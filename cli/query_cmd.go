@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"strconv"
 	"time"
 
@@ -153,12 +154,25 @@ func (a *App) messagesShowCmd() *cobra.Command {
 				return err
 			}
 			defer st.Close()
-			m, err := st.GetMessage(context.Background(), args[0])
+			ctx := context.Background()
+			m, err := st.GetMessage(ctx, args[0])
 			if err != nil {
 				return err
 			}
+			resources, err := st.ResourcesFor(ctx, m.MessageID)
+			if err != nil {
+				return err
+			}
+			for i := range resources {
+				if resources[i].LocalPath != "" && !filepath.IsAbs(resources[i].LocalPath) {
+					resources[i].LocalPath = filepath.Join(a.cfg.DataDir, resources[i].LocalPath)
+				}
+			}
 			if a.json() {
-				return a.printJSON(m)
+				return a.printJSON(struct {
+					store.Message
+					Resources []store.Resource `json:"resources"`
+				}{m, resources})
 			}
 			fmt.Fprintf(a.Out, "message_id:  %s\nchat_id:     %s\ntype:        %s\nsender:      %s (%s)\ncreated:     %s\n",
 				m.MessageID, m.ChatID, m.MsgType, m.SenderName, m.SenderID, fmtMs(m.CreateMs))
@@ -174,7 +188,23 @@ func (a *App) messagesShowCmd() *cobra.Command {
 			if m.ReplyTo != "" {
 				fmt.Fprintf(a.Out, "reply_to:    %s\n", m.ReplyTo)
 			}
+			if m.IsReadRemote != nil {
+				fmt.Fprintf(a.Out, "read (feishu): %v\n", *m.IsReadRemote)
+			}
+			if m.ConsumedAt != 0 {
+				fmt.Fprintf(a.Out, "consumed:    %s\n", fmtMs(m.ConsumedAt))
+			}
 			fmt.Fprintf(a.Out, "\n%s\n\nraw: %s\n", m.Content, m.ContentRaw)
+			for _, r := range resources {
+				fmt.Fprintf(a.Out, "resource: %s %s %s", r.Type, r.FileKey, r.Status)
+				if r.LocalPath != "" {
+					fmt.Fprintf(a.Out, " %s (%d bytes)", r.LocalPath, r.SizeBytes)
+				}
+				if r.LastError != "" {
+					fmt.Fprintf(a.Out, " [%s]", r.LastError)
+				}
+				fmt.Fprintln(a.Out)
+			}
 			return nil
 		},
 	}

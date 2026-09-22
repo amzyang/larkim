@@ -24,7 +24,7 @@ func newSyncer(t *testing.T) (*Syncer, *larkcli.Fake, *fakeClock) {
 	clk := &fakeClock{t: time.Date(2026, 9, 22, 12, 0, 0, 0, time.UTC)}
 	s := &Syncer{Client: f, Store: st, Clock: clk, Opt: Options{
 		PollInterval: time.Second, Overlap: 2 * time.Minute, ChatsRefreshEvery: 10 * time.Minute,
-		SlowPathEvery: 10 * time.Minute, BackfillDays: 30, ActiveTopK: 30, BackfillPerTick: 5, RenderPerTick: 4,
+		SlowPathEvery: 10 * time.Minute, BackfillDays: 30, ActiveTopK: 30, BackfillPerTick: 5, RenderPerTick: 4, DownloadPerTick: 1, ReadStatusPerTick: 4,
 	}}
 	return s, f, clk
 }

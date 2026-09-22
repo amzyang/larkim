@@ -96,7 +96,11 @@ func renderRows(msgs []store.Message, width int, self string) []msgRow {
 		} else {
 			sender = stBold.Render(sender)
 		}
-		head := fmt.Sprintf("%s %s  %s", stDim.Render(time.UnixMilli(x.CreateMs).Local().Format("01-02 15:04")), sender, stDim.Render(x.MessageID))
+		dot := " "
+		if x.IsReadRemote != nil && !*x.IsReadRemote {
+			dot = stAccent.Render("●")
+		}
+		head := fmt.Sprintf("%s%s %s  %s", dot, stDim.Render(time.UnixMilli(x.CreateMs).Local().Format("01-02 15:04")), sender, stDim.Render(x.MessageID))
 		if x.ThreadID != "" && x.MessagePosition >= 0 {
 			head += stAccent.Render(" ⤷thread")
 		}
@@ -249,7 +253,11 @@ func (m Model) renderChats(h int) string {
 		default:
 			mark = "⌂"
 		}
-		line := fit(fmt.Sprintf("%s %s", stDim.Render(mark), truncate(name, w-3)), w)
+		badge := ""
+		if n := m.unread[c.ChatID]; n > 0 {
+			badge = stAccent.Render(fmt.Sprintf(" %d", n))
+		}
+		line := fit(fmt.Sprintf("%s %s%s", stDim.Render(mark), truncate(name, w-3-lipgloss.Width(badge)), badge), w)
 		if i == m.chatIdx {
 			if m.focus == paneChats {
 				line = stSel.Render(line)

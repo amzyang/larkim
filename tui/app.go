@@ -45,6 +45,7 @@ type Model struct {
 	showHelp      bool
 
 	chats      []store.Chat
+	unread     map[string]int64
 	chatFilter string
 	chatIdx    int
 	chatTop    int
@@ -120,7 +121,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.focused = false
 		return m, nil
 	case chatsLoadedMsg:
-		m.chats = msg.chats
+		m.chats, m.unread = msg.chats, msg.unread
 		if m.chatID == "" && len(m.chats) > 0 {
 			return m, m.openChat(m.chats[0].ChatID)
 		}

@@ -34,7 +34,10 @@ const (
 
 // Messages flowing back into Update.
 type (
-	chatsLoadedMsg    struct{ chats []store.Chat }
+	chatsLoadedMsg struct {
+		chats  []store.Chat
+		unread map[string]int64
+	}
 	messagesLoadedMsg struct {
 		chatID string
 		msgs   []store.Message
@@ -56,7 +59,8 @@ func loadChats(st *store.Store) tea.Cmd {
 		if err != nil {
 			return errMsg{err}
 		}
-		return chatsLoadedMsg{chats}
+		unread, _ := st.UnreadCountsByChat(context.Background())
+		return chatsLoadedMsg{chats: chats, unread: unread}
 	}
 }
 

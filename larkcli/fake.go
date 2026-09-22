@@ -16,10 +16,12 @@ type Fake struct {
 	Messages map[string]RawMessage
 	Chats    []RawChat
 	Rendered map[string]RenderedMessage
-	Read     map[string]bool
-	Members  map[string][]ChatMember
-	Users    []User
-	Self     Identity
+	// Resources are returned by MGetRendered with download=true.
+	Resources map[string][]Resource
+	Read      map[string]bool
+	Members   map[string][]ChatMember
+	Users     []User
+	Self      Identity
 	// Truncate makes SearchMessageIDs report truncation when a window holds
 	// more than this many hits (0 disables).
 	Truncate int
@@ -34,11 +36,12 @@ type Fake struct {
 // NewFake returns an empty Fake with a default identity.
 func NewFake() *Fake {
 	return &Fake{
-		Messages: map[string]RawMessage{},
-		Rendered: map[string]RenderedMessage{},
-		Read:     map[string]bool{},
-		Members:  map[string][]ChatMember{},
-		Self:     Identity{AppID: "cli_test", UserOpenID: "ou_self"},
+		Messages:  map[string]RawMessage{},
+		Rendered:  map[string]RenderedMessage{},
+		Resources: map[string][]Resource{},
+		Read:      map[string]bool{},
+		Members:   map[string][]ChatMember{},
+		Self:      Identity{AppID: "cli_test", UserOpenID: "ou_self"},
 	}
 }
 
@@ -151,13 +154,18 @@ func (f *Fake) MGetRendered(_ context.Context, ids []string, download bool) ([]R
 	defer f.mu.Unlock()
 	var out []RenderedMessage
 	for _, id := range ids {
-		if r, ok := f.Rendered[id]; ok {
-			out = append(out, r)
-			continue
+		r, ok := f.Rendered[id]
+		if !ok {
+			m, known := f.Messages[id]
+			if !known {
+				continue
+			}
+			r = RenderedMessage{MessageID: id, ChatID: m.ChatID, Content: "rendered:" + m.Body.Content}
 		}
-		if m, ok := f.Messages[id]; ok {
-			out = append(out, RenderedMessage{MessageID: id, ChatID: m.ChatID, Content: "rendered:" + m.Body.Content})
+		if download {
+			r.Resources = append([]Resource(nil), f.Resources[id]...)
 		}
+		out = append(out, r)
 	}
 	return out, nil
 }

@@ -32,6 +32,13 @@ type Options struct {
 	ActiveTopK        int
 	BackfillPerTick   int
 	RenderPerTick     int // batches of 50
+	DownloadPerTick   int // batches of 50 messages with due resources
+	ReadStatusPerTick int // batches of 50
+	// DataDir is where lark-cli downloads land (resources/ below it); empty
+	// disables downloads.
+	DataDir string
+	// MaxBytes skips attachments larger than this (0 = unlimited).
+	MaxBytes int64
 }
 
 // OptionsFrom maps the user config onto loop options.
@@ -45,6 +52,10 @@ func OptionsFrom(cfg config.Config) Options {
 		ActiveTopK:        cfg.ActiveTopK,
 		BackfillPerTick:   10,
 		RenderPerTick:     4,
+		DownloadPerTick:   1,
+		ReadStatusPerTick: 4,
+		DataDir:           cfg.DataDir,
+		MaxBytes:          cfg.Resources.MaxBytes,
 	}
 }
 
@@ -95,6 +106,8 @@ type Report struct {
 	SlowPath   int
 	Chats      int
 	History    int // messages discovered by the historical search slice
+	Downloaded int // attachments stored
+	ReadChecks int // read-status answers recorded
 }
 
 func (s *Syncer) log() *slog.Logger {
@@ -205,6 +218,20 @@ func (s *Syncer) tick(ctx context.Context, now time.Time) (Report, error) {
 		return rep, fmt.Errorf("render: %w", err)
 	}
 	rep.Rendered = n
+
+	// 6. Download attachments that are pending or due for retry.
+	n, err = s.downloadPending(ctx, now)
+	if err != nil {
+		return rep, fmt.Errorf("resources: %w", err)
+	}
+	rep.Downloaded = n
+
+	// 7. Poll whether the user has read recent messages from others.
+	n, err = s.pollReadStatus(ctx, now)
+	if err != nil {
+		return rep, fmt.Errorf("read status: %w", err)
+	}
+	rep.ReadChecks = n
 	return rep, nil
 }
 
@@ -315,16 +342,29 @@ func (s *Syncer) fetchUnknown(ctx context.Context, hits []larkcli.SearchHit, now
 func (s *Syncer) upsertRaw(ctx context.Context, msgs []larkcli.RawMessage, now time.Time) (int, error) {
 	rows := make([]store.Message, 0, len(msgs))
 	chats := map[string]struct{}{}
+	var resources []store.Resource
 	for _, m := range msgs {
 		rows = append(rows, ToRow(m))
 		chats[m.ChatID] = struct{}{}
+		if !m.Deleted {
+			resources = append(resources, ExtractResources(m.MessageID, m.MsgType, m.Body.Content)...)
+		}
 	}
 	for id := range chats {
 		if err := s.Store.EnsureChat(ctx, id, now.UnixMilli()); err != nil {
 			return 0, err
 		}
 	}
-	return s.Store.UpsertMessages(ctx, rows, now.UnixMilli())
+	n, err := s.Store.UpsertMessages(ctx, rows, now.UnixMilli())
+	if err != nil {
+		return n, err
+	}
+	if s.Opt.DataDir != "" {
+		if err := s.Store.AddPendingResources(ctx, resources); err != nil {
+			return n, err
+		}
+	}
+	return n, nil
 }
 
 // ToRow maps a raw API message onto its store row. Bot senders are keyed by
@@ -470,9 +510,21 @@ func (s *Syncer) pullChat(ctx context.Context, chatID string, since, until, now 
 }
 
 func (s *Syncer) renderPending(ctx context.Context, now time.Time) (int, error) {
-	ids, err := s.Store.UnrenderedMessageIDs(ctx, s.Opt.RenderPerTick*50)
+	candidates, err := s.Store.UnrenderedMessageIDs(ctx, s.Opt.RenderPerTick*50)
 	if err != nil {
 		return 0, err
+	}
+	// Messages with attachments are rendered by the download step (one call
+	// does both), so leave them to it.
+	var ids []string
+	for _, id := range candidates {
+		rs, err := s.Store.ResourcesFor(ctx, id)
+		if err != nil {
+			return 0, err
+		}
+		if !hasResources(rs) {
+			ids = append(ids, id)
+		}
 	}
 	total := 0
 	for _, batch := range Chunk(ids, 50) {
