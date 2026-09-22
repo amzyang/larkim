@@ -24,7 +24,7 @@ func newSyncer(t *testing.T) (*Syncer, *larkcli.Fake, *fakeClock) {
 	clk := &fakeClock{t: time.Date(2026, 9, 22, 12, 0, 0, 0, time.UTC)}
 	s := &Syncer{Client: f, Store: st, Clock: clk, Opt: Options{
 		PollInterval: time.Second, Overlap: 2 * time.Minute, ChatsRefreshEvery: 10 * time.Minute,
-		SlowPathEvery: 10 * time.Minute, BackfillDays: 30, ActiveTopK: 30, BackfillPerTick: 5, RenderPerTick: 4, DownloadPerTick: 1, ReadStatusPerTick: 4,
+		SlowPathEvery: 10 * time.Minute, BackfillDays: 30, ActiveTopK: 30, BackfillPerTick: 5, RenderPerTick: 4, DownloadPerTick: 1, ReadStatusPerTick: 4, RepairEvery: 6 * time.Hour, RepairPerTick: 3, MembersPerTick: 2, AvatarsPerTick: 5,
 	}}
 	return s, f, clk
 }
@@ -86,6 +86,7 @@ func TestHistorySlice_WalksDayByDayUntilLive(t *testing.T) {
 	now := clk.t
 	s.Opt.BackfillDays = 2
 	s.Opt.BackfillPerTick = 0 // isolate the search-based history
+	s.Opt.RepairEvery = 0
 	f.AddMessage(msg("om_d1", "oc_a", now.Add(-40*time.Hour), "day1"))
 	f.AddMessage(msg("om_d2", "oc_a", now.Add(-20*time.Hour), "day2"))
 

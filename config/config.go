@@ -33,6 +33,17 @@ type Config struct {
 	// RepairEvery is the interval of the 7-day edit/recall repair pass.
 	RepairEvery time.Duration `yaml:"repair_every"`
 	Resources   Resources     `yaml:"resources"`
+	AI          AI            `yaml:"ai"`
+}
+
+// AI configures the TUI assistant.
+type AI struct {
+	// Model is the Claude model id.
+	Model string `yaml:"model"`
+	// APIKeyEnv names the environment variable holding the Anthropic API key.
+	APIKeyEnv string `yaml:"api_key_env"`
+	// Context is how many recent messages are given to the assistant.
+	Context int `yaml:"context"`
 }
 
 // Resources configures attachment downloads.
@@ -53,6 +64,7 @@ func Default() Config {
 		SlowPathEvery:     10 * time.Minute,
 		RepairEvery:       6 * time.Hour,
 		Resources:         Resources{MaxBytes: 50 << 20},
+		AI:                AI{Model: "claude-opus-5", APIKeyEnv: "ANTHROPIC_API_KEY", Context: 80},
 	}
 }
 

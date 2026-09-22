@@ -28,9 +28,13 @@ func (a *App) contactsCmd() *cobra.Command {
 			}
 			out := make([][]string, 0, len(rows))
 			for _, c := range rows {
-				out = append(out, []string{c.OpenID, c.Name, c.Email, c.P2PChatID})
+				bot := ""
+				if c.IsBot {
+					bot = "bot"
+				}
+				out = append(out, []string{c.OpenID, c.Name, bot, c.Email, c.AvatarPath})
 			}
-			table(a.Out, []string{"open_id", "name", "email", "p2p_chat_id"}, out)
+			table(a.Out, []string{"open_id", "name", "type", "email", "avatar"}, out)
 			return nil
 		},
 	}

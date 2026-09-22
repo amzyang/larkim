@@ -34,6 +34,10 @@ type Options struct {
 	RenderPerTick     int // batches of 50
 	DownloadPerTick   int // batches of 50 messages with due resources
 	ReadStatusPerTick int // batches of 50
+	RepairEvery       time.Duration
+	RepairPerTick     int
+	MembersPerTick    int
+	AvatarsPerTick    int
 	// DataDir is where lark-cli downloads land (resources/ below it); empty
 	// disables downloads.
 	DataDir string
@@ -54,6 +58,10 @@ func OptionsFrom(cfg config.Config) Options {
 		RenderPerTick:     4,
 		DownloadPerTick:   1,
 		ReadStatusPerTick: 4,
+		RepairEvery:       cfg.RepairEvery,
+		RepairPerTick:     3,
+		MembersPerTick:    2,
+		AvatarsPerTick:    5,
 		DataDir:           cfg.DataDir,
 		MaxBytes:          cfg.Resources.MaxBytes,
 	}
@@ -92,6 +100,8 @@ type Syncer struct {
 	Log    *slog.Logger
 	// OnError, when set, observes every failed tick (for crash reporting).
 	OnError func(error)
+	// Fetch downloads avatars; nil disables avatar files.
+	Fetch Fetcher
 }
 
 // Report summarizes one tick.
@@ -108,6 +118,9 @@ type Report struct {
 	History    int // messages discovered by the historical search slice
 	Downloaded int // attachments stored
 	ReadChecks int // read-status answers recorded
+	Repaired   int // messages re-listed by the repair pass
+	Members    int // chat members recorded
+	Avatars    int // avatar files stored
 }
 
 func (s *Syncer) log() *slog.Logger {
@@ -232,6 +245,17 @@ func (s *Syncer) tick(ctx context.Context, now time.Time) (Report, error) {
 		return rep, fmt.Errorf("read status: %w", err)
 	}
 	rep.ReadChecks = n
+
+	// 8. Repair recent history, refresh members, fetch avatars: a few each.
+	if rep.Repaired, err = s.repairSlice(ctx, now); err != nil {
+		return rep, fmt.Errorf("repair: %w", err)
+	}
+	if rep.Members, err = s.membersSlice(ctx, now); err != nil {
+		return rep, fmt.Errorf("members: %w", err)
+	}
+	if rep.Avatars, err = s.avatarsSlice(ctx, now); err != nil {
+		return rep, fmt.Errorf("avatars: %w", err)
+	}
 	return rep, nil
 }
 
@@ -357,6 +381,9 @@ func (s *Syncer) upsertRaw(ctx context.Context, msgs []larkcli.RawMessage, now t
 	}
 	n, err := s.Store.UpsertMessages(ctx, rows, now.UnixMilli())
 	if err != nil {
+		return n, err
+	}
+	if err := s.Store.UpsertContacts(ctx, senderContacts(msgs), now.UnixMilli()); err != nil {
 		return n, err
 	}
 	if s.Opt.DataDir != "" {

@@ -443,6 +443,26 @@ func (c *ExecClient) SearchUsers(ctx context.Context, query string, ids []string
 	return resp.Users, nil
 }
 
+func (c *ExecClient) UserDetail(ctx context.Context, openID string) (UserDetail, error) {
+	data, err := c.run(ctx, "api", "GET", "/open-apis/contact/v3/users/"+openID, "--params", jsonArg(map[string]string{"user_id_type": "open_id"}))
+	if err != nil {
+		return UserDetail{}, err
+	}
+	var resp struct {
+		User struct {
+			OpenID string `json:"open_id"`
+			Name   string `json:"name"`
+			Avatar struct {
+				Avatar240 string `json:"avatar_240"`
+			} `json:"avatar"`
+		} `json:"user"`
+	}
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return UserDetail{}, fmt.Errorf("decode user: %w", err)
+	}
+	return UserDetail{OpenID: resp.User.OpenID, Name: resp.User.Name, AvatarURL: resp.User.Avatar.Avatar240}, nil
+}
+
 func (c *ExecClient) SearchChats(ctx context.Context, query string) ([]RawChat, error) {
 	data, err := c.run(ctx, "im", "+chat-search", "--query", query)
 	if err != nil {

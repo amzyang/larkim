@@ -12,6 +12,7 @@ import (
 	"charm.land/bubbles/v2/textarea"
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
+	"github.com/amzyang/larkim/ai"
 	"github.com/amzyang/larkim/larkcli"
 	"github.com/amzyang/larkim/store"
 )
@@ -62,6 +63,21 @@ type Model struct {
 	threadIdx  int
 	threadTop  int
 	threadRows []msgRow
+
+	// Search mode: the messages pane lists cross-chat hits.
+	searching     bool
+	searchQuery   string
+	searchResults []store.Message
+	pendingSelect string // message to select once its chat loads
+
+	// Assistant pane (replaces the thread pane while open).
+	aiOpen  bool
+	aiBusy  bool
+	aiDraft bool
+	aiTitle string
+	aiText  string
+	aiTop   int
+	aiChan  <-chan ai.Chunk
 
 	input   textarea.Model
 	cmdline textinput.Model
@@ -133,9 +149,28 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.msgs = msg.msgs
 		m.msgIdx = len(m.msgs) - 1
+		if m.pendingSelect != "" {
+			for i, x := range m.msgs {
+				if x.MessageID == m.pendingSelect {
+					m.msgIdx = i
+				}
+			}
+			m.pendingSelect = ""
+		}
 		m.rebuildMessages()
 		m.scrollMessagesToSelection()
 		return m, markConsumed(m.deps.Store, m.msgs)
+	case searchMsg:
+		m.searching, m.searchQuery, m.searchResults = true, msg.query, msg.msgs
+		m.msgIdx, m.msgTop = 0, 0
+		m.focus = paneMessages
+		m.rebuildMessages()
+		if len(msg.msgs) == 0 {
+			return m.notify("no messages match "+msg.query, true), nil
+		}
+		return m.notify(fmt.Sprintf("%d hits · Enter opens · Esc leaves search", len(msg.msgs)), false), nil
+	case aiChunkMsg:
+		return m.onAIChunk(msg.chunk)
 	case threadLoadedMsg:
 		if msg.threadID != m.threadID {
 			return m, nil
@@ -191,6 +226,7 @@ func (m Model) notify(text string, isErr bool) Model {
 }
 
 func (m *Model) openChat(chatID string) tea.Cmd {
+	m.searching, m.searchResults, m.searchQuery = false, nil, ""
 	m.chatID = chatID
 	m.msgs, m.msgRows, m.msgIdx, m.msgTop = nil, nil, 0, 0
 	m.threadOpen, m.threadID, m.thread, m.threadRows = false, "", nil, nil
@@ -253,12 +289,19 @@ func (m Model) selected() (store.Message, bool) {
 			return m.thread[m.threadIdx], true
 		}
 	default:
-		if m.msgIdx >= 0 && m.msgIdx < len(m.msgs) {
-			return m.msgs[m.msgIdx], true
+		list := m.msgs
+		if m.searching {
+			list = m.searchResults
+		}
+		if m.msgIdx >= 0 && m.msgIdx < len(list) {
+			return list[m.msgIdx], true
 		}
 	}
 	return store.Message{}, false
 }
+
+// rightOpen reports whether the third pane (thread or assistant) is shown.
+func (m Model) rightOpen() bool { return m.threadOpen || m.aiOpen }
 
 func (m Model) currentChat() (store.Chat, bool) {
 	for _, c := range m.chats {
@@ -400,7 +443,7 @@ func (m Model) onNormalKey(s string) (tea.Model, tea.Cmd) {
 	case "h", "left":
 		if m.focus > paneChats && m.focus != paneInput {
 			m.focus--
-			if m.focus == paneThread && !m.threadOpen {
+			if m.focus == paneThread && !m.rightOpen() {
 				m.focus = paneMessages
 			}
 		}
@@ -408,7 +451,7 @@ func (m Model) onNormalKey(s string) (tea.Model, tea.Cmd) {
 	case "l", "right":
 		if m.focus == paneChats {
 			m.focus = paneMessages
-		} else if m.focus == paneMessages && m.threadOpen {
+		} else if m.focus == paneMessages && m.rightOpen() {
 			m.focus = paneThread
 		}
 		return m, nil
@@ -470,8 +513,23 @@ func (m Model) onNormalKey(s string) (tea.Model, tea.Cmd) {
 		m.cmdline.Prompt = ":"
 		m.cmdline.Reset()
 		return m, m.cmdline.Focus()
+	case "a":
+		m.mode = modeCommand
+		m.cmdline.Prompt = ":"
+		m.cmdline.SetValue("ai ")
+		m.cmdline.CursorEnd()
+		return m, m.cmdline.Focus()
 	case "esc":
-		if m.threadOpen && m.focus == paneThread {
+		switch {
+		case m.aiOpen:
+			return m.closeAI(), nil
+		case m.searching:
+			m.searching, m.searchResults = false, nil
+			m.msgIdx = len(m.msgs) - 1
+			m.rebuildMessages()
+			m.scrollMessagesToSelection()
+			return m.notify("", false), nil
+		case m.threadOpen && m.focus == paneThread:
 			return m.toggleThread()
 		}
 		m.replyTo, m.inThrd = nil, false
@@ -482,7 +540,7 @@ func (m Model) onNormalKey(s string) (tea.Model, tea.Cmd) {
 
 func (m Model) nextPane(dir int) pane {
 	order := []pane{paneChats, paneMessages}
-	if m.threadOpen {
+	if m.rightOpen() {
 		order = append(order, paneThread)
 	}
 	order = append(order, paneInput)
@@ -521,9 +579,17 @@ func (m Model) move(n int) (tea.Model, tea.Cmd) {
 			return m, m.openChat(vis[m.chatIdx].ChatID)
 		}
 	case paneMessages:
-		m.msgIdx = clamp(m.msgIdx+n, 0, len(m.msgs)-1)
+		count := len(m.msgs)
+		if m.searching {
+			count = len(m.searchResults)
+		}
+		m.msgIdx = clamp(m.msgIdx+n, 0, count-1)
 		m.scrollMessagesToSelection()
 	case paneThread:
+		if m.aiOpen {
+			m.aiTop = clamp(m.aiTop+n, 0, max(0, len(m.aiLines())-m.bodyHeight()+1))
+			return m, nil
+		}
 		m.threadIdx = clamp(m.threadIdx+n, 0, len(m.thread)-1)
 		m.scrollThreadToSelection()
 	case paneInput:
@@ -538,6 +604,13 @@ func (m Model) activate() (tea.Model, tea.Cmd) {
 		m.focus = paneMessages
 		return m, nil
 	case paneMessages:
+		if m.searching {
+			if sel, ok := m.selected(); ok {
+				m.pendingSelect = sel.MessageID
+				return m, m.openChat(sel.ChatID)
+			}
+			return m, nil
+		}
 		if sel, ok := m.selected(); ok && sel.ThreadID != "" {
 			return m.toggleThread()
 		}
@@ -568,6 +641,7 @@ func (m Model) toggleThread() (tea.Model, tea.Cmd) {
 	if !ok || sel.ThreadID == "" {
 		return m.notify("selected message has no thread", true), nil
 	}
+	m = m.closeAI()
 	m.focus = paneThread
 	return m, m.openThread(sel.ThreadID)
 }
@@ -627,6 +701,13 @@ func (m Model) runCommand(line string) (tea.Model, tea.Cmd) {
 			}
 		}
 		return m.notify("unknown chat "+ref, true), nil
+	case "search", "s":
+		if len(strings.TrimSpace(rest)) == 0 {
+			return m.notify("usage: :search <text>", true), nil
+		}
+		return m.notify("searching…", false), searchMessages(m.deps.Store, rest)
+	case "ai":
+		return m.startAI(rest)
 	case "sync":
 		if m.deps.Syncer == nil {
 			return m.notify("sync is handled by the daemon", false), nil
@@ -640,6 +721,72 @@ func (m Model) runCommand(line string) (tea.Model, tea.Cmd) {
 		}
 	}
 	return m.notify("unknown command :"+name, true), nil
+}
+
+// --- assistant ------------------------------------------------------------
+
+func (m Model) startAI(input string) (tea.Model, tea.Cmd) {
+	if m.deps.AI == nil {
+		return m.notify("assistant off: set ANTHROPIC_API_KEY (config ai.api_key_env)", true), nil
+	}
+	if m.chatID == "" || len(m.msgs) == 0 {
+		return m.notify("open a chat with messages first", true), nil
+	}
+	if m.aiBusy {
+		return m.notify("assistant is still answering", true), nil
+	}
+	prompt, draft := ai.Prompt(input)
+	name := m.chatID
+	if c, ok := m.currentChat(); ok && c.Name != "" {
+		name = c.Name
+	}
+	n := m.deps.AIContext
+	if n <= 0 || n > len(m.msgs) {
+		n = len(m.msgs)
+	}
+	transcript := ai.Transcript(name, m.msgs[len(m.msgs)-n:], m.deps.Self)
+	m.threadOpen = false
+	m.aiOpen, m.aiBusy, m.aiDraft = true, true, draft
+	m.aiTitle = strings.TrimSpace(input)
+	if m.aiTitle == "" {
+		m.aiTitle = "summary"
+	}
+	m.aiText, m.aiTop = "", 0
+	m.focus = paneThread
+	m.layout()
+	m.aiChan = m.deps.AI.Stream(context.Background(), transcript, prompt)
+	return m.notify("asking Claude…", false), waitForAI(m.aiChan)
+}
+
+func (m Model) onAIChunk(c ai.Chunk) (tea.Model, tea.Cmd) {
+	if c.Err != nil {
+		m.aiBusy = false
+		m.aiText += "\n\n" + c.Err.Error()
+		return m.notify("assistant failed", true), nil
+	}
+	m.aiText += c.Text
+	if !c.Done {
+		// Follow the stream unless the user scrolled up.
+		if m.aiTop >= max(0, len(m.aiLines())-m.bodyHeight()+1)-3 {
+			m.aiTop = max(0, len(m.aiLines())-m.bodyHeight()+1)
+		}
+		return m, waitForAI(m.aiChan)
+	}
+	m.aiBusy = false
+	if m.aiDraft && strings.TrimSpace(m.aiText) != "" {
+		m.input.SetValue(strings.TrimSpace(m.aiText))
+		return m.notify("draft placed in the composer: i to edit, Enter to send", false), nil
+	}
+	return m.notify("", false), nil
+}
+
+func (m Model) closeAI() Model {
+	m.aiOpen, m.aiChan = false, nil
+	if m.focus == paneThread {
+		m.focus = paneMessages
+	}
+	m.layout()
+	return m
 }
 
 // --- mouse ----------------------------------------------------------------
@@ -723,7 +870,8 @@ const helpText = `NORMAL      j/k move · gg/G ends · Ctrl+d/u page · Tab/Shif
             Enter open chat / thread / reply · i write · r reply · R reply in thread · t thread
             y copy message id · Y copy chat id · o open in Feishu · / filter chats · : command · q quit
 INSERT      Enter send · Shift+Enter newline · Esc back
-COMMAND     :goto <chat> · :send <chat|ou_> <text> · :sync · :q
+COMMAND     :goto <chat> · :send <chat|ou_> <text> · :search <text> · :sync · :q
+ASSISTANT   a or :ai [summary | draft <how> | todo | <question>] · answer streams in the right pane · Esc closes
 MOUSE       click focuses and selects · double-click opens · wheel scrolls`
 
 func fmtStatus(m Model) string {

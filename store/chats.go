@@ -27,6 +27,7 @@ type Chat struct {
 	LastSeenAt      int64  `json:"last_seen_at"`
 	LeftAt          int64  `json:"left_at,omitempty"`
 	SyncError       string `json:"sync_error,omitempty"`
+	RepairedAt      int64  `json:"repaired_at,omitempty"`
 	RawJSON         string `json:"-"`
 	// Derived for listings.
 	LastMessageMs int64 `json:"last_message_ms"`
@@ -34,14 +35,14 @@ type Chat struct {
 }
 
 const chatColumns = `c.chat_id, c.name, c.description, c.chat_mode, c.chat_status, c.owner_id, c.external, c.p2p_target_id, c.p2p_target_type,
- c.avatar_url, c.avatar_path, c.cursor_ms, c.backfill_done_at, c.members_synced_at, c.first_seen_at, c.last_seen_at, c.left_at, c.sync_error, c.raw_json,
+ c.avatar_url, c.avatar_path, c.cursor_ms, c.backfill_done_at, c.members_synced_at, c.first_seen_at, c.last_seen_at, c.left_at, c.sync_error, c.repaired_at, c.raw_json,
  COALESCE((SELECT max(create_ms) FROM messages m WHERE m.chat_id = c.chat_id), 0),
  (SELECT count(*) FROM messages m WHERE m.chat_id = c.chat_id)`
 
 func scanChat(sc interface{ Scan(...any) error }) (Chat, error) {
 	var c Chat
 	err := sc.Scan(&c.ChatID, &c.Name, &c.Description, &c.ChatMode, &c.ChatStatus, &c.OwnerID, &c.External, &c.P2PTargetID, &c.P2PTargetType,
-		&c.AvatarURL, &c.AvatarPath, &c.CursorMs, &c.BackfillDoneAt, &c.MembersSyncedAt, &c.FirstSeenAt, &c.LastSeenAt, &c.LeftAt, &c.SyncError, &c.RawJSON,
+		&c.AvatarURL, &c.AvatarPath, &c.CursorMs, &c.BackfillDoneAt, &c.MembersSyncedAt, &c.FirstSeenAt, &c.LastSeenAt, &c.LeftAt, &c.SyncError, &c.RepairedAt, &c.RawJSON,
 		&c.LastMessageMs, &c.MessageCount)
 	return c, err
 }
@@ -112,7 +113,7 @@ func (s *Store) SetChatSyncError(ctx context.Context, chatID, msg string, now in
 // already have discovered messages come first so active conversations fill in
 // before dormant ones.
 func (s *Store) ChatsNeedingBackfill(ctx context.Context, limit int) ([]Chat, error) {
-	return s.queryChats(ctx, `WHERE c.backfill_done_at = 0 AND c.left_at = 0 ORDER BY 20 DESC, c.last_seen_at DESC LIMIT ?`, limit)
+	return s.queryChats(ctx, `WHERE c.backfill_done_at = 0 AND c.left_at = 0 ORDER BY 21 DESC, c.last_seen_at DESC LIMIT ?`, limit)
 }
 
 // GetChat loads one chat.
@@ -156,7 +157,7 @@ func (s *Store) ListChats(ctx context.Context, q ChatQuery) ([]Chat, error) {
 	if limit <= 0 {
 		limit = 1000
 	}
-	sql += "ORDER BY 20 DESC, c.name LIMIT ?"
+	sql += "ORDER BY 21 DESC, c.name LIMIT ?"
 	args = append(args, limit)
 	return s.queryChats(ctx, sql, args...)
 }

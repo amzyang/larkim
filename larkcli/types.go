@@ -121,6 +121,13 @@ type User struct {
 	P2PChatID string `json:"p2p_chat_id"`
 }
 
+// UserDetail is the contact card of one user (GET /contact/v3/users/{id}).
+type UserDetail struct {
+	OpenID    string
+	Name      string
+	AvatarURL string // 240px variant
+}
+
 // Identity is the resolved caller of a lark-cli invocation.
 type Identity struct {
 	AppID      string

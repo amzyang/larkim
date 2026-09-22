@@ -54,10 +54,10 @@ func (a *App) messagesCmd() *cobra.Command {
 
 func (a *App) messagesListCmd() *cobra.Command {
 	var q store.MessageQuery
-	var since, until, order string
+	var since, until, order, query string
 	cmd := &cobra.Command{
 		Use:   "list",
-		Short: "List messages with filters, sorting and pagination",
+		Short: "List messages with filters, sorting and pagination; --query searches rendered text",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			now := time.Now()
 			var err error
@@ -90,7 +90,12 @@ func (a *App) messagesListCmd() *cobra.Command {
 					return err
 				}
 			}
-			rows, err := st.ListMessages(ctx, q)
+			var rows []store.Message
+			if query != "" {
+				rows, err = st.SearchMessages(ctx, query, q.ChatID, q.Limit)
+			} else {
+				rows, err = st.ListMessages(ctx, q)
+			}
 			if err != nil {
 				return err
 			}
@@ -102,6 +107,7 @@ func (a *App) messagesListCmd() *cobra.Command {
 		},
 	}
 	f := cmd.Flags()
+	f.StringVar(&query, "query", "", "full-text search over rendered content and sender names (every term must match; combinable with --chat and --limit)")
 	f.StringVar(&q.ChatID, "chat", "", "chat id (oc_…) or exact chat name")
 	f.StringVar(&q.SenderID, "sender", "", "sender open_id (ou_…)")
 	f.StringVar(&q.MsgType, "type", "", "msg_type: text | post | image | file | interactive | system | …")

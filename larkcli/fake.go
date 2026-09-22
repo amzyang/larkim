@@ -21,6 +21,7 @@ type Fake struct {
 	Read      map[string]bool
 	Members   map[string][]ChatMember
 	Users     []User
+	Details   map[string]UserDetail
 	Self      Identity
 	// Truncate makes SearchMessageIDs report truncation when a window holds
 	// more than this many hits (0 disables).
@@ -41,6 +42,7 @@ func NewFake() *Fake {
 		Resources: map[string][]Resource{},
 		Read:      map[string]bool{},
 		Members:   map[string][]ChatMember{},
+		Details:   map[string]UserDetail{},
 		Self:      Identity{AppID: "cli_test", UserOpenID: "ou_self"},
 	}
 }
@@ -215,6 +217,19 @@ func (f *Fake) SearchUsers(_ context.Context, query string, ids []string) ([]Use
 		}
 	}
 	return out, nil
+}
+
+func (f *Fake) UserDetail(_ context.Context, openID string) (UserDetail, error) {
+	if err := f.record("user:" + openID); err != nil {
+		return UserDetail{}, err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	d, ok := f.Details[openID]
+	if !ok {
+		return UserDetail{}, &Error{ExitCode: ExitAPI, Type: "api", Subtype: "not_found", Message: "user not found"}
+	}
+	return d, nil
 }
 
 func (f *Fake) SearchChats(_ context.Context, query string) ([]RawChat, error) {

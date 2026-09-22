@@ -8,6 +8,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/amzyang/larkim/ai"
 	"github.com/amzyang/larkim/larkcli"
 	"github.com/amzyang/larkim/store"
 	"github.com/amzyang/larkim/sync"
@@ -23,6 +24,9 @@ type Deps struct {
 	Self     string // the user's open_id
 	Version  string
 	Embedded bool
+	// AI is the assistant; nil when no API key is configured.
+	AI        *ai.Client
+	AIContext int // recent messages handed to the assistant
 }
 
 const (
@@ -51,7 +55,32 @@ type (
 	syncStatusMsg struct{ status, lastError string }
 	errMsg        struct{ err error }
 	noticeMsg     struct{ text string }
+	aiChunkMsg    struct{ chunk ai.Chunk }
+	searchMsg     struct {
+		query string
+		msgs  []store.Message
+	}
 )
+
+func searchMessages(st *store.Store, query string) tea.Cmd {
+	return func() tea.Msg {
+		rows, err := st.SearchMessages(context.Background(), query, "", 200)
+		if err != nil {
+			return errMsg{err}
+		}
+		return searchMsg{query: query, msgs: rows}
+	}
+}
+
+func waitForAI(ch <-chan ai.Chunk) tea.Cmd {
+	return func() tea.Msg {
+		c, ok := <-ch
+		if !ok {
+			return aiChunkMsg{ai.Chunk{Done: true}}
+		}
+		return aiChunkMsg{c}
+	}
+}
 
 func loadChats(st *store.Store) tea.Cmd {
 	return func() tea.Msg {

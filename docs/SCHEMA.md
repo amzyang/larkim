@@ -19,6 +19,8 @@ One row per chat the user is (or was) in, from `GET /im/v1/chats` with `types=p2
 | `cursor_ms` | newest `create_ms` pulled by a per-chat listing; the slow path resumes from here minus overlap |
 | `backfill_done_at` | set once the historical pull (`backfill_days`) finished |
 | `left_at` | non-zero when a full listing no longer contains the chat; reset when it reappears |
+| `sync_error` | last permanent API rejection (e.g. restricted-mode chats cannot be listed); such chats still receive messages via search |
+| `repaired_at` | when the last repair pass re-listed the chat's recent week |
 | `raw_json` | the API item as received |
 
 A chat first seen only through a message (before the next full listing) exists with an empty name.
@@ -71,9 +73,13 @@ Attachments of a message (`image_key` / `file_key`), one row per key.
 | `status` | `pending`, `done`, `failed`, `skipped` (over `resources.max_bytes`) |
 | `attempts`, `next_attempt_at`, `last_error` | retry bookkeeping |
 
+## messages_fts
+
+FTS5 external-content index over `messages(content, sender_name)` with the trigram tokenizer, kept in step by triggers. Query it with `MATCH` for terms of three or more characters (`SELECT rowid FROM messages_fts WHERE messages_fts MATCH '"发布计划"'`); shorter terms need `instr()` on `messages.content`.
+
 ## contacts, chat_members
 
-`contacts` caches users and bots seen as chat members or senders (`open_id`, `name`, `email`, `p2p_chat_id`, avatar). `chat_members` maps `chat_id` → `member_id` with the time the membership was last confirmed.
+`contacts` caches users and bots seen as chat members or senders (`open_id`, `name`, `email`, `p2p_chat_id`, `avatar_url`, `avatar_path`). `avatar_url = 'none'` means the user has no fetchable avatar; `avatar_path = '-'` means the download failed and is not retried. `chat_members` maps `chat_id` → `member_id` with the time the membership was last confirmed; group member lists refresh daily.
 
 ## sync_state, sync_runs
 

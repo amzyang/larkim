@@ -101,7 +101,7 @@ func (a *App) client() *larkcli.ExecClient {
 
 func (a *App) syncer(st *store.Store) *sync.Syncer {
 	return &sync.Syncer{Client: a.client(), Store: st, Clock: sync.RealClock{}, Opt: sync.OptionsFrom(a.cfg),
-		Log: slog.New(slog.NewTextHandler(a.Err, nil)), OnError: captureError}
+		Log: slog.New(slog.NewTextHandler(a.Err, nil)), OnError: captureError, Fetch: sync.HTTPFetch}
 }
 
 // quietLogger discards logs so an embedded syncer never writes over the TUI.

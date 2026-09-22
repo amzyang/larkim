@@ -7,6 +7,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/amzyang/larkim/ai"
 	"github.com/amzyang/larkim/sync"
 	"github.com/amzyang/larkim/tui"
 	"github.com/spf13/cobra"
@@ -25,7 +26,10 @@ func (a *App) tuiCmd() *cobra.Command {
 			ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 			defer cancel()
 			client := a.client()
-			deps := tui.Deps{Store: st, Client: client, Version: a.Version}
+			deps := tui.Deps{Store: st, Client: client, Version: a.Version, AIContext: a.cfg.AI.Context}
+			if key := os.Getenv(a.cfg.AI.APIKeyEnv); key != "" {
+				deps.AI = ai.New(key, a.cfg.AI.Model)
+			}
 			if v, _, _ := st.GetState(ctx, sync.KeySelfOpenID); v != "" {
 				deps.Self = v
 			}

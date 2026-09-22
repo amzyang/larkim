@@ -63,14 +63,46 @@ func (m Model) chatListHeight() int { return m.bodyHeight() }
 
 func (m Model) messagesWidth() int {
 	w := m.width - chatsWidth
-	if m.threadOpen {
+	if m.rightOpen() {
 		w -= threadWidth
 	}
 	return max(20, w)
 }
 
 func (m *Model) rebuildMessages() {
+	if m.searching {
+		m.msgRows = renderSearchRows(m.searchResults, m.chats, m.messagesWidth()-2, m.deps.Self)
+		return
+	}
 	m.msgRows = renderRows(m.msgs, m.messagesWidth()-2, m.deps.Self)
+}
+
+// renderSearchRows is renderRows with the chat name in the head line.
+func renderSearchRows(msgs []store.Message, chats []store.Chat, width int, self string) []msgRow {
+	names := map[string]string{}
+	for _, c := range chats {
+		names[c.ChatID] = c.Name
+	}
+	rows := renderRows(msgs, width, self)
+	for i := range rows {
+		if rows[i].head {
+			name := names[msgs[rows[i].idx].ChatID]
+			if name == "" {
+				name = msgs[rows[i].idx].ChatID
+			}
+			rows[i].text = stAccent.Render(truncate(flatten(name), 18)) + " " + rows[i].text
+		}
+	}
+	return rows
+}
+
+// aiLines wraps the assistant's answer to the right pane.
+func (m Model) aiLines() []string {
+	text := m.aiText
+	if text == "" && m.aiBusy {
+		text = "…"
+	}
+	return strings.Split(lipgloss.NewStyle().Width(threadWidth-2).Render(text), "\n")
 }
 
 func (m *Model) rebuildThread() {
@@ -184,7 +216,7 @@ func (m Model) hit(x, y int) (pane, int) {
 	switch {
 	case x < chatsWidth:
 		return paneChats, row
-	case m.threadOpen && x >= m.width-threadWidth:
+	case m.rightOpen() && x >= m.width-threadWidth:
 		return paneThread, row
 	default:
 		return paneMessages, row - headerHeight
@@ -205,7 +237,9 @@ func (m Model) View() tea.View {
 	body := m.bodyHeight()
 	panes := []string{m.renderChats(body)}
 	panes = append(panes, m.renderMessages(body))
-	if m.threadOpen {
+	if m.aiOpen {
+		panes = append(panes, m.renderAI(body))
+	} else if m.threadOpen {
 		panes = append(panes, m.renderThread(body))
 	}
 	top := lipgloss.JoinHorizontal(lipgloss.Top, panes...)
@@ -294,7 +328,7 @@ func (m Model) renderMessages(h int) string {
 		}
 		lines = append(lines, line)
 	}
-	if len(m.msgs) == 0 {
+	if len(m.msgRows) == 0 {
 		lines = append(lines, fit(stDim.Render("no messages synced for this chat yet"), w))
 	}
 	for len(lines) < h-headerHeight {
@@ -303,7 +337,28 @@ func (m Model) renderMessages(h int) string {
 	return paneStyle(m.focus == paneMessages, w).Height(h).Render(header + "\n" + strings.Join(lines, "\n"))
 }
 
+func (m Model) renderAI(h int) string {
+	w := threadWidth - 2
+	lines := make([]string, 0, h)
+	state := ""
+	if m.aiBusy {
+		state = stDim.Render(" (streaming)")
+	}
+	lines = append(lines, fit(stBold.Render("AI · ")+truncate(m.aiTitle, w-14)+state, w))
+	body := m.aiLines()
+	for i := m.aiTop; i < len(body) && len(lines) < h; i++ {
+		lines = append(lines, fit(body[i], w))
+	}
+	for len(lines) < h {
+		lines = append(lines, fit("", w))
+	}
+	return paneStyle(m.focus == paneThread, w).Height(h).Render(strings.Join(lines, "\n"))
+}
+
 func (m Model) renderHeader(w int) string {
+	if m.searching {
+		return fit(stBold.Render("Search ")+stAccent.Render(m.searchQuery)+stDim.Render(fmt.Sprintf(" · %d hits · Esc to leave", len(m.searchResults))), w)
+	}
 	c, ok := m.currentChat()
 	if !ok {
 		return stDim.Render("select a chat")
