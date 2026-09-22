@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/amzyang/larkim/store"
@@ -129,18 +130,14 @@ func (a *App) printMessageTable(rows []store.Message, withChat bool) {
 	}
 	out := make([][]string, 0, len(rows))
 	for _, m := range rows {
-		content := m.Content
+		content := contentLabel(m)
 		if m.RenderedAt == 0 {
-			content = "(unrendered) " + m.ContentRaw
+			content = "(unrendered) " + content
 		}
 		if m.Deleted {
 			content = "(recalled) " + content
 		}
-		sender := m.SenderName
-		if sender == "" {
-			sender = m.SenderID
-		}
-		r := []string{m.MessageID, fmtMs(m.CreateMs), oneLine(sender, 16), m.MsgType, oneLine(content, 80)}
+		r := []string{m.MessageID, fmtMs(m.CreateMs), oneLine(senderLabel(m), 16), m.MsgType, oneLine(content, 80)}
 		if withChat {
 			r = append([]string{m.ChatID}, r...)
 		}
@@ -250,7 +247,7 @@ func (a *App) messagesThreadCmd() *cobra.Command {
 
 // resolveChatLocal accepts a chat id or an exact chat name known to the store.
 func resolveChatLocal(ctx context.Context, st *store.Store, ref string) (string, error) {
-	if len(ref) > 3 && ref[:3] == "oc_" {
+	if strings.HasPrefix(ref, "oc_") {
 		return ref, nil
 	}
 	chats, err := st.ListChats(ctx, store.ChatQuery{Search: ref})

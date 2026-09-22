@@ -19,11 +19,8 @@ type Client struct {
 	model string
 }
 
-// New builds a client; model defaults to Claude Opus 5.
+// New builds a client for the given Claude model id.
 func New(apiKey, model string) *Client {
-	if model == "" {
-		model = "claude-opus-5"
-	}
 	return &Client{api: anthropic.NewClient(option.WithAPIKey(apiKey)), model: model}
 }
 

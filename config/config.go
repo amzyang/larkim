@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -110,7 +111,7 @@ func homeDir() string {
 }
 
 func expandHome(p string) string {
-	if len(p) >= 2 && p[:2] == "~/" {
+	if strings.HasPrefix(p, "~/") {
 		return filepath.Join(homeDir(), p[2:])
 	}
 	return p
