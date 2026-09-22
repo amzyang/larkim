@@ -105,6 +105,33 @@ func TestHighlightSurvivesInnerResets(t *testing.T) {
 	require.GreaterOrEqual(t, strings.Count(out, bg), 3, "background re-applied after every embedded style: %q", out)
 }
 
+func TestFilterEnterOpensHighlightedChat(t *testing.T) {
+	m := sized(120, 36)
+	m.mode, m.chatFilter, m.chatIdx = modeFilter, "群 70 ", 0
+	mm, _ := m.onFilterKey(tea.KeyPressMsg{Code: tea.KeyEnter})
+	m = mm.(Model)
+	require.Equal(t, "oc_70", m.chatID)
+	require.Equal(t, modeNormal, m.mode)
+}
+
+func TestEscClearsFilterAndKeepsCurrentChat(t *testing.T) {
+	m := sized(120, 36)
+	m.chatID, m.chatFilter = "oc_5", "群 7"
+	m.clampChat()
+	mm, _ := m.onNormalKey("esc")
+	m = mm.(Model)
+	require.Empty(t, m.chatFilter)
+	require.Equal(t, "oc_5", m.visibleChats()[m.chatIdx].ChatID)
+}
+
+func TestOpeningHiddenChatDropsFilter(t *testing.T) {
+	m := sized(120, 36)
+	m.chatFilter = "群 7"
+	m.openChat("oc_1")
+	require.Empty(t, m.chatFilter)
+	require.Equal(t, "oc_1", m.visibleChats()[m.chatIdx].ChatID)
+}
+
 func TestTabCyclesListPanesOnly(t *testing.T) {
 	m := sized(120, 36)
 	m.focus = paneMessages

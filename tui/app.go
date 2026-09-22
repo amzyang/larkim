@@ -246,13 +246,32 @@ func (m *Model) openChat(chatID string) tea.Cmd {
 	m.msgs, m.msgRows, m.msgIdx, m.msgTop = nil, nil, 0, 0
 	m.threadOpen, m.threadID, m.thread, m.threadRows = false, "", nil, nil
 	m.replyTo, m.inThrd = nil, false
-	for i, c := range m.visibleChats() {
-		if c.ChatID == chatID {
-			m.chatIdx = i
-		}
+	m.selectCurrentChat()
+	return loadMessages(m.deps.Store, chatID)
+}
+
+// selectCurrentChat puts the cursor on the open chat within the visible list,
+// dropping a filter that would hide it.
+func (m *Model) selectCurrentChat() {
+	isOpen := func(c store.Chat) bool { return c.ChatID == m.chatID }
+	idx := slices.IndexFunc(m.visibleChats(), isOpen)
+	if idx < 0 && m.chatFilter != "" {
+		m.chatFilter = ""
+		idx = slices.IndexFunc(m.visibleChats(), isOpen)
+	}
+	if idx >= 0 {
+		m.chatIdx = idx
 	}
 	m.clampChat()
-	return loadMessages(m.deps.Store, chatID)
+}
+
+// openHighlighted loads the chat under the cursor unless it is already open.
+func (m *Model) openHighlighted() tea.Cmd {
+	vis := m.visibleChats()
+	if len(vis) == 0 || vis[m.chatIdx].ChatID == m.chatID {
+		return nil
+	}
+	return m.openChat(vis[m.chatIdx].ChatID)
 }
 
 func (m *Model) openThread(threadID string) tea.Cmd {
@@ -422,15 +441,15 @@ func (m Model) onFilterKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "esc":
 		m.mode = modeNormal
 		m.cmdline.Blur()
-		m.chatFilter = ""
 		m.cmdline.Reset()
-		m.clampChat()
+		m.chatFilter = ""
+		m.selectCurrentChat()
 		return m, nil
 	case "enter":
 		m.mode = modeNormal
 		m.cmdline.Blur()
 		m.clampChat()
-		return m, nil
+		return m, m.openHighlighted()
 	}
 	var cmd tea.Cmd
 	m.cmdline, cmd = m.cmdline.Update(k)
@@ -537,6 +556,10 @@ func (m Model) onNormalKey(s string) (tea.Model, tea.Cmd) {
 			return m.notify("", false), nil
 		case m.threadOpen && m.focus == paneThread:
 			return m.toggleThread()
+		case m.chatFilter != "":
+			m.chatFilter = ""
+			m.selectCurrentChat()
+			return m.notify("", false), nil
 		}
 		m.replyTo, m.inThrd = nil, false
 		return m.notify("", false), nil
@@ -590,12 +613,9 @@ func (m Model) pageStep() int {
 func (m Model) move(n int) (tea.Model, tea.Cmd) {
 	switch m.focus {
 	case paneChats:
-		vis := m.visibleChats()
-		m.chatIdx = clamp(m.chatIdx+n, 0, len(vis)-1)
+		m.chatIdx = clamp(m.chatIdx+n, 0, len(m.visibleChats())-1)
 		m.clampChat()
-		if len(vis) > 0 && vis[m.chatIdx].ChatID != m.chatID {
-			return m, m.openChat(vis[m.chatIdx].ChatID)
-		}
+		return m, m.openHighlighted()
 	case paneMessages:
 		count := len(m.msgs)
 		if m.searching {
