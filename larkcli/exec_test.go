@@ -144,3 +144,34 @@ echo '{"ok":true,"identity":"user","data":{"items":[]}}'`)
 func TestLarkTimeLayout_NeverRendersZ(t *testing.T) {
 	require.Equal(t, "2026-09-22T12:00:00+00:00", time.Date(2026, 9, 22, 12, 0, 0, 0, time.UTC).Format(larkTimeLayout))
 }
+
+func TestRealBinary_PrefersGoBinaryBehindNpmWrapper(t *testing.T) {
+	root := t.TempDir()
+	pkg := filepath.Join(root, "lib", "node_modules", "@larksuite", "cli")
+	require.NoError(t, os.MkdirAll(filepath.Join(pkg, "scripts"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(pkg, "bin"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(pkg, "scripts", "run.js"), []byte("#!/usr/bin/env node\n"), 0o755))
+	real := filepath.Join(pkg, "bin", "lark-cli")
+	require.NoError(t, os.WriteFile(real, []byte("#!/bin/sh\n"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(root, "bin"), 0o755))
+	link := filepath.Join(root, "bin", "lark-cli")
+	require.NoError(t, os.Symlink(filepath.Join(pkg, "scripts", "run.js"), link))
+
+	got, err := (&ExecClient{Path: link}).ResolvePath()
+	require.NoError(t, err)
+	wantReal, _ := filepath.EvalSymlinks(real)
+	require.Equal(t, wantReal, got)
+
+	plain := filepath.Join(root, "plain-lark-cli")
+	require.NoError(t, os.WriteFile(plain, []byte("#!/bin/sh\n"), 0o755))
+	got, err = (&ExecClient{Path: plain}).ResolvePath()
+	require.NoError(t, err)
+	require.Equal(t, plain, got)
+}
+
+func TestChildEnv_PrependsHomebrewPath(t *testing.T) {
+	env := childEnv([]string{"HOME=/x", "PATH=/usr/bin"})
+	require.Contains(t, env, "PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin")
+	env = childEnv([]string{"HOME=/x"})
+	require.Contains(t, env, "PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin")
+}

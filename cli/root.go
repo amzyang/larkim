@@ -47,7 +47,7 @@ func New(version string) *cobra.Command {
 	root.PersistentFlags().StringVar(&app.configPath, "config", "", "config file (default ~/.larkim/config.yaml)")
 	root.PersistentFlags().BoolVar(&app.jsonOut, "json", false, "JSON output (default when stdout is not a terminal)")
 	root.AddCommand(app.syncCmd(), app.statusCmd(), app.daemonCmd(), app.chatsCmd(), app.messagesCmd(), app.contactsCmd(),
-		app.sendCmd(), app.replyCmd(), app.watchCmd(), app.dbCmd(), app.schemaCmd())
+		app.sendCmd(), app.replyCmd(), app.watchCmd(), app.tuiCmd(), app.dbCmd(), app.schemaCmd())
 	return root
 }
 
@@ -85,6 +85,11 @@ func (a *App) client() *larkcli.ExecClient {
 func (a *App) syncer(st *store.Store) *sync.Syncer {
 	return &sync.Syncer{Client: a.client(), Store: st, Clock: sync.RealClock{}, Opt: sync.OptionsFrom(a.cfg),
 		Log: slog.New(slog.NewTextHandler(a.Err, nil))}
+}
+
+// quietLogger discards logs so an embedded syncer never writes over the TUI.
+func quietLogger() *slog.Logger {
+	return slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelError + 1}))
 }
 
 // parseTime accepts YYYY-MM-DD, RFC 3339, or a duration such as 24h (relative to now).

@@ -1,6 +1,6 @@
 # larkim
 
-Feishu/Lark IM synced to local SQLite, with a CLI and (soon) a TUI on top. Runs as a background service, keeps your chats, messages, contacts and attachments in `~/.larkim/larkim.db`, and answers queries without touching the network.
+Feishu/Lark IM synced to local SQLite, with a CLI and a TUI on top. Runs as a background service, keeps your chats, messages, contacts and attachments in `~/.larkim/larkim.db`, and answers queries without touching the network.
 
 larkim drives the official [lark-cli](https://github.com/larksuite/cli) for authentication and every API call; it never stores credentials itself.
 
@@ -27,6 +27,32 @@ larkim db path && larkim schema                # for direct SQLite consumers, se
 ```
 
 Output is a table on a terminal and JSON when piped or with `--json`.
+
+```sh
+larkim send --to zouyang@gaotu.cn --text "hi"     # email, name or ou_ id
+larkim send --chat "FDEV兜底" --text "hi"          # chat name or oc_ id
+larkim reply om_xxx --text "ok" --in-thread
+larkim watch --chat "FDEV兜底"                     # stream new messages
+larkim tui
+```
+
+## TUI
+
+`larkim tui` shows chats, the selected chat's messages (with each message's id) and, when opened, a thread pane, plus a composer. The chat header carries the chat id. If no daemon holds the data-dir lock the TUI syncs in-process.
+
+| keys | action |
+|---|---|
+| `j` `k` `gg` `G` `Ctrl+d` `Ctrl+u` | move in the focused list |
+| `Tab` `Shift+Tab` `h` `l` | change focused pane |
+| `Enter` | open chat · open thread · reply |
+| `i` `r` `R` | write · reply · reply in thread (Enter sends, Shift+Enter newline, Esc back) |
+| `t` | toggle the thread pane for the selected message |
+| `y` `Y` `o` | copy message id · copy chat id · open in the Feishu client |
+| `/` | filter chats |
+| `:goto <chat>` `:send <chat\|ou_> <text>` `:sync` `:q` | commands |
+| mouse | click focuses and selects, double-click opens, wheel scrolls |
+
+Shift+Enter needs a terminal with the kitty keyboard protocol (kitty, Ghostty, WezTerm); elsewhere use Alt+Enter or Ctrl+J for newlines.
 
 ## How it syncs
 

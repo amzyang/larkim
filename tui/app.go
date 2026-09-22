@@ -1,0 +1,754 @@
+// Package tui is the interactive client: chats, messages, threads and a
+// composer, driven by vim-style keys and the mouse, fed by the local store.
+package tui
+
+import (
+	"context"
+	"fmt"
+	"strings"
+	"time"
+
+	"charm.land/bubbles/v2/key"
+	"charm.land/bubbles/v2/textarea"
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
+	"github.com/amzyang/larkim/larkcli"
+	"github.com/amzyang/larkim/store"
+)
+
+type pane int
+
+const (
+	paneChats pane = iota
+	paneMessages
+	paneThread
+	paneInput
+)
+
+type mode int
+
+const (
+	modeNormal mode = iota
+	modeInsert
+	modeCommand
+	modeFilter
+)
+
+// Model is the Bubble Tea model.
+type Model struct {
+	deps Deps
+
+	width, height int
+	focus         pane
+	mode          mode
+	focused       bool
+	showHelp      bool
+
+	chats      []store.Chat
+	chatFilter string
+	chatIdx    int
+	chatTop    int
+
+	chatID  string
+	msgs    []store.Message
+	msgIdx  int
+	msgTop  int // first visible line of the message pane
+	msgRows []msgRow
+
+	threadOpen bool
+	threadID   string
+	thread     []store.Message
+	threadIdx  int
+	threadTop  int
+	threadRows []msgRow
+
+	input   textarea.Model
+	cmdline textinput.Model
+	replyTo *store.Message
+	inThrd  bool
+	sending bool
+
+	notice     string
+	noticeErr  bool
+	syncStatus string
+	syncErr    string
+	pendingG   bool
+	lastClick  time.Time
+	lastClickY int
+	changes    <-chan store.Change
+	cancel     context.CancelFunc
+}
+
+// New builds the model.
+func New(d Deps) Model {
+	ta := textarea.New()
+	ta.Prompt = ""
+	ta.ShowLineNumbers = false
+	ta.Placeholder = "i to write · Enter sends · Shift+Enter newline"
+	ta.KeyMap.InsertNewline = key.NewBinding(key.WithKeys("shift+enter", "alt+enter", "ctrl+j"))
+	ta.SetHeight(3)
+	ti := textinput.New()
+	ti.Prompt = ":"
+	return Model{deps: d, input: ta, cmdline: ti, focus: paneChats, focused: true}
+}
+
+// Run starts the program until quit or ctx is done.
+func Run(ctx context.Context, d Deps) error {
+	ctx, cancel := context.WithCancel(ctx)
+	m := New(d)
+	m.cancel = cancel
+	m.changes = d.Store.Watch(ctx, watchEvery, "")
+	_, err := tea.NewProgram(m, tea.WithContext(ctx)).Run()
+	cancel()
+	return err
+}
+
+func (m Model) Init() tea.Cmd {
+	return tea.Batch(loadChats(m.deps.Store), readSyncStatus(m.deps.Store), pollSyncStatus(m.deps.Store), waitForChange(m.changes))
+}
+
+func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width, m.height = msg.Width, msg.Height
+		m.layout()
+		return m, nil
+	case tea.FocusMsg:
+		m.focused = true
+		return m, nil
+	case tea.BlurMsg:
+		m.focused = false
+		return m, nil
+	case chatsLoadedMsg:
+		m.chats = msg.chats
+		if m.chatID == "" && len(m.chats) > 0 {
+			return m, m.openChat(m.chats[0].ChatID)
+		}
+		m.clampChat()
+		return m, nil
+	case messagesLoadedMsg:
+		if msg.chatID != m.chatID {
+			return m, nil
+		}
+		m.msgs = msg.msgs
+		m.msgIdx = len(m.msgs) - 1
+		m.rebuildMessages()
+		m.scrollMessagesToSelection()
+		return m, markConsumed(m.deps.Store, m.msgs)
+	case threadLoadedMsg:
+		if msg.threadID != m.threadID {
+			return m, nil
+		}
+		m.thread = msg.msgs
+		if m.threadIdx >= len(m.thread) {
+			m.threadIdx = max(0, len(m.thread)-1)
+		}
+		m.rebuildThread()
+		return m, nil
+	case changeMsg:
+		return m, m.onChange(msg.msgs)
+	case syncStatusMsg:
+		m.syncStatus, m.syncErr = msg.status, msg.lastError
+		return m, pollSyncStatus(m.deps.Store)
+	case sentMsg:
+		m.sending = false
+		if msg.err != nil {
+			return m.notify("send failed: "+msg.err.Error(), true), nil
+		}
+		m.input.Reset()
+		m.replyTo, m.inThrd = nil, false
+		return m.notify("sent", false), m.reloadCurrent()
+	case errMsg:
+		return m.notify(msg.err.Error(), true), nil
+	case noticeMsg:
+		return m.notify(msg.text, false), nil
+	case tea.MouseClickMsg:
+		return m.onClick(tea.Mouse(msg))
+	case tea.MouseWheelMsg:
+		return m.onWheel(tea.Mouse(msg))
+	case tea.KeyPressMsg:
+		return m.onKey(msg)
+	}
+	return m.forward(msg)
+}
+
+// forward passes a message to the focused text component.
+func (m Model) forward(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+	switch m.mode {
+	case modeInsert:
+		m.input, cmd = m.input.Update(msg)
+	case modeCommand, modeFilter:
+		m.cmdline, cmd = m.cmdline.Update(msg)
+	}
+	return m, cmd
+}
+
+func (m Model) notify(text string, isErr bool) Model {
+	m.notice, m.noticeErr = text, isErr
+	return m
+}
+
+func (m *Model) openChat(chatID string) tea.Cmd {
+	m.chatID = chatID
+	m.msgs, m.msgRows, m.msgIdx, m.msgTop = nil, nil, 0, 0
+	m.threadOpen, m.threadID, m.thread, m.threadRows = false, "", nil, nil
+	m.replyTo, m.inThrd = nil, false
+	for i, c := range m.visibleChats() {
+		if c.ChatID == chatID {
+			m.chatIdx = i
+		}
+	}
+	m.clampChat()
+	return loadMessages(m.deps.Store, chatID)
+}
+
+func (m *Model) openThread(threadID string) tea.Cmd {
+	m.threadOpen = true
+	m.threadID = threadID
+	m.threadIdx, m.threadTop = 0, 0
+	m.layout()
+	return loadThread(m.deps.Store, threadID)
+}
+
+func (m Model) reloadCurrent() tea.Cmd {
+	cmds := []tea.Cmd{loadChats(m.deps.Store)}
+	if m.chatID != "" {
+		cmds = append(cmds, loadMessages(m.deps.Store, m.chatID))
+	}
+	if m.threadOpen {
+		cmds = append(cmds, loadThread(m.deps.Store, m.threadID))
+	}
+	return tea.Batch(cmds...)
+}
+
+// onChange refreshes panes touched by newly synced messages and keeps the
+// watch subscription alive.
+func (m *Model) onChange(msgs []store.Message) tea.Cmd {
+	cmds := []tea.Cmd{waitForChange(m.changes), loadChats(m.deps.Store)}
+	touchedChat, touchedThread := false, false
+	for _, x := range msgs {
+		if x.ChatID == m.chatID {
+			touchedChat = true
+		}
+		if m.threadOpen && x.ThreadID == m.threadID {
+			touchedThread = true
+		}
+	}
+	if touchedChat {
+		cmds = append(cmds, loadMessages(m.deps.Store, m.chatID))
+	}
+	if touchedThread {
+		cmds = append(cmds, loadThread(m.deps.Store, m.threadID))
+	}
+	return tea.Batch(cmds...)
+}
+
+// selected returns the message under the cursor in the focused list.
+func (m Model) selected() (store.Message, bool) {
+	switch m.focus {
+	case paneThread:
+		if m.threadIdx < len(m.thread) {
+			return m.thread[m.threadIdx], true
+		}
+	default:
+		if m.msgIdx >= 0 && m.msgIdx < len(m.msgs) {
+			return m.msgs[m.msgIdx], true
+		}
+	}
+	return store.Message{}, false
+}
+
+func (m Model) currentChat() (store.Chat, bool) {
+	for _, c := range m.chats {
+		if c.ChatID == m.chatID {
+			return c, true
+		}
+	}
+	return store.Chat{}, false
+}
+
+func (m Model) visibleChats() []store.Chat {
+	if m.chatFilter == "" {
+		return m.chats
+	}
+	f := strings.ToLower(m.chatFilter)
+	var out []store.Chat
+	for _, c := range m.chats {
+		if strings.Contains(strings.ToLower(c.Name), f) || strings.Contains(c.ChatID, f) {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+func (m *Model) clampChat() {
+	n := len(m.visibleChats())
+	if m.chatIdx >= n {
+		m.chatIdx = n - 1
+	}
+	if m.chatIdx < 0 {
+		m.chatIdx = 0
+	}
+	h := m.chatListHeight()
+	if h <= 0 {
+		return
+	}
+	if m.chatIdx < m.chatTop {
+		m.chatTop = m.chatIdx
+	}
+	if m.chatIdx >= m.chatTop+h {
+		m.chatTop = m.chatIdx - h + 1
+	}
+}
+
+// --- key handling ---------------------------------------------------------
+
+func (m Model) onKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	s := k.String()
+	if s == "ctrl+c" {
+		return m, tea.Quit
+	}
+	switch m.mode {
+	case modeInsert:
+		return m.onInsertKey(k)
+	case modeCommand:
+		return m.onCommandKey(k)
+	case modeFilter:
+		return m.onFilterKey(k)
+	}
+	if m.showHelp {
+		m.showHelp = false
+		return m, nil
+	}
+	return m.onNormalKey(s)
+}
+
+func (m Model) onInsertKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	switch k.String() {
+	case "esc":
+		m.mode = modeNormal
+		m.input.Blur()
+		m.focus = paneMessages
+		return m, nil
+	case "enter":
+		return m.submit()
+	}
+	var cmd tea.Cmd
+	m.input, cmd = m.input.Update(k)
+	return m, cmd
+}
+
+func (m Model) onCommandKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	switch k.String() {
+	case "esc":
+		m.mode = modeNormal
+		m.cmdline.Blur()
+		m.cmdline.Reset()
+		return m, nil
+	case "enter":
+		line := strings.TrimSpace(m.cmdline.Value())
+		m.mode = modeNormal
+		m.cmdline.Blur()
+		m.cmdline.Reset()
+		return m.runCommand(line)
+	}
+	var cmd tea.Cmd
+	m.cmdline, cmd = m.cmdline.Update(k)
+	return m, cmd
+}
+
+func (m Model) onFilterKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	switch k.String() {
+	case "esc":
+		m.mode = modeNormal
+		m.cmdline.Blur()
+		m.chatFilter = ""
+		m.cmdline.Reset()
+		m.clampChat()
+		return m, nil
+	case "enter":
+		m.mode = modeNormal
+		m.cmdline.Blur()
+		m.clampChat()
+		return m, nil
+	}
+	var cmd tea.Cmd
+	m.cmdline, cmd = m.cmdline.Update(k)
+	m.chatFilter = m.cmdline.Value()
+	m.chatIdx, m.chatTop = 0, 0
+	return m, cmd
+}
+
+func (m Model) onNormalKey(s string) (tea.Model, tea.Cmd) {
+	if s != "g" {
+		defer func() { m.pendingG = false }()
+	}
+	switch s {
+	case "q":
+		return m, tea.Quit
+	case "?":
+		m.showHelp = !m.showHelp
+		return m, nil
+	case "tab":
+		m.focus = m.nextPane(1)
+		return m.enterFocus()
+	case "shift+tab":
+		m.focus = m.nextPane(-1)
+		return m.enterFocus()
+	case "h", "left":
+		if m.focus > paneChats && m.focus != paneInput {
+			m.focus--
+			if m.focus == paneThread && !m.threadOpen {
+				m.focus = paneMessages
+			}
+		}
+		return m, nil
+	case "l", "right":
+		if m.focus == paneChats {
+			m.focus = paneMessages
+		} else if m.focus == paneMessages && m.threadOpen {
+			m.focus = paneThread
+		}
+		return m, nil
+	case "j", "down":
+		return m.move(1)
+	case "k", "up":
+		return m.move(-1)
+	case "ctrl+d", "pgdown":
+		return m.move(m.pageStep())
+	case "ctrl+u", "pgup":
+		return m.move(-m.pageStep())
+	case "g":
+		if m.pendingG {
+			m.pendingG = false
+			return m.move(-1 << 30)
+		}
+		m.pendingG = true
+		return m, nil
+	case "G", "end":
+		return m.move(1 << 30)
+	case "enter":
+		return m.activate()
+	case "i":
+		return m.startInsert(nil, false)
+	case "r":
+		if sel, ok := m.selected(); ok {
+			return m.startInsert(&sel, false)
+		}
+		return m.startInsert(nil, false)
+	case "R":
+		if sel, ok := m.selected(); ok {
+			return m.startInsert(&sel, true)
+		}
+	case "t":
+		return m.toggleThread()
+	case "y":
+		if sel, ok := m.selected(); ok {
+			return m.notify("copied "+sel.MessageID, false), tea.SetClipboard(sel.MessageID)
+		}
+	case "Y":
+		if m.chatID != "" {
+			return m.notify("copied "+m.chatID, false), tea.SetClipboard(m.chatID)
+		}
+	case "o":
+		if sel, ok := m.selected(); ok {
+			return m, openInFeishu(sel.ChatID, sel.MessagePosition)
+		}
+		if m.chatID != "" {
+			return m, openInFeishu(m.chatID, 0)
+		}
+	case "/":
+		m.mode = modeFilter
+		m.focus = paneChats
+		m.cmdline.Prompt = "/"
+		m.cmdline.SetValue(m.chatFilter)
+		return m, m.cmdline.Focus()
+	case ":":
+		m.mode = modeCommand
+		m.cmdline.Prompt = ":"
+		m.cmdline.Reset()
+		return m, m.cmdline.Focus()
+	case "esc":
+		if m.threadOpen && m.focus == paneThread {
+			return m.toggleThread()
+		}
+		m.replyTo, m.inThrd = nil, false
+		return m.notify("", false), nil
+	}
+	return m, nil
+}
+
+func (m Model) nextPane(dir int) pane {
+	order := []pane{paneChats, paneMessages}
+	if m.threadOpen {
+		order = append(order, paneThread)
+	}
+	order = append(order, paneInput)
+	for i, p := range order {
+		if p == m.focus {
+			return order[(i+dir+len(order))%len(order)]
+		}
+	}
+	return paneChats
+}
+
+func (m Model) enterFocus() (tea.Model, tea.Cmd) {
+	if m.focus == paneInput {
+		return m.startInsert(m.replyTo, m.inThrd)
+	}
+	return m, nil
+}
+
+func (m Model) pageStep() int {
+	switch m.focus {
+	case paneChats:
+		return max(1, m.chatListHeight()/2)
+	default:
+		return max(1, m.bodyHeight()/4)
+	}
+}
+
+// move shifts the selection in the focused list by n rows.
+func (m Model) move(n int) (tea.Model, tea.Cmd) {
+	switch m.focus {
+	case paneChats:
+		vis := m.visibleChats()
+		m.chatIdx = clamp(m.chatIdx+n, 0, len(vis)-1)
+		m.clampChat()
+		if len(vis) > 0 && vis[m.chatIdx].ChatID != m.chatID {
+			return m, m.openChat(vis[m.chatIdx].ChatID)
+		}
+	case paneMessages:
+		m.msgIdx = clamp(m.msgIdx+n, 0, len(m.msgs)-1)
+		m.scrollMessagesToSelection()
+	case paneThread:
+		m.threadIdx = clamp(m.threadIdx+n, 0, len(m.thread)-1)
+		m.scrollThreadToSelection()
+	case paneInput:
+		return m.startInsert(m.replyTo, m.inThrd)
+	}
+	return m, nil
+}
+
+func (m Model) activate() (tea.Model, tea.Cmd) {
+	switch m.focus {
+	case paneChats:
+		m.focus = paneMessages
+		return m, nil
+	case paneMessages:
+		if sel, ok := m.selected(); ok && sel.ThreadID != "" {
+			return m.toggleThread()
+		}
+		if sel, ok := m.selected(); ok {
+			return m.startInsert(&sel, false)
+		}
+	case paneThread:
+		if sel, ok := m.selected(); ok {
+			return m.startInsert(&sel, true)
+		}
+	case paneInput:
+		return m.startInsert(m.replyTo, m.inThrd)
+	}
+	return m, nil
+}
+
+func (m Model) toggleThread() (tea.Model, tea.Cmd) {
+	if m.threadOpen {
+		m.threadOpen = false
+		m.threadID = ""
+		if m.focus == paneThread {
+			m.focus = paneMessages
+		}
+		m.layout()
+		return m, nil
+	}
+	sel, ok := m.selected()
+	if !ok || sel.ThreadID == "" {
+		return m.notify("selected message has no thread", true), nil
+	}
+	m.focus = paneThread
+	return m, m.openThread(sel.ThreadID)
+}
+
+func (m Model) startInsert(replyTo *store.Message, inThread bool) (tea.Model, tea.Cmd) {
+	if m.chatID == "" {
+		return m.notify("open a chat first", true), nil
+	}
+	m.mode = modeInsert
+	m.focus = paneInput
+	m.replyTo, m.inThrd = replyTo, inThread
+	return m, m.input.Focus()
+}
+
+func (m Model) submit() (tea.Model, tea.Cmd) {
+	text := strings.TrimSpace(m.input.Value())
+	if text == "" || m.sending {
+		return m, nil
+	}
+	m.sending = true
+	if m.replyTo != nil {
+		return m.notify("replying…", false), replyText(m.deps, m.replyTo.MessageID, text, m.inThrd)
+	}
+	return m.notify("sending…", false), sendText(m.deps, larkcli.Target{ChatID: m.chatID}, text)
+}
+
+func (m Model) runCommand(line string) (tea.Model, tea.Cmd) {
+	if line == "" {
+		return m, nil
+	}
+	name, rest, _ := strings.Cut(line, " ")
+	rest = strings.TrimSpace(rest)
+	switch name {
+	case "q", "quit":
+		return m, tea.Quit
+	case "goto", "chat":
+		for _, c := range m.chats {
+			if c.ChatID == rest || strings.EqualFold(strings.Join(strings.Fields(c.Name), ""), strings.Join(strings.Fields(rest), "")) {
+				m.focus = paneMessages
+				return m, m.openChat(c.ChatID)
+			}
+		}
+		return m.notify("no chat "+rest, true), nil
+	case "send":
+		ref, text, ok := strings.Cut(rest, " ")
+		if !ok || strings.TrimSpace(text) == "" {
+			return m.notify("usage: :send <chat|oc_|ou_> <text>", true), nil
+		}
+		if strings.HasPrefix(ref, "ou_") {
+			m.sending = true
+			return m, sendText(m.deps, larkcli.Target{UserID: ref}, strings.TrimSpace(text))
+		}
+		for _, c := range m.chats {
+			if c.ChatID == ref || c.Name == ref {
+				m.sending = true
+				return m, sendText(m.deps, larkcli.Target{ChatID: c.ChatID}, strings.TrimSpace(text))
+			}
+		}
+		return m.notify("unknown chat "+ref, true), nil
+	case "sync":
+		if m.deps.Syncer == nil {
+			return m.notify("sync is handled by the daemon", false), nil
+		}
+		s := m.deps.Syncer
+		return m.notify("syncing…", false), func() tea.Msg {
+			if _, err := s.Tick(context.Background()); err != nil {
+				return errMsg{err}
+			}
+			return noticeMsg{"synced"}
+		}
+	}
+	return m.notify("unknown command :"+name, true), nil
+}
+
+// --- mouse ----------------------------------------------------------------
+
+func (m Model) onClick(ms tea.Mouse) (tea.Model, tea.Cmd) {
+	if ms.Button != tea.MouseLeft {
+		return m, nil
+	}
+	double := time.Since(m.lastClick) < 400*time.Millisecond && m.lastClickY == ms.Y
+	m.lastClick, m.lastClickY = time.Now(), ms.Y
+	p, row := m.hit(ms.X, ms.Y)
+	switch p {
+	case paneChats:
+		m.mode = modeNormal
+		m.input.Blur()
+		m.focus = paneChats
+		vis := m.visibleChats()
+		idx := m.chatTop + row
+		if idx >= 0 && idx < len(vis) {
+			m.chatIdx = idx
+			if vis[idx].ChatID != m.chatID || double {
+				m.focus = paneMessages
+				return m, m.openChat(vis[idx].ChatID)
+			}
+		}
+	case paneMessages:
+		m.mode = modeNormal
+		m.input.Blur()
+		m.focus = paneMessages
+		if idx := rowAt(m.msgRows, m.msgTop+row); idx >= 0 {
+			m.msgIdx = idx
+			if double {
+				return m.activate()
+			}
+		}
+	case paneThread:
+		m.mode = modeNormal
+		m.input.Blur()
+		m.focus = paneThread
+		if idx := rowAt(m.threadRows, m.threadTop+row); idx >= 0 {
+			m.threadIdx = idx
+			if double {
+				return m.activate()
+			}
+		}
+	case paneInput:
+		return m.startInsert(m.replyTo, m.inThrd)
+	}
+	return m, nil
+}
+
+func (m Model) onWheel(ms tea.Mouse) (tea.Model, tea.Cmd) {
+	p, _ := m.hit(ms.X, ms.Y)
+	step := 3
+	if ms.Button == tea.MouseWheelUp {
+		step = -3
+	} else if ms.Button != tea.MouseWheelDown {
+		return m, nil
+	}
+	switch p {
+	case paneChats:
+		vis := m.visibleChats()
+		m.chatTop = clamp(m.chatTop+step, 0, max(0, len(vis)-m.chatListHeight()))
+	case paneMessages:
+		m.msgTop = clamp(m.msgTop+step, 0, max(0, len(m.msgRows)-m.bodyHeight()))
+	case paneThread:
+		m.threadTop = clamp(m.threadTop+step, 0, max(0, len(m.threadRows)-m.bodyHeight()))
+	}
+	return m, nil
+}
+
+func clamp(v, lo, hi int) int {
+	if hi < lo {
+		return lo
+	}
+	return min(max(v, lo), hi)
+}
+
+// Help text shown by ?.
+const helpText = `NORMAL      j/k move · gg/G ends · Ctrl+d/u page · Tab/Shift+Tab focus · h/l panes
+            Enter open chat / thread / reply · i write · r reply · R reply in thread · t thread
+            y copy message id · Y copy chat id · o open in Feishu · / filter chats · : command · q quit
+INSERT      Enter send · Shift+Enter newline · Esc back
+COMMAND     :goto <chat> · :send <chat|ou_> <text> · :sync · :q
+MOUSE       click focuses and selects · double-click opens · wheel scrolls`
+
+func fmtStatus(m Model) string {
+	sync := "daemon"
+	if m.deps.Embedded {
+		sync = "embedded"
+	}
+	st := m.syncStatus
+	if st == "" {
+		st = "never_synced"
+	}
+	out := fmt.Sprintf("%s · sync:%s/%s", modeLabel(m.mode), sync, st)
+	if st == "needs_login" {
+		out += " → lark-cli auth login"
+	}
+	return out
+}
+
+func modeLabel(md mode) string {
+	switch md {
+	case modeInsert:
+		return "INSERT"
+	case modeCommand:
+		return "COMMAND"
+	case modeFilter:
+		return "FILTER"
+	}
+	return "NORMAL"
+}

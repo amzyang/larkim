@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -15,9 +16,14 @@ import (
 	"time"
 )
 
-// DefaultPath is where the npm-installed lark-cli lands on Homebrew macOS.
-// launchd services get a minimal PATH, so the daemon cannot rely on lookup.
+// DefaultPath is where the npm-installed lark-cli wrapper lands on Homebrew
+// macOS. launchd services get a minimal PATH, so the daemon cannot rely on
+// lookup.
 const DefaultPath = "/opt/homebrew/bin/lark-cli"
+
+// extraPath is prepended to the child's PATH so the npm wrapper can find node
+// even under launchd or a bare environment.
+const extraPath = "/opt/homebrew/bin:/usr/local/bin"
 
 // larkTimeLayout renders the local offset explicitly ("+00:00", never "Z"):
 // messages/search forwards the string to the server verbatim.
@@ -45,15 +51,39 @@ type ExecClient struct {
 	mu sync.Mutex
 }
 
-// ResolvePath returns the binary that will be executed.
+// ResolvePath returns the binary that will be executed. The npm package
+// installs a node wrapper script next to the real Go binary
+// (lib/node_modules/@larksuite/cli/bin/lark-cli); the real binary is preferred
+// because it needs no node on PATH and starts five times faster.
 func (c *ExecClient) ResolvePath() (string, error) {
 	if c.Path != "" {
-		return c.Path, nil
+		return realBinary(c.Path), nil
 	}
 	if _, err := os.Stat(DefaultPath); err == nil {
-		return DefaultPath, nil
+		return realBinary(DefaultPath), nil
 	}
-	return exec.LookPath("lark-cli")
+	p, err := exec.LookPath("lark-cli")
+	if err != nil {
+		return "", err
+	}
+	return realBinary(p), nil
+}
+
+// realBinary maps an npm wrapper path onto the Go binary it launches, when
+// that layout is present; otherwise it returns path unchanged.
+func realBinary(path string) string {
+	resolved, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return path
+	}
+	// <prefix>/lib/node_modules/@larksuite/cli/scripts/run.js → ../bin/lark-cli
+	if filepath.Base(resolved) == "run.js" {
+		candidate := filepath.Join(filepath.Dir(resolved), "..", "bin", "lark-cli")
+		if st, err := os.Stat(candidate); err == nil && st.Mode()&0o111 != 0 {
+			return candidate
+		}
+	}
+	return path
 }
 
 type envelope struct {
@@ -110,7 +140,7 @@ func (c *ExecClient) exec(ctx context.Context, args ...string) (stdout, stderr [
 
 	cmd := exec.CommandContext(ctx, path, args...)
 	cmd.Dir = c.Dir
-	cmd.Env = append(os.Environ(), "NO_COLOR=1")
+	cmd.Env = append(childEnv(os.Environ()), "NO_COLOR=1")
 	// The npm wrapper is a node process that spawns the real binary; kill the
 	// whole group so a cancelled call does not leave the child running.
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
@@ -131,6 +161,24 @@ func (c *ExecClient) exec(ctx context.Context, args ...string) (stdout, stderr [
 		return nil, nil, 0, fmt.Errorf("lark-cli %s: %w", args[0], runErr)
 	}
 	return out.Bytes(), errBuf.Bytes(), 0, nil
+}
+
+// childEnv prepends extraPath to PATH (or sets one) for the subprocess.
+func childEnv(env []string) []string {
+	out := make([]string, 0, len(env)+1)
+	found := false
+	for _, kv := range env {
+		if strings.HasPrefix(kv, "PATH=") {
+			out = append(out, "PATH="+extraPath+":"+strings.TrimPrefix(kv, "PATH="))
+			found = true
+			continue
+		}
+		out = append(out, kv)
+	}
+	if !found {
+		out = append(out, "PATH="+extraPath+":/usr/bin:/bin")
+	}
+	return out
 }
 
 // decodeError finds the JSON error envelope in stderr; lark-cli prints
