@@ -40,6 +40,37 @@ func TestResources_Lifecycle(t *testing.T) {
 	require.Equal(t, int64(1), counts["skipped"])
 }
 
+func TestUnrenderedMessageIDs_SkipsMessagesWithUnfinishedResources(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+	_, err := s.UpsertMessages(ctx, []Message{
+		{MessageID: "om_plain", ChatID: "oc", CreateMs: 60, RawJSON: "{}"},
+		{MessageID: "om_pending", ChatID: "oc", CreateMs: 50, RawJSON: "{}"},
+		{MessageID: "om_failed", ChatID: "oc", CreateMs: 40, RawJSON: "{}"},
+		{MessageID: "om_done", ChatID: "oc", CreateMs: 30, RawJSON: "{}"},
+		{MessageID: "om_skipped", ChatID: "oc", CreateMs: 20, RawJSON: "{}"},
+		{MessageID: "om_deleted", ChatID: "oc", CreateMs: 10, Deleted: true, RawJSON: "{}"},
+	}, 1)
+	require.NoError(t, err)
+	require.NoError(t, s.AddPendingResources(ctx, []Resource{
+		{MessageID: "om_pending", FileKey: "k_pending", Type: "image"},
+		{MessageID: "om_failed", FileKey: "k_failed", Type: "file"},
+		{MessageID: "om_done", FileKey: "k_done", Type: "image"},
+		{MessageID: "om_skipped", FileKey: "k_skipped", Type: "file"},
+	}))
+	require.NoError(t, s.MarkResourceFailed(ctx, "om_failed", "k_failed", "timeout", 500))
+	require.NoError(t, s.MarkResourceDone(ctx, "om_done", "k_done", "resources/k_done.jpg", 1))
+	require.NoError(t, s.MarkResourceSkipped(ctx, "om_skipped", "k_skipped", 999, "too large"))
+
+	ids, err := s.UnrenderedMessageIDs(ctx, 10)
+	require.NoError(t, err)
+	require.Equal(t, []string{"om_plain", "om_done", "om_skipped"}, ids, "pending/failed downloads and deleted messages wait; newest first")
+
+	require.NoError(t, s.UpdateRendered(ctx, "om_plain", "hi", "", "", 2))
+	ids, _ = s.UnrenderedMessageIDs(ctx, 10)
+	require.Equal(t, []string{"om_done", "om_skipped"}, ids)
+}
+
 func TestReadStatus_CandidatesAndSchedule(t *testing.T) {
 	s := openTest(t)
 	ctx := context.Background()
