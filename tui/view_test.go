@@ -38,7 +38,7 @@ func withThread(m Model) Model {
 	return m
 }
 
-func TestPanesShareHeight(t *testing.T) {
+func TestView_PanesShareHeight(t *testing.T) {
 	m := sized(120, 40)
 	h := m.bodyHeight()
 	require.Equal(t, h+2, lipgloss.Height(m.renderChats(h)), "chats pane = body + border")
@@ -52,7 +52,7 @@ func TestPanesShareHeight(t *testing.T) {
 	}
 }
 
-func TestChatsPaneKeepsOneRowPerChat(t *testing.T) {
+func TestRenderChats_OneRowPerChat(t *testing.T) {
 	m := sized(120, 30)
 	h := m.bodyHeight()
 	lines := strings.Split(m.renderChats(h), "\n")
@@ -60,7 +60,7 @@ func TestChatsPaneKeepsOneRowPerChat(t *testing.T) {
 	require.Contains(t, lines[2], "line1 line2", "multi-line names are flattened onto one row")
 }
 
-func TestScrollToKeepsSelectionVisible(t *testing.T) {
+func TestScrollTo_KeepsSelectionVisible(t *testing.T) {
 	m := sized(120, 20)
 	m.msgs = append(m.msgs, store.Message{MessageID: "om_last", ChatID: "oc_1", SenderName: "邹洋", Content: "LASTLINE", RenderedAt: 1, CreateMs: 99_000})
 	m.layout()
@@ -72,7 +72,7 @@ func TestScrollToKeepsSelectionVisible(t *testing.T) {
 	require.Zero(t, m.msgTop)
 }
 
-func TestLastChatStaysVisibleAfterG(t *testing.T) {
+func TestMove_LastChatStaysVisibleAfterG(t *testing.T) {
 	m := sized(120, 36)
 	m.focus = paneChats
 	mm, _ := m.move(1 << 30)
@@ -81,7 +81,7 @@ func TestLastChatStaysVisibleAfterG(t *testing.T) {
 	require.Contains(t, ansi.Strip(m.renderChats(m.bodyHeight())), "群 79 ", "the selected last chat is rendered")
 }
 
-func TestHitMapsPanes(t *testing.T) {
+func TestHit_MapsPanesBelowTitles(t *testing.T) {
 	m := sized(120, 30)
 	p, row := m.hit(2, 3)
 	require.Equal(t, paneChats, p)
@@ -97,7 +97,7 @@ func TestHitMapsPanes(t *testing.T) {
 	require.Equal(t, paneInput, p)
 }
 
-func TestHighlightSurvivesInnerResets(t *testing.T) {
+func TestHighlight_SurvivesInnerResets(t *testing.T) {
 	m := sized(120, 30)
 	line := stDim.Render("12:00") + " sender " + stBold.Render("om_1")
 	out := m.highlight(line, true)
@@ -105,7 +105,7 @@ func TestHighlightSurvivesInnerResets(t *testing.T) {
 	require.GreaterOrEqual(t, strings.Count(out, bg), 3, "background re-applied after every embedded style: %q", out)
 }
 
-func TestFilterEnterOpensHighlightedChat(t *testing.T) {
+func TestOnFilterKey_EnterOpensHighlightedChat(t *testing.T) {
 	m := sized(120, 36)
 	m.mode, m.chatFilter, m.chatIdx = modeFilter, "群 70 ", 0
 	mm, _ := m.onFilterKey(tea.KeyPressMsg{Code: tea.KeyEnter})
@@ -114,7 +114,7 @@ func TestFilterEnterOpensHighlightedChat(t *testing.T) {
 	require.Equal(t, modeNormal, m.mode)
 }
 
-func TestEscClearsFilterAndKeepsCurrentChat(t *testing.T) {
+func TestOnNormalKey_EscClearsFilterAndKeepsCurrentChat(t *testing.T) {
 	m := sized(120, 36)
 	m.chatID, m.chatFilter = "oc_5", "群 7"
 	m.clampChat()
@@ -124,7 +124,7 @@ func TestEscClearsFilterAndKeepsCurrentChat(t *testing.T) {
 	require.Equal(t, "oc_5", m.visibleChats()[m.chatIdx].ChatID)
 }
 
-func TestOpeningHiddenChatDropsFilter(t *testing.T) {
+func TestOpenChat_DropsFilterHidingIt(t *testing.T) {
 	m := sized(120, 36)
 	m.chatFilter = "群 7"
 	m.openChat("oc_1")
@@ -132,7 +132,7 @@ func TestOpeningHiddenChatDropsFilter(t *testing.T) {
 	require.Equal(t, "oc_1", m.visibleChats()[m.chatIdx].ChatID)
 }
 
-func TestTabCyclesListPanesOnly(t *testing.T) {
+func TestOnNormalKey_TabCyclesListPanesOnly(t *testing.T) {
 	m := sized(120, 36)
 	m.focus = paneMessages
 	mm, _ := m.onNormalKey("tab")
@@ -152,7 +152,7 @@ func TestTabCyclesListPanesOnly(t *testing.T) {
 	require.Equal(t, paneMessages, m.focus)
 }
 
-func TestNarrowTerminalFoldsRightPane(t *testing.T) {
+func TestView_FoldsRightPaneOnNarrowTerminal(t *testing.T) {
 	m := sized(82, 35)
 	m = withThread(m)
 	m.focus = paneThread
@@ -178,12 +178,12 @@ func TestOnInsertKey_EscOnFoldedLayoutShowsMessages(t *testing.T) {
 	require.False(t, m.threadOpen, "the right pane that covered the messages closes")
 }
 
-func TestTooSmallTerminal(t *testing.T) {
+func TestView_TooSmallTerminal(t *testing.T) {
 	m := sized(50, 10)
 	require.Contains(t, m.View().Content, "too small")
 }
 
-func TestBackgroundColorDrivesSelectionShade(t *testing.T) {
+func TestUpdate_BackgroundColorDrivesSelectionShade(t *testing.T) {
 	m := New(Deps{})
 	light := lipgloss.Color("#eff1f5")
 	mm, _ := m.Update(tea.BackgroundColorMsg{Color: light})
@@ -195,7 +195,7 @@ func TestBackgroundColorDrivesSelectionShade(t *testing.T) {
 	require.Greater(t, luma(m.th.sel.GetBackground()), luma(dark), "dark theme: selection lighter than the background")
 }
 
-func TestComposerStylesFollowPalette(t *testing.T) {
+func TestComposerStyles_FollowPalette(t *testing.T) {
 	for _, dark := range []bool{true, false} {
 		st := composerStyles(dark)
 		require.Equal(t, lipgloss.NoColor{}, st.Focused.CursorLine.GetBackground(), "no cursor-line shade")
@@ -208,7 +208,7 @@ func luma(c color.Color) float64 {
 	return 0.2126*float64(r) + 0.7152*float64(g) + 0.0722*float64(b)
 }
 
-func TestSearchHitAnchorsMessagePage(t *testing.T) {
+func TestActivate_SearchHitAnchorsMessagePage(t *testing.T) {
 	m := sized(120, 36)
 	m.searching, m.focus, m.msgIdx = true, paneMessages, 0
 	m.searchResults = []store.Message{{MessageID: "om_old", ChatID: "oc_2", CreateMs: 123}}
@@ -228,7 +228,7 @@ func TestSearchHitAnchorsMessagePage(t *testing.T) {
 	require.Equal(t, messagePageSize, q.Limit)
 }
 
-func TestStatusBarStaysOneLine(t *testing.T) {
+func TestRenderStatus_StaysOneLine(t *testing.T) {
 	m := sized(120, 36)
 	m = m.notify("no messages match "+strings.Repeat("z", 200), true)
 	s := m.renderStatus()
