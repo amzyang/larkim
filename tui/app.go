@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"image/color"
+	"slices"
 	"strings"
 	"time"
 
@@ -450,24 +451,15 @@ func (m Model) onNormalKey(s string) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "tab":
 		m.focus = m.nextPane(1)
-		return m.enterFocus()
+		return m, nil
 	case "shift+tab":
 		m.focus = m.nextPane(-1)
-		return m.enterFocus()
+		return m, nil
 	case "h", "left":
-		if m.focus > paneChats && m.focus != paneInput {
-			m.focus--
-			if m.focus == paneThread && !m.rightOpen() {
-				m.focus = paneMessages
-			}
-		}
+		m.focus = m.stepPane(-1)
 		return m, nil
 	case "l", "right":
-		if m.focus == paneChats {
-			m.focus = paneMessages
-		} else if m.focus == paneMessages && m.rightOpen() {
-			m.focus = paneThread
-		}
+		m.focus = m.stepPane(1)
 		return m, nil
 	case "j", "down":
 		return m.move(1)
@@ -552,25 +544,34 @@ func (m Model) onNormalKey(s string) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) nextPane(dir int) pane {
+// visiblePanes lists the list panes on screen from left to right; the
+// composer is entered with i, r or Enter rather than by cycling focus.
+func (m Model) visiblePanes() []pane {
 	order := []pane{paneChats, paneMessages}
 	if m.rightOpen() {
 		order = append(order, paneThread)
 	}
-	order = append(order, paneInput)
-	for i, p := range order {
-		if p == m.focus {
-			return order[(i+dir+len(order))%len(order)]
-		}
-	}
-	return paneChats
+	return order
 }
 
-func (m Model) enterFocus() (tea.Model, tea.Cmd) {
-	if m.focus == paneInput {
-		return m.startInsert(m.replyTo, m.inThrd)
+// nextPane cycles focus through the visible panes.
+func (m Model) nextPane(dir int) pane {
+	order := m.visiblePanes()
+	i := slices.Index(order, m.focus)
+	if i < 0 {
+		return paneChats
 	}
-	return m, nil
+	return order[(i+dir+len(order))%len(order)]
+}
+
+// stepPane moves focus one visible pane sideways, stopping at the edges.
+func (m Model) stepPane(dir int) pane {
+	order := m.visiblePanes()
+	i := slices.Index(order, m.focus)
+	if i < 0 {
+		return paneChats
+	}
+	return order[clamp(i+dir, 0, len(order)-1)]
 }
 
 func (m Model) pageStep() int {
@@ -606,8 +607,6 @@ func (m Model) move(n int) (tea.Model, tea.Cmd) {
 		}
 		m.threadIdx = clamp(m.threadIdx+n, 0, len(m.thread)-1)
 		m.scrollThreadToSelection()
-	case paneInput:
-		return m.startInsert(m.replyTo, m.inThrd)
 	}
 	return m, nil
 }
@@ -637,8 +636,6 @@ func (m Model) activate() (tea.Model, tea.Cmd) {
 		if sel, ok := m.selected(); ok {
 			return m.startInsert(&sel, true)
 		}
-	case paneInput:
-		return m.startInsert(m.replyTo, m.inThrd)
 	}
 	return m, nil
 }

@@ -105,6 +105,26 @@ func TestHighlightSurvivesInnerResets(t *testing.T) {
 	require.GreaterOrEqual(t, strings.Count(out, bg), 3, "background re-applied after every embedded style: %q", out)
 }
 
+func TestTabCyclesListPanesOnly(t *testing.T) {
+	m := sized(120, 36)
+	m.focus = paneMessages
+	mm, _ := m.onNormalKey("tab")
+	m = mm.(Model)
+	require.Equal(t, paneChats, m.focus)
+	require.Equal(t, modeNormal, m.mode)
+	m = withThread(m)
+	m.focus = paneMessages
+	mm, _ = m.onNormalKey("tab")
+	m = mm.(Model)
+	require.Equal(t, paneThread, m.focus)
+	mm, _ = m.onNormalKey("l")
+	m = mm.(Model)
+	require.Equal(t, paneThread, m.focus, "l stops at the right edge")
+	mm, _ = m.onNormalKey("h")
+	m = mm.(Model)
+	require.Equal(t, paneMessages, m.focus)
+}
+
 func TestBackgroundColorDrivesSelectionShade(t *testing.T) {
 	m := New(Deps{})
 	light := lipgloss.Color("#eff1f5")
