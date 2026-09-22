@@ -260,6 +260,31 @@ func (s *Syncer) historySlice(ctx context.Context, liveStart, now time.Time) (in
 	return n, s.Store.SetState(ctx, KeyHistoryCursor, strconv.FormatInt(coveredEnd.UnixMilli(), 10))
 }
 
+// IngestIDs fetches the given messages regardless of the watermark and
+// renders them; used after sending so the sender sees its message at once.
+func (s *Syncer) IngestIDs(ctx context.Context, ids []string) error {
+	now := s.now()
+	for _, batch := range Chunk(UniqueStrings(ids), 50) {
+		msgs, err := s.Client.MGetRaw(ctx, batch)
+		if err != nil {
+			return err
+		}
+		if _, err := s.upsertRaw(ctx, msgs, now); err != nil {
+			return err
+		}
+		rendered, err := s.Client.MGetRendered(ctx, batch, false)
+		if err != nil {
+			return err
+		}
+		for _, r := range rendered {
+			if err := s.Store.UpdateRendered(ctx, r.MessageID, r.Content, rawString(r.Mentions), rawString(r.Reactions), now.UnixMilli()); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 // fetchUnknown pulls and stores the hits not yet in the store.
 func (s *Syncer) fetchUnknown(ctx context.Context, hits []larkcli.SearchHit, now time.Time) (int, error) {
 	ids := make([]string, 0, len(hits))

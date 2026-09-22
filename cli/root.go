@@ -2,7 +2,6 @@
 package cli
 
 import (
-	"context"
 	"fmt"
 	"io"
 	"log/slog"
@@ -47,7 +46,8 @@ func New(version string) *cobra.Command {
 	}
 	root.PersistentFlags().StringVar(&app.configPath, "config", "", "config file (default ~/.larkim/config.yaml)")
 	root.PersistentFlags().BoolVar(&app.jsonOut, "json", false, "JSON output (default when stdout is not a terminal)")
-	root.AddCommand(app.syncCmd(), app.statusCmd(), app.daemonCmd(), app.chatsCmd(), app.messagesCmd(), app.dbCmd(), app.schemaCmd())
+	root.AddCommand(app.syncCmd(), app.statusCmd(), app.daemonCmd(), app.chatsCmd(), app.messagesCmd(), app.contactsCmd(),
+		app.sendCmd(), app.replyCmd(), app.watchCmd(), app.dbCmd(), app.schemaCmd())
 	return root
 }
 
@@ -102,8 +102,4 @@ func parseTime(s string, now time.Time) (time.Time, error) {
 		return t, nil
 	}
 	return time.Time{}, fmt.Errorf("unrecognized time %q (use 2026-09-01, 2026-09-01T10:00:00+08:00 or 24h)", s)
-}
-
-func signalContext() (context.Context, context.CancelFunc) {
-	return context.WithCancel(context.Background())
 }
