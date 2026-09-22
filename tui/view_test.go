@@ -75,3 +75,11 @@ func TestHitMapsPanes(t *testing.T) {
 	p, _ = m.hit(5, m.bodyHeight()+3)
 	require.Equal(t, paneInput, p)
 }
+
+func TestStatusBarStaysOneLine(t *testing.T) {
+	m := sized(120, 36)
+	m = m.notify("no messages match "+strings.Repeat("z", 200), true)
+	s := m.renderStatus()
+	require.Equal(t, 1, lipgloss.Height(s))
+	require.Equal(t, m.width, lipgloss.Width(s))
+}

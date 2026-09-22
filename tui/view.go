@@ -353,7 +353,7 @@ func (m Model) renderHeader(w int) string {
 	}
 	c, ok := m.currentChat()
 	if !ok {
-		return stDim.Render("select a chat")
+		return fit(stDim.Render("select a chat"), w)
 	}
 	name := flatten(c.Name)
 	if name == "" {
@@ -410,13 +410,11 @@ func (m Model) renderStatus() string {
 	if right == "" {
 		right = "? help"
 	}
+	right = truncate(right, max(0, m.width-lipgloss.Width(left)-3))
 	if m.noticeErr {
 		right = stErr.Render(right)
 	}
-	gap := m.width - lipgloss.Width(left) - lipgloss.Width(right) - 2
-	if gap < 1 {
-		gap = 1
-	}
+	gap := max(1, m.width-lipgloss.Width(left)-lipgloss.Width(right)-2)
 	return stStatus.Width(m.width).Render(" " + left + strings.Repeat(" ", gap) + right)
 }
 
