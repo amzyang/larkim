@@ -117,9 +117,13 @@ func (s *Store) UpdateRendered(ctx context.Context, messageID, content, mentions
 	return err
 }
 
-// UnrenderedMessageIDs returns up to limit message ids that still need rendering, oldest first.
+// UnrenderedMessageIDs returns up to limit live message ids that still need
+// rendering, newest first. Messages with attachments still to download are
+// left out: the download step renders them in the same lark-cli call.
 func (s *Store) UnrenderedMessageIDs(ctx context.Context, limit int) ([]string, error) {
-	return queryAll(ctx, s.db, scanOne[string], `SELECT message_id FROM messages WHERE rendered_at = 0 AND deleted = 0 ORDER BY create_ms DESC LIMIT ?`, limit)
+	return queryAll(ctx, s.db, scanOne[string], `SELECT m.message_id FROM messages m WHERE m.rendered_at = 0 AND m.deleted = 0
+ AND NOT EXISTS (SELECT 1 FROM resources r WHERE r.message_id = m.message_id AND r.status IN ('pending', 'failed'))
+ ORDER BY m.create_ms DESC LIMIT ?`, limit)
 }
 
 // UnknownMessageIDs filters ids down to those not yet stored, preserving order.

@@ -265,13 +265,3 @@ func (s *Syncer) pollReadStatus(ctx context.Context, now time.Time) (int, error)
 	}
 	return checked, nil
 }
-
-// hasPendingResources reports whether any of the ids still needs a download.
-func hasResources(rs []store.Resource) bool {
-	for _, r := range rs {
-		if r.Status == "pending" || r.Status == "failed" {
-			return true
-		}
-	}
-	return false
-}

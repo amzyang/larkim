@@ -536,22 +536,12 @@ func (s *Syncer) pullChat(ctx context.Context, chatID string, since, until, now 
 	return n, nil
 }
 
+// renderPending renders messages without attachments; those with pending
+// downloads are rendered by downloadPending in the same lark-cli call.
 func (s *Syncer) renderPending(ctx context.Context, now time.Time) (int, error) {
-	candidates, err := s.Store.UnrenderedMessageIDs(ctx, s.Opt.RenderPerTick*50)
+	ids, err := s.Store.UnrenderedMessageIDs(ctx, s.Opt.RenderPerTick*50)
 	if err != nil {
 		return 0, err
-	}
-	// Messages with attachments are rendered by the download step (one call
-	// does both), so leave them to it.
-	var ids []string
-	for _, id := range candidates {
-		rs, err := s.Store.ResourcesFor(ctx, id)
-		if err != nil {
-			return 0, err
-		}
-		if !hasResources(rs) {
-			ids = append(ids, id)
-		}
 	}
 	total := 0
 	for batch := range slices.Chunk(ids, 50) {
