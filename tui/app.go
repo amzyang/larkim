@@ -678,8 +678,9 @@ func (m Model) runCommand(line string) (tea.Model, tea.Cmd) {
 	case "q", "quit":
 		return m, tea.Quit
 	case "goto", "chat":
+		want := store.FoldName(rest)
 		for _, c := range m.chats {
-			if c.ChatID == rest || strings.EqualFold(strings.Join(strings.Fields(c.Name), ""), strings.Join(strings.Fields(rest), "")) {
+			if c.ChatID == rest || store.FoldName(c.Name) == want {
 				m.focus = paneMessages
 				return m, m.openChat(c.ChatID)
 			}

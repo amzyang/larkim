@@ -3,7 +3,6 @@ package store
 import (
 	"context"
 	"database/sql"
-	"strings"
 )
 
 // Contact is one row of contacts.
@@ -83,24 +82,4 @@ func (s *Store) GetContact(ctx context.Context, openID string) (Contact, error) 
 		return c, ErrNotFound
 	}
 	return c, err
-}
-
-// FindChatsByName returns chats whose name equals ref ignoring whitespace and case.
-func (s *Store) FindChatsByName(ctx context.Context, ref string) ([]Chat, error) {
-	chats, err := s.ListChats(ctx, ChatQuery{})
-	if err != nil {
-		return nil, err
-	}
-	want := foldName(ref)
-	var out []Chat
-	for _, c := range chats {
-		if foldName(c.Name) == want {
-			out = append(out, c)
-		}
-	}
-	return out, nil
-}
-
-func foldName(s string) string {
-	return strings.ToLower(strings.Join(strings.Fields(s), ""))
 }

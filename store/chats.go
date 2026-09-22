@@ -167,3 +167,24 @@ func (s *Store) ListChats(ctx context.Context, q ChatQuery) ([]Chat, error) {
 func (s *Store) queryChats(ctx context.Context, tail string, args ...any) ([]Chat, error) {
 	return queryAll(ctx, s.db, scanChat, `SELECT `+chatColumns+` FROM chats c `+tail, args...)
 }
+
+// FindChatsByName returns chats whose name equals ref ignoring whitespace and case.
+func (s *Store) FindChatsByName(ctx context.Context, ref string) ([]Chat, error) {
+	chats, err := s.ListChats(ctx, ChatQuery{})
+	if err != nil {
+		return nil, err
+	}
+	want := FoldName(ref)
+	var out []Chat
+	for _, c := range chats {
+		if FoldName(c.Name) == want {
+			out = append(out, c)
+		}
+	}
+	return out, nil
+}
+
+// FoldName normalizes a display name for equality: whitespace removed, lower case.
+func FoldName(s string) string {
+	return strings.ToLower(strings.Join(strings.Fields(s), ""))
+}

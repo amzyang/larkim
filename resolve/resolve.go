@@ -52,10 +52,10 @@ func (r *Resolver) Chat(ctx context.Context, ref string) (store.Chat, error) {
 	if err != nil {
 		return store.Chat{}, err
 	}
-	want := fold(ref)
+	want := store.FoldName(ref)
 	var hits []store.Chat
 	for _, c := range remote {
-		if fold(c.Name) == want {
+		if store.FoldName(c.Name) == want {
 			hits = append(hits, store.Chat{ChatID: c.ChatID, Name: c.Name, ChatMode: c.ChatMode, RawJSON: string(c.Raw)})
 		}
 	}
@@ -127,5 +127,3 @@ func ambiguousContacts(ref string, cs []store.Contact) error {
 	}
 	return e
 }
-
-func fold(s string) string { return strings.ToLower(strings.Join(strings.Fields(s), "")) }
