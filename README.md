@@ -42,7 +42,7 @@ larkim tui
 
 ## TUI
 
-`larkim tui` shows chats, the selected chat's messages (with each message's id) and, when opened, a thread pane, plus a composer. The chat header carries the chat id. If no daemon holds the data-dir lock the TUI syncs in-process.
+`larkim tui` shows chats, the selected chat's messages (with each message's id) and, when opened, a thread pane, plus a composer. The chat header carries the chat id. If no daemon holds the data-dir lock the TUI syncs in-process. Colours follow the terminal palette and its light or dark background.
 
 | keys | action |
 |---|---|

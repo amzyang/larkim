@@ -2,12 +2,16 @@ package tui
 
 import (
 	"fmt"
+	"image/color"
+	"regexp"
 	"strings"
 	"time"
 
+	"charm.land/bubbles/v2/textarea"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/amzyang/larkim/store"
+	"github.com/charmbracelet/x/ansi"
 )
 
 const (
@@ -18,23 +22,53 @@ const (
 	headerHeight = 1
 )
 
+// Foreground colours are ANSI palette indices, so they follow the terminal
+// theme; shades that need a background come from theme.
 var (
-	colAccent   = lipgloss.Color("4")
-	colDim      = lipgloss.Color("8")
-	colSelBg    = lipgloss.Color("237")
-	colSelBgAlt = lipgloss.Color("236")
-	colErr      = lipgloss.Color("1")
-	colOK       = lipgloss.Color("2")
+	colAccent = lipgloss.Color("4")
+	colDim    = lipgloss.Color("8")
+	colErr    = lipgloss.Color("1")
+	colOK     = lipgloss.Color("2")
 
-	stDim      = lipgloss.NewStyle().Foreground(colDim)
-	stAccent   = lipgloss.NewStyle().Foreground(colAccent)
-	stBold     = lipgloss.NewStyle().Bold(true)
-	stErr      = lipgloss.NewStyle().Foreground(colErr)
-	stOK       = lipgloss.NewStyle().Foreground(colOK)
-	stStatus   = lipgloss.NewStyle().Background(lipgloss.Color("236")).Foreground(lipgloss.Color("252"))
-	stSel      = lipgloss.NewStyle().Background(colSelBg)
-	stSelInact = lipgloss.NewStyle().Background(colSelBgAlt)
+	stDim    = lipgloss.NewStyle().Foreground(colDim)
+	stAccent = lipgloss.NewStyle().Foreground(colAccent)
+	stBold   = lipgloss.NewStyle().Bold(true)
+	stErr    = lipgloss.NewStyle().Foreground(colErr)
+	stOK     = lipgloss.NewStyle().Foreground(colOK)
+
+	sgrSeq = regexp.MustCompile("\x1b\\[[0-9;:]*m")
 )
+
+// theme holds the styles shaded from the terminal background, so the
+// selected row (sel also paints the status bar) stays readable on light and
+// dark palettes alike.
+type theme struct {
+	sel, selInact lipgloss.Style
+}
+
+func themeFor(bg color.Color, dark bool) theme {
+	shade := func(onLight, onDark float64) color.Color {
+		if dark {
+			return lipgloss.Lighten(bg, onDark)
+		}
+		return lipgloss.Darken(bg, onLight)
+	}
+	return theme{
+		sel:      lipgloss.NewStyle().Background(shade(0.12, 0.18)),
+		selInact: lipgloss.NewStyle().Background(shade(0.06, 0.09)),
+	}
+}
+
+// composerStyles keeps bubbles' defaults but drops the cursor-line shade (the
+// focused border already marks the composer) and lets the placeholder use the
+// palette's muted colour.
+func composerStyles(dark bool) textarea.Styles {
+	st := textarea.DefaultStyles(dark)
+	st.Focused.CursorLine = lipgloss.NewStyle()
+	st.Focused.Placeholder = stDim
+	st.Blurred.Placeholder = stDim
+	return st
+}
 
 // msgRow is one rendered line of a message list and the message it belongs to.
 type msgRow struct {
@@ -293,7 +327,7 @@ func (m Model) renderChats(h int) string {
 		}
 		line := fit(fmt.Sprintf("%s %s%s", stDim.Render(mark), truncate(name, w-3-lipgloss.Width(badge)), badge), w)
 		if i == m.chatIdx {
-			line = highlight(line, m.focus == paneChats)
+			line = m.highlight(line, m.focus == paneChats)
 		}
 		lines = append(lines, line)
 	}
@@ -316,7 +350,7 @@ func (m Model) renderMessages(h int) string {
 		r := m.msgRows[i]
 		line := fit(r.text, w)
 		if r.idx == m.msgIdx {
-			line = highlight(line, m.focus == paneMessages)
+			line = m.highlight(line, m.focus == paneMessages)
 		}
 		lines = append(lines, line)
 	}
@@ -374,7 +408,7 @@ func (m Model) renderThread(h int) string {
 		r := m.threadRows[i]
 		line := fit(r.text, w)
 		if r.idx == m.threadIdx {
-			line = highlight(line, m.focus == paneThread)
+			line = m.highlight(line, m.focus == paneThread)
 		}
 		lines = append(lines, line)
 	}
@@ -415,15 +449,19 @@ func (m Model) renderStatus() string {
 		right = stErr.Render(right)
 	}
 	gap := max(1, m.width-lipgloss.Width(left)-lipgloss.Width(right)-2)
-	return stStatus.Width(m.width).Render(" " + left + strings.Repeat(" ", gap) + right)
+	return m.th.sel.Render(fit(" "+left+strings.Repeat(" ", gap)+right, m.width))
 }
 
-// highlight marks the selected row, brighter when its pane has focus.
-func highlight(line string, focused bool) string {
-	if focused {
-		return stSel.Render(line)
+// highlight paints the selected row, brighter when its pane has focus. The
+// row carries its own foreground styles whose resets would end a plainly
+// wrapped background, so the background is re-asserted after each of them.
+func (m Model) highlight(line string, focused bool) string {
+	st := m.th.sel
+	if !focused {
+		st = m.th.selInact
 	}
-	return stSelInact.Render(line)
+	bg := ansi.Style{}.BackgroundColor(st.GetBackground()).String()
+	return st.Render(sgrSeq.ReplaceAllStringFunc(line, func(s string) string { return s + bg }))
 }
 
 func truncate(s string, n int) string {

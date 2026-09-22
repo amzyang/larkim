@@ -2,11 +2,14 @@ package tui
 
 import (
 	"fmt"
+	"image/color"
 	"strings"
 	"testing"
 
+	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/amzyang/larkim/store"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/stretchr/testify/require"
 )
 
@@ -74,6 +77,39 @@ func TestHitMapsPanes(t *testing.T) {
 	require.Equal(t, 1, row, "message body rows start below the header")
 	p, _ = m.hit(5, m.bodyHeight()+3)
 	require.Equal(t, paneInput, p)
+}
+
+func TestHighlightSurvivesInnerResets(t *testing.T) {
+	m := sized(120, 30)
+	line := stDim.Render("12:00") + " sender " + stBold.Render("om_1")
+	out := m.highlight(line, true)
+	bg := ansi.Style{}.BackgroundColor(m.th.sel.GetBackground()).String()
+	require.GreaterOrEqual(t, strings.Count(out, bg), 3, "background re-applied after every embedded style: %q", out)
+}
+
+func TestBackgroundColorDrivesSelectionShade(t *testing.T) {
+	m := New(Deps{})
+	light := lipgloss.Color("#eff1f5")
+	mm, _ := m.Update(tea.BackgroundColorMsg{Color: light})
+	m = mm.(Model)
+	require.Less(t, luma(m.th.sel.GetBackground()), luma(light), "light theme: selection darker than the background")
+	dark := lipgloss.Color("#1e1e2e")
+	mm, _ = m.Update(tea.BackgroundColorMsg{Color: dark})
+	m = mm.(Model)
+	require.Greater(t, luma(m.th.sel.GetBackground()), luma(dark), "dark theme: selection lighter than the background")
+}
+
+func TestComposerStylesFollowPalette(t *testing.T) {
+	for _, dark := range []bool{true, false} {
+		st := composerStyles(dark)
+		require.Equal(t, lipgloss.NoColor{}, st.Focused.CursorLine.GetBackground(), "no cursor-line shade")
+		require.Equal(t, colDim, st.Focused.Placeholder.GetForeground())
+	}
+}
+
+func luma(c color.Color) float64 {
+	r, g, b, _ := c.RGBA()
+	return 0.2126*float64(r) + 0.7152*float64(g) + 0.0722*float64(b)
 }
 
 func TestStatusBarStaysOneLine(t *testing.T) {

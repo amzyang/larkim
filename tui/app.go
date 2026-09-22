@@ -5,6 +5,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"image/color"
 	"strings"
 	"time"
 
@@ -44,6 +45,7 @@ type Model struct {
 	mode          mode
 	focused       bool
 	showHelp      bool
+	th            theme
 
 	chats      []store.Chat
 	unread     map[string]int64
@@ -106,7 +108,16 @@ func New(d Deps) Model {
 	ta.SetHeight(3)
 	ti := textinput.New()
 	ti.Prompt = ":"
-	return Model{deps: d, input: ta, cmdline: ti, focus: paneChats, focused: true}
+	m := Model{deps: d, input: ta, cmdline: ti, focus: paneChats, focused: true}
+	m.setBackground(color.Black, true)
+	return m
+}
+
+// setBackground derives every shaded style from the terminal background.
+func (m *Model) setBackground(bg color.Color, dark bool) {
+	m.th = themeFor(bg, dark)
+	m.input.SetStyles(composerStyles(dark))
+	m.cmdline.SetStyles(textinput.DefaultStyles(dark))
 }
 
 // Run starts the program until quit or ctx is done.
@@ -121,7 +132,7 @@ func Run(ctx context.Context, d Deps) error {
 }
 
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(loadChats(m.deps.Store), readSyncStatus(m.deps.Store), pollSyncStatus(m.deps.Store), waitForChange(m.changes))
+	return tea.Batch(tea.RequestBackgroundColor, loadChats(m.deps.Store), readSyncStatus(m.deps.Store), pollSyncStatus(m.deps.Store), waitForChange(m.changes))
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -129,6 +140,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 		m.layout()
+		return m, nil
+	case tea.BackgroundColorMsg:
+		m.setBackground(msg, msg.IsDark())
 		return m, nil
 	case tea.FocusMsg:
 		m.focused = true
