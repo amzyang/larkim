@@ -55,7 +55,7 @@ larkim tui
 | `/` | filter chats |
 | `:search <text>` | cross-chat full-text search in the messages pane; Enter jumps to the hit, Esc leaves |
 | `a` / `:ai …` | assistant in the right pane: `summary`, `draft <how>` (result lands in the composer), `todo`, or any question about the open chat |
-| `:goto <chat>` `:send <chat\|ou_> <text>` `:sync` `:q` | commands |
+| `:` `;` | command line: `:goto <chat>` `:send <chat\|ou_> <text>` `:sync` `:q` |
 | mouse | click focuses and selects, double-click opens, wheel scrolls |
 
 Shift+Enter needs a terminal with the kitty keyboard protocol (kitty, Ghostty, WezTerm); elsewhere use Alt+Enter or Ctrl+J for newlines.

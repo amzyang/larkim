@@ -508,7 +508,7 @@ func (m Model) onNormalKey(s string) (tea.Model, tea.Cmd) {
 		m.cmdline.Prompt = "/"
 		m.cmdline.SetValue(m.chatFilter)
 		return m, m.cmdline.Focus()
-	case ":":
+	case ":", ";":
 		m.mode = modeCommand
 		m.cmdline.Prompt = ":"
 		m.cmdline.Reset()
@@ -868,7 +868,7 @@ func clamp(v, lo, hi int) int {
 // Help text shown by ?.
 const helpText = `NORMAL      j/k move · gg/G ends · Ctrl+d/u page · Tab/Shift+Tab focus · h/l panes
             Enter open chat / thread / reply · i write · r reply · R reply in thread · t thread
-            y copy message id · Y copy chat id · o open in Feishu · / filter chats · : command · q quit
+            y copy message id · Y copy chat id · o open in Feishu · / filter chats · :/; command · q quit
 INSERT      Enter send · Shift+Enter newline · Esc back
 COMMAND     :goto <chat> · :send <chat|ou_> <text> · :search <text> · :sync · :q
 ASSISTANT   a or :ai [summary | draft <how> | todo | <question>] · answer streams in the right pane · Esc closes
