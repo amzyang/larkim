@@ -348,7 +348,7 @@ func (m *Model) clampChat() {
 	if m.chatIdx < 0 {
 		m.chatIdx = 0
 	}
-	h := m.chatListHeight()
+	h := m.listHeight()
 	if h <= 0 {
 		return
 	}
@@ -576,7 +576,7 @@ func (m Model) enterFocus() (tea.Model, tea.Cmd) {
 func (m Model) pageStep() int {
 	switch m.focus {
 	case paneChats:
-		return max(1, m.chatListHeight()/2)
+		return max(1, m.listHeight()/2)
 	default:
 		return max(1, m.bodyHeight()/4)
 	}
@@ -601,7 +601,7 @@ func (m Model) move(n int) (tea.Model, tea.Cmd) {
 		m.scrollMessagesToSelection()
 	case paneThread:
 		if m.aiOpen {
-			m.aiTop = clamp(m.aiTop+n, 0, max(0, len(m.aiLines())-m.bodyHeight()+1))
+			m.aiTop = clamp(m.aiTop+n, 0, max(0, len(m.aiLines())-m.listHeight()))
 			return m, nil
 		}
 		m.threadIdx = clamp(m.threadIdx+n, 0, len(m.thread)-1)
@@ -784,7 +784,7 @@ func (m Model) onAIChunk(c ai.Chunk) (tea.Model, tea.Cmd) {
 	m.aiText += c.Text
 	if !c.Done {
 		// Follow the stream unless the user scrolled up.
-		bottom := max(0, len(m.aiLines())-m.bodyHeight()+1)
+		bottom := max(0, len(m.aiLines())-m.listHeight())
 		if m.aiTop >= bottom-3 {
 			m.aiTop = bottom
 		}
@@ -863,11 +863,11 @@ func (m Model) onWheel(ms tea.Mouse) (tea.Model, tea.Cmd) {
 	switch p {
 	case paneChats:
 		vis := m.visibleChats()
-		m.chatTop = clamp(m.chatTop+step, 0, max(0, len(vis)-m.chatListHeight()))
+		m.chatTop = clamp(m.chatTop+step, 0, max(0, len(vis)-m.listHeight()))
 	case paneMessages:
-		m.msgTop = clamp(m.msgTop+step, 0, max(0, len(m.msgRows)-m.bodyHeight()))
+		m.msgTop = clamp(m.msgTop+step, 0, max(0, len(m.msgRows)-m.listHeight()))
 	case paneThread:
-		m.threadTop = clamp(m.threadTop+step, 0, max(0, len(m.threadRows)-m.bodyHeight()))
+		m.threadTop = clamp(m.threadTop+step, 0, max(0, len(m.threadRows)-m.listHeight()))
 	}
 	return m, nil
 }

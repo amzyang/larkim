@@ -19,7 +19,7 @@ const (
 	threadWidth  = 44
 	inputHeight  = 3
 	statusHeight = 1
-	headerHeight = 1
+	headerHeight = 1 // title row of every list pane
 )
 
 // Foreground colours are ANSI palette indices, so they follow the terminal
@@ -93,7 +93,8 @@ func (m Model) bodyHeight() int {
 	return max(1, m.height-inputHeight-2-statusHeight-2) // input border + pane border
 }
 
-func (m Model) chatListHeight() int { return m.bodyHeight() }
+// listHeight is the number of rows a list pane shows below its title.
+func (m Model) listHeight() int { return max(1, m.bodyHeight()-headerHeight) }
 
 func (m Model) messagesWidth() int {
 	w := m.width - chatsWidth
@@ -216,11 +217,11 @@ func rowAt(rows []msgRow, line int) int {
 }
 
 func (m *Model) scrollMessagesToSelection() {
-	m.msgTop = scrollTo(m.msgRows, m.msgIdx, m.msgTop, m.bodyHeight())
+	m.msgTop = scrollTo(m.msgRows, m.msgIdx, m.msgTop, m.listHeight())
 }
 
 func (m *Model) scrollThreadToSelection() {
-	m.threadTop = scrollTo(m.threadRows, m.threadIdx, m.threadTop, m.bodyHeight())
+	m.threadTop = scrollTo(m.threadRows, m.threadIdx, m.threadTop, m.listHeight())
 }
 
 func scrollTo(rows []msgRow, idx, top, h int) int {
@@ -246,14 +247,14 @@ func (m Model) hit(x, y int) (pane, int) {
 	if y < 1 || y > body {
 		return -1, 0
 	}
-	row := y - 1
+	row := y - 1 - headerHeight
 	switch {
 	case x < chatsWidth:
 		return paneChats, row
 	case m.rightOpen() && x >= m.width-threadWidth:
 		return paneThread, row
 	default:
-		return paneMessages, row - headerHeight
+		return paneMessages, row
 	}
 }
 
@@ -306,7 +307,7 @@ func (m Model) renderChats(h int) string {
 	vis := m.visibleChats()
 	lines := make([]string, 0, h)
 	w := chatsWidth - 2
-	for i := m.chatTop; i < len(vis) && len(lines) < h; i++ {
+	for i := m.chatTop; i < len(vis) && len(lines) < h-headerHeight; i++ {
 		c := vis[i]
 		name := flatten(c.Name)
 		if name == "" {
@@ -331,14 +332,14 @@ func (m Model) renderChats(h int) string {
 		}
 		lines = append(lines, line)
 	}
-	for len(lines) < h {
+	for len(lines) < h-headerHeight {
 		lines = append(lines, fit("", w))
 	}
 	title := "Chats"
 	if m.chatFilter != "" {
 		title = "Chats /" + m.chatFilter
 	}
-	content := fit(stBold.Render(truncate(title, w)), w) + "\n" + strings.Join(lines[:max(0, h-1)], "\n")
+	content := fit(stBold.Render(truncate(title, w)), w) + "\n" + strings.Join(lines, "\n")
 	return paneStyle(m.focus == paneChats, w).Height(h).Render(content)
 }
 

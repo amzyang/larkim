@@ -32,14 +32,18 @@ func sized(w, h int) Model {
 	return m
 }
 
+func withThread(m Model) Model {
+	m.threadOpen, m.threadID, m.thread = true, "omt_1", m.msgs[:3]
+	m.layout()
+	return m
+}
+
 func TestPanesShareHeight(t *testing.T) {
 	m := sized(120, 40)
 	h := m.bodyHeight()
 	require.Equal(t, h+2, lipgloss.Height(m.renderChats(h)), "chats pane = body + border")
 	require.Equal(t, h+2, lipgloss.Height(m.renderMessages(h)), "messages pane = body + border")
-	m.threadOpen, m.threadID = true, "omt_1"
-	m.thread = m.msgs[:5]
-	m.layout()
+	m = withThread(m)
 	require.Equal(t, h+2, lipgloss.Height(m.renderThread(h)))
 	v := m.View()
 	require.Equal(t, m.height, lipgloss.Height(v.Content), "whole view fits the terminal exactly")
@@ -58,23 +62,37 @@ func TestChatsPaneKeepsOneRowPerChat(t *testing.T) {
 
 func TestScrollToKeepsSelectionVisible(t *testing.T) {
 	m := sized(120, 20)
+	m.msgs = append(m.msgs, store.Message{MessageID: "om_last", ChatID: "oc_1", SenderName: "邹洋", Content: "LASTLINE", RenderedAt: 1, CreateMs: 99_000})
+	m.layout()
 	m.msgIdx = len(m.msgs) - 1
 	m.scrollMessagesToSelection()
-	last := lastRow(m.msgRows, m.msgIdx)
-	require.Less(t, last-m.msgTop, m.bodyHeight())
+	require.Contains(t, ansi.Strip(m.renderMessages(m.bodyHeight())), "LASTLINE", "the selected message's last row is on screen")
 	m.msgIdx = 0
 	m.scrollMessagesToSelection()
 	require.Zero(t, m.msgTop)
+}
+
+func TestLastChatStaysVisibleAfterG(t *testing.T) {
+	m := sized(120, 36)
+	m.focus = paneChats
+	mm, _ := m.move(1 << 30)
+	m = mm.(Model)
+	require.Equal(t, len(m.chats)-1, m.chatIdx)
+	require.Contains(t, ansi.Strip(m.renderChats(m.bodyHeight())), "群 79 ", "the selected last chat is rendered")
 }
 
 func TestHitMapsPanes(t *testing.T) {
 	m := sized(120, 30)
 	p, row := m.hit(2, 3)
 	require.Equal(t, paneChats, p)
-	require.Equal(t, 2, row)
+	require.Equal(t, 1, row, "chat rows start below the title")
 	p, row = m.hit(chatsWidth+5, 3)
 	require.Equal(t, paneMessages, p)
 	require.Equal(t, 1, row, "message body rows start below the header")
+	m = withThread(m)
+	p, row = m.hit(m.width-5, 3)
+	require.Equal(t, paneThread, p)
+	require.Equal(t, 1, row, "thread rows start below the title")
 	p, _ = m.hit(5, m.bodyHeight()+3)
 	require.Equal(t, paneInput, p)
 }
