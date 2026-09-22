@@ -36,7 +36,10 @@ func (a *App) tuiCmd() *cobra.Command {
 				s.Log = quietLogger()
 				deps.Syncer = s
 				deps.Embedded = true
-				go s.Run(ctx)
+				go func() {
+					defer sentryRecoverRepanic()
+					s.Run(ctx)
+				}()
 			} else if !errors.Is(err, sync.ErrLocked) {
 				return err
 			}

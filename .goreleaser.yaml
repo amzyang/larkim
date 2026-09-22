@@ -19,6 +19,9 @@ builds:
     ldflags:
       - -s -w
       - -X main.version={{ .Version }}
+      # envOrDefault: an unset SENTRY_DSN (local snapshot, forks) yields an empty
+      # string, which disables telemetry instead of failing the build.
+      - -X main.sentryDSN={{ envOrDefault "SENTRY_DSN" "" }}
 
 archives:
   - id: larkim

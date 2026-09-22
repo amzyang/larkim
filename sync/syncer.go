@@ -79,6 +79,8 @@ type Syncer struct {
 	Clock  Clock
 	Opt    Options
 	Log    *slog.Logger
+	// OnError, when set, observes every failed tick (for crash reporting).
+	OnError func(error)
 }
 
 // Report summarizes one tick.
@@ -536,6 +538,9 @@ func (s *Syncer) Run(ctx context.Context) error {
 			failures++
 			delay = s.delayFor(err, failures)
 			s.log().Warn("tick failed", "err", err, "retry_in", delay)
+			if s.OnError != nil {
+				s.OnError(err)
+			}
 		} else {
 			failures = 0
 			s.log().Debug("tick", "hits", rep.Hits, "new", rep.New, "rendered", rep.Rendered, "backfilled", rep.Backfilled)

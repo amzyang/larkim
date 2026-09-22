@@ -18,17 +18,22 @@ import (
 
 // App carries process-wide dependencies into commands.
 type App struct {
-	Version    string
-	Out        io.Writer
-	Err        io.Writer
-	configPath string
-	jsonOut    bool
-	cfg        config.Config
+	Version      string
+	Out          io.Writer
+	Err          io.Writer
+	configPath   string
+	jsonOut      bool
+	cfg          config.Config
+	sentryFlag   string
+	sentryDSN    string // effective DSN after resolution
+	sentrySource string
+	buildDSN     string
 }
 
-// New builds the root command.
-func New(version string) *cobra.Command {
-	app := &App{Version: version, Out: os.Stdout, Err: os.Stderr}
+// New builds the root command. buildDSN is the Sentry DSN baked in at build
+// time (empty in local builds, so telemetry is off unless configured).
+func New(version, buildDSN string) *cobra.Command {
+	app := &App{Version: version, Out: os.Stdout, Err: os.Stderr, buildDSN: buildDSN}
 	root := &cobra.Command{
 		Use:           "larkim",
 		Short:         "Feishu/Lark IM synced to local SQLite, with a CLI and TUI on top",
@@ -36,6 +41,13 @@ func New(version string) *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
+			// Shell completion must stay side-effect free and fast.
+			if cmd.Name() != cobra.ShellCompRequestCmd && cmd.Name() != cobra.ShellCompNoDescRequestCmd {
+				envValue, envSet := os.LookupEnv("SENTRY_DSN")
+				app.sentryDSN, app.sentrySource = resolveSentryDSN(app.sentryFlag, cmd.Flags().Changed("sentry-dsn"),
+					os.Getenv("DO_NOT_TRACK"), envValue, envSet, app.buildDSN)
+				initSentry(app.sentryDSN, version)
+			}
 			cfg, err := config.Load(app.configPath)
 			if err != nil {
 				return err
@@ -46,15 +58,20 @@ func New(version string) *cobra.Command {
 	}
 	root.PersistentFlags().StringVar(&app.configPath, "config", "", "config file (default ~/.larkim/config.yaml)")
 	root.PersistentFlags().BoolVar(&app.jsonOut, "json", false, "JSON output (default when stdout is not a terminal)")
+	root.PersistentFlags().StringVar(&app.sentryFlag, "sentry-dsn", "", "Sentry DSN for crash reporting (overrides SENTRY_DSN and the build-time default; empty disables)")
+	root.SetFlagErrorFunc(func(_ *cobra.Command, err error) error { return &usageError{err} })
 	root.AddCommand(app.syncCmd(), app.statusCmd(), app.daemonCmd(), app.chatsCmd(), app.messagesCmd(), app.contactsCmd(),
-		app.sendCmd(), app.replyCmd(), app.watchCmd(), app.tuiCmd(), app.dbCmd(), app.schemaCmd())
+		app.sendCmd(), app.replyCmd(), app.watchCmd(), app.tuiCmd(), app.dbCmd(), app.schemaCmd(), app.sentryCmd())
 	return root
 }
 
-// Execute runs the CLI and returns the process exit code.
-func Execute(version string) int {
-	if err := New(version).Execute(); err != nil {
+// Execute runs the CLI and returns the process exit code. Defects are
+// reported to Sentry when telemetry is enabled; expected failures are not.
+func Execute(version, buildDSN string) int {
+	defer sentryRecoverRepanic()
+	if err := New(version, buildDSN).Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, "larkim:", err)
+		captureError(err)
 		return 1
 	}
 	return 0
@@ -84,7 +101,7 @@ func (a *App) client() *larkcli.ExecClient {
 
 func (a *App) syncer(st *store.Store) *sync.Syncer {
 	return &sync.Syncer{Client: a.client(), Store: st, Clock: sync.RealClock{}, Opt: sync.OptionsFrom(a.cfg),
-		Log: slog.New(slog.NewTextHandler(a.Err, nil))}
+		Log: slog.New(slog.NewTextHandler(a.Err, nil)), OnError: captureError}
 }
 
 // quietLogger discards logs so an embedded syncer never writes over the TUI.

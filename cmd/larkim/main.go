@@ -7,9 +7,13 @@ import (
 	"github.com/amzyang/larkim/cli"
 )
 
-// version is injected by goreleaser via -ldflags "-X main.version=…".
-var version = "dev"
+// version and sentryDSN are injected by goreleaser via -ldflags -X. A local
+// build leaves sentryDSN empty, which disables telemetry.
+var (
+	version   = "dev"
+	sentryDSN string
+)
 
 func main() {
-	os.Exit(cli.Execute(version))
+	os.Exit(cli.Execute(version, sentryDSN))
 }
