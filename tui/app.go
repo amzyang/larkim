@@ -547,7 +547,10 @@ func (m Model) onNormalKey(s string) (tea.Model, tea.Cmd) {
 // visiblePanes lists the list panes on screen from left to right; the
 // composer is entered with i, r or Enter rather than by cycling focus.
 func (m Model) visiblePanes() []pane {
-	order := []pane{paneChats, paneMessages}
+	order := []pane{paneChats}
+	if !m.foldRight() {
+		order = append(order, paneMessages)
+	}
 	if m.rightOpen() {
 		order = append(order, paneThread)
 	}

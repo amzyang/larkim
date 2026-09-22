@@ -15,11 +15,14 @@ import (
 )
 
 const (
-	chatsWidth   = 30
-	threadWidth  = 44
-	inputHeight  = 3
-	statusHeight = 1
-	headerHeight = 1 // title row of every list pane
+	chatsWidth       = 30
+	threadWidth      = 44
+	minMessagesWidth = 40 // narrower than this, the right pane takes the messages pane's place
+	minWidth         = 60
+	minHeight        = 12
+	inputHeight      = 3
+	statusHeight     = 1
+	headerHeight     = 1 // title row of every list pane
 )
 
 // Foreground colours are ANSI palette indices, so they follow the terminal
@@ -86,6 +89,9 @@ func (m *Model) layout() {
 	m.clampChat()
 	m.scrollMessagesToSelection()
 	m.scrollThreadToSelection()
+	if m.foldRight() && m.focus == paneMessages {
+		m.focus = paneThread
+	}
 }
 
 // bodyHeight is the inner height of the list panes.
@@ -96,9 +102,22 @@ func (m Model) bodyHeight() int {
 // listHeight is the number of rows a list pane shows below its title.
 func (m Model) listHeight() int { return max(1, m.bodyHeight()-headerHeight) }
 
+// foldRight reports whether the terminal is too narrow for three columns, in
+// which case the thread or assistant pane replaces the messages pane.
+func (m Model) foldRight() bool {
+	return m.rightOpen() && m.width < chatsWidth+minMessagesWidth+threadWidth
+}
+
+func (m Model) rightWidth() int {
+	if m.foldRight() {
+		return m.width - chatsWidth
+	}
+	return threadWidth
+}
+
 func (m Model) messagesWidth() int {
 	w := m.width - chatsWidth
-	if m.rightOpen() {
+	if m.rightOpen() && !m.foldRight() {
 		w -= threadWidth
 	}
 	return max(20, w)
@@ -137,7 +156,7 @@ func (m Model) aiLines() []string {
 	if text == "" && m.aiBusy {
 		text = "…"
 	}
-	return strings.Split(lipgloss.NewStyle().Width(threadWidth-2).Render(text), "\n")
+	return strings.Split(lipgloss.NewStyle().Width(m.rightWidth()-2).Render(text), "\n")
 }
 
 func (m *Model) rebuildThread() {
@@ -145,7 +164,7 @@ func (m *Model) rebuildThread() {
 		m.threadRows = nil
 		return
 	}
-	m.threadRows = renderRows(m.thread, threadWidth-2, m.deps.Self)
+	m.threadRows = renderRows(m.thread, m.rightWidth()-2, m.deps.Self)
 }
 
 // renderRows lays messages out as "HH:MM sender  message_id" head lines
@@ -251,7 +270,7 @@ func (m Model) hit(x, y int) (pane, int) {
 	switch {
 	case x < chatsWidth:
 		return paneChats, row
-	case m.rightOpen() && x >= m.width-threadWidth:
+	case m.rightOpen() && x >= m.width-m.rightWidth():
 		return paneThread, row
 	default:
 		return paneMessages, row
@@ -269,9 +288,16 @@ func (m Model) View() tea.View {
 		v.Content = "loading…"
 		return v
 	}
+	if m.width < minWidth || m.height < minHeight {
+		v.Content = lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center,
+			stDim.Render(fmt.Sprintf("terminal too small · need %d×%d", minWidth, minHeight)))
+		return v
+	}
 	body := m.bodyHeight()
 	panes := []string{m.renderChats(body)}
-	panes = append(panes, m.renderMessages(body))
+	if !m.foldRight() {
+		panes = append(panes, m.renderMessages(body))
+	}
 	if m.aiOpen {
 		panes = append(panes, m.renderAI(body))
 	} else if m.threadOpen {
@@ -365,7 +391,7 @@ func (m Model) renderMessages(h int) string {
 }
 
 func (m Model) renderAI(h int) string {
-	w := threadWidth - 2
+	w := m.rightWidth() - 2
 	lines := make([]string, 0, h)
 	state := ""
 	if m.aiBusy {
@@ -402,7 +428,7 @@ func (m Model) renderHeader(w int) string {
 }
 
 func (m Model) renderThread(h int) string {
-	w := threadWidth - 2
+	w := m.rightWidth() - 2
 	lines := make([]string, 0, h)
 	lines = append(lines, fit(stBold.Render("Thread ")+stDim.Render(truncate(m.threadID, w-7)), w))
 	for i := m.threadTop; i < len(m.threadRows) && len(lines) < h; i++ {

@@ -125,6 +125,28 @@ func TestTabCyclesListPanesOnly(t *testing.T) {
 	require.Equal(t, paneMessages, m.focus)
 }
 
+func TestNarrowTerminalFoldsRightPane(t *testing.T) {
+	m := sized(82, 35)
+	m = withThread(m)
+	m.focus = paneThread
+	require.True(t, m.foldRight())
+	v := m.View()
+	for _, line := range strings.Split(v.Content, "\n") {
+		require.LessOrEqual(t, lipgloss.Width(line), m.width, "%q", line)
+	}
+	require.Contains(t, ansi.Strip(v.Content), "Thread omt_1")
+	p, _ := m.hit(chatsWidth+5, 3)
+	require.Equal(t, paneThread, p)
+	mm, _ := m.onNormalKey("h")
+	m = mm.(Model)
+	require.Equal(t, paneChats, m.focus, "h skips the hidden messages pane")
+}
+
+func TestTooSmallTerminal(t *testing.T) {
+	m := sized(50, 10)
+	require.Contains(t, m.View().Content, "too small")
+}
+
 func TestBackgroundColorDrivesSelectionShade(t *testing.T) {
 	m := New(Deps{})
 	light := lipgloss.Color("#eff1f5")
