@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
@@ -39,8 +38,9 @@ func HTTPFetch(ctx context.Context, url string) ([]byte, string, error) {
 }
 
 const (
-	KeyRepairStartedAt = "repair_started_at"
-	KeyRepairAt        = "repair_at"
+	// KeyRepairAt is when the current repair pass started; chats repaired
+	// before it are due again.
+	KeyRepairAt = "repair_at"
 
 	repairHorizon       = 7 * 24 * time.Hour
 	membersRefreshEvery = 24 * time.Hour
@@ -52,18 +52,12 @@ func (s *Syncer) repairSlice(ctx context.Context, now time.Time) (int, error) {
 	if s.Opt.RepairEvery <= 0 {
 		return 0, nil
 	}
-	if Due(s.stateTime(ctx, KeyRepairAt), s.Opt.RepairEvery, now) {
-		ms := strconv.FormatInt(now.UnixMilli(), 10)
-		if err := s.Store.SetState(ctx, KeyRepairAt, ms); err != nil {
+	started := s.stateTime(ctx, KeyRepairAt)
+	if Due(started, s.Opt.RepairEvery, now) {
+		if err := s.setStateTime(ctx, KeyRepairAt, now); err != nil {
 			return 0, err
 		}
-		if err := s.Store.SetState(ctx, KeyRepairStartedAt, ms); err != nil {
-			return 0, err
-		}
-	}
-	started := s.stateTime(ctx, KeyRepairStartedAt)
-	if started.IsZero() {
-		return 0, nil
+		started = now
 	}
 	chats, err := s.Store.ChatsForRepair(ctx, now.Add(-repairHorizon).UnixMilli(), started.UnixMilli(), s.Opt.RepairPerTick)
 	if err != nil {

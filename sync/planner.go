@@ -44,18 +44,6 @@ func Due(last time.Time, every time.Duration, now time.Time) bool {
 	return last.IsZero() || !now.Before(last.Add(every))
 }
 
-// Chunk splits xs into slices of at most n elements.
-func Chunk[T any](xs []T, n int) [][]T {
-	if n <= 0 || len(xs) == 0 {
-		return nil
-	}
-	out := make([][]T, 0, (len(xs)+n-1)/n)
-	for i := 0; i < len(xs); i += n {
-		out = append(out, xs[i:min(i+n, len(xs))])
-	}
-	return out
-}
-
 // Backoff returns the delay for the n-th consecutive failure (n >= 1),
 // doubling from base up to limit.
 func Backoff(n int, base, limit time.Duration) time.Duration {

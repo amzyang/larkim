@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strconv"
 	"time"
 
@@ -161,7 +162,7 @@ func (s *Syncer) Tick(ctx context.Context) (Report, error) {
 	if rerr := s.Store.RecordRun(ctx, run); rerr != nil {
 		s.log().Warn("record run", "err", rerr)
 	}
-	_ = s.Store.SetState(ctx, KeyLastTickAt, strconv.FormatInt(end.UnixMilli(), 10))
+	_ = s.setStateTime(ctx, KeyLastTickAt, end)
 	return rep, err
 }
 
@@ -174,8 +175,7 @@ func (s *Syncer) tick(ctx context.Context, now time.Time) (Report, error) {
 	}
 
 	// 1. Fast path: discover new message ids across all chats.
-	wm := s.watermark(ctx)
-	rep.Window = FastWindow(wm, now, s.Opt.Overlap)
+	rep.Window = FastWindow(s.stateTime(ctx, KeyWatermark), now, s.Opt.Overlap)
 	hits, coveredEnd, err := s.searchWindow(ctx, rep.Window)
 	if err != nil {
 		return rep, fmt.Errorf("search: %w", err)
@@ -187,7 +187,7 @@ func (s *Syncer) tick(ctx context.Context, now time.Time) (Report, error) {
 		return rep, err
 	}
 	rep.Upserted = rep.New
-	if err := s.Store.SetState(ctx, KeyWatermark, strconv.FormatInt(coveredEnd.UnixMilli(), 10)); err != nil {
+	if err := s.setStateTime(ctx, KeyWatermark, coveredEnd); err != nil {
 		return rep, err
 	}
 
@@ -310,14 +310,14 @@ func (s *Syncer) historySlice(ctx context.Context, liveStart, now time.Time) (in
 	if err != nil {
 		return n, err
 	}
-	return n, s.Store.SetState(ctx, KeyHistoryCursor, strconv.FormatInt(coveredEnd.UnixMilli(), 10))
+	return n, s.setStateTime(ctx, KeyHistoryCursor, coveredEnd)
 }
 
 // IngestIDs fetches the given messages regardless of the watermark and
 // renders them; used after sending so the sender sees its message at once.
 func (s *Syncer) IngestIDs(ctx context.Context, ids []string) error {
 	now := s.now()
-	for _, batch := range Chunk(UniqueStrings(ids), 50) {
+	for batch := range slices.Chunk(UniqueStrings(ids), 50) {
 		msgs, err := s.Client.MGetRaw(ctx, batch)
 		if err != nil {
 			return err
@@ -330,7 +330,7 @@ func (s *Syncer) IngestIDs(ctx context.Context, ids []string) error {
 			return err
 		}
 		for _, r := range rendered {
-			if err := s.Store.UpdateRendered(ctx, r.MessageID, r.Content, rawString(r.Mentions), rawString(r.Reactions), now.UnixMilli()); err != nil {
+			if err := s.storeRendered(ctx, r, now); err != nil {
 				return err
 			}
 		}
@@ -349,7 +349,7 @@ func (s *Syncer) fetchUnknown(ctx context.Context, hits []larkcli.SearchHit, now
 		return 0, err
 	}
 	total := 0
-	for _, batch := range Chunk(unknown, 50) {
+	for batch := range slices.Chunk(unknown, 50) {
 		msgs, err := s.Client.MGetRaw(ctx, batch)
 		if err != nil {
 			return total, fmt.Errorf("mget: %w", err)
@@ -428,7 +428,7 @@ func (s *Syncer) refreshChats(ctx context.Context, now time.Time) (int, error) {
 	if _, err := s.Store.MarkChatsLeft(ctx, ms); err != nil {
 		return 0, err
 	}
-	return len(rows), s.Store.SetState(ctx, KeyChatsRefreshed, strconv.FormatInt(ms, 10))
+	return len(rows), s.setStateTime(ctx, KeyChatsRefreshed, now)
 }
 
 func (s *Syncer) slowPath(ctx context.Context, now time.Time) (int, error) {
@@ -461,7 +461,7 @@ func (s *Syncer) slowPath(ctx context.Context, now time.Time) (int, error) {
 		}
 		total += n
 	}
-	return total, s.Store.SetState(ctx, KeySlowPathAt, strconv.FormatInt(now.UnixMilli(), 10))
+	return total, s.setStateTime(ctx, KeySlowPathAt, now)
 }
 
 func (s *Syncer) backfillSlice(ctx context.Context, now time.Time) (int, error) {
@@ -554,7 +554,7 @@ func (s *Syncer) renderPending(ctx context.Context, now time.Time) (int, error) 
 		}
 	}
 	total := 0
-	for _, batch := range Chunk(ids, 50) {
+	for batch := range slices.Chunk(ids, 50) {
 		rendered, err := s.Client.MGetRendered(ctx, batch, false)
 		if err != nil {
 			return total, err
@@ -562,7 +562,7 @@ func (s *Syncer) renderPending(ctx context.Context, now time.Time) (int, error) 
 		got := map[string]bool{}
 		for _, r := range rendered {
 			got[r.MessageID] = true
-			if err := s.Store.UpdateRendered(ctx, r.MessageID, r.Content, rawString(r.Mentions), rawString(r.Reactions), now.UnixMilli()); err != nil {
+			if err := s.storeRendered(ctx, r, now); err != nil {
 				return total, err
 			}
 			total++
@@ -580,6 +580,11 @@ func (s *Syncer) renderPending(ctx context.Context, now time.Time) (int, error) 
 	return total, nil
 }
 
+// storeRendered saves a rendered message's text, mentions and reactions.
+func (s *Syncer) storeRendered(ctx context.Context, r larkcli.RenderedMessage, now time.Time) error {
+	return s.Store.UpdateRendered(ctx, r.MessageID, r.Content, rawString(r.Mentions), rawString(r.Reactions), now.UnixMilli())
+}
+
 func rawString(r json.RawMessage) string {
 	if len(r) == 0 || string(r) == "null" {
 		return ""
@@ -587,10 +592,7 @@ func rawString(r json.RawMessage) string {
 	return string(r)
 }
 
-func (s *Syncer) watermark(ctx context.Context) time.Time {
-	return s.stateTime(ctx, KeyWatermark)
-}
-
+// stateTime and setStateTime keep sync_state timestamps as Unix milliseconds.
 func (s *Syncer) stateTime(ctx context.Context, key string) time.Time {
 	v, ok, err := s.Store.GetState(ctx, key)
 	if err != nil || !ok {
@@ -601,6 +603,10 @@ func (s *Syncer) stateTime(ctx context.Context, key string) time.Time {
 		return time.Time{}
 	}
 	return time.UnixMilli(ms)
+}
+
+func (s *Syncer) setStateTime(ctx context.Context, key string, t time.Time) error {
+	return s.Store.SetState(ctx, key, strconv.FormatInt(t.UnixMilli(), 10))
 }
 
 // Run ticks until ctx is cancelled, pacing by PollInterval and backing off on
@@ -637,12 +643,10 @@ func (s *Syncer) delayFor(err error, failures int) time.Duration {
 	var le *larkcli.Error
 	if errors.As(err, &le) {
 		switch {
-		case le.IsAuth():
+		case le.IsAuth(), le.IsNetwork():
 			return Backoff(failures, 30*time.Second, 10*time.Minute)
 		case le.IsRateLimit():
 			return max(le.RetryAfter, 30*time.Second)
-		case le.IsNetwork():
-			return Backoff(failures, 30*time.Second, 10*time.Minute)
 		}
 	}
 	return Backoff(failures, s.Opt.PollInterval, 5*time.Minute)

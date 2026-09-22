@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"time"
 
@@ -147,14 +148,14 @@ func (s *Syncer) downloadPending(ctx context.Context, now time.Time) (int, error
 		return 0, err
 	}
 	done := 0
-	for _, batch := range Chunk(ids, 50) {
+	for batch := range slices.Chunk(ids, 50) {
 		rendered, err := s.Client.MGetRendered(ctx, batch, true)
 		if err != nil {
 			return done, err
 		}
 		got := map[string]map[string]larkcli.Resource{}
 		for _, r := range rendered {
-			if err := s.Store.UpdateRendered(ctx, r.MessageID, r.Content, rawString(r.Mentions), rawString(r.Reactions), now.UnixMilli()); err != nil {
+			if err := s.storeRendered(ctx, r, now); err != nil {
 				return done, err
 			}
 			byKey := map[string]larkcli.Resource{}
@@ -179,7 +180,7 @@ func (s *Syncer) downloadPending(ctx context.Context, now time.Time) (int, error
 					}
 					continue
 				}
-				stored, err := s.storeResource(ctx, p, res)
+				stored, err := s.storeResource(ctx, p, res, now)
 				if err != nil {
 					return done, err
 				}
@@ -194,14 +195,14 @@ func (s *Syncer) downloadPending(ctx context.Context, now time.Time) (int, error
 
 // storeResource records a downloaded file; stored is false when the file was
 // missing or discarded for size.
-func (s *Syncer) storeResource(ctx context.Context, p store.Resource, res larkcli.Resource) (bool, error) {
+func (s *Syncer) storeResource(ctx context.Context, p store.Resource, res larkcli.Resource, now time.Time) (bool, error) {
 	abs := res.LocalPath
 	if !filepath.IsAbs(abs) {
 		abs = filepath.Join(s.Opt.DataDir, "resources", abs)
 	}
 	st, err := os.Stat(abs)
 	if err != nil {
-		return false, s.failResource(ctx, p, "downloaded file missing: "+err.Error(), s.now())
+		return false, s.failResource(ctx, p, "downloaded file missing: "+err.Error(), now)
 	}
 	if s.Opt.MaxBytes > 0 && st.Size() > s.Opt.MaxBytes {
 		_ = os.Remove(abs)
@@ -235,7 +236,7 @@ func (s *Syncer) pollReadStatus(ctx context.Context, now time.Time) (int, error)
 		return 0, err
 	}
 	checked := 0
-	for _, batch := range Chunk(ids, 50) {
+	for batch := range slices.Chunk(ids, 50) {
 		items, invalid, err := s.Client.ReadStatus(ctx, batch)
 		if err != nil {
 			return checked, err

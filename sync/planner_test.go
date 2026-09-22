@@ -33,14 +33,11 @@ func TestHalves(t *testing.T) {
 	require.False(t, ok)
 }
 
-func TestDueChunkBackoffUnique(t *testing.T) {
+func TestDueBackoffUnique(t *testing.T) {
 	now := time.Unix(1000, 0)
 	require.True(t, Due(time.Time{}, time.Minute, now))
 	require.False(t, Due(now.Add(-30*time.Second), time.Minute, now))
 	require.True(t, Due(now.Add(-time.Minute), time.Minute, now))
-
-	require.Equal(t, [][]int{{1, 2}, {3}}, Chunk([]int{1, 2, 3}, 2))
-	require.Nil(t, Chunk([]int{}, 2))
 
 	require.Equal(t, 30*time.Second, Backoff(1, 30*time.Second, 10*time.Minute))
 	require.Equal(t, 2*time.Minute, Backoff(3, 30*time.Second, 10*time.Minute))
