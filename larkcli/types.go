@@ -143,14 +143,7 @@ type SentMessage struct {
 // Millis decodes a millisecond timestamp encoded as a JSON string.
 type Millis int64
 
-func (m *Millis) UnmarshalJSON(b []byte) error {
-	n, err := unquoteInt(b)
-	if err != nil {
-		return err
-	}
-	*m = Millis(n)
-	return nil
-}
+func (m *Millis) UnmarshalJSON(b []byte) error { return unquoteInt(b, (*int64)(m)) }
 
 // Time converts the millisecond value to time.Time in UTC.
 func (m Millis) Time() time.Time { return time.UnixMilli(int64(m)).UTC() }
@@ -158,25 +151,22 @@ func (m Millis) Time() time.Time { return time.UnixMilli(int64(m)).UTC() }
 // intString decodes an integer encoded as a JSON string or number.
 type intString int64
 
-func (i *intString) UnmarshalJSON(b []byte) error {
-	n, err := unquoteInt(b)
-	if err != nil {
-		return err
-	}
-	*i = intString(n)
-	return nil
-}
+func (i *intString) UnmarshalJSON(b []byte) error { return unquoteInt(b, (*int64)(i)) }
 
-func unquoteInt(b []byte) (int64, error) {
+// unquoteInt parses a JSON string or number into dst; null and "" read as 0.
+func unquoteInt(b []byte, dst *int64) error {
 	s := string(b)
 	if s == "null" || s == `""` {
-		return 0, nil
+		*dst = 0
+		return nil
 	}
 	if len(s) >= 2 && s[0] == '"' {
 		s = s[1 : len(s)-1]
 	}
-	return strconv.ParseInt(s, 10, 64)
+	n, err := strconv.ParseInt(s, 10, 64)
+	if err != nil {
+		return err
+	}
+	*dst = n
+	return nil
 }
-
-// Ms builds a millisecond timestamp value for tests and fakes.
-func Ms(ms int64) Millis { return Millis(ms) }

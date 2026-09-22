@@ -36,7 +36,7 @@ func msg(id, chat string, at time.Time, text string) larkcli.RawMessage {
 		Body:   larkcli.RawBody{Content: `{"text":"` + text + `"}`}}
 }
 
-func msAt(t time.Time) larkcli.Millis { return larkcli.Ms(t.UnixMilli()) }
+func msAt(t time.Time) larkcli.Millis { return larkcli.Millis(t.UnixMilli()) }
 
 func TestTick_FirstRunDiscoversRendersAndBackfills(t *testing.T) {
 	s, f, clk := newSyncer(t)

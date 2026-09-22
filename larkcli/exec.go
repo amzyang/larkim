@@ -156,7 +156,7 @@ func (c *ExecClient) exec(ctx context.Context, args ...string) (stdout, stderr [
 			return out.Bytes(), errBuf.Bytes(), exitErr.ExitCode(), nil
 		}
 		if ctx.Err() != nil {
-			return nil, nil, 0, fmt.Errorf("lark-cli %s: %w", args[0], ctx.Err())
+			runErr = ctx.Err()
 		}
 		return nil, nil, 0, fmt.Errorf("lark-cli %s: %w", args[0], runErr)
 	}
@@ -270,7 +270,7 @@ func (c *ExecClient) MGetRaw(ctx context.Context, ids []string) ([]RawMessage, e
 	if err != nil {
 		return nil, err
 	}
-	return decodeRawMessages(data)
+	return decodeItems[RawMessage](data, "items")
 }
 
 func (c *ExecClient) ListMessagesRaw(ctx context.Context, containerType, containerID string, start, end time.Time) ([]RawMessage, error) {
@@ -293,24 +293,39 @@ func (c *ExecClient) ListMessagesRaw(ctx context.Context, containerType, contain
 	if err != nil {
 		return nil, err
 	}
-	return decodeRawMessages(data)
+	return decodeItems[RawMessage](data, "items")
 }
 
-func decodeRawMessages(data json.RawMessage) ([]RawMessage, error) {
-	var resp struct {
-		Items []json.RawMessage `json:"items"`
-	}
+// rawKeeper is implemented by decoded items that retain their source JSON.
+type rawKeeper interface{ keepRaw(json.RawMessage) }
+
+func (m *RawMessage) keepRaw(r json.RawMessage)      { m.Raw = r }
+func (c *RawChat) keepRaw(r json.RawMessage)         { c.Raw = r }
+func (m *RenderedMessage) keepRaw(r json.RawMessage) { m.Raw = r }
+
+// decodeItems decodes the list under data[key], keeping each item's raw JSON.
+func decodeItems[T any, PT interface {
+	*T
+	rawKeeper
+}](data json.RawMessage, key string) ([]T, error) {
+	var resp map[string]json.RawMessage
 	if err := json.Unmarshal(data, &resp); err != nil {
-		return nil, fmt.Errorf("decode messages: %w", err)
+		return nil, fmt.Errorf("decode %s: %w", key, err)
 	}
-	out := make([]RawMessage, 0, len(resp.Items))
-	for _, raw := range resp.Items {
-		var m RawMessage
-		if err := json.Unmarshal(raw, &m); err != nil {
-			return nil, fmt.Errorf("decode message item: %w", err)
+	var items []json.RawMessage
+	if raw, ok := resp[key]; ok {
+		if err := json.Unmarshal(raw, &items); err != nil {
+			return nil, fmt.Errorf("decode %s: %w", key, err)
 		}
-		m.Raw = raw
-		out = append(out, m)
+	}
+	out := make([]T, 0, len(items))
+	for _, raw := range items {
+		var v T
+		if err := json.Unmarshal(raw, &v); err != nil {
+			return nil, fmt.Errorf("decode %s item: %w", key, err)
+		}
+		PT(&v).keepRaw(raw)
+		out = append(out, v)
 	}
 	return out, nil
 }
@@ -333,30 +348,7 @@ func (c *ExecClient) ListChats(ctx context.Context, activeFirstPage bool) ([]Raw
 	if err != nil {
 		return nil, err
 	}
-	return decodeChats(data, "items")
-}
-
-func decodeChats(data json.RawMessage, key string) ([]RawChat, error) {
-	var resp map[string]json.RawMessage
-	if err := json.Unmarshal(data, &resp); err != nil {
-		return nil, fmt.Errorf("decode chats: %w", err)
-	}
-	var items []json.RawMessage
-	if raw, ok := resp[key]; ok {
-		if err := json.Unmarshal(raw, &items); err != nil {
-			return nil, fmt.Errorf("decode chats.%s: %w", key, err)
-		}
-	}
-	out := make([]RawChat, 0, len(items))
-	for _, raw := range items {
-		var ch RawChat
-		if err := json.Unmarshal(raw, &ch); err != nil {
-			return nil, fmt.Errorf("decode chat item: %w", err)
-		}
-		ch.Raw = raw
-		out = append(out, ch)
-	}
-	return out, nil
+	return decodeItems[RawChat](data, "items")
 }
 
 func (c *ExecClient) MGetRendered(ctx context.Context, ids []string, download bool) ([]RenderedMessage, error) {
@@ -371,22 +363,7 @@ func (c *ExecClient) MGetRendered(ctx context.Context, ids []string, download bo
 	if err != nil {
 		return nil, err
 	}
-	var resp struct {
-		Messages []json.RawMessage `json:"messages"`
-	}
-	if err := json.Unmarshal(data, &resp); err != nil {
-		return nil, fmt.Errorf("decode rendered messages: %w", err)
-	}
-	out := make([]RenderedMessage, 0, len(resp.Messages))
-	for _, raw := range resp.Messages {
-		var m RenderedMessage
-		if err := json.Unmarshal(raw, &m); err != nil {
-			return nil, fmt.Errorf("decode rendered item: %w", err)
-		}
-		m.Raw = raw
-		out = append(out, m)
-	}
-	return out, nil
+	return decodeItems[RenderedMessage](data, "messages")
 }
 
 func (c *ExecClient) ReadStatus(ctx context.Context, ids []string) ([]ReadStatus, []string, error) {
@@ -468,7 +445,7 @@ func (c *ExecClient) SearchChats(ctx context.Context, query string) ([]RawChat, 
 	if err != nil {
 		return nil, err
 	}
-	return decodeChats(data, "chats")
+	return decodeItems[RawChat](data, "chats")
 }
 
 func (c *ExecClient) SendText(ctx context.Context, target Target, text, idempotencyKey string) (SentMessage, error) {
