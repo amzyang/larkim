@@ -199,6 +199,26 @@ func luma(c color.Color) float64 {
 	return 0.2126*float64(r) + 0.7152*float64(g) + 0.0722*float64(b)
 }
 
+func TestSearchHitAnchorsMessagePage(t *testing.T) {
+	m := sized(120, 36)
+	m.searching, m.focus, m.msgIdx = true, paneMessages, 0
+	m.searchResults = []store.Message{{MessageID: "om_old", ChatID: "oc_2", CreateMs: 123}}
+	m = m.notify("1 hit", false)
+	mm, _ := m.activate()
+	m = mm.(Model)
+	require.Equal(t, "oc_2", m.chatID)
+	require.Empty(t, m.notice, "the search notice does not outlive the search")
+	require.Equal(t, "om_old", m.pendingSelect)
+	require.EqualValues(t, 123, m.msgSince)
+	q := messageQuery("oc_2", 123)
+	require.EqualValues(t, 123, q.SinceMs)
+	require.False(t, q.Desc)
+	require.Greater(t, q.Limit, messagePageSize)
+	q = messageQuery("oc_2", 0)
+	require.True(t, q.Desc)
+	require.Equal(t, messagePageSize, q.Limit)
+}
+
 func TestStatusBarStaysOneLine(t *testing.T) {
 	m := sized(120, 36)
 	m = m.notify("no messages match "+strings.Repeat("z", 200), true)

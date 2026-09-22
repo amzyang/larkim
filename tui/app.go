@@ -54,11 +54,12 @@ type Model struct {
 	chatIdx    int
 	chatTop    int
 
-	chatID  string
-	msgs    []store.Message
-	msgIdx  int
-	msgTop  int // first visible line of the message pane
-	msgRows []msgRow
+	chatID   string
+	msgs     []store.Message
+	msgIdx   int
+	msgTop   int // first visible line of the message pane
+	msgRows  []msgRow
+	msgSince int64 // when set, the page starts here instead of at the newest messages
 
 	threadOpen bool
 	threadID   string
@@ -240,14 +241,18 @@ func (m Model) notify(text string, isErr bool) Model {
 	return m
 }
 
-func (m *Model) openChat(chatID string) tea.Cmd {
+func (m *Model) openChat(chatID string) tea.Cmd { return m.openChatFrom(chatID, 0) }
+
+// openChatFrom opens a chat; sinceMs > 0 anchors the message page at that
+// time so a search hit older than the newest page can be shown.
+func (m *Model) openChatFrom(chatID string, sinceMs int64) tea.Cmd {
 	m.searching, m.searchResults, m.searchQuery = false, nil, ""
-	m.chatID = chatID
+	m.chatID, m.msgSince = chatID, sinceMs
 	m.msgs, m.msgRows, m.msgIdx, m.msgTop = nil, nil, 0, 0
 	m.threadOpen, m.threadID, m.thread, m.threadRows = false, "", nil, nil
 	m.replyTo, m.inThrd = nil, false
 	m.selectCurrentChat()
-	return loadMessages(m.deps.Store, chatID)
+	return loadMessages(m.deps.Store, chatID, sinceMs)
 }
 
 // selectCurrentChat puts the cursor on the open chat within the visible list,
@@ -285,7 +290,7 @@ func (m *Model) openThread(threadID string) tea.Cmd {
 func (m Model) reloadCurrent() tea.Cmd {
 	cmds := []tea.Cmd{loadChats(m.deps.Store)}
 	if m.chatID != "" {
-		cmds = append(cmds, loadMessages(m.deps.Store, m.chatID))
+		cmds = append(cmds, loadMessages(m.deps.Store, m.chatID, m.msgSince))
 	}
 	if m.threadOpen {
 		cmds = append(cmds, loadThread(m.deps.Store, m.threadID))
@@ -307,7 +312,7 @@ func (m *Model) onChange(msgs []store.Message) tea.Cmd {
 		}
 	}
 	if touchedChat {
-		cmds = append(cmds, loadMessages(m.deps.Store, m.chatID))
+		cmds = append(cmds, loadMessages(m.deps.Store, m.chatID, m.msgSince))
 	}
 	if touchedThread {
 		cmds = append(cmds, loadThread(m.deps.Store, m.threadID))
@@ -643,7 +648,8 @@ func (m Model) activate() (tea.Model, tea.Cmd) {
 		if m.searching {
 			if sel, ok := m.selected(); ok {
 				m.pendingSelect = sel.MessageID
-				return m, m.openChat(sel.ChatID)
+				m.notice = ""
+				return m, m.openChatFrom(sel.ChatID, sel.CreateMs)
 			}
 			return m, nil
 		}

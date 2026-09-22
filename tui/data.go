@@ -31,10 +31,11 @@ type Deps struct {
 }
 
 const (
-	messagePageSize = 200
-	threadPageSize  = 500
-	watchEvery      = 500 * time.Millisecond
-	statusEvery     = 5 * time.Second
+	messagePageSize  = 200
+	anchoredPageSize = 2000 // from a search hit onwards
+	threadPageSize   = 500
+	watchEvery       = 500 * time.Millisecond
+	statusEvery      = 5 * time.Second
 )
 
 // Messages flowing back into Update.
@@ -94,13 +95,25 @@ func loadChats(st *store.Store) tea.Cmd {
 	}
 }
 
-func loadMessages(st *store.Store, chatID string) tea.Cmd {
+// messageQuery is the newest page of a chat or, anchored at sinceMs, every
+// message from that time on, so a search hit older than the page is included.
+func messageQuery(chatID string, sinceMs int64) store.MessageQuery {
+	if sinceMs > 0 {
+		return store.MessageQuery{ChatID: chatID, SinceMs: sinceMs, Limit: anchoredPageSize}
+	}
+	return store.MessageQuery{ChatID: chatID, Desc: true, Limit: messagePageSize}
+}
+
+func loadMessages(st *store.Store, chatID string, sinceMs int64) tea.Cmd {
+	q := messageQuery(chatID, sinceMs)
 	return func() tea.Msg {
-		rows, err := st.ListMessages(context.Background(), store.MessageQuery{ChatID: chatID, Desc: true, Limit: messagePageSize})
+		rows, err := st.ListMessages(context.Background(), q)
 		if err != nil {
 			return errMsg{err}
 		}
-		slices.Reverse(rows)
+		if q.Desc {
+			slices.Reverse(rows)
+		}
 		return messagesLoadedMsg{chatID: chatID, msgs: rows}
 	}
 }
