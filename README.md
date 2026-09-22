@@ -104,6 +104,6 @@ Release builds carry a Sentry DSN and report crashes and unexpected errors (neve
 ## Development
 
 ```sh
-make test
-make build && ./larkim --config ./dev.yaml sync
+just test
+just build && ./larkim --config ./dev.yaml sync
 ```
