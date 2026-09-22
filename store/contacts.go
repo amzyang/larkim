@@ -21,7 +21,7 @@ type Contact struct {
 
 const contactColumns = `open_id, name, email, is_bot, p2p_chat_id, avatar_url, avatar_path, updated_at, raw_json`
 
-func scanContact(sc interface{ Scan(...any) error }) (Contact, error) {
+func scanContact(sc scanner) (Contact, error) {
 	var c Contact
 	err := sc.Scan(&c.OpenID, &c.Name, &c.Email, &c.IsBot, &c.P2PChatID, &c.AvatarURL, &c.AvatarPath, &c.UpdatedAt, &c.RawJSON)
 	return c, err
@@ -57,20 +57,7 @@ func (s *Store) UpsertContacts(ctx context.Context, contacts []Contact, now int6
 
 // FindContacts returns contacts whose open_id, email or name equals ref (case-insensitive for email/name).
 func (s *Store) FindContacts(ctx context.Context, ref string) ([]Contact, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT `+contactColumns+` FROM contacts WHERE open_id = ? OR lower(email) = lower(?) OR name = ? ORDER BY name`, ref, ref, ref)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []Contact
-	for rows.Next() {
-		c, err := scanContact(rows)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, c)
-	}
-	return out, rows.Err()
+	return queryAll(ctx, s.db, scanContact, `SELECT `+contactColumns+` FROM contacts WHERE open_id = ? OR lower(email) = lower(?) OR name = ? ORDER BY name`, ref, ref, ref)
 }
 
 // ListContacts returns contacts matching an optional substring of name or email.
@@ -86,20 +73,7 @@ func (s *Store) ListContacts(ctx context.Context, search string, limit int) ([]C
 	}
 	q += ` ORDER BY name LIMIT ?`
 	args = append(args, limit)
-	rows, err := s.db.QueryContext(ctx, q, args...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []Contact
-	for rows.Next() {
-		c, err := scanContact(rows)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, c)
-	}
-	return out, rows.Err()
+	return queryAll(ctx, s.db, scanContact, q, args...)
 }
 
 // GetContact loads one contact.

@@ -21,7 +21,7 @@ type Resource struct {
 
 const resourceColumns = `message_id, file_key, type, local_path, size_bytes, status, attempts, next_attempt_at, last_error`
 
-func scanResource(sc interface{ Scan(...any) error }) (Resource, error) {
+func scanResource(sc scanner) (Resource, error) {
 	var r Resource
 	err := sc.Scan(&r.MessageID, &r.FileKey, &r.Type, &r.LocalPath, &r.SizeBytes, &r.Status, &r.Attempts, &r.NextAttemptAt, &r.LastError)
 	return r, err
@@ -67,80 +67,27 @@ func (s *Store) MarkResourceFailed(ctx context.Context, messageID, fileKey, reas
 // ResourceMessagesDue returns message ids with pending or retryable
 // resources, newest messages first.
 func (s *Store) ResourceMessagesDue(ctx context.Context, now int64, limit int) ([]string, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT DISTINCT r.message_id FROM resources r JOIN messages m ON m.message_id = r.message_id
+	return queryAll(ctx, s.db, scanOne[string], `SELECT DISTINCT r.message_id FROM resources r JOIN messages m ON m.message_id = r.message_id
  WHERE (r.status = 'pending' OR (r.status = 'failed' AND r.next_attempt_at > 0 AND r.next_attempt_at <= ?))
  ORDER BY m.create_ms DESC LIMIT ?`, now, limit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []string
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			return nil, err
-		}
-		out = append(out, id)
-	}
-	return out, rows.Err()
 }
 
 // ResourcesFor lists the resources of one message.
 func (s *Store) ResourcesFor(ctx context.Context, messageID string) ([]Resource, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT `+resourceColumns+` FROM resources WHERE message_id = ? ORDER BY file_key`, messageID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []Resource
-	for rows.Next() {
-		r, err := scanResource(rows)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, r)
-	}
-	return out, rows.Err()
+	return queryAll(ctx, s.db, scanResource, `SELECT `+resourceColumns+` FROM resources WHERE message_id = ? ORDER BY file_key`, messageID)
 }
 
 // ResourceCounts summarizes resource states.
 func (s *Store) ResourceCounts(ctx context.Context) (map[string]int64, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT status, count(*) FROM resources GROUP BY status`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := map[string]int64{}
-	for rows.Next() {
-		var st string
-		var n int64
-		if err := rows.Scan(&st, &n); err != nil {
-			return nil, err
-		}
-		out[st] = n
-	}
-	return out, rows.Err()
+	return queryCounts(ctx, s.db, `SELECT status, count(*) FROM resources GROUP BY status`)
 }
 
 // ReadStatusCandidates returns messages from others newer than sinceMs whose
 // remote read flag is unknown or unread and whose next check is due.
 func (s *Store) ReadStatusCandidates(ctx context.Context, self string, sinceMs, now int64, limit int) ([]string, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT m.message_id FROM messages m LEFT JOIN read_state r ON r.message_id = m.message_id
+	return queryAll(ctx, s.db, scanOne[string], `SELECT m.message_id `+messageFrom+`
  WHERE m.sender_id <> ? AND m.deleted = 0 AND m.create_ms > ? AND COALESCE(r.is_read_remote, 0) = 0 AND COALESCE(r.next_check_at, 0) <= ?
  ORDER BY m.create_ms DESC LIMIT ?`, self, sinceMs, now, limit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []string
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			return nil, err
-		}
-		out = append(out, id)
-	}
-	return out, rows.Err()
 }
 
 // SetReadStatus stores the remote read flag (nil = still unknown) and the
@@ -174,22 +121,8 @@ func (s *Store) UnreadCount(ctx context.Context) (int64, error) {
 // UnreadCountsByChat returns per-chat counts of messages Feishu reports as
 // unread by the user.
 func (s *Store) UnreadCountsByChat(ctx context.Context) (map[string]int64, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT m.chat_id, count(*) FROM messages m JOIN read_state r ON r.message_id = m.message_id
+	return queryCounts(ctx, s.db, `SELECT m.chat_id, count(*) FROM messages m JOIN read_state r ON r.message_id = m.message_id
  WHERE r.is_read_remote = 0 AND m.deleted = 0 GROUP BY m.chat_id`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := map[string]int64{}
-	for rows.Next() {
-		var id string
-		var n int64
-		if err := rows.Scan(&id, &n); err != nil {
-			return nil, err
-		}
-		out[id] = n
-	}
-	return out, rows.Err()
 }
 
 // ScanRow is a message summary for the resource back-scan.
@@ -204,19 +137,10 @@ type ScanRow struct {
 // rowID, oldest first, so resources of messages stored before downloads
 // existed can be registered.
 func (s *Store) MessagesAfterIDForScan(ctx context.Context, rowID int64, limit int) ([]ScanRow, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id, message_id, msg_type, content_raw FROM messages
- WHERE id > ? AND deleted = 0 AND msg_type IN ('image','file','audio','media','video','post') ORDER BY id LIMIT ?`, rowID, limit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []ScanRow
-	for rows.Next() {
+	return queryAll(ctx, s.db, func(sc scanner) (ScanRow, error) {
 		var r ScanRow
-		if err := rows.Scan(&r.ID, &r.MessageID, &r.MsgType, &r.ContentRaw); err != nil {
-			return nil, err
-		}
-		out = append(out, r)
-	}
-	return out, rows.Err()
+		err := sc.Scan(&r.ID, &r.MessageID, &r.MsgType, &r.ContentRaw)
+		return r, err
+	}, `SELECT id, message_id, msg_type, content_raw FROM messages
+ WHERE id > ? AND deleted = 0 AND msg_type IN ('image','file','audio','media','video','post') ORDER BY id LIMIT ?`, rowID, limit)
 }

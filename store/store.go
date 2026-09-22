@@ -7,6 +7,7 @@ import (
 	"context"
 	"database/sql"
 	"embed"
+	"errors"
 	"fmt"
 	"io/fs"
 	"sort"
@@ -17,6 +18,9 @@ import (
 
 //go:embed migrations/*.sql
 var migrations embed.FS
+
+// ErrNotFound is returned by single-row lookups.
+var ErrNotFound = errors.New("not found")
 
 // Store wraps one SQLite database.
 type Store struct {
@@ -45,24 +49,67 @@ func (s *Store) Close() error { return s.db.Close() }
 // DB exposes the underlying handle for ad-hoc read queries.
 func (s *Store) DB() *sql.DB { return s.db }
 
+// scanner is satisfied by *sql.Row and *sql.Rows.
+type scanner interface{ Scan(dest ...any) error }
+
+// scanOne scans a single-column row.
+func scanOne[T any](sc scanner) (T, error) {
+	var v T
+	err := sc.Scan(&v)
+	return v, err
+}
+
+// queryAll runs query and scans every row with scan.
+func queryAll[T any](ctx context.Context, db *sql.DB, scan func(scanner) (T, error), query string, args ...any) ([]T, error) {
+	rows, err := db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []T
+	for rows.Next() {
+		v, err := scan(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, v)
+	}
+	return out, rows.Err()
+}
+
+// queryCounts runs a (key, count) query into a map.
+func queryCounts(ctx context.Context, db *sql.DB, query string, args ...any) (map[string]int64, error) {
+	type kv struct {
+		k string
+		n int64
+	}
+	pairs, err := queryAll(ctx, db, func(sc scanner) (kv, error) {
+		var p kv
+		err := sc.Scan(&p.k, &p.n)
+		return p, err
+	}, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]int64, len(pairs))
+	for _, p := range pairs {
+		out[p.k] = p.n
+	}
+	return out, nil
+}
+
 func (s *Store) migrate(ctx context.Context) error {
 	if _, err := s.db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, applied_at INTEGER NOT NULL)`); err != nil {
 		return err
 	}
-	applied := map[int]bool{}
-	rows, err := s.db.QueryContext(ctx, `SELECT version FROM schema_migrations`)
+	versions, err := queryAll(ctx, s.db, scanOne[int], `SELECT version FROM schema_migrations`)
 	if err != nil {
 		return err
 	}
-	for rows.Next() {
-		var v int
-		if err := rows.Scan(&v); err != nil {
-			rows.Close()
-			return err
-		}
+	applied := map[int]bool{}
+	for _, v := range versions {
 		applied[v] = true
 	}
-	rows.Close()
 	for _, m := range migrationFiles() {
 		if applied[m.version] {
 			continue
@@ -158,20 +205,11 @@ func (s *Store) RecordRun(ctx context.Context, r Run) error {
 
 // LastRuns returns the newest n runs, newest first.
 func (s *Store) LastRuns(ctx context.Context, n int) ([]Run, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id, kind, started_at, finished_at, ok, fetched, upserted, error FROM sync_runs ORDER BY id DESC LIMIT ?`, n)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []Run
-	for rows.Next() {
+	return queryAll(ctx, s.db, func(sc scanner) (Run, error) {
 		var r Run
-		if err := rows.Scan(&r.ID, &r.Kind, &r.StartedAt, &r.FinishedAt, &r.OK, &r.Fetched, &r.Upserted, &r.Error); err != nil {
-			return nil, err
-		}
-		out = append(out, r)
-	}
-	return out, rows.Err()
+		err := sc.Scan(&r.ID, &r.Kind, &r.StartedAt, &r.FinishedAt, &r.OK, &r.Fetched, &r.Upserted, &r.Error)
+		return r, err
+	}, `SELECT id, kind, started_at, finished_at, ok, fetched, upserted, error FROM sync_runs ORDER BY id DESC LIMIT ?`, n)
 }
 
 // Counts summarizes table sizes for status output.

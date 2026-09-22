@@ -34,12 +34,14 @@ type Chat struct {
 	MessageCount  int64 `json:"message_count"`
 }
 
+// chatColumns selects from `chats c`; the derived columns are named so
+// callers can order by them.
 const chatColumns = `c.chat_id, c.name, c.description, c.chat_mode, c.chat_status, c.owner_id, c.external, c.p2p_target_id, c.p2p_target_type,
  c.avatar_url, c.avatar_path, c.cursor_ms, c.backfill_done_at, c.members_synced_at, c.first_seen_at, c.last_seen_at, c.left_at, c.sync_error, c.repaired_at, c.raw_json,
- COALESCE((SELECT max(create_ms) FROM messages m WHERE m.chat_id = c.chat_id), 0),
- (SELECT count(*) FROM messages m WHERE m.chat_id = c.chat_id)`
+ COALESCE((SELECT max(create_ms) FROM messages m WHERE m.chat_id = c.chat_id), 0) AS last_message_ms,
+ (SELECT count(*) FROM messages m WHERE m.chat_id = c.chat_id) AS message_count`
 
-func scanChat(sc interface{ Scan(...any) error }) (Chat, error) {
+func scanChat(sc scanner) (Chat, error) {
 	var c Chat
 	err := sc.Scan(&c.ChatID, &c.Name, &c.Description, &c.ChatMode, &c.ChatStatus, &c.OwnerID, &c.External, &c.P2PTargetID, &c.P2PTargetType,
 		&c.AvatarURL, &c.AvatarPath, &c.CursorMs, &c.BackfillDoneAt, &c.MembersSyncedAt, &c.FirstSeenAt, &c.LastSeenAt, &c.LeftAt, &c.SyncError, &c.RepairedAt, &c.RawJSON,
@@ -113,7 +115,7 @@ func (s *Store) SetChatSyncError(ctx context.Context, chatID, msg string, now in
 // already have discovered messages come first so active conversations fill in
 // before dormant ones.
 func (s *Store) ChatsNeedingBackfill(ctx context.Context, limit int) ([]Chat, error) {
-	return s.queryChats(ctx, `WHERE c.backfill_done_at = 0 AND c.left_at = 0 ORDER BY 21 DESC, c.last_seen_at DESC LIMIT ?`, limit)
+	return s.queryChats(ctx, `WHERE c.backfill_done_at = 0 AND c.left_at = 0 ORDER BY last_message_ms DESC, c.last_seen_at DESC LIMIT ?`, limit)
 }
 
 // GetChat loads one chat.
@@ -149,32 +151,19 @@ func (s *Store) ListChats(ctx context.Context, q ChatQuery) ([]Chat, error) {
 	if !q.IncludeLeft {
 		where = append(where, "c.left_at = 0")
 	}
-	sql := ""
+	tail := ""
 	if len(where) > 0 {
-		sql = "WHERE " + strings.Join(where, " AND ") + " "
+		tail = "WHERE " + strings.Join(where, " AND ") + " "
 	}
 	limit := q.Limit
 	if limit <= 0 {
 		limit = 1000
 	}
-	sql += "ORDER BY 21 DESC, c.name LIMIT ?"
+	tail += "ORDER BY last_message_ms DESC, c.name LIMIT ?"
 	args = append(args, limit)
-	return s.queryChats(ctx, sql, args...)
+	return s.queryChats(ctx, tail, args...)
 }
 
 func (s *Store) queryChats(ctx context.Context, tail string, args ...any) ([]Chat, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT `+chatColumns+` FROM chats c `+tail, args...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []Chat
-	for rows.Next() {
-		c, err := scanChat(rows)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, c)
-	}
-	return out, rows.Err()
+	return queryAll(ctx, s.db, scanChat, `SELECT `+chatColumns+` FROM chats c `+tail, args...)
 }

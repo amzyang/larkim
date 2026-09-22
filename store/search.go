@@ -23,7 +23,7 @@ func (s *Store) SearchMessages(ctx context.Context, query, chatID string, limit 
 	}
 	var where []string
 	var args []any
-	q := `SELECT ` + messageColumns + ` FROM messages m LEFT JOIN read_state r ON r.message_id = m.message_id`
+	q := `SELECT ` + messageColumns + ` ` + messageFrom
 	if len(ftsTerms) > 0 {
 		q = `SELECT ` + messageColumns + ` FROM messages_fts f JOIN messages m ON m.id = f.rowid LEFT JOIN read_state r ON r.message_id = m.message_id`
 		where = append(where, `messages_fts MATCH ?`)
@@ -43,27 +43,14 @@ func (s *Store) SearchMessages(ctx context.Context, query, chatID string, limit 
 	}
 	q += ` WHERE ` + strings.Join(where, " AND ") + ` ORDER BY m.create_ms DESC LIMIT ?`
 	args = append(args, limit)
-	rows, err := s.db.QueryContext(ctx, q, args...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []Message
-	for rows.Next() {
-		m, err := scanMessage(rows)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, m)
-	}
-	return out, rows.Err()
+	return queryAll(ctx, s.db, scanMessage, q, args...)
 }
 
 // ChatsForRepair returns chats with messages newer than sinceMs that were not
 // repaired since startedAt, most active first.
 func (s *Store) ChatsForRepair(ctx context.Context, sinceMs, startedAt int64, limit int) ([]Chat, error) {
 	return s.queryChats(ctx, `WHERE c.left_at = 0 AND c.sync_error = '' AND c.repaired_at < ?
- AND EXISTS (SELECT 1 FROM messages m WHERE m.chat_id = c.chat_id AND m.create_ms > ?) ORDER BY 21 DESC LIMIT ?`, startedAt, sinceMs, limit)
+ AND EXISTS (SELECT 1 FROM messages m WHERE m.chat_id = c.chat_id AND m.create_ms > ?) ORDER BY last_message_ms DESC LIMIT ?`, startedAt, sinceMs, limit)
 }
 
 // SetChatRepaired stamps a completed repair for a chat.
@@ -75,7 +62,7 @@ func (s *Store) SetChatRepaired(ctx context.Context, chatID string, now int64) e
 // ChatsNeedingMembers returns chats whose member list is older than beforeMs,
 // most recently active first.
 func (s *Store) ChatsNeedingMembers(ctx context.Context, beforeMs int64, limit int) ([]Chat, error) {
-	return s.queryChats(ctx, `WHERE c.left_at = 0 AND c.sync_error = '' AND c.chat_mode <> 'p2p' AND c.members_synced_at < ? ORDER BY 21 DESC LIMIT ?`, beforeMs, limit)
+	return s.queryChats(ctx, `WHERE c.left_at = 0 AND c.sync_error = '' AND c.chat_mode <> 'p2p' AND c.members_synced_at < ? ORDER BY last_message_ms DESC LIMIT ?`, beforeMs, limit)
 }
 
 // SetChatMembers replaces a chat's member list and stamps members_synced_at.
@@ -113,21 +100,8 @@ func (s *Store) ChatMemberCount(ctx context.Context, chatID string) (int64, erro
 // ContactsNeedingAvatar returns user contacts without an avatar URL that are
 // worth fetching: p2p partners and recent senders first.
 func (s *Store) ContactsNeedingAvatar(ctx context.Context, limit int) ([]Contact, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT `+contactColumns+` FROM contacts c WHERE c.is_bot = 0 AND c.avatar_url = ''
+	return queryAll(ctx, s.db, scanContact, `SELECT `+contactColumns+` FROM contacts c WHERE c.is_bot = 0 AND c.avatar_url = ''
  ORDER BY (SELECT max(create_ms) FROM messages m WHERE m.sender_id = c.open_id) DESC LIMIT ?`, limit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []Contact
-	for rows.Next() {
-		c, err := scanContact(rows)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, c)
-	}
-	return out, rows.Err()
 }
 
 // SetContactAvatar records the avatar URL of a contact.
@@ -145,23 +119,15 @@ const (
 
 // AvatarsToDownload lists chats and contacts whose avatar URL has no local copy yet.
 func (s *Store) AvatarsToDownload(ctx context.Context, limit int) (chats []Chat, contacts []Contact, err error) {
-	chats, err = s.queryChats(ctx, `WHERE c.avatar_url NOT IN ('', 'none') AND c.avatar_path = '' AND c.left_at = 0 ORDER BY 21 DESC LIMIT ?`, limit)
+	chats, err = s.queryChats(ctx, `WHERE c.avatar_url NOT IN ('', 'none') AND c.avatar_path = '' AND c.left_at = 0 ORDER BY last_message_ms DESC LIMIT ?`, limit)
 	if err != nil {
 		return nil, nil, err
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT `+contactColumns+` FROM contacts WHERE avatar_url NOT IN ('', 'none') AND avatar_path = '' LIMIT ?`, limit)
+	contacts, err = queryAll(ctx, s.db, scanContact, `SELECT `+contactColumns+` FROM contacts WHERE avatar_url NOT IN ('', 'none') AND avatar_path = '' LIMIT ?`, limit)
 	if err != nil {
 		return nil, nil, err
 	}
-	defer rows.Close()
-	for rows.Next() {
-		c, err := scanContact(rows)
-		if err != nil {
-			return nil, nil, err
-		}
-		contacts = append(contacts, c)
-	}
-	return chats, contacts, rows.Err()
+	return chats, contacts, nil
 }
 
 // SetChatAvatarPath / SetContactAvatarPath record a downloaded avatar

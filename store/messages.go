@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -42,7 +43,10 @@ const messageColumns = `m.id, m.message_id, m.chat_id, m.msg_type, m.sender_id, 
  m.thread_id, m.reply_to, m.mentions_json, m.reactions_json, m.raw_json, m.rendered_at, m.first_seen_at, m.last_seen_at,
  r.is_read_remote, COALESCE(r.consumed_at, 0)`
 
-func scanMessage(sc interface{ Scan(...any) error }) (Message, error) {
+// messageFrom is the FROM clause every message query selects messageColumns from.
+const messageFrom = `FROM messages m LEFT JOIN read_state r ON r.message_id = m.message_id`
+
+func scanMessage(sc scanner) (Message, error) {
 	var m Message
 	var isRead sql.NullBool
 	err := sc.Scan(&m.ID, &m.MessageID, &m.ChatID, &m.MsgType, &m.SenderID, &m.SenderType, &m.SenderName,
@@ -115,20 +119,7 @@ func (s *Store) UpdateRendered(ctx context.Context, messageID, content, mentions
 
 // UnrenderedMessageIDs returns up to limit message ids that still need rendering, oldest first.
 func (s *Store) UnrenderedMessageIDs(ctx context.Context, limit int) ([]string, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT message_id FROM messages WHERE rendered_at = 0 AND deleted = 0 ORDER BY create_ms DESC LIMIT ?`, limit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []string
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			return nil, err
-		}
-		out = append(out, id)
-	}
-	return out, rows.Err()
+	return queryAll(ctx, s.db, scanOne[string], `SELECT message_id FROM messages WHERE rendered_at = 0 AND deleted = 0 ORDER BY create_ms DESC LIMIT ?`, limit)
 }
 
 // UnknownMessageIDs filters ids down to those not yet stored, preserving order.
@@ -137,25 +128,19 @@ func (s *Store) UnknownMessageIDs(ctx context.Context, ids []string) ([]string, 
 		return nil, nil
 	}
 	known := map[string]bool{}
-	for chunk := range chunks(ids, 500) {
+	for chunk := range slices.Chunk(ids, 500) {
 		q := `SELECT message_id FROM messages WHERE message_id IN (?` + strings.Repeat(",?", len(chunk)-1) + `)`
 		args := make([]any, len(chunk))
 		for i, id := range chunk {
 			args[i] = id
 		}
-		rows, err := s.db.QueryContext(ctx, q, args...)
+		found, err := queryAll(ctx, s.db, scanOne[string], q, args...)
 		if err != nil {
 			return nil, err
 		}
-		for rows.Next() {
-			var id string
-			if err := rows.Scan(&id); err != nil {
-				rows.Close()
-				return nil, err
-			}
+		for _, id := range found {
 			known[id] = true
 		}
-		rows.Close()
 	}
 	var out []string
 	for _, id := range ids {
@@ -168,7 +153,7 @@ func (s *Store) UnknownMessageIDs(ctx context.Context, ids []string) ([]string, 
 
 // GetMessage loads one message by id.
 func (s *Store) GetMessage(ctx context.Context, messageID string) (Message, error) {
-	row := s.db.QueryRowContext(ctx, `SELECT `+messageColumns+` FROM messages m LEFT JOIN read_state r ON r.message_id = m.message_id WHERE m.message_id = ?`, messageID)
+	row := s.db.QueryRowContext(ctx, `SELECT `+messageColumns+` `+messageFrom+` WHERE m.message_id = ?`, messageID)
 	m, err := scanMessage(row)
 	if err == sql.ErrNoRows {
 		return m, ErrNotFound
@@ -224,35 +209,22 @@ func (s *Store) ListMessages(ctx context.Context, q MessageQuery) ([]Message, er
 	if q.Unconsumed {
 		add("COALESCE(r.consumed_at, 0) = 0")
 	}
-	sql := `SELECT ` + messageColumns + ` FROM messages m LEFT JOIN read_state r ON r.message_id = m.message_id`
+	query := `SELECT ` + messageColumns + ` ` + messageFrom
 	if len(where) > 0 {
-		sql += " WHERE " + strings.Join(where, " AND ")
+		query += " WHERE " + strings.Join(where, " AND ")
 	}
 	order := "ASC"
 	if q.Desc {
 		order = "DESC"
 	}
-	sql += fmt.Sprintf(" ORDER BY m.create_ms %s, m.message_position %s, m.id %s", order, order, order)
+	query += fmt.Sprintf(" ORDER BY m.create_ms %s, m.message_position %s, m.id %s", order, order, order)
 	limit := q.Limit
 	if limit <= 0 {
 		limit = 100
 	}
-	sql += " LIMIT ? OFFSET ?"
+	query += " LIMIT ? OFFSET ?"
 	args = append(args, limit, q.Offset)
-	rows, err := s.db.QueryContext(ctx, sql, args...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []Message
-	for rows.Next() {
-		m, err := scanMessage(rows)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, m)
-	}
-	return out, rows.Err()
+	return queryAll(ctx, s.db, scanMessage, query, args...)
 }
 
 // MaxMessageRowID returns the newest ingest id; consumers poll it to detect changes.
@@ -278,22 +250,4 @@ func (s *Store) MarkConsumed(ctx context.Context, ids []string, now int64) error
 		}
 	}
 	return tx.Commit()
-}
-
-// ErrNotFound is returned by single-row lookups.
-var ErrNotFound = errNotFound{}
-
-type errNotFound struct{}
-
-func (errNotFound) Error() string { return "not found" }
-
-func chunks[T any](xs []T, n int) func(yield func([]T) bool) {
-	return func(yield func([]T) bool) {
-		for i := 0; i < len(xs); i += n {
-			end := min(i+n, len(xs))
-			if !yield(xs[i:end]) {
-				return
-			}
-		}
-	}
 }

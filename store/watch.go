@@ -12,7 +12,7 @@ type Change struct {
 
 // MessagesAfterRowID returns messages ingested after rowID, oldest first.
 func (s *Store) MessagesAfterRowID(ctx context.Context, rowID int64, chatID string, limit int) ([]Message, error) {
-	q := `SELECT ` + messageColumns + ` FROM messages m LEFT JOIN read_state r ON r.message_id = m.message_id WHERE m.id > ?`
+	q := `SELECT ` + messageColumns + ` ` + messageFrom + ` WHERE m.id > ?`
 	args := []any{rowID}
 	if chatID != "" {
 		q += ` AND m.chat_id = ?`
@@ -23,20 +23,7 @@ func (s *Store) MessagesAfterRowID(ctx context.Context, rowID int64, chatID stri
 	}
 	q += ` ORDER BY m.id LIMIT ?`
 	args = append(args, limit)
-	rows, err := s.db.QueryContext(ctx, q, args...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []Message
-	for rows.Next() {
-		m, err := scanMessage(rows)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, m)
-	}
-	return out, rows.Err()
+	return queryAll(ctx, s.db, scanMessage, q, args...)
 }
 
 // Watch polls the ingest counter every interval and delivers newly stored
