@@ -179,7 +179,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case searchMsg:
 		m.searching, m.searchQuery, m.searchResults = true, msg.query, msg.msgs
 		m.msgIdx, m.msgTop = 0, 0
-		m.focus = paneMessages
+		m = m.focusMessages()
 		m.rebuildMessages()
 		if len(msg.msgs) == 0 {
 			return m.notify("no messages match "+msg.query, true), nil
@@ -412,8 +412,7 @@ func (m Model) onInsertKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "esc":
 		m.mode = modeNormal
 		m.input.Blur()
-		m.focus = paneMessages
-		return m, nil
+		return m.focusMessages(), nil
 	case "enter":
 		return m.submit()
 	}
@@ -642,8 +641,7 @@ func (m Model) move(n int) (tea.Model, tea.Cmd) {
 func (m Model) activate() (tea.Model, tea.Cmd) {
 	switch m.focus {
 	case paneChats:
-		m.focus = paneMessages
-		return m, nil
+		return m.focusMessages(), nil
 	case paneMessages:
 		if m.searching {
 			if sel, ok := m.selected(); ok {
@@ -723,7 +721,7 @@ func (m Model) runCommand(line string) (tea.Model, tea.Cmd) {
 		want := store.FoldName(rest)
 		for _, c := range m.chats {
 			if c.ChatID == rest || store.FoldName(c.Name) == want {
-				m.focus = paneMessages
+				m = m.focusMessages()
 				return m, m.openChat(c.ChatID)
 			}
 		}
@@ -824,6 +822,18 @@ func (m Model) onAIChunk(c ai.Chunk) (tea.Model, tea.Cmd) {
 	return m.notify("", false), nil
 }
 
+// focusMessages moves focus to the messages pane; on a folded layout the
+// right pane stood in for it, so that pane closes first.
+func (m Model) focusMessages() Model {
+	if m.foldRight() {
+		m.threadOpen, m.threadID, m.thread, m.threadRows = false, "", nil, nil
+		m.aiOpen, m.aiChan = false, nil
+		m.layout()
+	}
+	m.focus = paneMessages
+	return m
+}
+
 func (m Model) closeAI() Model {
 	m.aiOpen, m.aiChan = false, nil
 	if m.focus == paneThread {
@@ -854,7 +864,7 @@ func (m Model) onClick(ms tea.Mouse) (tea.Model, tea.Cmd) {
 		if idx >= 0 && idx < len(vis) {
 			m.chatIdx = idx
 			if vis[idx].ChatID != m.chatID || double {
-				m.focus = paneMessages
+				m = m.focusMessages()
 				return m, m.openChat(vis[idx].ChatID)
 			}
 		}

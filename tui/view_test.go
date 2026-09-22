@@ -169,6 +169,15 @@ func TestNarrowTerminalFoldsRightPane(t *testing.T) {
 	require.Equal(t, paneChats, m.focus, "h skips the hidden messages pane")
 }
 
+func TestOnInsertKey_EscOnFoldedLayoutShowsMessages(t *testing.T) {
+	m := withThread(sized(82, 35))
+	m.mode, m.focus = modeInsert, paneInput
+	mm, _ := m.onInsertKey(tea.KeyPressMsg{Code: tea.KeyEscape})
+	m = mm.(Model)
+	require.Equal(t, paneMessages, m.focus)
+	require.False(t, m.threadOpen, "the right pane that covered the messages closes")
+}
+
 func TestTooSmallTerminal(t *testing.T) {
 	m := sized(50, 10)
 	require.Contains(t, m.View().Content, "too small")
