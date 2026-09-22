@@ -130,13 +130,13 @@ func markConsumed(st *store.Store, msgs []store.Message) tea.Cmd {
 	}
 }
 
-func waitForChange(ch <-chan store.Change) tea.Cmd {
+func waitForChange(ch <-chan []store.Message) tea.Cmd {
 	return func() tea.Msg {
-		c, ok := <-ch
+		msgs, ok := <-ch
 		if !ok {
 			return nil
 		}
-		return changeMsg{c.Messages}
+		return changeMsg{msgs}
 	}
 }
 

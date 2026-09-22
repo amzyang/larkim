@@ -92,7 +92,7 @@ type Model struct {
 	pendingG   bool
 	lastClick  time.Time
 	lastClickY int
-	changes    <-chan store.Change
+	changes    <-chan []store.Message
 	cancel     context.CancelFunc
 }
 

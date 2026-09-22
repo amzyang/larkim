@@ -35,8 +35,8 @@ func (a *App) watchCmd() *cobra.Command {
 			}
 			enc := json.NewEncoder(a.Out)
 			enc.SetEscapeHTML(false)
-			for change := range st.Watch(ctx, every, chat) {
-				for _, m := range change.Messages {
+			for msgs := range st.Watch(ctx, every, chat) {
+				for _, m := range msgs {
 					if a.json() {
 						if err := enc.Encode(m); err != nil {
 							return err

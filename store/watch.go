@@ -5,11 +5,6 @@ import (
 	"time"
 )
 
-// Change reports messages ingested since the previous notification.
-type Change struct {
-	Messages []Message
-}
-
 // MessagesAfterRowID returns messages ingested after rowID, oldest first.
 func (s *Store) MessagesAfterRowID(ctx context.Context, rowID int64, chatID string, limit int) ([]Message, error) {
 	q := `SELECT ` + messageColumns + ` ` + messageFrom + ` WHERE m.id > ?`
@@ -26,11 +21,12 @@ func (s *Store) MessagesAfterRowID(ctx context.Context, rowID int64, chatID stri
 	return queryAll(ctx, s.db, scanMessage, q, args...)
 }
 
-// Watch polls the ingest counter every interval and delivers newly stored
-// messages (optionally for one chat) until ctx is done. Rendering may lag a
-// tick behind ingestion; consumers that need content re-read by message id.
-func (s *Store) Watch(ctx context.Context, every time.Duration, chatID string) <-chan Change {
-	ch := make(chan Change)
+// Watch polls the ingest counter every interval and delivers each batch of
+// newly stored messages (optionally for one chat) until ctx is done.
+// Rendering may lag a tick behind ingestion; consumers that need content
+// re-read by message id.
+func (s *Store) Watch(ctx context.Context, every time.Duration, chatID string) <-chan []Message {
+	ch := make(chan []Message)
 	go func() {
 		defer close(ch)
 		last, _ := s.MaxMessageRowID(ctx)
@@ -55,7 +51,7 @@ func (s *Store) Watch(ctx context.Context, every time.Duration, chatID string) <
 				continue
 			}
 			select {
-			case ch <- Change{Messages: msgs}:
+			case ch <- msgs:
 			case <-ctx.Done():
 				return
 			}
