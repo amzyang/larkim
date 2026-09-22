@@ -611,12 +611,14 @@ func (m Model) activate() (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		}
-		if sel, ok := m.selected(); ok && sel.ThreadID != "" {
+		sel, ok := m.selected()
+		if !ok {
+			return m, nil
+		}
+		if sel.ThreadID != "" {
 			return m.toggleThread()
 		}
-		if sel, ok := m.selected(); ok {
-			return m.startInsert(&sel, false)
-		}
+		return m.startInsert(&sel, false)
 	case paneThread:
 		if sel, ok := m.selected(); ok {
 			return m.startInsert(&sel, true)
@@ -768,8 +770,9 @@ func (m Model) onAIChunk(c ai.Chunk) (tea.Model, tea.Cmd) {
 	m.aiText += c.Text
 	if !c.Done {
 		// Follow the stream unless the user scrolled up.
-		if m.aiTop >= max(0, len(m.aiLines())-m.bodyHeight()+1)-3 {
-			m.aiTop = max(0, len(m.aiLines())-m.bodyHeight()+1)
+		bottom := max(0, len(m.aiLines())-m.bodyHeight()+1)
+		if m.aiTop >= bottom-3 {
+			m.aiTop = bottom
 		}
 		return m, waitForAI(m.aiChan)
 	}
@@ -799,11 +802,13 @@ func (m Model) onClick(ms tea.Mouse) (tea.Model, tea.Cmd) {
 	double := time.Since(m.lastClick) < 400*time.Millisecond && m.lastClickY == ms.Y
 	m.lastClick, m.lastClickY = time.Now(), ms.Y
 	p, row := m.hit(ms.X, ms.Y)
-	switch p {
-	case paneChats:
+	if p == paneChats || p == paneMessages || p == paneThread {
 		m.mode = modeNormal
 		m.input.Blur()
-		m.focus = paneChats
+		m.focus = p
+	}
+	switch p {
+	case paneChats:
 		vis := m.visibleChats()
 		idx := m.chatTop + row
 		if idx >= 0 && idx < len(vis) {
@@ -814,9 +819,6 @@ func (m Model) onClick(ms tea.Mouse) (tea.Model, tea.Cmd) {
 			}
 		}
 	case paneMessages:
-		m.mode = modeNormal
-		m.input.Blur()
-		m.focus = paneMessages
 		if idx := rowAt(m.msgRows, m.msgTop+row); idx >= 0 {
 			m.msgIdx = idx
 			if double {
@@ -824,9 +826,6 @@ func (m Model) onClick(ms tea.Mouse) (tea.Model, tea.Cmd) {
 			}
 		}
 	case paneThread:
-		m.mode = modeNormal
-		m.input.Blur()
-		m.focus = paneThread
 		if idx := rowAt(m.threadRows, m.threadTop+row); idx >= 0 {
 			m.threadIdx = idx
 			if double {

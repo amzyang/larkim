@@ -293,11 +293,7 @@ func (m Model) renderChats(h int) string {
 		}
 		line := fit(fmt.Sprintf("%s %s%s", stDim.Render(mark), truncate(name, w-3-lipgloss.Width(badge)), badge), w)
 		if i == m.chatIdx {
-			if m.focus == paneChats {
-				line = stSel.Render(line)
-			} else {
-				line = stSelInact.Render(line)
-			}
+			line = highlight(line, m.focus == paneChats)
 		}
 		lines = append(lines, line)
 	}
@@ -320,11 +316,7 @@ func (m Model) renderMessages(h int) string {
 		r := m.msgRows[i]
 		line := fit(r.text, w)
 		if r.idx == m.msgIdx {
-			if m.focus == paneMessages {
-				line = stSel.Render(line)
-			} else {
-				line = stSelInact.Render(line)
-			}
+			line = highlight(line, m.focus == paneMessages)
 		}
 		lines = append(lines, line)
 	}
@@ -382,11 +374,7 @@ func (m Model) renderThread(h int) string {
 		r := m.threadRows[i]
 		line := fit(r.text, w)
 		if r.idx == m.threadIdx {
-			if m.focus == paneThread {
-				line = stSel.Render(line)
-			} else {
-				line = stSelInact.Render(line)
-			}
+			line = highlight(line, m.focus == paneThread)
 		}
 		lines = append(lines, line)
 	}
@@ -430,6 +418,14 @@ func (m Model) renderStatus() string {
 		gap = 1
 	}
 	return stStatus.Width(m.width).Render(" " + left + strings.Repeat(" ", gap) + right)
+}
+
+// highlight marks the selected row, brighter when its pane has focus.
+func highlight(line string, focused bool) string {
+	if focused {
+		return stSel.Render(line)
+	}
+	return stSelInact.Render(line)
 }
 
 func truncate(s string, n int) string {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
+	"slices"
 	"strconv"
 	"time"
 
@@ -99,7 +100,7 @@ func loadMessages(st *store.Store, chatID string) tea.Cmd {
 		if err != nil {
 			return errMsg{err}
 		}
-		reverse(rows)
+		slices.Reverse(rows)
 		return messagesLoadedMsg{chatID: chatID, msgs: rows}
 	}
 }
@@ -140,22 +141,19 @@ func waitForChange(ch <-chan []store.Message) tea.Cmd {
 	}
 }
 
+func syncStatus(st *store.Store) tea.Msg {
+	ctx := context.Background()
+	status, _, _ := st.GetState(ctx, sync.KeyStatus)
+	lastErr, _, _ := st.GetState(ctx, sync.KeyLastError)
+	return syncStatusMsg{status: status, lastError: lastErr}
+}
+
 func pollSyncStatus(st *store.Store) tea.Cmd {
-	return tea.Tick(statusEvery, func(time.Time) tea.Msg {
-		ctx := context.Background()
-		status, _, _ := st.GetState(ctx, sync.KeyStatus)
-		lastErr, _, _ := st.GetState(ctx, sync.KeyLastError)
-		return syncStatusMsg{status: status, lastError: lastErr}
-	})
+	return tea.Tick(statusEvery, func(time.Time) tea.Msg { return syncStatus(st) })
 }
 
 func readSyncStatus(st *store.Store) tea.Cmd {
-	return func() tea.Msg {
-		ctx := context.Background()
-		status, _, _ := st.GetState(ctx, sync.KeyStatus)
-		lastErr, _, _ := st.GetState(ctx, sync.KeyLastError)
-		return syncStatusMsg{status: status, lastError: lastErr}
-	}
+	return func() tea.Msg { return syncStatus(st) }
 }
 
 // sendText sends to a chat and ingests the result so the message appears at once.
@@ -205,11 +203,5 @@ func openInFeishu(chatID string, position int64) tea.Cmd {
 			return errMsg{err}
 		}
 		return noticeMsg{"opened in Feishu"}
-	}
-}
-
-func reverse(rows []store.Message) {
-	for i, j := 0, len(rows)-1; i < j; i, j = i+1, j-1 {
-		rows[i], rows[j] = rows[j], rows[i]
 	}
 }
