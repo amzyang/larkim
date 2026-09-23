@@ -130,6 +130,43 @@ func senderContacts(msgs []larkcli.RawMessage) []store.Contact {
 	return out
 }
 
+// contactDetailsSlice resolves identity fields for a few contacts per tick.
+// It uses `contact +search-user`, which answers tenant-wide, unlike
+// contact/v3/users/{id} (see avatarsSlice) whose reach is the app's directory
+// scope.
+func (s *Syncer) contactDetailsSlice(ctx context.Context, now time.Time) (int, error) {
+	if s.Opt.ContactDetailsPerTick <= 0 {
+		return 0, nil
+	}
+	need, err := s.Store.ContactsNeedingDetail(ctx, s.Opt.ContactDetailsPerTick)
+	if err != nil || len(need) == 0 {
+		return 0, err
+	}
+	ids := make([]string, len(need))
+	for i, c := range need {
+		ids[i] = c.OpenID
+	}
+	users, err := s.Client.SearchUsers(ctx, "", ids)
+	if err != nil {
+		return 0, err
+	}
+	details := make([]store.ContactDetail, 0, len(users))
+	for _, u := range users {
+		details = append(details, store.ContactDetail{
+			OpenID:          u.OpenID,
+			Name:            u.Name,
+			Email:           u.Email,
+			EnterpriseEmail: u.EnterpriseEmail,
+			Department:      u.Department,
+			IsCrossTenant:   u.IsCrossTenant,
+		})
+	}
+	if err := s.Store.SetContactDetails(ctx, ids, details, now.UnixMilli()); err != nil {
+		return 0, err
+	}
+	return len(details), nil
+}
+
 // avatarsSlice resolves avatar URLs for contacts and downloads a few chat and
 // contact avatars per tick into resources/avatars/.
 func (s *Syncer) avatarsSlice(ctx context.Context, now time.Time) (int, error) {

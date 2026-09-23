@@ -81,6 +81,10 @@ FTS5 external-content index over `messages(content, sender_name)` with the trigr
 
 `contacts` caches users and bots seen as chat members or senders (`open_id`, `name`, `email`, `p2p_chat_id`, `avatar_url`, `avatar_path`). `avatar_url = 'none'` means the user has no fetchable avatar; `avatar_path = '-'` means the download failed and is not retried. `chat_members` maps `chat_id` → `member_id` with the time the membership was last confirmed; group member lists refresh daily.
 
+`enterprise_email`, `department` and `is_cross_tenant` come from a separate identity lookup, marked by `detail_checked_at`; a non-zero `detail_checked_at` with empty fields means the lookup ran and the tenant did not return that user. The number ending the `enterprise_email` local part (`chenjianwei01`) is the tenant's own disambiguator for same-named colleagues.
+
+Avatar coverage depends on the app's directory scope: users outside it keep `avatar_url = 'none'`, because the only endpoint carrying avatar URLs rejects them. The identity fields have no such limit.
+
 ## sync_state, sync_runs
 
 `sync_state` is a key/value table: `watermark_ms` (end of the last fully searched window), `self_open_id`, `status` (`running` / `needs_login` / `error`), `last_error`, `last_tick_at`, `chats_refreshed_at`, `slow_path_at`. `sync_runs` keeps the newest 1000 ticks with timing, counts and error text.

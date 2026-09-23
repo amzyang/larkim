@@ -400,14 +400,29 @@ func (c *ExecClient) ChatMembers(ctx context.Context, chatID string) ([]ChatMemb
 	return resp.Items, nil
 }
 
+// MaxUserIDsPerSearch is how many ids one `+search-user --user-ids` call
+// resolves. The flag accepts 100, but the server answers at most this many and
+// sets has_more, and the shortcut has no pagination.
+const MaxUserIDsPerSearch = 20
+
 func (c *ExecClient) SearchUsers(ctx context.Context, query string, ids []string) ([]User, error) {
-	args := []string{"contact", "+search-user"}
-	if len(ids) > 0 {
-		args = append(args, "--user-ids", strings.Join(ids, ","))
-	} else {
-		args = append(args, "--query", query)
+	if len(ids) == 0 {
+		return c.searchUsers(ctx, "--query", query)
 	}
-	data, err := c.run(ctx, args...)
+	var out []User
+	for start := 0; start < len(ids); start += MaxUserIDsPerSearch {
+		batch := ids[start:min(start+MaxUserIDsPerSearch, len(ids))]
+		users, err := c.searchUsers(ctx, "--user-ids", strings.Join(batch, ","))
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, users...)
+	}
+	return out, nil
+}
+
+func (c *ExecClient) searchUsers(ctx context.Context, flag, value string) ([]User, error) {
+	data, err := c.run(ctx, "contact", "+search-user", flag, value)
 	if err != nil {
 		return nil, err
 	}

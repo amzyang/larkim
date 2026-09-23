@@ -39,6 +39,9 @@ type Options struct {
 	RepairPerTick     int
 	MembersPerTick    int
 	AvatarsPerTick    int
+	// ContactDetailsPerTick bounds one tick's identity backfill; SearchUsers
+	// splits it into as many `+search-user` calls as it needs.
+	ContactDetailsPerTick int
 	// DataDir is where lark-cli downloads land (resources/ below it); empty
 	// disables downloads.
 	DataDir string
@@ -49,22 +52,23 @@ type Options struct {
 // OptionsFrom maps the user config onto loop options.
 func OptionsFrom(cfg config.Config) Options {
 	return Options{
-		PollInterval:      cfg.PollInterval,
-		Overlap:           cfg.Overlap,
-		ChatsRefreshEvery: cfg.ChatsRefreshEvery,
-		SlowPathEvery:     cfg.SlowPathEvery,
-		BackfillDays:      cfg.BackfillDays,
-		ActiveTopK:        cfg.ActiveTopK,
-		BackfillPerTick:   10,
-		RenderPerTick:     4,
-		DownloadPerTick:   1,
-		ReadStatusPerTick: 4,
-		RepairEvery:       cfg.RepairEvery,
-		RepairPerTick:     3,
-		MembersPerTick:    2,
-		AvatarsPerTick:    5,
-		DataDir:           cfg.DataDir,
-		MaxBytes:          cfg.Resources.MaxBytes,
+		PollInterval:          cfg.PollInterval,
+		Overlap:               cfg.Overlap,
+		ChatsRefreshEvery:     cfg.ChatsRefreshEvery,
+		SlowPathEvery:         cfg.SlowPathEvery,
+		BackfillDays:          cfg.BackfillDays,
+		ActiveTopK:            cfg.ActiveTopK,
+		BackfillPerTick:       10,
+		RenderPerTick:         4,
+		DownloadPerTick:       1,
+		ReadStatusPerTick:     4,
+		RepairEvery:           cfg.RepairEvery,
+		RepairPerTick:         3,
+		MembersPerTick:        2,
+		AvatarsPerTick:        5,
+		ContactDetailsPerTick: larkcli.MaxUserIDsPerSearch,
+		DataDir:               cfg.DataDir,
+		MaxBytes:              cfg.Resources.MaxBytes,
 	}
 }
 
@@ -122,6 +126,7 @@ type Report struct {
 	Repaired   int // messages re-listed by the repair pass
 	Members    int // chat members recorded
 	Avatars    int // avatar files stored
+	Contacts   int // contacts whose identity fields were resolved
 }
 
 func (s *Syncer) log() *slog.Logger {
@@ -255,6 +260,9 @@ func (s *Syncer) tick(ctx context.Context, now time.Time) (Report, error) {
 	}
 	if rep.Avatars, err = s.avatarsSlice(ctx, now); err != nil {
 		return rep, fmt.Errorf("avatars: %w", err)
+	}
+	if rep.Contacts, err = s.contactDetailsSlice(ctx, now); err != nil {
+		return rep, fmt.Errorf("contact details: %w", err)
 	}
 	return rep, nil
 }

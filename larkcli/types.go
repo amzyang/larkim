@@ -113,12 +113,17 @@ type ChatMember struct {
 	Name       string `json:"name"`
 }
 
-// User is one entry of `contact +search-user`.
+// User is one entry of `contact +search-user`. EnterpriseEmail carries the
+// tenant account name, whose numeric suffix is how Feishu tells same-named
+// colleagues apart.
 type User struct {
-	OpenID    string `json:"open_id"`
-	Name      string `json:"localized_name"`
-	Email     string `json:"email"`
-	P2PChatID string `json:"p2p_chat_id"`
+	OpenID          string `json:"open_id"`
+	Name            string `json:"localized_name"`
+	Email           string `json:"email"`
+	EnterpriseEmail string `json:"enterprise_email"`
+	Department      string `json:"department"`
+	IsCrossTenant   bool   `json:"is_cross_tenant"`
+	P2PChatID       string `json:"p2p_chat_id"`
 }
 
 // UserDetail is the contact card of one user (GET /contact/v3/users/{id}).

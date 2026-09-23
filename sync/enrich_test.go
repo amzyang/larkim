@@ -75,3 +75,41 @@ func TestTick_RepairPassRelistsActiveChats(t *testing.T) {
 	got, _ := s.Store.GetMessage(ctx, "om_1")
 	require.True(t, got.Deleted)
 }
+
+func TestTick_ResolvesContactDetailsForP2PPartners(t *testing.T) {
+	s, f, clk := newSyncer(t)
+	ctx := context.Background()
+	f.Chats = []larkcli.RawChat{{ChatID: "oc_p", Name: "陈建伟", ChatMode: "p2p", P2PTargetID: "ou_cjw", P2PTargetType: "user"}}
+	f.Users = []larkcli.User{{
+		OpenID: "ou_cjw", Name: "陈建伟", Email: "chenjianwei01@gaotu.cn",
+		EnterpriseEmail: "chenjianwei01@gaotu.cn", Department: "产品部", P2PChatID: "oc_p",
+	}}
+	m := msg("om_1", "oc_p", clk.t.Add(-time.Minute), "hi")
+	m.Sender = larkcli.RawSender{ID: "ou_cjw", SenderType: "user", SenderName: "陈建伟"}
+	f.AddMessage(m)
+
+	rep, err := s.Tick(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1, rep.Contacts)
+
+	c, err := s.Store.GetContact(ctx, "ou_cjw")
+	require.NoError(t, err)
+	require.Equal(t, "01", c.AccountSuffix(), "the account suffix disambiguates same-named colleagues")
+	require.Equal(t, "产品部", c.Department)
+}
+
+func TestTick_DoesNotReAskForContactsTheSearchOmitted(t *testing.T) {
+	s, f, clk := newSyncer(t)
+	ctx := context.Background()
+	f.Chats = []larkcli.RawChat{{ChatID: "oc_p", Name: "Gone", ChatMode: "p2p", P2PTargetID: "ou_gone", P2PTargetType: "user"}}
+	m := msg("om_1", "oc_p", clk.t.Add(-time.Minute), "hi")
+	m.Sender = larkcli.RawSender{ID: "ou_gone", SenderType: "user", SenderName: "Gone"}
+	f.AddMessage(m)
+
+	_, err := s.Tick(ctx)
+	require.NoError(t, err)
+
+	need, err := s.Store.ContactsNeedingDetail(ctx, 10)
+	require.NoError(t, err)
+	require.Empty(t, need, "an id the search cannot resolve is marked checked, not retried every tick")
+}

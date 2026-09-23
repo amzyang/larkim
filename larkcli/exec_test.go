@@ -2,8 +2,10 @@ package larkcli
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -174,4 +176,47 @@ func TestChildEnv_PrependsHomebrewPath(t *testing.T) {
 	require.Contains(t, env, "PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin")
 	env = childEnv([]string{"HOME=/x"})
 	require.Contains(t, env, "PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin")
+}
+
+func TestSearchUsers_SplitsIDsIntoServerSizedBatches(t *testing.T) {
+	c := fakeBinary(t, `
+echo "$*" >> "$(dirname "$0")/calls"
+n=0
+for id in $(echo "$4" | tr ',' ' '); do
+  n=$((n+1))
+  [ $n -gt 1 ] && printf ,
+  printf '{"open_id":"%s","localized_name":"u","enterprise_email":"%s01@x.cn"}' "$id" "$id"
+done > "$(dirname "$0")/users"
+printf '{"ok":true,"identity":"user","data":{"users":[%s]}}' "$(cat "$(dirname "$0")/users")"`)
+	ids := make([]string, 45)
+	for i := range ids {
+		ids[i] = fmt.Sprintf("ou_%02d", i)
+	}
+	users, err := c.SearchUsers(context.Background(), "", ids)
+	require.NoError(t, err)
+	require.Len(t, users, len(ids), "every id is resolved across batches")
+	require.Equal(t, "ou_00", users[0].OpenID)
+	require.Equal(t, "ou_0001@x.cn", users[0].EnterpriseEmail)
+	require.Equal(t, "ou_44", users[len(users)-1].OpenID)
+
+	calls, err := os.ReadFile(filepath.Join(c.Dir, "calls"))
+	require.NoError(t, err)
+	lines := strings.Split(strings.TrimSpace(string(calls)), "\n")
+	require.Len(t, lines, 3, "45 ids split into batches of %d", MaxUserIDsPerSearch)
+	require.Equal(t, MaxUserIDsPerSearch, strings.Count(lines[0], ",")+1)
+	require.Equal(t, 5, strings.Count(lines[2], ",")+1, "last batch holds the remainder")
+}
+
+func TestSearchUsers_QueryModeSendsOneCall(t *testing.T) {
+	c := fakeBinary(t, `
+echo "$*" >> "$(dirname "$0")/calls"
+echo '{"ok":true,"identity":"user","data":{"users":[{"open_id":"ou_1","localized_name":"陈建伟","enterprise_email":"chenjianwei01@gaotu.cn","department":"产品部"}]}}'`)
+	users, err := c.SearchUsers(context.Background(), "陈建伟", nil)
+	require.NoError(t, err)
+	require.Len(t, users, 1)
+	require.Equal(t, "产品部", users[0].Department)
+
+	calls, err := os.ReadFile(filepath.Join(c.Dir, "calls"))
+	require.NoError(t, err)
+	require.Contains(t, string(calls), "--query 陈建伟")
 }
