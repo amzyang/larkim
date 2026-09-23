@@ -53,36 +53,33 @@ func TestKittyAvatars_PlaceholderCellsSpanTheAvatarColumn(t *testing.T) {
 	require.NotEqual(t, top, bottom, "each line names its own row of the picture")
 }
 
-func TestKittyAvatars_FallsBackWhenThereIsNoPictureToDraw(t *testing.T) {
+func TestKittyAvatars_DrawsAPictureWhenThereIsNoFile(t *testing.T) {
 	dir := t.TempDir()
 	k := newKittyAvatars(dir)
 	for _, tc := range []struct {
 		name string
 		chat store.Chat
 	}{
-		{"no avatar at all", store.Chat{ChatID: "oc_1", Name: "群"}},
-		{"peer has none", store.Chat{ChatID: "oc_2", Name: "人", ChatMode: "p2p", PeerAvatarPath: store.AvatarNone}},
-		{"download gave up", store.Chat{ChatID: "oc_3", Name: "人", ChatMode: "p2p", PeerAvatarPath: store.AvatarFailed}},
-		{"file is not an image", store.Chat{ChatID: "oc_4", Name: "群", AvatarPath: "missing.webp"}},
+		{"no avatar at all", store.Chat{ChatID: "oc_1", Name: "程序化养号"}},
+		{"peer has none", store.Chat{ChatID: "oc_2", Name: "王将", ChatMode: "p2p", PeerAvatarPath: store.AvatarNone}},
+		{"download gave up", store.Chat{ChatID: "oc_3", Name: "严萍", ChatMode: "p2p", PeerAvatarPath: store.AvatarFailed}},
+		{"file is not an image", store.Chat{ChatID: "oc_4", Name: "灵创告警群", AvatarPath: "missing.webp"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			require.Empty(t, k.prepare([]store.Chat{tc.chat}))
-			top, bottom := k.cells(tc.chat)
-			wantTop, wantBottom := avatarBlock(tc.chat)
-			require.Equal(t, wantTop, top)
-			require.Equal(t, wantBottom, bottom)
+			require.NotEmpty(t, k.prepare([]store.Chat{tc.chat}), "a chat with no file still gets a drawn one")
+			top, _ := k.cells(tc.chat)
+			require.Equal(t, avatarWidth, strings.Count(top, string(kitty.Placeholder)))
 		})
 	}
 }
 
-func TestKittyAvatars_DecodesABrokenFileOnlyOnce(t *testing.T) {
+func TestKittyAvatars_TransmitsEachChatOnlyOnce(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "bad.png"), []byte("not a png"), 0o644))
 	k := newKittyAvatars(dir)
 	c := store.Chat{ChatID: "oc_1", Name: "群", AvatarPath: "bad.png"}
 
-	require.Empty(t, k.prepare([]store.Chat{c}))
-	require.True(t, k.failed["oc_1"])
+	require.NotEmpty(t, k.prepare([]store.Chat{c}), "an unreadable file falls through to a drawn picture")
 	require.NoError(t, os.Remove(filepath.Join(dir, "bad.png")))
 	require.Empty(t, k.prepare([]store.Chat{c}), "the second pass never opens the file again")
 }
@@ -125,4 +122,58 @@ func TestModelAvatarPrepare_OnlyCoversWhatIsOnScreen(t *testing.T) {
 	require.Len(t, k.id, 2*m.chatListHeight(),
 		"the viewport plus the screen below it, not every chat in the store")
 	require.Less(t, len(k.id), len(m.chats))
+}
+
+func TestInitials_SkipsTheDecorationGroupNamesOpenWith(t *testing.T) {
+	for _, tc := range []struct{ name, want string }{
+		{"程序化养号", "程序化养"},
+		{"【语言】灵创问题及需求沟通群", "语言灵创"},
+		{"H程序化直播暖场", "H程序化"},
+		{"陈建伟", "陈建伟"},
+		{"王将", "王将"},
+		{"- _ ·", ""},
+		{"", ""},
+	} {
+		require.Equal(t, tc.want, initials(tc.name), "name %q", tc.name)
+	}
+}
+
+func TestGlyphCell_LaysGlyphsOutByCount(t *testing.T) {
+	half := avatarPixels / 2
+	require.Equal(t, image.Rect(0, 0, avatarPixels, avatarPixels), glyphCell(1, 0),
+		"one glyph owns the whole square")
+
+	require.Equal(t, image.Rect(0, 0, half, avatarPixels), glyphCell(2, 0))
+	require.Equal(t, image.Rect(half, 0, avatarPixels, avatarPixels), glyphCell(2, 1),
+		"two sit side by side")
+
+	require.Equal(t, image.Rect(0, 0, half, half), glyphCell(4, 0))
+	require.Equal(t, image.Rect(half, 0, avatarPixels, half), glyphCell(4, 1))
+	require.Equal(t, image.Rect(0, half, half, avatarPixels), glyphCell(4, 2))
+	require.Equal(t, image.Rect(half, half, avatarPixels, avatarPixels), glyphCell(4, 3),
+		"four fill a 2x2 grid, reading order")
+}
+
+func TestGenerateAvatar_InksTheGlyphsOntoTheBackground(t *testing.T) {
+	if avatarFont() == nil {
+		t.Skip("no system font on this machine")
+	}
+	m := generateAvatar("程序化养号", 0)
+	require.NotNil(t, m)
+	require.Equal(t, image.Rect(0, 0, avatarPixels, avatarPixels), m.Bounds())
+
+	// The glyphs are white on a coloured square, so count the fully white pixels.
+	rgba := m.(*image.RGBA)
+	white := 0
+	for i := 0; i < len(rgba.Pix); i += 4 {
+		if rgba.Pix[i] == 0xFF && rgba.Pix[i+1] == 0xFF && rgba.Pix[i+2] == 0xFF {
+			white++
+		}
+	}
+	require.Greater(t, white, 200, "four glyphs leave a visible amount of ink")
+
+	plain := generateAvatar("", 0).(*image.RGBA)
+	for i := 0; i < len(plain.Pix); i += 4 {
+		require.NotEqual(t, uint8(0xFF), plain.Pix[i], "a nameless chat gets a bare colour square")
+	}
 }

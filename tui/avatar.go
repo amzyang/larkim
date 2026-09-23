@@ -34,7 +34,7 @@ const (
 	// avatarPixels is the transmitted size. The terminal scales it to
 	// avatarWidth x chatRowHeight cells, so this only has to be big enough
 	// not to look soft.
-	avatarPixels = 64
+	avatarPixels = 128
 	// kittyIDBase and kittyIDs bound the image ids. The id travels in the
 	// cell's foreground colour as a 256-colour index, and indices under 16
 	// are named colours a palette downgrade could fold together.
@@ -106,11 +106,12 @@ func (k *kittyAvatars) prepare(chats []store.Chat) string {
 			k.used[c.ChatID] = k.clock
 			continue
 		}
-		if k.failed[c.ChatID] || c.AvatarFile() == "" {
+		if k.failed[c.ChatID] {
 			continue
 		}
-		img, err := loadAvatar(filepath.Join(k.dataDir, c.AvatarFile()))
-		if err != nil {
+		img := k.picture(c)
+		if img == nil {
+			// No file and no font: the colour block takes over.
 			k.failed[c.ChatID] = true
 			continue
 		}
@@ -125,6 +126,18 @@ func (k *kittyAvatars) prepare(chats []store.Chat) string {
 		}
 	}
 	return out.String()
+}
+
+// picture is the chat's own avatar file, or one drawn from its name when
+// there is no file to read — a chat with no picture still deserves to look
+// like the ones that have one.
+func (k *kittyAvatars) picture(c store.Chat) image.Image {
+	if f := c.AvatarFile(); f != "" {
+		if img, err := loadAvatar(filepath.Join(k.dataDir, f)); err == nil {
+			return img
+		}
+	}
+	return generateAvatar(c.Name, chatHash(c.ChatID))
 }
 
 // take assigns an image id to chatID, reclaiming the least recently prepared

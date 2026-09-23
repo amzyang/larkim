@@ -28,6 +28,13 @@ type chatRow struct {
 // chatTextWidth is how much of a w-wide pane the text half of a row gets.
 func chatTextWidth(w int) int { return max(minTitleWidth, w-avatarWidth-avatarGap) }
 
+// chatHash is a chat's stable colour seed, so it always looks the same.
+func chatHash(chatID string) uint32 {
+	h := fnv.New32a()
+	h.Write([]byte(chatID))
+	return h.Sum32()
+}
+
 // avatarPalette are the ANSI colours a chat's block can take. White on any of
 // these reads on every terminal theme, which a computed shade would not.
 var avatarPalette = []string{"1", "2", "3", "4", "5", "6"}
@@ -36,11 +43,9 @@ var avatarPalette = []string{"1", "2", "3", "4", "5", "6"}
 // block carrying the chat's initial, shaded from the chat id so a chat always
 // looks the same.
 func avatarBlock(c store.Chat) (string, string) {
-	h := fnv.New32a()
-	h.Write([]byte(c.ChatID))
 	st := lipgloss.NewStyle().Bold(true).
 		Foreground(lipgloss.Color("15")).
-		Background(lipgloss.Color(avatarPalette[int(h.Sum32())%len(avatarPalette)]))
+		Background(lipgloss.Color(avatarPalette[int(chatHash(c.ChatID))%len(avatarPalette)]))
 
 	initial := "?"
 	for _, r := range flatten(c.Name) {
