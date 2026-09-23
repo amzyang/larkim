@@ -206,7 +206,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.chatID == "" && len(m.chats) > 0 {
 			return m, m.openChat(m.chats[0].ChatID)
 		}
-		m.clampChat()
+		m.repinChat()
 		return m, nil
 	case messagesLoadedMsg:
 		if msg.chatID != m.chatID {
@@ -314,16 +314,36 @@ func (m *Model) openChatFrom(chatID string, sinceMs int64) tea.Cmd {
 // selectCurrentChat puts the cursor on the open chat within the visible list,
 // dropping a filter that would hide it.
 func (m *Model) selectCurrentChat() {
-	isOpen := func(c store.Chat) bool { return c.ChatID == m.chatID }
-	idx := slices.IndexFunc(m.visibleChats(), isOpen)
+	idx := indexOfChat(m.visibleChats(), m.chatID)
 	if idx < 0 && m.chatFilter != "" {
 		m.chatFilter = ""
-		idx = slices.IndexFunc(m.visibleChats(), isOpen)
+		idx = indexOfChat(m.visibleChats(), m.chatID)
 	}
 	if idx >= 0 {
 		m.chatIdx = idx
 	}
 	m.clampChat()
+}
+
+// repinChat keeps the cursor on the open chat after a reload reordered the
+// list. Chats sort by their newest message, so a message in any chat can move
+// the row the cursor sits on; an index kept across the swap would follow the
+// row rather than the chat. A filter being typed owns the cursor instead, and
+// has no open chat to pin to yet.
+func (m *Model) repinChat() {
+	if m.mode != modeFilter {
+		if idx := indexOfChat(m.visibleChats(), m.chatID); idx >= 0 {
+			m.chatIdx = idx
+		}
+	}
+	m.clampChat()
+}
+
+func indexOfChat(chats []store.Chat, chatID string) int {
+	if chatID == "" {
+		return -1
+	}
+	return slices.IndexFunc(chats, func(c store.Chat) bool { return c.ChatID == chatID })
 }
 
 // openHighlighted loads the chat under the cursor unless it is already open.

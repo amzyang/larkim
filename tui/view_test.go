@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"image/color"
+	"slices"
 	"strings"
 	"testing"
 
@@ -238,4 +239,26 @@ func TestRenderStatus_StaysOneLine(t *testing.T) {
 	s := m.renderStatus()
 	require.Equal(t, 1, lipgloss.Height(s))
 	require.Equal(t, m.width, lipgloss.Width(s))
+}
+
+func TestChatsLoaded_CursorFollowsTheOpenChat(t *testing.T) {
+	m := sized(120, 36)
+	m.chatID = "oc_3"
+	m.repinChat()
+	require.Equal(t, "oc_3", m.visibleChats()[m.chatIdx].ChatID)
+
+	// A message in another chat re-sorts the list; the cursor belongs to the
+	// chat, not to the row it happened to be on.
+	reordered := append([]store.Chat{m.chats[7]}, slices.Delete(slices.Clone(m.chats), 7, 8)...)
+	mm, _ := m.update(chatsLoadedMsg{chats: reordered})
+	m = mm.(Model)
+	require.Equal(t, "oc_3", m.visibleChats()[m.chatIdx].ChatID)
+}
+
+func TestChatsLoaded_FilterBeingTypedKeepsItsCursor(t *testing.T) {
+	m := sized(120, 36)
+	m.chatID, m.mode, m.chatFilter, m.chatIdx = "oc_3", modeFilter, "群 1", 2
+	mm, _ := m.update(chatsLoadedMsg{chats: m.chats})
+	m = mm.(Model)
+	require.Equal(t, 2, m.chatIdx)
 }
