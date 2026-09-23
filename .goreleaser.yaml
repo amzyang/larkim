@@ -1,0 +1,74 @@
+# yaml-language-server: $schema=https://goreleaser.com/static/schema.json
+version: 2
+project_name: larkim
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: larkim
+    main: ./cmd/larkim
+    binary: larkim
+    env:
+      - CGO_ENABLED=0
+    goos: [darwin, linux]
+    goarch: [amd64, arm64]
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X main.version={{ .Version }}
+      # envOrDefault: an unset SENTRY_DSN (local snapshot, forks) yields an empty
+      # string, which disables telemetry instead of failing the build.
+      - -X main.sentryDSN={{ envOrDefault "SENTRY_DSN" "" }}
+
+archives:
+  - id: larkim
+    ids: [larkim]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    formats: [tar.gz]
+    files:
+      - README.md
+      - LICENSE
+
+checksum:
+  name_template: "checksums.txt"
+  algorithm: sha256
+
+changelog:
+  use: github
+  sort: asc
+  filters:
+    exclude:
+      - '^docs(\(.*\))?!?:'
+      - '^test(\(.*\))?!?:'
+      - '^chore(\(.*\))?!?:'
+      - '^ci(\(.*\))?!?:'
+      - "Merge "
+
+brews:
+  - name: larkim
+    ids: [larkim]
+    repository:
+      owner: amzyang
+      name: homebrew-tap
+      branch: main
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    directory: Formula
+    homepage: "https://github.com/amzyang/larkim"
+    description: "Feishu/Lark IM synced to local SQLite: background daemon, CLI and TUI"
+    license: MIT
+    caveats: |
+      larkim drives the official lark-cli for authentication and API access:
+        npm install -g @larksuite/cli
+        lark-cli auth login --domain im,contact
+      Then start the sync service:
+        brew services start larkim
+    service: |
+      run [opt_bin/"larkim", "daemon", "run"]
+      keep_alive true
+      log_path var/"log/larkim.log"
+      error_log_path var/"log/larkim.log"
+    test: |
+      system "#{bin}/larkim", "--version"

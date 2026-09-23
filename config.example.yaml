@@ -1,0 +1,42 @@
+# larkim configuration. Copy to ~/.larkim/config.yaml and edit; every key is
+# optional and falls back to the value shown here.
+
+# Database, attachments and the daemon lock live here.
+data_dir: ~/.larkim
+
+# Empty tries /opt/homebrew/bin/lark-cli, then $PATH.
+lark_cli_path: ""
+
+# Pause between daemon ticks; values below 1s are raised to 1s.
+poll_interval: 3s
+
+# How far each search window reaches behind the watermark, to absorb the
+# search index's own latency (measured around 10s).
+overlap: 2m
+
+# Bound on the initial history pull per chat.
+backfill_days: 30
+
+# How many of the most active chats the slow path reconciles.
+active_top_k: 30
+
+# Full chat listing, including per-chat mute settings.
+chats_refresh_every: 10m
+
+# Reconciliation of the active chats from their cursors; catches what the
+# search index misses.
+slow_path_every: 10m
+
+# Re-list the chats active in the last week so edits and recalls land.
+repair_every: 6h
+
+resources:
+  # Skip attachments larger than this; 0 means unlimited.
+  max_bytes: 52428800 # 50 MiB
+
+ai:
+  model: claude-opus-5
+  # Environment variable holding the Anthropic API key.
+  api_key_env: ANTHROPIC_API_KEY
+  # Recent messages handed to the assistant.
+  context: 80
