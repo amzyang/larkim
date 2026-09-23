@@ -43,6 +43,11 @@ type Chat struct {
 	LastRenderedAt int64  `json:"last_rendered_at,omitempty"`
 	LastDeleted    bool   `json:"last_deleted,omitempty"`
 
+	// Muted is the user's do-not-disturb setting, which only a lookup of its
+	// own reports; MuteCheckedAt stamps that lookup's last answer.
+	Muted         bool  `json:"muted,omitempty"`
+	MuteCheckedAt int64 `json:"mute_checked_at,omitempty"`
+
 	// Derived for listings.
 	MessageCount int64 `json:"message_count"`
 	// PeerAccount is the p2p peer's tenant account address; empty for groups
@@ -75,6 +80,7 @@ func (c Chat) AvatarFile() string {
 const chatColumns = `c.chat_id, c.name, c.description, c.chat_mode, c.chat_status, c.owner_id, c.external, c.p2p_target_id, c.p2p_target_type,
  c.avatar_url, c.avatar_path, c.cursor_ms, c.backfill_done_at, c.members_synced_at, c.first_seen_at, c.last_seen_at, c.left_at, c.sync_error, c.repaired_at, c.raw_json,
  c.last_message_id, c.last_message_ms, c.last_sender_id, c.last_sender_name, c.last_sender_type, c.last_msg_type, c.last_content, c.last_content_raw, c.last_rendered_at, c.last_deleted,
+ c.muted, c.mute_checked_at,
  (SELECT count(*) FROM messages m WHERE m.chat_id = c.chat_id) AS message_count,
  COALESCE(NULLIF(ct.enterprise_email, ''), ct.email, '') AS peer_account,
  COALESCE(ct.avatar_path, '') AS peer_avatar_path`
@@ -84,6 +90,7 @@ func scanChat(sc scanner) (Chat, error) {
 	err := sc.Scan(&c.ChatID, &c.Name, &c.Description, &c.ChatMode, &c.ChatStatus, &c.OwnerID, &c.External, &c.P2PTargetID, &c.P2PTargetType,
 		&c.AvatarURL, &c.AvatarPath, &c.CursorMs, &c.BackfillDoneAt, &c.MembersSyncedAt, &c.FirstSeenAt, &c.LastSeenAt, &c.LeftAt, &c.SyncError, &c.RepairedAt, &c.RawJSON,
 		&c.LastMessageID, &c.LastMessageMs, &c.LastSenderID, &c.LastSenderName, &c.LastSenderType, &c.LastMsgType, &c.LastContent, &c.LastContentRaw, &c.LastRenderedAt, &c.LastDeleted,
+		&c.Muted, &c.MuteCheckedAt,
 		&c.MessageCount, &c.PeerAccount, &c.PeerAvatarPath)
 	return c, err
 }
@@ -155,6 +162,38 @@ func (s *Store) SetChatSyncError(ctx context.Context, chatID, msg string, now in
 // before dormant ones.
 func (s *Store) ChatsNeedingBackfill(ctx context.Context, limit int) ([]Chat, error) {
 	return s.queryChats(ctx, `WHERE c.backfill_done_at = 0 AND c.left_at = 0 ORDER BY c.last_message_ms DESC, c.last_seen_at DESC LIMIT ?`, limit)
+}
+
+// ChatsNeedingMute returns up to limit chats whose do-not-disturb setting has
+// not been looked up since beforeMs, least recently checked first so a run
+// bounded by the API's batch size still comes round to every one of them.
+// Chats with nothing since activeAfterMs are left out: the list only marks
+// conversations a person is still reading.
+func (s *Store) ChatsNeedingMute(ctx context.Context, activeAfterMs, beforeMs int64, limit int) ([]Chat, error) {
+	return s.queryChats(ctx, `WHERE c.left_at = 0 AND c.last_message_ms >= ? AND c.mute_checked_at < ?
+ ORDER BY c.mute_checked_at, c.last_message_ms DESC LIMIT ?`, activeAfterMs, beforeMs, limit)
+}
+
+// SetMuteStatus records a mute lookup. unknown are the chats it declined to
+// answer for; they keep their last known setting but are stamped all the
+// same, so one unanswerable chat cannot hold the rotation in place.
+func (s *Store) SetMuteStatus(ctx context.Context, muted map[string]bool, unknown []string, now int64) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for chatID, m := range muted {
+		if _, err := tx.ExecContext(ctx, `UPDATE chats SET muted = ?, mute_checked_at = ? WHERE chat_id = ?`, m, now, chatID); err != nil {
+			return fmt.Errorf("set mute %s: %w", chatID, err)
+		}
+	}
+	for _, chatID := range unknown {
+		if _, err := tx.ExecContext(ctx, `UPDATE chats SET mute_checked_at = ? WHERE chat_id = ?`, now, chatID); err != nil {
+			return fmt.Errorf("stamp mute %s: %w", chatID, err)
+		}
+	}
+	return tx.Commit()
 }
 
 // GetChat loads one chat.

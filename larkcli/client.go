@@ -28,6 +28,10 @@ type Client interface {
 	ReadStatus(ctx context.Context, ids []string) (items []ReadStatus, invalid []string, err error)
 	// ChatMembers lists user members of a chat.
 	ChatMembers(ctx context.Context, chatID string) ([]ChatMember, error)
+	// MuteStatus reports the user's do-not-disturb setting per chat. unknown
+	// carries the chats the API declined to answer for, which a caller must
+	// not read as "not muted".
+	MuteStatus(ctx context.Context, chatIDs []string) (muted map[string]bool, unknown []string, err error)
 	// SearchUsers finds users by keyword (name or email) or by open_id list.
 	SearchUsers(ctx context.Context, query string, ids []string) ([]User, error)
 	// AppDetail fetches one app's name and icon, which is how a bot's

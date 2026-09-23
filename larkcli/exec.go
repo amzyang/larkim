@@ -407,6 +407,45 @@ func (c *ExecClient) ChatMembers(ctx context.Context, chatID string) ([]ChatMemb
 	return resp.Items, nil
 }
 
+// MaxChatIDsPerMuteCall is the upstream cap on one mute lookup.
+const MaxChatIDsPerMuteCall = 100
+
+// MuteStatus reads do-not-disturb, which no chat listing carries and lark-cli
+// only exposes as a filter, so it goes through the raw API. The setting
+// belongs to the signed-in user; under bot identity the endpoint has no data
+// at all, which is why this rides the user identity every other call uses.
+func (c *ExecClient) MuteStatus(ctx context.Context, chatIDs []string) (map[string]bool, []string, error) {
+	muted := map[string]bool{}
+	var unknown []string
+	for start := 0; start < len(chatIDs); start += MaxChatIDsPerMuteCall {
+		batch := chatIDs[start:min(start+MaxChatIDsPerMuteCall, len(chatIDs))]
+		data, err := c.run(ctx, "api", "POST", "/open-apis/im/v1/chat_user_setting/batch_get_mute_status",
+			"--data", jsonArg(map[string]any{"chat_ids": batch}))
+		if err != nil {
+			return nil, nil, err
+		}
+		var resp struct {
+			Items []struct {
+				ChatID  string `json:"chat_id"`
+				IsMuted bool   `json:"is_muted"`
+			} `json:"items"`
+			Invalid []struct {
+				ID string `json:"id"`
+			} `json:"invalid_id_list"`
+		}
+		if err := json.Unmarshal(data, &resp); err != nil {
+			return nil, nil, fmt.Errorf("decode mute status: %w", err)
+		}
+		for _, it := range resp.Items {
+			muted[it.ChatID] = it.IsMuted
+		}
+		for _, it := range resp.Invalid {
+			unknown = append(unknown, it.ID)
+		}
+	}
+	return muted, unknown, nil
+}
+
 // MaxUserIDsPerSearch is how many ids one `+search-user --user-ids` call
 // resolves. The flag accepts 100, but the server answers at most this many and
 // sets has_more, and the shortcut has no pagination.

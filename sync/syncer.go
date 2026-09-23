@@ -125,6 +125,7 @@ type Report struct {
 	ReadChecks int // read-status answers recorded
 	Repaired   int // messages re-listed by the repair pass
 	Members    int // chat members recorded
+	Muted      int // chats whose do-not-disturb setting was answered
 	Avatars    int // avatar files stored
 	Contacts   int // contacts whose identity fields were resolved
 }
@@ -205,13 +206,16 @@ func (s *Syncer) tick(ctx context.Context, now time.Time) (Report, error) {
 	}
 	rep.History = n
 
-	// 2. Full chat listing.
+	// 2. Full chat listing, and the per-user settings it does not carry.
 	if Due(s.stateTime(ctx, KeyChatsRefreshed), s.Opt.ChatsRefreshEvery, now) {
 		n, err := s.refreshChats(ctx, now)
 		if err != nil {
 			return rep, fmt.Errorf("chats: %w", err)
 		}
 		rep.Chats = n
+		if rep.Muted, err = s.muteSlice(ctx, now); err != nil {
+			return rep, fmt.Errorf("mute: %w", err)
+		}
 	}
 
 	// 3. Slow path: reconcile the most active chats.
@@ -416,6 +420,33 @@ func ToRow(m larkcli.RawMessage) store.Message {
 		MessagePosition: int64(m.MessagePosition), Updated: m.Updated, Deleted: m.Deleted,
 		ThreadID: m.ThreadID, ReplyTo: m.ParentID, RawJSON: string(m.Raw),
 	}
+}
+
+// muteActiveDays bounds the mute lookup to chats recent enough for the list
+// to mark. Older ones keep whatever was last known.
+const muteActiveDays = 30
+
+// muteSlice refreshes do-not-disturb for the chats that have gone longest
+// without an answer. One call covers the API's whole batch, so the slice is a
+// single round trip; chats beyond it come round on the next refresh.
+func (s *Syncer) muteSlice(ctx context.Context, now time.Time) (int, error) {
+	active := now.AddDate(0, 0, -muteActiveDays).UnixMilli()
+	chats, err := s.Store.ChatsNeedingMute(ctx, active, now.Add(-s.Opt.ChatsRefreshEvery).UnixMilli(), larkcli.MaxChatIDsPerMuteCall)
+	if err != nil || len(chats) == 0 {
+		return 0, err
+	}
+	ids := make([]string, 0, len(chats))
+	for _, c := range chats {
+		ids = append(ids, c.ChatID)
+	}
+	muted, unknown, err := s.Client.MuteStatus(ctx, ids)
+	if err != nil {
+		return 0, err
+	}
+	if err := s.Store.SetMuteStatus(ctx, muted, unknown, now.UnixMilli()); err != nil {
+		return 0, err
+	}
+	return len(muted), nil
 }
 
 func (s *Syncer) refreshChats(ctx context.Context, now time.Time) (int, error) {

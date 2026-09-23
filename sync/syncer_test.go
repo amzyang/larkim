@@ -226,3 +226,35 @@ func TestBackfill_PermanentChatErrorIsRecordedAndSkipped(t *testing.T) {
 	_, err = s.Tick(ctx)
 	require.Error(t, err)
 }
+
+func TestTick_MuteRidesTheChatRefresh(t *testing.T) {
+	s, f, clk := newSyncer(t)
+	ctx := context.Background()
+	now := clk.t
+	f.Chats = []larkcli.RawChat{
+		{ChatID: "oc_a", Name: "Alpha", ChatMode: "group"},
+		{ChatID: "oc_b", Name: "Beta", ChatMode: "group"},
+	}
+	f.Muted = map[string]bool{"oc_a": true}
+	f.AddMessage(msg("om_a", "oc_a", now.Add(-time.Minute), "hi"))
+	f.AddMessage(msg("om_b", "oc_b", now.Add(-time.Minute), "hi"))
+
+	rep, err := s.Tick(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 2, rep.Muted)
+
+	chats, err := s.Store.ListChats(ctx, store.ChatQuery{})
+	require.NoError(t, err)
+	byID := map[string]store.Chat{}
+	for _, c := range chats {
+		byID[c.ChatID] = c
+	}
+	require.True(t, byID["oc_a"].Muted)
+	require.False(t, byID["oc_b"].Muted)
+	require.Equal(t, now.UnixMilli(), byID["oc_a"].MuteCheckedAt)
+
+	clk.t = clk.t.Add(time.Minute)
+	rep, err = s.Tick(ctx)
+	require.NoError(t, err)
+	require.Zero(t, rep.Muted, "the lookup is paced by the chat refresh it rides")
+}

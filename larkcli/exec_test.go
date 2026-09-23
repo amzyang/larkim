@@ -257,3 +257,40 @@ echo '{"ok":true,"identity":"user","data":{"items":[]}}'`)
 	require.Len(t, strings.Split(strings.TrimSpace(string(calls)), "\n"), 2,
 		"%d ids need a second call", len(ids))
 }
+
+func TestMuteStatus_KeepsUnansweredChatsApartFromUnmutedOnes(t *testing.T) {
+	c := fakeBinary(t, `
+echo "$*" >> "$(dirname "$0")/calls"
+echo '{"ok":true,"identity":"user","data":{"items":[{"chat_id":"oc_a","is_muted":true},{"chat_id":"oc_b","is_muted":false}],"invalid_id_list":[{"id":"oc_x","msg":"not a member"}]}}'`)
+
+	muted, unknown, err := c.MuteStatus(context.Background(), []string{"oc_a", "oc_b", "oc_x"})
+	require.NoError(t, err)
+	require.Equal(t, map[string]bool{"oc_a": true, "oc_b": false}, muted)
+	require.Equal(t, []string{"oc_x"}, unknown, "a chat the API would not answer for is not an unmuted one")
+
+	calls, err := os.ReadFile(filepath.Join(c.Dir, "calls"))
+	require.NoError(t, err)
+	require.Contains(t, string(calls), "POST /open-apis/im/v1/chat_user_setting/batch_get_mute_status")
+	require.Contains(t, string(calls), `{"chat_ids":["oc_a","oc_b","oc_x"]}`)
+	require.Contains(t, string(calls), "--as user", "mute is a per-user setting; a bot has no answer to give")
+}
+
+func TestMuteStatus_SplitsIDsIntoServerSizedBatches(t *testing.T) {
+	c := fakeBinary(t, `
+echo "$*" >> "$(dirname "$0")/calls"
+echo '{"ok":true,"identity":"user","data":{"items":[]}}'`)
+	ids := make([]string, MaxChatIDsPerMuteCall+5)
+	for i := range ids {
+		ids[i] = fmt.Sprintf("oc_%03d", i)
+	}
+
+	_, _, err := c.MuteStatus(context.Background(), ids)
+	require.NoError(t, err)
+
+	calls, err := os.ReadFile(filepath.Join(c.Dir, "calls"))
+	require.NoError(t, err)
+	lines := strings.Split(strings.TrimSpace(string(calls)), "\n")
+	require.Len(t, lines, 2, "%d ids do not fit one call of %d", len(ids), MaxChatIDsPerMuteCall)
+	require.Equal(t, MaxChatIDsPerMuteCall, strings.Count(lines[0], ",")+1)
+	require.Equal(t, 5, strings.Count(lines[1], ",")+1, "the last call holds the remainder")
+}

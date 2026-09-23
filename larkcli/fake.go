@@ -20,10 +20,13 @@ type Fake struct {
 	// Resources are returned by MGetRendered with download=true.
 	Resources map[string][]Resource
 	Read      map[string]bool
-	Members   map[string][]ChatMember
-	Users     []User
-	Details   map[string]UserDetail
-	Self      Identity
+	// Muted answers MuteStatus for chats in Chats; one that is listed
+	// nowhere comes back unknown, as a chat the user is not a member of does.
+	Muted   map[string]bool
+	Members map[string][]ChatMember
+	Users   []User
+	Details map[string]UserDetail
+	Self    Identity
 	// Truncate makes SearchMessageIDs report truncation when a window holds
 	// more than this many hits (0 disables).
 	Truncate int
@@ -46,6 +49,7 @@ func NewFake() *Fake {
 		Rendered:  map[string]RenderedMessage{},
 		Resources: map[string][]Resource{},
 		Read:      map[string]bool{},
+		Muted:     map[string]bool{},
 		Members:   map[string][]ChatMember{},
 		Details:   map[string]UserDetail{},
 		Apps:      map[string]AppDetail{},
@@ -194,6 +198,28 @@ func (f *Fake) ReadStatus(_ context.Context, ids []string) ([]ReadStatus, []stri
 		items = append(items, ReadStatus{MessageID: id, IsRead: f.Read[id]})
 	}
 	return items, invalid, nil
+}
+
+func (f *Fake) MuteStatus(_ context.Context, chatIDs []string) (map[string]bool, []string, error) {
+	if err := f.record("mute-status"); err != nil {
+		return nil, nil, err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	known := map[string]bool{}
+	for _, c := range f.Chats {
+		known[c.ChatID] = true
+	}
+	muted := map[string]bool{}
+	var unknown []string
+	for _, id := range chatIDs {
+		if !known[id] {
+			unknown = append(unknown, id)
+			continue
+		}
+		muted[id] = f.Muted[id]
+	}
+	return muted, unknown, nil
 }
 
 func (f *Fake) ChatMembers(_ context.Context, chatID string) ([]ChatMember, error) {

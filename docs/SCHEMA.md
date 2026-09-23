@@ -26,8 +26,11 @@ One row per chat the user is (or was) in, from `GET /im/v1/chats` with `types=p2
 | `last_sender_id`, `last_sender_name`, `last_sender_type` | that message's sender |
 | `last_msg_type`, `last_content`, `last_content_raw` | that message's type and body; `last_content` is empty until `last_rendered_at` is set, and stays empty for types that render to nothing (`system`) |
 | `last_rendered_at`, `last_deleted` | that message's rendering state and recall flag |
+| `muted`, `mute_checked_at` | the user's do-not-disturb setting and when it was last answered; 0 means it has never been asked |
 
 A chat first seen only through a message (before the next full listing) exists with an empty name.
+
+`muted` comes from `POST /im/v1/chat_user_setting/batch_get_mute_status` under user identity, since no chat listing carries it. The lookup rides the full chat refresh, covers at most 100 chats per round and only those with a message in the last 30 days, taking the longest unanswered first. Chats the API declines to answer for (non-member, malformed id) keep their previous `muted` and are stamped all the same, so `mute_checked_at` says when a chat was last asked about, not that the answer changed.
 
 The `last_*` columns mirror the newest message whose `message_position` is non-negative, so the list shows what the chat's main flow shows: thread replies are excluded, thread roots are not. `UpsertMessages` and `UpdateRendered` rewrite them in their own transaction, which covers ingest, edits, recalls and rendering. Order chats by `last_message_ms` rather than an aggregate over `messages`.
 
