@@ -8,6 +8,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - CLI: 设计参数时必须考虑 shell 自动补全（命令、子命令、flag、参数值）
 - TUI: 交互设计必须考虑补全（输入时的候选提示与选择）
 
+## Architecture
+
+- 单人自用工具，不分发：除持久化的数据与状态（SQLite 已落盘数据、`dev.yaml` 配置、`docs/SCHEMA.md` 对外契约）外，只要能重建就不考虑向后兼容，直接用最简单直接的策略
+- 派生物（FTS 索引、汇总/缓存表、TUI 状态、构建产物）坏了就重建或重新 sync，不写兼容层、不留迁移期 fallback
+- 运行环境只考虑本机（macOS + kitty + 已安装的 lark-cli），不为其他 OS、终端、Go 版本或未安装依赖做适配，除非需求明确要求
+
 ## Commands
 
 - Build: `just build`（输出 `./larkim`）；Test: `just test`；Vet: `just vet`
