@@ -164,3 +164,36 @@ func TestRenderChats_HoldsTogetherAtTheNarrowestSupportedWidth(t *testing.T) {
 	}
 	require.NotPanics(t, func() { m.View() })
 }
+
+// badgedAvatars stands in for the picture renderer once the picture carries
+// the unread counter itself.
+type badgedAvatars struct{}
+
+func (badgedAvatars) cells(store.Chat, int64) (string, string, bool) {
+	return "····", "····", true
+}
+func (badgedAvatars) prepare([]store.Chat, map[string]int64) string { return "" }
+
+func TestRenderChatRow_LeavesTheCountToAPictureThatCarriesIt(t *testing.T) {
+	c := store.Chat{ChatID: "oc_1", Name: "Alpha", ChatMode: "group",
+		LastMessageID: "om_1", LastMessageMs: at(-time.Hour), LastSenderName: "Bob", LastContent: "hi"}
+
+	on := ansi.Strip(renderChatRow(badgedAvatars{}, c, 12, "ou_me", testNow, 40).top)
+	require.NotContains(t, on, "12", "the avatar shows it, so the title line keeps the room")
+
+	off, _ := plainRow(c, 12, 40)
+	require.Contains(t, off, "12", "a colour block carries nothing, so the number stays in the text")
+}
+
+func TestRenderChatRow_MarksAMutedChat(t *testing.T) {
+	c := store.Chat{ChatID: "oc_1", Name: "Alpha", ChatMode: "group",
+		LastMessageID: "om_1", LastMessageMs: at(-time.Hour), LastSenderName: "Bob", LastContent: "hi"}
+
+	_, bottom := plainRow(c, 0, 40)
+	require.NotContains(t, bottom, muteGlyph)
+
+	c.Muted = true
+	row := renderChatRow(textAvatars{}, c, 0, "ou_me", testNow, 40)
+	require.Contains(t, ansi.Strip(row.bottom), muteGlyph, "a muted chat with nothing unread still says so")
+	require.Equal(t, chatTextWidth(40), lipgloss.Width(row.bottom), "and the mark stays inside the row")
+}

@@ -5,6 +5,7 @@ import (
 	"image/color"
 	"math"
 	"os"
+	"strconv"
 	"sync"
 
 	"golang.org/x/image/font"
@@ -58,15 +59,20 @@ var avatarFont = sync.OnceValue(func() *sfnt.Font {
 // avatarFace builds a face at the size one glyph gets, which depends on how
 // many share the square and how large that square is on screen.
 func avatarFace(glyphs, side int) font.Face {
-	f := avatarFont()
-	if f == nil {
-		return nil
-	}
 	size := float64(side) * 0.56 // one glyph, alone
 	if glyphs > 1 {
 		size = float64(side) * 0.33 // a 2x2 cell, clear of the rounded edge
 	}
-	face, err := opentype.NewFace(f, &opentype.FaceOptions{Size: size, DPI: 72, Hinting: font.HintingFull})
+	return faceAt(size)
+}
+
+// faceAt builds a face whose em box is px pixels tall.
+func faceAt(px float64) font.Face {
+	f := avatarFont()
+	if f == nil {
+		return nil
+	}
+	face, err := opentype.NewFace(f, &opentype.FaceOptions{Size: px, DPI: 72, Hinting: font.HintingFull})
 	if err != nil {
 		return nil
 	}
@@ -88,7 +94,7 @@ func parseFace(b []byte) (*sfnt.Font, error) {
 // generateAvatar draws a stand-in picture for a chat with no avatar file: a
 // colour square carrying the first characters of its name. Returns nil when
 // no usable font was found, which leaves the colour block in charge.
-func generateAvatar(name string, hash uint32, w, h int) image.Image {
+func generateAvatar(name string, hash uint32, w, h int) *image.RGBA {
 	text := []rune(initials(name))
 	face := avatarFace(len(text), min(w, h))
 	if face == nil {
@@ -192,4 +198,98 @@ func isAvatarPunct(r rune) bool {
 		return true
 	}
 	return r == ' '
+}
+
+// badgeRed is the unread counter's disc; badgeGrey replaces it when the chat
+// is on do-not-disturb. Both are the Feishu client's own shades, sampled from
+// it, so the two windows read as the same product.
+var (
+	badgeRed  = color.RGBA{R: 0xFF, G: 0x4E, B: 0x4C, A: 0xFF}
+	badgeGrey = color.RGBA{R: 0xBC, G: 0xC0, B: 0xC5, A: 0xFF}
+)
+
+const (
+	// badgeHeight is the counter's height as a share of the avatar's shorter
+	// side. Larger swallows the picture it sits on; smaller cannot hold two
+	// digits. The shorter side is what keeps the proportion when a terminal's
+	// cells make the avatar box an oblong rather than a square.
+	badgeHeight = 0.40
+	// badgeGlyph is the digit size inside that height.
+	badgeGlyph = 0.78
+	// badgePad is the width one digit beyond the first adds, so a pill keeps
+	// the same air around its text that the circle has.
+	badgePad = 0.45
+	// badgeRing is the gap cleared around the counter, in pixels. The
+	// terminal shows through it, which is what separates the counter from a
+	// picture of any colour.
+	badgeRing = 1.5
+)
+
+// badgeLabel is what the counter carries: the count up to 99, "99+" beyond,
+// nothing when there is nothing unread.
+func badgeLabel(n int64) string {
+	switch {
+	case n <= 0:
+		return ""
+	case n > 99:
+		return "99+"
+	default:
+		return strconv.FormatInt(n, 10)
+	}
+}
+
+// drawBadge stamps the unread counter onto the picture's top-right corner,
+// widening from a circle into a pill when the digits need it. It reports
+// whether it drew, because the row repeats the number in its text half when
+// the picture could not carry it.
+func drawBadge(m *image.RGBA, n int64, muted bool) bool {
+	label := badgeLabel(n)
+	if label == "" {
+		return false
+	}
+	b := m.Bounds()
+	h := math.Min(float64(b.Dx()), float64(b.Dy())) * badgeHeight
+	face := faceAt(h * badgeGlyph)
+	if face == nil {
+		return false
+	}
+	d := &font.Drawer{Face: face}
+	w := math.Max(h, float64(d.MeasureString(label).Round())+h*badgePad)
+	rect := image.Rect(b.Max.X-int(math.Round(w)), b.Min.Y, b.Max.X, b.Min.Y+int(math.Round(h)))
+
+	fill := badgeRed
+	if muted {
+		fill = badgeGrey
+	}
+	fillRounded(m, rect.Inset(-int(math.Ceil(badgeRing))), h/2+badgeRing, color.RGBA{})
+	fillRounded(m, rect, h/2, fill)
+	drawGlyph(m, face, label, rect)
+	return true
+}
+
+// fillRounded paints a rounded rectangle with an anti-aliased edge, clipped
+// to the image. A transparent colour erases rather than paints, which is how
+// the counter cuts its ring out of whatever it sits on.
+func fillRounded(m *image.RGBA, r image.Rectangle, radius float64, c color.RGBA) {
+	cx, cy := float64(r.Min.X+r.Max.X)/2, float64(r.Min.Y+r.Max.Y)/2
+	// Half-extents of the rectangle the corner arcs are centred on.
+	ex, ey := float64(r.Dx())/2-radius, float64(r.Dy())/2-radius
+	b := m.Bounds()
+	for y := max(r.Min.Y, b.Min.Y); y < min(r.Max.Y, b.Max.Y); y++ {
+		for x := max(r.Min.X, b.Min.X); x < min(r.Max.X, b.Max.X); x++ {
+			dx := math.Max(math.Abs(float64(x)+0.5-cx)-ex, 0)
+			dy := math.Max(math.Abs(float64(y)+0.5-cy)-ey, 0)
+			cover := math.Min(radius-math.Hypot(dx, dy)+0.5, 1)
+			if cover <= 0 {
+				continue
+			}
+			i := m.PixOffset(x, y)
+			src := [4]uint8{c.R, c.G, c.B, c.A}
+			// color.RGBA is alpha-premultiplied, so every channel blends the
+			// same way.
+			for k := range 4 {
+				m.Pix[i+k] = uint8(float64(src[k])*cover + float64(m.Pix[i+k])*(1-cover))
+			}
+		}
+	}
 }

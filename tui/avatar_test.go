@@ -43,10 +43,10 @@ func TestKittyAvatars_PlaceholderCellsSpanTheAvatarColumn(t *testing.T) {
 	k := newKittyAvatars(dir)
 	c := store.Chat{ChatID: "oc_1", Name: "群", ChatMode: "group", AvatarPath: writePNG(t, dir, "a.png")}
 
-	require.NotEmpty(t, k.prepare([]store.Chat{c}), "the picture is transmitted once")
-	require.Empty(t, k.prepare([]store.Chat{c}), "and not again")
+	require.NotEmpty(t, k.prepare([]store.Chat{c}, nil), "the picture is transmitted once")
+	require.Empty(t, k.prepare([]store.Chat{c}, nil), "and not again")
 
-	top, bottom := k.cells(c)
+	top, bottom, _ := k.cells(c, 0)
 	for _, line := range []string{top, bottom} {
 		require.Equal(t, avatarWidth, lipgloss.Width(line), "the cells occupy exactly the avatar column")
 		require.Equal(t, avatarWidth, strings.Count(line, string(kitty.Placeholder)))
@@ -67,8 +67,8 @@ func TestKittyAvatars_DrawsAPictureWhenThereIsNoFile(t *testing.T) {
 		{"file is not an image", store.Chat{ChatID: "oc_4", Name: "灵创告警群", AvatarPath: "missing.webp"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			require.NotEmpty(t, k.prepare([]store.Chat{tc.chat}), "a chat with no file still gets a drawn one")
-			top, _ := k.cells(tc.chat)
+			require.NotEmpty(t, k.prepare([]store.Chat{tc.chat}, nil), "a chat with no file still gets a drawn one")
+			top, _, _ := k.cells(tc.chat, 0)
 			require.Equal(t, avatarWidth, strings.Count(top, string(kitty.Placeholder)))
 		})
 	}
@@ -80,9 +80,9 @@ func TestKittyAvatars_TransmitsEachChatOnlyOnce(t *testing.T) {
 	k := newKittyAvatars(dir)
 	c := store.Chat{ChatID: "oc_1", Name: "群", AvatarPath: "bad.png"}
 
-	require.NotEmpty(t, k.prepare([]store.Chat{c}), "an unreadable file falls through to a drawn picture")
+	require.NotEmpty(t, k.prepare([]store.Chat{c}, nil), "an unreadable file falls through to a drawn picture")
 	require.NoError(t, os.Remove(filepath.Join(dir, "bad.png")))
-	require.Empty(t, k.prepare([]store.Chat{c}), "the second pass never opens the file again")
+	require.Empty(t, k.prepare([]store.Chat{c}, nil), "the second pass never opens the file again")
 }
 
 func TestKittyAvatars_ReclaimsTheLeastRecentlyShownID(t *testing.T) {
@@ -94,15 +94,15 @@ func TestKittyAvatars_ReclaimsTheLeastRecentlyShownID(t *testing.T) {
 	for i := range chats {
 		chats[i] = store.Chat{ChatID: "oc_" + string(rune('a'+i%26)) + string(rune('0'+i/26)), Name: "群", AvatarPath: name}
 	}
-	require.NotEmpty(t, k.prepare(chats))
+	require.NotEmpty(t, k.prepare(chats, nil))
 	require.Len(t, k.id, kittyIDs, "the id space is full")
 	evicted := chats[0].ChatID
 	reused := k.id[evicted]
 
 	// Show everything except the first, then something new: the first loses its id.
-	require.Empty(t, k.prepare(chats[1:]))
+	require.Empty(t, k.prepare(chats[1:], nil))
 	fresh := store.Chat{ChatID: "oc_new", Name: "群", AvatarPath: name}
-	require.NotEmpty(t, k.prepare([]store.Chat{fresh}))
+	require.NotEmpty(t, k.prepare([]store.Chat{fresh}, nil))
 
 	require.NotContains(t, k.id, evicted)
 	require.Equal(t, reused, k.id["oc_new"], "the freed id is handed straight on")
@@ -174,11 +174,11 @@ func TestKittyAvatars_ANewCellSizeRedrawsEverything(t *testing.T) {
 	dir := t.TempDir()
 	k := newKittyAvatars(dir)
 	c := store.Chat{ChatID: "oc_1", Name: "程序化养号"}
-	require.NotEmpty(t, k.prepare([]store.Chat{c}))
-	require.Empty(t, k.prepare([]store.Chat{c}))
+	require.NotEmpty(t, k.prepare([]store.Chat{c}, nil))
+	require.Empty(t, k.prepare([]store.Chat{c}, nil))
 
 	require.True(t, k.setCellSize(9, 19))
-	require.NotEmpty(t, k.prepare([]store.Chat{c}),
+	require.NotEmpty(t, k.prepare([]store.Chat{c}, nil),
 		"pictures drawn for the old cell size would be resampled, so they are drawn again")
 }
 
@@ -191,7 +191,7 @@ func TestGenerateAvatar_InksTheGlyphsOntoTheBackground(t *testing.T) {
 	require.Equal(t, image.Rect(0, 0, avatarPixels, avatarPixels), m.Bounds())
 
 	// The glyphs are white on a coloured square, so count the fully white pixels.
-	rgba := m.(*image.RGBA)
+	rgba := m
 	white := 0
 	for i := 0; i < len(rgba.Pix); i += 4 {
 		if rgba.Pix[i] == 0xFF && rgba.Pix[i+1] == 0xFF && rgba.Pix[i+2] == 0xFF {
@@ -200,7 +200,7 @@ func TestGenerateAvatar_InksTheGlyphsOntoTheBackground(t *testing.T) {
 	}
 	require.Greater(t, white, 200, "four glyphs leave a visible amount of ink")
 
-	plain := generateAvatar("", 0, avatarPixels, avatarPixels).(*image.RGBA)
+	plain := generateAvatar("", 0, avatarPixels, avatarPixels)
 	for i := 0; i < len(plain.Pix); i += 4 {
 		require.NotEqual(t, uint8(0xFF), plain.Pix[i], "a nameless chat gets a bare colour square")
 	}
@@ -210,7 +210,7 @@ func TestRoundCorners_ClearsTheCornersAndKeepsTheGlyphs(t *testing.T) {
 	if avatarFont() == nil {
 		t.Skip("no system font on this machine")
 	}
-	m := generateAvatar("程序化养号", 0, avatarPixels, avatarPixels).(*image.RGBA)
+	m := generateAvatar("程序化养号", 0, avatarPixels, avatarPixels)
 
 	for _, p := range []image.Point{{X: 0, Y: 0}, {X: avatarPixels - 1, Y: 0},
 		{X: 0, Y: avatarPixels - 1}, {X: avatarPixels - 1, Y: avatarPixels - 1}} {
@@ -236,4 +236,82 @@ func TestRoundCorners_ClearsTheCornersAndKeepsTheGlyphs(t *testing.T) {
 		require.LessOrEqual(t, m.Pix[i+1], m.Pix[i+3], "green exceeds alpha at %d", i)
 		require.LessOrEqual(t, m.Pix[i+2], m.Pix[i+3], "blue exceeds alpha at %d", i)
 	}
+}
+
+func TestBadgeLabel_CapsAtNinetyNinePlus(t *testing.T) {
+	for _, tc := range []struct {
+		n    int64
+		want string
+	}{{0, ""}, {-1, ""}, {1, "1"}, {12, "12"}, {99, "99"}, {100, "99+"}, {5000, "99+"}} {
+		require.Equal(t, tc.want, badgeLabel(tc.n), "count %d", tc.n)
+	}
+}
+
+func TestDrawBadge_StampsTheTopRightInTheColourTheChatCallsFor(t *testing.T) {
+	if avatarFont() == nil {
+		t.Skip("no system font on this machine")
+	}
+	// The pixels four by two cells occupy on the machine this runs on.
+	const w, h = 68, 72
+	blue := color.RGBA{B: 0xFF, A: 0xFF}
+	stamped := func(n int64, muted bool) (*image.RGBA, bool) {
+		m := image.NewRGBA(image.Rect(0, 0, w, h))
+		for i := 0; i < len(m.Pix); i += 4 {
+			m.Pix[i], m.Pix[i+1], m.Pix[i+2], m.Pix[i+3] = blue.R, blue.G, blue.B, blue.A
+		}
+		return m, drawBadge(m, n, muted)
+	}
+
+	// Three pixels in from the right edge, level with the counter's middle:
+	// inside the disc, clear of the digits.
+	inside := image.Pt(w-3, int(math.Round(math.Min(w, h)*badgeHeight))/2)
+	m, drawn := stamped(3, false)
+	require.True(t, drawn)
+	require.Equal(t, badgeRed, m.RGBAAt(inside.X, inside.Y))
+	require.Equal(t, blue, m.RGBAAt(w/2, h/2), "the picture under it keeps its middle")
+	cleared := 0
+	for i := 3; i < len(m.Pix); i += 4 {
+		if m.Pix[i] == 0 {
+			cleared++
+		}
+	}
+	require.Greater(t, cleared, 0, "a ring is cleared so the counter reads against any picture")
+
+	muted, _ := stamped(3, true)
+	require.Equal(t, badgeGrey, muted.RGBAAt(inside.X, inside.Y), "do-not-disturb gets the quiet colour")
+
+	none, drawn := stamped(0, false)
+	require.False(t, drawn)
+	require.Equal(t, blue, none.RGBAAt(inside.X, inside.Y), "nothing unread leaves the picture alone")
+}
+
+func TestKittyAvatars_RedrawsWhenTheUnreadCountMoves(t *testing.T) {
+	dir := t.TempDir()
+	k := newKittyAvatars(dir)
+	c := store.Chat{ChatID: "oc_1", Name: "群", AvatarPath: writePNG(t, dir, "a.png")}
+	unread := map[string]int64{"oc_1": 2}
+
+	require.NotEmpty(t, k.prepare([]store.Chat{c}, unread))
+	require.Empty(t, k.prepare([]store.Chat{c}, unread), "the same count needs no new picture")
+
+	id := k.id["oc_1"]
+	unread["oc_1"] = 3
+	require.NotEmpty(t, k.prepare([]store.Chat{c}, unread), "the counter is part of the picture")
+	require.Equal(t, id, k.id["oc_1"], "and a redraw keeps the id the cells already name")
+}
+
+func TestKittyAvatars_CellsClaimTheCountOnlyOnceTheyCarryIt(t *testing.T) {
+	dir := t.TempDir()
+	k := newKittyAvatars(dir)
+	c := store.Chat{ChatID: "oc_1", Name: "群", AvatarPath: writePNG(t, dir, "a.png")}
+
+	_, _, badged := k.cells(c, 2)
+	require.False(t, badged, "with no picture yet the row prints the number itself")
+
+	require.NotEmpty(t, k.prepare([]store.Chat{c}, map[string]int64{"oc_1": 2}))
+	_, _, badged = k.cells(c, 2)
+	require.True(t, badged)
+
+	_, _, badged = k.cells(c, 3)
+	require.False(t, badged, "a count the picture has not caught up with is printed too")
 }

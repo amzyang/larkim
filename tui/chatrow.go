@@ -1,8 +1,8 @@
 package tui
 
 import (
-	"fmt"
 	"hash/fnv"
+	"strconv"
 	"strings"
 	"time"
 
@@ -31,6 +31,11 @@ func chatTextWidth(w int) int { return max(minTitleWidth, w-avatarWidth-avatarGa
 // botBadge marks a chat whose other side is a machine. The glyph is
 // double-width, which is a column cheaper than spelling it out.
 const botBadge = "🤖"
+
+// muteGlyph is the crossed-out bell, from the Nerd Font the terminal maps the
+// private use area to. Unlike the emoji bell it takes the colour it is given,
+// which is what lets it sit dim behind the summary.
+const muteGlyph = ""
 
 // chatHash is a chat's stable colour seed, so it always looks the same.
 func chatHash(chatID string) uint32 {
@@ -184,12 +189,12 @@ func chatSummary(c store.Chat, self string) string {
 // included. Right-aligned fields are placed first and the title absorbs what
 // is left, so the right edge stays aligned however long a name is.
 func renderChatRow(av avatars, c store.Chat, unread int64, self string, now time.Time, w int) chatRow {
-	avatarTop, avatarBottom := av.cells(c)
+	avatarTop, avatarBottom, badged := av.cells(c, unread)
 	textWidth := chatTextWidth(w)
 
 	badge := ""
-	if unread > 0 {
-		badge = stAccent.Render(fmt.Sprintf("%d", unread))
+	if unread > 0 && !badged {
+		badge = stAccent.Render(strconv.FormatInt(unread, 10))
 	}
 	right := strings.TrimSpace(badge + " " + stDim.Render(chatTime(c.LastMessageMs, now)))
 
@@ -205,16 +210,32 @@ func renderChatRow(av avatars, c store.Chat, unread int64, self string, now time
 		avatarTop:    avatarTop,
 		avatarBottom: avatarBottom,
 		top:          padBetween(title, right, textWidth),
-		bottom:       fit(chatSummary(c, self), textWidth),
+		bottom:       padBetween(chatSummary(c, self), muteMark(c), textWidth),
 	}
 }
 
+// muteMark tells a do-not-disturb chat apart. The counter on the avatar goes
+// grey for the same reason, but a muted chat with nothing unread has no
+// counter to grey, so this is the only place the setting always shows.
+func muteMark(c store.Chat) string {
+	if !c.Muted {
+		return ""
+	}
+	return stDim.Render(muteGlyph)
+}
+
 // padBetween pushes right to the far edge of w, cutting left if they collide.
+// An empty right gives the whole width to left: there is nothing to keep it
+// clear of.
 func padBetween(left, right string, w int) string {
 	rw := lipgloss.Width(right)
 	if rw >= w {
 		return fit(right, w)
 	}
-	left = lipgloss.NewStyle().MaxWidth(w - rw - 1).Inline(true).Render(left)
+	gap := 1
+	if rw == 0 {
+		gap = 0
+	}
+	left = lipgloss.NewStyle().MaxWidth(w - rw - gap).Inline(true).Render(left)
 	return left + strings.Repeat(" ", w-rw-lipgloss.Width(left)) + right
 }

@@ -178,7 +178,7 @@ func (m Model) avatarPrepare() string {
 	h := m.chatListHeight()
 	top := clamp(m.chatTop-h, 0, len(vis))
 	end := clamp(m.chatTop+2*h, 0, len(vis))
-	return m.avatars.prepare(vis[top:end])
+	return m.avatars.prepare(vis[top:end], m.unread)
 }
 
 func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {

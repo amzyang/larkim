@@ -16,19 +16,24 @@ import (
 
 // avatars fills the chat list's avatar column.
 type avatars interface {
-	// cells are the two lines the column occupies for one chat.
-	cells(c store.Chat) (top, bottom string)
+	// cells are the two lines the column occupies for one chat. badged
+	// reports that the picture already carries the unread counter, which is
+	// what keeps the row from printing the number a second time.
+	cells(c store.Chat, unread int64) (top, bottom string, badged bool)
 	// prepare returns an escape sequence the terminal needs before these
 	// chats can be drawn, or "" when there is nothing to send. Sending it is
 	// the caller's job, because only it can reach the terminal in frame order.
-	prepare(chats []store.Chat) string
+	prepare(chats []store.Chat, unread map[string]int64) string
 }
 
 // textAvatars draws the colour block that stands in for a picture.
 type textAvatars struct{}
 
-func (textAvatars) cells(c store.Chat) (string, string) { return avatarBlock(c) }
-func (textAvatars) prepare([]store.Chat) string         { return "" }
+func (textAvatars) cells(c store.Chat, _ int64) (string, string, bool) {
+	top, bottom := avatarBlock(c)
+	return top, bottom, false
+}
+func (textAvatars) prepare([]store.Chat, map[string]int64) string { return "" }
 
 const (
 	// avatarPixels is the fallback transmitted size, used until the terminal
@@ -59,6 +64,9 @@ type kittyAvatars struct {
 	id    map[string]int
 	used  map[string]int64
 	clock int64
+	// badge is the unread count drawn into each live picture. The counter is
+	// part of the image, so a chat whose count moved needs a new one.
+	badge map[string]int64
 	// failed remembers chats whose file could not be turned into a picture,
 	// so a broken avatar is decoded once, not every frame.
 	failed   map[string]bool
@@ -78,6 +86,7 @@ func (k *kittyAvatars) setCellSize(w, h int) bool {
 	k.cellW, k.cellH = w, h
 	k.id = map[string]int{}
 	k.used = map[string]int64{}
+	k.badge = map[string]int64{}
 	k.failed = map[string]bool{}
 	return true
 }
@@ -96,16 +105,19 @@ func newKittyAvatars(dataDir string) *kittyAvatars {
 		dataDir: dataDir,
 		id:      map[string]int{},
 		used:    map[string]int64{},
+		badge:   map[string]int64{},
 		failed:  map[string]bool{},
 	}
 }
 
-func (k *kittyAvatars) cells(c store.Chat) (string, string) {
+func (k *kittyAvatars) cells(c store.Chat, unread int64) (string, string, bool) {
 	id, ok := k.id[c.ChatID]
 	if !ok {
-		return k.fallback.cells(c)
+		return k.fallback.cells(c, unread)
 	}
-	return placeholderLine(id, 0), placeholderLine(id, 1)
+	// Until the next prepare redraws it, the live picture still carries the
+	// previous count, so the row has to print the new one itself.
+	return placeholderLine(id, 0), placeholderLine(id, 1), k.badge[c.ChatID] == unread
 }
 
 // placeholderLine is one row of a picture's cells.
@@ -121,18 +133,22 @@ func placeholderLine(id, row int) string {
 	return b.String()
 }
 
-// prepare transmits the pictures of chats that do not have one yet, evicting
-// the least recently prepared when the id space is full. Transmitting over a
-// live id replaces that picture, so no delete is needed.
-func (k *kittyAvatars) prepare(chats []store.Chat) string {
+// prepare transmits the pictures of chats that do not have one yet or whose
+// unread counter has moved, evicting the least recently prepared when the id
+// space is full. Transmitting over a live id replaces that picture, so no
+// delete is needed and a redraw keeps the id its cells already name.
+func (k *kittyAvatars) prepare(chats []store.Chat, unread map[string]int64) string {
 	k.clock++
 	var out strings.Builder
 	for _, c := range chats {
-		if _, ok := k.id[c.ChatID]; ok {
+		n := unread[c.ChatID]
+		id, live := k.id[c.ChatID]
+		if live {
 			k.used[c.ChatID] = k.clock
-			continue
-		}
-		if k.failed[c.ChatID] {
+			if k.badge[c.ChatID] == n {
+				continue
+			}
+		} else if k.failed[c.ChatID] {
 			continue
 		}
 		img := k.picture(c)
@@ -141,15 +157,20 @@ func (k *kittyAvatars) prepare(chats []store.Chat) string {
 			k.failed[c.ChatID] = true
 			continue
 		}
-		id := k.take(c.ChatID)
+		drawBadge(img, n, c.Muted)
+		if !live {
+			id = k.take(c.ChatID)
+		}
 		if err := transmitAvatar(&out, id, img); err != nil {
-			// Both maps key the same chat; leaving one behind would let take
+			// The maps key the same chat; leaving one behind would let take
 			// pick it as the oldest and hand out image id 0.
 			delete(k.id, c.ChatID)
 			delete(k.used, c.ChatID)
+			delete(k.badge, c.ChatID)
 			k.failed[c.ChatID] = true
 			continue
 		}
+		k.badge[c.ChatID] = n
 	}
 	return out.String()
 }
@@ -157,7 +178,7 @@ func (k *kittyAvatars) prepare(chats []store.Chat) string {
 // picture is the chat's own avatar file, or one drawn from its name when
 // there is no file to read — a chat with no picture still deserves to look
 // like the ones that have one.
-func (k *kittyAvatars) picture(c store.Chat) image.Image {
+func (k *kittyAvatars) picture(c store.Chat) *image.RGBA {
 	w, h := k.box()
 	if f := c.AvatarFile(); f != "" {
 		if img, err := loadAvatar(filepath.Join(k.dataDir, f), w, h); err == nil {
@@ -191,7 +212,7 @@ func (k *kittyAvatars) take(chatID string) int {
 // loadAvatar decodes an avatar file at the size it will be shown. Formats the
 // standard library cannot decode (webp) fail here and fall back to a drawn
 // picture.
-func loadAvatar(path string, w, h int) (image.Image, error) {
+func loadAvatar(path string, w, h int) (*image.RGBA, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
