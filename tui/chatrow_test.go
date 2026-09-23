@@ -197,3 +197,11 @@ func TestRenderChatRow_MarksAMutedChat(t *testing.T) {
 	require.Contains(t, ansi.Strip(row.bottom), muteGlyph, "a muted chat with nothing unread still says so")
 	require.Equal(t, chatTextWidth(40), lipgloss.Width(row.bottom), "and the mark stays inside the row")
 }
+
+func TestChatSummary_NamesACardRatherThanItsMarkup(t *testing.T) {
+	c := store.Chat{ChatID: "oc_1", ChatMode: "group", LastMessageID: "om_1", LastRenderedAt: 1,
+		LastSenderName: "Factory-Dev", LastMsgType: "interactive", LastContent: weeklyCard}
+	_, bottom := plainRow(c, 0, 36)
+	require.Contains(t, bottom, "设备版本周报")
+	require.NotContains(t, bottom, "<card")
+}

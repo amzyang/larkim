@@ -164,7 +164,7 @@ func chatSummary(c store.Chat, self string) string {
 		return stDim.Render(sender + "撤回了一条消息")
 	}
 
-	body := flatten(expandEmoji(c.LastContent))
+	body := lastMessageSummary(c)
 	switch {
 	case body != "":
 	case c.LastRenderedAt == 0:
@@ -183,6 +183,16 @@ func chatSummary(c store.Chat, self string) string {
 		prefix = sender + ": "
 	}
 	return stDim.Render(prefix + body)
+}
+
+// lastMessageSummary is the chat's newest message pressed onto one line. A
+// card is named by its title: the DSL below it is a whole screen of markup
+// that says nothing at this width.
+func lastMessageSummary(c store.Chat) string {
+	if card, ok := parseCard(c.LastContent); ok {
+		return flatten(expandEmoji(strings.TrimSpace(card.title + " " + card.tags)))
+	}
+	return flatten(expandEmoji(c.LastContent))
 }
 
 // renderChatRow lays one chat out over two lines of w columns, avatar
