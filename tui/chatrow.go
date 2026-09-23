@@ -164,7 +164,7 @@ func chatSummary(c store.Chat, self string) string {
 		return stDim.Render(sender + "撤回了一条消息")
 	}
 
-	body := flatten(c.LastContent)
+	body := flatten(expandEmoji(c.LastContent))
 	switch {
 	case body != "":
 	case c.LastRenderedAt == 0:
