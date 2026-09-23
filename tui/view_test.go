@@ -83,9 +83,13 @@ func TestMove_LastChatStaysVisibleAfterG(t *testing.T) {
 
 func TestHit_MapsPanesBelowTitles(t *testing.T) {
 	m := sized(120, 30)
-	p, row := m.hit(2, 3)
+	p, row := m.hit(2, 2)
 	require.Equal(t, paneChats, p)
-	require.Equal(t, 1, row, "chat rows start below the title")
+	require.Equal(t, 0, row, "the first chat starts on the line below the title")
+	_, row = m.hit(2, 3)
+	require.Equal(t, 0, row, "its second line maps to the same chat")
+	_, row = m.hit(2, 4)
+	require.Equal(t, 1, row, "the next chat starts two lines on")
 	p, row = m.hit(chatsWidth+5, 3)
 	require.Equal(t, paneMessages, p)
 	require.Equal(t, 1, row, "message body rows start below the header")
@@ -133,7 +137,7 @@ func TestOpenChat_DropsFilterHidingIt(t *testing.T) {
 }
 
 func TestOnNormalKey_TabCyclesListPanesOnly(t *testing.T) {
-	m := sized(120, 36)
+	m := sized(130, 36) // wide enough for three panes: chats + messages + thread
 	m.focus = paneMessages
 	mm, _ := m.onNormalKey("tab")
 	m = mm.(Model)

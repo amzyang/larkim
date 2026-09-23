@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"image/color"
+	"os"
 	"slices"
 	"strings"
 	"time"
@@ -52,6 +53,7 @@ type Model struct {
 
 	chats      []store.Chat
 	unread     map[string]int64
+	avatars    avatars
 	chatFilter string
 	chatIdx    int
 	chatTop    int
@@ -117,7 +119,8 @@ func New(d Deps) Model {
 	ta.SetHeight(3)
 	ti := textinput.New()
 	ti.Prompt = ":"
-	m := Model{deps: d, input: ta, cmdline: ti, focus: paneChats, focused: true}
+	m := Model{deps: d, input: ta, cmdline: ti, focus: paneChats, focused: true,
+		avatars: newAvatars(d.DataDir, os.Getenv)}
 	m.setBackground(color.Black, true)
 	return m
 }
@@ -144,7 +147,36 @@ func (m Model) Init() tea.Cmd {
 	return tea.Batch(tea.RequestBackgroundColor, loadChats(m.deps.Store), readSyncStatus(m.deps.Store), pollSyncStatus(m.deps.Store), waitForChange(m.changes))
 }
 
+// Update runs the handler, then hands the terminal any avatar the newly
+// visible chats need. Going through tea.Raw puts the sequence in the
+// renderer's own output buffer, under its lock, so it lands between frames
+// and after the alternate screen is up — which is the only screen a virtual
+// placement made earlier would not reach.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	next, cmd := m.update(msg)
+	nm, ok := next.(Model)
+	if !ok {
+		return next, cmd
+	}
+	if seq := nm.avatarPrepare(); seq != "" {
+		return nm, tea.Batch(cmd, tea.Raw(seq))
+	}
+	return nm, cmd
+}
+
+// avatarPrepare asks the renderer for what the chats around the viewport
+// need. It reaches a screen beyond each edge so a scroll shows its pictures
+// on the frame it arrives, not the one after. The renderer caches through a
+// pointer, so the work survives this value copy.
+func (m Model) avatarPrepare() string {
+	vis := m.visibleChats()
+	h := m.chatListHeight()
+	top := clamp(m.chatTop-h, 0, len(vis))
+	end := clamp(m.chatTop+2*h, 0, len(vis))
+	return m.avatars.prepare(vis[top:end])
+}
+
+func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
@@ -395,7 +427,7 @@ func (m *Model) clampChat() {
 	if m.chatIdx < 0 {
 		m.chatIdx = 0
 	}
-	h := m.listHeight()
+	h := m.chatListHeight()
 	if h <= 0 {
 		return
 	}
@@ -768,7 +800,7 @@ func (m Model) stepPane(dir int) pane {
 func (m Model) pageStep() int {
 	switch m.focus {
 	case paneChats:
-		return max(1, m.listHeight()/2)
+		return max(1, m.chatListHeight()/2)
 	default:
 		return max(1, m.bodyHeight()/4)
 	}
@@ -1062,7 +1094,7 @@ func (m Model) onWheel(ms tea.Mouse) (tea.Model, tea.Cmd) {
 	switch p {
 	case paneChats:
 		vis := m.visibleChats()
-		m.chatTop = clamp(m.chatTop+step, 0, max(0, len(vis)-m.listHeight()))
+		m.chatTop = clamp(m.chatTop+step, 0, max(0, len(vis)-m.chatListHeight()))
 	case paneMessages:
 		m.msgTop = clamp(m.msgTop+step, 0, max(0, len(m.msgRows)-m.listHeight()))
 	case paneThread:

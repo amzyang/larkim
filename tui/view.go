@@ -15,10 +15,10 @@ import (
 )
 
 const (
-	chatsWidth       = 30
+	chatsWidth       = 38 // avatar + two lines of text, per docs/chats-list/PRD.md
 	threadWidth      = 44
 	minMessagesWidth = 40 // narrower than this, the right pane takes the messages pane's place
-	minWidth         = 60
+	minWidth         = chatsWidth + minMessagesWidth
 	minHeight        = 12
 	inputHeight      = 3
 	statusHeight     = 1
@@ -101,6 +101,10 @@ func (m Model) bodyHeight() int {
 
 // listHeight is the number of rows a list pane shows below its title.
 func (m Model) listHeight() int { return max(1, m.bodyHeight()-headerHeight) }
+
+// chatListHeight is how many whole chats the chat pane shows; a chat is never
+// drawn with only one of its two lines.
+func (m Model) chatListHeight() int { return max(1, m.listHeight()/chatRowHeight) }
 
 // foldRight reports whether the terminal is too narrow for three columns, in
 // which case the thread or assistant pane replaces the messages pane.
@@ -269,7 +273,7 @@ func (m Model) hit(x, y int) (pane, int) {
 	row := y - 1 - headerHeight
 	switch {
 	case x < chatsWidth:
-		return paneChats, row
+		return paneChats, row / chatRowHeight
 	case m.rightOpen() && x >= m.width-m.rightWidth():
 		return paneThread, row
 	default:
@@ -331,33 +335,23 @@ func paneStyle(focused bool, _ int) lipgloss.Style {
 
 func (m Model) renderChats(h int) string {
 	vis := m.visibleChats()
-	lines := make([]string, 0, h)
 	w := chatsWidth - 2
-	for i := m.chatTop; i < len(vis) && len(lines) < h-headerHeight; i++ {
-		c := vis[i]
-		name := flatten(c.Name)
-		if name == "" {
-			name = c.ChatID
+	now := time.Now()
+	gap := strings.Repeat(" ", avatarGap)
+	line := func(avatar, text string, selected bool) string {
+		text = fit(gap+text, w-avatarWidth)
+		if selected {
+			text = m.highlight(text, m.focus == paneChats)
 		}
-		mark := " "
-		switch c.ChatMode {
-		case "p2p":
-			mark = "·"
-		case "topic":
-			mark = "#"
-		default:
-			mark = "⌂"
-		}
-		badge := ""
-		if n := m.unread[c.ChatID]; n > 0 {
-			badge = stAccent.Render(fmt.Sprintf(" %d", n))
-		}
-		line := fit(fmt.Sprintf("%s %s%s", stDim.Render(mark), truncate(name, w-3-lipgloss.Width(badge)), badge), w)
-		if i == m.chatIdx {
-			line = m.highlight(line, m.focus == paneChats)
-		}
-		lines = append(lines, line)
+		return avatar + text
 	}
+	lines := make([]string, 0, h)
+	for i := m.chatTop; i < len(vis) && len(lines)+chatRowHeight <= h-headerHeight; i++ {
+		r := renderChatRow(m.avatars, vis[i], m.unread[vis[i].ChatID], m.deps.Self, now, w)
+		sel := i == m.chatIdx
+		lines = append(lines, line(r.avatarTop, r.top, sel), line(r.avatarBottom, r.bottom, sel))
+	}
+	// A trailing row that cannot show both its lines is left out entirely.
 	for len(lines) < h-headerHeight {
 		lines = append(lines, fit("", w))
 	}
