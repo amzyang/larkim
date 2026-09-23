@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -27,7 +28,7 @@ func sized(w, h int) Model {
 	m.chatID = "oc_1"
 	for i := range 40 {
 		m.msgs = append(m.msgs, store.Message{MessageID: fmt.Sprintf("om_%d", i), ChatID: "oc_1", SenderName: "邹洋", SenderID: "ou_me",
-			Content: strings.Repeat("内容很长 content ", 12), RenderedAt: 1, CreateMs: int64(i) * 1000})
+			Content: strings.Repeat("内容很长 content ", 12), RenderedAt: 1, CreateMs: int64(i) * 60_000})
 	}
 	m.layout()
 	return m
@@ -63,7 +64,7 @@ func TestRenderChats_OneRowPerChat(t *testing.T) {
 
 func TestScrollTo_KeepsSelectionVisible(t *testing.T) {
 	m := sized(120, 20)
-	m.msgs = append(m.msgs, store.Message{MessageID: "om_last", ChatID: "oc_1", SenderName: "邹洋", Content: "LASTLINE", RenderedAt: 1, CreateMs: 99_000})
+	m.msgs = append(m.msgs, store.Message{MessageID: "om_last", ChatID: "oc_1", SenderName: "邹洋", Content: "LASTLINE", RenderedAt: 1, CreateMs: 99 * 60_000})
 	m.layout()
 	m.msgIdx = len(m.msgs) - 1
 	m.scrollMessagesToSelection()
@@ -261,4 +262,21 @@ func TestChatsLoaded_FilterBeingTypedKeepsItsCursor(t *testing.T) {
 	mm, _ := m.update(chatsLoadedMsg{chats: m.chats})
 	m = mm.(Model)
 	require.Equal(t, 2, m.chatIdx)
+}
+
+func TestSelection_TheSelectedMessageShowsItsTime(t *testing.T) {
+	m := sized(120, 36)
+	m.focus, m.msgIdx = paneMessages, 0
+	m.rebuildMessages()
+	stamp := msgTime(m.msgs[3].CreateMs, time.Now())
+	require.NotContains(t, ansi.Strip(m.renderMessages(m.bodyHeight())), stamp)
+
+	mm, _ := m.move(3)
+	m = mm.(Model)
+	require.Contains(t, ansi.Strip(m.renderMessages(m.bodyHeight())), stamp, "moving the cursor spells out the new time")
+
+	mm, _ = m.onClick(tea.Mouse{Button: tea.MouseLeft, X: chatsWidth + 5, Y: 2})
+	m = mm.(Model)
+	require.Contains(t, ansi.Strip(m.renderMessages(m.bodyHeight())), msgTime(m.msgs[m.msgIdx].CreateMs, time.Now()),
+		"clicking a message spells out its time too")
 }

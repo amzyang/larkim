@@ -16,9 +16,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func writePNG(t *testing.T, dir, name string) string {
+func writePNG(t *testing.T, dir, name string, w, h int) string {
 	t.Helper()
-	m := image.NewRGBA(image.Rect(0, 0, 8, 8))
+	m := image.NewRGBA(image.Rect(0, 0, w, h))
 	m.Set(0, 0, color.RGBA{R: 255, A: 255})
 	f, err := os.Create(filepath.Join(dir, name))
 	require.NoError(t, err)
@@ -41,7 +41,7 @@ func TestNewAvatars_FallsBackWhenTheTerminalCannotShowPictures(t *testing.T) {
 func TestKittyAvatars_PlaceholderCellsSpanTheAvatarColumn(t *testing.T) {
 	dir := t.TempDir()
 	k := newKittyAvatars(dir)
-	c := store.Chat{ChatID: "oc_1", Name: "群", ChatMode: "group", AvatarPath: writePNG(t, dir, "a.png")}
+	c := store.Chat{ChatID: "oc_1", Name: "群", ChatMode: "group", AvatarPath: writePNG(t, dir, "a.png", 8, 8)}
 
 	require.NotEmpty(t, k.prepare([]store.Chat{c}, nil), "the picture is transmitted once")
 	require.Empty(t, k.prepare([]store.Chat{c}, nil), "and not again")
@@ -87,7 +87,7 @@ func TestKittyAvatars_TransmitsEachChatOnlyOnce(t *testing.T) {
 
 func TestKittyAvatars_ReclaimsTheLeastRecentlyShownID(t *testing.T) {
 	dir := t.TempDir()
-	name := writePNG(t, dir, "a.png")
+	name := writePNG(t, dir, "a.png", 8, 8)
 	k := newKittyAvatars(dir)
 
 	chats := make([]store.Chat, kittyIDs)
@@ -111,7 +111,7 @@ func TestKittyAvatars_ReclaimsTheLeastRecentlyShownID(t *testing.T) {
 
 func TestModelAvatarPrepare_OnlyCoversWhatIsOnScreen(t *testing.T) {
 	dir := t.TempDir()
-	name := writePNG(t, dir, "a.png")
+	name := writePNG(t, dir, "a.png", 8, 8)
 	m := sized(130, 30)
 	k := newKittyAvatars(dir)
 	m.avatars = k
@@ -288,7 +288,7 @@ func TestDrawBadge_StampsTheTopRightInTheColourTheChatCallsFor(t *testing.T) {
 func TestKittyAvatars_RedrawsWhenTheUnreadCountMoves(t *testing.T) {
 	dir := t.TempDir()
 	k := newKittyAvatars(dir)
-	c := store.Chat{ChatID: "oc_1", Name: "群", AvatarPath: writePNG(t, dir, "a.png")}
+	c := store.Chat{ChatID: "oc_1", Name: "群", AvatarPath: writePNG(t, dir, "a.png", 8, 8)}
 	unread := map[string]int64{"oc_1": 2}
 
 	require.NotEmpty(t, k.prepare([]store.Chat{c}, unread))
@@ -303,7 +303,7 @@ func TestKittyAvatars_RedrawsWhenTheUnreadCountMoves(t *testing.T) {
 func TestKittyAvatars_CellsClaimTheCountOnlyOnceTheyCarryIt(t *testing.T) {
 	dir := t.TempDir()
 	k := newKittyAvatars(dir)
-	c := store.Chat{ChatID: "oc_1", Name: "群", AvatarPath: writePNG(t, dir, "a.png")}
+	c := store.Chat{ChatID: "oc_1", Name: "群", AvatarPath: writePNG(t, dir, "a.png", 8, 8)}
 
 	_, _, badged := k.cells(c, 2)
 	require.False(t, badged, "with no picture yet the row prints the number itself")

@@ -73,13 +73,6 @@ func composerStyles(dark bool) textarea.Styles {
 	return st
 }
 
-// msgRow is one rendered line of a message list and the message it belongs to.
-type msgRow struct {
-	text string
-	idx  int  // index into the backing message slice
-	head bool // first line of the message
-}
-
 func (m *Model) layout() {
 	m.input.SetWidth(max(10, m.width-2))
 	m.input.SetHeight(inputHeight)
@@ -127,21 +120,32 @@ func (m Model) messagesWidth() int {
 	return max(20, w)
 }
 
+// msgStyleFor is the render context of one message pane: its width, the
+// message whose time is spelled out, and the details the store holds.
+func (m Model) msgStyleFor(width int, meta msgMeta, selected string) msgStyle {
+	st := msgStyle{width: width, self: m.deps.Self, now: time.Now(), selected: selected, suffix: meta.suffix, res: meta.res}
+	if m.pics != nil {
+		st.place = m.pics.place
+	}
+	return st
+}
+
 func (m *Model) rebuildMessages() {
+	w := m.messagesWidth() - 2
 	if m.searching {
-		m.msgRows = renderSearchRows(m.searchResults, m.chats, m.messagesWidth()-2, m.deps.Self)
+		m.msgRows = renderSearchRows(m.searchResults, m.chats, m.msgStyleFor(w, m.searchMeta, idAt(m.searchResults, m.msgIdx)))
 		return
 	}
-	m.msgRows = renderRows(m.msgs, m.messagesWidth()-2, m.deps.Self)
+	m.msgRows = renderRows(m.msgs, m.msgStyleFor(w, m.meta, idAt(m.msgs, m.msgIdx)))
 }
 
 // renderSearchRows is renderRows with the chat name in the head line.
-func renderSearchRows(msgs []store.Message, chats []store.Chat, width int, self string) []msgRow {
+func renderSearchRows(msgs []store.Message, chats []store.Chat, st msgStyle) []msgRow {
 	names := map[string]string{}
 	for _, c := range chats {
 		names[c.ChatID] = c.Name
 	}
-	rows := renderRows(msgs, width, self)
+	rows := renderRows(msgs, st)
 	for i := range rows {
 		if rows[i].head {
 			name := names[msgs[rows[i].idx].ChatID]
@@ -168,54 +172,29 @@ func (m *Model) rebuildThread() {
 		m.threadRows = nil
 		return
 	}
-	m.threadRows = renderRows(m.thread, m.rightWidth()-2, m.deps.Self)
+	m.threadRows = renderRows(m.thread, m.msgStyleFor(m.rightWidth()-2, m.threadMeta, idAt(m.thread, m.threadIdx)))
 }
 
-// renderRows lays messages out as "HH:MM sender  message_id" head lines
-// followed by wrapped content lines.
-func renderRows(msgs []store.Message, width int, self string) []msgRow {
-	var rows []msgRow
-	body := lipgloss.NewStyle().Width(max(10, width-2))
-	for i, x := range msgs {
-		sender := flatten(x.SenderName)
-		if sender == "" {
-			sender = x.SenderID
-		}
-		if x.SenderID == self {
-			sender = stOK.Render(sender)
-		} else {
-			sender = stBold.Render(sender)
-		}
-		dot := " "
-		if x.IsReadRemote != nil && !*x.IsReadRemote {
-			dot = stAccent.Render("●")
-		}
-		head := fmt.Sprintf("%s%s %s  %s", dot, stDim.Render(time.UnixMilli(x.CreateMs).Local().Format("01-02 15:04")), sender, stDim.Render(x.MessageID))
-		if x.ThreadID != "" && x.MessagePosition >= 0 {
-			head += stAccent.Render(" ⤷thread")
-		}
-		if x.Updated {
-			head += stDim.Render(" (edited)")
-		}
-		rows = append(rows, msgRow{text: head, idx: i, head: true})
-		content := x.Content
-		if x.RenderedAt == 0 {
-			content = stDim.Render("(rendering…) ") + x.ContentRaw
-		}
-		if x.Deleted {
-			content = stDim.Render("(recalled) " + content)
-		}
-		content = strings.ReplaceAll(strings.ReplaceAll(content, "\r", ""), "\t", "    ")
-		for _, line := range strings.Split(body.Render(content), "\n") {
-			rows = append(rows, msgRow{text: "  " + line, idx: i})
-		}
+// rowLine is the drawn form of one row, and whether it carries a picture. A
+// picture row is already the pane's width and holds cells the terminal fills
+// with an image: fitting it would cut the glyph cluster apart and a selection
+// tint has nothing to colour.
+func (m Model) rowLine(r msgRow, w int) (string, bool) {
+	if r.pic.cols == 0 {
+		return fit(r.text, w), false
 	}
-	return rows
+	cells := m.pics.cells(r.pic, r.picRow)
+	if cells == "" {
+		return fit("", w), true // still on its way to the terminal
+	}
+	return bodyIndent + cells + strings.Repeat(" ", max(0, w-lipgloss.Width(bodyIndent)-r.pic.cols)), true
 }
 
+// firstRow is where a message's block starts — its day separator when it
+// opens a day, so scrolling to it brings that label along.
 func firstRow(rows []msgRow, idx int) int {
 	for i, r := range rows {
-		if r.idx == idx && r.head {
+		if r.idx == idx {
 			return i
 		}
 	}
@@ -369,8 +348,8 @@ func (m Model) renderMessages(h int) string {
 	lines := make([]string, 0, h)
 	for i := m.msgTop; i < len(m.msgRows) && len(lines) < h-headerHeight; i++ {
 		r := m.msgRows[i]
-		line := fit(r.text, w)
-		if m.inSelection(paneMessages, r.idx) {
+		line, pic := m.rowLine(r, w)
+		if !pic && !r.plain && m.inSelection(paneMessages, r.idx) {
 			line = m.highlight(line, m.focus == paneMessages)
 		}
 		lines = append(lines, line)
@@ -427,8 +406,8 @@ func (m Model) renderThread(h int) string {
 	lines = append(lines, fit(stBold.Render("Thread ")+stDim.Render(truncate(m.threadID, w-7)), w))
 	for i := m.threadTop; i < len(m.threadRows) && len(lines) < h; i++ {
 		r := m.threadRows[i]
-		line := fit(r.text, w)
-		if m.inSelection(paneThread, r.idx) {
+		line, pic := m.rowLine(r, w)
+		if !pic && !r.plain && m.inSelection(paneThread, r.idx) {
 			line = m.highlight(line, m.focus == paneThread)
 		}
 		lines = append(lines, line)

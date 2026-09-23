@@ -117,14 +117,15 @@ func (k *kittyAvatars) cells(c store.Chat, unread int64) (string, string, bool) 
 	}
 	// Until the next prepare redraws it, the live picture still carries the
 	// previous count, so the row has to print the new one itself.
-	return placeholderLine(id, 0), placeholderLine(id, 1), k.badge[c.ChatID] == unread
+	return placeholderRow(id, 0, avatarWidth), placeholderRow(id, 1, avatarWidth), k.badge[c.ChatID] == unread
 }
 
-// placeholderLine is one row of a picture's cells.
-func placeholderLine(id, row int) string {
+// placeholderRow is one row of a picture's cells: the image id travels in the
+// foreground colour and every cell names its own row and column.
+func placeholderRow(id, row, cols int) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "\x1b[38;5;%dm", id)
-	for col := range avatarWidth {
+	for col := range cols {
 		b.WriteRune(kitty.Placeholder)
 		b.WriteRune(kitty.Diacritic(row))
 		b.WriteRune(kitty.Diacritic(col))
@@ -161,7 +162,7 @@ func (k *kittyAvatars) prepare(chats []store.Chat, unread map[string]int64) stri
 		if !live {
 			id = k.take(c.ChatID)
 		}
-		if err := transmitAvatar(&out, id, img); err != nil {
+		if err := transmitPicture(&out, id, img, avatarWidth, chatRowHeight); err != nil {
 			// The maps key the same chat; leaving one behind would let take
 			// pick it as the oldest and hand out image id 0.
 			delete(k.id, c.ChatID)
@@ -181,7 +182,7 @@ func (k *kittyAvatars) prepare(chats []store.Chat, unread map[string]int64) stri
 func (k *kittyAvatars) picture(c store.Chat) *image.RGBA {
 	w, h := k.box()
 	if f := c.AvatarFile(); f != "" {
-		if img, err := loadAvatar(filepath.Join(k.dataDir, f), w, h); err == nil {
+		if img, err := loadImage(filepath.Join(k.dataDir, f), w, h); err == nil {
 			return img
 		}
 	}
@@ -209,10 +210,10 @@ func (k *kittyAvatars) take(chatID string) int {
 	return id
 }
 
-// loadAvatar decodes an avatar file at the size it will be shown. Formats the
-// standard library cannot decode (webp) fail here and fall back to a drawn
-// picture.
-func loadAvatar(path string, w, h int) (*image.RGBA, error) {
+// loadImage decodes a file at the size it will be shown. Formats the standard
+// library cannot decode (webp) fail here, and the caller falls back to what it
+// can draw without a picture.
+func loadImage(path string, w, h int) (*image.RGBA, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
@@ -227,15 +228,15 @@ func loadAvatar(path string, w, h int) (*image.RGBA, error) {
 	return dst, nil
 }
 
-func transmitAvatar(w *strings.Builder, id int, img image.Image) error {
+func transmitPicture(w *strings.Builder, id int, img image.Image, cols, rows int) error {
 	return kitty.EncodeGraphics(w, img, &kitty.Options{
 		Action:           kitty.TransmitAndPut,
 		ID:               id,
 		Format:           kitty.PNG,
 		Transmission:     kitty.Direct,
 		VirtualPlacement: true,
-		Columns:          avatarWidth,
-		Rows:             chatRowHeight,
+		Columns:          cols,
+		Rows:             rows,
 		Quiet:            2,
 		Chunk:            true,
 	})

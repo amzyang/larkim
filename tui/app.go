@@ -56,12 +56,14 @@ type Model struct {
 	chats      []store.Chat
 	unread     map[string]int64
 	avatars    avatars
+	pics       *pictures // message images; nil on a terminal without graphics
 	chatFilter string
 	chatIdx    int
 	chatTop    int
 
 	chatID   string
 	msgs     []store.Message
+	meta     msgMeta // detail for whatever the messages pane shows
 	msgIdx   int
 	msgTop   int // first visible line of the message pane
 	msgRows  []msgRow
@@ -75,6 +77,7 @@ type Model struct {
 	threadOpen bool
 	threadID   string
 	thread     []store.Message
+	threadMeta msgMeta
 	threadIdx  int
 	threadTop  int
 	threadRows []msgRow
@@ -83,6 +86,7 @@ type Model struct {
 	searching     bool
 	searchQuery   string
 	searchResults []store.Message
+	searchMeta    msgMeta
 	pendingSelect string // message to select once its chat loads
 
 	// Assistant pane (replaces the thread pane while open).
@@ -122,7 +126,7 @@ func New(d Deps) Model {
 	ti := textinput.New()
 	ti.Prompt = ":"
 	m := Model{deps: d, input: ta, cmdline: ti, focus: paneChats, focused: true,
-		avatars: newAvatars(d.DataDir, os.Getenv)}
+		avatars: newAvatars(d.DataDir, os.Getenv), pics: newPictures(d.DataDir, os.Getenv)}
 	m.setBackground(color.Black, true)
 	return m
 }
@@ -163,10 +167,28 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if !ok {
 		return next, cmd
 	}
-	if seq := nm.avatarPrepare(); seq != "" {
+	if seq := nm.avatarPrepare() + nm.picturePrepare(); seq != "" {
 		return nm, tea.Batch(cmd, tea.Raw(seq))
 	}
 	return nm, cmd
+}
+
+// picturePrepare hands the terminal the images the message panes are about to
+// draw, reaching a screen beyond each edge so a scroll shows a picture on the
+// frame it arrives rather than the one after.
+func (m Model) picturePrepare() string {
+	h := m.listHeight()
+	var pics []picture
+	collect := func(rows []msgRow, top int) {
+		for i := clamp(top-h, 0, len(rows)); i < clamp(top+2*h, 0, len(rows)); i++ {
+			if rows[i].pic.cols > 0 {
+				pics = append(pics, rows[i].pic)
+			}
+		}
+	}
+	collect(m.msgRows, m.msgTop)
+	collect(m.threadRows, m.threadTop)
+	return m.pics.prepare(pics)
 }
 
 // avatarPrepare asks the renderer for what the chats around the viewport
@@ -194,6 +216,8 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if k, ok := m.avatars.(*kittyAvatars); ok {
 			k.setCellSize(msg.Width, msg.Height)
 		}
+		m.pics.setCellSize(msg.Width, msg.Height)
+		m.layout()
 		return m, nil
 	case tea.FocusMsg:
 		m.focused = true
@@ -213,7 +237,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		wasOn := idAt(m.msgs, m.msgIdx)
-		m.msgs = msg.msgs
+		m.msgs, m.meta = msg.msgs, msg.meta
 		m.msgIdx = len(m.msgs) - 1
 		if m.pendingSelect != "" {
 			for i, x := range m.msgs {
@@ -228,7 +252,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.scrollMessagesToSelection()
 		return m, markConsumed(m.deps.Store, m.msgs)
 	case searchMsg:
-		m.searching, m.searchQuery, m.searchResults = true, msg.query, msg.msgs
+		m.searching, m.searchQuery, m.searchResults, m.searchMeta = true, msg.query, msg.msgs, msg.meta
 		m.msgIdx, m.msgTop = 0, 0
 		m = m.focusMessages()
 		m.rebuildMessages()
@@ -243,7 +267,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		wasOn := idAt(m.thread, m.threadIdx)
-		m.thread = msg.msgs
+		m.thread, m.threadMeta = msg.msgs, msg.meta
 		if m.threadIdx >= len(m.thread) {
 			m.threadIdx = max(0, len(m.thread)-1)
 		}
@@ -849,6 +873,7 @@ func (m Model) move(n int) (tea.Model, tea.Cmd) {
 			count = len(m.searchResults)
 		}
 		m.msgIdx = clamp(m.msgIdx+n, 0, count-1)
+		m.rebuildMessages()
 		m.scrollMessagesToSelection()
 	case paneThread:
 		if m.aiOpen {
@@ -856,6 +881,7 @@ func (m Model) move(n int) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.threadIdx = clamp(m.threadIdx+n, 0, len(m.thread)-1)
+		m.rebuildThread()
 		m.scrollThreadToSelection()
 	}
 	return m, nil
@@ -1096,6 +1122,7 @@ func (m Model) onClick(ms tea.Mouse) (tea.Model, tea.Cmd) {
 	case paneMessages:
 		if idx := rowAt(m.msgRows, m.msgTop+row); idx >= 0 {
 			m.msgIdx = idx
+			m.rebuildMessages()
 			if double {
 				return m.activate()
 			}
@@ -1103,6 +1130,7 @@ func (m Model) onClick(ms tea.Mouse) (tea.Model, tea.Cmd) {
 	case paneThread:
 		if idx := rowAt(m.threadRows, m.threadTop+row); idx >= 0 {
 			m.threadIdx = idx
+			m.rebuildThread()
 			if double {
 				return m.activate()
 			}

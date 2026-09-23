@@ -52,10 +52,12 @@ type (
 	messagesLoadedMsg struct {
 		chatID string
 		msgs   []store.Message
+		meta   msgMeta
 	}
 	threadLoadedMsg struct {
 		threadID string
 		msgs     []store.Message
+		meta     msgMeta
 	}
 	changeMsg     struct{ msgs []store.Message }
 	sentMsg       struct{ err error }
@@ -66,16 +68,58 @@ type (
 	searchMsg     struct {
 		query string
 		msgs  []store.Message
+		meta  msgMeta
 	}
 )
 
+// msgMeta is the per-message detail the store keeps outside the messages
+// table: the sender's account suffix, which tells same-named colleagues
+// apart, and the files a message's attachments were downloaded to.
+type msgMeta struct {
+	suffix map[string]string
+	res    map[string][]store.Resource
+}
+
+func loadMeta(ctx context.Context, st *store.Store, msgs []store.Message) (msgMeta, error) {
+	ids := make([]string, 0, len(msgs))
+	msgIDs := make([]string, 0, len(msgs))
+	seen := map[string]bool{}
+	for _, x := range msgs {
+		msgIDs = append(msgIDs, x.MessageID)
+		if x.SenderID != "" && !seen[x.SenderID] {
+			seen[x.SenderID] = true
+			ids = append(ids, x.SenderID)
+		}
+	}
+	contacts, err := st.ContactsByIDs(ctx, ids)
+	if err != nil {
+		return msgMeta{}, err
+	}
+	suffix := make(map[string]string, len(contacts))
+	for id, c := range contacts {
+		if s := c.AccountSuffix(); s != "" {
+			suffix[id] = s
+		}
+	}
+	res, err := st.ResourcesForMessages(ctx, msgIDs)
+	if err != nil {
+		return msgMeta{}, err
+	}
+	return msgMeta{suffix: suffix, res: res}, nil
+}
+
 func searchMessages(st *store.Store, query string) tea.Cmd {
 	return func() tea.Msg {
-		rows, err := st.SearchMessages(context.Background(), query, "", 200)
+		ctx := context.Background()
+		rows, err := st.SearchMessages(ctx, query, "", 200)
 		if err != nil {
 			return errMsg{err}
 		}
-		return searchMsg{query: query, msgs: rows}
+		meta, err := loadMeta(ctx, st, rows)
+		if err != nil {
+			return errMsg{err}
+		}
+		return searchMsg{query: query, msgs: rows, meta: meta}
 	}
 }
 
@@ -112,24 +156,34 @@ func messageQuery(chatID string, sinceMs int64) store.MessageQuery {
 func loadMessages(st *store.Store, chatID string, sinceMs int64) tea.Cmd {
 	q := messageQuery(chatID, sinceMs)
 	return func() tea.Msg {
-		rows, err := st.ListMessages(context.Background(), q)
+		ctx := context.Background()
+		rows, err := st.ListMessages(ctx, q)
 		if err != nil {
 			return errMsg{err}
 		}
 		if q.Desc {
 			slices.Reverse(rows)
 		}
-		return messagesLoadedMsg{chatID: chatID, msgs: rows}
+		meta, err := loadMeta(ctx, st, rows)
+		if err != nil {
+			return errMsg{err}
+		}
+		return messagesLoadedMsg{chatID: chatID, msgs: rows, meta: meta}
 	}
 }
 
 func loadThread(st *store.Store, threadID string) tea.Cmd {
 	return func() tea.Msg {
-		rows, err := st.ListMessages(context.Background(), store.MessageQuery{ThreadID: threadID, Limit: threadPageSize})
+		ctx := context.Background()
+		rows, err := st.ListMessages(ctx, store.MessageQuery{ThreadID: threadID, Limit: threadPageSize})
 		if err != nil {
 			return errMsg{err}
 		}
-		return threadLoadedMsg{threadID: threadID, msgs: rows}
+		meta, err := loadMeta(ctx, st, rows)
+		if err != nil {
+			return errMsg{err}
+		}
+		return threadLoadedMsg{threadID: threadID, msgs: rows, meta: meta}
 	}
 }
 

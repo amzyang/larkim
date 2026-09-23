@@ -77,22 +77,10 @@ func chatTime(ms int64, now time.Time) string {
 		return ""
 	}
 	t := time.UnixMilli(ms).Local()
-	day := func(x time.Time) time.Time {
-		return time.Date(x.Year(), x.Month(), x.Day(), 0, 0, 0, 0, x.Location())
-	}
-	days := int(day(now).Sub(day(t)).Hours() / 24)
-	switch {
-	case days <= 0:
+	if daysApart(t, now) <= 0 {
 		return t.Format("15:04")
-	case days == 1:
-		return "昨天"
-	case days < 7:
-		return [...]string{"周日", "周一", "周二", "周三", "周四", "周五", "周六"}[t.Weekday()]
-	case t.Year() == now.Year():
-		return t.Format("01-02")
-	default:
-		return t.Format("2006-01-02")
 	}
+	return msgDay(ms, now)
 }
 
 // msgTypeLabel stands in for a message whose rendering carries no text.
