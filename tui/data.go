@@ -25,6 +25,11 @@ type Deps struct {
 	Self     string // the user's open_id
 	Version  string
 	Embedded bool
+	// DataDir resolves stored attachment paths to absolute ones, and
+	// ConfigPath goes into the follow-up command a copy ends with. Both are
+	// optional: without them a copy keeps relative paths and omits --config.
+	DataDir    string
+	ConfigPath string
 	// AI is the assistant; nil when no API key is configured.
 	AI        *ai.Client
 	AIContext int // recent messages handed to the assistant

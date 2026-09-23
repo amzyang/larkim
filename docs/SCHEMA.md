@@ -41,7 +41,7 @@ One row per message id, from the raw message API (`create_ms` is millisecond pre
 | `content_raw` | `body.content` JSON string, shape depends on `msg_type` (`{"text":"…"}`, post blocks, `{"image_key":…}`, card JSON) |
 | `content` | human-readable rendering by lark-cli (`+messages-mget`); empty until `rendered_at` is set |
 | `create_ms`, `update_ms` | creation and last edit time |
-| `message_position` | per-chat monotonic position; `-1` for thread replies |
+| `message_position` | per-chat monotonic position; negative for thread replies (the API picks the sentinel, `-3` in current data) |
 | `updated`, `deleted` | edited / recalled flags as reported by the API |
 | `deleted_seen_at` | when the recall was first observed; `content_raw` keeps the last known body |
 | `thread_id` | `omt_…` for thread roots and replies |

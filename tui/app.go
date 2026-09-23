@@ -14,6 +14,7 @@ import (
 	"charm.land/bubbles/v2/textarea"
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
+	"github.com/amzyang/larkim/agentctx"
 	"github.com/amzyang/larkim/ai"
 	"github.com/amzyang/larkim/larkcli"
 	"github.com/amzyang/larkim/store"
@@ -35,6 +36,7 @@ const (
 	modeInsert
 	modeCommand
 	modeFilter
+	modeVisual
 )
 
 // Model is the Bubble Tea model.
@@ -60,6 +62,11 @@ type Model struct {
 	msgTop   int // first visible line of the message pane
 	msgRows  []msgRow
 	msgSince int64 // when set, the page starts here instead of at the newest messages
+
+	// visualAnchor is the message the VISUAL selection started from, held by
+	// id rather than index because a sync tick can replace the whole list
+	// while the selection is open.
+	visualAnchor string
 
 	threadOpen bool
 	threadID   string
@@ -163,6 +170,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.chatID != m.chatID {
 			return m, nil
 		}
+		wasOn := idAt(m.msgs, m.msgIdx)
 		m.msgs = msg.msgs
 		m.msgIdx = len(m.msgs) - 1
 		if m.pendingSelect != "" {
@@ -173,6 +181,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.pendingSelect = ""
 		}
+		m.repinSelection(wasOn)
 		m.rebuildMessages()
 		m.scrollMessagesToSelection()
 		return m, markConsumed(m.deps.Store, m.msgs)
@@ -191,10 +200,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.threadID != m.threadID {
 			return m, nil
 		}
+		wasOn := idAt(m.thread, m.threadIdx)
 		m.thread = msg.msgs
 		if m.threadIdx >= len(m.thread) {
 			m.threadIdx = max(0, len(m.thread)-1)
 		}
+		m.repinSelection(wasOn)
 		m.rebuildThread()
 		return m, nil
 	case changeMsg:
@@ -214,6 +225,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.notify(msg.err.Error(), true), nil
 	case noticeMsg:
 		return m.notify(msg.text, false), nil
+	case contextMsg:
+		return m.notify(fmt.Sprintf("copied %s · %s · %s", plural(msg.n, "msg", "msgs"), humanBytes(len(msg.text)), msg.chat), false),
+			tea.SetClipboard(msg.text)
 	case tea.MouseClickMsg:
 		return m.onClick(tea.Mouse(msg))
 	case tea.MouseWheelMsg:
@@ -320,6 +334,14 @@ func (m *Model) onChange(msgs []store.Message) tea.Cmd {
 	return tea.Batch(cmds...)
 }
 
+// idAt names the message at idx, or "" when the list does not reach it.
+func idAt(msgs []store.Message, idx int) string {
+	if idx < 0 || idx >= len(msgs) {
+		return ""
+	}
+	return msgs[idx].MessageID
+}
+
 // selected returns the message under the cursor in the focused list.
 func (m Model) selected() (store.Message, bool) {
 	switch m.focus {
@@ -399,6 +421,8 @@ func (m Model) onKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m.onCommandKey(k)
 	case modeFilter:
 		return m.onFilterKey(k)
+	case modeVisual:
+		return m.onVisualKey(s)
 	}
 	if m.showHelp {
 		m.showHelp = false
@@ -517,13 +541,9 @@ func (m Model) onNormalKey(s string) (tea.Model, tea.Cmd) {
 	case "t":
 		return m.toggleThread()
 	case "y":
-		if sel, ok := m.selected(); ok {
-			return m.notify("copied "+sel.MessageID, false), tea.SetClipboard(sel.MessageID)
-		}
-	case "Y":
-		if m.chatID != "" {
-			return m.notify("copied "+m.chatID, false), tea.SetClipboard(m.chatID)
-		}
+		return m.copySelection()
+	case "v":
+		return m.startVisual()
 	case "o":
 		if sel, ok := m.selected(); ok {
 			return m, openInFeishu(sel.ChatID, sel.MessagePosition)
@@ -569,6 +589,147 @@ func (m Model) onNormalKey(s string) (tea.Model, tea.Cmd) {
 		return m.notify("", false), nil
 	}
 	return m, nil
+}
+
+// --- selection and copying ------------------------------------------------
+
+// onVisualKey handles the VISUAL range selection: only extending it, copying
+// it and leaving it. Everything else would have to decide what happens to a
+// half-made selection.
+func (m Model) onVisualKey(s string) (tea.Model, tea.Cmd) {
+	switch s {
+	case "j", "down":
+		return m.move(1)
+	case "k", "up":
+		return m.move(-1)
+	case "y":
+		out, cmd := m.copySelection()
+		out.mode = modeNormal
+		return out, cmd
+	case "esc":
+		m.mode = modeNormal
+		return m.notify("", false), nil
+	}
+	return m, nil
+}
+
+// startVisual anchors a range selection at the cursor of the focused list.
+func (m Model) startVisual() (tea.Model, tea.Cmd) {
+	if m.searching {
+		return m.notify("press Enter to open the hit; v selects inside a chat", true), nil
+	}
+	selectable := m.focus == paneMessages && len(m.msgs) > 0 ||
+		m.focus == paneThread && !m.aiOpen && len(m.thread) > 0
+	if !selectable {
+		return m.notify("v selects in the messages or thread pane", true), nil
+	}
+	m.visualAnchor = m.focusedList()[m.cursor(m.focus)].MessageID
+	m.mode = modeVisual
+	return m.notify("j/k extend · y copies · Esc cancels", false), nil
+}
+
+// cursor is the selected row of a message list pane.
+func (m Model) cursor(p pane) int {
+	if p == paneThread {
+		return m.threadIdx
+	}
+	return m.msgIdx
+}
+
+// focusedList is the message slice the selection keys act on.
+func (m Model) focusedList() []store.Message {
+	if m.focus == paneThread {
+		return m.thread
+	}
+	return m.msgs
+}
+
+// selectionRange is the inclusive index span y acts on: the cursor alone in
+// NORMAL, the whole anchored range in VISUAL. An anchor whose message is no
+// longer listed degrades to the cursor, so the span always indexes the list.
+func (m Model) selectionRange() (lo, hi int) {
+	idx := m.cursor(m.focus)
+	anchor := indexOfID(m.focusedList(), m.visualAnchor)
+	if m.mode != modeVisual || anchor < 0 {
+		return idx, idx
+	}
+	return min(anchor, idx), max(anchor, idx)
+}
+
+// repinSelection keeps an open VISUAL range on the same two messages after a
+// reload replaced the list. A selection that lost either end ends, rather
+// than being silently redrawn around whatever now sits at those indices.
+func (m *Model) repinSelection(cursorID string) {
+	if m.mode != modeVisual {
+		return
+	}
+	list := m.focusedList()
+	idx := indexOfID(list, cursorID)
+	if idx < 0 || indexOfID(list, m.visualAnchor) < 0 {
+		m.mode = modeNormal
+		return
+	}
+	if m.focus == paneThread {
+		m.threadIdx = idx
+		return
+	}
+	m.msgIdx = idx
+}
+
+func indexOfID(msgs []store.Message, id string) int {
+	if id == "" {
+		return -1
+	}
+	return slices.IndexFunc(msgs, func(m store.Message) bool { return m.MessageID == id })
+}
+
+// inSelection reports whether row idx of pane p is painted as selected.
+func (m Model) inSelection(p pane, idx int) bool {
+	if m.mode != modeVisual || m.focus != p {
+		return idx == m.cursor(p)
+	}
+	lo, hi := m.selectionRange()
+	return idx >= lo && idx <= hi
+}
+
+// copySelection puts the agent context of the current focus on the clipboard:
+// the cursor's message or the VISUAL range from a message list, the last day
+// of the highlighted chat from the chats pane.
+func (m Model) copySelection() (Model, tea.Cmd) {
+	switch {
+	case m.searching:
+		return m.notify("press Enter to open the hit; y copies from inside a chat", true), nil
+	case m.focus == paneChats:
+		vis := m.visibleChats()
+		if len(vis) == 0 {
+			return m.notify("nothing to copy", true), nil
+		}
+		spec := copySpec{chatID: vis[m.chatIdx].ChatID, rng: agentctx.Range{Since: chatsCopyAge, Limit: chatsCopyLimit}}
+		return m.notify("copying…", false), copyContext(m.deps, spec)
+	case m.focus == paneMessages, m.focus == paneThread && !m.aiOpen:
+		list := m.msgs
+		if m.focus == paneThread {
+			list = m.thread
+		}
+		if len(list) == 0 {
+			return m.notify("nothing to copy", true), nil
+		}
+		lo, hi := m.selectionRange()
+		return m.notify("copying…", false), copyContext(m.deps, copySpec{chatID: m.chatID, msgs: list[lo : hi+1]})
+	}
+	return m.notify("nothing to copy here", true), nil
+}
+
+// runCopy is :copy, which always covers the open chat, whatever has focus.
+func (m Model) runCopy(arg string) (tea.Model, tea.Cmd) {
+	if m.chatID == "" {
+		return m.notify("nothing to copy", true), nil
+	}
+	r, err := agentctx.ParseRange(arg)
+	if err != nil {
+		return m.notify(err.Error(), true), nil
+	}
+	return m.notify("copying…", false), copyContext(m.deps, copySpec{chatID: m.chatID, rng: r})
 }
 
 // visiblePanes lists the list panes on screen from left to right; the
@@ -747,6 +908,8 @@ func (m Model) runCommand(line string) (tea.Model, tea.Cmd) {
 			return m.notify("usage: :search <text>", true), nil
 		}
 		return m.notify("searching…", false), searchMessages(m.deps.Store, rest)
+	case "copy":
+		return m.runCopy(rest)
 	case "ai":
 		return m.startAI(rest)
 	case "sync":
@@ -918,9 +1081,10 @@ func clamp(v, lo, hi int) int {
 // Help text shown by ?.
 const helpText = `NORMAL      j/k move · gg/G ends · Ctrl+d/u page · Tab/Shift+Tab focus · h/l panes
             Enter open chat / thread / reply · i write · r reply · R reply in thread · t thread
-            y copy message id · Y copy chat id · o open in Feishu · / filter chats · :/; command · q quit
+            y copy agent context · v select a range · o open in Feishu · / filter chats · :/; command · q quit
+VISUAL      v starts in the messages or thread pane · j/k extend · y copies and leaves · Esc cancels
 INSERT      Enter send · Shift+Enter newline · Esc back
-COMMAND     :goto <chat> · :send <chat|ou_> <text> · :search <text> · :sync · :q
+COMMAND     :copy <200|7d|all> · :goto <chat> · :send <chat|ou_> <text> · :search <text> · :sync · :q
 ASSISTANT   a or :ai [summary | draft <how> | todo | <question>] · answer streams in the right pane · Esc closes
 MOUSE       click focuses and selects · double-click opens · wheel scrolls`
 
@@ -933,7 +1097,12 @@ func fmtStatus(m Model) string {
 	if st == "" {
 		st = "never_synced"
 	}
-	out := fmt.Sprintf("%s · sync:%s/%s", modeLabel(m.mode), sync, st)
+	label := modeLabel(m.mode)
+	if m.mode == modeVisual {
+		lo, hi := m.selectionRange()
+		label += " " + plural(hi-lo+1, "msg", "msgs")
+	}
+	out := fmt.Sprintf("%s · sync:%s/%s", label, sync, st)
 	if st == "needs_login" {
 		out += " → lark-cli auth login"
 	}
@@ -948,6 +1117,8 @@ func modeLabel(md mode) string {
 		return "COMMAND"
 	case modeFilter:
 		return "FILTER"
+	case modeVisual:
+		return "VISUAL"
 	}
 	return "NORMAL"
 }

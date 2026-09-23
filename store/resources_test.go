@@ -106,3 +106,25 @@ func TestReadStatus_CandidatesAndSchedule(t *testing.T) {
 	ids, _ = s.ReadStatusCandidates(ctx, "ou_me", 100, 1e12, 10)
 	require.Empty(t, ids, "read messages are never re-checked")
 }
+
+func TestResourcesForMessages_GroupsByMessage(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+	_, err := s.UpsertMessages(ctx, []Message{
+		{MessageID: "om_1", ChatID: "oc", CreateMs: 10, RawJSON: "{}"},
+		{MessageID: "om_2", ChatID: "oc", CreateMs: 20, RawJSON: "{}"},
+		{MessageID: "om_3", ChatID: "oc", CreateMs: 30, RawJSON: "{}"},
+	}, 1)
+	require.NoError(t, err)
+	require.NoError(t, s.AddPendingResources(ctx, []Resource{
+		{MessageID: "om_1", FileKey: "img_b", Type: "image"},
+		{MessageID: "om_1", FileKey: "img_a", Type: "image"},
+		{MessageID: "om_2", FileKey: "file_c", Type: "file"},
+	}))
+
+	got, err := s.ResourcesForMessages(ctx, []string{"om_1", "om_2", "om_3"})
+	require.NoError(t, err)
+	require.Len(t, got, 2, "a message without attachments has no entry")
+	require.Equal(t, []string{"img_a", "img_b"}, []string{got["om_1"][0].FileKey, got["om_1"][1].FileKey})
+	require.Equal(t, "file_c", got["om_2"][0].FileKey)
+}

@@ -376,7 +376,7 @@ func (m Model) renderMessages(h int) string {
 	for i := m.msgTop; i < len(m.msgRows) && len(lines) < h-headerHeight; i++ {
 		r := m.msgRows[i]
 		line := fit(r.text, w)
-		if r.idx == m.msgIdx {
+		if m.inSelection(paneMessages, r.idx) {
 			line = m.highlight(line, m.focus == paneMessages)
 		}
 		lines = append(lines, line)
@@ -434,7 +434,7 @@ func (m Model) renderThread(h int) string {
 	for i := m.threadTop; i < len(m.threadRows) && len(lines) < h; i++ {
 		r := m.threadRows[i]
 		line := fit(r.text, w)
-		if r.idx == m.threadIdx {
+		if m.inSelection(paneThread, r.idx) {
 			line = m.highlight(line, m.focus == paneThread)
 		}
 		lines = append(lines, line)

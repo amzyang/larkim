@@ -8,6 +8,7 @@ import (
 	"syscall"
 
 	"github.com/amzyang/larkim/ai"
+	"github.com/amzyang/larkim/config"
 	"github.com/amzyang/larkim/sync"
 	"github.com/amzyang/larkim/tui"
 	"github.com/spf13/cobra"
@@ -26,7 +27,11 @@ func (a *App) tuiCmd() *cobra.Command {
 			ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 			defer cancel()
 			client := a.client()
-			deps := tui.Deps{Store: st, Client: client, Version: a.Version, AIContext: a.cfg.AI.Context}
+			// The follow-up command a copy ends with is pasted into an agent
+			// with a working directory of its own, so the config it names is
+			// the absolute path this process actually loaded.
+			deps := tui.Deps{Store: st, Client: client, Version: a.Version, AIContext: a.cfg.AI.Context,
+				DataDir: a.cfg.DataDir, ConfigPath: config.Resolve(a.configPath)}
 			if key := os.Getenv(a.cfg.AI.APIKeyEnv); key != "" {
 				deps.AI = ai.New(key, a.cfg.AI.Model)
 			}

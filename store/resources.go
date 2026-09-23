@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"slices"
 )
 
 // Resource is one row of resources: an attachment key of a message and its
@@ -143,4 +144,20 @@ func (s *Store) MessagesAfterIDForScan(ctx context.Context, rowID int64, limit i
 		return r, err
 	}, `SELECT id, message_id, msg_type, content_raw FROM messages
  WHERE id > ? AND deleted = 0 AND msg_type IN ('image','file','audio','media','video','post') ORDER BY id LIMIT ?`, rowID, limit)
+}
+
+// ResourcesForMessages lists the resources of many messages at once, keyed by
+// message id; messages without attachments are absent from the map.
+func (s *Store) ResourcesForMessages(ctx context.Context, messageIDs []string) (map[string][]Resource, error) {
+	out := make(map[string][]Resource, len(messageIDs))
+	for chunk := range slices.Chunk(messageIDs, 500) {
+		rows, err := queryAll(ctx, s.db, scanResource, `SELECT `+resourceColumns+` FROM resources WHERE message_id IN `+inClause(len(chunk))+` ORDER BY message_id, file_key`, anySlice(chunk)...)
+		if err != nil {
+			return nil, err
+		}
+		for _, r := range rows {
+			out[r.MessageID] = append(out[r.MessageID], r)
+		}
+	}
+	return out, nil
 }

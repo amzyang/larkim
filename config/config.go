@@ -72,12 +72,24 @@ func Default() Config {
 // DefaultPath is where Load looks when no path is given.
 func DefaultPath() string { return filepath.Join(homeDir(), ".larkim", "config.yaml") }
 
-// Load reads path over the defaults; a missing file yields the defaults.
-func Load(path string) (Config, error) {
-	cfg := Default()
+// Resolve is the absolute file Load reads for a given --config value, which
+// callers need when they hand the path to a process with a working directory
+// of its own.
+func Resolve(path string) string {
 	if path == "" {
 		path = DefaultPath()
 	}
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return path
+	}
+	return abs
+}
+
+// Load reads path over the defaults; a missing file yields the defaults.
+func Load(path string) (Config, error) {
+	cfg := Default()
+	path = Resolve(path)
 	b, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return cfg, nil

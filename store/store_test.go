@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 	"testing"
 
@@ -181,4 +182,106 @@ func TestStateAndRuns(t *testing.T) {
 	c, err := s.Counts(ctx)
 	require.NoError(t, err)
 	require.Zero(t, c.Messages)
+}
+
+// cursorFixture stores five messages whose canonical order is only decidable
+// by (create_ms, message_position, id): three of them share a millisecond.
+func cursorFixture(t *testing.T) (*Store, []string) {
+	t.Helper()
+	s := openTest(t)
+	msgs := []Message{
+		{MessageID: "om_a", ChatID: "oc_a", CreateMs: 50, MessagePosition: 1, RawJSON: "{}"},
+		{MessageID: "om_b", ChatID: "oc_a", CreateMs: 100, MessagePosition: 1, RawJSON: "{}"},
+		{MessageID: "om_c", ChatID: "oc_a", CreateMs: 100, MessagePosition: 2, RawJSON: "{}"},
+		{MessageID: "om_d", ChatID: "oc_a", CreateMs: 100, MessagePosition: 3, RawJSON: "{}"},
+		{MessageID: "om_e", ChatID: "oc_a", CreateMs: 200, MessagePosition: 4, RawJSON: "{}"},
+	}
+	_, err := s.UpsertMessages(context.Background(), msgs, 1)
+	require.NoError(t, err)
+	return s, []string{"om_a", "om_b", "om_c", "om_d", "om_e"}
+}
+
+func ids(msgs []Message) []string {
+	out := make([]string, len(msgs))
+	for i, m := range msgs {
+		out[i] = m.MessageID
+	}
+	return out
+}
+
+func TestListMessages_CursorsSplitAtTheAnchorWithinOneMillisecond(t *testing.T) {
+	s, all := cursorFixture(t)
+	ctx := context.Background()
+
+	before, err := s.ListMessages(ctx, MessageQuery{ChatID: "oc_a", BeforeID: "om_c", Limit: 10})
+	require.NoError(t, err)
+	require.Equal(t, []string{"om_a", "om_b"}, ids(before), "before is exclusive and splits inside the shared millisecond")
+
+	after, err := s.ListMessages(ctx, MessageQuery{ChatID: "oc_a", AfterID: "om_c", Limit: 10})
+	require.NoError(t, err)
+	require.Equal(t, []string{"om_d", "om_e"}, ids(after))
+
+	require.Equal(t, all, append(append(ids(before), "om_c"), ids(after)...), "the two pages plus the anchor cover everything once")
+}
+
+func TestListMessages_CursorPagesDoNotRepeat(t *testing.T) {
+	s, all := cursorFixture(t)
+	ctx := context.Background()
+	var walked []string
+	cursor := "om_e"
+	for range 4 {
+		page, err := s.ListMessages(ctx, MessageQuery{ChatID: "oc_a", BeforeID: cursor, Desc: true, Limit: 2})
+		require.NoError(t, err)
+		if len(page) == 0 {
+			break
+		}
+		walked = append(walked, ids(page)...)
+		cursor = page[len(page)-1].MessageID
+	}
+	require.Equal(t, []string{"om_d", "om_c", "om_b", "om_a"}, walked, "paging backwards in twos visits every older message once")
+	require.Len(t, all, len(walked)+1)
+}
+
+func TestListMessages_UnknownCursorIsNotFound(t *testing.T) {
+	s, _ := cursorFixture(t)
+	_, err := s.ListMessages(context.Background(), MessageQuery{BeforeID: "om_nope"})
+	require.ErrorIs(t, err, ErrNotFound)
+}
+
+func TestThreadReplyCounts_CountsLiveRepliesOnly(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+	msgs := []Message{
+		{MessageID: "om_root", ChatID: "oc_a", CreateMs: 10, MessagePosition: 1, ThreadID: "omt_1", RawJSON: "{}"},
+		{MessageID: "om_r1", ChatID: "oc_a", CreateMs: 20, MessagePosition: -3, ThreadID: "omt_1", RawJSON: "{}"},
+		{MessageID: "om_r2", ChatID: "oc_a", CreateMs: 30, MessagePosition: -1, ThreadID: "omt_1", RawJSON: "{}"},
+		{MessageID: "om_r3", ChatID: "oc_a", CreateMs: 40, MessagePosition: -3, ThreadID: "omt_1", Deleted: true, RawJSON: "{}"},
+		{MessageID: "om_other", ChatID: "oc_b", CreateMs: 50, MessagePosition: -3, ThreadID: "omt_1", RawJSON: "{}"},
+	}
+	_, err := s.UpsertMessages(ctx, msgs, 1)
+	require.NoError(t, err)
+
+	got, err := s.ThreadReplyCounts(ctx, "oc_a", []string{"omt_1", "omt_absent"})
+	require.NoError(t, err)
+	require.Equal(t, map[string]int{"omt_1": 2}, got, "every negative position counts; recalled replies, the root and other chats are left out")
+}
+
+func TestListMessages_ExcludeThreadRepliesAppliesBeforeTheLimit(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+	var msgs []Message
+	for i := range 20 {
+		pos := int64(-3) // a thread reply, whatever sentinel the API chose
+		if i%5 == 0 {
+			pos = int64(i + 1)
+		}
+		msgs = append(msgs, Message{MessageID: fmt.Sprintf("om_%02d", i), ChatID: "oc_a",
+			CreateMs: int64(i) * 100, MessagePosition: pos, ThreadID: "omt_1", RawJSON: "{}"})
+	}
+	_, err := s.UpsertMessages(ctx, msgs, 1)
+	require.NoError(t, err)
+
+	got, err := s.ListMessages(ctx, MessageQuery{ChatID: "oc_a", ExcludeThreadReplies: true, Desc: true, Limit: 3})
+	require.NoError(t, err)
+	require.Equal(t, []string{"om_15", "om_10", "om_05"}, ids(got), "the limit counts the messages that survive the filter")
 }

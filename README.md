@@ -51,14 +51,21 @@ larkim tui
 | `Enter` | open chat · open thread · reply |
 | `i` `r` `R` | write · reply · reply in thread (Enter sends, Shift+Enter newline, Esc back) |
 | `t` | toggle the thread pane for the selected message |
-| `y` `Y` `o` | copy message id · copy chat id · open in the Feishu client |
+| `y` `v` | copy the agent context · start a range selection (`j`/`k` extend, `y` copies, `Esc` cancels) |
+| `o` | open in the Feishu client |
 | `/` | filter chats |
 | `:search <text>` | cross-chat full-text search in the messages pane; Enter jumps to the hit, Esc leaves |
 | `a` / `:ai …` | assistant in the right pane: `summary`, `draft <how>` (result lands in the composer), `todo`, or any question about the open chat |
-| `:` `;` | command line: `:goto <chat>` `:send <chat\|ou_> <text>` `:sync` `:q` |
+| `:` `;` | command line: `:copy <200\|7d\|all>` `:goto <chat>` `:send <chat\|ou_> <text>` `:sync` `:q` |
 | mouse | click focuses and selects, double-click opens, wheel scrolls |
 
 Shift+Enter needs a terminal with the kitty keyboard protocol (kitty, Ghostty, WezTerm); elsewhere use Alt+Enter or Ctrl+J for newlines.
+
+### Agent context
+
+`y` puts the conversation on the clipboard in a fixed format built for pasting into a coding agent: a header naming the chat, the people in it and who you are, then one tagged block per message carrying its id, time, sender, mentions, reply and thread links, reactions and attachment paths. Message bodies are copied verbatim, so the block boundary carries a random suffix generated per copy. The export ends with a `larkim messages list --before …` command the agent can run to page further back.
+
+What `y` covers depends on the focus: the message under the cursor, the whole `v` selection, or — from the chats pane — the highlighted chat's last day, at most ten messages. `:copy 200`, `:copy 7d` and `:copy all` always cover the open chat, whatever has focus. Thread replies are folded out of a chat export and counted on their root instead; to copy a thread's contents, open it and press `y` there.
 
 ## How it syncs
 

@@ -133,12 +133,8 @@ func (s *Store) UnknownMessageIDs(ctx context.Context, ids []string) ([]string, 
 	}
 	known := map[string]bool{}
 	for chunk := range slices.Chunk(ids, 500) {
-		q := `SELECT message_id FROM messages WHERE message_id IN (?` + strings.Repeat(",?", len(chunk)-1) + `)`
-		args := make([]any, len(chunk))
-		for i, id := range chunk {
-			args[i] = id
-		}
-		found, err := queryAll(ctx, s.db, scanOne[string], q, args...)
+		q := `SELECT message_id FROM messages WHERE message_id IN ` + inClause(len(chunk))
+		found, err := queryAll(ctx, s.db, scanOne[string], q, anySlice(chunk)...)
 		if err != nil {
 			return nil, err
 		}
@@ -167,18 +163,28 @@ func (s *Store) GetMessage(ctx context.Context, messageID string) (Message, erro
 
 // MessageQuery filters ListMessages. Zero values mean "no filter".
 type MessageQuery struct {
-	ChatID         string
-	ThreadID       string
-	SenderID       string
-	MsgType        string
-	SinceMs        int64
-	UntilMs        int64
-	IncludeDeleted bool
-	Unread         bool // is_read_remote = 0
-	Unconsumed     bool // consumed_at = 0
-	Desc           bool
-	Limit          int
-	Offset         int
+	ChatID   string
+	ThreadID string
+	SenderID string
+	MsgType  string
+	SinceMs  int64
+	UntilMs  int64
+	// BeforeID and AfterID page by cursor: an exclusive anchor compared on
+	// the canonical sort key, so consecutive pages neither repeat nor drop a
+	// row when several messages share a millisecond. Desc picks which side
+	// of the anchor the page walks into.
+	BeforeID string
+	AfterID  string
+	// ExcludeThreadReplies drops the folded replies of a chat's threads, so
+	// a limit counts only what the caller will keep. A reply is any message
+	// whose position is negative; the API picks the sentinel.
+	ExcludeThreadReplies bool
+	IncludeDeleted       bool
+	Unread               bool // is_read_remote = 0
+	Unconsumed           bool // consumed_at = 0
+	Desc                 bool
+	Limit                int
+	Offset               int
 }
 
 // ListMessages returns messages ordered by (create_ms, message_position, id).
@@ -203,6 +209,22 @@ func (s *Store) ListMessages(ctx context.Context, q MessageQuery) ([]Message, er
 	}
 	if q.UntilMs > 0 {
 		add("m.create_ms <= ?", q.UntilMs)
+	}
+	for _, c := range []struct {
+		id string
+		op string
+	}{{q.BeforeID, "<"}, {q.AfterID, ">"}} {
+		if c.id == "" {
+			continue
+		}
+		anchor, err := s.GetMessage(ctx, c.id)
+		if err != nil {
+			return nil, fmt.Errorf("cursor %s: %w", c.id, err)
+		}
+		add("(m.create_ms, m.message_position, m.id) "+c.op+" (?, ?, ?)", anchor.CreateMs, anchor.MessagePosition, anchor.ID)
+	}
+	if q.ExcludeThreadReplies {
+		add("m.message_position >= 0")
 	}
 	if !q.IncludeDeleted {
 		add("m.deleted = 0")
@@ -254,4 +276,26 @@ func (s *Store) MarkConsumed(ctx context.Context, ids []string, now int64) error
 		}
 	}
 	return tx.Commit()
+}
+
+// ThreadReplyCounts counts the live replies of each thread id in a chat,
+// keyed by thread id; threads with no reply are absent. A reply is any
+// message whose position is negative: the API hands out several such
+// sentinels, so the sign is the only thing to test. The stored rows are
+// counted rather than a loaded page, which would undercount a thread whose
+// root is older than the page.
+func (s *Store) ThreadReplyCounts(ctx context.Context, chatID string, threadIDs []string) (map[string]int, error) {
+	out := make(map[string]int, len(threadIDs))
+	for chunk := range slices.Chunk(threadIDs, 500) {
+		args := append([]any{chatID}, anySlice(chunk)...)
+		counts, err := queryCounts(ctx, s.db, `SELECT thread_id, count(*) FROM messages
+ WHERE chat_id = ? AND message_position < 0 AND deleted = 0 AND thread_id IN `+inClause(len(chunk))+` GROUP BY thread_id`, args...)
+		if err != nil {
+			return nil, err
+		}
+		for id, n := range counts {
+			out[id] = int(n)
+		}
+	}
+	return out, nil
 }

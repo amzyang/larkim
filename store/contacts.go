@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"slices"
 	"strings"
 )
 
@@ -169,4 +170,20 @@ func (s *Store) SetContactDetails(ctx context.Context, ids []string, details []C
 		}
 	}
 	return tx.Commit()
+}
+
+// ContactsByIDs loads contacts by open id, keyed by open id; ids with no row
+// are absent from the map.
+func (s *Store) ContactsByIDs(ctx context.Context, ids []string) (map[string]Contact, error) {
+	out := make(map[string]Contact, len(ids))
+	for chunk := range slices.Chunk(ids, 500) {
+		rows, err := queryAll(ctx, s.db, scanContact, `SELECT `+contactColumns+` FROM contacts WHERE open_id IN `+inClause(len(chunk)), anySlice(chunk)...)
+		if err != nil {
+			return nil, err
+		}
+		for _, c := range rows {
+			out[c.OpenID] = c
+		}
+	}
+	return out, nil
 }

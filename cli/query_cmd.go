@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -55,13 +56,20 @@ func (a *App) messagesCmd() *cobra.Command {
 
 func (a *App) messagesListCmd() *cobra.Command {
 	var q store.MessageQuery
-	var since, until, order, query string
+	var since, until, order, query, around string
+	var contextN int
 	cmd := &cobra.Command{
 		Use:   "list",
-		Short: "List messages with filters, sorting and pagination; --query searches rendered text",
+		Short: "List messages with filters, sorting and cursor pagination; --query searches rendered text",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			now := time.Now()
 			var err error
+			if cmd.Flags().Changed("context") && around == "" {
+				return fmt.Errorf("--context only applies to --around")
+			}
+			if q.Offset != 0 && (q.BeforeID != "" || q.AfterID != "" || around != "") {
+				return fmt.Errorf("--offset and the cursor flags are two ways to paginate; pick one")
+			}
 			if t, err := parseTime(since, now); err != nil {
 				return err
 			} else if !t.IsZero() {
@@ -92,9 +100,12 @@ func (a *App) messagesListCmd() *cobra.Command {
 				}
 			}
 			var rows []store.Message
-			if query != "" {
+			switch {
+			case query != "":
 				rows, err = st.SearchMessages(ctx, query, q.ChatID, q.Limit)
-			} else {
+			case around != "":
+				rows, err = listAround(ctx, st, q, around, contextN)
+			default:
 				rows, err = st.ListMessages(ctx, q)
 			}
 			if err != nil {
@@ -114,13 +125,55 @@ func (a *App) messagesListCmd() *cobra.Command {
 	f.StringVar(&q.MsgType, "type", "", "msg_type: text | post | image | file | interactive | system | …")
 	f.StringVar(&since, "since", "", "lower bound: 2026-09-01, RFC 3339, or 24h")
 	f.StringVar(&until, "until", "", "upper bound, same formats")
+	f.StringVar(&q.BeforeID, "before", "", "page from just before this message id, exclusive; --order picks the direction")
+	f.StringVar(&q.AfterID, "after", "", "page from just after this message id, exclusive")
+	f.StringVar(&around, "around", "", "centre on this message id, in its own chat unless --chat says otherwise")
+	f.IntVar(&contextN, "context", 20, "messages on each side of --around")
 	f.BoolVar(&q.IncludeDeleted, "include-deleted", false, "include recalled messages")
 	f.BoolVar(&q.Unread, "unread", false, "only messages Feishu reports as unread by you")
 	f.BoolVar(&q.Unconsumed, "unconsumed", false, "only messages not yet marked consumed locally")
 	f.StringVar(&order, "order", "desc", "asc | desc by create time")
 	f.IntVar(&q.Limit, "limit", 50, "max rows")
 	f.IntVar(&q.Offset, "offset", 0, "rows to skip")
+	cmd.MarkFlagsMutuallyExclusive("around", "before")
+	cmd.MarkFlagsMutuallyExclusive("around", "after")
+	cmd.MarkFlagsMutuallyExclusive("around", "limit") // --around is sized by --context
 	return cmd
+}
+
+// listAround returns the anchor with contextN messages on either side. Two
+// cursor queries beat one UNION: each side is an ordinary page, and the
+// anchor is added back by hand because both cursors exclude it.
+func listAround(ctx context.Context, st *store.Store, q store.MessageQuery, id string, n int) ([]store.Message, error) {
+	anchor, err := st.GetMessage(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if q.ChatID == "" {
+		q.ChatID = anchor.ChatID
+	}
+	page := func(q store.MessageQuery) ([]store.Message, error) {
+		q.Limit, q.Offset = n, 0
+		return st.ListMessages(ctx, q)
+	}
+	older := q
+	older.BeforeID, older.Desc = id, true
+	before, err := page(older)
+	if err != nil {
+		return nil, err
+	}
+	slices.Reverse(before)
+	newer := q
+	newer.AfterID, newer.Desc = id, false
+	after, err := page(newer)
+	if err != nil {
+		return nil, err
+	}
+	out := append(append(before, anchor), after...)
+	if q.Desc {
+		slices.Reverse(out)
+	}
+	return out, nil
 }
 
 func (a *App) printMessageTable(rows []store.Message, withChat bool) {

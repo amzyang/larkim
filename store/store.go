@@ -227,3 +227,16 @@ func (s *Store) Counts(ctx context.Context) (Counts, error) {
 	}
 	return c, nil
 }
+
+// inClause builds the "(?,?,…)" list of an IN predicate for n >= 1 values.
+// Callers feed it from slices.Chunk, which never yields an empty chunk.
+func inClause(n int) string { return "(?" + strings.Repeat(",?", n-1) + ")" }
+
+// anySlice widens a string slice into query arguments.
+func anySlice(ss []string) []any {
+	args := make([]any, len(ss))
+	for i, s := range ss {
+		args[i] = s
+	}
+	return args
+}

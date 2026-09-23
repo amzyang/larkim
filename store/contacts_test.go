@@ -87,6 +87,22 @@ func TestUpsertContacts_KeepsResolvedDetails(t *testing.T) {
 	require.Equal(t, int64(2), c.DetailCheckedAt)
 }
 
+func TestContactsByIDs_SkipsUnknownIDs(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+	require.NoError(t, s.UpsertContacts(ctx, []Contact{
+		{OpenID: "ou_a", Name: "A", Email: "a@x.cn"},
+		{OpenID: "cli_bot", Name: "Bot", IsBot: true},
+	}, 1))
+
+	got, err := s.ContactsByIDs(ctx, []string{"ou_a", "cli_bot", "ou_missing"})
+	require.NoError(t, err)
+	require.Len(t, got, 2)
+	require.Equal(t, "a@x.cn", got["ou_a"].Email)
+	require.True(t, got["cli_bot"].IsBot)
+	require.NotContains(t, got, "ou_missing")
+}
+
 func TestSetContactDetails_KeepsAnEmailTheLookupOmits(t *testing.T) {
 	s := openTest(t)
 	ctx := context.Background()
