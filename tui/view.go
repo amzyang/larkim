@@ -414,7 +414,7 @@ func (m Model) renderHeader(w int) string {
 	if name == "" {
 		name = "(unnamed)"
 	}
-	parts := []string{stBold.Render(name), c.ChatMode, stAccent.Render(c.ChatID), fmt.Sprintf("%d msgs", c.MessageCount)}
+	parts := []string{stBold.Render(name), c.ChatMode, stAccent.Render(c.ChatID)}
 	if c.SyncError != "" {
 		parts = append(parts, stErr.Render("history unavailable"))
 	}
