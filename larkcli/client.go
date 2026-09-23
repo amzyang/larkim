@@ -30,8 +30,10 @@ type Client interface {
 	ChatMembers(ctx context.Context, chatID string) ([]ChatMember, error)
 	// SearchUsers finds users by keyword (name or email) or by open_id list.
 	SearchUsers(ctx context.Context, query string, ids []string) ([]User, error)
-	// UserDetail fetches a user's name and avatar URL.
-	UserDetail(ctx context.Context, openID string) (UserDetail, error)
+	// UserDetails fetches names and avatar URLs. Users outside the app's
+	// directory scope come back absent rather than as an error, so the result
+	// may be shorter than the input.
+	UserDetails(ctx context.Context, openIDs []string) ([]UserDetail, error)
 	// SearchChats finds group chats by name keyword.
 	SearchChats(ctx context.Context, query string) ([]RawChat, error)
 	// SendText sends a plain-text message to a chat or a user.

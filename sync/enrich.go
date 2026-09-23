@@ -2,7 +2,6 @@ package sync
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"mime"
@@ -173,32 +172,8 @@ func (s *Syncer) avatarsSlice(ctx context.Context, now time.Time) (int, error) {
 	if s.Fetch == nil || s.Opt.DataDir == "" {
 		return 0, nil
 	}
-	need, err := s.Store.ContactsNeedingAvatar(ctx, s.Opt.AvatarsPerTick)
-	if err != nil {
+	if err := s.resolveAvatarURLs(ctx, now); err != nil {
 		return 0, err
-	}
-	for _, c := range need {
-		d, err := s.Client.UserDetail(ctx, c.OpenID)
-		if err != nil {
-			var le *larkcli.Error
-			if errors.As(err, &le) && le.IsPermanent() {
-				if err := s.Store.SetContactAvatar(ctx, c.OpenID, store.AvatarNone, now.UnixMilli()); err != nil {
-					return 0, err
-				}
-				continue
-			}
-			return 0, err
-		}
-		url := d.AvatarURL
-		if url == "" {
-			url = store.AvatarNone
-		}
-		if err := s.Store.SetContactAvatar(ctx, c.OpenID, url, now.UnixMilli()); err != nil {
-			return 0, err
-		}
-		if d.Name != "" {
-			_ = s.Store.UpsertContacts(ctx, []store.Contact{{OpenID: c.OpenID, Name: d.Name}}, now.UnixMilli())
-		}
 	}
 	chats, contacts, err := s.Store.AvatarsToDownload(ctx, s.Opt.AvatarsPerTick)
 	if err != nil {
@@ -224,6 +199,51 @@ func (s *Syncer) avatarsSlice(ctx context.Context, now time.Time) (int, error) {
 		}
 	}
 	return done, nil
+}
+
+// resolveAvatarURLs settles the avatar URL of one batch of contacts that have
+// none yet. An id the tenant withheld — the app's directory scope does not
+// reach that user — comes back absent and is recorded as having no avatar, so
+// it is asked for once rather than every tick.
+func (s *Syncer) resolveAvatarURLs(ctx context.Context, now time.Time) error {
+	need, err := s.Store.ContactsNeedingAvatar(ctx, larkcli.MaxUserDetailsBatch)
+	if err != nil {
+		return err
+	}
+	if len(need) == 0 {
+		return nil
+	}
+	ids := make([]string, len(need))
+	for i, c := range need {
+		ids[i] = c.OpenID
+	}
+	details, err := s.Client.UserDetails(ctx, ids)
+	if err != nil {
+		return err
+	}
+	byID := make(map[string]larkcli.UserDetail, len(details))
+	for _, d := range details {
+		byID[d.OpenID] = d
+	}
+	named := make([]store.Contact, 0, len(details))
+	for _, id := range ids {
+		d := byID[id]
+		url := store.AvatarNone
+		if d.AvatarURL != "" {
+			url = d.AvatarURL
+		}
+		if err := s.Store.SetContactAvatar(ctx, id, url, now.UnixMilli()); err != nil {
+			return err
+		}
+		if d.Name != "" {
+			named = append(named, store.Contact{OpenID: id, Name: d.Name})
+		}
+	}
+	if len(named) > 0 {
+		// A name refresh riding along with the avatar lookup is best-effort.
+		_ = s.Store.UpsertContacts(ctx, named, now.UnixMilli())
+	}
+	return nil
 }
 
 // downloadAvatar stores an avatar under resources/avatars/<kind>/<id>.<ext>

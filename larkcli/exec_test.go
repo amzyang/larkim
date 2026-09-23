@@ -220,3 +220,38 @@ echo '{"ok":true,"identity":"user","data":{"users":[{"open_id":"ou_1","localized
 	require.NoError(t, err)
 	require.Contains(t, string(calls), "--query 陈建伟")
 }
+
+func TestUserDetails_RepeatsUserIDsAndDropsWithheldUsers(t *testing.T) {
+	c := fakeBinary(t, `
+echo "$*" >> "$(dirname "$0")/calls"
+echo '{"ok":true,"identity":"user","data":{"items":[
+ {"open_id":"ou_in","name":"卢浩然","avatar":{"avatar_240":"https://cdn/a.png"}}
+]}}'`)
+	got, err := c.UserDetails(context.Background(), []string{"ou_in", "ou_out"})
+	require.NoError(t, err)
+	require.Len(t, got, 1, "a user outside the directory scope is absent, not an error")
+	require.Equal(t, "ou_in", got[0].OpenID)
+	require.Equal(t, "https://cdn/a.png", got[0].AvatarURL)
+
+	calls, err := os.ReadFile(filepath.Join(c.Dir, "calls"))
+	require.NoError(t, err)
+	require.Contains(t, string(calls), `"user_ids":["ou_in","ou_out"]`,
+		"user_ids must repeat as an array; a comma-joined string reads as one malformed id")
+}
+
+func TestUserDetails_SplitsIntoBatches(t *testing.T) {
+	c := fakeBinary(t, `
+echo "$*" >> "$(dirname "$0")/calls"
+echo '{"ok":true,"identity":"user","data":{"items":[]}}'`)
+	ids := make([]string, MaxUserDetailsBatch+1)
+	for i := range ids {
+		ids[i] = fmt.Sprintf("ou_%02d", i)
+	}
+	_, err := c.UserDetails(context.Background(), ids)
+	require.NoError(t, err)
+
+	calls, err := os.ReadFile(filepath.Join(c.Dir, "calls"))
+	require.NoError(t, err)
+	require.Len(t, strings.Split(strings.TrimSpace(string(calls)), "\n"), 2,
+		"%d ids need a second call", len(ids))
+}

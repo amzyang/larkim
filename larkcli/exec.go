@@ -435,24 +435,37 @@ func (c *ExecClient) searchUsers(ctx context.Context, flag, value string) ([]Use
 	return resp.Users, nil
 }
 
-func (c *ExecClient) UserDetail(ctx context.Context, openID string) (UserDetail, error) {
-	data, err := c.run(ctx, "api", "GET", "/open-apis/contact/v3/users/"+openID, "--params", jsonArg(map[string]string{"user_id_type": "open_id"}))
-	if err != nil {
-		return UserDetail{}, err
+// MaxUserDetailsBatch is the documented cap of contact/v3/users/batch.
+const MaxUserDetailsBatch = 50
+
+func (c *ExecClient) UserDetails(ctx context.Context, openIDs []string) ([]UserDetail, error) {
+	var out []UserDetail
+	for start := 0; start < len(openIDs); start += MaxUserDetailsBatch {
+		batch := openIDs[start:min(start+MaxUserDetailsBatch, len(openIDs))]
+		// user_ids has to repeat as a query parameter; a comma-joined string
+		// reads as one malformed id and the whole call comes back empty.
+		data, err := c.run(ctx, "api", "GET", "/open-apis/contact/v3/users/batch",
+			"--params", jsonArg(map[string]any{"user_ids": batch, "user_id_type": "open_id"}))
+		if err != nil {
+			return nil, err
+		}
+		var resp struct {
+			Items []struct {
+				OpenID string `json:"open_id"`
+				Name   string `json:"name"`
+				Avatar struct {
+					Avatar240 string `json:"avatar_240"`
+				} `json:"avatar"`
+			} `json:"items"`
+		}
+		if err := json.Unmarshal(data, &resp); err != nil {
+			return nil, fmt.Errorf("decode users: %w", err)
+		}
+		for _, it := range resp.Items {
+			out = append(out, UserDetail{OpenID: it.OpenID, Name: it.Name, AvatarURL: it.Avatar.Avatar240})
+		}
 	}
-	var resp struct {
-		User struct {
-			OpenID string `json:"open_id"`
-			Name   string `json:"name"`
-			Avatar struct {
-				Avatar240 string `json:"avatar_240"`
-			} `json:"avatar"`
-		} `json:"user"`
-	}
-	if err := json.Unmarshal(data, &resp); err != nil {
-		return UserDetail{}, fmt.Errorf("decode user: %w", err)
-	}
-	return UserDetail{OpenID: resp.User.OpenID, Name: resp.User.Name, AvatarURL: resp.User.Avatar.Avatar240}, nil
+	return out, nil
 }
 
 func (c *ExecClient) SearchChats(ctx context.Context, query string) ([]RawChat, error) {

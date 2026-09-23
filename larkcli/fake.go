@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 )
@@ -219,17 +220,20 @@ func (f *Fake) SearchUsers(_ context.Context, query string, ids []string) ([]Use
 	return out, nil
 }
 
-func (f *Fake) UserDetail(_ context.Context, openID string) (UserDetail, error) {
-	if err := f.record("user:" + openID); err != nil {
-		return UserDetail{}, err
+func (f *Fake) UserDetails(_ context.Context, openIDs []string) ([]UserDetail, error) {
+	if err := f.record("users:" + strings.Join(openIDs, ",")); err != nil {
+		return nil, err
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	d, ok := f.Details[openID]
-	if !ok {
-		return UserDetail{}, &Error{ExitCode: ExitAPI, Type: "api", Subtype: "not_found", Message: "user not found"}
+	var out []UserDetail
+	for _, id := range openIDs {
+		// A user outside the directory scope is simply absent, as upstream.
+		if d, ok := f.Details[id]; ok {
+			out = append(out, d)
+		}
 	}
-	return d, nil
+	return out, nil
 }
 
 func (f *Fake) SearchChats(_ context.Context, query string) ([]RawChat, error) {

@@ -113,3 +113,34 @@ func TestTick_DoesNotReAskForContactsTheSearchOmitted(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, need, "an id the search cannot resolve is marked checked, not retried every tick")
 }
+
+func TestTick_MarksWithheldContactsAsHavingNoAvatar(t *testing.T) {
+	s, f, clk := newSyncer(t)
+	ctx := context.Background()
+	s.Opt.DataDir = t.TempDir()
+	s.Fetch = func(_ context.Context, url string) ([]byte, string, error) {
+		return []byte("png-bytes"), "image/png", nil
+	}
+	f.Chats = []larkcli.RawChat{{ChatID: "oc_g", Name: "G", ChatMode: "group"}}
+	f.Members["oc_g"] = []larkcli.ChatMember{{MemberID: "ou_in", Name: "In"}, {MemberID: "ou_out", Name: "Out"}}
+	// Only ou_in is within the app's directory scope.
+	f.Details["ou_in"] = larkcli.UserDetail{OpenID: "ou_in", Name: "In", AvatarURL: "https://cdn/in.png"}
+	m := msg("om_1", "oc_g", clk.t.Add(-time.Minute), "hi")
+	m.Sender = larkcli.RawSender{ID: "ou_in", SenderType: "user", SenderName: "In"}
+	f.AddMessage(m)
+
+	_, err := s.Tick(ctx)
+	require.NoError(t, err)
+
+	in, err := s.Store.GetContact(ctx, "ou_in")
+	require.NoError(t, err)
+	require.Equal(t, "https://cdn/in.png", in.AvatarURL)
+
+	out, err := s.Store.GetContact(ctx, "ou_out")
+	require.NoError(t, err)
+	require.Equal(t, store.AvatarNone, out.AvatarURL, "a withheld user is settled, not retried every tick")
+
+	need, err := s.Store.ContactsNeedingAvatar(ctx, 10)
+	require.NoError(t, err)
+	require.Empty(t, need)
+}
