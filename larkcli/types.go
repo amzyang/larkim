@@ -3,6 +3,9 @@
 // lark-cli owns authentication (OAuth device flow, keychain, token refresh),
 // pagination and rate-limit classification; this package only shells out to it
 // and decodes its documented JSON envelope.
+//
+// Calls run with user identity, except contact reads, which go as the app so
+// they reach the whole tenant rather than one person's view of it.
 package larkcli
 
 import (

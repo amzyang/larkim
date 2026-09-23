@@ -257,18 +257,3 @@ func refreshChatSummary(ctx context.Context, tx *sql.Tx, chatID string) error {
 		c.LastMsgType, c.LastContent, c.LastContentRaw, c.LastRenderedAt, c.LastDeleted, chatID)
 	return err
 }
-
-// RefreshChatSummary recomputes one chat's cold-stored newest message. Writes
-// that go through UpsertMessages or UpdateRendered do this themselves; this is
-// for repairing a chat whose messages were changed some other way.
-func (s *Store) RefreshChatSummary(ctx context.Context, chatID string) error {
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-	if err := refreshChatSummary(ctx, tx, chatID); err != nil {
-		return err
-	}
-	return tx.Commit()
-}

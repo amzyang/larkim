@@ -237,6 +237,8 @@ echo '{"ok":true,"identity":"user","data":{"items":[
 	require.NoError(t, err)
 	require.Contains(t, string(calls), `"user_ids":["ou_in","ou_out"]`,
 		"user_ids must repeat as an array; a comma-joined string reads as one malformed id")
+	require.Contains(t, string(calls), "--as bot",
+		"contact reads go as the app, whose directory scope is tenant-wide")
 }
 
 func TestUserDetails_SplitsIntoBatches(t *testing.T) {

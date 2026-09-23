@@ -144,3 +144,49 @@ func TestTick_MarksWithheldContactsAsHavingNoAvatar(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, need)
 }
+
+func TestTick_APermanentAvatarRejectionDoesNotWedgeLaterSlices(t *testing.T) {
+	s, f, clk := newSyncer(t)
+	ctx := context.Background()
+	s.Opt.DataDir = t.TempDir()
+	s.Fetch = func(_ context.Context, url string) ([]byte, string, error) {
+		return []byte("png-bytes"), "image/png", nil
+	}
+	f.Chats = []larkcli.RawChat{{ChatID: "oc_p", Name: "P", ChatMode: "p2p", P2PTargetID: "ou_a", P2PTargetType: "user"}}
+	f.Users = []larkcli.User{{OpenID: "ou_a", Name: "A", EnterpriseEmail: "a01@x.cn"}}
+	f.DetailsErr = &larkcli.Error{ExitCode: larkcli.ExitAPI, Type: "api", Subtype: "permission_denied", Code: 41050}
+	m := msg("om_1", "oc_p", clk.t.Add(-time.Minute), "hi")
+	m.Sender = larkcli.RawSender{ID: "ou_a", SenderType: "user", SenderName: "A"}
+	f.AddMessage(m)
+
+	rep, err := s.Tick(ctx)
+	require.NoError(t, err, "a permanent rejection settles the batch instead of failing the tick")
+	require.Equal(t, 1, rep.Contacts, "the slice after avatars still ran")
+
+	c, err := s.Store.GetContact(ctx, "ou_a")
+	require.NoError(t, err)
+	require.Equal(t, store.AvatarNone, c.AvatarURL)
+
+	need, err := s.Store.ContactsNeedingAvatar(ctx, 10)
+	require.NoError(t, err)
+	require.Empty(t, need, "and the same ids do not come back next tick")
+}
+
+func TestTick_ATransientAvatarFailureStillFailsTheTick(t *testing.T) {
+	s, f, clk := newSyncer(t)
+	ctx := context.Background()
+	s.Opt.DataDir = t.TempDir()
+	s.Fetch = func(_ context.Context, url string) ([]byte, string, error) { return nil, "", nil }
+	f.Chats = []larkcli.RawChat{{ChatID: "oc_p", Name: "P", ChatMode: "p2p", P2PTargetID: "ou_a", P2PTargetType: "user"}}
+	f.DetailsErr = &larkcli.Error{ExitCode: larkcli.ExitNetwork, Type: "network"}
+	m := msg("om_1", "oc_p", clk.t.Add(-time.Minute), "hi")
+	m.Sender = larkcli.RawSender{ID: "ou_a", SenderType: "user", SenderName: "A"}
+	f.AddMessage(m)
+
+	_, err := s.Tick(ctx)
+	require.Error(t, err, "a network blip must not be recorded as 'this user has no avatar'")
+
+	c, err := s.Store.GetContact(ctx, "ou_a")
+	require.NoError(t, err)
+	require.Empty(t, c.AvatarURL, "the contact stays queued")
+}

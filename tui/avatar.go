@@ -116,7 +116,10 @@ func (k *kittyAvatars) prepare(chats []store.Chat) string {
 		}
 		id := k.take(c.ChatID)
 		if err := transmitAvatar(&out, id, img); err != nil {
+			// Both maps key the same chat; leaving one behind would let take
+			// pick it as the oldest and hand out image id 0.
 			delete(k.id, c.ChatID)
+			delete(k.used, c.ChatID)
 			k.failed[c.ChatID] = true
 			continue
 		}

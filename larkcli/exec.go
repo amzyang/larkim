@@ -106,7 +106,14 @@ type envelopeError struct {
 // run executes lark-cli with args plus the user identity and JSON output flags
 // and returns the envelope's data.
 func (c *ExecClient) run(ctx context.Context, args ...string) (json.RawMessage, error) {
-	stdout, stderr, exitCode, err := c.exec(ctx, append(args, "--as", "user", "--json")...)
+	return c.runAs(ctx, "user", args...)
+}
+
+// runAs is run with an explicit identity. Contact reads go as the app, whose
+// directory scope is the tenant-wide one; the user identity sees only what
+// the signed-in person sees.
+func (c *ExecClient) runAs(ctx context.Context, identity string, args ...string) (json.RawMessage, error) {
+	stdout, stderr, exitCode, err := c.exec(ctx, append(args, "--as", identity, "--json")...)
 	if err != nil {
 		return nil, err
 	}
@@ -444,7 +451,10 @@ func (c *ExecClient) UserDetails(ctx context.Context, openIDs []string) ([]UserD
 		batch := openIDs[start:min(start+MaxUserDetailsBatch, len(openIDs))]
 		// user_ids has to repeat as a query parameter; a comma-joined string
 		// reads as one malformed id and the whole call comes back empty.
-		data, err := c.run(ctx, "api", "GET", "/open-apis/contact/v3/users/batch",
+		// As the app, not the user: the app's directory scope covers the whole
+		// tenant, while a user token returns only the colleagues that person
+		// can see.
+		data, err := c.runAs(ctx, "bot", "api", "GET", "/open-apis/contact/v3/users/batch",
 			"--params", jsonArg(map[string]any{"user_ids": batch, "user_id_type": "open_id"}))
 		if err != nil {
 			return nil, err

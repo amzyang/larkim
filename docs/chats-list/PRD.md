@@ -96,7 +96,7 @@ TUI 左侧会话列表按飞书桌面端的信息密度重做：头像 + 两行�
 
 ### chats 冷存摘要列
 
-`loadChats` 在每批变更后重跑（`store.Watch` 最密 500ms 一次），最新消息不能靠相关子查询取。同步层在每个改动 `messages` 的路径上显式回填 `RefreshChatSummary(chatID)`——ingest、`rendered_at` 补齐、`updated` 编辑、`deleted` 撤回，四条路径都要调。
+`loadChats` 在每批变更后重跑（`store.Watch` 最密 500ms 一次），最新消息不能靠相关子查询取。回填放在 store 层：`UpsertMessages`（覆盖 ingest、编辑、撤回）和 `UpdateRendered`（覆盖渲染补齐）在各自的事务里重算受影响会话的摘要。这两条是仅有的写 `messages` 的路径，同一原子边界内完成，新增调用方也漏不掉。
 
 新增列：`last_message_id`、`last_message_ms`、`last_sender_id`、`last_sender_name`、`last_msg_type`、`last_summary`、`last_deleted`、`muted`、`mute_checked_at`。
 

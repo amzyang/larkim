@@ -31,8 +31,10 @@ type Fake struct {
 	Err error
 	// ListErr injects a per-container error into ListMessagesRaw.
 	ListErr map[string]error
-	Calls   []string
-	sent    int
+	// DetailsErr injects an error into UserDetails alone.
+	DetailsErr error
+	Calls      []string
+	sent       int
 }
 
 // NewFake returns an empty Fake with a default identity.
@@ -223,6 +225,9 @@ func (f *Fake) SearchUsers(_ context.Context, query string, ids []string) ([]Use
 func (f *Fake) UserDetails(_ context.Context, openIDs []string) ([]UserDetail, error) {
 	if err := f.record("users:" + strings.Join(openIDs, ",")); err != nil {
 		return nil, err
+	}
+	if f.DetailsErr != nil {
+		return nil, f.DetailsErr
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()

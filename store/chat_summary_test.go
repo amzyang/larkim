@@ -119,7 +119,7 @@ func TestUpsertMessages_CarriesEditsAndRecallsIntoTheSummary(t *testing.T) {
 	require.True(t, summaryOf(t, s, "oc_a").LastDeleted)
 }
 
-func TestRefreshChatSummary_ClearsAChatWithNoMainFlowMessage(t *testing.T) {
+func TestUpsertMessages_ClearsAChatLeftWithNoMainFlowMessage(t *testing.T) {
 	s := openTest(t)
 	ctx := context.Background()
 	require.NoError(t, s.EnsureChat(ctx, "oc_a", 1))
@@ -127,12 +127,14 @@ func TestRefreshChatSummary_ClearsAChatWithNoMainFlowMessage(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, summaryOf(t, s, "oc_a").LastMessageID)
 
-	_, err = s.DB().ExecContext(ctx, `DELETE FROM messages WHERE chat_id = 'oc_a'`)
+	// The chat's only main-flow message turns out to be a thread reply.
+	reply := msgAt("om_1", "oc_a", 100, -3, "hi")
+	reply.ThreadID = "omt_1"
+	_, err = s.UpsertMessages(ctx, []Message{reply}, 2)
 	require.NoError(t, err)
-	require.NoError(t, s.RefreshChatSummary(ctx, "oc_a"))
 
 	c := summaryOf(t, s, "oc_a")
-	require.Empty(t, c.LastMessageID)
+	require.Empty(t, c.LastMessageID, "the summary is cleared, not left stale")
 	require.Zero(t, c.LastMessageMs)
 }
 

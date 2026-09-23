@@ -2,6 +2,7 @@ package sync
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"mime"
@@ -129,10 +130,9 @@ func senderContacts(msgs []larkcli.RawMessage) []store.Contact {
 	return out
 }
 
-// contactDetailsSlice resolves identity fields for a few contacts per tick.
-// It uses `contact +search-user`, which answers tenant-wide, unlike
-// contact/v3/users/{id} (see avatarsSlice) whose reach is the app's directory
-// scope.
+// contactDetailsSlice resolves identity fields for a few contacts per tick,
+// through `contact +search-user` rather than the batch user lookup that
+// avatarsSlice uses: only the search carries the enterprise address.
 func (s *Syncer) contactDetailsSlice(ctx context.Context, now time.Time) (int, error) {
 	if s.Opt.ContactDetailsPerTick <= 0 {
 		return 0, nil
@@ -219,7 +219,19 @@ func (s *Syncer) resolveAvatarURLs(ctx context.Context, now time.Time) error {
 	}
 	details, err := s.Client.UserDetails(ctx, ids)
 	if err != nil {
-		return err
+		// A permanent rejection settles the batch as having no avatar. Letting
+		// it propagate would fail the tick before the later slices run and
+		// hand back the same ids next time, forever.
+		var le *larkcli.Error
+		if !errors.As(err, &le) || !le.IsPermanent() {
+			return err
+		}
+		for _, id := range ids {
+			if err := s.Store.SetContactAvatar(ctx, id, store.AvatarNone, now.UnixMilli()); err != nil {
+				return err
+			}
+		}
+		return nil
 	}
 	byID := make(map[string]larkcli.UserDetail, len(details))
 	for _, d := range details {

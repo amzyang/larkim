@@ -29,7 +29,7 @@ One row per chat the user is (or was) in, from `GET /im/v1/chats` with `types=p2
 
 A chat first seen only through a message (before the next full listing) exists with an empty name.
 
-The `last_*` columns mirror the newest message whose `message_position` is non-negative, so the list shows what the chat's main flow shows: thread replies are excluded, thread roots are not. `UpsertMessages` and `UpdateRendered` rewrite them in their own transaction, which covers ingest, edits, recalls and rendering; `RefreshChatSummary` repairs a chat whose messages changed some other way. Order chats by `last_message_ms` rather than an aggregate over `messages`.
+The `last_*` columns mirror the newest message whose `message_position` is non-negative, so the list shows what the chat's main flow shows: thread replies are excluded, thread roots are not. `UpsertMessages` and `UpdateRendered` rewrite them in their own transaction, which covers ingest, edits, recalls and rendering. Order chats by `last_message_ms` rather than an aggregate over `messages`.
 
 ## messages
 
