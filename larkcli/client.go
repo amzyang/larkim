@@ -30,6 +30,9 @@ type Client interface {
 	ChatMembers(ctx context.Context, chatID string) ([]ChatMember, error)
 	// SearchUsers finds users by keyword (name or email) or by open_id list.
 	SearchUsers(ctx context.Context, query string, ids []string) ([]User, error)
+	// AppDetail fetches one app's name and icon, which is how a bot's
+	// picture is reached.
+	AppDetail(ctx context.Context, appID string) (AppDetail, error)
 	// UserDetails fetches names and avatar URLs. Users outside the app's
 	// directory scope come back absent rather than as an error, so the result
 	// may be shorter than the input.

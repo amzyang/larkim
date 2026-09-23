@@ -166,6 +166,40 @@ func (s *Syncer) contactDetailsSlice(ctx context.Context, now time.Time) (int, e
 	return len(details), nil
 }
 
+// resolveBotAvatarURLs fills in bot pictures, which come from the app behind
+// each bot rather than the directory: a bot open id is not a user id.
+func (s *Syncer) resolveBotAvatarURLs(ctx context.Context, now time.Time) error {
+	bots, err := s.Store.BotsNeedingAvatar(ctx, s.Opt.AvatarsPerTick)
+	if err != nil {
+		return err
+	}
+	for _, b := range bots {
+		url, name := store.AvatarNone, ""
+		app, err := s.Client.AppDetail(ctx, b.AppID)
+		switch {
+		case err == nil:
+			if app.AvatarURL != "" {
+				url = app.AvatarURL
+			}
+			name = app.Name
+		default:
+			// Same bargain as the user lookup: an app this tenant will not
+			// show is settled, so it is asked for once rather than forever.
+			var le *larkcli.Error
+			if !errors.As(err, &le) || !le.IsPermanent() {
+				return err
+			}
+		}
+		if err := s.Store.SetContactAvatar(ctx, b.OpenID, url, now.UnixMilli()); err != nil {
+			return err
+		}
+		if name != "" {
+			_ = s.Store.UpsertContacts(ctx, []store.Contact{{OpenID: b.OpenID, Name: name, IsBot: true}}, now.UnixMilli())
+		}
+	}
+	return nil
+}
+
 // avatarsSlice resolves avatar URLs for contacts and downloads a few chat and
 // contact avatars per tick into resources/avatars/.
 func (s *Syncer) avatarsSlice(ctx context.Context, now time.Time) (int, error) {
@@ -173,6 +207,9 @@ func (s *Syncer) avatarsSlice(ctx context.Context, now time.Time) (int, error) {
 		return 0, nil
 	}
 	if err := s.resolveAvatarURLs(ctx, now); err != nil {
+		return 0, err
+	}
+	if err := s.resolveBotAvatarURLs(ctx, now); err != nil {
 		return 0, err
 	}
 	chats, contacts, err := s.Store.AvatarsToDownload(ctx, s.Opt.AvatarsPerTick)

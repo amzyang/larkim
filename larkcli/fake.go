@@ -33,8 +33,10 @@ type Fake struct {
 	ListErr map[string]error
 	// DetailsErr injects an error into UserDetails alone.
 	DetailsErr error
-	Calls      []string
-	sent       int
+	// Apps are the apps AppDetail can resolve, by app id.
+	Apps  map[string]AppDetail
+	Calls []string
+	sent  int
 }
 
 // NewFake returns an empty Fake with a default identity.
@@ -46,6 +48,7 @@ func NewFake() *Fake {
 		Read:      map[string]bool{},
 		Members:   map[string][]ChatMember{},
 		Details:   map[string]UserDetail{},
+		Apps:      map[string]AppDetail{},
 		Self:      Identity{AppID: "cli_test", UserOpenID: "ou_self"},
 	}
 }
@@ -220,6 +223,20 @@ func (f *Fake) SearchUsers(_ context.Context, query string, ids []string) ([]Use
 		}
 	}
 	return out, nil
+}
+
+func (f *Fake) AppDetail(_ context.Context, appID string) (AppDetail, error) {
+	if err := f.record("app:" + appID); err != nil {
+		return AppDetail{}, err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	a, ok := f.Apps[appID]
+	if !ok {
+		return AppDetail{}, &Error{ExitCode: ExitAPI, Type: "api", Subtype: "not_found", Code: 210508,
+			Message: "insufficient permission level"}
+	}
+	return a, nil
 }
 
 func (f *Fake) UserDetails(_ context.Context, openIDs []string) ([]UserDetail, error) {

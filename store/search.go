@@ -104,6 +104,27 @@ func (s *Store) ContactsNeedingAvatar(ctx context.Context, limit int) ([]Contact
  ORDER BY (SELECT max(create_ms) FROM messages m WHERE m.sender_id = c.open_id) DESC LIMIT ?`, limit)
 }
 
+// BotRef pairs a bot's contact id with the app it belongs to.
+type BotRef struct {
+	OpenID string
+	AppID  string
+}
+
+// BotsNeedingAvatar returns bots whose avatar is still unknown, newest
+// speaker first. A bot's picture is its app's icon, and the only place the
+// app id appears is the sender of a message it sent, so a bot that has never
+// spoken is simply not listed.
+func (s *Store) BotsNeedingAvatar(ctx context.Context, limit int) ([]BotRef, error) {
+	return queryAll(ctx, s.db, func(sc scanner) (BotRef, error) {
+		var b BotRef
+		err := sc.Scan(&b.OpenID, &b.AppID)
+		return b, err
+	}, `SELECT c.open_id, json_extract(m.raw_json, '$.sender.id')
+ FROM contacts c JOIN messages m ON m.sender_id = c.open_id AND m.sender_type = 'app'
+ WHERE c.is_bot = 1 AND c.avatar_url = '' AND json_extract(m.raw_json, '$.sender.id_type') = 'app_id'
+ GROUP BY c.open_id ORDER BY max(m.create_ms) DESC LIMIT ?`, limit)
+}
+
 // SetContactAvatar records the avatar URL of a contact.
 func (s *Store) SetContactAvatar(ctx context.Context, openID, url string, now int64) error {
 	_, err := s.db.ExecContext(ctx, `UPDATE contacts SET avatar_url = ?, updated_at = ? WHERE open_id = ?`, url, now, openID)

@@ -2,6 +2,8 @@ package sync
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -189,4 +191,91 @@ func TestTick_ATransientAvatarFailureStillFailsTheTick(t *testing.T) {
 	c, err := s.Store.GetContact(ctx, "ou_a")
 	require.NoError(t, err)
 	require.Empty(t, c.AvatarURL, "the contact stays queued")
+}
+
+// botMsg is a message as a bot sends it: the sender carries the app id that a
+// bot's picture has to be looked up by.
+func botMsg(id, chatID, botOpenID, appID string, at time.Time) larkcli.RawMessage {
+	m := msg(id, chatID, at, "beep")
+	m.Sender = larkcli.RawSender{ID: appID, IDType: "app_id", SenderType: "app", SenderName: "Bot", OpenBotID: botOpenID}
+	m.Raw, _ = json.Marshal(map[string]any{
+		"message_id": id, "chat_id": chatID, "msg_type": "text",
+		"create_time": fmt.Sprint(at.UnixMilli()),
+		"body":        map[string]string{"content": `{"text":"beep"}`},
+		"sender": map[string]any{
+			"id": appID, "id_type": "app_id", "sender_type": "app",
+			"sender_name": "Bot", "open_bot_id": botOpenID,
+		},
+	})
+	return m
+}
+
+func TestTick_ResolvesBotAvatarsThroughTheirApp(t *testing.T) {
+	s, f, clk := newSyncer(t)
+	ctx := context.Background()
+	s.Opt.DataDir = t.TempDir()
+	s.Fetch = func(_ context.Context, url string) ([]byte, string, error) {
+		return []byte("png-bytes"), "image/png", nil
+	}
+	f.Chats = []larkcli.RawChat{{ChatID: "oc_b", Name: "轻舟平台", ChatMode: "p2p",
+		P2PTargetID: "ou_bot", P2PTargetType: "bot"}}
+	f.Apps["cli_x"] = larkcli.AppDetail{AppID: "cli_x", Name: "轻舟平台", AvatarURL: "https://cdn/bot.png"}
+	f.AddMessage(botMsg("om_1", "oc_b", "ou_bot", "cli_x", clk.t.Add(-time.Minute)))
+
+	_, err := s.Tick(ctx)
+	require.NoError(t, err)
+
+	c, err := s.Store.GetContact(ctx, "ou_bot")
+	require.NoError(t, err)
+	require.Equal(t, "https://cdn/bot.png", c.AvatarURL)
+	require.True(t, c.IsBot)
+
+	require.Empty(t, mustBots(t, s), "and it is not asked for again")
+}
+
+func TestBotsNeedingAvatar_SkipsBotsThatNeverSpoke(t *testing.T) {
+	s, f, clk := newSyncer(t)
+	ctx := context.Background()
+	s.Opt.DataDir = t.TempDir()
+	s.Fetch = func(_ context.Context, url string) ([]byte, string, error) {
+		return []byte("png-bytes"), "image/png", nil
+	}
+	f.Chats = []larkcli.RawChat{{ChatID: "oc_b", Name: "Quiet", ChatMode: "p2p",
+		P2PTargetID: "ou_quiet", P2PTargetType: "bot"}}
+	// A human message keeps the tick busy; the bot itself says nothing.
+	m := msg("om_1", "oc_b", clk.t.Add(-time.Minute), "hi")
+	m.Sender = larkcli.RawSender{ID: "ou_quiet", SenderType: "user", SenderName: "Quiet"}
+	f.AddMessage(m)
+
+	_, err := s.Tick(ctx)
+	require.NoError(t, err)
+	require.Empty(t, mustBots(t, s), "without a message there is no app id, so nothing to ask for")
+}
+
+func TestTick_SettlesABotWhoseAppTheTenantWillNotShow(t *testing.T) {
+	s, f, clk := newSyncer(t)
+	ctx := context.Background()
+	s.Opt.DataDir = t.TempDir()
+	s.Fetch = func(_ context.Context, url string) ([]byte, string, error) {
+		return []byte("png-bytes"), "image/png", nil
+	}
+	f.Chats = []larkcli.RawChat{{ChatID: "oc_b", Name: "Hidden", ChatMode: "p2p",
+		P2PTargetID: "ou_bot", P2PTargetType: "bot"}}
+	// f.Apps has no entry, so AppDetail answers 210508 as upstream would.
+	f.AddMessage(botMsg("om_1", "oc_b", "ou_bot", "cli_hidden", clk.t.Add(-time.Minute)))
+
+	_, err := s.Tick(ctx)
+	require.NoError(t, err, "a refused app must not fail the tick")
+
+	c, err := s.Store.GetContact(ctx, "ou_bot")
+	require.NoError(t, err)
+	require.Equal(t, store.AvatarNone, c.AvatarURL)
+	require.Empty(t, mustBots(t, s))
+}
+
+func mustBots(t *testing.T, s *Syncer) []store.BotRef {
+	t.Helper()
+	b, err := s.Store.BotsNeedingAvatar(context.Background(), 10)
+	require.NoError(t, err)
+	return b
 }

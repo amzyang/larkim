@@ -442,6 +442,28 @@ func (c *ExecClient) searchUsers(ctx context.Context, flag, value string) ([]Use
 	return resp.Users, nil
 }
 
+// AppDetail reads one app as the app itself, which is the only identity the
+// endpoint accepts. Reaching an app other than this one needs
+// admin:app.info:readonly; without it the server answers 210508.
+func (c *ExecClient) AppDetail(ctx context.Context, appID string) (AppDetail, error) {
+	data, err := c.runAs(ctx, "bot", "api", "GET", "/open-apis/application/v6/applications/"+appID,
+		"--params", jsonArg(map[string]string{"lang": "zh_cn"}))
+	if err != nil {
+		return AppDetail{}, err
+	}
+	var resp struct {
+		App struct {
+			AppID     string `json:"app_id"`
+			AppName   string `json:"app_name"`
+			AvatarURL string `json:"avatar_url"`
+		} `json:"app"`
+	}
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return AppDetail{}, fmt.Errorf("decode app: %w", err)
+	}
+	return AppDetail{AppID: resp.App.AppID, Name: resp.App.AppName, AvatarURL: resp.App.AvatarURL}, nil
+}
+
 // MaxUserDetailsBatch is the documented cap of contact/v3/users/batch.
 const MaxUserDetailsBatch = 50
 

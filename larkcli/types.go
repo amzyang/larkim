@@ -129,6 +129,14 @@ type User struct {
 	P2PChatID       string `json:"p2p_chat_id"`
 }
 
+// AppDetail is the public face of one app: a bot's name and picture are its
+// app's, because a bot is not a directory user.
+type AppDetail struct {
+	AppID     string
+	Name      string
+	AvatarURL string
+}
+
 // UserDetail is the contact card of one user (GET /contact/v3/users/{id}).
 type UserDetail struct {
 	OpenID    string
