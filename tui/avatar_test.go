@@ -4,6 +4,7 @@ import (
 	"image"
 	"image/color"
 	"image/png"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -139,26 +140,53 @@ func TestInitials_SkipsTheDecorationGroupNamesOpenWith(t *testing.T) {
 }
 
 func TestGlyphCell_LaysGlyphsOutByCount(t *testing.T) {
-	half := avatarPixels / 2
-	require.Equal(t, image.Rect(0, 0, avatarPixels, avatarPixels), glyphCell(1, 0),
-		"one glyph owns the whole square")
+	const w, h = 80, 40 // an oblong box, as real terminal cells give
+	require.Equal(t, image.Rect(0, 0, w, h), glyphCell(1, 0, w, h),
+		"one glyph owns the whole box")
 
-	require.Equal(t, image.Rect(0, 0, half, avatarPixels), glyphCell(2, 0))
-	require.Equal(t, image.Rect(half, 0, avatarPixels, avatarPixels), glyphCell(2, 1),
+	require.Equal(t, image.Rect(0, 0, 40, h), glyphCell(2, 0, w, h))
+	require.Equal(t, image.Rect(40, 0, w, h), glyphCell(2, 1, w, h),
 		"two sit side by side")
 
-	require.Equal(t, image.Rect(0, 0, half, half), glyphCell(4, 0))
-	require.Equal(t, image.Rect(half, 0, avatarPixels, half), glyphCell(4, 1))
-	require.Equal(t, image.Rect(0, half, half, avatarPixels), glyphCell(4, 2))
-	require.Equal(t, image.Rect(half, half, avatarPixels, avatarPixels), glyphCell(4, 3),
+	require.Equal(t, image.Rect(0, 0, 40, 20), glyphCell(4, 0, w, h))
+	require.Equal(t, image.Rect(40, 0, w, 20), glyphCell(4, 1, w, h))
+	require.Equal(t, image.Rect(0, 20, 40, h), glyphCell(4, 2, w, h))
+	require.Equal(t, image.Rect(40, 20, w, h), glyphCell(4, 3, w, h),
 		"four fill a 2x2 grid, reading order")
+}
+
+func TestKittyAvatars_DrawsAtTheCellSizeTheTerminalReports(t *testing.T) {
+	k := newKittyAvatars(t.TempDir())
+	w, h := k.box()
+	require.Equal(t, avatarPixels, w, "a square guess until the terminal says")
+	require.Equal(t, avatarPixels, h)
+
+	require.True(t, k.setCellSize(9, 19))
+	w, h = k.box()
+	require.Equal(t, avatarWidth*9, w, "then exactly the pixels the cells occupy")
+	require.Equal(t, chatRowHeight*19, h)
+
+	require.False(t, k.setCellSize(9, 19), "the same size is not a change")
+	require.False(t, k.setCellSize(0, 19), "nor is a nonsense one")
+}
+
+func TestKittyAvatars_ANewCellSizeRedrawsEverything(t *testing.T) {
+	dir := t.TempDir()
+	k := newKittyAvatars(dir)
+	c := store.Chat{ChatID: "oc_1", Name: "程序化养号"}
+	require.NotEmpty(t, k.prepare([]store.Chat{c}))
+	require.Empty(t, k.prepare([]store.Chat{c}))
+
+	require.True(t, k.setCellSize(9, 19))
+	require.NotEmpty(t, k.prepare([]store.Chat{c}),
+		"pictures drawn for the old cell size would be resampled, so they are drawn again")
 }
 
 func TestGenerateAvatar_InksTheGlyphsOntoTheBackground(t *testing.T) {
 	if avatarFont() == nil {
 		t.Skip("no system font on this machine")
 	}
-	m := generateAvatar("程序化养号", 0)
+	m := generateAvatar("程序化养号", 0, avatarPixels, avatarPixels)
 	require.NotNil(t, m)
 	require.Equal(t, image.Rect(0, 0, avatarPixels, avatarPixels), m.Bounds())
 
@@ -172,8 +200,40 @@ func TestGenerateAvatar_InksTheGlyphsOntoTheBackground(t *testing.T) {
 	}
 	require.Greater(t, white, 200, "four glyphs leave a visible amount of ink")
 
-	plain := generateAvatar("", 0).(*image.RGBA)
+	plain := generateAvatar("", 0, avatarPixels, avatarPixels).(*image.RGBA)
 	for i := 0; i < len(plain.Pix); i += 4 {
 		require.NotEqual(t, uint8(0xFF), plain.Pix[i], "a nameless chat gets a bare colour square")
+	}
+}
+
+func TestRoundCorners_ClearsTheCornersAndKeepsTheGlyphs(t *testing.T) {
+	if avatarFont() == nil {
+		t.Skip("no system font on this machine")
+	}
+	m := generateAvatar("程序化养号", 0, avatarPixels, avatarPixels).(*image.RGBA)
+
+	for _, p := range []image.Point{{X: 0, Y: 0}, {X: avatarPixels - 1, Y: 0},
+		{X: 0, Y: avatarPixels - 1}, {X: avatarPixels - 1, Y: avatarPixels - 1}} {
+		_, _, _, a := m.At(p.X, p.Y).RGBA()
+		require.Zero(t, a, "corner %v shows the terminal through", p)
+	}
+
+	_, _, _, a := m.At(avatarPixels/2, avatarPixels/2).RGBA()
+	require.Equal(t, uint32(0xFFFF), a, "the middle stays opaque")
+
+	// The glyph grid runs to the edges of each quadrant, so the rounding must
+	// stop short of where a disc would have cut into them.
+	inset := int(math.Round(float64(avatarPixels) * cornerRadius))
+	for _, p := range []image.Point{{X: inset, Y: 1}, {X: avatarPixels - 1 - inset, Y: 1},
+		{X: 1, Y: inset}, {X: 1, Y: avatarPixels - 1 - inset}} {
+		_, _, _, a := m.At(p.X, p.Y).RGBA()
+		require.Equal(t, uint32(0xFFFF), a, "edge %v stays inside the shape", p)
+	}
+
+	// Premultiplied alpha: no channel may exceed the alpha it is scaled by.
+	for i := 0; i < len(m.Pix); i += 4 {
+		require.LessOrEqual(t, m.Pix[i], m.Pix[i+3], "red exceeds alpha at %d", i)
+		require.LessOrEqual(t, m.Pix[i+1], m.Pix[i+3], "green exceeds alpha at %d", i)
+		require.LessOrEqual(t, m.Pix[i+2], m.Pix[i+3], "blue exceeds alpha at %d", i)
 	}
 }

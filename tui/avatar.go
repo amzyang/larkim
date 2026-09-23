@@ -31,9 +31,9 @@ func (textAvatars) cells(c store.Chat) (string, string) { return avatarBlock(c) 
 func (textAvatars) prepare([]store.Chat) string         { return "" }
 
 const (
-	// avatarPixels is the transmitted size. The terminal scales it to
-	// avatarWidth x chatRowHeight cells, so this only has to be big enough
-	// not to look soft.
+	// avatarPixels is the fallback transmitted size, used until the terminal
+	// reports how large a cell is. Drawing at the exact size the cells will
+	// occupy is what keeps glyphs crisp; anything else gets resampled.
 	avatarPixels = 128
 	// kittyIDBase and kittyIDs bound the image ids. The id travels in the
 	// cell's foreground colour as a 256-colour index, and indices under 16
@@ -63,6 +63,32 @@ type kittyAvatars struct {
 	// so a broken avatar is decoded once, not every frame.
 	failed   map[string]bool
 	fallback textAvatars
+	// cellW, cellH are the terminal's cell size in pixels, zero until it
+	// reports one.
+	cellW, cellH int
+}
+
+// setCellSize records the terminal's cell size and drops every cached
+// picture, because they were drawn for the old one. Returns whether anything
+// changed, so the caller knows to transmit again.
+func (k *kittyAvatars) setCellSize(w, h int) bool {
+	if w <= 0 || h <= 0 || (w == k.cellW && h == k.cellH) {
+		return false
+	}
+	k.cellW, k.cellH = w, h
+	k.id = map[string]int{}
+	k.used = map[string]int64{}
+	k.failed = map[string]bool{}
+	return true
+}
+
+// box is the pixel size an avatar occupies on screen. Before the terminal
+// says, a square guess is the best available.
+func (k *kittyAvatars) box() (w, h int) {
+	if k.cellW <= 0 || k.cellH <= 0 {
+		return avatarPixels, avatarPixels
+	}
+	return avatarWidth * k.cellW, chatRowHeight * k.cellH
 }
 
 func newKittyAvatars(dataDir string) *kittyAvatars {
@@ -132,12 +158,13 @@ func (k *kittyAvatars) prepare(chats []store.Chat) string {
 // there is no file to read — a chat with no picture still deserves to look
 // like the ones that have one.
 func (k *kittyAvatars) picture(c store.Chat) image.Image {
+	w, h := k.box()
 	if f := c.AvatarFile(); f != "" {
-		if img, err := loadAvatar(filepath.Join(k.dataDir, f)); err == nil {
+		if img, err := loadAvatar(filepath.Join(k.dataDir, f), w, h); err == nil {
 			return img
 		}
 	}
-	return generateAvatar(c.Name, chatHash(c.ChatID))
+	return generateAvatar(c.Name, chatHash(c.ChatID), w, h)
 }
 
 // take assigns an image id to chatID, reclaiming the least recently prepared
@@ -161,9 +188,10 @@ func (k *kittyAvatars) take(chatID string) int {
 	return id
 }
 
-// loadAvatar decodes and squares an avatar file. Formats the standard library
-// cannot decode (webp) fail here and fall back to the colour block.
-func loadAvatar(path string) (image.Image, error) {
+// loadAvatar decodes an avatar file at the size it will be shown. Formats the
+// standard library cannot decode (webp) fail here and fall back to a drawn
+// picture.
+func loadAvatar(path string, w, h int) (image.Image, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
@@ -173,7 +201,7 @@ func loadAvatar(path string) (image.Image, error) {
 	if err != nil {
 		return nil, err
 	}
-	dst := image.NewRGBA(image.Rect(0, 0, avatarPixels, avatarPixels))
+	dst := image.NewRGBA(image.Rect(0, 0, w, h))
 	draw.CatmullRom.Scale(dst, dst.Bounds(), src, src.Bounds(), draw.Src, nil)
 	return dst, nil
 }

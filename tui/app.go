@@ -19,6 +19,8 @@ import (
 	"github.com/amzyang/larkim/ai"
 	"github.com/amzyang/larkim/larkcli"
 	"github.com/amzyang/larkim/store"
+	uv "github.com/charmbracelet/ultraviolet"
+	"github.com/charmbracelet/x/ansi"
 )
 
 type pane int
@@ -144,7 +146,10 @@ func Run(ctx context.Context, d Deps) error {
 }
 
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(tea.RequestBackgroundColor, loadChats(m.deps.Store), readSyncStatus(m.deps.Store), pollSyncStatus(m.deps.Store), waitForChange(m.changes))
+	// Asking for the cell size lets avatars be drawn at the exact pixels they
+	// will occupy; resampling is what makes small glyphs mushy.
+	return tea.Batch(tea.RequestBackgroundColor, tea.Raw(ansi.WindowOp(ansi.RequestCellSizeWinOp)),
+		loadChats(m.deps.Store), readSyncStatus(m.deps.Store), pollSyncStatus(m.deps.Store), waitForChange(m.changes))
 }
 
 // Update runs the handler, then hands the terminal any avatar the newly
@@ -184,6 +189,11 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case tea.BackgroundColorMsg:
 		m.setBackground(msg, msg.IsDark())
+		return m, nil
+	case uv.CellSizeEvent:
+		if k, ok := m.avatars.(*kittyAvatars); ok {
+			k.setCellSize(msg.Width, msg.Height)
+		}
 		return m, nil
 	case tea.FocusMsg:
 		m.focused = true

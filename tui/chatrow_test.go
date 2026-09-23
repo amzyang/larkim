@@ -102,15 +102,15 @@ func TestRenderChatRow_AppendsTheAccountSuffix(t *testing.T) {
 func TestRenderChatRow_BotBadgeFollowsTheChatKind(t *testing.T) {
 	bot := store.Chat{ChatID: "oc_1", Name: "天眼告警", ChatMode: "p2p", P2PTargetType: "bot"}
 	top, _ := plainRow(bot, 0, 31)
-	require.Contains(t, top, "BOT")
+	require.Contains(t, top, botBadge)
 
 	person := store.Chat{ChatID: "oc_2", Name: "王将", ChatMode: "p2p", P2PTargetType: "user"}
 	top, _ = plainRow(person, 0, 31)
-	require.NotContains(t, top, "BOT")
+	require.NotContains(t, top, botBadge)
 
 	group := store.Chat{ChatID: "oc_3", Name: "流程中心", ChatMode: "group", LastSenderType: "app"}
 	top, _ = plainRow(group, 0, 31)
-	require.Contains(t, top, "BOT", "a group is flagged by whoever spoke last")
+	require.Contains(t, top, botBadge, "a group is flagged by whoever spoke last")
 }
 
 func TestRenderChatRow_KeepsTheRightEdgeAlignedAndBothLinesInWidth(t *testing.T) {

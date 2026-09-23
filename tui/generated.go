@@ -3,6 +3,7 @@ package tui
 import (
 	"image"
 	"image/color"
+	"math"
 	"os"
 	"sync"
 
@@ -55,15 +56,15 @@ var avatarFont = sync.OnceValue(func() *sfnt.Font {
 })
 
 // avatarFace builds a face at the size one glyph gets, which depends on how
-// many share the square.
-func avatarFace(glyphs int) font.Face {
+// many share the square and how large that square is on screen.
+func avatarFace(glyphs, side int) font.Face {
 	f := avatarFont()
 	if f == nil {
 		return nil
 	}
-	size := avatarPixels * 0.62 // one glyph, alone
+	size := float64(side) * 0.56 // one glyph, alone
 	if glyphs > 1 {
-		size = avatarPixels * 0.38 // a 2x2 cell, with room to breathe
+		size = float64(side) * 0.33 // a 2x2 cell, clear of the rounded edge
 	}
 	face, err := opentype.NewFace(f, &opentype.FaceOptions{Size: size, DPI: 72, Hinting: font.HintingFull})
 	if err != nil {
@@ -87,35 +88,73 @@ func parseFace(b []byte) (*sfnt.Font, error) {
 // generateAvatar draws a stand-in picture for a chat with no avatar file: a
 // colour square carrying the first characters of its name. Returns nil when
 // no usable font was found, which leaves the colour block in charge.
-func generateAvatar(name string, hash uint32) image.Image {
+func generateAvatar(name string, hash uint32, w, h int) image.Image {
 	text := []rune(initials(name))
-	face := avatarFace(len(text))
+	face := avatarFace(len(text), min(w, h))
 	if face == nil {
 		return nil
 	}
-	m := image.NewRGBA(image.Rect(0, 0, avatarPixels, avatarPixels))
+	m := image.NewRGBA(image.Rect(0, 0, w, h))
 	bg := generatedPalette[int(hash)%len(generatedPalette)]
 	for i := 0; i < len(m.Pix); i += 4 {
 		m.Pix[i], m.Pix[i+1], m.Pix[i+2], m.Pix[i+3] = bg.R, bg.G, bg.B, bg.A
 	}
 	for i, r := range text {
-		drawGlyph(m, face, string(r), glyphCell(len(text), i))
+		drawGlyph(m, face, string(r), glyphCell(len(text), i, w, h))
 	}
+	roundCorners(m)
 	return m
+}
+
+// cornerRadius is how far the corners are rounded, as a share of the shorter
+// side. A full disc would cut into a 2x2 grid of glyphs; this leaves them
+// whole while still softening the square.
+const cornerRadius = 0.22
+
+// roundCorners clips the rectangle to a rounded one, so a drawn avatar sits
+// among the real ones rather than standing out as the only hard square. The
+// terminal shows through the cleared corners, which is why the edge fades
+// rather than stepping: there is no background colour here to blend against.
+func roundCorners(m *image.RGBA) {
+	b := m.Bounds()
+	w, h := float64(b.Dx()), float64(b.Dy())
+	r := math.Min(w, h) * cornerRadius
+	// Half-extents of the rectangle the corner arcs are centred on.
+	ex, ey := w/2-r, h/2-r
+	for y := range b.Dy() {
+		for x := range b.Dx() {
+			dx := math.Max(math.Abs(float64(x)+0.5-w/2)-ex, 0)
+			dy := math.Max(math.Abs(float64(y)+0.5-h/2)-ey, 0)
+			// Coverage over the last pixel of the edge, which is all the
+			// anti-aliasing a shape this size needs.
+			cover := r - math.Hypot(dx, dy) + 0.5
+			if cover >= 1 {
+				continue
+			}
+			i := m.PixOffset(x, y)
+			if cover <= 0 {
+				m.Pix[i], m.Pix[i+1], m.Pix[i+2], m.Pix[i+3] = 0, 0, 0, 0
+				continue
+			}
+			// color.RGBA is alpha-premultiplied, so every channel scales.
+			for c := range 4 {
+				m.Pix[i+c] = uint8(float64(m.Pix[i+c]) * cover)
+			}
+		}
+	}
 }
 
 // glyphCell is the square one glyph owns: the whole avatar when it is alone,
 // a half-width column for two, a 2x2 quadrant beyond that.
-func glyphCell(count, i int) image.Rectangle {
-	half := avatarPixels / 2
+func glyphCell(count, i, w, h int) image.Rectangle {
 	switch {
 	case count <= 1:
-		return image.Rect(0, 0, avatarPixels, avatarPixels)
+		return image.Rect(0, 0, w, h)
 	case count == 2:
-		return image.Rect(i*half, 0, (i+1)*half, avatarPixels)
+		return image.Rect(i*w/2, 0, (i+1)*w/2, h)
 	default:
 		col, row := i%2, i/2
-		return image.Rect(col*half, row*half, (col+1)*half, (row+1)*half)
+		return image.Rect(col*w/2, row*h/2, (col+1)*w/2, (row+1)*h/2)
 	}
 }
 

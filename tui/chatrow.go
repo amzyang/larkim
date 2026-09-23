@@ -28,6 +28,10 @@ type chatRow struct {
 // chatTextWidth is how much of a w-wide pane the text half of a row gets.
 func chatTextWidth(w int) int { return max(minTitleWidth, w-avatarWidth-avatarGap) }
 
+// botBadge marks a chat whose other side is a machine. The glyph is
+// double-width, which is a column cheaper than spelling it out.
+const botBadge = "🤖"
+
 // chatHash is a chat's stable colour seed, so it always looks the same.
 func chatHash(chatID string) uint32 {
 	h := fnv.New32a()
@@ -191,7 +195,7 @@ func renderChatRow(av avatars, c store.Chat, unread int64, self string, now time
 
 	bot := ""
 	if isBotChat(c) {
-		bot = " " + stAccent.Render("BOT")
+		bot = botBadge
 	}
 	name, suffix := chatTitle(c)
 	room := textWidth - lipgloss.Width(right) - lipgloss.Width(bot) - lipgloss.Width(suffix) - 1
