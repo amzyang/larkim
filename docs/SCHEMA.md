@@ -22,8 +22,14 @@ One row per chat the user is (or was) in, from `GET /im/v1/chats` with `types=p2
 | `sync_error` | last permanent API rejection (e.g. restricted-mode chats cannot be listed); such chats still receive messages via search |
 | `repaired_at` | when the last repair pass re-listed the chat's recent week |
 | `raw_json` | the API item as received |
+| `last_message_id`, `last_message_ms` | the chat's newest main-flow message; empty and 0 when it has none |
+| `last_sender_id`, `last_sender_name`, `last_sender_type` | that message's sender |
+| `last_msg_type`, `last_content`, `last_content_raw` | that message's type and body; `last_content` is empty until `last_rendered_at` is set, and stays empty for types that render to nothing (`system`) |
+| `last_rendered_at`, `last_deleted` | that message's rendering state and recall flag |
 
 A chat first seen only through a message (before the next full listing) exists with an empty name.
+
+The `last_*` columns mirror the newest message whose `message_position` is non-negative, so the list shows what the chat's main flow shows: thread replies are excluded, thread roots are not. `UpsertMessages` and `UpdateRendered` rewrite them in their own transaction, which covers ingest, edits, recalls and rendering; `RefreshChatSummary` repairs a chat whose messages changed some other way. Order chats by `last_message_ms` rather than an aggregate over `messages`.
 
 ## messages
 
@@ -102,8 +108,7 @@ ORDER BY m.create_ms DESC;
 SELECT message_id, sender_name, content FROM messages
 WHERE thread_id = 'omt_xxx' ORDER BY create_ms, message_position, id;
 
--- Chats by recent activity
-SELECT c.chat_id, c.name, max(m.create_ms) AS last_ms
-FROM chats c JOIN messages m ON m.chat_id = c.chat_id
-WHERE c.left_at = 0 GROUP BY c.chat_id ORDER BY last_ms DESC LIMIT 20;
+-- Chats by recent activity, with what each one last said
+SELECT chat_id, name, last_sender_name, last_content, last_message_ms
+FROM chats WHERE left_at = 0 ORDER BY last_message_ms DESC LIMIT 20;
 ```

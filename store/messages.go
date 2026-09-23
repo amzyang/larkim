@@ -99,22 +99,42 @@ func (s *Store) UpsertMessages(ctx context.Context, msgs []Message, now int64) (
 	}
 	defer stmt.Close()
 	n := 0
+	touched := map[string]struct{}{}
 	for _, m := range msgs {
 		if _, err := stmt.ExecContext(ctx, m.MessageID, m.ChatID, m.MsgType, m.SenderID, m.SenderType, m.SenderName,
 			m.ContentRaw, m.CreateMs, m.UpdateMs, m.MessagePosition, m.Updated, m.Deleted, m.DeletedSeenAt, m.ThreadID, m.ReplyTo,
 			m.RawJSON, now, now); err != nil {
 			return n, fmt.Errorf("upsert %s: %w", m.MessageID, err)
 		}
+		touched[m.ChatID] = struct{}{}
 		n++
+	}
+	for chatID := range touched {
+		if err := refreshChatSummary(ctx, tx, chatID); err != nil {
+			return n, err
+		}
 	}
 	return n, tx.Commit()
 }
 
-// UpdateRendered stores the human-readable rendering of a message.
+// UpdateRendered stores the human-readable rendering of a message. When the
+// message is its chat's newest, the chat's cold-stored summary picks up the
+// rendering in the same transaction.
 func (s *Store) UpdateRendered(ctx context.Context, messageID, content, mentionsJSON, reactionsJSON string, now int64) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE messages SET content = ?, mentions_json = ?, reactions_json = ?, rendered_at = ? WHERE message_id = ?`,
-		content, mentionsJSON, reactionsJSON, now, messageID)
-	return err
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `UPDATE messages SET content = ?, mentions_json = ?, reactions_json = ?, rendered_at = ? WHERE message_id = ?`,
+		content, mentionsJSON, reactionsJSON, now, messageID); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE chats SET last_content = ?, last_rendered_at = ? WHERE last_message_id = ?`,
+		content, now, messageID); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // UnrenderedMessageIDs returns up to limit live message ids that still need

@@ -50,7 +50,7 @@ func (s *Store) SearchMessages(ctx context.Context, query, chatID string, limit 
 // repaired since startedAt, most active first.
 func (s *Store) ChatsForRepair(ctx context.Context, sinceMs, startedAt int64, limit int) ([]Chat, error) {
 	return s.queryChats(ctx, `WHERE c.left_at = 0 AND c.sync_error = '' AND c.repaired_at < ?
- AND EXISTS (SELECT 1 FROM messages m WHERE m.chat_id = c.chat_id AND m.create_ms > ?) ORDER BY last_message_ms DESC LIMIT ?`, startedAt, sinceMs, limit)
+ AND EXISTS (SELECT 1 FROM messages m WHERE m.chat_id = c.chat_id AND m.create_ms > ?) ORDER BY c.last_message_ms DESC LIMIT ?`, startedAt, sinceMs, limit)
 }
 
 // SetChatRepaired stamps a completed repair for a chat.
@@ -62,7 +62,7 @@ func (s *Store) SetChatRepaired(ctx context.Context, chatID string, now int64) e
 // ChatsNeedingMembers returns chats whose member list is older than beforeMs,
 // most recently active first.
 func (s *Store) ChatsNeedingMembers(ctx context.Context, beforeMs int64, limit int) ([]Chat, error) {
-	return s.queryChats(ctx, `WHERE c.left_at = 0 AND c.sync_error = '' AND c.chat_mode <> 'p2p' AND c.members_synced_at < ? ORDER BY last_message_ms DESC LIMIT ?`, beforeMs, limit)
+	return s.queryChats(ctx, `WHERE c.left_at = 0 AND c.sync_error = '' AND c.chat_mode <> 'p2p' AND c.members_synced_at < ? ORDER BY c.last_message_ms DESC LIMIT ?`, beforeMs, limit)
 }
 
 // SetChatMembers replaces a chat's member list and stamps members_synced_at.
@@ -119,7 +119,7 @@ const (
 
 // AvatarsToDownload lists chats and contacts whose avatar URL has no local copy yet.
 func (s *Store) AvatarsToDownload(ctx context.Context, limit int) (chats []Chat, contacts []Contact, err error) {
-	chats, err = s.queryChats(ctx, `WHERE c.avatar_url NOT IN ('', 'none') AND c.avatar_path = '' AND c.left_at = 0 ORDER BY last_message_ms DESC LIMIT ?`, limit)
+	chats, err = s.queryChats(ctx, `WHERE c.avatar_url NOT IN ('', 'none') AND c.avatar_path = '' AND c.left_at = 0 ORDER BY c.last_message_ms DESC LIMIT ?`, limit)
 	if err != nil {
 		return nil, nil, err
 	}

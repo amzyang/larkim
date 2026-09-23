@@ -29,23 +29,37 @@ type Chat struct {
 	SyncError       string `json:"sync_error,omitempty"`
 	RepairedAt      int64  `json:"repaired_at,omitempty"`
 	RawJSON         string `json:"-"`
+
+	// Newest main-flow message, kept in step by UpsertMessages and
+	// UpdateRendered so a listing needs no per-chat subquery.
+	LastMessageID  string `json:"last_message_id,omitempty"`
+	LastMessageMs  int64  `json:"last_message_ms"`
+	LastSenderID   string `json:"last_sender_id,omitempty"`
+	LastSenderName string `json:"last_sender_name,omitempty"`
+	LastSenderType string `json:"last_sender_type,omitempty"`
+	LastMsgType    string `json:"last_msg_type,omitempty"`
+	LastContent    string `json:"last_content,omitempty"`
+	LastContentRaw string `json:"-"`
+	LastRenderedAt int64  `json:"last_rendered_at,omitempty"`
+	LastDeleted    bool   `json:"last_deleted,omitempty"`
+
 	// Derived for listings.
-	LastMessageMs int64 `json:"last_message_ms"`
-	MessageCount  int64 `json:"message_count"`
+	MessageCount int64 `json:"message_count"`
 }
 
 // chatColumns selects from `chats c`; the derived columns are named so
 // callers can order by them.
 const chatColumns = `c.chat_id, c.name, c.description, c.chat_mode, c.chat_status, c.owner_id, c.external, c.p2p_target_id, c.p2p_target_type,
  c.avatar_url, c.avatar_path, c.cursor_ms, c.backfill_done_at, c.members_synced_at, c.first_seen_at, c.last_seen_at, c.left_at, c.sync_error, c.repaired_at, c.raw_json,
- COALESCE((SELECT max(create_ms) FROM messages m WHERE m.chat_id = c.chat_id), 0) AS last_message_ms,
+ c.last_message_id, c.last_message_ms, c.last_sender_id, c.last_sender_name, c.last_sender_type, c.last_msg_type, c.last_content, c.last_content_raw, c.last_rendered_at, c.last_deleted,
  (SELECT count(*) FROM messages m WHERE m.chat_id = c.chat_id) AS message_count`
 
 func scanChat(sc scanner) (Chat, error) {
 	var c Chat
 	err := sc.Scan(&c.ChatID, &c.Name, &c.Description, &c.ChatMode, &c.ChatStatus, &c.OwnerID, &c.External, &c.P2PTargetID, &c.P2PTargetType,
 		&c.AvatarURL, &c.AvatarPath, &c.CursorMs, &c.BackfillDoneAt, &c.MembersSyncedAt, &c.FirstSeenAt, &c.LastSeenAt, &c.LeftAt, &c.SyncError, &c.RepairedAt, &c.RawJSON,
-		&c.LastMessageMs, &c.MessageCount)
+		&c.LastMessageID, &c.LastMessageMs, &c.LastSenderID, &c.LastSenderName, &c.LastSenderType, &c.LastMsgType, &c.LastContent, &c.LastContentRaw, &c.LastRenderedAt, &c.LastDeleted,
+		&c.MessageCount)
 	return c, err
 }
 
@@ -115,7 +129,7 @@ func (s *Store) SetChatSyncError(ctx context.Context, chatID, msg string, now in
 // already have discovered messages come first so active conversations fill in
 // before dormant ones.
 func (s *Store) ChatsNeedingBackfill(ctx context.Context, limit int) ([]Chat, error) {
-	return s.queryChats(ctx, `WHERE c.backfill_done_at = 0 AND c.left_at = 0 ORDER BY last_message_ms DESC, c.last_seen_at DESC LIMIT ?`, limit)
+	return s.queryChats(ctx, `WHERE c.backfill_done_at = 0 AND c.left_at = 0 ORDER BY c.last_message_ms DESC, c.last_seen_at DESC LIMIT ?`, limit)
 }
 
 // GetChat loads one chat.
@@ -159,7 +173,7 @@ func (s *Store) ListChats(ctx context.Context, q ChatQuery) ([]Chat, error) {
 	if limit <= 0 {
 		limit = 1000
 	}
-	tail += "ORDER BY last_message_ms DESC, c.name LIMIT ?"
+	tail += "ORDER BY c.last_message_ms DESC, c.name LIMIT ?"
 	args = append(args, limit)
 	return s.queryChats(ctx, tail, args...)
 }
@@ -187,4 +201,49 @@ func (s *Store) FindChatsByName(ctx context.Context, ref string) ([]Chat, error)
 // FoldName normalizes a display name for equality: whitespace removed, lower case.
 func FoldName(s string) string {
 	return strings.ToLower(strings.Join(strings.Fields(s), ""))
+}
+
+// chatSummaryQuery selects the newest main-flow message of a chat. Thread replies
+// carry a negative message_position and are left out, so the list shows what
+// the chat's main flow shows; thread roots have a non-negative position and
+// do count.
+const chatSummaryQuery = `SELECT message_id, create_ms, sender_id, sender_name, sender_type, msg_type, content, content_raw, rendered_at, deleted
+ FROM messages WHERE chat_id = ? AND message_position >= 0
+ ORDER BY create_ms DESC, message_position DESC, id DESC LIMIT 1`
+
+const chatSummaryUpdate = `UPDATE chats SET
+ last_message_id = ?, last_message_ms = ?, last_sender_id = ?, last_sender_name = ?, last_sender_type = ?,
+ last_msg_type = ?, last_content = ?, last_content_raw = ?, last_rendered_at = ?, last_deleted = ?
+ WHERE chat_id = ?`
+
+// refreshChatSummary recomputes one chat's cold-stored newest message inside
+// tx. A chat with no main-flow message has its summary cleared rather than
+// left stale, which is what "New chat" renders from.
+func refreshChatSummary(ctx context.Context, tx *sql.Tx, chatID string) error {
+	var c Chat
+	err := tx.QueryRowContext(ctx, chatSummaryQuery, chatID).Scan(
+		&c.LastMessageID, &c.LastMessageMs, &c.LastSenderID, &c.LastSenderName, &c.LastSenderType,
+		&c.LastMsgType, &c.LastContent, &c.LastContentRaw, &c.LastRenderedAt, &c.LastDeleted)
+	if err != nil && err != sql.ErrNoRows {
+		return fmt.Errorf("chat summary %s: %w", chatID, err)
+	}
+	_, err = tx.ExecContext(ctx, chatSummaryUpdate,
+		c.LastMessageID, c.LastMessageMs, c.LastSenderID, c.LastSenderName, c.LastSenderType,
+		c.LastMsgType, c.LastContent, c.LastContentRaw, c.LastRenderedAt, c.LastDeleted, chatID)
+	return err
+}
+
+// RefreshChatSummary recomputes one chat's cold-stored newest message. Writes
+// that go through UpsertMessages or UpdateRendered do this themselves; this is
+// for repairing a chat whose messages were changed some other way.
+func (s *Store) RefreshChatSummary(ctx context.Context, chatID string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if err := refreshChatSummary(ctx, tx, chatID); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
