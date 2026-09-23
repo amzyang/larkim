@@ -38,13 +38,10 @@ func scanContact(sc scanner) (Contact, error) {
 }
 
 // AccountSuffix is the trailing number of the tenant account name
-// ("chenjianwei01" → "01"), which the tenant assigns only to disambiguate
-// same-named colleagues. Empty when the name carries no suffix.
-func (c Contact) AccountSuffix() string {
-	local, _, _ := strings.Cut(c.EnterpriseEmail, "@")
-	if local == "" {
-		local, _, _ = strings.Cut(c.Email, "@")
-	}
+// ("chenjianwei01@gaotu.cn" → "01"), which the tenant assigns only to
+// disambiguate same-named colleagues. Empty when the name carries no suffix.
+func AccountSuffix(addr string) string {
+	local, _, _ := strings.Cut(addr, "@")
 	end := len(local)
 	for end > 0 && local[end-1] >= '0' && local[end-1] <= '9' {
 		end--
@@ -53,6 +50,15 @@ func (c Contact) AccountSuffix() string {
 		return "" // all digits, or none: not a disambiguating suffix
 	}
 	return local[end:]
+}
+
+// AccountSuffix reads the contact's own account name, preferring the
+// enterprise address.
+func (c Contact) AccountSuffix() string {
+	if s := AccountSuffix(c.EnterpriseEmail); s != "" {
+		return s
+	}
+	return AccountSuffix(c.Email)
 }
 
 // UpsertContacts inserts or refreshes contacts; empty incoming fields keep the stored value.

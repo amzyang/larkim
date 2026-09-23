@@ -45,6 +45,29 @@ type Chat struct {
 
 	// Derived for listings.
 	MessageCount int64 `json:"message_count"`
+	// PeerAccount is the p2p peer's tenant account address; empty for groups
+	// and for peers whose identity lookup has not run.
+	PeerAccount string `json:"peer_account,omitempty"`
+	// PeerAvatarPath is the p2p peer's downloaded avatar; the chat's own
+	// avatar columns stay empty for p2p.
+	PeerAvatarPath string `json:"peer_avatar_path,omitempty"`
+}
+
+// PeerSuffix disambiguates same-named colleagues in a p2p chat's title.
+func (c Chat) PeerSuffix() string { return AccountSuffix(c.PeerAccount) }
+
+// AvatarFile is the chat's picture relative to the data dir: its own for a
+// group, the peer's for p2p. Empty when there is none to draw, including the
+// sentinels for "no avatar" and "download gave up".
+func (c Chat) AvatarFile() string {
+	p := c.AvatarPath
+	if c.ChatMode == "p2p" {
+		p = c.PeerAvatarPath
+	}
+	if p == AvatarNone || p == AvatarFailed {
+		return ""
+	}
+	return p
 }
 
 // chatColumns selects from `chats c`; the derived columns are named so
@@ -52,14 +75,16 @@ type Chat struct {
 const chatColumns = `c.chat_id, c.name, c.description, c.chat_mode, c.chat_status, c.owner_id, c.external, c.p2p_target_id, c.p2p_target_type,
  c.avatar_url, c.avatar_path, c.cursor_ms, c.backfill_done_at, c.members_synced_at, c.first_seen_at, c.last_seen_at, c.left_at, c.sync_error, c.repaired_at, c.raw_json,
  c.last_message_id, c.last_message_ms, c.last_sender_id, c.last_sender_name, c.last_sender_type, c.last_msg_type, c.last_content, c.last_content_raw, c.last_rendered_at, c.last_deleted,
- (SELECT count(*) FROM messages m WHERE m.chat_id = c.chat_id) AS message_count`
+ (SELECT count(*) FROM messages m WHERE m.chat_id = c.chat_id) AS message_count,
+ COALESCE(NULLIF(ct.enterprise_email, ''), ct.email, '') AS peer_account,
+ COALESCE(ct.avatar_path, '') AS peer_avatar_path`
 
 func scanChat(sc scanner) (Chat, error) {
 	var c Chat
 	err := sc.Scan(&c.ChatID, &c.Name, &c.Description, &c.ChatMode, &c.ChatStatus, &c.OwnerID, &c.External, &c.P2PTargetID, &c.P2PTargetType,
 		&c.AvatarURL, &c.AvatarPath, &c.CursorMs, &c.BackfillDoneAt, &c.MembersSyncedAt, &c.FirstSeenAt, &c.LastSeenAt, &c.LeftAt, &c.SyncError, &c.RepairedAt, &c.RawJSON,
 		&c.LastMessageID, &c.LastMessageMs, &c.LastSenderID, &c.LastSenderName, &c.LastSenderType, &c.LastMsgType, &c.LastContent, &c.LastContentRaw, &c.LastRenderedAt, &c.LastDeleted,
-		&c.MessageCount)
+		&c.MessageCount, &c.PeerAccount, &c.PeerAvatarPath)
 	return c, err
 }
 
@@ -134,7 +159,7 @@ func (s *Store) ChatsNeedingBackfill(ctx context.Context, limit int) ([]Chat, er
 
 // GetChat loads one chat.
 func (s *Store) GetChat(ctx context.Context, chatID string) (Chat, error) {
-	row := s.db.QueryRowContext(ctx, `SELECT `+chatColumns+` FROM chats c WHERE c.chat_id = ?`, chatID)
+	row := s.db.QueryRowContext(ctx, `SELECT `+chatColumns+` FROM chats c LEFT JOIN contacts ct ON ct.open_id = c.p2p_target_id WHERE c.chat_id = ?`, chatID)
 	c, err := scanChat(row)
 	if err == sql.ErrNoRows {
 		return c, ErrNotFound
@@ -179,7 +204,7 @@ func (s *Store) ListChats(ctx context.Context, q ChatQuery) ([]Chat, error) {
 }
 
 func (s *Store) queryChats(ctx context.Context, tail string, args ...any) ([]Chat, error) {
-	return queryAll(ctx, s.db, scanChat, `SELECT `+chatColumns+` FROM chats c `+tail, args...)
+	return queryAll(ctx, s.db, scanChat, `SELECT `+chatColumns+` FROM chats c LEFT JOIN contacts ct ON ct.open_id = c.p2p_target_id `+tail, args...)
 }
 
 // FindChatsByName returns chats whose name equals ref ignoring whitespace and case.
