@@ -152,6 +152,9 @@ func New(d Deps) Model {
 	ta.SetHeight(3)
 	ti := textinput.New()
 	ti.Prompt = ":"
+	if d.OpenURL == nil {
+		d.OpenURL = openURL
+	}
 	m := Model{deps: d, input: ta, cmdline: ti, focus: paneChats, focused: true,
 		readRefreshed: map[string]time.Time{},
 		avatars:       newAvatars(d.DataDir, os.Getenv), pics: newPictures(d.DataDir, os.Getenv)}
@@ -470,7 +473,7 @@ func (m *Model) enterChat() {
 // causes.
 func (m *Model) markDots(msgs []store.Message) {
 	for _, x := range msgs {
-		if x.IsReadRemote != nil && !*x.IsReadRemote && x.LocalReadAt == 0 {
+		if isUnread(x) {
 			if m.dots == nil {
 				m.dots = map[string]bool{}
 			}
@@ -483,8 +486,19 @@ func (m *Model) markDots(msgs []store.Message) {
 // consumed for the CLI cursor, read for the badge. Both run on every page,
 // reloads included, so the chat being watched does not light up again as
 // messages land in it.
+//
+// The Feishu client keeps a red dot of its own, which only the client itself
+// can drop. A page that arrived with something waiting therefore also walks
+// the client onto the chat, so reading here settles both badges rather than
+// leaving one lit for a later trip to Feishu. That covers the chat under the
+// reader's eyes as well as the one just opened: a message landing in it
+// relights the client's dot, and the page it arrives on drops it again.
 func (m Model) takeRead(chatID string, msgs []store.Message) tea.Cmd {
-	return tea.Batch(markConsumed(m.deps.Store, msgs), markChatRead(m.deps.Store, chatID))
+	cmds := []tea.Cmd{markConsumed(m.deps.Store, msgs), markChatRead(m.deps.Store, chatID)}
+	if unreadWaiting(msgs) {
+		cmds = append(cmds, clearFeishuBadge(m.deps, chatID))
+	}
+	return tea.Batch(cmds...)
 }
 
 // selectCurrentChat puts the cursor on the chat being opened within the
@@ -781,10 +795,10 @@ func (m Model) onNormalKey(s string) (tea.Model, tea.Cmd) {
 		return m.startVisual()
 	case "o":
 		if sel, ok := m.selected(); ok {
-			return m, openInFeishu(sel.ChatID, sel.MessagePosition)
+			return m, openInFeishu(m.deps, sel.ChatID, sel.MessagePosition)
 		}
 		if m.chatID != "" {
-			return m, openInFeishu(m.chatID, 0)
+			return m, openInFeishu(m.deps, m.chatID, 0)
 		}
 	case "/":
 		m.mode = modeFilter

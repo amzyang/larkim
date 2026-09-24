@@ -35,6 +35,9 @@ type Deps struct {
 	// waiting out its interval. Only an embedded syncer can reach this
 	// process; against a daemon it is nil and the interval is all there is.
 	Nudge <-chan struct{}
+	// OpenURL hands an applink to the desktop client. New fills it when nil;
+	// tests replace it to keep the real `open` out of the run.
+	OpenURL func(url string, background bool) error
 }
 
 const (
@@ -336,13 +339,36 @@ func feishuChatLink(chatID string, position int64) string {
 	return url
 }
 
+// openURL hands a URL to macOS. A keypress asking for the Feishu client
+// wants the screen; an applink fired to clear a badge must leave the reader
+// in the terminal, which is what background buys.
+func openURL(url string, background bool) error {
+	args := []string{url}
+	if background {
+		args = []string{"-g", url}
+	}
+	return exec.Command("open", args...).Run()
+}
+
 // openInFeishu opens a chat (optionally at a message position) in the desktop client.
-func openInFeishu(chatID string, position int64) tea.Cmd {
-	url := feishuChatLink(chatID, position)
+func openInFeishu(d Deps, chatID string, position int64) tea.Cmd {
 	return func() tea.Msg {
-		if err := exec.Command("open", url).Start(); err != nil {
+		if err := d.OpenURL(feishuChatLink(chatID, position), false); err != nil {
 			return errMsg{err}
 		}
 		return noticeMsg{"opened in Feishu"}
+	}
+}
+
+// clearFeishuBadge walks the desktop client onto a chat without taking the
+// screen, which is what makes it send the read receipt Feishu offers no API
+// for. It is the only lever larkim has on the client's own red dot, and it is
+// best effort: local_read_at has already dropped the badge drawn here.
+func clearFeishuBadge(d Deps, chatID string) tea.Cmd {
+	return func() tea.Msg {
+		if err := d.OpenURL(feishuChatLink(chatID, 0), true); err != nil {
+			return errMsg{err}
+		}
+		return nil
 	}
 }
