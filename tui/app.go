@@ -17,6 +17,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/amzyang/larkim/agentctx"
 	"github.com/amzyang/larkim/ai"
+	"github.com/amzyang/larkim/emoji"
 	"github.com/amzyang/larkim/larkcli"
 	"github.com/amzyang/larkim/store"
 	uv "github.com/charmbracelet/ultraviolet"
@@ -41,6 +42,7 @@ const (
 	modeCommand
 	modeFilter
 	modeVisual
+	modeEmoji
 )
 
 // Model is the Bubble Tea model.
@@ -59,11 +61,20 @@ type Model struct {
 	// readRefreshed is when each chat last had its read status re-asked, so
 	// revisiting a chat does not spend a call every time.
 	readRefreshed map[string]time.Time
-	avatars       avatars
-	pics          *pictures // message images; nil on a terminal without graphics
-	chatFilter    string
-	chatIdx       int
-	chatTop       int
+	// picker is the emoji chooser, open only in modeEmoji.
+	picker picker
+	// emoji is the searchable emoji set the picker offers, prepared once
+	// because the terms never change while the program runs.
+	emoji *emoji.Index
+	// reactionRefreshed is when each chat last had its reactions re-asked.
+	// Nothing else keeps them current: Feishu does not move a message's
+	// update_time when somebody reacts, so the rendering pass never revisits.
+	reactionRefreshed map[string]time.Time
+	avatars           avatars
+	pics              *pictures // message images; nil on a terminal without graphics
+	chatFilter        string
+	chatIdx           int
+	chatTop           int
 
 	chatID string
 	// msgs is what the pane indexes: the rows the store returned, held in
@@ -156,8 +167,11 @@ func New(d Deps) Model {
 		d.OpenURL = openURL
 	}
 	m := Model{deps: d, input: ta, cmdline: ti, focus: paneChats, focused: true,
-		readRefreshed: map[string]time.Time{},
-		avatars:       newAvatars(d.DataDir, os.Getenv), pics: newPictures(d.DataDir, os.Getenv)}
+		readRefreshed:     map[string]time.Time{},
+		reactionRefreshed: map[string]time.Time{},
+		emoji:             emoji.NewReactionIndex(),
+		avatars:           newAvatars(d.DataDir, os.Getenv), pics: newPictures(d.DataDir, os.Getenv)}
+	m.emoji.LoadRecent(d.DataDir)
 	m.setBackground(color.Black, true)
 	return m
 }
@@ -220,13 +234,18 @@ func (m Model) picturePrepare() string {
 	var pics []picture
 	seen := map[string]bool{}
 	collect := func(rows []msgRow, lo, hi int) {
-		for i := clamp(lo, 0, len(rows)); i < clamp(hi, 0, len(rows)) && len(pics) < picIDs; i++ {
-			p := rows[i].pic
-			if p.cols == 0 || seen[p.key()] {
-				continue
+		take := func(p picture) {
+			if p.cols == 0 || seen[p.key()] || len(pics) >= picIDs {
+				return
 			}
 			seen[p.key()] = true
 			pics = append(pics, p)
+		}
+		for i := clamp(lo, 0, len(rows)); i < clamp(hi, 0, len(rows)) && len(pics) < picIDs; i++ {
+			take(rows[i].pic)
+			for _, s := range rows[i].segs {
+				take(s.pic)
+			}
 		}
 	}
 	// The rows on screen are claimed first, so a pane crowded with pictures
@@ -411,6 +430,11 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		return m, refreshReadStatus(m.deps, msg.chatID)
+	case reactionRefreshDueMsg:
+		if !m.claimReactionRefresh(msg.chatID, time.Now()) {
+			return m, nil
+		}
+		return m, refreshReactions(m.deps, msg.chatID)
 	case contextMsg:
 		return m.notify(fmt.Sprintf("copied %s · %s · %s", plural(msg.n, "msg", "msgs"), humanBytes(len(msg.text)), msg.chat), false),
 			tea.SetClipboard(msg.text)
@@ -449,7 +473,8 @@ func (m *Model) openChat(chatID string) tea.Cmd { return m.openChatFrom(chatID, 
 func (m *Model) openChatFrom(chatID string, sinceMs int64) tea.Cmd {
 	m.pendingChat, m.pendingSince = chatID, sinceMs
 	m.selectCurrentChat()
-	return tea.Batch(loadMessages(m.deps.Store, chatID, sinceMs), scheduleReadRefresh(chatID))
+	return tea.Batch(loadMessages(m.deps.Store, chatID, sinceMs),
+		scheduleReadRefresh(chatID), scheduleReactionRefresh(chatID))
 }
 
 // enterChat swaps the panes over to the chat whose page has just arrived.
@@ -657,6 +682,8 @@ func (m Model) onKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m.onCommandKey(k)
 	case modeFilter:
 		return m.onFilterKey(k)
+	case modeEmoji:
+		return m.onEmojiKey(k)
 	case modeVisual:
 		return m.onVisualKey(s)
 	}
@@ -770,6 +797,8 @@ func (m Model) onNormalKey(s string) (tea.Model, tea.Cmd) {
 		return m.move(1 << 30)
 	case "enter":
 		return m.activate()
+	case "e":
+		return m.openPicker()
 	case "i":
 		return m.startInsert(nil, false)
 	case "r":
@@ -1317,6 +1346,8 @@ func (m Model) runCommand(line string) (tea.Model, tea.Cmd) {
 		return m.notify("searching…", false), searchMessages(m.deps.Store, rest)
 	case "copy":
 		return m.runCopy(rest)
+	case "react":
+		return m.runReact(rest)
 	case "ai":
 		return m.startAI(rest)
 	case "sync":
@@ -1332,6 +1363,39 @@ func (m Model) runCommand(line string) (tea.Model, tea.Cmd) {
 		}
 	}
 	return m.notify("unknown command :"+name, true), nil
+}
+
+// runReact puts one emoji on the selected message by name, for a reader who
+// already knows which one they want. The argument is matched the way the
+// picker matches, so :react zan and :react 赞 reach the same emoji.
+func (m Model) runReact(arg string) (tea.Model, tea.Cmd) {
+	if arg == "" {
+		return m.notify("usage: :react <emoji>", true), nil
+	}
+	if m.deps.Syncer == nil {
+		return m.notify("reacting needs the sync lock; the daemon holds it", true), nil
+	}
+	x, ok := m.selected()
+	if !ok || x.Deleted {
+		return m.notify("select a message to react to", true), nil
+	}
+	if m.outboxAt(x.MessageID) != nil {
+		return m.notify("that message has not reached Feishu yet", true), nil
+	}
+	hits := m.emoji.Search(arg)
+	if len(hits) == 0 {
+		return m.notify("no emoji matches "+arg, true), nil
+	}
+	e := hits[0].Emoji
+	on := true
+	for _, c := range emoji.Summary(x.ReactionsJSON, m.deps.Self) {
+		if c.Mine && emoji.Fold(c.Key) == emoji.Fold(e.Key) {
+			on = false
+		}
+	}
+	m.emoji.Use(e.Key)
+	_ = m.emoji.SaveRecent(m.deps.DataDir)
+	return m, react(m.deps, x.MessageID, e.Key, on)
 }
 
 // --- assistant ------------------------------------------------------------
@@ -1493,11 +1557,14 @@ func clamp(v, lo, hi int) int {
 const helpText = `NORMAL      j/k move · gg/G ends · Ctrl+d/u page · Tab/Shift+Tab focus · h/l panes
             Enter open chat / thread / reply · i write · r reply · R reply in thread · t thread
             Y copy agent context · yy id · yr raw json · yc content · v select a range · o open in Feishu
+            e react to the selected message
             / filter chats · :/; command · q quit
             . send a failed message again · x drop it
 VISUAL      v starts in the messages or thread pane · j/k extend · Y or yy/yr/yc copy and leave · Esc cancels
 INSERT      Enter send · Shift+Enter newline · ^r drop the quote · Esc back
-COMMAND     :copy <200|7d|all> · :goto <chat> · :send <chat|ou_> <text> · :search <text> · :sync · :q
+EMOJI       e opens it · type to filter (Chinese, pinyin or initials) · ↑↓ move · Enter react · Esc cancel
+            an emoji already yours is marked ✓, and choosing it takes the reaction back
+COMMAND     :copy <200|7d|all> · :goto <chat> · :react <emoji> · :send <chat|ou_> <text> · :search <text> · :sync · :q
 ASSISTANT   a or :ai [summary | draft <how> | todo | <question>] · answer streams in the right pane · Esc closes
 MOUSE       click focuses and selects · double-click opens · wheel scrolls`
 
@@ -1538,6 +1605,8 @@ func modeLabel(md mode) string {
 		return "FILTER"
 	case modeVisual:
 		return "VISUAL"
+	case modeEmoji:
+		return "REACT"
 	}
 	return "NORMAL"
 }

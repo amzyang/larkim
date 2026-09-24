@@ -1,0 +1,197 @@
+package tui
+
+import (
+	"context"
+	"path/filepath"
+	"testing"
+
+	tea "charm.land/bubbletea/v2"
+	"github.com/amzyang/larkim/store"
+	"github.com/amzyang/larkim/sync"
+	"github.com/charmbracelet/x/ansi"
+	"github.com/stretchr/testify/require"
+)
+
+// pickerModel is a model over a real store holding one chat with one message
+// the reader has already put 👍 on.
+func pickerModel(t *testing.T) Model {
+	t.Helper()
+	st, err := store.Open(filepath.Join(t.TempDir(), "t.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { st.Close() })
+	ctx := context.Background()
+	require.NoError(t, st.EnsureChat(ctx, "oc_team", 1))
+	_, err = st.UpsertMessages(ctx, []store.Message{{MessageID: "om_a", ChatID: "oc_team", MsgType: "text",
+		SenderID: "ou_a", SenderName: "张三", ContentRaw: `{"text":"下周一发版"}`, CreateMs: 100, UpdateMs: 100}}, 1)
+	require.NoError(t, err)
+	require.NoError(t, st.UpdateRendered(ctx, "om_a", "下周一发版", "", "", 2))
+	require.NoError(t, st.UpdateReactions(ctx, "om_a",
+		`{"counts":[{"reaction_type":"THUMBSUP","count":"1"}],"details":[{"emoji_type":"THUMBSUP","operator":{"operator_id":"ou_me"}}]}`))
+
+	m := New(Deps{Store: st, Self: "ou_me", DataDir: t.TempDir(), Syncer: &sync.Syncer{Store: st}})
+	m.width, m.height = 120, 36
+	m.layout()
+	m.chats, _ = st.ListChats(ctx, store.ChatQuery{Limit: 10})
+	m.msgsBase, _ = st.ListMessages(ctx, store.MessageQuery{ChatID: "oc_team", Limit: 10})
+	m.chatID = "oc_team"
+	m.applyOutbox()
+	m.focus = paneMessages
+	m.msgIdx = 0
+	m.layout()
+	return m
+}
+
+func press(t *testing.T, m Model, keys ...string) Model {
+	t.Helper()
+	for _, k := range keys {
+		next, _ := m.onKey(tea.KeyPressMsg{Code: []rune(k)[0], Text: k})
+		if len(k) > 1 {
+			next, _ = m.onKey(tea.KeyPressMsg{Code: keyCode(k)})
+		}
+		m = next.(Model)
+	}
+	return m
+}
+
+func keyCode(name string) rune {
+	switch name {
+	case "enter":
+		return tea.KeyEnter
+	case "esc":
+		return tea.KeyEscape
+	case "up":
+		return tea.KeyUp
+	case "down":
+		return tea.KeyDown
+	case "backspace":
+		return tea.KeyBackspace
+	}
+	return []rune(name)[0]
+}
+
+func TestOpenPicker_ArmsAgainstTheSelectedMessage(t *testing.T) {
+	m := press(t, pickerModel(t), "e")
+	require.Equal(t, modeEmoji, m.mode)
+	require.Equal(t, "om_a", m.picker.target.MessageID)
+	require.NotEmpty(t, m.picker.hits, "an empty query offers the client's own panel order")
+	require.True(t, m.picker.mine["THUMBSUP"], "the reader's own reaction is known before they choose")
+}
+
+func TestPicker_FiltersAsTheReaderTypes(t *testing.T) {
+	m := press(t, pickerModel(t), "e", "z", "a", "n")
+	require.Equal(t, "zan", m.picker.query)
+	require.Equal(t, "THUMBSUP", m.picker.hits[0].Emoji.Key)
+	require.Less(t, len(m.picker.hits), m.emoji.Len(), "the list narrows")
+
+	m = press(t, m, "backspace", "backspace", "backspace")
+	require.Equal(t, "", m.picker.query)
+	require.Len(t, m.picker.hits, m.emoji.Len(), "and opens back up")
+}
+
+func TestPicker_MovesOnArrowsBecauseTheQueryOwnsTheLetters(t *testing.T) {
+	m := press(t, pickerModel(t), "e")
+	first := m.picker.hits[0].Emoji.Key
+	m = press(t, m, "down", "down")
+	require.Equal(t, 2, m.picker.idx)
+	require.NotEqual(t, first, m.picker.hits[m.picker.idx].Emoji.Key)
+
+	// j is a letter, so it filters rather than moving.
+	m = press(t, m, "j")
+	require.Equal(t, "j", m.picker.query)
+	require.Zero(t, m.picker.idx, "a new query puts the cursor back on the best hit")
+}
+
+func TestPicker_EscLeavesWithoutReacting(t *testing.T) {
+	m := press(t, pickerModel(t), "e", "z")
+	m = press(t, m, "esc")
+	require.Equal(t, modeNormal, m.mode)
+	require.Zero(t, m.picker.target.MessageID, "nothing of the chooser is left behind")
+}
+
+func TestPicker_RemembersWhatWasChosen(t *testing.T) {
+	m := press(t, pickerModel(t), "e", "m", "e", "i", "g", "u", "i")
+	require.Equal(t, "ROSE", m.picker.hits[0].Emoji.Key)
+	m = press(t, m, "enter")
+	require.Equal(t, modeNormal, m.mode)
+	require.Equal(t, []string{"ROSE"}, m.emoji.Recent())
+}
+
+func TestPicker_SaysTooShortRatherThanOpeningBlind(t *testing.T) {
+	m := pickerModel(t)
+	m.height = minHeight
+	m.layout()
+	m = press(t, m, "e")
+	require.Equal(t, modeNormal, m.mode)
+	require.Contains(t, m.notice, "too short")
+}
+
+func TestPicker_LeavesTheMessageOnScreenBehindIt(t *testing.T) {
+	// The reader has to see what they are reacting to, so the picker takes the
+	// composer's rows and the panes give up exactly those.
+	m := press(t, pickerModel(t), "e")
+	require.GreaterOrEqual(t, m.bodyHeight(), minListRows)
+	require.Contains(t, ansi.Strip(m.View().Content), "下周一发版")
+	require.Contains(t, ansi.Strip(m.View().Content), "react", "the frame names what is being reacted to")
+}
+
+func TestPicker_MarksAnEmojiTheReaderAlreadyChose(t *testing.T) {
+	m := press(t, pickerModel(t), "e", "z", "a", "n")
+	line := ansi.Strip(m.pickerLine(m.picker.hits[0], true, 60))
+	require.Contains(t, line, "✓", "choosing it again takes the reaction back, and the line says so")
+}
+
+func TestRunReact_TogglesOffWhatTheReaderAlreadyChose(t *testing.T) {
+	m := pickerModel(t)
+	next, cmd := m.runCommand("react zan")
+	require.NotNil(t, cmd)
+	require.Equal(t, []string{"THUMBSUP"}, next.(Model).emoji.Recent(),
+		"naming it by pinyin reaches the same emoji the picker would")
+}
+
+func TestRunReact_SaysWhatIsWrongRatherThanReactingWithTheFirstThingItFinds(t *testing.T) {
+	m := pickerModel(t)
+	for _, tc := range []struct{ arg, want string }{
+		{"", "usage:"},
+		{"zzzzqqqq", "no emoji matches"},
+	} {
+		next, cmd := m.runCommand("react " + tc.arg)
+		require.Nil(t, cmd, "%q sends nothing", tc.arg)
+		require.Contains(t, next.(Model).notice, tc.want)
+	}
+}
+
+func TestPicker_StaysShutBesideADaemon(t *testing.T) {
+	// The messages table belongs to whoever holds the data-dir lock, and the
+	// refresh after a reaction writes it.
+	m := pickerModel(t)
+	m.deps.Syncer = nil
+	m = press(t, m, "e")
+	require.Equal(t, modeNormal, m.mode)
+	require.Contains(t, m.notice, "sync lock")
+}
+
+func TestOpenPicker_TakesAMessageWhoseBodyIsNotRenderedYet(t *testing.T) {
+	// A reaction reaches a message by id alone, so waiting on the rendering
+	// would refuse a message Feishu already holds.
+	m := pickerModel(t)
+	m.msgs[0].RenderedAt = 0
+	m = press(t, m, "e")
+	require.Equal(t, modeEmoji, m.mode)
+}
+
+func TestOpenPicker_RefusesASendStillOnItsWay(t *testing.T) {
+	m := pickerModel(t)
+	m.enqueue(outboxItem{localID: "local_1", chatID: "oc_team", text: "稍等", createMs: 200})
+	m.applyOutbox()
+	m.msgIdx = len(m.msgs) - 1
+	require.Equal(t, "local_1", m.msgs[m.msgIdx].MessageID)
+
+	m = press(t, m, "e")
+	require.Equal(t, modeNormal, m.mode)
+	require.Contains(t, m.notice, "not reached Feishu")
+}
+
+func TestStatus_NamesThePickerWhileItIsOpen(t *testing.T) {
+	m := press(t, pickerModel(t), "e")
+	require.Contains(t, fmtStatus(m), "REACT", "the mode line says which keys are live")
+}

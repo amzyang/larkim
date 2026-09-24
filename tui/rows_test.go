@@ -20,7 +20,27 @@ func rowText(rows []msgRow) string {
 	var b strings.Builder
 	for _, r := range rows {
 		b.WriteString(ansi.Strip(r.text))
+		for _, s := range r.segs {
+			// A picture stands in as the cells it will fill, which is what the
+			// pane shows before the terminal has it.
+			if s.pic.cols > 0 {
+				b.WriteString(strings.Repeat("·", s.pic.cols))
+				continue
+			}
+			b.WriteString(ansi.Strip(s.text))
+		}
 		b.WriteString("\n")
+	}
+	return b.String()
+}
+
+// segText is a row's drawn text with its styling intact, which is what a test
+// asserting on colour or underline compares against.
+func segText(r msgRow) string {
+	var b strings.Builder
+	b.WriteString(r.text)
+	for _, s := range r.segs {
+		b.WriteString(s.text)
 	}
 	return b.String()
 }
@@ -487,4 +507,40 @@ func TestRenderRows_BadgesAMentionOfTheReader(t *testing.T) {
 	require.Contains(t, out, "@秦风 unreachable", "another person's mention is body text")
 	require.Contains(t, out, stAccent.Render(allName)+" all")
 	require.NotContains(t, out, allKey)
+}
+
+func TestBodyRows_StickerDrawsThePictureInsteadOfItsPlaceholder(t *testing.T) {
+	msgs := []store.Message{{MessageID: "om_1", MsgType: "sticker", SenderName: "张三",
+		Content: "[Sticker]", ContentRaw: `{"file_key":"v3_shrug"}`, CreateMs: msgAt(23, 9, 0), RenderedAt: 1}}
+	st := baseStyle()
+	st.res = map[string][]store.Resource{"om_1": {{FileKey: "v3_shrug", Type: "sticker",
+		LocalPath: "resources/stickers/v3_shrug.gif", Status: "done"}}}
+	cols := 0
+	st.place = func(path string, maxCols, maxRows int) picture {
+		require.Equal(t, "resources/stickers/v3_shrug.gif", path)
+		cols = maxCols
+		return picture{path: path, cols: 6, rows: 3}
+	}
+	rows := renderRows(msgs, st)
+	require.Equal(t, stickerCols, cols, "a sticker is drawn at its own size, not the pane's")
+	require.NotContains(t, rowText(rows), "[Sticker]", "the picture stands for itself")
+	n := 0
+	for _, r := range rows {
+		if r.pic.cols > 0 {
+			n++
+		}
+	}
+	require.Equal(t, 3, n, "one row per cell row of the picture")
+}
+
+func TestBodyRows_StickerWithoutItsPictureStandsIn(t *testing.T) {
+	msgs := []store.Message{{MessageID: "om_1", MsgType: "sticker", SenderName: "张三",
+		Content: "[Sticker]", ContentRaw: `{"file_key":"v3_shrug"}`, CreateMs: msgAt(23, 9, 0), RenderedAt: 1}}
+	out := rowText(renderRows(msgs, baseStyle()))
+	require.Contains(t, out, "[表情]")
+	require.NotContains(t, out, "[Sticker]")
+
+	msgs[0].ContentRaw = `{}`
+	require.Contains(t, rowText(renderRows(msgs, baseStyle())), "[Sticker]",
+		"a sticker body naming no picture keeps whatever text it has")
 }

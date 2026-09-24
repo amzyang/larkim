@@ -1,11 +1,15 @@
 package tui
 
 import (
+	"encoding/json"
 	"regexp"
+	"slices"
+	"strconv"
 	"strings"
 	"time"
 
 	"charm.land/lipgloss/v2"
+	"github.com/amzyang/larkim/emoji"
 	"github.com/amzyang/larkim/store"
 )
 
@@ -41,6 +45,18 @@ type msgRow struct {
 	pic    picture
 	picRow int
 	prefix string
+	// segs, when set, is the row's text in pieces so that pictures can sit
+	// inside a line rather than take one of their own: a reaction carries an
+	// emoji this terminal may have no character for, next to a count that is
+	// ordinary text. A row with segs draws no selection tint, the same as a
+	// row that is one whole picture.
+	segs []rowSeg
+}
+
+// rowSeg is one piece of a row: text, or a picture the terminal fills in.
+type rowSeg struct {
+	text string
+	pic  picture
 }
 
 // msgStyle is what the message rows need besides the messages themselves.
@@ -64,6 +80,21 @@ type msgStyle struct {
 	// place sizes a picture for the pane. Nil draws a text stand-in instead,
 	// which is what a terminal without graphics gets.
 	place func(path string, maxCols, maxRows int) picture
+	// emojiDir holds the pictures `larkim emoji sync` cut out of the Lark
+	// client, which is what an emoji with no Unicode character is drawn as.
+	// Empty means they were never cut out, and the name stands in.
+	emojiDir string
+}
+
+// emojiPic sizes one emoji's picture to sit on a line of text: one row tall,
+// and as many cells wide as its own shape asks for. A zero size means there is
+// nothing to draw — no graphics, or the pictures were never cut out — and the
+// caller falls back to the emoji's name.
+func (st msgStyle) emojiPic(key string) picture {
+	if st.place == nil || st.emojiDir == "" {
+		return picture{}
+	}
+	return st.place(emoji.Path(st.emojiDir, key), emojiCols, 1)
 }
 
 // inner is the width a message body has, once the gutter is taken off.
@@ -147,6 +178,7 @@ func renderRows(msgs []store.Message, st msgStyle) []msgRow {
 			rows = append(rows, q)
 		}
 		rows = append(rows, bodyRows(x, i, st, &g)...)
+		rows = append(rows, reactionRows(x, i, st, &g)...)
 		prev = x.MessageID
 	}
 	return rows
@@ -277,6 +309,11 @@ func bodyRows(x store.Message, idx int, st msgStyle, g *gutters) []msgRow {
 	if c, ok := parseCard(x.Content); ok && x.MsgType == "interactive" {
 		return cardRows(c, x, idx, st, g, ms)
 	}
+	// A sticker renders as the text "[Sticker]", which names the picture
+	// nowhere: the key is in the body.
+	if key := stickerKey(x); key != "" {
+		return pictureRows(key, "", x, idx, st, g)
+	}
 
 	var rows []msgRow
 	content := strings.ReplaceAll(strings.ReplaceAll(x.Content, "\r", ""), "\t", "    ")
@@ -289,6 +326,126 @@ func bodyRows(x store.Message, idx int, st msgStyle, g *gutters) []msgRow {
 			rows = append(rows, pictureRows(key, "", x, idx, st, g)...)
 		}
 	}
+	return rows
+}
+
+// emojiCols is the widest a reaction picture is drawn. Most of Feishu's emoji
+// are square, which is two cells beside a line of text; the few that are a
+// word rather than a face are wider, and cutting them to a square would make
+// them unreadable.
+const emojiCols = 4
+
+// stickerCols is the widest a sticker is drawn. A sticker is a gesture rather
+// than a picture to study, and the client draws it about this size; given the
+// pane it would take a screenful for one shrug.
+const stickerCols = 12
+
+// stickerKey is the picture a sticker message carries, and "" for any other
+// message.
+func stickerKey(x store.Message) string {
+	if x.MsgType != "sticker" {
+		return ""
+	}
+	var body struct {
+		FileKey string `json:"file_key"`
+	}
+	if json.Unmarshal([]byte(x.ContentRaw), &body) != nil {
+		return ""
+	}
+	return body.FileKey
+}
+
+// reactionChip is one emoji's standing on a message: the emoji itself, then
+// how many people chose it. The emoji is a Unicode character where one
+// carries the same feeling, the client's own picture where none does, and the
+// client's name for it where this terminal draws no pictures at all.
+func reactionChip(c emoji.Chip, st msgStyle) []rowSeg {
+	// The reader's own reaction is underlined as well as coloured, so it is
+	// still the one that stands out where colour does not reach.
+	style := stDim
+	if c.Mine {
+		style = stAccent.Underline(true)
+	}
+	count := " " + strconv.Itoa(c.Count)
+	e, known := emoji.ByKey(c.Key)
+	switch {
+	case !known:
+		return []rowSeg{{text: style.Render("[" + c.Key + "]" + count)}}
+	case e.Glyph != "":
+		return []rowSeg{{text: style.Render(e.Glyph + count)}}
+	}
+	if pic := st.emojiPic(e.Key); pic.cols > 0 {
+		return []rowSeg{{pic: pic}, {text: style.Render(count)}}
+	}
+	return []rowSeg{{text: style.Render("[" + e.ZH + "]" + count)}}
+}
+
+func segsWidth(segs []rowSeg) int {
+	w := 0
+	for _, s := range segs {
+		if s.pic.cols > 0 {
+			w += s.pic.cols
+			continue
+		}
+		w += lipgloss.Width(s.text)
+	}
+	return w
+}
+
+// reactionRows draw the emoji a message collected, below its body the way the
+// Feishu client puts them. A recalled message keeps no reactions: the client
+// drops them with the body.
+//
+// The chips are packed by hand rather than wrapped: a picture stands in the
+// text as placeholder cells the terminal fills, and a wrap that measured them
+// as the characters they are would break one apart.
+func reactionRows(x store.Message, idx int, st msgStyle, g *gutters) []msgRow {
+	if x.Deleted {
+		return nil
+	}
+	chips := emoji.Summary(x.ReactionsJSON, st.self)
+	if len(chips) == 0 {
+		return nil
+	}
+	// Two spaces between chips: one reads as part of the count before it.
+	const gap = "  "
+	var rows []msgRow
+	var line []rowSeg
+	width := 0
+	flush := func() {
+		if len(line) == 0 {
+			return
+		}
+		// A row of nothing but characters is ordinary text, and stays so: the
+		// pieces exist for pictures, and a row made of them takes no selection
+		// tint. Only a strip that actually carries one gives that up.
+		row := msgRow{idx: idx}
+		if slices.ContainsFunc(line, func(s rowSeg) bool { return s.pic.cols > 0 }) {
+			row.segs = append([]rowSeg{{text: g.take()}}, line...)
+		} else {
+			row.text = g.take()
+			for _, s := range line {
+				row.text += s.text
+			}
+		}
+		rows = append(rows, row)
+		line, width = nil, 0
+	}
+	for _, c := range chips {
+		segs := reactionChip(c, st)
+		w := segsWidth(segs)
+		if len(line) > 0 {
+			if width+len(gap)+w > st.inner() {
+				flush()
+			} else {
+				line = append(line, rowSeg{text: gap})
+				width += len(gap)
+			}
+		}
+		line = append(line, segs...)
+		width += w
+	}
+	flush()
 	return rows
 }
 
@@ -312,8 +469,12 @@ func cardRows(c card, x store.Message, idx int, st msgStyle, g *gutters, ms ment
 // cannot draw — no graphics protocol, not downloaded yet, a format the
 // decoder will not read — falls back to a one-line stand-in.
 func pictureRows(key, edge string, x store.Message, idx int, st msgStyle, g *gutters) []msgRow {
+	cols, label := st.inner()-lipgloss.Width(edge), "[图片]"
+	if x.MsgType == "sticker" {
+		cols, label = min(cols, stickerCols), "[表情]"
+	}
 	stand := func() []msgRow {
-		return []msgRow{{text: g.take() + edge + stDim.Render("[图片]"), idx: idx}}
+		return []msgRow{{text: g.take() + edge + stDim.Render(label), idx: idx}}
 	}
 	if st.place == nil {
 		return stand()
@@ -324,7 +485,7 @@ func pictureRows(key, edge string, x store.Message, idx int, st msgStyle, g *gut
 			path = r.LocalPath
 		}
 	}
-	pic := st.place(path, st.inner()-lipgloss.Width(edge), st.height)
+	pic := st.place(path, cols, st.height)
 	if pic.cols == 0 {
 		return stand()
 	}

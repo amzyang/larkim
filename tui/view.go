@@ -147,7 +147,7 @@ func (m Model) msgStyleFor(width int, meta msgMeta) msgStyle {
 		st.quoted = m.replyTo.MessageID
 	}
 	if m.pics != nil {
-		st.place = m.pics.place
+		st.place, st.emojiDir = m.pics.place, m.deps.DataDir
 	}
 	return st
 }
@@ -193,6 +193,9 @@ func (m *Model) rebuildThread() {
 // with an image: fitting it would cut the glyph cluster apart and a selection
 // tint has nothing to colour.
 func (m Model) rowLine(r msgRow, w int) (string, bool) {
+	if len(r.segs) > 0 {
+		return m.segLine(r, w), true
+	}
 	if r.pic.cols == 0 {
 		return fit(r.text, w), false
 	}
@@ -201,6 +204,28 @@ func (m Model) rowLine(r msgRow, w int) (string, bool) {
 		return fit("", w), true // still on its way to the terminal
 	}
 	return r.prefix + cells + strings.Repeat(" ", max(0, w-lipgloss.Width(r.prefix)-r.pic.cols)), true
+}
+
+// segLine draws a row whose pictures sit inside its text. It pads rather than
+// fits: MaxWidth measures a picture's placeholder cells as the characters they
+// are and would cut one out of its cluster, and the row was packed to the
+// pane's width when it was built, so there is nothing to cut.
+func (m Model) segLine(r msgRow, w int) string {
+	var b strings.Builder
+	for _, s := range r.segs {
+		if s.pic.cols == 0 {
+			b.WriteString(s.text)
+			continue
+		}
+		cells := m.pics.cells(s.pic, 0)
+		if cells == "" {
+			// Still on its way to the terminal: hold the cells it will fill.
+			cells = strings.Repeat(" ", s.pic.cols)
+		}
+		b.WriteString(cells)
+	}
+	line := b.String()
+	return line + strings.Repeat(" ", max(0, w-lipgloss.Width(line)))
 }
 
 // firstRow is where a message's block starts — its day separator when it
@@ -316,7 +341,11 @@ func (m Model) View() tea.View {
 	var out strings.Builder
 	out.WriteString(top)
 	out.WriteString("\n")
-	out.WriteString(m.renderInput())
+	if m.mode == modeEmoji {
+		out.WriteString(m.renderPicker())
+	} else {
+		out.WriteString(m.renderInput())
+	}
 	out.WriteString("\n")
 	out.WriteString(m.renderStatus())
 	if m.showHelp {

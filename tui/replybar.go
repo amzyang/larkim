@@ -14,6 +14,12 @@ const replyBarHint = "^r drops the quote"
 // composerHeight is the inner height of the composer: the writing area, and
 // above it the row quoting the message a reply will attach to.
 func (m Model) composerHeight() int {
+	// The emoji picker stands where the composer does, so the panes above it
+	// give up exactly the rows it takes and the message being reacted to stays
+	// on screen.
+	if m.mode == modeEmoji {
+		return m.pickerRows() + pickerChrome - 2 // the border is counted outside
+	}
 	if m.replyTo != nil {
 		return inputHeight + 1
 	}
