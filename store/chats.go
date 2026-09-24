@@ -48,6 +48,11 @@ type Chat struct {
 	LastReactionsJSON string `json:"last_reactions_json,omitempty"`
 	LastRenderedAt    int64  `json:"last_rendered_at,omitempty"`
 	LastDeleted       bool   `json:"last_deleted,omitempty"`
+	// LastUnsilencedMs is the newest main-flow message the silence rules
+	// left alone, and the key the list orders on: noise changes what the
+	// row says, never where it sits. Zero when every message is silenced,
+	// which sinks the chat to the bottom with the empty ones.
+	LastUnsilencedMs int64 `json:"last_unsilenced_ms"`
 
 	// Muted is the user's do-not-disturb setting, which only a lookup of its
 	// own reports; MuteCheckedAt stamps that lookup's last answer.
@@ -85,7 +90,7 @@ func (c Chat) AvatarFile() string {
 // callers can order by them.
 const chatColumns = `c.chat_id, c.name, c.description, c.chat_mode, c.chat_status, c.owner_id, c.external, c.p2p_target_id, c.p2p_target_type,
  c.avatar_url, c.avatar_path, c.cursor_ms, c.backfill_done_at, c.members_synced_at, c.first_seen_at, c.last_seen_at, c.left_at, c.sync_error, c.repaired_at, c.raw_json,
- c.last_message_id, c.last_message_ms, c.last_sender_id, c.last_sender_name, c.last_sender_type, c.last_msg_type, c.last_content, c.last_content_raw, c.last_mentions_json, c.last_reactions_json, c.last_rendered_at, c.last_deleted,
+ c.last_message_id, c.last_message_ms, c.last_sender_id, c.last_sender_name, c.last_sender_type, c.last_msg_type, c.last_content, c.last_content_raw, c.last_mentions_json, c.last_reactions_json, c.last_rendered_at, c.last_deleted, c.last_unsilenced_ms,
  c.muted, c.mute_checked_at,
  (SELECT count(*) FROM messages m WHERE m.chat_id = c.chat_id) AS message_count,
  COALESCE(NULLIF(ct.enterprise_email, ''), ct.email, '') AS peer_account,
@@ -95,7 +100,7 @@ func scanChat(sc scanner) (Chat, error) {
 	var c Chat
 	err := sc.Scan(&c.ChatID, &c.Name, &c.Description, &c.ChatMode, &c.ChatStatus, &c.OwnerID, &c.External, &c.P2PTargetID, &c.P2PTargetType,
 		&c.AvatarURL, &c.AvatarPath, &c.CursorMs, &c.BackfillDoneAt, &c.MembersSyncedAt, &c.FirstSeenAt, &c.LastSeenAt, &c.LeftAt, &c.SyncError, &c.RepairedAt, &c.RawJSON,
-		&c.LastMessageID, &c.LastMessageMs, &c.LastSenderID, &c.LastSenderName, &c.LastSenderType, &c.LastMsgType, &c.LastContent, &c.LastContentRaw, &c.LastMentionsJSON, &c.LastReactionsJSON, &c.LastRenderedAt, &c.LastDeleted,
+		&c.LastMessageID, &c.LastMessageMs, &c.LastSenderID, &c.LastSenderName, &c.LastSenderType, &c.LastMsgType, &c.LastContent, &c.LastContentRaw, &c.LastMentionsJSON, &c.LastReactionsJSON, &c.LastRenderedAt, &c.LastDeleted, &c.LastUnsilencedMs,
 		&c.Muted, &c.MuteCheckedAt,
 		&c.MessageCount, &c.PeerAccount, &c.PeerAvatarPath)
 	return c, err
@@ -223,7 +228,7 @@ type ChatQuery struct {
 // unreadJoin flags the chats carrying a badge, on the same rule the counter
 // uses, so a chat is lifted exactly when it shows a number.
 const unreadJoin = `LEFT JOIN (SELECT m.chat_id FROM messages m JOIN read_state r ON r.message_id = m.message_id
- WHERE ` + unreadBadge + ` GROUP BY m.chat_id) u ON u.chat_id = c.chat_id `
+ WHERE ` + unreadCounted + ` GROUP BY m.chat_id) u ON u.chat_id = c.chat_id `
 
 // ListChats returns the chats waiting on the user first, then the rest, each
 // group newest message first.
@@ -249,7 +254,7 @@ func (s *Store) ListChats(ctx context.Context, q ChatQuery) ([]Chat, error) {
 	if limit <= 0 {
 		limit = 1000
 	}
-	tail += "ORDER BY (u.chat_id IS NOT NULL) DESC, c.last_message_ms DESC, c.name LIMIT ?"
+	tail += "ORDER BY (u.chat_id IS NOT NULL) DESC, c.last_unsilenced_ms DESC, c.last_message_ms DESC, c.name LIMIT ?"
 	args = append(args, limit)
 	return s.queryChats(ctx, tail, args...)
 }
@@ -287,9 +292,17 @@ const chatSummaryQuery = `SELECT message_id, create_ms, sender_id, sender_name, 
  FROM messages WHERE chat_id = ? AND message_position >= 0
  ORDER BY create_ms DESC, message_position DESC, id DESC LIMIT 1`
 
+// chatSummarySortKey is the newest main-flow message the silence rules left
+// alone. It is a second query rather than a column of the first, because the
+// message the list shows and the message that decides the chat's place are
+// not the same one once a rule matches.
+const chatSummarySortKey = `SELECT COALESCE(max(create_ms), 0) FROM messages
+ WHERE chat_id = ? AND message_position >= 0 AND silenced = 0`
+
 const chatSummaryUpdate = `UPDATE chats SET
  last_message_id = ?, last_message_ms = ?, last_sender_id = ?, last_sender_name = ?, last_sender_type = ?,
- last_msg_type = ?, last_content = ?, last_content_raw = ?, last_mentions_json = ?, last_reactions_json = ?, last_rendered_at = ?, last_deleted = ?
+ last_msg_type = ?, last_content = ?, last_content_raw = ?, last_mentions_json = ?, last_reactions_json = ?, last_rendered_at = ?, last_deleted = ?,
+ last_unsilenced_ms = ?
  WHERE chat_id = ?`
 
 // refreshChatSummary recomputes one chat's cold-stored newest message inside
@@ -303,8 +316,12 @@ func refreshChatSummary(ctx context.Context, tx *sql.Tx, chatID string) error {
 	if err != nil && err != sql.ErrNoRows {
 		return fmt.Errorf("chat summary %s: %w", chatID, err)
 	}
+	if err := tx.QueryRowContext(ctx, chatSummarySortKey, chatID).Scan(&c.LastUnsilencedMs); err != nil {
+		return fmt.Errorf("chat sort key %s: %w", chatID, err)
+	}
 	_, err = tx.ExecContext(ctx, chatSummaryUpdate,
 		c.LastMessageID, c.LastMessageMs, c.LastSenderID, c.LastSenderName, c.LastSenderType,
-		c.LastMsgType, c.LastContent, c.LastContentRaw, c.LastMentionsJSON, c.LastReactionsJSON, c.LastRenderedAt, c.LastDeleted, chatID)
+		c.LastMsgType, c.LastContent, c.LastContentRaw, c.LastMentionsJSON, c.LastReactionsJSON, c.LastRenderedAt, c.LastDeleted,
+		c.LastUnsilencedMs, chatID)
 	return err
 }

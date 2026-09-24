@@ -30,6 +30,15 @@ slow_path_every: 10m
 # Re-list the chats active in the last week so edits and recalls land.
 repair_every: 6h
 
+# Messages matching any rule keep their place in the chat but carry no unread
+# badge and never move their chat up the list. A rule's fields are an AND, an
+# omitted field matches anything, and a rule with no field set is refused.
+# `larkim silence` says how many messages each rule currently matches.
+silence: []
+#  - chat: oc_quiet       # chat_id, from `larkim chats list`
+#    sender: cli_c        # sender_id, from `larkim contacts list --search`
+#  - contains: nightly build   # case-insensitive substring of the message text
+
 resources:
   # Skip attachments larger than this; 0 means unlimited.
   max_bytes: 52428800 # 50 MiB

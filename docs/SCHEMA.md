@@ -28,13 +28,14 @@ One row per chat the user is (or was) in, from `GET /im/v1/chats` with `types=p2
 | `last_mentions_json` | that message's rendered mentions, the shape `messages.mentions_json` holds; empty until the rendering lands |
 | `last_reactions_json` | that message's reaction block, the shape `messages.reactions_json` holds; empty while nobody has reacted |
 | `last_rendered_at`, `last_deleted` | that message's rendering state and recall flag |
+| `last_unsilenced_ms` | the newest main-flow message no silence rule matched, and the key the list orders on; 0 when every message is silenced |
 | `muted`, `mute_checked_at` | the user's do-not-disturb setting and when it was last answered; 0 means it has never been asked |
 
 A chat first seen only through a message (before the next full listing) exists with an empty name.
 
 `muted` comes from `POST /im/v1/chat_user_setting/batch_get_mute_status` under user identity, since no chat listing carries it. The lookup rides the full chat refresh, covers at most 100 chats per round and only those with a message in the last 30 days, taking the longest unanswered first. Chats the API declines to answer for (non-member, malformed id) keep their previous `muted` and are stamped all the same, so `mute_checked_at` says when a chat was last asked about, not that the answer changed.
 
-The `last_*` columns mirror the newest message whose `message_position` is non-negative, so the list shows what the chat's main flow shows: thread replies are excluded, thread roots are not. `UpsertMessages` and `UpdateRendered` rewrite them in their own transaction, which covers ingest, edits, recalls and rendering. Order chats by `last_message_ms` rather than an aggregate over `messages`; `ListChats` puts the chats carrying an unread main-flow message ahead of that, on the same rule the TUI badge counts by.
+The `last_*` columns mirror the newest message whose `message_position` is non-negative, so the list shows what the chat's main flow shows: thread replies are excluded, thread roots are not. `UpsertMessages` and `UpdateRendered` rewrite them in their own transaction, which covers ingest, edits, recalls and rendering. Order chats by `last_unsilenced_ms` rather than by `last_message_ms` or an aggregate over `messages`: the `last_*` columns say what arrived last, the sort key says what last mattered, and the two differ exactly where a silence rule matched. `ListChats` puts the chats carrying an unread, unsilenced main-flow message ahead of that, on the same rule the TUI badge counts by.
 
 ## messages
 
@@ -54,6 +55,7 @@ One row per message id, from the raw message API (`create_ms` is millisecond pre
 | `create_ms`, `update_ms` | creation, and the last time the API's copy of the message changed for any reason |
 | `message_position` | per-chat monotonic position; negative for thread replies (the API picks the sentinel, `-3` in current data) |
 | `updated`, `deleted` | the API's own flags; `updated` also covers Feishu's post-send patches (mention resolution, link and time-phrase enrichment), so it is not an edit badge |
+| `silenced` | a configured silence rule matched; the message is stored, listed and read like any other, but carries no badge and does not move its chat up the list |
 | `edited_at` | when a sync first saw the body of a `text`/`post` message change; 0 means never observed changing, which is also every backfilled message |
 | `deleted_seen_at` | when the recall was first observed; `content_raw` keeps the last known body |
 | `thread_id` | `omt_…` for thread roots and replies |
@@ -62,6 +64,8 @@ One row per message id, from the raw message API (`create_ms` is millisecond pre
 | `reactions_json` | reaction summary, `{counts:[{reaction_type,count}], details:[{emoji_type,operator:{operator_id,operator_type},action_time,…}]}`; empty when the message carries none. `count` and `action_time` are **strings**, the latter in Unix seconds. `counts` is the server's total and arrives alphabetically; `details` is one page of the individual reactions, so it may not name every reactor. The client's own order is by each emoji's earliest `action_time` |
 | `raw_json` | the API item as received |
 | `rendered_at` | 0 = rendering pending (also reset when `update_ms` changes) |
+
+`silenced` is derived from the `silence` rules of the writer's config: a rule's `chat`, `sender` and `contains` fields are an AND, the rules are an OR, and `contains` reads `content` once the rendering lands and `content_raw` until then. The process holding `daemon.lock` stamps the flag as messages arrive and again when a rendering lands, and rebuilds the whole column when the rule set changes, so the column states what that process's config says — a reader that edits the config sees nothing until the writer restarts.
 
 A `system` message is its `template` with the values the same body carries filled in (`from_user`, `to_chatters`, `divider_text`). Feishu ships no value for the remaining slots, so `{old_group_name}`, `{count}` and the like read as `…` rather than as the placeholder.
 
@@ -82,7 +86,7 @@ Per-message read state, joined on `message_id`. Rows exist only for messages tha
 | `local_read_at` | local: the reader had the message in front of them in larkim, which is set for a whole chat at once when it is opened. Feishu offers no way to write a read receipt, so this is what lets a badge fall without leaving larkim; the Feishu client's own red dot is unaffected |
 | `consumed_at` | local: a larkim consumer marked the message as seen (`larkim mark consumed`), a processing cursor for scripts rather than a record of a person reading; never written by the daemon |
 
-A chat's badge counts the rows where `is_read_remote` is 0 and `local_read_at` is 0 on a live message with a non-negative `message_position`; thread replies are left out. Both flags can only witness that a message was seen, so taking either one as read adds no false unread.
+A chat's badge counts the rows where `is_read_remote` is 0 and `local_read_at` is 0 on a live, unsilenced message with a non-negative `message_position`; thread replies are left out. Both flags can only witness that a message was seen, so taking either one as read adds no false unread. Marking a chat read is deliberately wider than the badge: it takes every such row, silenced ones included, because the reader had them in front of them too.
 
 ## resources
 
@@ -119,7 +123,7 @@ SELECT rev FROM data_rev;  -- changed since last poll? re-read what you display
 
 ## sync_state, sync_runs
 
-`sync_state` is a key/value table: `watermark_ms` (end of the last fully searched window), `self_open_id`, `status` (`running` / `needs_login` / `error`), `last_error`, `last_tick_at`, `chats_refreshed_at`, `slow_path_at`. `sync_runs` keeps the newest 1000 ticks with timing, counts and error text.
+`sync_state` is a key/value table: `watermark_ms` (end of the last fully searched window), `self_open_id`, `status` (`running` / `needs_login` / `error`), `last_error`, `last_tick_at`, `chats_refreshed_at`, `slow_path_at`, `silence_rev` (fingerprint of the silence rules the stored flags came from). `sync_runs` keeps the newest 1000 ticks with timing, counts and error text.
 
 ## Example queries
 
@@ -127,7 +131,7 @@ SELECT rev FROM data_rev;  -- changed since last poll? re-read what you display
 -- Unread-by-me messages from the last day, newest first, on the badge's rule
 SELECT m.message_id, m.chat_id, m.sender_name, m.content
 FROM messages m LEFT JOIN read_state r ON r.message_id = m.message_id
-WHERE m.create_ms > (unixepoch() - 86400) * 1000 AND r.is_read_remote = 0 AND r.local_read_at = 0 AND m.deleted = 0
+WHERE m.create_ms > (unixepoch() - 86400) * 1000 AND r.is_read_remote = 0 AND r.local_read_at = 0 AND m.deleted = 0 AND m.silenced = 0
 ORDER BY m.create_ms DESC;
 
 -- A thread in order
@@ -136,5 +140,5 @@ WHERE thread_id = 'omt_xxx' ORDER BY create_ms, message_position, id;
 
 -- Chats by recent activity, with what each one last said
 SELECT chat_id, name, last_sender_name, last_content, last_message_ms
-FROM chats WHERE left_at = 0 ORDER BY last_message_ms DESC LIMIT 20;
+FROM chats WHERE left_at = 0 ORDER BY last_unsilenced_ms DESC LIMIT 20;
 ```

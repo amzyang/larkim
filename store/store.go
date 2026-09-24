@@ -25,6 +25,10 @@ var ErrNotFound = errors.New("not found")
 // Store wraps one SQLite database.
 type Store struct {
 	db *sql.DB
+	// Silence is the configured rule set; the process holding daemon.lock
+	// is the only one whose writes it reaches, since it is the only one
+	// that writes messages. Readers take the stored flag as given.
+	Silence SilenceRules
 }
 
 // Open opens (creating if needed) the database at path and applies migrations.

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/amzyang/larkim/store"
 	"gopkg.in/yaml.v3"
 )
 
@@ -35,6 +36,9 @@ type Config struct {
 	RepairEvery time.Duration `yaml:"repair_every"`
 	Resources   Resources     `yaml:"resources"`
 	AI          AI            `yaml:"ai"`
+	// Silence keeps matching messages out of the unread badge and out of the
+	// chat list's ordering; see docs/silence/PRD.md.
+	Silence store.SilenceRules `yaml:"silence"`
 }
 
 // AI configures the TUI assistant.
@@ -104,6 +108,9 @@ func Load(path string) (Config, error) {
 	cfg.LarkCLIPath = expandHome(cfg.LarkCLIPath)
 	if cfg.PollInterval < time.Second {
 		cfg.PollInterval = time.Second
+	}
+	if err := cfg.Silence.Validate(); err != nil {
+		return cfg, fmt.Errorf("%s: %w", path, err)
 	}
 	return cfg, nil
 }

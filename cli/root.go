@@ -41,6 +41,9 @@ func New(version, buildDSN string) *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
+			// Follow the streams cobra was handed, so a test can read what a
+			// command prints.
+			app.Out, app.Err = cmd.OutOrStdout(), cmd.ErrOrStderr()
 			// Shell completion must stay side-effect free and fast.
 			if cmd.Name() != cobra.ShellCompRequestCmd && cmd.Name() != cobra.ShellCompNoDescRequestCmd {
 				envValue, envSet := os.LookupEnv("SENTRY_DSN")
@@ -61,7 +64,7 @@ func New(version, buildDSN string) *cobra.Command {
 	root.PersistentFlags().StringVar(&app.sentryFlag, "sentry-dsn", "", "Sentry DSN for crash reporting (overrides SENTRY_DSN and the build-time default; empty disables)")
 	root.SetFlagErrorFunc(func(_ *cobra.Command, err error) error { return &usageError{err} })
 	root.AddCommand(app.syncCmd(), app.statusCmd(), app.daemonCmd(), app.chatsCmd(), app.messagesCmd(), app.contactsCmd(),
-		app.sendCmd(), app.replyCmd(), app.watchCmd(), app.markCmd(), app.tuiCmd(), app.dbCmd(), app.schemaCmd(),
+		app.sendCmd(), app.replyCmd(), app.watchCmd(), app.markCmd(), app.silenceCmd(), app.tuiCmd(), app.dbCmd(), app.schemaCmd(),
 		app.emojiCmd(), app.sentryCmd())
 	return root
 }
@@ -90,7 +93,12 @@ func (a *App) openStore() (*store.Store, error) {
 	if err := os.MkdirAll(a.cfg.DataDir, 0o700); err != nil {
 		return nil, err
 	}
-	return store.Open(a.cfg.DBPath())
+	st, err := store.Open(a.cfg.DBPath())
+	if err != nil {
+		return nil, err
+	}
+	st.Silence = a.cfg.Silence
+	return st, nil
 }
 
 func (a *App) client() *larkcli.ExecClient {

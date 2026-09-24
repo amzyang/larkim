@@ -7,9 +7,9 @@
 静音是 `messages` 上的一个派生列，求值挂在仅有的两条写消息的路径上，与 `refreshChatSummary` 共用事务：
 
 ```
-UpsertMessages (store/messages.go:69)   → applySilence(本批 ids) → refreshChatSummary
-UpdateRendered (store/messages.go:128)  → applySilence(该 id)    → refreshChatSummary
-Syncer.tick    (sync/syncer.go:183) 头部 → ReapplySilence         → 指纹不一致则全量重判
+UpsertMessages (store/messages.go:73)   → applySilence(本批 ids) → refreshChatSummary
+UpdateRendered (store/messages.go:138)  → applySilence(该 id)    → refreshChatSummary
+Syncer.tick    (sync/syncer.go:189) 头部 → ReapplySilence         → 指纹不一致则全量重判
 ```
 
 第二个求值点的理由是渲染异步：`content` 由 lark-cli 补齐，卡片与富文本在 ingest 那一刻只有 body JSON，内容规则判不准。ingest 时按当时可见的内容判一次，渲染到达再判一次并覆盖。覆盖是双向的——不再命中就取消静音，编辑与撤回走同一条路径。
@@ -41,7 +41,7 @@ UPDATE messages SET silenced = 1 WHERE message_id IN (…) AND <rule>;  -- 每�
 
 ## 数据
 
-`store/migrations/0013_silence.sql`：
+`store/migrations/0014_silence.sql`：
 
 ```sql
 ALTER TABLE messages ADD COLUMN silenced INTEGER NOT NULL DEFAULT 0;
@@ -51,7 +51,7 @@ UPDATE chats SET last_unsilenced_ms = last_message_ms;
 
 回填让没有规则的库与迁移前行为一致。两列都是派生物，指纹一变就整体重建。
 
-`refreshChatSummary`（store/chats.go:295）在摘要之外多算一个排序键：
+`refreshChatSummary`（store/chats.go:311）在摘要之外多算一个排序键：
 
 ```sql
 SELECT COALESCE(max(create_ms), 0) FROM messages
@@ -66,10 +66,10 @@ thread 口径与既有摘要一致（负 position 不参与）；撤回的消息
 
 | 位置 | 改法 |
 |---|---|
-| `ListChats` ORDER BY（store/chats.go:249） | `(u.chat_id IS NOT NULL) DESC, c.last_unsilenced_ms DESC, c.last_message_ms DESC, c.name` |
-| `unreadJoin`（store/chats.go:222） | 谓词换成 `unreadCounted` |
-| `UnreadCountsByChat`（store/resources.go:184） | 谓词换成 `unreadCounted` |
-| `MarkChatRead`（store/resources.go:166） | 保持 `unreadBadge` |
+| `ListChats` ORDER BY（store/chats.go:257） | `(u.chat_id IS NOT NULL) DESC, c.last_unsilenced_ms DESC, c.last_message_ms DESC, c.name` |
+| `unreadJoin`（store/chats.go:230） | 谓词换成 `unreadCounted` |
+| `UnreadCountsByChat`（store/resources.go:210） | 谓词换成 `unreadCounted` |
+| `MarkChatRead`（store/resources.go:191） | 保持 `unreadBadge` |
 
 ```go
 const unreadBadge = `r.is_read_remote = 0 AND r.local_read_at = 0 AND m.deleted = 0 AND m.message_position >= 0`
@@ -82,7 +82,7 @@ const unreadCounted = unreadBadge + ` AND m.silenced = 0`
 
 ## 注入与生效范围
 
-`Store` 加导出字段 `Silence SilenceRules`，由 `cli.App.openStore`（cli/root.go:88）从 `cfg.Silence` 填；`store.Open` 的签名不变，测试照常裸开库。只有持 `daemon.lock` 的进程写 `messages`，规则因此只在写者侧起作用；连着 daemon 的只读 TUI 与 CLI 读的是 `silenced` 列，不需要规则。
+`Store` 加导出字段 `Silence SilenceRules`，由 `cli.App.openStore`（cli/root.go:92）从 `cfg.Silence` 填；`store.Open` 的签名不变，测试照常裸开库。只有持 `daemon.lock` 的进程写 `messages`，规则因此只在写者侧起作用；连着 daemon 的只读 TUI 与 CLI 读的是 `silenced` 列，不需要规则。
 
 `Syncer.tick` 头部调 `Store.ReapplySilence`：读 `sync_state.silence_rev` 与 `Fingerprint()` 比对，不一致则在一个事务里清零、逐规则置位、重算所有会话摘要、写回指纹。代价是每 tick 一次 keyed SELECT，换来规则变更自愈，不依赖任何一次性的启动钩子。
 
@@ -106,8 +106,11 @@ store 层白盒，真 SQLite：
 
 | 用例 | 断言 |
 |---|---|
+| `TestSilenceRules_RejectARuleThatMatchesEverything` | 空规则被拒 |
+| `TestSilenceRules_FingerprintFollowsTheRules` | 指纹随规则变化，且对相同规则稳定 |
 | `TestUpsertMessages_SilencesAMatchingSender` | ingest 即打标 |
 | `TestUpsertMessages_LeavesAnUnmatchedFieldAlone` | 字段之间是 AND |
+| `TestUpsertMessages_SilencesOnTheRawBodyBeforeRendering` | 内容规则不等渲染队列 |
 | `TestUpdateRendered_SilencesOnTheRenderedBody` | 只有渲染后才命中的内容规则 |
 | `TestUpdateRendered_ClearsSilenceWhenTheRenderingStopsMatching` | 覆盖双向 |
 | `TestUpdateRendered_RefreshesTheSummaryWhenSilenceFlips` | 排序键不留旧值 |
@@ -118,13 +121,11 @@ store 层白盒，真 SQLite：
 | `TestListChats_DoesNotLiftAChatWhoseUnreadIsAllSilenced` | 未读组 |
 | `TestListChats_SinksAFullySilencedChat` | 沉底但保留摘要 |
 | `TestMarkChatRead_MarksSilencedMessagesToo` | 超集不变式 |
+| `TestSilenceMatches_CountsOneRule` | 诊断命令的数据源，含命中为 0 的规则 |
 
-config：`TestLoad_ParsesSilenceRules`、`TestLoad_RejectsARuleThatMatchesEverything`。
-cli：`TestSilenceCmd_ReportsPerRuleMatches`。
+sync：`TestTick_RebuildsSilenceWhenTheRulesChange`（改配置后一次 tick 即落到历史消息与排序键）、
+`TestTick_LeavesSilenceAloneWhenTheRulesHold`（指纹一致的 tick 不写 `data_rev`）。
+config：`TestLoad_ParsesSilenceRules`、`TestLoad_RejectsASilenceRuleThatMatchesEverything`。
+cli：`TestSilenceCmd_ReportsPerRuleMatches`、`TestSilenceCmd_RejectsARuleThatMatchesEverything`。
 
 数据一律虚构（`oc_quiet`、`cli_c`、`ou_a`）。
-
-## 阶段
-
-1. 列、规则、打标、重判、计数与排序，连同 `docs/SCHEMA.md` 与 `config.example.yaml`。合入即可用。
-2. `larkim silence` 诊断命令，独立合入。

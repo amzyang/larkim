@@ -24,16 +24,20 @@ type Message struct {
 	MessagePosition int64  `json:"message_position"`
 	Updated         bool   `json:"updated"`
 	Deleted         bool   `json:"deleted"`
-	DeletedSeenAt   int64  `json:"deleted_seen_at,omitempty"`
-	ThreadID        string `json:"thread_id,omitempty"`
-	ReplyTo         string `json:"reply_to,omitempty"`
-	MentionsJSON    string `json:"mentions_json,omitempty"`
-	ReactionsJSON   string `json:"reactions_json,omitempty"`
-	RawJSON         string `json:"-"`
-	RenderedAt      int64  `json:"rendered_at"`
-	EditedAt        int64  `json:"edited_at,omitempty"`
-	FirstSeenAt     int64  `json:"first_seen_at"`
-	LastSeenAt      int64  `json:"last_seen_at"`
+	// Silenced is set by the configured silence rules: the message is read
+	// and listed as any other, but carries no badge and does not move its
+	// chat up the list.
+	Silenced      bool   `json:"silenced"`
+	DeletedSeenAt int64  `json:"deleted_seen_at,omitempty"`
+	ThreadID      string `json:"thread_id,omitempty"`
+	ReplyTo       string `json:"reply_to,omitempty"`
+	MentionsJSON  string `json:"mentions_json,omitempty"`
+	ReactionsJSON string `json:"reactions_json,omitempty"`
+	RawJSON       string `json:"-"`
+	RenderedAt    int64  `json:"rendered_at"`
+	EditedAt      int64  `json:"edited_at,omitempty"`
+	FirstSeenAt   int64  `json:"first_seen_at"`
+	LastSeenAt    int64  `json:"last_seen_at"`
 	// From read_state; IsReadRemote is nil when never checked.
 	IsReadRemote *bool `json:"is_read_remote"`
 	ConsumedAt   int64 `json:"consumed_at"`
@@ -41,7 +45,7 @@ type Message struct {
 }
 
 const messageColumns = `m.id, m.message_id, m.chat_id, m.msg_type, m.sender_id, m.sender_type, m.sender_name,
- m.content_raw, m.content, m.create_ms, m.update_ms, m.message_position, m.updated, m.deleted, m.deleted_seen_at,
+ m.content_raw, m.content, m.create_ms, m.update_ms, m.message_position, m.updated, m.deleted, m.silenced, m.deleted_seen_at,
  m.thread_id, m.reply_to, m.mentions_json, m.reactions_json, m.raw_json, m.rendered_at, m.edited_at, m.first_seen_at, m.last_seen_at,
  r.is_read_remote, COALESCE(r.consumed_at, 0), COALESCE(r.local_read_at, 0)`
 
@@ -52,7 +56,7 @@ func scanMessage(sc scanner) (Message, error) {
 	var m Message
 	var isRead sql.NullBool
 	err := sc.Scan(&m.ID, &m.MessageID, &m.ChatID, &m.MsgType, &m.SenderID, &m.SenderType, &m.SenderName,
-		&m.ContentRaw, &m.Content, &m.CreateMs, &m.UpdateMs, &m.MessagePosition, &m.Updated, &m.Deleted, &m.DeletedSeenAt,
+		&m.ContentRaw, &m.Content, &m.CreateMs, &m.UpdateMs, &m.MessagePosition, &m.Updated, &m.Deleted, &m.Silenced, &m.DeletedSeenAt,
 		&m.ThreadID, &m.ReplyTo, &m.MentionsJSON, &m.ReactionsJSON, &m.RawJSON, &m.RenderedAt, &m.EditedAt, &m.FirstSeenAt, &m.LastSeenAt,
 		&isRead, &m.ConsumedAt, &m.LocalReadAt)
 	if isRead.Valid {
@@ -105,6 +109,7 @@ func (s *Store) UpsertMessages(ctx context.Context, msgs []Message, now int64) (
 	defer stmt.Close()
 	n := 0
 	touched := map[string]struct{}{}
+	ids := make([]string, 0, len(msgs))
 	for _, m := range msgs {
 		if _, err := stmt.ExecContext(ctx, m.MessageID, m.ChatID, m.MsgType, m.SenderID, m.SenderType, m.SenderName,
 			m.ContentRaw, m.CreateMs, m.UpdateMs, m.MessagePosition, m.Updated, m.Deleted, m.DeletedSeenAt, m.ThreadID, m.ReplyTo,
@@ -112,7 +117,12 @@ func (s *Store) UpsertMessages(ctx context.Context, msgs []Message, now int64) (
 			return n, fmt.Errorf("upsert %s: %w", m.MessageID, err)
 		}
 		touched[m.ChatID] = struct{}{}
+		ids = append(ids, m.MessageID)
 		n++
+	}
+	// Before the summaries: the sort key they compute reads the flag.
+	if err := s.applySilence(ctx, tx, ids); err != nil {
+		return n, err
 	}
 	for chatID := range touched {
 		if err := refreshChatSummary(ctx, tx, chatID); err != nil {
@@ -135,8 +145,18 @@ func (s *Store) UpdateRendered(ctx context.Context, messageID, content, mentions
 		content, mentionsJSON, reactionsJSON, now, messageID); err != nil {
 		return err
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE chats SET last_content = ?, last_mentions_json = ?, last_rendered_at = ? WHERE last_message_id = ?`,
-		content, mentionsJSON, now, messageID); err != nil {
+	// A contains rule reads the rendering, so this is where a card first
+	// becomes matchable and where an edit can stop matching.
+	if err := s.applySilence(ctx, tx, []string{messageID}); err != nil {
+		return err
+	}
+	var chatID string
+	if err := tx.QueryRowContext(ctx, `SELECT COALESCE((SELECT chat_id FROM messages WHERE message_id = ?), '')`, messageID).Scan(&chatID); err != nil {
+		return err
+	}
+	// The summary is recomputed rather than patched: the flag this message
+	// just took decides whether it still holds the chat's sort key.
+	if err := refreshChatSummary(ctx, tx, chatID); err != nil {
 		return err
 	}
 	return tx.Commit()

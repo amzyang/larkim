@@ -26,6 +26,7 @@ larkim messages list --query "发布 计划"         # full-text search (every t
 larkim messages list --unread                  # Feishu says you have not read these yet
 larkim messages list --unconsumed              # not yet processed by a local consumer
 larkim mark consumed om_xxx om_yyy             # local flag only; Feishu's red dot is untouched
+larkim silence                                 # configured silence rules and what each one matches
 larkim sync --backfill-days 7                  # one tick in the foreground (daemon must be stopped)
 larkim db path && larkim schema                # for direct SQLite consumers, see docs/SCHEMA.md
 ```
@@ -84,6 +85,8 @@ When the user token expires the daemon stops calling the API, reports `needs_log
 ## Configuration
 
 `~/.larkim/config.yaml`, every key optional. [`config.example.yaml`](config.example.yaml) lists them all with their defaults and what each one is for; copy it and edit.
+
+`silence` rules take noise out of the way without hiding it: a matching message keeps its place in the chat but carries no unread badge and never moves its chat up the list ([docs/silence](docs/silence/PRD.md)). The rules are read by the process that syncs, so a change lands when that process restarts.
 
 ## Assistant
 

@@ -175,6 +175,13 @@ func (s *Store) ReadCheckCount(ctx context.Context, messageID string) (int, erro
 // the list moves for one.
 const unreadBadge = `r.is_read_remote = 0 AND r.local_read_at = 0 AND m.deleted = 0 AND m.message_position >= 0`
 
+// unreadCounted is what the badge shows: the same messages, minus the ones a
+// silence rule matched. MarkChatRead deliberately keeps the wider predicate —
+// the set it marks must stay a superset of the one tui.unreadWaiting sees, or
+// a silenced message it cannot collect makes every reload fire another
+// applink (docs/read-sync/TECH.md).
+const unreadCounted = unreadBadge + ` AND m.silenced = 0`
+
 // MarkChatRead takes every message the chat's badge counts as seen locally.
 // Feishu has no mark-read call, so this is the only way a badge falls without
 // leaving larkim. consumed_at is left alone: that cursor belongs to the CLI
@@ -199,9 +206,10 @@ func (s *Store) UnreadCount(ctx context.Context) (int64, error) {
 
 // UnreadCountsByChat returns the per-chat badge counts. Muted chats are in
 // it: do-not-disturb decides how the counter is drawn, not whether it exists.
+// Silenced messages are not: the rule asked for no counter at all.
 func (s *Store) UnreadCountsByChat(ctx context.Context) (map[string]int64, error) {
 	return queryCounts(ctx, s.db, `SELECT m.chat_id, count(*) FROM messages m JOIN read_state r ON r.message_id = m.message_id
- WHERE `+unreadBadge+` GROUP BY m.chat_id`)
+ WHERE `+unreadCounted+` GROUP BY m.chat_id`)
 }
 
 // ScanRow is a message summary for the resource back-scan.

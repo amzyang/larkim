@@ -194,6 +194,15 @@ func (s *Syncer) tick(ctx context.Context, now time.Time) (Report, error) {
 		}
 	}
 
+	// 0. The silence rules live in the config; the flags they produce live
+	// in the database. Rebuilding is a full pass over messages, so the
+	// fingerprint gates it and an unchanged config costs one keyed read.
+	if silenced, err := s.Store.ReapplySilence(ctx); err != nil {
+		return rep, fmt.Errorf("silence: %w", err)
+	} else if silenced > 0 {
+		s.log().Info("silence rules changed", "messages", silenced)
+	}
+
 	// 1. Fast path: discover new message ids across all chats.
 	rep.Window = FastWindow(s.stateTime(ctx, KeyWatermark), now, s.Opt.Overlap)
 	hits, coveredEnd, err := s.searchWindow(ctx, rep.Window)
