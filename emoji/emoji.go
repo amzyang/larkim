@@ -9,7 +9,9 @@ package emoji
 //go:generate go run ./internal/gen
 
 import (
+	"cmp"
 	"encoding/json"
+	"math"
 	"slices"
 	"strings"
 	"sync"
@@ -125,11 +127,15 @@ func ByName(name string) (Emoji, bool) {
 }
 
 // Chip is one emoji's standing on a message: how many people reacted with it,
-// and whether the reader is one of them.
+// who they were, and whether the reader is one of them.
 type Chip struct {
 	Key   string
 	Count int
 	Mine  bool
+	// Operators are the reactors Feishu named, earliest first. Only one page
+	// of details comes back, so a busy emoji's later reactors are missing
+	// from it and Count stays the only full total.
+	Operators []string
 }
 
 // reactionBlock is what lark-cli attaches to a message it pulled. count is a
@@ -145,13 +151,21 @@ type reactionBlock struct {
 			OperatorID   string `json:"operator_id"`
 			OperatorType string `json:"operator_type"`
 		} `json:"operator"`
+		// ActionTime is when this reaction landed, in Unix seconds, and comes
+		// over the wire as a string.
+		ActionTime json.Number `json:"action_time"`
 	} `json:"details"`
 }
 
 // Summary reads a message's stored reaction block. Feishu sends the totals and
 // the individual reactions separately, and only the latter say who reacted, so
-// the reader's own mark is read off the details while the count stays the
-// server's — the details are one page and may not hold every reactor.
+// the reactors and the reader's own mark are read off the details while the
+// count stays the server's — the details are one page and may not hold every
+// reactor.
+//
+// The chips come back in the order the client shows them, which is when each
+// emoji was first put on the message rather than the alphabetical order the
+// totals arrive in. It is an order that never reshuffles as the counts move.
 //
 // A block that does not decode yields nothing rather than a guess.
 func Summary(reactionsJSON, selfOpenID string) []Chip {
@@ -162,11 +176,25 @@ func Summary(reactionsJSON, selfOpenID string) []Chip {
 	if json.Unmarshal([]byte(reactionsJSON), &blk) != nil {
 		return nil
 	}
-	mine := map[string]bool{}
+	type reaction struct {
+		operator string
+		at       int64
+	}
+	by := map[string][]reaction{}
 	for _, d := range blk.Details {
-		if selfOpenID != "" && d.Operator.OperatorID == selfOpenID {
-			mine[d.EmojiType] = true
+		at, _ := d.ActionTime.Int64()
+		by[d.EmojiType] = append(by[d.EmojiType], reaction{d.Operator.OperatorID, at})
+	}
+	for _, rs := range by {
+		slices.SortStableFunc(rs, func(a, b reaction) int { return cmp.Compare(a.at, b.at) })
+	}
+	// An emoji nobody on the page reacted with has no time to sort by, and
+	// keeps the place the totals gave it at the end of the strip.
+	first := func(key string) int64 {
+		if rs := by[key]; len(rs) > 0 {
+			return rs[0].at
 		}
+		return math.MaxInt64
 	}
 	chips := make([]Chip, 0, len(blk.Counts))
 	for _, c := range blk.Counts {
@@ -174,7 +202,13 @@ func Summary(reactionsJSON, selfOpenID string) []Chip {
 		if c.ReactionType == "" || err != nil || n <= 0 {
 			continue
 		}
-		chips = append(chips, Chip{Key: c.ReactionType, Count: int(n), Mine: mine[c.ReactionType]})
+		chip := Chip{Key: c.ReactionType, Count: int(n)}
+		for _, r := range by[c.ReactionType] {
+			chip.Operators = append(chip.Operators, r.operator)
+			chip.Mine = chip.Mine || (selfOpenID != "" && r.operator == selfOpenID)
+		}
+		chips = append(chips, chip)
 	}
+	slices.SortStableFunc(chips, func(a, b Chip) int { return cmp.Compare(first(a.Key), first(b.Key)) })
 	return chips
 }

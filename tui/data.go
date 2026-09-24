@@ -9,6 +9,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/amzyang/larkim/ai"
+	"github.com/amzyang/larkim/emoji"
 	"github.com/amzyang/larkim/larkcli"
 	"github.com/amzyang/larkim/store"
 	"github.com/amzyang/larkim/sync"
@@ -102,6 +103,7 @@ type (
 // messages this page replies to, which are often older than the page.
 type msgMeta struct {
 	suffix  map[string]string
+	people  map[string]string
 	res     map[string][]store.Resource
 	parents map[string]store.Message
 }
@@ -111,7 +113,7 @@ func loadMeta(ctx context.Context, st *store.Store, msgs []store.Message) (msgMe
 	ids := make([]string, 0, len(msgs))
 	var parentIDs []string
 	seen := map[string]bool{}
-	addSender := func(id string) {
+	addPerson := func(id string) {
 		if id != "" && !seen[id] {
 			seen[id] = true
 			ids = append(ids, id)
@@ -119,7 +121,14 @@ func loadMeta(ctx context.Context, st *store.Store, msgs []store.Message) (msgMe
 	}
 	for _, x := range msgs {
 		msgIDs = append(msgIDs, x.MessageID)
-		addSender(x.SenderID)
+		addPerson(x.SenderID)
+		// A reaction names its operator by open id alone, so the reactors a
+		// chip lists travel with the senders to the contacts lookup.
+		for _, c := range emoji.Summary(x.ReactionsJSON, "") {
+			for _, id := range c.Operators {
+				addPerson(id)
+			}
+		}
 		if x.ReplyTo != "" {
 			parentIDs = append(parentIDs, x.ReplyTo)
 		}
@@ -131,23 +140,27 @@ func loadMeta(ctx context.Context, st *store.Store, msgs []store.Message) (msgMe
 	// A quoted message names its sender the way the list does, so its author
 	// needs a suffix too even when they never spoke on this page.
 	for _, p := range parents {
-		addSender(p.SenderID)
+		addPerson(p.SenderID)
 	}
 	contacts, err := st.ContactsByIDs(ctx, ids)
 	if err != nil {
 		return msgMeta{}, err
 	}
 	suffix := make(map[string]string, len(contacts))
+	people := make(map[string]string, len(contacts))
 	for id, c := range contacts {
 		if s := c.AccountSuffix(); s != "" {
 			suffix[id] = s
+		}
+		if c.Name != "" {
+			people[id] = c.Name
 		}
 	}
 	res, err := st.ResourcesForMessages(ctx, msgIDs)
 	if err != nil {
 		return msgMeta{}, err
 	}
-	return msgMeta{suffix: suffix, res: res, parents: parents}, nil
+	return msgMeta{suffix: suffix, people: people, res: res, parents: parents}, nil
 }
 
 func searchMessages(st *store.Store, query string) tea.Cmd {

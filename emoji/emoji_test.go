@@ -103,8 +103,10 @@ func TestSummary_MarksTheReadersOwnReaction(t *testing.T) {
 	const block = `{"counts":[{"reaction_type":"THUMBSUP","count":"2"},{"reaction_type":"ROSE","count":"1"}],
 	  "details":[{"emoji_type":"THUMBSUP","operator":{"operator_id":"ou_a","operator_type":"user"}},
 	             {"emoji_type":"ROSE","operator":{"operator_id":"ou_b","operator_type":"user"}}]}`
-	require.Equal(t, []Chip{{Key: "THUMBSUP", Count: 2, Mine: true}, {Key: "ROSE", Count: 1}}, Summary(block, "ou_a"))
-	require.Equal(t, []Chip{{Key: "THUMBSUP", Count: 2}, {Key: "ROSE", Count: 1}}, Summary(block, "ou_c"),
+	require.Equal(t, []Chip{{Key: "THUMBSUP", Count: 2, Mine: true, Operators: []string{"ou_a"}},
+		{Key: "ROSE", Count: 1, Operators: []string{"ou_b"}}}, Summary(block, "ou_a"))
+	require.Equal(t, []Chip{{Key: "THUMBSUP", Count: 2, Operators: []string{"ou_a"}},
+		{Key: "ROSE", Count: 1, Operators: []string{"ou_b"}}}, Summary(block, "ou_c"),
 		"a reader who reacted to neither owns neither")
 }
 
@@ -166,4 +168,40 @@ func TestGlyphs_LetNoTwoEmojiWearTheSameCharacter(t *testing.T) {
 			was.Key, was.ZH, e.Key, e.ZH, e.Glyph)
 		seen[e.Glyph] = e
 	}
+}
+
+func TestSummary_OrdersEmojiByWhenEachWasFirstUsed(t *testing.T) {
+	// Feishu sorts the totals alphabetically. The client lists an emoji from
+	// when it was first put on the message, which is an order that never
+	// reshuffles as the counts move.
+	const block = `{"counts":[{"reaction_type":"DONE","count":"1"},{"reaction_type":"Get","count":"1"},
+	    {"reaction_type":"OK","count":"1"},{"reaction_type":"THUMBSUP","count":"1"}],
+	  "details":[{"emoji_type":"THUMBSUP","action_time":"1790173022","operator":{"operator_id":"ou_a"}},
+	             {"emoji_type":"DONE","action_time":"1790155046","operator":{"operator_id":"ou_a"}},
+	             {"emoji_type":"Get","action_time":"1790155044","operator":{"operator_id":"ou_a"}},
+	             {"emoji_type":"OK","action_time":"1790155041","operator":{"operator_id":"ou_a"}}]}`
+	var keys []string
+	for _, c := range Summary(block, "") {
+		keys = append(keys, c.Key)
+	}
+	require.Equal(t, []string{"OK", "Get", "DONE", "THUMBSUP"}, keys)
+}
+
+func TestSummary_KeepsAnEmojiWithNoDetailsLast(t *testing.T) {
+	// The block carries one page of details, so a busy emoji's reactors can
+	// all fall past it and leave nothing to sort it by.
+	const block = `{"counts":[{"reaction_type":"ROSE","count":"40"},{"reaction_type":"OK","count":"1"}],
+	  "details":[{"emoji_type":"OK","action_time":"1790155041","operator":{"operator_id":"ou_a"}}]}`
+	chips := Summary(block, "")
+	require.Equal(t, []string{"OK", "ROSE"}, []string{chips[0].Key, chips[1].Key})
+	require.Empty(t, chips[1].Operators, "nobody is named for it, and the total is all there is")
+}
+
+func TestSummary_NamesTheReactorsEarliestFirst(t *testing.T) {
+	// Three reacted, two are on the page: the count stays the server's.
+	const block = `{"counts":[{"reaction_type":"OK","count":"3"}],
+	  "details":[{"emoji_type":"OK","action_time":"1790155046","operator":{"operator_id":"ou_b"}},
+	             {"emoji_type":"OK","action_time":"1790155041","operator":{"operator_id":"ou_me"}}]}`
+	require.Equal(t, []Chip{{Key: "OK", Count: 3, Mine: true, Operators: []string{"ou_me", "ou_b"}}},
+		Summary(block, "ou_me"))
 }

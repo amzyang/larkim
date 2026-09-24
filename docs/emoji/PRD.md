@@ -5,6 +5,11 @@
 
 ## 在消息列表中展示消息相关的 reactions
 
+- 排序与 lark 端一致：按每个 emoji 最早一次 action_time 升序；details 覆盖不到的 emoji 排在最后
+- 展示参与者而非计数：最多 3 个名字，其余记为 +n
+- 自己显示为「你」，参与者不加颜色或下划线
+- 联系人里查不到的 operator 不写 open id，计入 +n
+
 ## 在消息列表中添加、移除对消息的 reaction
 
 ## 在 terminal 中展示 emoji

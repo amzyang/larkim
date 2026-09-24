@@ -84,17 +84,34 @@ type msgStyle struct {
 	// client, which is what an emoji with no Unicode character is drawn as.
 	// Empty means they were never cut out, and the name stands in.
 	emojiDir string
+	// people names a reaction's operators, by open id. A sender's name
+	// travels on the message itself; a reactor's does not — the block holds
+	// an id alone, and the contacts table is where a name for it lives.
+	people map[string]string
 }
 
-// emojiPic sizes one emoji's picture to sit on a line of text: one row tall,
-// and as many cells wide as its own shape asks for. A zero size means there is
-// nothing to draw — no graphics, or the pictures were never cut out — and the
-// caller falls back to the emoji's name.
-func (st msgStyle) emojiPic(key string) picture {
-	if st.place == nil || st.emojiDir == "" {
+// emojiPics sizes the pictures `larkim emoji sync` cut out of the Lark
+// client. The zero value draws none, which is what a terminal without
+// graphics, or a data dir they were never cut into, gets.
+type emojiPics struct {
+	place func(path string, maxCols, maxRows int) picture
+	dir   string
+}
+
+// pic sizes one emoji's picture to sit on a line of text: one row tall, and
+// up to cols wide. A zero size means there is nothing to draw, and the caller
+// falls back to the emoji's name or leaves it out.
+func (p emojiPics) pic(key string, cols int) picture {
+	if p.place == nil || p.dir == "" {
 		return picture{}
 	}
-	return st.place(emoji.Path(st.emojiDir, key), emojiCols, 1)
+	return p.place(emoji.Path(p.dir, key), cols, 1)
+}
+
+// emojiPic is one emoji's picture beside a message, as wide as its own shape
+// asks for.
+func (st msgStyle) emojiPic(key string) picture {
+	return emojiPics{place: st.place, dir: st.emojiDir}.pic(key, emojiCols)
 }
 
 // inner is the width a message body has, once the gutter is taken off.
@@ -355,29 +372,64 @@ func stickerKey(x store.Message) string {
 	return body.FileKey
 }
 
-// reactionChip is one emoji's standing on a message: the emoji itself, then
-// how many people chose it. The emoji is a Unicode character where one
-// carries the same feeling, the client's own picture where none does, and the
-// client's name for it where this terminal draws no pictures at all.
-func reactionChip(c emoji.Chip, st msgStyle) []rowSeg {
-	// The reader's own reaction is underlined as well as coloured, so it is
-	// still the one that stands out where colour does not reach.
-	style := stDim
-	if c.Mine {
-		style = stAccent.Underline(true)
+// reactorLimit is how many of an emoji's reactors are named. It is what the
+// client shows, and past it a name costs more width than it tells.
+const reactorLimit = 3
+
+// reactors is who put one emoji on the message: the first few by name, then
+// how many more there are. The reader is 你, which is the only mark a chip of
+// theirs carries — nothing else on the strip needs a colour to say it.
+//
+// Somebody the contacts table has never seen is counted rather than named: a
+// raw open id on screen says nothing.
+func reactors(c emoji.Chip, st msgStyle) string {
+	names := make([]string, 0, reactorLimit)
+	for _, id := range c.Operators {
+		if len(names) == reactorLimit {
+			break
+		}
+		switch {
+		case id == st.self:
+			names = append(names, "你")
+		case st.people[id] != "":
+			names = append(names, st.people[id])
+		}
 	}
-	count := " " + strconv.Itoa(c.Count)
+	rest := max(0, c.Count-len(names))
+	who := strings.Join(names, "、")
+	if rest > 0 {
+		who = strings.TrimPrefix(who+" +"+strconv.Itoa(rest), " ")
+	}
+	return who
+}
+
+// reactionChip is one emoji's standing on a message: the emoji itself, then
+// who put it there. The emoji is a Unicode character where one carries the
+// same feeling, the client's own picture where none does, and the client's
+// name for it where this terminal draws no pictures at all.
+//
+// The strip wraps between chips but never cuts inside one, so a chip crowded
+// with names is fitted here rather than left to run past the pane.
+func reactionChip(c emoji.Chip, st msgStyle) []rowSeg {
 	e, known := emoji.ByKey(c.Key)
+	label := "[" + c.Key + "]"
+	var pic picture
 	switch {
 	case !known:
-		return []rowSeg{{text: style.Render("[" + c.Key + "]" + count)}}
 	case e.Glyph != "":
-		return []rowSeg{{text: style.Render(e.Glyph + count)}}
+		label = e.Glyph
+	default:
+		if pic = st.emojiPic(e.Key); pic.cols > 0 {
+			label = ""
+		} else {
+			label = "[" + e.ZH + "]"
+		}
 	}
-	if pic := st.emojiPic(e.Key); pic.cols > 0 {
-		return []rowSeg{{pic: pic}, {text: style.Render(count)}}
+	who := " " + reactors(c, st)
+	if pic.cols > 0 {
+		return []rowSeg{{pic: pic}, {text: stDim.Render(truncate(who, st.inner()-pic.cols))}}
 	}
-	return []rowSeg{{text: style.Render("[" + e.ZH + "]" + count)}}
+	return []rowSeg{{text: stDim.Render(truncate(label+who, st.inner()))}}
 }
 
 func segsWidth(segs []rowSeg) int {
