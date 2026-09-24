@@ -11,6 +11,10 @@ import (
 // it costs less than a box and still separates the card from plain messages.
 const cardRule = "▌"
 
+// cardEdge is that frame with the gap that sets a row's content off it, which
+// is what every framed row opens with.
+func cardEdge() string { return stAccent.Render(cardRule) + " " }
+
 var (
 	stCardTitle = lipgloss.NewStyle().Bold(true).Foreground(colAccent)
 
@@ -99,7 +103,7 @@ func renderCard(c card, width int, ms mentions) []cardRow {
 	var out []cardRow
 	add := func(s string) {
 		for _, line := range wrap(s, inner) {
-			out = append(out, cardRow{text: stAccent.Render(cardRule) + " " + line})
+			out = append(out, cardRow{text: cardEdge() + line})
 		}
 	}
 

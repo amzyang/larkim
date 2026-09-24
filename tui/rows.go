@@ -46,13 +46,30 @@ type msgRow struct {
 	pic    picture
 	picRow int
 	prefix string
+	// zone, when set, is the click target this row carries: the button a
+	// call's card ends with.
+	zone clickZone
 	// segs, when set, is the row's text in pieces so that pictures can sit
 	// inside a line rather than take one of their own: a reaction carries an
 	// emoji this terminal may have no character for, next to a count that is
-	// ordinary text. A row with segs draws no selection tint, the same as a
-	// row that is one whole picture.
+	// ordinary text.
 	segs []rowSeg
+	// tinted marks a row of pieces a selection still colours. Body text earns
+	// it — an emoji drawn over the tint is what the client shows, and a row
+	// left plain inside a selected block reads as a hole. A chip does not: it
+	// carries a tint of its own that the selection's would fight.
+	tinted bool
 }
+
+// clickZone is a target inside a row: the half-open column range [x0, x1)
+// in the pane's own content coordinates, and where clicking it leads. An
+// empty url is no target at all.
+type clickZone struct {
+	x0, x1 int
+	url    string
+}
+
+func (z clickZone) hit(x int) bool { return z.url != "" && x >= z.x0 && x < z.x1 }
 
 // rowSeg is one piece of a row: text, or a picture the terminal fills in.
 type rowSeg struct {
@@ -85,6 +102,9 @@ type msgStyle struct {
 	// an emoji with no Unicode character is drawn as. Empty means they were
 	// never cut out, and the name stands in.
 	emojiDir string
+	// dark says which way the terminal's background leans, which is what picks
+	// the palette a code block is coloured from.
+	dark bool
 	// people names a reaction's operators, by open id. A sender's name
 	// travels on the message itself; a reactor's does not — the block holds
 	// an id alone, and the contacts table is where a name for it lives.
@@ -130,6 +150,13 @@ func (m Model) chatPics() emojiPics {
 // shape asks for.
 func (st msgStyle) emojiChip(key string) picture {
 	return emojiPics{place: st.place, dir: st.emojiDir}.chip(key, emojiCols)
+}
+
+// emojiInline is one emoji's picture standing in a line of body text. It
+// carries no chip tint: inside a message an emoji is part of what was said,
+// not a reaction put on it afterwards.
+func (st msgStyle) emojiInline(key string) picture {
+	return emojiPics{place: st.place, dir: st.emojiDir}.pic(key, emojiCols)
 }
 
 // inner is the width a message body has, once the gutter is taken off.
@@ -352,10 +379,15 @@ func bodyRows(x store.Message, idx int, st msgStyle, g *gutters) []msgRow {
 		}
 		return out
 	}
-	switch {
-	case x.Deleted:
+	if x.Deleted {
 		return text(wrap(stDim.Render("(Recalled) "+flatten(x.Content)), inner))
-	case x.RenderedAt == 0:
+	}
+	// A call's body is the whole invite, so its card is drawn without
+	// waiting for a rendering: the button matters most in the first seconds.
+	if v, ok := videoChatOf(x); ok {
+		return videoChatRows(v, idx, st, g)
+	}
+	if x.RenderedAt == 0 {
 		return text(wrap(stDim.Render(expandEmoji(pendingText(x.MsgType, x.ContentRaw))), inner))
 	}
 	ms := mentionsIn(x.MentionsJSON, st.self)
@@ -370,16 +402,40 @@ func bodyRows(x store.Message, idx int, st msgStyle, g *gutters) []msgRow {
 
 	var rows []msgRow
 	content := strings.ReplaceAll(strings.ReplaceAll(x.Content, "\r", ""), "\t", "    ")
-	for _, line := range strings.Split(content, "\n") {
+	lines := strings.Split(content, "\n")
+	for i := 0; i < len(lines); i++ {
+		line := lines[i]
+		if fence := codeFence.FindStringSubmatch(line); fence != nil {
+			code, next := takeCode(lines, i)
+			rows = append(rows, text(codeRows(code, fence[1], inner, st.dark))...)
+			i = next
+			continue
+		}
 		keys, rest := splitImages(line)
 		if len(keys) == 0 || strings.TrimSpace(rest) != "" {
-			rows = append(rows, text(wrap(renderInline(rest, ms), inner))...)
+			if segs := inlineSegs(rest, ms, st.emojiInline); segs != nil {
+				rows = append(rows, segRows(segs, idx, st, g)...)
+			} else {
+				rows = append(rows, text(wrap(renderInline(rest, ms), inner))...)
+			}
 		}
 		for _, key := range keys {
 			rows = append(rows, pictureRows(key, "", x, idx, st, g)...)
 		}
 	}
 	return rows
+}
+
+// segRows draw one body line as the pieces the client's own emoji pictures
+// sit between, where a plain string cannot hold them.
+func segRows(segs []rowSeg, idx int, st msgStyle, g *gutters) []msgRow {
+	packed := wrapSegs(segs, st.inner())
+	out := make([]msgRow, 0, len(packed))
+	for _, row := range packed {
+		out = append(out, msgRow{idx: idx, tinted: true,
+			segs: append([]rowSeg{{text: g.take()}}, row...)})
+	}
+	return out
 }
 
 // emojiCols is the widest a reaction picture is drawn. Most of Feishu's emoji
@@ -553,7 +609,7 @@ func reactionRows(x store.Message, idx int, st msgStyle, g *gutters) []msgRow {
 // cardRows lay a card out below its sender line: the text lines carry the
 // frame themselves, and the pictures the body names are placed inside it.
 func cardRows(c card, x store.Message, idx int, st msgStyle, g *gutters, ms mentions) []msgRow {
-	edge := stAccent.Render(cardRule) + " "
+	edge := cardEdge()
 	var rows []msgRow
 	for _, cr := range renderCard(c, st.inner(), ms) {
 		if cr.imgKey == "" {

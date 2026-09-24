@@ -51,7 +51,7 @@ One row per message id, from the raw message API (`create_ms` is millisecond pre
 | `sender_type` | `user` or `app` |
 | `sender_name` | server-provided display name; may be empty for system messages |
 | `content_raw` | `body.content` JSON string, shape depends on `msg_type` (`{"text":"…"}`, post blocks, `{"image_key":…}`, card JSON) |
-| `content` | human-readable rendering; empty until `rendered_at` is set. `system` messages are rendered in process from bodies already on disk, every other type by lark-cli (`+messages-mget`) |
+| `content` | human-readable rendering; empty until `rendered_at` is set. `system` and `video_chat` messages are rendered in process from bodies already on disk, every other type by lark-cli (`+messages-mget`) |
 | `create_ms`, `update_ms` | creation, and the last time the API's copy of the message changed for any reason |
 | `message_position` | per-chat monotonic position; negative for thread replies (the API picks the sentinel, `-3` in current data) |
 | `updated`, `deleted` | the API's own flags; `updated` also covers Feishu's post-send patches (mention resolution, link and time-phrase enrichment), so it is not an edit badge |
@@ -68,6 +68,8 @@ One row per message id, from the raw message API (`create_ms` is millisecond pre
 `silenced` is derived from the `silence` rules of the writer's config: a rule's `chat`, `sender` and `contains` fields are an AND, the rules are an OR, and `contains` reads `content` once the rendering lands and `content_raw` until then. The process holding `daemon.lock` stamps the flag as messages arrive and again when a rendering lands, and rebuilds the whole column when the rule set changes, so the column states what that process's config says — a reader that edits the config sees nothing until the writer restarts.
 
 A `system` message is its `template` with the values the same body carries filled in (`from_user`, `to_chatters`, `divider_text`). Feishu ships no value for the remaining slots, so `{old_group_name}`, `{count}` and the like read as `…` rather than as the placeholder.
+
+A `video_chat` message is a call, and its body (`topic`, `meet_number`, `start_time`, `end_time`) is all the rendering needs: `[Video call] 站会的视频会议 · 100000000 · 32s`, leaving out whatever the body does not carry. `end_time` arrives with the update that closes the call, so a message carrying none is a call still running and its rendering has no length yet.
 
 Feishu closes a call with a `system` message whose template is a single space. The API carries no text for it, so the rendering comes from the newest `video_chat` message before it in the same chat, whose `end_time` falls within five seconds of the marker's `create_ms`: `Meeting ended: 32s`, over the two largest units (`32s`, `24m28s`, `1h52m`). A p2p call leaves no `video_chat` message behind, so those read `Call ended`.
 

@@ -65,6 +65,9 @@ var (
 	// stChatSel paints the chat row under the cursor while the chats pane has
 	// focus; without focus the row falls back to the shaded selection.
 	stChatSel = lipgloss.NewStyle().Foreground(colChatSelText).Background(colChatSel)
+	// stChatSelBG is that tint without the text colour, for the avatar column:
+	// a picture's cells carry their image id in the foreground.
+	stChatSelBG = lipgloss.NewStyle().Background(colChatSel)
 
 	// A reaction wears the chip the client draws it on: a tint closed by a
 	// round cap either side. The tint is fixed, like the selected chat's, both
@@ -178,7 +181,7 @@ func (m Model) messagesWidth() int {
 func (m Model) msgStyleFor(width int, meta msgMeta) msgStyle {
 	st := msgStyle{width: width, height: m.picHeight(), self: m.deps.Self, now: time.Now(),
 		suffix: meta.suffix, people: meta.people, res: meta.res, parents: meta.parents,
-		outbox: m.outboxStates(), dots: m.dots}
+		outbox: m.outboxStates(), dots: m.dots, dark: m.dark}
 	if m.replyTo != nil {
 		st.quoted = m.replyTo.MessageID
 	}
@@ -224,22 +227,23 @@ func (m *Model) rebuildThread() {
 	m.threadRows = renderRows(m.thread, m.msgStyleFor(m.rightWidth()-2, m.threadMeta))
 }
 
-// rowLine is the drawn form of one row, and whether it carries a picture. A
-// picture row is already the pane's width and holds cells the terminal fills
-// with an image: fitting it would cut the glyph cluster apart and a selection
-// tint has nothing to colour.
+// rowLine is the drawn form of one row, and whether a selection may tint it.
+// A row that is one whole picture may not: it holds cells the terminal fills
+// with an image, so fitting it would cut the glyph cluster apart and the tint
+// would have nothing to colour. A row of pieces says for itself — body text
+// takes the tint under its emoji, a chip brings its own.
 func (m Model) rowLine(r msgRow, w int) (string, bool) {
 	if len(r.segs) > 0 {
-		return m.joinSegs(r.segs, w), true
+		return m.joinSegs(r.segs, w), r.tinted
 	}
 	if r.pic.cols == 0 {
-		return fit(r.text, w), false
+		return fit(r.text, w), true
 	}
 	cells := m.pics.cells(r.pic, r.picRow)
 	if cells == "" {
-		return fit("", w), true // still on its way to the terminal
+		return fit("", w), false // still on its way to the terminal
 	}
-	return r.prefix + cells + strings.Repeat(" ", max(0, w-lipgloss.Width(r.prefix)-r.pic.cols)), true
+	return r.prefix + cells + strings.Repeat(" ", max(0, w-lipgloss.Width(r.prefix)-r.pic.cols)), false
 }
 
 // segCells draws one segment's picture, holding the cells it will fill while
@@ -307,6 +311,16 @@ func rowAt(rows []msgRow, line int) int {
 		return -1
 	}
 	return rows[line].idx
+}
+
+// zoneAt is the click target at column x of a row, if the row carries one
+// there. x is in the pane's own content coordinates.
+func zoneAt(rows []msgRow, line, x int) (clickZone, bool) {
+	if line < 0 || line >= len(rows) {
+		return clickZone{}, false
+	}
+	z := rows[line].zone
+	return z, z.hit(x)
 }
 
 func (m *Model) scrollMessagesToSelection() {
@@ -415,6 +429,7 @@ func (m Model) renderChats(h int) string {
 	line := func(avatar, text string, selected bool) string {
 		text = fit(gap+text, w-avatarWidth)
 		if selected {
+			avatar = m.highlightAvatar(avatar, m.focus == paneChats)
 			text = m.highlightChat(text, m.focus == paneChats)
 		}
 		return avatar + text
@@ -434,6 +449,7 @@ func (m Model) renderChats(h int) string {
 		}
 		text += strings.Repeat(" ", max(0, w-avatarWidth-lipgloss.Width(text)))
 		if selected {
+			avatar = m.highlightAvatar(avatar, m.focus == paneChats)
 			text = m.highlightChat(text, m.focus == paneChats)
 		}
 		return avatar + text
@@ -466,8 +482,8 @@ func (m Model) renderMessages(h int) string {
 	lines := make([]string, 0, h)
 	for i := m.msgTop; i < len(m.msgRows) && len(lines) < h-headerHeight; i++ {
 		r := m.msgRows[i]
-		line, pic := m.rowLine(r, w)
-		if !pic && !r.plain && m.inSelection(paneMessages, r.idx) {
+		line, tint := m.rowLine(r, w)
+		if tint && !r.plain && m.inSelection(paneMessages, r.idx) {
 			line = m.highlight(line, m.focus == paneMessages)
 		}
 		lines = append(lines, line)
@@ -524,8 +540,8 @@ func (m Model) renderThread(h int) string {
 	lines = append(lines, fit(stBold.Render("Thread ")+stDim.Render(truncate(m.threadID, w-7)), w))
 	for i := m.threadTop; i < len(m.threadRows) && len(lines) < h; i++ {
 		r := m.threadRows[i]
-		line, pic := m.rowLine(r, w)
-		if !pic && !r.plain && m.inSelection(paneThread, r.idx) {
+		line, tint := m.rowLine(r, w)
+		if tint && !r.plain && m.inSelection(paneThread, r.idx) {
 			line = m.highlight(line, m.focus == paneThread)
 		}
 		lines = append(lines, line)
@@ -578,6 +594,17 @@ func (m Model) highlightChat(line string, focused bool) string {
 		return m.highlight(line, false)
 	}
 	return paint(stChatSel, line)
+}
+
+// highlightAvatar tints the avatar column of the row under the cursor. Only
+// the background travels: a picture's cells name their image in the
+// foreground, and a terminal paints the cell background under a placement, so
+// the tint reaches what the avatar's disc leaves clear.
+func (m Model) highlightAvatar(cells string, focused bool) string {
+	if !focused {
+		return paint(m.th.selInact, cells)
+	}
+	return paint(stChatSelBG, cells)
 }
 
 // paint wraps a row in st. The row carries styles of its own whose resets

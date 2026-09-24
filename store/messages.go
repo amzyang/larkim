@@ -196,40 +196,43 @@ func (s *Store) UpdateReactions(ctx context.Context, messageID, reactionsJSON st
 
 // UnrenderedMessageIDs returns up to limit live message ids that still need
 // rendering, newest first. Messages with attachments still to download are
-// left out: the download step renders them in the same lark-cli call. System
-// messages are left out too; UnrenderedSystemMessages owns them.
+// left out: the download step renders them in the same lark-cli call. The
+// types larkim renders from bodies it already holds are left out too;
+// UnrenderedLocalMessages owns them.
 func (s *Store) UnrenderedMessageIDs(ctx context.Context, limit int) ([]string, error) {
 	return queryAll(ctx, s.db, scanOne[string], `SELECT m.message_id FROM messages m
- WHERE m.rendered_at = 0 AND m.deleted = 0 AND m.msg_type <> 'system'
+ WHERE m.rendered_at = 0 AND m.deleted = 0 AND m.msg_type NOT IN ('system', 'video_chat')
  AND NOT EXISTS (SELECT 1 FROM resources r WHERE r.message_id = m.message_id AND r.status IN ('pending', 'failed'))
  ORDER BY m.create_ms DESC LIMIT ?`, limit)
 }
 
-// PendingSystemMessage is a system message awaiting its local rendering.
-// CallRaw is the body of the newest video_chat message before it in the same
-// chat, which is where Feishu leaves the length of a call that just ended.
-type PendingSystemMessage struct {
+// PendingLocalMessage is a message larkim renders itself, awaiting that
+// rendering. CallRaw is the body of the newest video_chat message before it
+// in the same chat, which is where Feishu leaves the length of a call that
+// just ended.
+type PendingLocalMessage struct {
 	MessageID  string
+	MsgType    string
 	ContentRaw string
 	CreateMs   int64
 	CallRaw    string
 }
 
-// UnrenderedSystemMessages returns up to limit live system messages that still
-// need rendering, newest first. Their text follows from bodies already on
-// disk, so they are rendered in process rather than through lark-cli.
-func (s *Store) UnrenderedSystemMessages(ctx context.Context, limit int) ([]PendingSystemMessage, error) {
-	scan := func(sc scanner) (PendingSystemMessage, error) {
-		var m PendingSystemMessage
-		err := sc.Scan(&m.MessageID, &m.ContentRaw, &m.CreateMs, &m.CallRaw)
+// UnrenderedLocalMessages returns up to limit live messages that still need
+// rendering and whose text follows from bodies already on disk, newest
+// first: system messages and the calls they close.
+func (s *Store) UnrenderedLocalMessages(ctx context.Context, limit int) ([]PendingLocalMessage, error) {
+	scan := func(sc scanner) (PendingLocalMessage, error) {
+		var m PendingLocalMessage
+		err := sc.Scan(&m.MessageID, &m.MsgType, &m.ContentRaw, &m.CreateMs, &m.CallRaw)
 		return m, err
 	}
-	return queryAll(ctx, s.db, scan, `SELECT m.message_id, m.content_raw, m.create_ms, COALESCE((
+	return queryAll(ctx, s.db, scan, `SELECT m.message_id, m.msg_type, m.content_raw, m.create_ms, COALESCE((
    SELECT v.content_raw FROM messages v
     WHERE v.chat_id = m.chat_id AND v.msg_type = 'video_chat' AND v.create_ms <= m.create_ms
     ORDER BY v.create_ms DESC LIMIT 1), '')
  FROM messages m
- WHERE m.rendered_at = 0 AND m.deleted = 0 AND m.msg_type = 'system'
+ WHERE m.rendered_at = 0 AND m.deleted = 0 AND m.msg_type IN ('system', 'video_chat')
  ORDER BY m.create_ms DESC LIMIT ?`, limit)
 }
 

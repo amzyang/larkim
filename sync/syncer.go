@@ -615,7 +615,7 @@ func (s *Syncer) pullChat(ctx context.Context, chatID string, since, until, now 
 // renderPending renders messages without attachments; those with pending
 // downloads are rendered by downloadPending in the same lark-cli call.
 func (s *Syncer) renderPending(ctx context.Context, now time.Time) (int, error) {
-	total, err := s.renderSystem(ctx, now)
+	total, err := s.renderLocal(ctx, now)
 	if err != nil {
 		return total, err
 	}
@@ -649,16 +649,17 @@ func (s *Syncer) renderPending(ctx context.Context, now time.Time) (int, error) 
 	return total, nil
 }
 
-// renderSystem renders the system messages from the API body already on
-// disk. Feishu templates them out of values the message itself carries, so
-// they cost no call and stay correct whatever lark-cli does with them.
-func (s *Syncer) renderSystem(ctx context.Context, now time.Time) (int, error) {
-	pending, err := s.Store.UnrenderedSystemMessages(ctx, s.Opt.RenderPerTick*50)
+// renderLocal renders the messages larkim can read off the API body already
+// on disk: a system message Feishu templates out of values the body carries,
+// and a call, whose body names the meeting. They cost no call and stay
+// correct whatever lark-cli does with them.
+func (s *Syncer) renderLocal(ctx context.Context, now time.Time) (int, error) {
+	pending, err := s.Store.UnrenderedLocalMessages(ctx, s.Opt.RenderPerTick*50)
 	if err != nil {
 		return 0, err
 	}
 	for i, m := range pending {
-		if err := s.Store.UpdateRendered(ctx, m.MessageID, systemText(m), "", "", now.UnixMilli()); err != nil {
+		if err := s.Store.UpdateRendered(ctx, m.MessageID, localText(m), "", "", now.UnixMilli()); err != nil {
 			return i, err
 		}
 	}

@@ -334,6 +334,15 @@ func TestHighlightChat_FocusedRowTakesTheFixedTint(t *testing.T) {
 		"without focus the row falls back to the shaded selection")
 }
 
+func TestRenderChats_TintsTheAvatarColumnOfTheRowUnderTheCursor(t *testing.T) {
+	m := sized(120, 36)
+	m.focus = paneChats
+	m.avatars = badgedAvatars{}
+
+	require.Contains(t, m.renderChats(m.bodyHeight()), "48;2;231;238;252m····",
+		"the tint reaches the avatar cells, so the cleared corners of a disc take it too")
+}
+
 func TestHighlightChat_KeepsARunsOwnColours(t *testing.T) {
 	m := sized(120, 36)
 	line := m.highlightChat(stUnread.Render("3")+" "+stBold.Render("群"), true)

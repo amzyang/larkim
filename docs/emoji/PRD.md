@@ -20,6 +20,15 @@
 
 ## 在消息列表中添加、移除对消息的 reaction
 
+## 在消息正文中展示 emoji
+
+- 正文里的 emoji 与 reaction 同源：text 消息写 `[完成]`，post 的 emotion 元素写 `:Get:`
+- 有等价 unicode 字符的画字符，没有的就地画 lark 客户端自己的图片
+- 图片随文字排版，不独占一行；换行时整块移到下一行，不会被截断
+- markdown 链接的 label 不当 emoji 处理
+- 终端不支持图形或图片没切出来时，保持原样的 `[完成]` / `:Get:`
+- 正文行的选中高亮照常生效，emoji 图片透明处透出选中底色
+
 ## 在 terminal 中展示 emoji
 
 - unicode/ascii emoji

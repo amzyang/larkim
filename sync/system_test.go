@@ -17,8 +17,8 @@ func videoChatBody(startMs, endMs int64) string {
 	return fmt.Sprintf(`{"topic":"站会的视频会议","meet_number":"100000000","start_time":"%d","end_time":"%d"}`, startMs, endMs)
 }
 
-func marker(contentRaw, callRaw string, createMs int64) store.PendingSystemMessage {
-	return store.PendingSystemMessage{MessageID: "om_1", ContentRaw: contentRaw, CallRaw: callRaw, CreateMs: createMs}
+func marker(contentRaw, callRaw string, createMs int64) store.PendingLocalMessage {
+	return store.PendingLocalMessage{MsgType: "system", MessageID: "om_1", ContentRaw: contentRaw, CallRaw: callRaw, CreateMs: createMs}
 }
 
 // fill renders a body the way systemText does, asserting larkim can read it.
@@ -97,6 +97,6 @@ func TestCallLength_ShowsTheTwoUnitsThatMatter(t *testing.T) {
 		{3_600_000, "1h"},
 		{6_729_000, "1h52m"},
 	} {
-		assert.Equal(t, c.want, callLength(c.ms), "%dms", c.ms)
+		assert.Equal(t, c.want, CallLength(c.ms), "%dms", c.ms)
 	}
 }

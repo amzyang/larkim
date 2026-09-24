@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
-	"strconv"
 	"strings"
 
 	"github.com/amzyang/larkim/store"
@@ -24,13 +23,22 @@ const unresolvedSlot = "…"
 // so the window only has to be wide enough to never split the pair.
 const callEndWindowMs = 5_000
 
+// localText renders a message larkim renders itself, from the bodies it
+// already stores.
+func localText(m store.PendingLocalMessage) string {
+	if m.MsgType == "video_chat" {
+		return videoChatText(m.ContentRaw)
+	}
+	return systemText(m)
+}
+
 // systemText renders a system message from the bodies larkim already stores,
 // so this msg_type needs no render call. A blank template carries no text
 // anywhere in the API — the client fills it from state of its own — and every
 // blank one seen so far closes a call, which the video_chat message the call
 // left behind can date. A p2p call leaves none, so there only the fact that a
 // call ended can be told, and that much is inferred rather than read.
-func systemText(m store.PendingSystemMessage) string {
+func systemText(m store.PendingLocalMessage) string {
 	tmpl, body, ok := systemBody(m.ContentRaw)
 	if !ok {
 		return ""
@@ -39,7 +47,7 @@ func systemText(m store.PendingSystemMessage) string {
 		return text
 	}
 	if ms, ok := callSpan(m.CallRaw, m.CreateMs); ok {
-		return "Meeting ended: " + callLength(ms)
+		return "Meeting ended: " + CallLength(ms)
 	}
 	return "Call ended"
 }
@@ -90,28 +98,20 @@ func systemSlot(v any) string {
 // callSpan reads how long the call ran for off a video_chat body, provided
 // that call ended just before the marker closing it was stamped.
 func callSpan(callRaw string, markerMs int64) (int64, bool) {
-	var c struct {
-		StartTime string `json:"start_time"`
-		EndTime   string `json:"end_time"`
-	}
-	if json.Unmarshal([]byte(callRaw), &c) != nil {
+	v, ok := ParseVideoChat(callRaw)
+	if !ok {
 		return 0, false
 	}
-	start, end := unixMs(c.StartTime), unixMs(c.EndTime)
-	if end <= start || markerMs < end || markerMs-end > callEndWindowMs {
+	ms, ended := v.Span()
+	if !ended || markerMs < v.EndMs || markerMs-v.EndMs > callEndWindowMs {
 		return 0, false
 	}
-	return end - start, true
+	return ms, true
 }
 
-func unixMs(s string) int64 {
-	ms, _ := strconv.ParseInt(s, 10, 64)
-	return ms
-}
-
-// callLength spells a duration out over the two units that carry it, with no
+// CallLength spells a duration out over the two units that carry it, with no
 // zero tail: 32s, 24m28s, 1h52m.
-func callLength(ms int64) string {
+func CallLength(ms int64) string {
 	s := ms / 1000
 	switch h, m, sec := s/3600, s%3600/60, s%60; {
 	case h > 0 && m > 0:

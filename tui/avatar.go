@@ -191,6 +191,10 @@ func (k *kittyAvatars) picture(c store.Chat) *image.RGBA {
 	w, h := k.box()
 	if f := c.AvatarFile(); f != "" {
 		if img, err := loadImage(filepath.Join(k.dataDir, f), w, h); err == nil {
+			// Masked after the scale, never before: a disc cut at the file's
+			// own resolution would have its rim resampled into a halo, and a
+			// circle cut there lands as an ellipse in an oblong box.
+			maskDisc(img)
 			return img
 		}
 	}

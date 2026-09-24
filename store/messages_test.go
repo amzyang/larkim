@@ -7,30 +7,36 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestUnrenderedSystemMessages_TakeTheirOwnQueue(t *testing.T) {
+func TestUnrenderedLocalMessages_TakeTheirOwnQueue(t *testing.T) {
 	s := openTest(t)
 	ctx := context.Background()
+	call := `{"topic":"站会的视频会议","meet_number":"100000000","start_time":"1000"}`
 	_, err := s.UpsertMessages(ctx, []Message{
 		{MessageID: "om_text", ChatID: "oc", MsgType: "text", CreateMs: 30, ContentRaw: `{"text":"hi"}`, RawJSON: "{}"},
 		{MessageID: "om_sys", ChatID: "oc", MsgType: "system", CreateMs: 20, ContentRaw: `{"template":"{from_user} left"}`, RawJSON: "{}"},
+		{MessageID: "om_call", ChatID: "oc_v", MsgType: "video_chat", CreateMs: 15, ContentRaw: call, RawJSON: "{}"},
 		{MessageID: "om_gone", ChatID: "oc", MsgType: "system", CreateMs: 10, Deleted: true, RawJSON: "{}"},
 	}, 1)
 	require.NoError(t, err)
 
 	ids, err := s.UnrenderedMessageIDs(ctx, 10)
 	require.NoError(t, err)
-	require.Equal(t, []string{"om_text"}, ids, "system messages never reach the renderer")
+	require.Equal(t, []string{"om_text"}, ids, "the messages larkim renders itself never reach lark-cli")
 
-	pending, err := s.UnrenderedSystemMessages(ctx, 10)
+	pending, err := s.UnrenderedLocalMessages(ctx, 10)
 	require.NoError(t, err)
-	require.Equal(t, []PendingSystemMessage{{MessageID: "om_sys", ContentRaw: `{"template":"{from_user} left"}`, CreateMs: 20}}, pending)
+	require.Equal(t, []PendingLocalMessage{
+		{MessageID: "om_sys", MsgType: "system", ContentRaw: `{"template":"{from_user} left"}`, CreateMs: 20},
+		{MessageID: "om_call", MsgType: "video_chat", ContentRaw: call, CreateMs: 15, CallRaw: call},
+	}, pending)
 
 	require.NoError(t, s.UpdateRendered(ctx, "om_sys", "A left", "", "", 2))
-	pending, _ = s.UnrenderedSystemMessages(ctx, 10)
+	require.NoError(t, s.UpdateRendered(ctx, "om_call", "[Video call]", "", "", 2))
+	pending, _ = s.UnrenderedLocalMessages(ctx, 10)
 	require.Empty(t, pending)
 }
 
-func TestUnrenderedSystemMessages_CarryTheCallThatRanBeforeThem(t *testing.T) {
+func TestUnrenderedLocalMessages_CarryTheCallThatRanBeforeThem(t *testing.T) {
 	// Feishu closes a call with a system message whose body says nothing; the
 	// length is on the video_chat message the call left behind, so the queue
 	// hands both to the renderer together.
@@ -45,7 +51,7 @@ func TestUnrenderedSystemMessages_CarryTheCallThatRanBeforeThem(t *testing.T) {
 	}, 1)
 	require.NoError(t, err)
 
-	pending, err := s.UnrenderedSystemMessages(ctx, 10)
+	pending, err := s.UnrenderedLocalMessages(ctx, 10)
 	require.NoError(t, err)
 	got := map[string]string{}
 	for _, m := range pending {

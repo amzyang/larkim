@@ -128,6 +128,8 @@ func msgTypeLabel(msgType string) string {
 		return "[表情]"
 	case "interactive":
 		return "[卡片]"
+	case "video_chat":
+		return "[视频会议]"
 	case "share_chat":
 		return "[群名片]"
 	case "share_user":

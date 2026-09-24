@@ -32,6 +32,19 @@ func writePNG(t *testing.T, dir, name string, w, h int) string {
 	return name
 }
 
+// writeFilledPNG writes a picture that is opaque everywhere, so a mask is the
+// only thing that can make one of its pixels transparent.
+func writeFilledPNG(t *testing.T, dir, name string, w, h int) string {
+	t.Helper()
+	m := image.NewRGBA(image.Rect(0, 0, w, h))
+	draw.Draw(m, m.Bounds(), image.NewUniform(color.RGBA{R: 0x20, G: 0x80, B: 0xF0, A: 0xFF}), image.Point{}, draw.Src)
+	f, err := os.Create(filepath.Join(dir, name))
+	require.NoError(t, err)
+	defer f.Close()
+	require.NoError(t, png.Encode(f, m))
+	return name
+}
+
 func TestNewAvatars_FallsBackWhenTheTerminalCannotShowPictures(t *testing.T) {
 	env := func(m map[string]string) func(string) string {
 		return func(k string) string { return m[k] }
@@ -132,9 +145,9 @@ func TestModelAvatarPrepare_OnlyCoversWhatIsOnScreen(t *testing.T) {
 
 func TestInitials_SkipsTheDecorationGroupNamesOpenWith(t *testing.T) {
 	for _, tc := range []struct{ name, want string }{
-		{"程序化养号", "程序化养"},
-		{"【语言】示例问题及需求沟通群", "语言示例"},
-		{"H程序化直播暖场", "H程序化"},
+		{"程序化养号", "程序"},
+		{"【语言】示例问题及需求沟通群", "语言"},
+		{"H程序化直播暖场", "H程"},
 		{"李明", "李明"},
 		{"孙琪", "孙琪"},
 		{"- _ ·", ""},
@@ -152,12 +165,6 @@ func TestGlyphCell_LaysGlyphsOutByCount(t *testing.T) {
 	require.Equal(t, image.Rect(0, 0, 40, h), glyphCell(2, 0, w, h))
 	require.Equal(t, image.Rect(40, 0, w, h), glyphCell(2, 1, w, h),
 		"two sit side by side")
-
-	require.Equal(t, image.Rect(0, 0, 40, 20), glyphCell(4, 0, w, h))
-	require.Equal(t, image.Rect(40, 0, w, 20), glyphCell(4, 1, w, h))
-	require.Equal(t, image.Rect(0, 20, 40, h), glyphCell(4, 2, w, h))
-	require.Equal(t, image.Rect(40, 20, w, h), glyphCell(4, 3, w, h),
-		"four fill a 2x2 grid, reading order")
 }
 
 func TestKittyAvatars_DrawsAtTheCellSizeTheTerminalReports(t *testing.T) {
@@ -203,7 +210,7 @@ func TestGenerateAvatar_InksTheGlyphsOntoTheBackground(t *testing.T) {
 			white++
 		}
 	}
-	require.Greater(t, white, 200, "four glyphs leave a visible amount of ink")
+	require.Greater(t, white, 200, "the glyphs leave a visible amount of ink")
 
 	plain := generateAvatar("", 0, avatarPixels, avatarPixels)
 	for i := 0; i < len(plain.Pix); i += 4 {
@@ -211,7 +218,7 @@ func TestGenerateAvatar_InksTheGlyphsOntoTheBackground(t *testing.T) {
 	}
 }
 
-func TestRoundCorners_ClearsTheCornersAndKeepsTheGlyphs(t *testing.T) {
+func TestMaskDisc_ClearsEverythingOutsideTheCircle(t *testing.T) {
 	if avatarFont() == nil {
 		t.Skip("no system font on this machine")
 	}
@@ -226,14 +233,24 @@ func TestRoundCorners_ClearsTheCornersAndKeepsTheGlyphs(t *testing.T) {
 	_, _, _, a := m.At(avatarPixels/2, avatarPixels/2).RGBA()
 	require.Equal(t, uint32(0xFFFF), a, "the middle stays opaque")
 
-	// The glyph grid runs to the edges of each quadrant, so the rounding must
-	// stop short of where a disc would have cut into them.
-	inset := int(math.Round(float64(avatarPixels) * cornerRadius))
-	for _, p := range []image.Point{{X: inset, Y: 1}, {X: avatarPixels - 1 - inset, Y: 1},
-		{X: 1, Y: inset}, {X: 1, Y: avatarPixels - 1 - inset}} {
-		_, _, _, a := m.At(p.X, p.Y).RGBA()
-		require.Equal(t, uint32(0xFFFF), a, "edge %v stays inside the shape", p)
+	// A tenth in along the diagonal is outside the disc but inside a rounded
+	// square, which is what tells the two shapes apart.
+	_, _, _, a = m.At(avatarPixels/10, avatarPixels/10).RGBA()
+	require.Zero(t, a, "the shape is a disc, not a square with soft corners")
+
+	_, _, _, a = m.At(avatarPixels/4, avatarPixels/4).RGBA()
+	require.Equal(t, uint32(0xFFFF), a, "everything within the radius is kept")
+
+	_, _, _, a = m.At(avatarPixels/2, 2).RGBA()
+	require.Equal(t, uint32(0xFFFF), a, "the disc runs to the edges of its box")
+
+	rim := 0
+	for i := 3; i < len(m.Pix); i += 4 {
+		if m.Pix[i] > 0 && m.Pix[i] < 0xFF {
+			rim++
+		}
 	}
+	require.Greater(t, rim, 0, "the rim is anti-aliased rather than stepped")
 
 	// Premultiplied alpha: no channel may exceed the alpha it is scaled by.
 	for i := 0; i < len(m.Pix); i += 4 {
@@ -241,6 +258,23 @@ func TestRoundCorners_ClearsTheCornersAndKeepsTheGlyphs(t *testing.T) {
 		require.LessOrEqual(t, m.Pix[i+1], m.Pix[i+3], "green exceeds alpha at %d", i)
 		require.LessOrEqual(t, m.Pix[i+2], m.Pix[i+3], "blue exceeds alpha at %d", i)
 	}
+}
+
+func TestKittyAvatars_MasksTheFileAvatarToADisc(t *testing.T) {
+	dir := t.TempDir()
+	k := newKittyAvatars(dir)
+	c := store.Chat{ChatID: "oc_1", Name: "群", ChatMode: "group",
+		AvatarPath: writeFilledPNG(t, dir, "a.png", 64, 64)}
+
+	img := k.picture(c)
+	require.NotNil(t, img)
+	w, h := k.box()
+	require.Equal(t, image.Rect(0, 0, w, h), img.Bounds())
+
+	_, _, _, a := img.At(0, 0).RGBA()
+	require.Zero(t, a, "the square the CDN serves is cut to the disc the client draws")
+	_, _, _, a = img.At(w/2, h/2).RGBA()
+	require.Equal(t, uint32(0xFFFF), a, "the picture itself is untouched")
 }
 
 func TestBadgeLabel_CapsAtNinetyNinePlus(t *testing.T) {

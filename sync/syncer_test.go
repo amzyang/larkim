@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"strconv"
 	"testing"
 	"time"
 
@@ -360,7 +361,35 @@ func TestTick_SystemMessagesRenderInProcess(t *testing.T) {
 	require.Equal(t, `A renamed the group to "…".`, m.Content)
 }
 
-func TestRenderSystem_TimesTheCallItsMarkerClosesForBothPanes(t *testing.T) {
+func TestRenderLocal_NamesTheCallInBothPanes(t *testing.T) {
+	// A call still running is the chat's last message until the marker that
+	// closes it arrives, so the list has to say which meeting it was.
+	s, _, clk := newSyncer(t)
+	ctx := context.Background()
+	start := clk.t.UnixMilli()
+	require.NoError(t, s.Store.EnsureChat(ctx, "oc_a", start))
+	_, err := s.Store.UpsertMessages(ctx, []store.Message{
+		{MessageID: "om_call", ChatID: "oc_a", MsgType: "video_chat", CreateMs: start, UpdateMs: start,
+			MessagePosition: 1, ContentRaw: `{"topic":"站会的视频会议","meet_number":"100000000","start_time":"` +
+				strconv.FormatInt(start, 10) + `"}`, RawJSON: "{}"},
+	}, start)
+	require.NoError(t, err)
+
+	n, err := s.renderLocal(ctx, clk.t)
+	require.NoError(t, err)
+	require.Equal(t, 1, n)
+
+	got, err := s.Store.MessagesByIDs(ctx, []string{"om_call"})
+	require.NoError(t, err)
+	require.Equal(t, "[Video call] 站会的视频会议 · 100000000", got["om_call"].Content,
+		"a call still running has no length yet")
+
+	c, err := s.Store.GetChat(ctx, "oc_a")
+	require.NoError(t, err)
+	require.Equal(t, "[Video call] 站会的视频会议 · 100000000", c.LastContent)
+}
+
+func TestRenderLocal_TimesTheCallItsMarkerClosesForBothPanes(t *testing.T) {
 	s, _, clk := newSyncer(t)
 	ctx := context.Background()
 	start := clk.t.UnixMilli()
@@ -374,13 +403,14 @@ func TestRenderSystem_TimesTheCallItsMarkerClosesForBothPanes(t *testing.T) {
 	}, start)
 	require.NoError(t, err)
 
-	n, err := s.renderSystem(ctx, clk.t)
+	n, err := s.renderLocal(ctx, clk.t)
 	require.NoError(t, err)
-	require.Equal(t, 1, n)
+	require.Equal(t, 2, n, "the call and the marker closing it are both rendered in process")
 
-	got, err := s.Store.MessagesByIDs(ctx, []string{"om_end"})
+	got, err := s.Store.MessagesByIDs(ctx, []string{"om_call", "om_end"})
 	require.NoError(t, err)
 	require.Equal(t, "Meeting ended: 32s", got["om_end"].Content)
+	require.Equal(t, "[Video call] 站会的视频会议 · 100000000 · 32s", got["om_call"].Content)
 
 	c, err := s.Store.GetChat(ctx, "oc_a")
 	require.NoError(t, err)

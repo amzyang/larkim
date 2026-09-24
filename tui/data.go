@@ -385,3 +385,21 @@ func clearFeishuBadge(d Deps, chatID string) tea.Cmd {
 		return nil
 	}
 }
+
+// feishuMeetingLink joins a meeting by its number. The lark:// scheme works
+// on the vc host too, so the client goes straight into the call rather than
+// through a browser redirect.
+func feishuMeetingLink(meetNumber string) string {
+	return "lark://vc.feishu.cn/j/" + meetNumber
+}
+
+// joinMeeting takes the reader into a call. It takes the screen: joining is
+// what the keypress or the click asked for.
+func joinMeeting(d Deps, link string) tea.Cmd {
+	return func() tea.Msg {
+		if err := d.OpenURL(link, false); err != nil {
+			return errMsg{err}
+		}
+		return noticeMsg{"joining the meeting"}
+	}
+}

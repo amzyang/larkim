@@ -55,6 +55,10 @@ type Model struct {
 	focused       bool
 	showHelp      bool
 	th            theme
+	// dark is which way the terminal's background leans, kept beside the
+	// theme shaded from it because a code block picks its palette by name
+	// rather than by shading.
+	dark bool
 
 	chats  []store.Chat
 	unread map[string]int64
@@ -178,6 +182,7 @@ func New(d Deps) Model {
 
 // setBackground derives every shaded style from the terminal background.
 func (m *Model) setBackground(bg color.Color, dark bool) {
+	m.dark = dark
 	m.th = themeFor(bg, dark)
 	m.input.SetStyles(composerStyles(dark))
 	m.cmdline.SetStyles(textinput.DefaultStyles(dark))
@@ -842,6 +847,11 @@ func (m Model) onNormalKey(s string) (tea.Model, tea.Cmd) {
 		return m.startVisual()
 	case "o":
 		if sel, ok := m.selected(); ok {
+			// While a call is running, opening it in Feishu means joining
+			// it; once it has ended, the message is all there is to open.
+			if link := joinLink(sel); link != "" {
+				return m, joinMeeting(m.deps, link)
+			}
 			return m, openInFeishu(m.deps, sel.ChatID, sel.MessagePosition)
 		}
 		if m.chatID != "" {
@@ -1521,6 +1531,12 @@ func (m Model) onClick(ms tea.Mouse) (tea.Model, tea.Cmd) {
 			}
 		}
 	case paneMessages:
+		// A button the row draws answers first: the click asked for the
+		// button, not for the message it sits on. Pane content starts one
+		// column inside the border the pane is drawn with.
+		if z, ok := zoneAt(m.msgRows, m.msgTop+row, ms.X-chatsWidth-1); ok {
+			return m, joinMeeting(m.deps, z.url)
+		}
 		if idx := rowAt(m.msgRows, m.msgTop+row); idx >= 0 {
 			m.msgIdx = idx
 			m.rebuildMessages()
@@ -1529,6 +1545,9 @@ func (m Model) onClick(ms tea.Mouse) (tea.Model, tea.Cmd) {
 			}
 		}
 	case paneThread:
+		if z, ok := zoneAt(m.threadRows, m.threadTop+row, ms.X-(m.width-m.rightWidth())-1); ok {
+			return m, joinMeeting(m.deps, z.url)
+		}
 		if idx := rowAt(m.threadRows, m.threadTop+row); idx >= 0 {
 			m.threadIdx = idx
 			m.rebuildThread()
@@ -1574,7 +1593,8 @@ func clamp(v, lo, hi int) int {
 // Help text shown by ?.
 const helpText = `NORMAL      j/k move · gg/G ends · Ctrl+d/u page · Tab/Shift+Tab focus · h/l panes
             Enter open chat / thread / reply · i write · r reply · R reply in thread · t thread
-            Y copy agent context · yy id · yr raw json · yc content · v select a range · o open in Feishu
+            Y copy agent context · yy id · yr raw json · yc content · v select a range
+            o open in Feishu, or join the call the selected message invites to
             e react to the selected message
             / filter chats · :/; command · q quit
             . send a failed message again · x drop it
@@ -1584,7 +1604,8 @@ EMOJI       e opens it · type to filter (Chinese, pinyin or initials) · ↑↓
             an emoji already yours is marked ✓, and choosing it takes the reaction back
 COMMAND     :copy <200|7d|all> · :goto <chat> · :react <emoji> · :send <chat|ou_> <text> · :search <text> · :sync · :q
 ASSISTANT   a or :ai [summary | draft <how> | todo | <question>] · answer streams in the right pane · Esc closes
-MOUSE       click focuses and selects · double-click opens · wheel scrolls`
+MOUSE       click focuses and selects · double-click opens · click Join to enter a call
+            wheel scrolls`
 
 func fmtStatus(m Model) string {
 	sync := "daemon"

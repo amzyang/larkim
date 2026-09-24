@@ -27,7 +27,10 @@ var systemFonts = []string{
 // avatarInitials is how many characters a generated avatar carries. Up to
 // four sit in a 2x2 grid, which is how the Feishu client draws a group with
 // no picture of its own.
-const avatarInitials = 4
+// avatarInitials is how many characters of a name the picture carries. Two
+// is what a disc holds at the size a terminal cell grid gives it; a third
+// would either run out of the shape or shrink past reading.
+const avatarInitials = 2
 
 // generatedPalette are the background colours, dark enough for white glyphs.
 var generatedPalette = []color.RGBA{
@@ -57,11 +60,11 @@ var avatarFont = sync.OnceValue(func() *sfnt.Font {
 })
 
 // avatarFace builds a face at the size one glyph gets, which depends on how
-// many share the square and how large that square is on screen.
+// many share the disc and how large that disc is on screen.
 func avatarFace(glyphs, side int) font.Face {
 	size := float64(side) * 0.56 // one glyph, alone
 	if glyphs > 1 {
-		size = float64(side) * 0.33 // a 2x2 cell, clear of the rounded edge
+		size = float64(side) * 0.35 // one of a pair, clear of the rim
 	}
 	return faceAt(size)
 }
@@ -92,7 +95,7 @@ func parseFace(b []byte) (*sfnt.Font, error) {
 }
 
 // generateAvatar draws a stand-in picture for a chat with no avatar file: a
-// colour square carrying the first characters of its name. Returns nil when
+// colour disc carrying the first characters of its name. Returns nil when
 // no usable font was found, which leaves the colour block in charge.
 func generateAvatar(name string, hash uint32, w, h int) *image.RGBA {
 	text := []rune(initials(name))
@@ -108,23 +111,27 @@ func generateAvatar(name string, hash uint32, w, h int) *image.RGBA {
 	for i, r := range text {
 		drawGlyph(m, face, string(r), glyphCell(len(text), i, w, h))
 	}
-	roundCorners(m)
+	maskDisc(m)
 	return m
 }
 
-// cornerRadius is how far the corners are rounded, as a share of the shorter
-// side. A full disc would cut into a 2x2 grid of glyphs; this leaves them
-// whole while still softening the square.
-const cornerRadius = 0.22
+// discRadius is the mask's radius as a share of the shorter side: a half is
+// the full disc, the shape the client gives every avatar.
+const discRadius = 0.5
 
-// roundCorners clips the rectangle to a rounded one, so a drawn avatar sits
-// among the real ones rather than standing out as the only hard square. The
-// terminal shows through the cleared corners, which is why the edge fades
-// rather than stepping: there is no background colour here to blend against.
-func roundCorners(m *image.RGBA) {
+// maskDisc clips the picture to the disc the client draws, so the list reads
+// as one column of circles whether a chat brought a picture or had one drawn
+// for it. The terminal shows through what is cleared, which is why the rim
+// fades rather than stepping: there is no background colour here to blend
+// against.
+//
+// A box the cell grid made oblong keeps the disc's radius and rounds only
+// what the shorter side reaches, which is what stops the circle turning into
+// an ellipse.
+func maskDisc(m *image.RGBA) {
 	b := m.Bounds()
 	w, h := float64(b.Dx()), float64(b.Dy())
-	r := math.Min(w, h) * cornerRadius
+	r := math.Min(w, h) * discRadius
 	// Half-extents of the rectangle the corner arcs are centred on.
 	ex, ey := w/2-r, h/2-r
 	for y := range b.Dy() {
@@ -150,18 +157,13 @@ func roundCorners(m *image.RGBA) {
 	}
 }
 
-// glyphCell is the square one glyph owns: the whole avatar when it is alone,
-// a half-width column for two, a 2x2 quadrant beyond that.
+// glyphCell is the box one glyph owns: the whole avatar when it is alone, a
+// half-width column when two share it.
 func glyphCell(count, i, w, h int) image.Rectangle {
-	switch {
-	case count <= 1:
+	if count <= 1 {
 		return image.Rect(0, 0, w, h)
-	case count == 2:
-		return image.Rect(i*w/2, 0, (i+1)*w/2, h)
-	default:
-		col, row := i%2, i/2
-		return image.Rect(col*w/2, row*h/2, (col+1)*w/2, (row+1)*h/2)
 	}
+	return image.Rect(i*w/2, 0, (i+1)*w/2, h)
 }
 
 // drawGlyph centres one glyph in cell, on the face's own ascent and descent
