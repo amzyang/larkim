@@ -231,15 +231,25 @@ func (s *Syncer) storeResource(ctx context.Context, p store.Resource, res larkcl
 	if err != nil {
 		return false, s.failResource(ctx, p, "downloaded file missing: "+err.Error(), now)
 	}
-	if s.Opt.MaxBytes > 0 && st.Size() > s.Opt.MaxBytes {
+	if s.oversize(st.Size()) {
 		_ = os.Remove(abs)
-		return false, s.Store.MarkResourceSkipped(ctx, p.MessageID, p.FileKey, st.Size(), fmt.Sprintf("larger than %d bytes", s.Opt.MaxBytes))
+		return false, s.skipResource(ctx, p, st.Size())
 	}
 	rel, err := filepath.Rel(s.Opt.DataDir, abs)
 	if err != nil {
 		rel = abs
 	}
 	return true, s.Store.MarkResourceDone(ctx, p.MessageID, p.FileKey, rel, st.Size())
+}
+
+// oversize reports whether an attachment is past resources.max_bytes.
+func (s *Syncer) oversize(size int64) bool {
+	return s.Opt.MaxBytes > 0 && size > s.Opt.MaxBytes
+}
+
+// skipResource records an attachment deliberately not kept for its size.
+func (s *Syncer) skipResource(ctx context.Context, p store.Resource, size int64) error {
+	return s.Store.MarkResourceSkipped(ctx, p.MessageID, p.FileKey, size, fmt.Sprintf("larger than %d bytes", s.Opt.MaxBytes))
 }
 
 func (s *Syncer) failResource(ctx context.Context, p store.Resource, reason string, now time.Time) error {

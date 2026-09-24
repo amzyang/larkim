@@ -171,11 +171,15 @@ func TestRender_AttachmentsTakeALinePerResource(t *testing.T) {
 		{FileKey: "img_1", Type: "image", Status: "done", LocalPath: "/Users/linlan/.larkim/resources/img_1.png"},
 		{FileKey: "file_2", Type: "file", Status: "skipped", SizeBytes: 8_598_323},
 		{FileKey: "file_3", Type: "file", Status: "pending"},
+		{FileKey: "v3_a", Type: "sticker", Status: "done", LocalPath: "/Users/linlan/.larkim/resources/stickers/v3_a.gif"},
+		{FileKey: "v3_b", Type: "sticker", Status: "failed"},
 	}}
 	out := Render(in)
 	require.Contains(t, out, "看下这个\n[image /Users/linlan/.larkim/resources/img_1.png]\n")
 	require.Contains(t, out, "[file file_2 8.2MB (not downloaded)]\n")
 	require.Contains(t, out, "[file file_3 (not downloaded)]\n", "an unknown size is left out rather than shown as zero")
+	require.Contains(t, out, "[sticker /Users/linlan/.larkim/resources/stickers/v3_a.gif]\n")
+	require.Contains(t, out, "[sticker v3_b (not downloaded)]\n", "a sticker the Lark client never drew still says what the message carried")
 }
 
 func TestRender_EmptyChatStillCarriesTheHeader(t *testing.T) {

@@ -42,9 +42,15 @@ func (s *Syncer) copyStickers(ctx context.Context, now time.Time) (int, error) {
 	}
 	done := 0
 	for _, p := range due {
-		src := findSticker(s.Opt.ClientDir, p.FileKey)
+		src, size := findSticker(s.Opt.ClientDir, p.FileKey)
 		if src == "" {
 			if err := s.failResource(ctx, p, "not in the Lark client's sticker storage", now); err != nil {
+				return done, err
+			}
+			continue
+		}
+		if s.oversize(size) {
+			if err := s.skipResource(ctx, p, size); err != nil {
 				return done, err
 			}
 			continue
@@ -64,15 +70,11 @@ func (s *Syncer) copyStickers(ctx context.Context, now time.Time) (int, error) {
 	return done, nil
 }
 
-// findSticker is the Lark client's copy of one sticker, or "" while the client
-// has never drawn it. Stickers somebody sent sit under resources/stickers as
-// <key>.<ext>; the sets the user sends from sit under sticker_sets/<set>/<key>
-// with no extension at all.
-func findSticker(clientDir, key string) string {
-	if key == "" {
-		// An empty key would turn the first pattern into a dotfile glob.
-		return ""
-	}
+// findSticker is the Lark client's copy of one sticker and its size, or "" while
+// the client has never drawn it. Stickers somebody sent sit under
+// resources/stickers as <key>.<ext>; the sets the user sends from sit under
+// sticker_sets/<set>/<key> with no extension at all.
+func findSticker(clientDir, key string) (string, int64) {
 	for _, pat := range []string{
 		filepath.Join(clientDir, "LarkShell*", "sdk_storage", "*", "resources", "stickers", key+".*"),
 		filepath.Join(clientDir, "LarkShell*", "sdk_storage", "*", "sticker_sets", "*", key),
@@ -80,11 +82,11 @@ func findSticker(clientDir, key string) string {
 		matches, _ := filepath.Glob(pat)
 		for _, m := range matches {
 			if st, err := os.Stat(m); err == nil && st.Mode().IsRegular() && st.Size() > 0 {
-				return m
+				return m, st.Size()
 			}
 		}
 	}
-	return ""
+	return "", 0
 }
 
 // copySticker copies one picture below the data dir and returns its path
@@ -100,6 +102,12 @@ func copySticker(src, dataDir, key string) (string, int64, error) {
 		return "", 0, err
 	}
 	name := key + stickerExt(b)
+	rel, dst := filepath.Join(stickerSubdir, name), filepath.Join(dir, name)
+	// The same sticker is due on every message that carries it, and a key
+	// names one unchanging picture, so a copy already here is that picture.
+	if st, err := os.Stat(dst); err == nil {
+		return rel, st.Size(), nil
+	}
 	// Written aside and renamed: the TUI is another process, and it may be
 	// decoding this very file for a message that already has it.
 	tmp := filepath.Join(dir, ".tmp-"+key)
@@ -107,10 +115,10 @@ func copySticker(src, dataDir, key string) (string, int64, error) {
 	if err := os.WriteFile(tmp, b, 0o600); err != nil {
 		return "", 0, err
 	}
-	if err := os.Rename(tmp, filepath.Join(dir, name)); err != nil {
+	if err := os.Rename(tmp, dst); err != nil {
 		return "", 0, err
 	}
-	return filepath.Join(stickerSubdir, name), int64(len(b)), nil
+	return rel, int64(len(b)), nil
 }
 
 // stickerExt names the format of the bytes, so a consumer holding nothing but

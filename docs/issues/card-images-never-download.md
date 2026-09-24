@@ -89,7 +89,7 @@ if !ok {
 迁移形制参考 `0008_rescan_card_images.sql`：
 
 ```sql
--- 0012_retry_card_images.sql
+-- store/migrations/<next>_retry_card_images.sql
 UPDATE resources SET status = 'pending', attempts = 0, next_attempt_at = 0, last_error = ''
 WHERE status = 'failed' AND last_error = 'not returned by lark-cli';
 ```

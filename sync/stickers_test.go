@@ -63,7 +63,7 @@ func TestTick_StickerPicturesComeFromTheLarkClient(t *testing.T) {
 
 	rs, _ = s.Store.ResourcesFor(ctx, "om_mine")
 	require.Equal(t, filepath.Join("resources", "stickers", "v3_mine.gif"), rs[0].LocalPath,
-		"a sticker of the user's own sets is stored without any extension")
+		"the client keeps the user's own sets unnamed, so the format comes from the bytes alone")
 
 	rs, _ = s.Store.ResourcesFor(ctx, "om_gone")
 	require.Equal(t, "failed", rs[0].Status)
@@ -72,23 +72,59 @@ func TestTick_StickerPicturesComeFromTheLarkClient(t *testing.T) {
 	require.Equal(t, clk.t.Add(time.Minute).UnixMilli(), rs[0].NextAttemptAt)
 }
 
-func TestCopyStickers_ReplacesAPictureWhileAnotherProcessReadsIt(t *testing.T) {
+func TestTick_StickerPicturesOverTheSizeLimitAreSkipped(t *testing.T) {
+	s, f, clk := newSyncer(t)
+	ctx := context.Background()
+	data, client := t.TempDir(), t.TempDir()
+	s.Opt.DataDir, s.Opt.ClientDir, s.Opt.MaxBytes = data, client, 1
+	clientSticker(t, filepath.Join(client, "LarkShell", "sdk_storage", "u1", "resources", "stickers"), "v3_big.png")
+
+	f.Chats = []larkcli.RawChat{{ChatID: "oc_a", Name: "平台组", ChatMode: "group"}}
+	f.AddMessage(stickerMsg("om_big", "v3_big", clk.t.Add(-time.Minute)))
+
+	rep, err := s.Tick(ctx)
+	require.NoError(t, err)
+	require.Zero(t, rep.Stickers)
+
+	rs, _ := s.Store.ResourcesFor(ctx, "om_big")
+	require.Equal(t, "skipped", rs[0].Status)
+	require.Contains(t, rs[0].LastError, "larger than 1 bytes")
+	require.NoDirExists(t, filepath.Join(data, stickerSubdir))
+}
+
+func TestCopySticker_LeavesNoHalfWrittenCopyBehind(t *testing.T) {
 	data, client := t.TempDir(), t.TempDir()
 	dir := filepath.Join(client, "LarkShell", "sdk_storage", "u1", "resources", "stickers")
 	pic := clientSticker(t, dir, "v3_a.png")
 
-	rel, size, err := copySticker(filepath.Join(dir, "v3_a.png"), data, "v3_a")
+	_, size, err := copySticker(filepath.Join(dir, "v3_a.png"), data, "v3_a")
 	require.NoError(t, err)
 	require.Equal(t, int64(len(pic)), size)
-	again, _, err := copySticker(filepath.Join(dir, "v3_a.png"), data, "v3_a")
-	require.NoError(t, err)
-	require.Equal(t, rel, again)
 	left, err := filepath.Glob(filepath.Join(data, stickerSubdir, ".tmp-*"))
 	require.NoError(t, err)
-	require.Empty(t, left, "no half-written copy is left behind")
+	require.Empty(t, left)
+}
+
+func TestCopySticker_KeepsThePictureItAlreadyHas(t *testing.T) {
+	data, client := t.TempDir(), t.TempDir()
+	dir := filepath.Join(client, "LarkShell", "sdk_storage", "u1", "resources", "stickers")
+	clientSticker(t, dir, "v3_a.png")
+
+	rel, _, err := copySticker(filepath.Join(dir, "v3_a.png"), data, "v3_a")
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(data, rel), []byte("already here"), 0o600))
+
+	again, size, err := copySticker(filepath.Join(dir, "v3_a.png"), data, "v3_a")
+	require.NoError(t, err)
+	require.Equal(t, rel, again)
+	require.Equal(t, int64(len("already here")), size)
+	stored, err := os.ReadFile(filepath.Join(data, rel))
+	require.NoError(t, err)
+	require.Equal(t, "already here", string(stored), "a key names one picture, so the copy is made once")
 }
 
 func TestFindSticker_AnswersNothingForAKeyTheClientNeverDrew(t *testing.T) {
-	require.Empty(t, findSticker(t.TempDir(), "v3_a"))
-	require.Empty(t, findSticker(t.TempDir(), ""))
+	src, size := findSticker(t.TempDir(), "v3_a")
+	require.Empty(t, src)
+	require.Zero(t, size)
 }

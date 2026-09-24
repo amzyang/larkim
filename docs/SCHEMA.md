@@ -90,7 +90,7 @@ Attachments of a message, one row per key: an `image` or `file` body's key, the 
 | column | meaning |
 |---|---|
 | `type` | `image`, `file` or `sticker` |
-| `local_path` | path relative to the data dir once `status = done`; stickers land in `resources/stickers/<file_key>.<ext>` |
+| `local_path` | path relative to the data dir once `status = done`; stickers land in `resources/stickers/<file_key>`, with the extension of the picture's format appended when the bytes name one |
 | `status` | `pending`, `done`, `failed`, `skipped` (over `resources.max_bytes`) |
 | `attempts`, `next_attempt_at`, `last_error` | retry bookkeeping |
 
