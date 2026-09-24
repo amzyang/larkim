@@ -135,12 +135,14 @@ func renderCard(c card, width int, ms mentions) []cardRow {
 	return out
 }
 
-// renderCardActions turns a button row into chips. The link target drops out
-// the same way it does in body text: the label is what the button shows.
+// renderCardActions turns a button row into filled pills. The link target
+// drops out the same way it does in body text: the label is what the button
+// shows.
 func renderCardActions(line string) string {
-	var chips []string
+	var buttons []string
 	for _, m := range cardAction.FindAllStringSubmatch(line, -1) {
-		chips = append(chips, stLink.Render("[ "+expandEmoji(strings.TrimSpace(m[1]))+" ]"))
+		label := stBtn.Render(expandEmoji(strings.TrimSpace(m[1])))
+		buttons = append(buttons, stBtnEdge.Render(chipLeft)+label+stBtnEdge.Render(chipRight))
 	}
-	return strings.Join(chips, " ")
+	return strings.Join(buttons, " ")
 }

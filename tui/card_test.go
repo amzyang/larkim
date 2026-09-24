@@ -55,7 +55,8 @@ func TestRenderCard_FramesTheCardAndDropsTheMarkup(t *testing.T) {
 	require.Contains(t, out, "「兜底」", "the header tag rides with the title")
 	require.Contains(t, out, "待认领账号：13 个", "bold markers are styling, not text")
 	require.NotContains(t, out, "**")
-	require.Contains(t, out, "[ 知道了 ] [ 查看清单(内网) ]", "actions read as buttons")
+	require.Contains(t, out, chipLeft+"知道了"+chipRight+" "+chipLeft+"查看清单(内网)"+chipRight,
+		"actions read as filled buttons, the caps their only padding")
 	require.NotContains(t, out, "https://", "a button shows its label, not its target")
 	require.Contains(t, out, "─────", "the divider is drawn")
 }

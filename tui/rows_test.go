@@ -299,6 +299,18 @@ func gutterOf(r msgRow) string {
 	return string(g[:gutterWidth])
 }
 
+// drawn is the rows a message put on screen, with the day rules and the blank
+// lines between sections dropped, so an index into it counts content.
+func drawn(rows []msgRow) []msgRow {
+	out := make([]msgRow, 0, len(rows))
+	for _, r := range rows {
+		if !r.plain {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
 // blocks counts the sender lines a rendered list opens its blocks with. In
 // these fixtures the name appears nowhere but there.
 func blocks(rows []msgRow, name string) int {
@@ -347,13 +359,48 @@ func TestRenderRows_SplitsABlockAtASystemMessage(t *testing.T) {
 	require.Equal(t, 2, blocks(rows, "孙琪"), "the system line between them ends the block")
 }
 
+func TestRenderRows_HoldsEachSectionOffTheOneAbove(t *testing.T) {
+	sys := said("om_2", "孙琪", "林岚 invited 张三 to the group.", 23, 9, 1)
+	sys.MsgType = "system"
+	msgs := []store.Message{
+		said("om_1", "孙琪", "早", 23, 9, 0),
+		sys,
+		said("om_3", "李四", "收到", 23, 9, 2),
+		said("om_4", "李四", "在看", 23, 9, 3),
+	}
+	rows := renderRows(msgs, baseStyle())
+
+	var gaps []int
+	for i, r := range rows {
+		if r.plain && r.text == "" {
+			gaps = append(gaps, i)
+		}
+	}
+	require.Equal(t, []int{4, 6}, gaps,
+		"a blank line before the system notice and the next block, none under the day rule: %q", rowText(rows))
+	require.Equal(t, 1, blocks(rows, "李四"), "the second message merges, so it opens nothing")
+	require.NotEmpty(t, rows[0].text, "the day rule still heads the list")
+	require.NotEmpty(t, rows[len(rows)-1].text, "and the last section is not followed by a blank")
+}
+
+func TestRenderRows_HoldsTheBodyOffTheSenderLine(t *testing.T) {
+	mine := said("om_1", "me", "好的", 23, 9, 0)
+	mine.SenderID = "ou_me"
+	rows := drawn(renderRows([]store.Message{mine, said("om_2", "孙琪", "收到", 23, 9, 1)}, baseStyle()))
+
+	require.Equal(t, rail+" ", ansi.Strip(rows[1].text), "the line under the sender carries nothing but the rail")
+	require.False(t, rows[1].plain, "it belongs to the message, so a selection tints it with the rest")
+	require.Contains(t, ansi.Strip(rows[2].text), "好的", "and the body follows it")
+	require.Equal(t, "  ", ansi.Strip(rows[4].text), "a sender with no rail leaves the gutter blank")
+}
+
 func TestRenderRows_SplitsABlockWhenTheReadStateDiffers(t *testing.T) {
 	msgs := []store.Message{said("om_1", "孙琪", "早", 23, 9, 0), said("om_2", "孙琪", "在吗", 23, 9, 1)}
 	st := baseStyle()
 	st.dots = map[string]bool{"om_2": true}
 	rows := renderRows(msgs, st)
 	require.Equal(t, 2, blocks(rows, "孙琪"), "the unread dot heads a block, so a block is all read or all unread")
-	require.Equal(t, "● ", gutterOf(rows[3]), "the dot opens the unread block")
+	require.Equal(t, "● ", gutterOf(drawn(rows)[3]), "the dot opens the unread block")
 }
 
 func TestRenderRows_SplitsABlockForAMessageCarryingItsOwnBadge(t *testing.T) {
@@ -380,9 +427,10 @@ func TestRenderRows_RailsTheReadersOwnMessages(t *testing.T) {
 	mine.SenderID = "ou_me"
 	msgs := []store.Message{mine, said("om_2", "孙琪", "收到", 23, 9, 1)}
 	rows := renderRows(msgs, baseStyle())
-	require.Equal(t, rail+" ", gutterOf(rows[1]), "own messages run down a rail of their own")
-	require.Contains(t, rows[1].text, stOK.Render(rail), "a delivered send rails in the sent colour")
-	require.Equal(t, "  ", gutterOf(rows[3]), "someone else's message has no rail")
+	own, theirs := drawn(rows)[0], drawn(rows)[3]
+	require.Equal(t, rail+" ", gutterOf(own), "own messages run down a rail of their own")
+	require.Contains(t, own.text, stSelf.Render(rail), "a delivered send rails in the sent colour")
+	require.Equal(t, "  ", gutterOf(theirs), "someone else's message has no rail")
 }
 
 func TestRenderRows_RailShadesASendOnItsWay(t *testing.T) {
@@ -392,12 +440,12 @@ func TestRenderRows_RailShadesASendOnItsWay(t *testing.T) {
 
 	st.outbox = map[string]outboxState{"local-1": outSending}
 	rows := renderRows(msgs, st)
-	require.Contains(t, rows[1].text, stDim.Render(rail), "a send still on its way shades its rail")
+	require.Contains(t, drawn(rows)[0].text, stDim.Render(rail), "a send still on its way shades its rail")
 	require.Equal(t, 1, blocks(rows, "你"), "a send in flight still merges; the rail carries its state")
 
 	st.outbox["local-1"] = outFailed
 	rows = renderRows(msgs, st)
-	require.Contains(t, rows[1].text, stErr.Render(rail))
+	require.Contains(t, drawn(rows)[0].text, stErr.Render(rail))
 	require.Contains(t, rowText(rows), "(failed)", "a failed send is loud enough to head its own block")
 }
 
@@ -419,8 +467,8 @@ func TestRenderRows_MarksTheReplyTargetInTheGutter(t *testing.T) {
 	st.quoted = "om_2"
 	rows := renderRows(msgs, st)
 	require.Equal(t, 1, blocks(rows, "孙琪"), "aiming a draft at a message does not move the rows around it")
-	require.Equal(t, "↩ ", gutterOf(rows[3]), "the gutter says which message the open draft answers")
-	require.Equal(t, "  ", gutterOf(rows[2]), "and only that one")
+	require.Equal(t, "↩ ", gutterOf(drawn(rows)[3]), "the gutter says which message the open draft answers")
+	require.Equal(t, "  ", gutterOf(drawn(rows)[2]), "and only that one")
 }
 
 func TestRenderRows_NamesTheReaderAsYou(t *testing.T) {

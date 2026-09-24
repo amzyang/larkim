@@ -14,10 +14,16 @@ import (
 
 const (
 	chatRowHeight = 2 // avatar height, and the two text lines beside it
+	chatRowGap    = 1 // blank line holding one chat's two lines off the next
+	chatRowStride = chatRowHeight + chatRowGap
 	avatarWidth   = 4 // 4x2 cells is about square on a terminal grid
 	avatarGap     = 1
 	minTitleWidth = 2 // a title never shrinks past one glyph plus the ellipsis
 )
+
+// chatsThatFit is how many whole chats h lines of pane body hold. The last
+// chat carries no separator, so n of them take n*chatRowStride - chatRowGap.
+func chatsThatFit(h int) int { return max(0, (h+chatRowGap)/chatRowStride) }
 
 // chatRow is one chat's two rendered lines. The avatar is kept apart from the
 // text because a selection must not repaint it: it stands for a picture, and
@@ -35,9 +41,10 @@ type chatRow struct {
 func chatTextWidth(w int) int { return max(minTitleWidth, w-avatarWidth-avatarGap) }
 
 // botBadge marks a machine: the peer a p2p chat's title names, or a speaker
-// named anywhere a turn is quoted. The glyph is double-width, which is a
-// column cheaper than spelling it out.
-const botBadge = "🤖"
+// named anywhere a turn is quoted. The robot head comes from the Nerd Font the
+// terminal maps the private use area to, so it takes the colour of the name it
+// rides and holds to a single column.
+const botBadge = ""
 
 // botMark badges a speaker whose turn came from an app. It rides the name
 // rather than a chat's title because it states what one message is, not what
@@ -217,6 +224,9 @@ const chatChipCols = 2
 // group's stay in the message pane, where there is room to say whose they
 // are. A recall takes them with the body, the way the client does.
 //
+// The icons share one chip rather than wearing one each: at this width a cap
+// between every pair would cost more room than the icons themselves.
+//
 // An emoji this terminal can draw neither as a character nor as a picture is
 // left out rather than spelled: its name at the head of the line would cost
 // more room than the message behind it.
@@ -236,21 +246,25 @@ func chatChips(c store.Chat, pics emojiPics) []rowSeg {
 		case !known:
 			continue
 		case e.Glyph != "":
-			seg = rowSeg{text: e.Glyph}
+			seg = rowSeg{text: stChip.Render(e.Glyph)}
 		default:
-			pic := pics.pic(e.Key, chatChipCols)
+			pic := pics.chip(e.Key, chatChipCols)
 			if pic.cols == 0 {
 				continue
 			}
 			seg = rowSeg{pic: pic}
 		}
 		if shown > 0 {
-			out = append(out, rowSeg{text: " "})
+			out = append(out, rowSeg{text: stChip.Render(" ")})
 		}
 		out = append(out, seg)
 		shown++
 	}
-	return out
+	if len(out) == 0 {
+		return nil
+	}
+	out = append(out, rowSeg{text: stChipEdge.Render(chipRight)})
+	return append([]rowSeg{{text: stChipEdge.Render(chipLeft)}}, out...)
 }
 
 // chatSummaryLine is the row's second line: the reactions the chat collected,

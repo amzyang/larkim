@@ -92,7 +92,9 @@ func TestHit_MapsPanesBelowTitles(t *testing.T) {
 	_, row = m.hit(2, 3)
 	require.Equal(t, 0, row, "its second line maps to the same chat")
 	_, row = m.hit(2, 4)
-	require.Equal(t, 1, row, "the next chat starts two lines on")
+	require.Equal(t, 0, row, "so does the blank line that holds off the next chat")
+	_, row = m.hit(2, 5)
+	require.Equal(t, 1, row, "the next chat starts a stride on")
 	p, row = m.hit(chatsWidth+5, 3)
 	require.Equal(t, paneMessages, p)
 	require.Equal(t, 1, row, "message body rows start below the header")
@@ -321,4 +323,22 @@ func TestModelPicHeight_DoesNotMoveWithTheReplyBar(t *testing.T) {
 	require.Equal(t, was, m.picHeight(),
 		"opening the reply bar must not resize every picture on screen")
 	require.Equal(t, m.listHeight()+1, m.picHeight(), "at the cost of one row while it is open")
+}
+
+func TestHighlightChat_FocusedRowTakesTheFixedTint(t *testing.T) {
+	tint := "48;2;231;238;252"
+	m := sized(120, 36)
+	m.focus = paneChats
+	require.Contains(t, m.renderChats(m.bodyHeight()), tint, "the row under the cursor carries the client's tint")
+	require.NotContains(t, m.highlightChat("plain", false), tint,
+		"without focus the row falls back to the shaded selection")
+}
+
+func TestHighlightChat_KeepsARunsOwnColours(t *testing.T) {
+	m := sized(120, 36)
+	line := m.highlightChat(stUnread.Render("3")+" "+stBold.Render("群"), true)
+	require.Contains(t, ansi.Strip(line), "3 群")
+	require.Contains(t, line, "31m3", "a run naming its own colour keeps it")
+	require.GreaterOrEqual(t, strings.Count(line, "48;2;231;238;252"), 3,
+		"the tint is re-applied after every embedded style: %q", line)
 }

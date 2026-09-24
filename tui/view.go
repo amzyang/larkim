@@ -23,21 +23,37 @@ const (
 	inputHeight      = 3
 	statusHeight     = 1
 	headerHeight     = 1 // title row of every list pane
+
+	// chipLeft and chipRight are the powerline half-circles that round a chip
+	// off, drawn from the Nerd Font this terminal maps U+E0B0-U+E0C8 to.
+	chipLeft  = "\ue0b6"
+	chipRight = "\ue0b4"
+	// chipPad is what a chip costs beside what it holds: a cap either side.
+	chipPad = 2
 )
 
 // Foreground colours are ANSI palette indices, so they follow the terminal
-// theme; shades that need a background come from theme.
+// theme; shades that need a background come from theme. The fixed hex tints
+// below are the exceptions: each one is a colour the client owns, so it reads
+// the same whatever a terminal theme happens to paint.
 var (
 	colAccent = lipgloss.Color("4")
 	colDim    = lipgloss.Color("8")
 	colErr    = lipgloss.Color("1")
-	colOK     = lipgloss.Color("2")
+	colSelf   = lipgloss.Color("#d5e2fa")
+	// colChatSel and colChatSelText are the client's own tint for the chat it
+	// is on, kept off the shade ladder so the list reads the same wherever it
+	// is opened. The text colour rides along because the tint is light on
+	// every terminal: it is re-asserted per run, so a run that names its own
+	// colour keeps it.
+	colChatSel     = lipgloss.Color("#e7eefc")
+	colChatSelText = lipgloss.Color("#1f2329")
 
 	stDim    = lipgloss.NewStyle().Foreground(colDim)
 	stAccent = lipgloss.NewStyle().Foreground(colAccent)
 	stBold   = lipgloss.NewStyle().Bold(true)
 	stErr    = lipgloss.NewStyle().Foreground(colErr)
-	stOK     = lipgloss.NewStyle().Foreground(colOK)
+	stSelf   = lipgloss.NewStyle().Foreground(colSelf)
 	// stMentionMe is the filled badge the client paints on the reader's own
 	// mention. White on an ANSI colour reads on every terminal theme, which is
 	// why the avatar block is drawn the same way.
@@ -46,6 +62,25 @@ var (
 	// onto a picture: the header's count and the digits a row falls back to when
 	// no disc could be drawn both take it, so the three read as one signal.
 	stUnread = lipgloss.NewStyle().Foreground(colErr).Bold(true)
+	// stChatSel paints the chat row under the cursor while the chats pane has
+	// focus; without focus the row falls back to the shaded selection.
+	stChatSel = lipgloss.NewStyle().Foreground(colChatSelText).Background(colChatSel)
+
+	// A reaction wears the chip the client draws it on: a tint closed by a
+	// round cap either side. The tint is fixed, like the selected chat's, both
+	// because the emoji art is drawn for a light backing and because the caps
+	// have to be painted in the very colour they close.
+	colChip     = lipgloss.Color("#bbcef6")
+	stChip      = lipgloss.NewStyle().Foreground(colChatSelText).Background(colChip)
+	stChipCells = lipgloss.NewStyle().Background(colChip)
+	stChipEdge  = lipgloss.NewStyle().Foreground(colChip)
+
+	// A card's button is the chip's shape filled darker: a button is a block
+	// of colour with its label on it, not bracketed text, and the caps carry
+	// the padding so the label needs none of its own.
+	colBtn    = lipgloss.Color("#9db4e0")
+	stBtn     = lipgloss.NewStyle().Foreground(colChatSelText).Background(colBtn)
+	stBtnEdge = lipgloss.NewStyle().Foreground(colBtn)
 
 	// sgrReset is the sequence that ends a styled run; lipgloss writes the
 	// short spelling, a hand-written line may carry the long one.
@@ -115,7 +150,7 @@ func (m Model) picHeight() int {
 
 // chatListHeight is how many whole chats the chat pane shows; a chat is never
 // drawn with only one of its two lines.
-func (m Model) chatListHeight() int { return max(1, m.listHeight()/chatRowHeight) }
+func (m Model) chatListHeight() int { return max(1, chatsThatFit(m.listHeight())) }
 
 // foldRight reports whether the terminal is too narrow for three columns, in
 // which case the thread or assistant pane replaces the messages pane.
@@ -207,6 +242,15 @@ func (m Model) rowLine(r msgRow, w int) (string, bool) {
 	return r.prefix + cells + strings.Repeat(" ", max(0, w-lipgloss.Width(r.prefix)-r.pic.cols)), true
 }
 
+// segCells draws one segment's picture, holding the cells it will fill while
+// the image is still on its way to the terminal.
+func (m Model) segCells(pic picture) string {
+	if cells := m.pics.cells(pic, 0); cells != "" {
+		return cells
+	}
+	return pic.gap()
+}
+
 // joinSegs draws a line whose pictures sit inside its text. It pads rather
 // than fits: MaxWidth measures a picture's placeholder cells as the characters
 // they are and would cut one out of its cluster, and the pieces were packed to
@@ -218,12 +262,7 @@ func (m Model) joinSegs(segs []rowSeg, w int) string {
 			b.WriteString(s.text)
 			continue
 		}
-		cells := m.pics.cells(s.pic, 0)
-		if cells == "" {
-			// Still on its way to the terminal: hold the cells it will fill.
-			cells = strings.Repeat(" ", s.pic.cols)
-		}
-		b.WriteString(cells)
+		b.WriteString(m.segCells(s.pic))
 	}
 	line := b.String()
 	return line + strings.Repeat(" ", max(0, w-lipgloss.Width(line)))
@@ -304,7 +343,7 @@ func (m Model) hit(x, y int) (pane, int) {
 	row := y - 1 - headerHeight
 	switch {
 	case x < chatsWidth:
-		return paneChats, row / chatRowHeight
+		return paneChats, row / chatRowStride
 	case m.rightOpen() && x >= m.width-m.rightWidth():
 		return paneThread, row
 	default:
@@ -376,7 +415,7 @@ func (m Model) renderChats(h int) string {
 	line := func(avatar, text string, selected bool) string {
 		text = fit(gap+text, w-avatarWidth)
 		if selected {
-			text = m.highlight(text, m.focus == paneChats)
+			text = m.highlightChat(text, m.focus == paneChats)
 		}
 		return avatar + text
 	}
@@ -391,20 +430,18 @@ func (m Model) renderChats(h int) string {
 				text += s.text
 				continue
 			}
-			cells := m.pics.cells(s.pic, 0)
-			if cells == "" {
-				cells = strings.Repeat(" ", s.pic.cols) // still on its way to the terminal
-			}
-			text += cells
+			text += m.segCells(s.pic)
 		}
 		text += strings.Repeat(" ", max(0, w-avatarWidth-lipgloss.Width(text)))
 		if selected {
-			text = m.highlight(text, m.focus == paneChats)
+			text = m.highlightChat(text, m.focus == paneChats)
 		}
 		return avatar + text
 	}
 	lines := make([]string, 0, h)
-	for i := m.chatTop; i < len(vis) && len(lines)+chatRowHeight <= h-headerHeight; i++ {
+	// A trailing row that cannot show both its lines is left out entirely.
+	last := m.chatTop + min(len(vis)-m.chatTop, chatsThatFit(h-headerHeight)) - 1
+	for i := m.chatTop; i <= last; i++ {
 		r := renderChatRow(m.avatars, vis[i], m.unread[vis[i].ChatID], m.deps.Self, now, w, m.chatPics())
 		sel := i == m.chatIdx
 		bottom := line(r.avatarBottom, r.bottom, sel)
@@ -412,8 +449,10 @@ func (m Model) renderChats(h int) string {
 			bottom = segLine(r.avatarBottom, r.segs, sel)
 		}
 		lines = append(lines, line(r.avatarTop, r.top, sel), bottom)
+		if i < last {
+			lines = append(lines, fit("", w))
+		}
 	}
-	// A trailing row that cannot show both its lines is left out entirely.
 	for len(lines) < h-headerHeight {
 		lines = append(lines, fit("", w))
 	}
@@ -523,17 +562,34 @@ func (m Model) renderStatus() string {
 	return m.th.sel.Render(fit(" "+left+strings.Repeat(" ", gap)+right, m.width))
 }
 
-// highlight paints the selected row, brighter when its pane has focus. The
-// row carries styles of its own whose resets would end a plainly wrapped
-// background, so the background is re-asserted after each reset — after the
-// resets alone, so that a run painting its own background keeps it.
+// highlight paints the selected row, brighter when its pane has focus.
 func (m Model) highlight(line string, focused bool) string {
-	st := m.th.sel
-	if !focused {
-		st = m.th.selInact
+	if focused {
+		return paint(m.th.sel, line)
 	}
-	bg := ansi.Style{}.BackgroundColor(st.GetBackground()).String()
-	return st.Render(sgrReset.ReplaceAllStringFunc(line, func(s string) string { return s + bg }))
+	return paint(m.th.selInact, line)
+}
+
+// highlightChat paints the chat row under the cursor. A focused chats pane
+// takes the client's fixed tint rather than a shade of the terminal
+// background, so the chat being read looks the same on every palette.
+func (m Model) highlightChat(line string, focused bool) string {
+	if !focused {
+		return m.highlight(line, false)
+	}
+	return paint(stChatSel, line)
+}
+
+// paint wraps a row in st. The row carries styles of its own whose resets
+// would end a plainly wrapped colour, so st is re-asserted after each reset —
+// after the resets alone, so that a run naming its own colour keeps it.
+func paint(st lipgloss.Style, line string) string {
+	a := ansi.Style{}.BackgroundColor(st.GetBackground())
+	if fg := st.GetForeground(); fg != (lipgloss.NoColor{}) {
+		a = a.ForegroundColor(fg)
+	}
+	sgr := a.String()
+	return st.Render(sgrReset.ReplaceAllStringFunc(line, func(s string) string { return s + sgr }))
 }
 
 func truncate(s string, n int) string {

@@ -28,6 +28,19 @@ type picture struct {
 	// box. The box is rounded to the cell grid; the difference between the two
 	// is left transparent rather than stretched into.
 	w, h int
+	// chip tints the cells the picture is placed in. A terminal paints the
+	// cell background under a placement, so an emoji reads as a reaction
+	// without a second picture cut with the tint baked into it.
+	chip bool
+}
+
+// gap holds a picture's cells while it is still on its way to the terminal.
+func (p picture) gap() string {
+	s := strings.Repeat(" ", p.cols)
+	if p.chip {
+		return stChipCells.Render(s)
+	}
+	return s
 }
 
 func (p picture) key() string { return fmt.Sprintf("%s|%dx%d", p.path, p.cols, p.rows) }
@@ -152,7 +165,13 @@ func (p *pictures) cells(pic picture, row int) string {
 	if !ok {
 		return ""
 	}
-	return placeholderRow(id, row, pic.cols)
+	cells := placeholderRow(id, row, pic.cols)
+	if pic.chip {
+		// The background alone: the foreground of a placeholder cell is what
+		// names the image to the terminal.
+		return stChipCells.Render(cells)
+	}
+	return cells
 }
 
 // prepare transmits the pictures that do not have an id yet, evicting the

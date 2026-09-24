@@ -56,7 +56,7 @@ TUI 左侧会话列表按飞书桌面端的信息密度重做：头像 + 两行�
 | 自己的 | 发送失败 > 草稿 | `drafts.failed_at != 0` / `drafts.text != ''` |
 | 别人的 | @我 > 最新表情回复 | `mentions_json` 含 self open_id 且该消息未读 / `reactions_json` 最新一项 |
 
-**发件人前缀**：p2p 不显示对方名字；群聊显示 `发件人: `，该条 `sender_type = 'app'` 时名字后带 BOT 徽章（`Factory🤖: `）。最新一条是自己发的时候，两种会话都显示 `你: `。
+**发件人前缀**：p2p 不显示对方名字；群聊显示 `发件人: `，该条 `sender_type = 'app'` 时名字后带 BOT 徽章（`Factory: `）。最新一条是自己发的时候，两种会话都显示 `你: `。
 
 **摘要**：优先用 `messages.content`（lark-cli 渲染过的人读文本）压成单行；纯媒体类型或 `content` 为空时回退到 `msg_type` 占位符（`[图片]` `[文件]` `[语音]` `[卡片]` `[合并转发]`）。
 

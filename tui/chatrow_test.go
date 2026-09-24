@@ -159,10 +159,11 @@ func TestRenderChatRow_KeepsTheRightEdgeAlignedAndBothLinesInWidth(t *testing.T)
 
 func TestRenderChats_LeavesTheOddLineBlankRatherThanHalveAChat(t *testing.T) {
 	m := sized(130, 30)
-	require.Equal(t, 1, m.listHeight()%chatRowHeight, "this size is the interesting one: an odd body")
+	fit := m.chatListHeight()
+	require.Equal(t, 1, m.listHeight()-(fit*chatRowStride-chatRowGap),
+		"this size is the interesting one: one line over what the chats take")
 	out := ansi.Strip(m.renderChats(m.bodyHeight()))
 
-	fit := m.chatListHeight()
 	require.Contains(t, out, "群 0 ", "the first chat is drawn")
 	require.Contains(t, out, fmt.Sprintf("群 %d ", fit-1), "so is the last one that fits whole")
 	require.NotContains(t, out, fmt.Sprintf("群 %d ", fit), "the chat that would be halved is left out")
@@ -174,7 +175,23 @@ func TestRenderChats_LeavesTheOddLineBlankRatherThanHalveAChat(t *testing.T) {
 			blank++
 		}
 	}
-	require.Equal(t, 1, blank, "exactly the leftover line stays empty")
+	require.Equal(t, fit, blank, "one separator between each pair of chats, plus the leftover line")
+}
+
+func TestRenderChats_SeparatesEachChatFromTheNextButNotFromTheFoot(t *testing.T) {
+	m := sized(130, 29)
+	fit := m.chatListHeight()
+	require.Equal(t, 0, m.listHeight()-(fit*chatRowStride-chatRowGap),
+		"this size is the interesting one: the chats take the body exactly")
+
+	body := strings.Split(ansi.Strip(m.renderChats(m.bodyHeight())), "\n")
+	body = body[2 : len(body)-1] // past the top border and the title, short of the bottom border
+	require.Len(t, body, m.listHeight())
+	for i, l := range body {
+		blank := strings.TrimSpace(strings.Trim(l, "│")) == ""
+		require.Equal(t, i%chatRowStride == chatRowHeight, blank,
+			"line %d of the list: %q", i, l)
+	}
 }
 
 func TestRenderChats_HoldsTogetherAtTheNarrowestSupportedWidth(t *testing.T) {
@@ -272,7 +289,7 @@ func reactedP2P(keys ...string) store.Chat {
 
 func TestChatSummary_LeadsAP2PLineWithTheReactionIcons(t *testing.T) {
 	_, bottom := plainRow(reactedP2P("THUMBSUP", "HEART"), 0, 40)
-	require.True(t, strings.HasPrefix(bottom, "👍 ❤️ 你: 明天上午的排期"), "got %q", bottom)
+	require.True(t, strings.HasPrefix(bottom, chipLeft+"👍 ❤️"+chipRight+" 你: 明天上午的排期"), "got %q", bottom)
 	require.NotContains(t, bottom, "2", "in a chat of two, how many reacted says nothing")
 }
 
@@ -293,7 +310,7 @@ func TestChatSummary_DropsTheReactionsOfARecalledMessage(t *testing.T) {
 
 func TestChatSummary_ShowsNoMoreThanThreeReactions(t *testing.T) {
 	_, bottom := plainRow(reactedP2P("THUMBSUP", "HEART", "ROSE", "MUSCLE"), 0, 44)
-	require.True(t, strings.HasPrefix(bottom, "👍 ❤️ 🌹 你:"), "got %q", bottom)
+	require.True(t, strings.HasPrefix(bottom, chipLeft+"👍 ❤️ 🌹"+chipRight+" 你:"), "got %q", bottom)
 	require.NotContains(t, bottom, "💪", "past three the icons crowd out the message behind them")
 }
 
@@ -302,7 +319,7 @@ func TestChatSummary_LeavesOutAnEmojiItCanDrawNoWayAtAll(t *testing.T) {
 	// nor a picture. Its name at the head of the line would cost more room
 	// than the message it sits in front of.
 	_, bottom := plainRow(reactedP2P("OK", "THUMBSUP"), 0, 40)
-	require.True(t, strings.HasPrefix(bottom, "👍 你:"), "got %q", bottom)
+	require.True(t, strings.HasPrefix(bottom, chipLeft+"👍"+chipRight+" 你:"), "got %q", bottom)
 	require.NotContains(t, bottom, "[OK]")
 }
 
@@ -312,7 +329,8 @@ func TestChatSummary_KeepsTheBodyClearOfTheReactions(t *testing.T) {
 	c.LastContent = strings.Repeat("很长的内容", 20)
 	row := renderChatRow(textAvatars{}, c, 0, "ou_me", testNow, w, emojiPics{})
 	require.Equal(t, chatTextWidth(w), lipgloss.Width(row.bottom), "the line fills its column exactly")
-	require.True(t, strings.HasPrefix(ansi.Strip(row.bottom), "👍 ❤️ 🌹 "), "the icons are what survives, the body gives way")
+	require.True(t, strings.HasPrefix(ansi.Strip(row.bottom), chipLeft+"👍 ❤️ 🌹"+chipRight+" "),
+		"the icons are what survives, the body gives way")
 }
 
 func TestChatSummary_DrawsAReactionNoCharacterCarriesAsAPicture(t *testing.T) {
@@ -323,9 +341,11 @@ func TestChatSummary_DrawsAReactionNoCharacterCarriesAsAPicture(t *testing.T) {
 	const w = 40
 	row := renderChatRow(textAvatars{}, reactedP2P("OK"), 0, "ou_me", testNow, w, pics)
 	require.Empty(t, row.bottom, "a picture in the line is what puts it in pieces")
-	require.Positive(t, row.segs[0].pic.cols, "the icon is the client's own picture")
-	require.Equal(t, 1, row.segs[0].pic.rows, "an icon on a line of text is one row tall")
-	require.LessOrEqual(t, row.segs[0].pic.cols, chatChipCols, "narrower here than beside a message")
+	require.Equal(t, chipLeft, ansi.Strip(row.segs[0].text), "the chip opens the line")
+	require.Positive(t, row.segs[1].pic.cols, "the icon is the client's own picture")
+	require.True(t, row.segs[1].pic.chip, "the cells it sits in carry the chip's tint")
+	require.Equal(t, 1, row.segs[1].pic.rows, "an icon on a line of text is one row tall")
+	require.LessOrEqual(t, row.segs[1].pic.cols, chatChipCols, "narrower here than beside a message")
 	require.Equal(t, chatTextWidth(w), segsWidth(row.segs), "the line still fills its column exactly")
 	require.Contains(t, ansi.Strip(row.segs[len(row.segs)-1].text), "你: 明天上午的排期")
 }

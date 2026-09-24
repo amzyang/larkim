@@ -34,8 +34,9 @@ var imgRef = regexp.MustCompile(`!\[[^\]\n]*\]\((img_[A-Za-z0-9_-]+)\)|\[Image: 
 type msgRow struct {
 	text string
 	idx  int // index into the backing message slice
-	// plain marks a row that belongs to no message — a day separator — so the
-	// selection never paints it.
+	// plain marks a row that belongs to no message — a day separator, or the
+	// blank line parting one message from the next — so the selection never
+	// paints it.
 	plain bool
 	// pic is set on the rows a picture occupies, picRow being which of its
 	// rows this one is. Those rows carry an image rather than text, so they
@@ -108,6 +109,14 @@ func (p emojiPics) pic(key string, cols int) picture {
 	return p.place(emoji.Path(p.dir, key), cols, 1)
 }
 
+// chip is the same picture with the reaction's tint behind its cells, which is
+// how a reaction is told apart from a picture inside the message.
+func (p emojiPics) chip(key string, cols int) picture {
+	pic := p.pic(key, cols)
+	pic.chip = pic.cols > 0
+	return pic
+}
+
 // chatPics sizes the emoji pictures drawn inside a line of text: a chat
 // row's reactions, and the emoji the picker offers.
 func (m Model) chatPics() emojiPics {
@@ -117,10 +126,10 @@ func (m Model) chatPics() emojiPics {
 	return emojiPics{place: m.pics.place, dir: m.deps.DataDir}
 }
 
-// emojiPic is one emoji's picture beside a message, as wide as its own shape
-// asks for.
-func (st msgStyle) emojiPic(key string) picture {
-	return emojiPics{place: st.place, dir: st.emojiDir}.pic(key, emojiCols)
+// emojiChip is one reaction's picture beside a message, as wide as its own
+// shape asks for.
+func (st msgStyle) emojiChip(key string) picture {
+	return emojiPics{place: st.place, dir: st.emojiDir}.chip(key, emojiCols)
 }
 
 // inner is the width a message body has, once the gutter is taken off.
@@ -166,7 +175,7 @@ func railStyle(x store.Message, st msgStyle) lipgloss.Style {
 	state, ok := st.outbox[x.MessageID]
 	switch {
 	case !ok:
-		return stOK
+		return stSelf
 	case state == outFailed:
 		return stErr
 	default:
@@ -184,12 +193,26 @@ func unread(x store.Message, st msgStyle) bool { return st.dots[x.MessageID] }
 func renderRows(msgs []store.Message, st msgStyle) []msgRow {
 	var rows []msgRow
 	day, prev, run := "", "", -1
+	// open starts a section — a day rule, a system notice, a sender's block —
+	// holding it off whatever came before with a blank line. A day rule is a
+	// divider in its own right and heads the day below it, so the first
+	// section under one takes no blank of its own. The line belongs to the
+	// message below it, so scrolling to that message brings its own air along.
+	open := func(i int, underRule bool) {
+		if len(rows) > 0 && !underRule {
+			rows = append(rows, msgRow{idx: i, plain: true})
+		}
+	}
 	for i, x := range msgs {
-		if d := msgDay(x.CreateMs, st.now); d != day {
+		d := msgDay(x.CreateMs, st.now)
+		rule := d != day
+		if rule {
+			open(i, false)
 			day, run = d, -1
 			rows = append(rows, msgRow{text: daySeparator(d, st.width), idx: i, plain: true})
 		}
 		if x.MsgType == "system" {
+			open(i, rule)
 			rows = append(rows, systemRows(x, i, st)...)
 			prev, run = x.MessageID, -1
 			continue
@@ -197,7 +220,11 @@ func renderRows(msgs []store.Message, st msgStyle) []msgRow {
 		opensBlock := run < 0 || !mergeable(msgs[run], x, st)
 		g := gutterFor(x, st, opensBlock)
 		if opensBlock {
+			open(i, rule)
 			rows = append(rows, msgRow{text: g.take() + headLine(x, st), idx: i})
+			// The blank under the sender line keeps the gutter, so the rail
+			// runs unbroken and a selection tints the block as one shape.
+			rows = append(rows, msgRow{text: g.take(), idx: i})
 			run = i
 		}
 		if q, ok := quoteRow(x, prev, i, st, &g); ok {
@@ -275,7 +302,7 @@ func displaySender(x store.Message, self, suffix string) string {
 func headLine(x store.Message, st msgStyle) string {
 	head := displaySender(x, st.self, st.suffix[x.SenderID])
 	if x.SenderID == st.self {
-		head = stOK.Render(head)
+		head = stSelf.Render(head)
 	} else {
 		head = stBold.Render(head)
 	}
@@ -412,9 +439,10 @@ func reactors(c emoji.Chip, st msgStyle) string {
 	return who
 }
 
-// reactionChip is one emoji's standing on a message: the emoji itself, then
-// who put it there. The emoji is a Unicode character where one carries the
-// same feeling, the client's own picture where none does, and the client's
+// reactionChip is one emoji's standing on a message, drawn as the chip the
+// client puts it on: the emoji and who put it there share one tint, closed by
+// a round cap either side. The emoji is a Unicode character where one carries
+// the same feeling, the client's own picture where none does, and the client's
 // name for it where this terminal draws no pictures at all.
 //
 // The strip wraps between chips but never cuts inside one, so a chip crowded
@@ -428,17 +456,29 @@ func reactionChip(c emoji.Chip, st msgStyle) []rowSeg {
 	case e.Glyph != "":
 		label = e.Glyph
 	default:
-		if pic = st.emojiPic(e.Key); pic.cols > 0 {
+		if pic = st.emojiChip(e.Key); pic.cols > 0 {
 			label = ""
 		} else {
 			label = "[" + e.ZH + "]"
 		}
 	}
-	who := " " + reactors(c, st)
-	if pic.cols > 0 {
-		return []rowSeg{{pic: pic}, {text: stDim.Render(truncate(who, st.inner()-pic.cols))}}
+	// Nothing is spaced off the caps: a cap's flat side is the cell edge it
+	// hands over on, and a picture is drawn at its own shape inside cells
+	// rounded up to the grid, so the slack at its right edge is the only gap
+	// the chip needs. A character label does pay for the space parting it from
+	// the names, so it carries that space into the budget the names get.
+	if label != "" {
+		label += " "
 	}
-	return []rowSeg{{text: stDim.Render(truncate(label+who, st.inner()))}}
+	who := truncate(reactors(c, st), st.inner()-chipPad-pic.cols-lipgloss.Width(label))
+	if pic.cols > 0 {
+		return []rowSeg{{text: stChipEdge.Render(chipLeft)}, {pic: pic},
+			{text: stChip.Render(who) + stChipEdge.Render(chipRight)}}
+	}
+	// A chip of characters alone stays one piece, so a strip made of them is
+	// ordinary text that a selected row can still tint.
+	return []rowSeg{{text: stChipEdge.Render(chipLeft) +
+		stChip.Render(strings.TrimSpace(label+who)) + stChipEdge.Render(chipRight)}}
 }
 
 func segsWidth(segs []rowSeg) int {

@@ -32,7 +32,7 @@ func reorder(chats []store.Chat, from, to int) []store.Chat {
 
 func TestRepinChat_HoldsTheRowTheCursorSitsOn(t *testing.T) {
 	m := sized(120, 36)
-	m.chatID, m.chatIdx, m.chatTop = "oc_40", 40, 30
+	m.chatID, m.chatIdx, m.chatTop = "oc_40", 40, 34
 	row := m.chatIdx - m.chatTop
 
 	m.chats = reorder(m.chats, 40, 45)
@@ -153,11 +153,11 @@ func TestChatsLoaded_ACursorAheadOfTheOpenChatKeepsItsPlace(t *testing.T) {
 	m := sized(120, 36)
 	// A sweep down the list left the cursor far from the chat whose page is
 	// still the one on screen.
-	m.chatID, m.chatIdx, m.chatTop = "oc_1", 40, 30
+	m.chatID, m.chatIdx, m.chatTop = "oc_1", 40, 34
 
 	mm, _ := m.update(chatsLoadedMsg{chats: m.chats})
 	m = mm.(Model)
 
 	require.Equal(t, 40, m.chatIdx, "a reload belongs to the list, not to the cursor")
-	require.Equal(t, 30, m.chatTop)
+	require.Equal(t, 34, m.chatTop)
 }
