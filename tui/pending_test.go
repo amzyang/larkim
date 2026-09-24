@@ -28,3 +28,7 @@ func TestPendingSummary_IsOneLine(t *testing.T) {
 	c := store.Chat{LastMsgType: "text", LastContentRaw: `{"text":"line1\nline2"}`}
 	require.Equal(t, "line1 line2", pendingSummary(c))
 }
+
+func TestPendingText_FlattensARichTextBody(t *testing.T) {
+	require.Equal(t, "abc\ndef", pendingText("text", `{"text":"<p>abc</p><p>def</p>"}`))
+}

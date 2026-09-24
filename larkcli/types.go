@@ -96,6 +96,7 @@ type Resource struct {
 type RenderedMessage struct {
 	MessageID string          `json:"message_id"`
 	ChatID    string          `json:"chat_id"`
+	MsgType   string          `json:"msg_type"`
 	Content   string          `json:"content"`
 	Mentions  json.RawMessage `json:"mentions"`
 	Reactions json.RawMessage `json:"reactions"`

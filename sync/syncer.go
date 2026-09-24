@@ -667,7 +667,7 @@ func (s *Syncer) renderSystem(ctx context.Context, now time.Time) (int, error) {
 
 // storeRendered saves a rendered message's text, mentions and reactions.
 func (s *Syncer) storeRendered(ctx context.Context, r larkcli.RenderedMessage, now time.Time) error {
-	return s.Store.UpdateRendered(ctx, r.MessageID, r.Content, rawString(r.Mentions), rawString(r.Reactions), now.UnixMilli())
+	return s.Store.UpdateRendered(ctx, r.MessageID, renderedText(r), rawString(r.Mentions), rawString(r.Reactions), now.UnixMilli())
 }
 
 func rawString(r json.RawMessage) string {
