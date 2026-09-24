@@ -629,7 +629,7 @@ func (s *Syncer) renderSystem(ctx context.Context, now time.Time) (int, error) {
 		return 0, err
 	}
 	for i, m := range pending {
-		if err := s.Store.UpdateRendered(ctx, m.MessageID, systemText(m.ContentRaw), "", "", now.UnixMilli()); err != nil {
+		if err := s.Store.UpdateRendered(ctx, m.MessageID, systemText(m), "", "", now.UnixMilli()); err != nil {
 			return i, err
 		}
 	}

@@ -24,7 +24,7 @@ One row per chat the user is (or was) in, from `GET /im/v1/chats` with `types=p2
 | `raw_json` | the API item as received |
 | `last_message_id`, `last_message_ms` | the chat's newest main-flow message; empty and 0 when it has none |
 | `last_sender_id`, `last_sender_name`, `last_sender_type` | that message's sender |
-| `last_msg_type`, `last_content`, `last_content_raw` | that message's type and body; `last_content` is empty until `last_rendered_at` is set, and for a body that renders to nothing |
+| `last_msg_type`, `last_content`, `last_content_raw` | that message's type and body; `last_content` is empty until `last_rendered_at` is set |
 | `last_mentions_json` | that message's rendered mentions, the shape `messages.mentions_json` holds; empty until the rendering lands |
 | `last_rendered_at`, `last_deleted` | that message's rendering state and recall flag |
 | `muted`, `mute_checked_at` | the user's do-not-disturb setting and when it was last answered; 0 means it has never been asked |
@@ -49,7 +49,7 @@ One row per message id, from the raw message API (`create_ms` is millisecond pre
 | `sender_type` | `user` or `app` |
 | `sender_name` | server-provided display name; may be empty for system messages |
 | `content_raw` | `body.content` JSON string, shape depends on `msg_type` (`{"text":"…"}`, post blocks, `{"image_key":…}`, card JSON) |
-| `content` | human-readable rendering; empty until `rendered_at` is set. `system` messages are rendered in process from `content_raw`, every other type by lark-cli (`+messages-mget`) |
+| `content` | human-readable rendering; empty until `rendered_at` is set. `system` messages are rendered in process from bodies already on disk, every other type by lark-cli (`+messages-mget`) |
 | `create_ms`, `update_ms` | creation, and the last time the API's copy of the message changed for any reason |
 | `message_position` | per-chat monotonic position; negative for thread replies (the API picks the sentinel, `-3` in current data) |
 | `updated`, `deleted` | the API's own flags; `updated` also covers Feishu's post-send patches (mention resolution, link and time-phrase enrichment), so it is not an edit badge |
@@ -62,6 +62,8 @@ One row per message id, from the raw message API (`create_ms` is millisecond pre
 | `rendered_at` | 0 = rendering pending (also reset when `update_ms` changes) |
 
 A `system` message is its `template` with the values the same body carries filled in (`from_user`, `to_chatters`, `divider_text`). Feishu ships no value for the remaining slots, so `{old_group_name}`, `{count}` and the like read as `…` rather than as the placeholder.
+
+Feishu closes a call with a `system` message whose template is a single space. The API carries no text for it, so the rendering comes from the newest `video_chat` message before it in the same chat, whose `end_time` falls within five seconds of the marker's `create_ms`: `Meeting ended: 32s`, over the two largest units (`32s`, `24m28s`, `1h52m`). A p2p call leaves no `video_chat` message behind, so those read `Call ended`.
 
 Canonical ordering: `ORDER BY create_ms, message_position, id`.
 

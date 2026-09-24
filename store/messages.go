@@ -154,23 +154,31 @@ func (s *Store) UnrenderedMessageIDs(ctx context.Context, limit int) ([]string, 
 }
 
 // PendingSystemMessage is a system message awaiting its local rendering.
+// CallRaw is the body of the newest video_chat message before it in the same
+// chat, which is where Feishu leaves the length of a call that just ended.
 type PendingSystemMessage struct {
 	MessageID  string
 	ContentRaw string
+	CreateMs   int64
+	CallRaw    string
 }
 
 // UnrenderedSystemMessages returns up to limit live system messages that still
-// need rendering, newest first. Their text follows from content_raw alone, so
-// they are rendered in process rather than through lark-cli.
+// need rendering, newest first. Their text follows from bodies already on
+// disk, so they are rendered in process rather than through lark-cli.
 func (s *Store) UnrenderedSystemMessages(ctx context.Context, limit int) ([]PendingSystemMessage, error) {
 	scan := func(sc scanner) (PendingSystemMessage, error) {
 		var m PendingSystemMessage
-		err := sc.Scan(&m.MessageID, &m.ContentRaw)
+		err := sc.Scan(&m.MessageID, &m.ContentRaw, &m.CreateMs, &m.CallRaw)
 		return m, err
 	}
-	return queryAll(ctx, s.db, scan, `SELECT message_id, content_raw FROM messages
- WHERE rendered_at = 0 AND deleted = 0 AND msg_type = 'system'
- ORDER BY create_ms DESC LIMIT ?`, limit)
+	return queryAll(ctx, s.db, scan, `SELECT m.message_id, m.content_raw, m.create_ms, COALESCE((
+   SELECT v.content_raw FROM messages v
+    WHERE v.chat_id = m.chat_id AND v.msg_type = 'video_chat' AND v.create_ms <= m.create_ms
+    ORDER BY v.create_ms DESC LIMIT 1), '')
+ FROM messages m
+ WHERE m.rendered_at = 0 AND m.deleted = 0 AND m.msg_type = 'system'
+ ORDER BY m.create_ms DESC LIMIT ?`, limit)
 }
 
 // UnknownMessageIDs filters ids down to those not yet stored, preserving order.

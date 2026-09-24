@@ -359,3 +359,30 @@ func TestTick_SystemMessagesRenderInProcess(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, `A renamed the group to "…".`, m.Content)
 }
+
+func TestRenderSystem_TimesTheCallItsMarkerClosesForBothPanes(t *testing.T) {
+	s, _, clk := newSyncer(t)
+	ctx := context.Background()
+	start := clk.t.UnixMilli()
+	end := start + 32_000
+	require.NoError(t, s.Store.EnsureChat(ctx, "oc_a", start))
+	_, err := s.Store.UpsertMessages(ctx, []store.Message{
+		{MessageID: "om_call", ChatID: "oc_a", MsgType: "video_chat", CreateMs: start, UpdateMs: end,
+			MessagePosition: 1, ContentRaw: videoChatBody(start, end), RawJSON: "{}"},
+		{MessageID: "om_end", ChatID: "oc_a", MsgType: "system", CreateMs: end + 909, UpdateMs: end + 909,
+			MessagePosition: 2, ContentRaw: blankTemplate, RawJSON: "{}"},
+	}, start)
+	require.NoError(t, err)
+
+	n, err := s.renderSystem(ctx, clk.t)
+	require.NoError(t, err)
+	require.Equal(t, 1, n)
+
+	got, err := s.Store.MessagesByIDs(ctx, []string{"om_end"})
+	require.NoError(t, err)
+	require.Equal(t, "Meeting ended: 32s", got["om_end"].Content)
+
+	c, err := s.Store.GetChat(ctx, "oc_a")
+	require.NoError(t, err)
+	require.Equal(t, "Meeting ended: 32s", c.LastContent, "the chat list reads the same rendering")
+}
