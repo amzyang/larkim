@@ -1,0 +1,494 @@
+{
+ "ANGRY": [
+  "生气"
+ ],
+ "APPLAUSE": [
+  "拍手"
+ ],
+ "AWESOME": [
+  "六六六",
+  "溜"
+ ],
+ "AWESOMEN": [
+  "牛逼",
+  "牛批",
+  "nb"
+ ],
+ "Alarm": [
+  "提醒"
+ ],
+ "BEAR": [
+  "熊"
+ ],
+ "BEER": [
+  "干杯"
+ ],
+ "BETRAYED": [
+  "绿帽子",
+  "原谅"
+ ],
+ "BLACKFACE": [
+  "黑月亮"
+ ],
+ "BLUSH": [
+  "龇牙",
+  "嘿嘿"
+ ],
+ "BULL": [
+  "牛头",
+  "ox"
+ ],
+ "BubbleTea": [
+  "珍珠奶茶",
+  "boba"
+ ],
+ "CAKE": [
+  "生日",
+  "birthday"
+ ],
+ "CALF": [
+  "奶牛",
+  "cow"
+ ],
+ "CHUCKLE": [
+  "捂嘴笑"
+ ],
+ "CLEAVER": [
+  "菜刀"
+ ],
+ "COMFORT": [
+  "安慰",
+  "摸摸头"
+ ],
+ "CUCUMBER": [
+  "黄瓜"
+ ],
+ "CheckMark": [
+  "对",
+  "打勾",
+  "正确",
+  "绿勾"
+ ],
+ "ClownFace": [
+  "小丑"
+ ],
+ "CrossMark": [
+  "错",
+  "打叉",
+  "错误",
+  "红叉"
+ ],
+ "DONE": [
+  "搞定",
+  "已完成",
+  "办妥"
+ ],
+ "DULL": [
+  "猫",
+  "cat"
+ ],
+ "Drumstick": [
+  "加鸡腿"
+ ],
+ "EATING": [
+  "吃瓜",
+  "西瓜",
+  "watermelon"
+ ],
+ "EMBARRASSED": [
+  "尴尬"
+ ],
+ "EYESCLOSED": [
+  "猴子",
+  "monkey"
+ ],
+ "EatingFood": [
+  "干饭",
+  "米饭",
+  "rice"
+ ],
+ "FACEPALM": [
+  "捂脸哭",
+  "无奈"
+ ],
+ "FINGERHEART": [
+  "笔芯",
+  "爱你"
+ ],
+ "FIRECRACKER": [
+  "鞭炮"
+ ],
+ "FISTBUMP": [
+  "击拳"
+ ],
+ "FORTUNE": [
+  "发财",
+  "麻将",
+  "mahjong"
+ ],
+ "Fire": [
+  "火了",
+  "热门"
+ ],
+ "FullMoonFace": [
+  "黄月亮"
+ ],
+ "GIFT": [
+  "礼盒",
+  "present"
+ ],
+ "GLANCE": [
+  "围观",
+  "瞅",
+  "狗头",
+  "dog"
+ ],
+ "GeneralBusinessTrip": [
+  "行李箱",
+  "luggage",
+  "suitcase"
+ ],
+ "GeneralDoNotDisturb": [
+  "铃铛",
+  "静音",
+  "bell",
+  "mute"
+ ],
+ "GeneralInMeetingBusy": [
+  "日历",
+  "calendar"
+ ],
+ "GeneralMoonRest": [
+  "月亮",
+  "晚安",
+  "moon"
+ ],
+ "GeneralSun": [
+  "太阳",
+  "sun"
+ ],
+ "GeneralTravellingCar": [
+  "汽车",
+  "car"
+ ],
+ "GeneralVacation": [
+  "时钟",
+  "clock"
+ ],
+ "GeneralWorkFromHome": [
+  "房子",
+  "house",
+  "home"
+ ],
+ "Get": [
+  "收到",
+  "懂了"
+ ],
+ "GoGoGo": [
+  "冲鸭",
+  "披风",
+  "超人"
+ ],
+ "HAMMER": [
+  "锤"
+ ],
+ "HEADSET": [
+  "耳机",
+  "headphones"
+ ],
+ "HEART": [
+  "红心"
+ ],
+ "HUG": [
+  "抱抱",
+  "拥抱"
+ ],
+ "HUSKY": [
+  "二哈"
+ ],
+ "Hundred": [
+  "满分"
+ ],
+ "INNOCENTSMILE": [
+  "龅牙"
+ ],
+ "JIAYI": [
+  "加一",
+  "同意",
+  "同上"
+ ],
+ "KISS": [
+  "么么哒"
+ ],
+ "LAUGH": [
+  "哈哈",
+  "haha"
+ ],
+ "LGTM": [
+  "墨镜",
+  "sunglasses"
+ ],
+ "LIPS": [
+  "红唇"
+ ],
+ "LOL": [
+  "笑cry",
+  "破涕为笑",
+  "哭笑不得"
+ ],
+ "Lemon": [
+  "酸",
+  "柠檬精"
+ ],
+ "Loudspeaker": [
+  "通知",
+  "公告",
+  "扩音器",
+  "megaphone"
+ ],
+ "MONEY": [
+  "钱"
+ ],
+ "MUSCLE": [
+  "肌肉",
+  "奥利给"
+ ],
+ "MeMeMe": [
+  "我我我",
+  "报名"
+ ],
+ "MinusOne": [
+  "减一",
+  "反对"
+ ],
+ "MoonRabbit": [
+  "兔子",
+  "rabbit",
+  "中秋"
+ ],
+ "Mooncake": [
+  "中秋"
+ ],
+ "Movie": [
+  "场记板",
+  "clapperboard"
+ ],
+ "Music": [
+  "音符",
+  "note"
+ ],
+ "NOSEPICK": [
+  "挖鼻孔",
+  "不屑"
+ ],
+ "OK": [
+  "好的",
+  "收到",
+  "没问题"
+ ],
+ "OnIt": [
+  "处理中",
+  "在办了",
+  "进度条",
+  "loading"
+ ],
+ "OneSecond": [
+  "等一下",
+  "马上"
+ ],
+ "PARTY": [
+  "庆祝",
+  "恭喜",
+  "礼花",
+  "彩带",
+  "confetti"
+ ],
+ "PETRIFIED": [
+  "裂开",
+  "石头",
+  "stone"
+ ],
+ "POOP": [
+  "屎",
+  "粑粑"
+ ],
+ "PRAISE": [
+  "厉害"
+ ],
+ "PROUD": [
+  "墨镜",
+  "sunglasses"
+ ],
+ "PUKE": [
+  "呕吐"
+ ],
+ "Partying": [
+  "派对帽"
+ ],
+ "Pepper": [
+  "chili"
+ ],
+ "Pumpkin": [
+  "万圣节",
+  "halloween"
+ ],
+ "ROSE": [
+  "花",
+  "flower",
+  "玫瑰花"
+ ],
+ "SALUTE": [
+  "承让",
+  "佩服",
+  "敬礼"
+ ],
+ "SCOWL": [
+  "目瞪口呆"
+ ],
+ "SHAKE": [
+  "合作愉快"
+ ],
+ "SHHH": [
+  "安静"
+ ],
+ "SHOWOFF": [
+  "墨镜",
+  "sunglasses"
+ ],
+ "SICK": [
+  "生病",
+  "口罩"
+ ],
+ "SLAP": [
+  "拖鞋",
+  "slipper"
+ ],
+ "SLEEP": [
+  "睡觉"
+ ],
+ "SLIGHT": [
+  "dog"
+ ],
+ "SMIRK": [
+  "阴险"
+ ],
+ "SOB": [
+  "哭"
+ ],
+ "STRIVE": [
+  "头带"
+ ],
+ "SWEAT": [
+  "流汗"
+ ],
+ "Shrug": [
+  "摊手",
+  "无奈"
+ ],
+ "Sigh": [
+  "唉"
+ ],
+ "Soccer": [
+  "football"
+ ],
+ "StatusBus": [
+  "巴士"
+ ],
+ "StatusEnjoyLife": [
+  "沙滩",
+  "遮阳伞",
+  "度假",
+  "beach"
+ ],
+ "StatusFlashOfInspiration": [
+  "灯泡",
+  "bulb",
+  "idea"
+ ],
+ "StatusInFlight": [
+  "飞机",
+  "plane",
+  "airplane"
+ ],
+ "StatusReading": [
+  "书",
+  "book"
+ ],
+ "Status_PrivateMessage": [
+  "气泡",
+  "省略号",
+  "chat"
+ ],
+ "StickyRiceBalls": [
+  "汤圆"
+ ],
+ "THANKS": [
+  "谢谢",
+  "感谢",
+  "拜托",
+  "祈祷"
+ ],
+ "THUMBSUP": [
+  "点赞",
+  "大拇指",
+  "棒"
+ ],
+ "TOASTED": [
+  "倒霉",
+  "黑脸"
+ ],
+ "TONGUE": [
+  "柴犬",
+  "dog"
+ ],
+ "ThumbsDown": [
+  "差评",
+  "倒赞"
+ ],
+ "Trophy": [
+  "冠军",
+  "champion"
+ ],
+ "Typing": [
+  "打字",
+  "码字",
+  "keyboard"
+ ],
+ "UPPERLEFT": [
+  "手指",
+  "finger"
+ ],
+ "VRHeadset": [
+  "VR眼镜"
+ ],
+ "WAIL": [
+  "嚎啕大哭"
+ ],
+ "WAVE": [
+  "拜拜"
+ ],
+ "WHAT": [
+  "疑问",
+  "问号"
+ ],
+ "WINK": [
+  "眨眼"
+ ],
+ "WOW": [
+  "星星眼",
+  "star",
+  "惊讶"
+ ],
+ "XmasHat": [
+  "christmas"
+ ],
+ "YEAH": [
+  "胜利",
+  "剪刀手"
+ ],
+ "YouAreTheBest": [
+  "小红花",
+  "花",
+  "flower"
+ ]
+}
