@@ -25,6 +25,9 @@ type Client interface {
 	// MGetRendered fetches up to 50 messages rendered to human-readable text;
 	// with download, image/file resources are saved under the client's Dir.
 	MGetRendered(ctx context.Context, ids []string, download bool) ([]RenderedMessage, error)
+	// DownloadResource fetches one attachment by key, beside the ones
+	// MGetRendered brings down. typ is "image" or "file".
+	DownloadResource(ctx context.Context, messageID, fileKey, typ string) (Resource, error)
 	// ReactionCounts reads who reacted to each message. Every requested id gets
 	// an entry; a nil one means Feishu holds no reaction for that message.
 	ReactionCounts(ctx context.Context, messageIDs []string) (map[string]json.RawMessage, error)

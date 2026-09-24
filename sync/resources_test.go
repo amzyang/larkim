@@ -21,6 +21,11 @@ func TestExtractResources(t *testing.T) {
 	require.Len(t, rs, 2, "duplicates collapse")
 	require.Equal(t, []store.Resource{{MessageID: "om", FileKey: "v3_s", Type: "sticker"}},
 		ExtractResources("om", "sticker", `{"file_key":"v3_s"}`))
+	require.Equal(t, []store.Resource{
+		{MessageID: "om", FileKey: "file_clip", Type: "file"},
+		{MessageID: "om", FileKey: "img_cover", Type: "cover"},
+	}, ExtractResources("om", "media", `{"file_key":"file_clip","image_key":"img_cover","duration":25046}`),
+		"a video is its clip and the frame the client shows it as")
 	require.Empty(t, ExtractResources("om", "text", `not json`))
 }
 
@@ -73,6 +78,62 @@ func TestTick_DownloadsResourcesAndAppliesSizeCap(t *testing.T) {
 	m, _ := s.Store.GetMessage(ctx, "om_img")
 	require.NotZero(t, m.RenderedAt, "download step also renders")
 	require.Equal(t, 1, countCalls(f.Calls, "render:true"), "one download call covers the batch")
+}
+
+func TestTick_FetchesAVideoCoverOnItsOwn(t *testing.T) {
+	s, f, clk := newSyncer(t)
+	ctx := context.Background()
+	dir := t.TempDir()
+	s.Opt.DataDir, s.Opt.DownloadPerTick = dir, 1
+	resDir := filepath.Join(dir, "resources", "lark-im-resources")
+	require.NoError(t, os.MkdirAll(resDir, 0o755))
+	clip := filepath.Join(resDir, "file_clip.mp4")
+	cover := filepath.Join(resDir, "img_cover.png")
+	require.NoError(t, os.WriteFile(clip, []byte("clip"), 0o644))
+	require.NoError(t, os.WriteFile(cover, []byte("frame"), 0o644))
+
+	f.Chats = []larkcli.RawChat{{ChatID: "oc_a", Name: "A", ChatMode: "group"}}
+	vid := msg("om_vid", "oc_a", clk.t.Add(-time.Minute), "")
+	vid.MsgType, vid.Body.Content = "media", `{"file_key":"file_clip","image_key":"img_cover","duration":25046}`
+	f.AddMessage(vid)
+	// lark-cli's batch download extracts the clip alone, which is why the
+	// cover has to be asked for by itself.
+	f.Resources["om_vid"] = []larkcli.Resource{{MessageID: "om_vid", Key: "file_clip", Type: "file", LocalPath: clip, SizeBytes: 4}}
+	f.Singles["om_vid/img_cover"] = larkcli.Resource{LocalPath: cover, SizeBytes: 5}
+
+	rep, err := s.Tick(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 2, rep.Downloaded)
+	rs, _ := s.Store.ResourcesFor(ctx, "om_vid")
+	require.Len(t, rs, 2)
+	for _, r := range rs {
+		require.Equal(t, "done", r.Status, "key %s", r.FileKey)
+	}
+	require.Equal(t, 1, countCalls(f.Calls, "download:om_vid:img_cover"), "one call per cover, not one per tick")
+
+	_, err = s.Tick(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1, countCalls(f.Calls, "download:om_vid:img_cover"), "a cover already here is not asked for again")
+}
+
+func TestTick_ACoverFeishuRefusesStopsRetryingLikeAnyOtherResource(t *testing.T) {
+	s, f, clk := newSyncer(t)
+	ctx := context.Background()
+	s.Opt.DataDir, s.Opt.DownloadPerTick = t.TempDir(), 1
+
+	f.Chats = []larkcli.RawChat{{ChatID: "oc_a", Name: "A", ChatMode: "group"}}
+	vid := msg("om_vid", "oc_a", clk.t.Add(-time.Minute), "")
+	vid.MsgType, vid.Body.Content = "media", `{"file_key":"file_clip","image_key":"img_gone"}`
+	f.AddMessage(vid)
+
+	_, err := s.Tick(ctx)
+	require.NoError(t, err)
+	rs, _ := s.Store.ResourcesFor(ctx, "om_vid")
+	for _, r := range rs {
+		require.Equal(t, "failed", r.Status, "key %s", r.FileKey)
+		require.Equal(t, 1, r.Attempts)
+		require.Equal(t, clk.t.Add(time.Minute).UnixMilli(), r.NextAttemptAt)
+	}
 }
 
 func TestTick_PollsReadStatusOnSchedule(t *testing.T) {

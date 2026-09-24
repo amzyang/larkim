@@ -19,7 +19,11 @@ type Fake struct {
 	Rendered map[string]RenderedMessage
 	// Resources are returned by MGetRendered with download=true.
 	Resources map[string][]Resource
-	Read      map[string]bool
+	// Singles answer DownloadResource, keyed "<message id>/<file key>". A key
+	// listed nowhere is refused the way Feishu refuses one the message does
+	// not carry.
+	Singles map[string]Resource
+	Read    map[string]bool
 	// Reactions answers ReactionCounts; a message absent from it holds none.
 	Reactions map[string]json.RawMessage
 	// Reacted is what AddReaction and DeleteReaction write, keyed by message
@@ -58,6 +62,7 @@ func NewFake() *Fake {
 		Messages:  map[string]RawMessage{},
 		Rendered:  map[string]RenderedMessage{},
 		Resources: map[string][]Resource{},
+		Singles:   map[string]Resource{},
 		Read:      map[string]bool{},
 		Reactions: map[string]json.RawMessage{},
 		Reacted:   map[string][]Reaction{},
@@ -192,6 +197,20 @@ func (f *Fake) MGetRendered(_ context.Context, ids []string, download bool) ([]R
 		out = append(out, r)
 	}
 	return out, nil
+}
+
+func (f *Fake) DownloadResource(_ context.Context, messageID, fileKey, typ string) (Resource, error) {
+	if err := f.record("download:" + messageID + ":" + fileKey); err != nil {
+		return Resource{}, err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	r, ok := f.Singles[messageID+"/"+fileKey]
+	if !ok {
+		return Resource{}, &Error{ExitCode: ExitAPI, Message: "234003 File not in msg"}
+	}
+	r.MessageID, r.Key, r.Type = messageID, fileKey, typ
+	return r, nil
 }
 
 func (f *Fake) AddReaction(_ context.Context, messageID, emojiType string) (Reaction, error) {

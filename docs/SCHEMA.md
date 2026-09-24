@@ -92,11 +92,11 @@ A chat's badge counts the rows where `is_read_remote` is 0 and `local_read_at` i
 
 ## resources
 
-Attachments of a message, one row per key: an `image` or `file` body's key, the keys embedded in a rich-text post, the images an `interactive` card holds in its attachment table, and the picture a `sticker` names.
+Attachments of a message, one row per key: an `image` or `file` body's key, the clip and cover frame of a `media` body, the keys embedded in a rich-text post, the images an `interactive` card holds in its attachment table, and the picture a `sticker` names.
 
 | column | meaning |
 |---|---|
-| `type` | `image`, `file` or `sticker` |
+| `type` | `image`, `file`, `cover` (a video's frame) or `sticker` |
 | `local_path` | path relative to the data dir once `status = done`; stickers land in `resources/stickers/<file_key>`, with the extension of the picture's format appended when the bytes name one |
 | `status` | `pending`, `done`, `failed`, `skipped` (over `resources.max_bytes`) |
 | `attempts`, `next_attempt_at`, `last_error` | retry bookkeeping |

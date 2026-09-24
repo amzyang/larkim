@@ -3,6 +3,7 @@ package sync
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"maps"
 	"os"
@@ -68,8 +69,14 @@ func ExtractResources(messageID, msgType, contentRaw string) []store.Resource {
 	switch msgType {
 	case "image":
 		add(str(body["image_key"]), "image")
-	case "file", "audio", "media", "video":
+	case "file", "audio":
 		add(str(body["file_key"]), "file")
+	case "media", "video":
+		add(str(body["file_key"]), "file")
+		// The frame the client draws a video as. lark-cli's batch download
+		// extracts a media body's file_key alone, so this one is fetched by a
+		// call of its own.
+		add(str(body["image_key"]), "cover")
 	case "sticker":
 		add(str(body["file_key"]), "sticker")
 	case "post":
@@ -202,10 +209,13 @@ func (s *Syncer) downloadPending(ctx context.Context, now time.Time) (int, error
 				}
 				res, ok := got[id][p.FileKey]
 				if !ok {
-					if err := s.failResource(ctx, p, "not returned by lark-cli", now); err != nil {
-						return done, err
+					var err error
+					if res, err = s.fetchAside(ctx, p); err != nil {
+						if err := s.failResource(ctx, p, err.Error(), now); err != nil {
+							return done, err
+						}
+						continue
 					}
-					continue
 				}
 				stored, err := s.storeResource(ctx, p, res, now)
 				if err != nil {
@@ -218,6 +228,16 @@ func (s *Syncer) downloadPending(ctx context.Context, now time.Time) (int, error
 		}
 	}
 	return done, nil
+}
+
+// fetchAside downloads an attachment the batch left out. Only a video's cover
+// is expected here — lark-cli's worklist holds every other key — so anything
+// else is reported as the gap it is rather than costing a call.
+func (s *Syncer) fetchAside(ctx context.Context, p store.Resource) (larkcli.Resource, error) {
+	if p.Type != "cover" {
+		return larkcli.Resource{}, errors.New("not returned by lark-cli")
+	}
+	return s.Client.DownloadResource(ctx, p.MessageID, p.FileKey, "image")
 }
 
 // storeResource records a downloaded file; stored is false when the file was
