@@ -6,10 +6,11 @@ import (
 
 	"github.com/amzyang/larkim/store"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-// blankTemplate is how Feishu closes a call: a body whose template is one
-// space, carrying no text at all.
+// blankTemplate is a body that fills to nothing: a template of one space,
+// which so far only ever marks a call ending.
 const blankTemplate = `{"template":" ","from_user":[],"to_chatters":[],"divider_text":{}}`
 
 func videoChatBody(startMs, endMs int64) string {
@@ -20,26 +21,31 @@ func marker(contentRaw, callRaw string, createMs int64) store.PendingSystemMessa
 	return store.PendingSystemMessage{MessageID: "om_1", ContentRaw: contentRaw, CallRaw: callRaw, CreateMs: createMs}
 }
 
-func TestTemplateText_JoinsTheValuesTheBodyCarries(t *testing.T) {
+// fill renders a body the way systemText does, asserting larkim can read it.
+func fill(t *testing.T, contentRaw string) string {
+	tmpl, body, ok := systemBody(contentRaw)
+	require.True(t, ok)
+	return fillSlots(tmpl, body)
+}
+
+func TestFillSlots_JoinsTheValuesTheBodyCarries(t *testing.T) {
 	assert.Equal(t, "李明 invited 林岚, 孙琪 to the group.",
-		templateText(`{"template":"{from_user} invited {to_chatters} to the group.","from_user":["李明"],"to_chatters":["林岚","孙琪"],"divider_text":{}}`))
+		fill(t, `{"template":"{from_user} invited {to_chatters} to the group.","from_user":["李明"],"to_chatters":["林岚","孙琪"],"divider_text":{}}`))
 	assert.Equal(t, "2026年1月1日",
-		templateText(`{"template":"{divider_text}","divider_text":{"text":"2026年1月1日"}}`))
+		fill(t, `{"template":"{divider_text}","divider_text":{"text":"2026年1月1日"}}`))
 }
 
-func TestTemplateText_UnfillableSlotReadsAsAnEllipsis(t *testing.T) {
+func TestFillSlots_UnfillableSlotReadsAsAnEllipsis(t *testing.T) {
 	assert.Equal(t, `何静 updated the group name from "…" to "…".`,
-		templateText(`{"template":"{from_user} updated the group name from \"{old_group_name}\" to \"{group_name}\".","from_user":["何静"],"to_chatters":[],"divider_text":{}}`))
+		fill(t, `{"template":"{from_user} updated the group name from \"{old_group_name}\" to \"{group_name}\".","from_user":["何静"],"to_chatters":[],"divider_text":{}}`))
 	assert.Equal(t, "段明轩 invited … to the group.",
-		templateText(`{"template":"{from_user} invited {to_chatters} to the group.","from_user":["段明轩"],"to_chatters":[]}`))
+		fill(t, `{"template":"{from_user} invited {to_chatters} to the group.","from_user":["段明轩"],"to_chatters":[]}`))
 	assert.Equal(t, "… 同步了 … 条消息到本群组",
-		templateText(`{"template":"{} 同步了 {count} 条消息到本群组"}`))
+		fill(t, `{"template":"{} 同步了 {count} 条消息到本群组"}`))
 }
 
-func TestTemplateText_NothingToSayRendersEmpty(t *testing.T) {
-	assert.Empty(t, templateText(blankTemplate))
-	assert.Empty(t, templateText(`{"from_user":["何静"]}`))
-	assert.Empty(t, templateText(`not json`))
+func TestFillSlots_ABlankTemplateFillsToNothing(t *testing.T) {
+	assert.Empty(t, fill(t, blankTemplate))
 }
 
 func TestSystemText_KeepsAMessageThatSpeaksForItself(t *testing.T) {
@@ -68,6 +74,14 @@ func TestSystemText_IgnoresACallThatIsNotTheOneClosing(t *testing.T) {
 	assert.Equal(t, "Call ended", systemText(marker(blankTemplate, videoChatBody(1_000, 33_000), 32_000)))
 	assert.Equal(t, "Meeting ended: 32s", systemText(marker(blankTemplate, videoChatBody(1_000, 33_000), 33_000)),
 		"a marker stamped on the very millisecond still closes the call")
+}
+
+func TestSystemText_StaysSilentOnABodyItCannotRead(t *testing.T) {
+	// Only a template that is present and blank marks a call ending. A body
+	// larkim cannot read says nothing, and must not be guessed into one.
+	assert.Empty(t, systemText(marker(`not json`, "", 33_909)))
+	assert.Empty(t, systemText(marker(`{"from_user":["何静"]}`, "", 33_909)))
+	assert.Empty(t, systemText(marker(`{"template":42}`, videoChatBody(1_000, 33_000), 33_909)))
 }
 
 func TestCallLength_ShowsTheTwoUnitsThatMatter(t *testing.T) {

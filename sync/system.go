@@ -25,12 +25,17 @@ const unresolvedSlot = "…"
 const callEndWindowMs = 5_000
 
 // systemText renders a system message from the bodies larkim already stores,
-// so this msg_type needs no render call. Feishu closes a call with a template
-// that is a single space: the text is nowhere in the API, and the client
-// reads the length off the video_chat message the call left behind. A p2p
-// call leaves none, so there only the fact that it ended can be told.
+// so this msg_type needs no render call. A blank template carries no text
+// anywhere in the API — the client fills it from state of its own — and every
+// blank one seen so far closes a call, which the video_chat message the call
+// left behind can date. A p2p call leaves none, so there only the fact that a
+// call ended can be told, and that much is inferred rather than read.
 func systemText(m store.PendingSystemMessage) string {
-	if text := templateText(m.ContentRaw); text != "" {
+	tmpl, body, ok := systemBody(m.ContentRaw)
+	if !ok {
+		return ""
+	}
+	if text := fillSlots(tmpl, body); text != "" {
 		return text
 	}
 	if ms, ok := callSpan(m.CallRaw, m.CreateMs); ok {
@@ -39,13 +44,20 @@ func systemText(m store.PendingSystemMessage) string {
 	return "Call ended"
 }
 
-// templateText fills the template's slots from the rest of the body.
-func templateText(contentRaw string) string {
+// systemBody splits a body into its template and the values that fill it,
+// reporting whether larkim can read it at all. A body carrying no template is
+// a shape this renderer has never seen, not a blank marker.
+func systemBody(contentRaw string) (string, map[string]any, bool) {
 	var body map[string]any
 	if err := json.Unmarshal([]byte(contentRaw), &body); err != nil {
-		return ""
+		return "", nil, false
 	}
-	tmpl, _ := body["template"].(string)
+	tmpl, ok := body["template"].(string)
+	return tmpl, body, ok
+}
+
+// fillSlots fills the template's slots from the rest of the body.
+func fillSlots(tmpl string, body map[string]any) string {
 	return strings.TrimSpace(systemSlotRe.ReplaceAllStringFunc(tmpl, func(slot string) string {
 		if v := systemSlot(body[slot[1:len(slot)-1]]); v != "" {
 			return v
