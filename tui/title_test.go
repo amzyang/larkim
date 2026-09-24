@@ -20,8 +20,8 @@ func TestWindowTitle_PlainBeforeTheChatsLoad(t *testing.T) {
 func TestWindowTitle_LeadsWithTheCount(t *testing.T) {
 	chats, unread := headChats("uuu")
 	unread["a"] = 5
-	require.Equal(t, "(3) larkim", windowTitle(chats, unread),
-		"three chats are waiting, not seven messages")
+	require.Equal(t, "(7) larkim", windowTitle(chats, unread),
+		"seven messages are waiting, spread over three chats")
 }
 
 func TestWindowTitle_LeavesMutedChatsOut(t *testing.T) {

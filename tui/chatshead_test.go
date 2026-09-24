@@ -30,32 +30,34 @@ func head(t *testing.T, chats []store.Chat, unread map[string]int64, filter stri
 	return ansi.Strip(line)
 }
 
-func TestUnreadChats_CountsChatsNotMessages(t *testing.T) {
+func TestUnreadMessages_SumsAcrossChats(t *testing.T) {
 	chats, unread := headChats("uu")
 	unread["a"], unread["b"] = 5, 7
-	n, muted := unreadChats(chats, unread)
-	require.EqualValues(t, 2, n, "two chats are waiting, not twelve messages")
+	n, muted := unreadMessages(chats, unread)
+	require.EqualValues(t, 12, n, "twelve messages are waiting, spread over two chats")
 	require.False(t, muted)
 }
 
-func TestUnreadChats_MutedOnesOnlyRaiseTheDot(t *testing.T) {
+func TestUnreadMessages_MutedOnesOnlyRaiseTheDot(t *testing.T) {
 	chats, unread := headChats("mmu")
-	n, muted := unreadChats(chats, unread)
-	require.EqualValues(t, 1, n, "only the unmuted chat is counted")
+	unread["a"], unread["c"] = 9, 4
+	n, muted := unreadMessages(chats, unread)
+	require.EqualValues(t, 4, n, "only the unmuted chat's messages are counted")
 	require.True(t, muted)
 }
 
-func TestUnreadChats_ReadChatsCountForNeither(t *testing.T) {
+func TestUnreadMessages_ReadChatsCountForNeither(t *testing.T) {
 	chats, unread := headChats("um")
 	unread["a"], unread["b"] = 0, 0
-	n, muted := unreadChats(chats, unread)
+	n, muted := unreadMessages(chats, unread)
 	require.Zero(t, n)
 	require.False(t, muted, "a muted chat with nothing waiting raises no dot")
 }
 
 func TestChatsHeader_RaisesTheCount(t *testing.T) {
 	chats, unread := headChats("uuu")
-	require.Contains(t, head(t, chats, unread, "", 36), "Chats³")
+	unread["a"] = 3
+	require.Contains(t, head(t, chats, unread, "", 36), "Chats⁵")
 }
 
 func TestChatsHeader_CapsAt99Plus(t *testing.T) {

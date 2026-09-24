@@ -264,11 +264,11 @@ func padBetween(left, right string, w int) string {
 }
 
 // chatsHeader is the list's title row: the pane's name carrying the number of
-// chats waiting, and, at the far right, the dot that says the do-not-disturb
-// ones have something too. The dot sits in the column every row's mute mark
+// messages waiting, and, at the far right, the dot that says the
+// do-not-disturb chats have something too. The dot sits in the column every row's mute mark
 // is right-aligned to, so the setting reads down a single column.
 func chatsHeader(chats []store.Chat, unread map[string]int64, filter string, w int) string {
-	n, muted := unreadChats(chats, unread)
+	n, muted := unreadMessages(chats, unread)
 	count, dot := "", ""
 	if label := badgeLabel(n); label != "" {
 		count = stUnread.Render(superscript(label))
@@ -290,19 +290,20 @@ func chatsHeader(chats []store.Chat, unread map[string]int64, filter string, w i
 	return padBetween(stBold.Render(truncate(title, room))+count, dot, w)
 }
 
-// unreadChats counts the chats waiting for an answer and reports whether any
-// on do-not-disturb is among them. Muted chats stay out of the count: the
-// reader asked not to be counted at for them, and the dot is all the header
-// says about them. The filter is not applied — hiding rows is a lens on the
-// list, not a change to what is waiting.
-func unreadChats(chats []store.Chat, unread map[string]int64) (n int64, muted bool) {
+// unreadMessages sums the messages waiting for an answer and reports whether
+// any chat on do-not-disturb is among them. The sum is what the avatar badges
+// add up to, so the header and the rows below it state the same quantity.
+// Muted chats stay out of it: the reader asked not to be counted at for them,
+// and the dot is all the header says about them. The filter is not applied —
+// hiding rows is a lens on the list, not a change to what is waiting.
+func unreadMessages(chats []store.Chat, unread map[string]int64) (n int64, muted bool) {
 	for _, c := range chats {
 		switch {
 		case unread[c.ChatID] <= 0:
 		case c.Muted:
 			muted = true
 		default:
-			n++
+			n += unread[c.ChatID]
 		}
 	}
 	return n, muted

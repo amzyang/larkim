@@ -8,7 +8,7 @@ import "github.com/amzyang/larkim/store"
 // crowded one drops. Muted chats stay out: the pane header says they have
 // something, but a tab-bar marker is the pull that muting asked not to happen.
 func windowTitle(chats []store.Chat, unread map[string]int64) string {
-	n, _ := unreadChats(chats, unread)
+	n, _ := unreadMessages(chats, unread)
 	if label := badgeLabel(n); label != "" {
 		return "(" + label + ") larkim"
 	}
