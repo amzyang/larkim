@@ -119,3 +119,10 @@ func TestSetContactDetails_KeepsAnEmailTheLookupOmits(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, found, 1, "and the contact stays findable by it")
 }
+
+func TestContactAvatarFile_HoldsBackTheSentinels(t *testing.T) {
+	require.Equal(t, "users/ou_a.png", Contact{AvatarPath: "users/ou_a.png"}.AvatarFile())
+	require.Empty(t, Contact{AvatarPath: AvatarNone}.AvatarFile(), "a contact known to have no picture")
+	require.Empty(t, Contact{AvatarPath: AvatarFailed}.AvatarFile(), "a download that gave up")
+	require.Empty(t, Contact{}.AvatarFile())
+}

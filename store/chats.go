@@ -76,14 +76,10 @@ func (c Chat) PeerSuffix() string { return AccountSuffix(c.PeerAccount) }
 // group, the peer's for p2p. Empty when there is none to draw, including the
 // sentinels for "no avatar" and "download gave up".
 func (c Chat) AvatarFile() string {
-	p := c.AvatarPath
 	if c.ChatMode == "p2p" {
-		p = c.PeerAvatarPath
+		return avatarFile(c.PeerAvatarPath)
 	}
-	if p == AvatarNone || p == AvatarFailed {
-		return ""
-	}
-	return p
+	return avatarFile(c.AvatarPath)
 }
 
 // chatColumns selects from `chats c`; the derived columns are named so

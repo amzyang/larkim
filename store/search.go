@@ -138,6 +138,15 @@ const (
 	AvatarFailed = "-"
 )
 
+// avatarFile is a stored avatar path with the sentinels taken out, leaving
+// only a path there is a picture behind.
+func avatarFile(path string) string {
+	if path == AvatarNone || path == AvatarFailed {
+		return ""
+	}
+	return path
+}
+
 // AvatarsToDownload lists chats and contacts whose avatar URL has no local copy yet.
 func (s *Store) AvatarsToDownload(ctx context.Context, limit int) (chats []Chat, contacts []Contact, err error) {
 	chats, err = s.queryChats(ctx, `WHERE c.avatar_url NOT IN ('', 'none') AND c.avatar_path = '' AND c.left_at = 0 ORDER BY c.last_message_ms DESC LIMIT ?`, limit)

@@ -24,6 +24,11 @@ type Contact struct {
 	RawJSON         string `json:"-"`
 }
 
+// AvatarFile is the contact's picture relative to the data dir. Empty when
+// there is none to draw, including the sentinels for "no avatar" and
+// "download gave up".
+func (c Contact) AvatarFile() string { return avatarFile(c.AvatarPath) }
+
 const contactColumns = `open_id, name, email, enterprise_email, department, is_cross_tenant, is_bot, p2p_chat_id, avatar_url, avatar_path, detail_checked_at, updated_at, raw_json`
 
 // contactUpsertColumns is contactColumns without the ones only the detail
