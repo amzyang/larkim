@@ -202,12 +202,13 @@ func senderLabel(x store.Message, suffix string) string {
 }
 
 // displaySender names a sender on a list: the reader reads as 你, the way the
-// chat list already names them.
+// chat list already names them, and an app carries the badge that says the
+// turn is a machine's.
 func displaySender(x store.Message, self, suffix string) string {
 	if x.SenderID == self {
 		return "你"
 	}
-	return senderLabel(x, suffix)
+	return senderLabel(x, suffix) + botMark(x.SenderType)
 }
 
 // headLine opens a block: who spoke, and the badges belonging to the message

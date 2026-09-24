@@ -110,7 +110,7 @@ func TestRenderChatRow_AppendsTheAccountSuffix(t *testing.T) {
 	require.NotContains(t, top, "(", "an account with no number is not a disambiguator")
 }
 
-func TestRenderChatRow_BotBadgeFollowsTheChatKind(t *testing.T) {
+func TestRenderChatRow_TitleBadgesOnlyABotPeer(t *testing.T) {
 	bot := store.Chat{ChatID: "oc_1", Name: "监控告警", ChatMode: "p2p", P2PTargetType: "bot"}
 	top, _ := plainRow(bot, 0, 31)
 	require.Contains(t, top, botBadge)
@@ -119,9 +119,21 @@ func TestRenderChatRow_BotBadgeFollowsTheChatKind(t *testing.T) {
 	top, _ = plainRow(person, 0, 31)
 	require.NotContains(t, top, botBadge)
 
-	group := store.Chat{ChatID: "oc_3", Name: "流程中心", ChatMode: "group", LastSenderType: "app"}
-	top, _ = plainRow(group, 0, 31)
-	require.Contains(t, top, botBadge, "a group is flagged by whoever spoke last")
+	group := store.Chat{ChatID: "oc_3", Name: "流程中心", ChatMode: "group", LastSenderType: "app",
+		LastMessageID: "om_1", LastMessageMs: at(-time.Hour), LastSenderID: "ou_bot",
+		LastSenderName: "Factory", LastContent: "任务执行日报", LastRenderedAt: 1}
+	top, bottom := plainRow(group, 0, 31)
+	require.NotContains(t, top, botBadge, "a group holds whoever its members invite")
+	require.Contains(t, bottom, "Factory"+botBadge+": ", "the turn it quotes is the machine's")
+}
+
+func TestChatSummary_LeavesAHumanTurnUnbadged(t *testing.T) {
+	group := store.Chat{ChatID: "oc_1", Name: "流程中心", ChatMode: "group", LastSenderType: "user",
+		LastMessageID: "om_1", LastMessageMs: at(-time.Hour), LastSenderID: "ou_them",
+		LastSenderName: "周舟", LastContent: "收到", LastRenderedAt: 1}
+	_, bottom := plainRow(group, 0, 31)
+	require.Contains(t, bottom, "周舟: ")
+	require.NotContains(t, bottom, botBadge)
 }
 
 func TestRenderChatRow_KeepsTheRightEdgeAlignedAndBothLinesInWidth(t *testing.T) {

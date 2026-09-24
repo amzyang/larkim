@@ -28,9 +28,20 @@ type chatRow struct {
 // chatTextWidth is how much of a w-wide pane the text half of a row gets.
 func chatTextWidth(w int) int { return max(minTitleWidth, w-avatarWidth-avatarGap) }
 
-// botBadge marks a chat whose other side is a machine. The glyph is
-// double-width, which is a column cheaper than spelling it out.
+// botBadge marks a machine: the peer a p2p chat's title names, or a speaker
+// named anywhere a turn is quoted. The glyph is double-width, which is a
+// column cheaper than spelling it out.
 const botBadge = "🤖"
+
+// botMark badges a speaker whose turn came from an app. It rides the name
+// rather than a chat's title because it states what one message is, not what
+// the chat is: the next human turn takes it away again.
+func botMark(senderType string) string {
+	if senderType != "app" {
+		return ""
+	}
+	return botBadge
+}
 
 // muteGlyph is the crossed-out bell, from the Nerd Font the terminal maps the
 // private use area to. Unlike the emoji bell it takes the colour it is given,
@@ -129,14 +140,10 @@ func chatTitle(c store.Chat) (name, suffix string) {
 	return name, c.PeerSuffix()
 }
 
-// isBotChat reports whether the BOT badge applies: for a p2p chat that is a
-// property of the peer, for a group it follows whoever spoke last.
-func isBotChat(c store.Chat) bool {
-	if c.ChatMode == "p2p" {
-		return c.P2PTargetType == "bot"
-	}
-	return c.LastSenderType == "app"
-}
+// isBotChat reports whether the title carries the badge. Only a p2p peer is a
+// property of the chat itself; a group holds whoever its members invite, so a
+// bot's turn there is marked on the summary line that quotes it.
+func isBotChat(c store.Chat) bool { return c.P2PTargetType == "bot" }
 
 // chatSummary is the second line's text: who said what, or why there is
 // nothing to show.
@@ -172,7 +179,7 @@ func chatSummary(c store.Chat, self string) string {
 	case c.LastSenderID == self:
 		prefix = "你: "
 	case c.ChatMode != "p2p":
-		prefix = sender + ": "
+		prefix = sender + botMark(c.LastSenderType) + ": "
 	}
 	// The line is dim as a whole, so an @ that reaches the reader is the one
 	// thing on it that still carries a colour.

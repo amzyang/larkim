@@ -243,6 +243,16 @@ func TestBodyRows_CardPictureStandsInInsideTheFrame(t *testing.T) {
 	require.NotContains(t, out, "img_key:")
 }
 
+func TestHeadLine_BadgesAnAppsTurn(t *testing.T) {
+	st := msgStyle{width: 60, self: "ou_me", now: testNow}
+
+	bot := store.Message{MessageID: "om_1", SenderID: "ou_bot", SenderName: "Factory", SenderType: "app"}
+	require.Contains(t, ansi.Strip(headLine(bot, st)), "Factory"+botBadge)
+
+	human := store.Message{MessageID: "om_2", SenderID: "ou_them", SenderName: "周舟", SenderType: "user"}
+	require.NotContains(t, ansi.Strip(headLine(human, st)), botBadge)
+}
+
 func TestHeadLine_MarksAMessageOnItsWayAndOneThatFailed(t *testing.T) {
 	pending := store.Message{MessageID: "local-1", SenderID: "ou_me", SenderName: "林岚"}
 	st := msgStyle{width: 60, self: "ou_me", now: testNow,
