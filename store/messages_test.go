@@ -76,3 +76,49 @@ func TestMessagesByIDs_SkipsWhatTheStoreNeverSaw(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, empty)
 }
+
+func TestUpdateReactions_LeavesTheRenderingAlone(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+	_, err := s.UpsertMessages(ctx, []Message{
+		{MessageID: "om_a", ChatID: "oc", MsgType: "text", CreateMs: 10, ContentRaw: `{"text":"hi"}`, RawJSON: "{}"},
+	}, 1)
+	require.NoError(t, err)
+	require.NoError(t, s.UpdateRendered(ctx, "om_a", "hi", `[{"id":"ou_a"}]`, "", 2))
+
+	const block = `{"counts":[{"reaction_type":"OK","count":"1"}]}`
+	require.NoError(t, s.UpdateReactions(ctx, "om_a", block))
+
+	got, err := s.GetMessage(ctx, "om_a")
+	require.NoError(t, err)
+	require.Equal(t, block, got.ReactionsJSON)
+	require.Equal(t, "hi", got.Content, "the body is not re-rendered")
+	require.Equal(t, `[{"id":"ou_a"}]`, got.MentionsJSON)
+	require.EqualValues(t, 2, got.RenderedAt, "the message does not go back into the render queue")
+}
+
+func TestUpdateReactions_DoesNotAdvanceTheRevisionForAnUnchangedSummary(t *testing.T) {
+	// Every open pane reloads on a revision bump, and a chat is re-asked about
+	// on every visit, so re-stating what the row already holds must be silent.
+	s := openTest(t)
+	ctx := context.Background()
+	_, err := s.UpsertMessages(ctx, []Message{
+		{MessageID: "om_a", ChatID: "oc", MsgType: "text", CreateMs: 10, RawJSON: "{}"},
+	}, 1)
+	require.NoError(t, err)
+
+	const block = `{"counts":[{"reaction_type":"OK","count":"1"}]}`
+	require.NoError(t, s.UpdateReactions(ctx, "om_a", block))
+	changed, err := s.DataRev(ctx)
+	require.NoError(t, err)
+
+	require.NoError(t, s.UpdateReactions(ctx, "om_a", block))
+	again, err := s.DataRev(ctx)
+	require.NoError(t, err)
+	require.Equal(t, changed, again, "the same summary written twice moves nothing")
+
+	require.NoError(t, s.UpdateReactions(ctx, "om_a", ""))
+	cleared, err := s.DataRev(ctx)
+	require.NoError(t, err)
+	require.Greater(t, cleared, again, "a reaction taken back is a change the panes must see")
+}

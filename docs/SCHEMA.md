@@ -57,13 +57,16 @@ One row per message id, from the raw message API (`create_ms` is millisecond pre
 | `deleted_seen_at` | when the recall was first observed; `content_raw` keeps the last known body |
 | `thread_id` | `omt_…` for thread roots and replies |
 | `reply_to` | parent message of a direct reply |
-| `mentions_json`, `reactions_json` | rendered mentions `[{key,id,name}]` and reaction summary |
+| `mentions_json` | rendered mentions, `[{key,id,name}]` |
+| `reactions_json` | reaction summary, `{counts:[{reaction_type,count}], details:[{emoji_type,operator:{operator_id,operator_type},…}]}`; empty when the message carries none. `count` is a **string**. `counts` is the server's total; `details` is one page of the individual reactions, so it may not name every reactor |
 | `raw_json` | the API item as received |
 | `rendered_at` | 0 = rendering pending (also reset when `update_ms` changes) |
 
 A `system` message is its `template` with the values the same body carries filled in (`from_user`, `to_chatters`, `divider_text`). Feishu ships no value for the remaining slots, so `{old_group_name}`, `{count}` and the like read as `…` rather than as the placeholder.
 
 Feishu closes a call with a `system` message whose template is a single space. The API carries no text for it, so the rendering comes from the newest `video_chat` message before it in the same chat, whose `end_time` falls within five seconds of the marker's `create_ms`: `Meeting ended: 32s`, over the two largest units (`32s`, `24m28s`, `1h52m`). A p2p call leaves no `video_chat` message behind, so those read `Call ended`.
+
+`reactions_json` is the one column that keeps changing after a message is rendered, and it does not ride the rendering pass: Feishu leaves `update_ms` alone when somebody reacts, so `rendered_at` is never reset and the renderer never comes back. It is refreshed on its own, for the newest 20 messages of a chat, when that chat is opened in the TUI — at most once every 30 seconds per chat. A message further back than that keeps whatever summary its rendering left, so a consumer that needs current reactions must ask Feishu itself rather than trust an old row.
 
 Canonical ordering: `ORDER BY create_ms, message_position, id`.
 

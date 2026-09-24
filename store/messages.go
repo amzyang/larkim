@@ -142,6 +142,23 @@ func (s *Store) UpdateRendered(ctx context.Context, messageID, content, mentions
 	return tx.Commit()
 }
 
+// UpdateReactions stores a message's reaction summary on its own. Reactions
+// are the one part of a message that keeps changing after it is rendered —
+// Feishu does not move update_time when somebody reacts, so the rendering
+// pass never comes back for them — and this is the write that keeps them
+// current. It deliberately leaves rendered_at and content alone: the FTS
+// triggers watch content, so a reaction never churns the index, while the
+// data revision trigger fires all the same and the panes reload.
+//
+// An unchanged summary is not written at all: the revision trigger counts
+// every UPDATE, value changed or not, and a refresh that re-states what the
+// row already holds would have every open pane reload for nothing.
+func (s *Store) UpdateReactions(ctx context.Context, messageID, reactionsJSON string) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE messages SET reactions_json = ? WHERE message_id = ? AND reactions_json <> ?`,
+		reactionsJSON, messageID, reactionsJSON)
+	return err
+}
+
 // UnrenderedMessageIDs returns up to limit live message ids that still need
 // rendering, newest first. Messages with attachments still to download are
 // left out: the download step renders them in the same lark-cli call. System

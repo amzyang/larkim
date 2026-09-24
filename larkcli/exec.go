@@ -446,6 +446,145 @@ func (c *ExecClient) MuteStatus(ctx context.Context, chatIDs []string) (map[stri
 	return muted, unknown, nil
 }
 
+// MaxMessageIDsPerReactionCall is the upstream cap on one reaction lookup.
+const MaxMessageIDsPerReactionCall = 20
+
+// reactionsPerMessage is how many individual reactions one message's answer
+// carries. Ten is the server's ceiling — eleven is rejected outright — and it
+// is why the totals are read off the counts rather than counted here: a
+// popular message has more reactors than one page names.
+const reactionsPerMessage = 10
+
+// ReactionCounts asks Feishu who reacted to each message. Every requested id
+// gets an entry: a message whose reactions were all taken back answers with
+// nothing, and the caller has to clear the summary it holds rather than keep
+// showing one Feishu no longer has.
+//
+// The result is the same `{counts, details}` block the message-pulling
+// shortcuts attach, so the store keeps one shape and every reader one decoder.
+// The individual reactions are passed through as they came, because Feishu
+// carries the reaction id there and only there.
+func (c *ExecClient) ReactionCounts(ctx context.Context, messageIDs []string) (map[string]json.RawMessage, error) {
+	out := make(map[string]json.RawMessage, len(messageIDs))
+	for _, id := range messageIDs {
+		out[id] = nil
+	}
+	for start := 0; start < len(messageIDs); start += MaxMessageIDsPerReactionCall {
+		batch := messageIDs[start:min(start+MaxMessageIDsPerReactionCall, len(messageIDs))]
+		queries := make([]map[string]string, 0, len(batch))
+		for _, id := range batch {
+			queries = append(queries, map[string]string{"message_id": id})
+		}
+		data, err := c.run(ctx, "api", "POST", "/open-apis/im/v1/messages/reactions/batch_query",
+			"--data", jsonArg(map[string]any{"queries": queries, "page_size_per_message": reactionsPerMessage}))
+		if err != nil {
+			return nil, err
+		}
+		var resp struct {
+			Counts []struct {
+				MessageID string            `json:"message_id"`
+				Items     []json.RawMessage `json:"reaction_count"`
+			} `json:"success_msg_reaction_counts"`
+			Details []struct {
+				MessageID string            `json:"message_id"`
+				Items     []json.RawMessage `json:"message_reaction_items"`
+			} `json:"success_msg_reaction_details"`
+		}
+		if err := json.Unmarshal(data, &resp); err != nil {
+			return nil, fmt.Errorf("decode reactions: %w", err)
+		}
+		details := make(map[string][]json.RawMessage, len(resp.Details))
+		for _, d := range resp.Details {
+			details[d.MessageID] = d.Items
+		}
+		for _, c := range resp.Counts {
+			if len(c.Items) == 0 {
+				continue
+			}
+			block, err := json.Marshal(map[string]any{"counts": c.Items, "details": details[c.MessageID]})
+			if err != nil {
+				return nil, err
+			}
+			out[c.MessageID] = block
+		}
+	}
+	return out, nil
+}
+
+// Reaction is one person's reaction to one message. ReactionID is the only
+// handle that deletes it, and Feishu hands it out nowhere but reactions.list —
+// the block the message-pulling shortcuts attach leaves it out.
+type Reaction struct {
+	ReactionID string `json:"reaction_id"`
+	EmojiType  string `json:"emoji_type"`
+	OperatorID string `json:"operator_id"`
+}
+
+// AddReaction puts one emoji on a message under the user's own name. Feishu
+// validates nothing here: an emoji_type it does not know is stored all the
+// same, as a reaction nobody's client can draw, so the caller must offer only
+// emoji the client itself ships.
+func (c *ExecClient) AddReaction(ctx context.Context, messageID, emojiType string) (Reaction, error) {
+	data, err := c.run(ctx, "api", "POST", "/open-apis/im/v1/messages/"+messageID+"/reactions",
+		"--data", jsonArg(map[string]any{"reaction_type": map[string]string{"emoji_type": emojiType}}))
+	if err != nil {
+		return Reaction{}, err
+	}
+	var resp struct {
+		ReactionID   string `json:"reaction_id"`
+		ReactionType struct {
+			EmojiType string `json:"emoji_type"`
+		} `json:"reaction_type"`
+		Operator struct {
+			OperatorID string `json:"operator_id"`
+		} `json:"operator"`
+	}
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return Reaction{}, fmt.Errorf("decode reaction: %w", err)
+	}
+	return Reaction{ReactionID: resp.ReactionID, EmojiType: resp.ReactionType.EmojiType,
+		OperatorID: resp.Operator.OperatorID}, nil
+}
+
+// ListReactions lists who reacted to a message with one emoji. It exists for
+// the sake of taking a reaction back: the delete needs a reaction id, and this
+// is the only call that gives one for a reaction this process did not make.
+func (c *ExecClient) ListReactions(ctx context.Context, messageID, emojiType string) ([]Reaction, error) {
+	data, err := c.run(ctx, "im", "reactions", "list", "--message-id", messageID,
+		"--reaction-type", emojiType, "--page-size", "50")
+	if err != nil {
+		return nil, err
+	}
+	var resp struct {
+		Items []struct {
+			ReactionID   string `json:"reaction_id"`
+			ReactionType struct {
+				EmojiType string `json:"emoji_type"`
+			} `json:"reaction_type"`
+			Operator struct {
+				OperatorID string `json:"operator_id"`
+			} `json:"operator"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return nil, fmt.Errorf("decode reactions: %w", err)
+	}
+	out := make([]Reaction, 0, len(resp.Items))
+	for _, it := range resp.Items {
+		out = append(out, Reaction{ReactionID: it.ReactionID, EmojiType: it.ReactionType.EmojiType,
+			OperatorID: it.Operator.OperatorID})
+	}
+	return out, nil
+}
+
+// DeleteReaction takes one reaction back. Feishu only lets an identity delete
+// what it added, so a reaction id belonging to somebody else fails here rather
+// than removing their reaction.
+func (c *ExecClient) DeleteReaction(ctx context.Context, messageID, reactionID string) error {
+	_, err := c.run(ctx, "api", "DELETE", "/open-apis/im/v1/messages/"+messageID+"/reactions/"+reactionID)
+	return err
+}
+
 // MaxUserIDsPerSearch is how many ids one `+search-user --user-ids` call
 // resolves. The flag accepts 100, but the server answers at most this many and
 // sets has_more, and the shortcut has no pagination.

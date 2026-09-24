@@ -2,6 +2,7 @@ package larkcli
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 )
@@ -24,6 +25,16 @@ type Client interface {
 	// MGetRendered fetches up to 50 messages rendered to human-readable text;
 	// with download, image/file resources are saved under the client's Dir.
 	MGetRendered(ctx context.Context, ids []string, download bool) ([]RenderedMessage, error)
+	// ReactionCounts reads who reacted to each message. Every requested id gets
+	// an entry; a nil one means Feishu holds no reaction for that message.
+	ReactionCounts(ctx context.Context, messageIDs []string) (map[string]json.RawMessage, error)
+	// AddReaction puts one emoji on a message under the user's own name.
+	AddReaction(ctx context.Context, messageID, emojiType string) (Reaction, error)
+	// ListReactions lists who reacted to a message with one emoji, which is
+	// the only way to learn the reaction id a delete needs.
+	ListReactions(ctx context.Context, messageID, emojiType string) ([]Reaction, error)
+	// DeleteReaction takes back a reaction this identity added.
+	DeleteReaction(ctx context.Context, messageID, reactionID string) error
 	// ReadStatus reports whether the current user has read each message.
 	ReadStatus(ctx context.Context, ids []string) (items []ReadStatus, invalid []string, err error)
 	// ChatMembers lists user members of a chat.

@@ -265,6 +265,82 @@ func (s *Syncer) RefreshReadStatus(ctx context.Context, chatID string) (int, err
 	return s.checkReadStatus(ctx, s.now(), store.ReadCheckQuery{ChatID: chatID, Limit: 50})
 }
 
+// reactionWindow is how many of a chat's newest messages have their reactions
+// re-asked when it is opened. It is exactly one batch_query, and it is the
+// part of the chat people react to: an older message's summary stays as the
+// rendering left it.
+const reactionWindow = larkcli.MaxMessageIDsPerReactionCall
+
+// RefreshReactions re-asks Feishu who reacted to the newest messages of one
+// chat. Nothing else keeps a reaction summary current: Feishu does not move a
+// message's update_time when somebody reacts, so the rendering pass, which is
+// what wrote the summary in the first place, never comes back for it.
+func (s *Syncer) RefreshReactions(ctx context.Context, chatID string) (int, error) {
+	msgs, err := s.Store.ListMessages(ctx, store.MessageQuery{ChatID: chatID, Desc: true, Limit: reactionWindow})
+	if err != nil || len(msgs) == 0 {
+		return 0, err
+	}
+	ids := make([]string, 0, len(msgs))
+	for _, m := range msgs {
+		ids = append(ids, m.MessageID)
+	}
+	blocks, err := s.Client.ReactionCounts(ctx, ids)
+	if err != nil {
+		return 0, err
+	}
+	for id, block := range blocks {
+		if err := s.Store.UpdateReactions(ctx, id, rawString(block)); err != nil {
+			return 0, err
+		}
+	}
+	return len(blocks), nil
+}
+
+// React puts one emoji on a message, or takes the reader's own back, and
+// brings that message's summary up to date in the same breath so the pane
+// shows what Feishu now holds rather than what it held a moment ago.
+//
+// Taking one back costs an extra call: the delete needs a reaction id, and
+// Feishu hands that out nowhere but reactions.list. Feishu only lets an
+// identity delete what it added, so the id has to be the reader's own.
+func (s *Syncer) React(ctx context.Context, messageID, emojiType string, on bool) error {
+	if on {
+		if _, err := s.Client.AddReaction(ctx, messageID, emojiType); err != nil {
+			return err
+		}
+		return s.refreshReaction(ctx, messageID)
+	}
+	self, _, err := s.Store.GetState(ctx, KeySelfOpenID)
+	if err != nil {
+		return err
+	}
+	items, err := s.Client.ListReactions(ctx, messageID, emojiType)
+	if err != nil {
+		return err
+	}
+	for _, it := range items {
+		if it.OperatorID != self {
+			continue
+		}
+		if err := s.Client.DeleteReaction(ctx, messageID, it.ReactionID); err != nil {
+			return err
+		}
+		return s.refreshReaction(ctx, messageID)
+	}
+	// Nothing of the reader's to take back: somebody else's reaction, or one
+	// already gone. Either way the stored summary is behind, so refresh it.
+	return s.refreshReaction(ctx, messageID)
+}
+
+// refreshReaction re-reads one message's reactions.
+func (s *Syncer) refreshReaction(ctx context.Context, messageID string) error {
+	blocks, err := s.Client.ReactionCounts(ctx, []string{messageID})
+	if err != nil {
+		return err
+	}
+	return s.Store.UpdateReactions(ctx, messageID, rawString(blocks[messageID]))
+}
+
 // checkReadStatus asks Feishu about the messages q selects, records each
 // answer and schedules the next check of the ones still unread. It fills in
 // the parts of q that every caller shares: the user's own open_id, whose

@@ -20,6 +20,13 @@ type Fake struct {
 	// Resources are returned by MGetRendered with download=true.
 	Resources map[string][]Resource
 	Read      map[string]bool
+	// Reactions answers ReactionCounts; a message absent from it holds none.
+	Reactions map[string]json.RawMessage
+	// Reacted is what AddReaction and DeleteReaction write, keyed by message
+	// id, so a test can assert on what reached Feishu rather than on the
+	// summary a later refresh would have brought back.
+	Reacted     map[string][]Reaction
+	reactionSeq int
 	// Muted answers MuteStatus for chats in Chats; one that is listed
 	// nowhere comes back unknown, as a chat the user is not a member of does.
 	Muted   map[string]bool
@@ -52,6 +59,8 @@ func NewFake() *Fake {
 		Rendered:  map[string]RenderedMessage{},
 		Resources: map[string][]Resource{},
 		Read:      map[string]bool{},
+		Reactions: map[string]json.RawMessage{},
+		Reacted:   map[string][]Reaction{},
 		Muted:     map[string]bool{},
 		Members:   map[string][]ChatMember{},
 		Details:   map[string]UserDetail{},
@@ -181,6 +190,63 @@ func (f *Fake) MGetRendered(_ context.Context, ids []string, download bool) ([]R
 			r.Resources = append([]Resource(nil), f.Resources[id]...)
 		}
 		out = append(out, r)
+	}
+	return out, nil
+}
+
+func (f *Fake) AddReaction(_ context.Context, messageID, emojiType string) (Reaction, error) {
+	if err := f.record("react:add:" + messageID + ":" + emojiType); err != nil {
+		return Reaction{}, err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.reactionSeq++
+	r := Reaction{ReactionID: fmt.Sprintf("rx_%d", f.reactionSeq), EmojiType: emojiType,
+		OperatorID: f.Self.UserOpenID}
+	f.Reacted[messageID] = append(f.Reacted[messageID], r)
+	return r, nil
+}
+
+func (f *Fake) ListReactions(_ context.Context, messageID, emojiType string) ([]Reaction, error) {
+	if err := f.record("react:list:" + messageID + ":" + emojiType); err != nil {
+		return nil, err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []Reaction
+	for _, r := range f.Reacted[messageID] {
+		if r.EmojiType == emojiType {
+			out = append(out, r)
+		}
+	}
+	return out, nil
+}
+
+func (f *Fake) DeleteReaction(_ context.Context, messageID, reactionID string) error {
+	if err := f.record("react:delete:" + messageID + ":" + reactionID); err != nil {
+		return err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	kept := f.Reacted[messageID][:0]
+	for _, r := range f.Reacted[messageID] {
+		if r.ReactionID != reactionID {
+			kept = append(kept, r)
+		}
+	}
+	f.Reacted[messageID] = kept
+	return nil
+}
+
+func (f *Fake) ReactionCounts(_ context.Context, messageIDs []string) (map[string]json.RawMessage, error) {
+	if err := f.record("reaction-counts:" + strings.Join(messageIDs, ",")); err != nil {
+		return nil, err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make(map[string]json.RawMessage, len(messageIDs))
+	for _, id := range messageIDs {
+		out[id] = f.Reactions[id]
 	}
 	return out, nil
 }
