@@ -19,6 +19,9 @@ func msgAt(day, hour, minute int) int64 {
 func rowText(rows []msgRow) string {
 	var b strings.Builder
 	for _, r := range rows {
+		// The lead's picture is left out: what a test reads is the marker
+		// column, and a disc has no text to strip.
+		b.WriteString(ansi.Strip(r.lead.mark))
 		b.WriteString(ansi.Strip(r.text))
 		for _, s := range r.segs {
 			// A picture stands in as the cells it will fill, which is what the
@@ -60,6 +63,26 @@ func TestRenderRows_SplitsDaysAndDropsMessageIDs(t *testing.T) {
 	require.Contains(t, out, "周一")
 	require.Contains(t, out, "昨天")
 	require.NotContains(t, out, "om_", "message ids are not part of the list any more")
+}
+
+func TestRenderRows_ADayRuleNeedsNoAirAroundIt(t *testing.T) {
+	msgs := []store.Message{
+		{MessageID: "om_1", SenderName: "张三", Content: "前天", CreateMs: msgAt(21, 9, 0), RenderedAt: 1},
+		{MessageID: "om_2", SenderName: "张三", Content: "昨天", CreateMs: msgAt(22, 9, 0), RenderedAt: 1},
+	}
+	rows := renderRows(msgs, baseStyle())
+	seen := 0
+	for i, r := range rows {
+		if i == 0 || !strings.Contains(ansi.Strip(r.text), "─ ") {
+			continue
+		}
+		seen++
+		require.NotEmpty(t, strings.TrimSpace(rowText(rows[i-1:i])),
+			"the rule is a divider of its own, so nothing is held off above it:\n%s", rowText(rows))
+		require.NotEmpty(t, strings.TrimSpace(rowText(rows[i+1:i+2])),
+			"nor below it:\n%s", rowText(rows))
+	}
+	require.Equal(t, 1, seen, "a rule between the two days:\n%s", rowText(rows))
 }
 
 func TestRenderRows_LeavesTheClockToTheStatusBar(t *testing.T) {
@@ -251,15 +274,15 @@ func TestBodyRows_CardPictureDrawsInsideTheFrame(t *testing.T) {
 		}
 	}
 	require.Len(t, pics, 3, "one row per cell row of the picture")
-	require.Contains(t, ansi.Strip(pics[0].prefix), cardRule, "a picture inside a card keeps the card's edge")
+	require.Equal(t, leadWidth, pics[0].lead.cols(), "a picture inside a card keeps the lead's columns")
 	out := rowText(rows)
 	require.Contains(t, out, "每日构建报告")
 	require.NotContains(t, out, "img_key:", "the picture is drawn, not spelled out")
 }
 
-func TestBodyRows_CardPictureStandsInInsideTheFrame(t *testing.T) {
+func TestBodyRows_CardPictureStandsInWhenItCannotBeDrawn(t *testing.T) {
 	out := rowText(renderRows(cardMessage(), baseStyle()))
-	require.Contains(t, out, cardRule+" [图片]", "the stand-in is still part of the card")
+	require.Contains(t, out, "[图片]")
 	require.NotContains(t, out, "img_key:")
 }
 
@@ -286,18 +309,8 @@ func TestHeadLine_MarksAMessageOnItsWayAndOneThatFailed(t *testing.T) {
 		"a message the store returned carries no send state")
 }
 
-// gutterOf is the two columns a rendered row opens with, styles stripped.
-func gutterOf(r msgRow) string {
-	s := r.text
-	if r.pic.cols > 0 {
-		s = r.prefix
-	}
-	g := []rune(ansi.Strip(s))
-	if len(g) < gutterWidth {
-		return ""
-	}
-	return string(g[:gutterWidth])
-}
+// markOf is the marker column a rendered row opens with, styles stripped.
+func markOf(r msgRow) string { return ansi.Strip(r.lead.mark) }
 
 // drawn is the rows a message put on screen, with the day rules and the blank
 // lines between sections dropped, so an index into it counts content.
@@ -376,22 +389,21 @@ func TestRenderRows_HoldsEachSectionOffTheOneAbove(t *testing.T) {
 			gaps = append(gaps, i)
 		}
 	}
-	require.Equal(t, []int{4, 6}, gaps,
+	require.Equal(t, []int{3, 5}, gaps,
 		"a blank line before the system notice and the next block, none under the day rule: %q", rowText(rows))
 	require.Equal(t, 1, blocks(rows, "李四"), "the second message merges, so it opens nothing")
 	require.NotEmpty(t, rows[0].text, "the day rule still heads the list")
 	require.NotEmpty(t, rows[len(rows)-1].text, "and the last section is not followed by a blank")
 }
 
-func TestRenderRows_HoldsTheBodyOffTheSenderLine(t *testing.T) {
+func TestRenderRows_PutsTheBodyRightUnderTheSenderLine(t *testing.T) {
 	mine := said("om_1", "me", "好的", 23, 9, 0)
 	mine.SenderID = "ou_me"
 	rows := drawn(renderRows([]store.Message{mine, said("om_2", "孙琪", "收到", 23, 9, 1)}, baseStyle()))
 
-	require.Equal(t, rail+" ", ansi.Strip(rows[1].text), "the line under the sender carries nothing but the rail")
-	require.False(t, rows[1].plain, "it belongs to the message, so a selection tints it with the rest")
-	require.Contains(t, ansi.Strip(rows[2].text), "好的", "and the body follows it")
-	require.Equal(t, "  ", ansi.Strip(rows[4].text), "a sender with no rail leaves the gutter blank")
+	require.Contains(t, ansi.Strip(rows[1].text), "好的", "the body follows the sender line with nothing between")
+	require.Equal(t, leadWidth, rows[1].lead.cols(), "every body line keeps the lead's columns")
+	require.Equal(t, " ", markOf(rows[1]), "an ordinary row marks nothing")
 }
 
 func TestRenderRows_SplitsABlockWhenTheReadStateDiffers(t *testing.T) {
@@ -400,7 +412,7 @@ func TestRenderRows_SplitsABlockWhenTheReadStateDiffers(t *testing.T) {
 	st.dots = map[string]bool{"om_2": true}
 	rows := renderRows(msgs, st)
 	require.Equal(t, 2, blocks(rows, "孙琪"), "the unread dot heads a block, so a block is all read or all unread")
-	require.Equal(t, "● ", gutterOf(drawn(rows)[3]), "the dot opens the unread block")
+	require.Equal(t, "●", markOf(drawn(rows)[2]), "the dot opens the unread block")
 }
 
 func TestRenderRows_SplitsABlockForAMessageCarryingItsOwnBadge(t *testing.T) {
@@ -422,31 +434,27 @@ func TestRenderRows_SplitsABlockForAMessageCarryingItsOwnBadge(t *testing.T) {
 	}
 }
 
-func TestRenderRows_RailsTheReadersOwnMessages(t *testing.T) {
+func TestRenderRows_TheReadersOwnMessagesCarryNoMarkOfTheirOwn(t *testing.T) {
 	mine := said("om_1", "me", "好的", 23, 9, 0)
 	mine.SenderID = "ou_me"
 	msgs := []store.Message{mine, said("om_2", "孙琪", "收到", 23, 9, 1)}
-	rows := renderRows(msgs, baseStyle())
-	own, theirs := drawn(rows)[0], drawn(rows)[3]
-	require.Equal(t, rail+" ", gutterOf(own), "own messages run down a rail of their own")
-	require.Contains(t, own.text, stSelf.Render(rail), "a delivered send rails in the sent colour")
-	require.Equal(t, "  ", gutterOf(theirs), "someone else's message has no rail")
+	rows := drawn(renderRows(msgs, baseStyle()))
+
+	require.Equal(t, " ", markOf(rows[0]), "the disc says whose turn it is; nothing else has to")
+	require.Equal(t, " ", markOf(rows[2]))
 }
 
-func TestRenderRows_RailShadesASendOnItsWay(t *testing.T) {
+func TestRenderRows_ASendOnItsWaySaysSoOnALineOfItsOwn(t *testing.T) {
 	msgs := []store.Message{{MessageID: "local-1", SenderID: "ou_me", SenderName: "林岚",
 		ChatID: "oc_1", Content: "在路上", CreateMs: msgAt(23, 9, 0), RenderedAt: 1}}
 	st := baseStyle()
 
 	st.outbox = map[string]outboxState{"local-1": outSending}
-	rows := renderRows(msgs, st)
-	require.Contains(t, drawn(rows)[0].text, stDim.Render(rail), "a send still on its way shades its rail")
-	require.Equal(t, 1, blocks(rows, "你"), "a send in flight still merges; the rail carries its state")
+	require.Contains(t, rowText(renderRows(msgs, st)), "(sending)",
+		"how far a send has got is spelled out, so it heads a block of its own")
 
 	st.outbox["local-1"] = outFailed
-	rows = renderRows(msgs, st)
-	require.Contains(t, drawn(rows)[0].text, stErr.Render(rail))
-	require.Contains(t, rowText(rows), "(failed)", "a failed send is loud enough to head its own block")
+	require.Contains(t, rowText(renderRows(msgs, st)), "(failed)")
 }
 
 func TestRenderRows_SplitsABlockForAFailedSend(t *testing.T) {
@@ -461,14 +469,14 @@ func TestRenderRows_SplitsABlockForAFailedSend(t *testing.T) {
 	require.Equal(t, 2, blocks(renderRows(msgs, st), "你"))
 }
 
-func TestRenderRows_MarksTheReplyTargetInTheGutter(t *testing.T) {
+func TestRenderRows_MarksTheReplyTargetInTheLead(t *testing.T) {
 	msgs := []store.Message{said("om_1", "孙琪", "早", 23, 9, 0), said("om_2", "孙琪", "在吗", 23, 9, 1)}
 	st := baseStyle()
 	st.quoted = "om_2"
 	rows := renderRows(msgs, st)
 	require.Equal(t, 1, blocks(rows, "孙琪"), "aiming a draft at a message does not move the rows around it")
-	require.Equal(t, "↩ ", gutterOf(drawn(rows)[3]), "the gutter says which message the open draft answers")
-	require.Equal(t, "  ", gutterOf(drawn(rows)[2]), "and only that one")
+	require.Equal(t, "↩", markOf(drawn(rows)[2]), "the lead says which message the open draft answers")
+	require.Equal(t, " ", markOf(drawn(rows)[1]), "and only that one")
 }
 
 func TestRenderRows_NamesTheReaderAsYou(t *testing.T) {
@@ -552,9 +560,31 @@ func TestRenderRows_BadgesAMentionOfTheReader(t *testing.T) {
 	}
 	out := body.String()
 	require.Contains(t, out, stMentionMe.Render("@林岚"))
-	require.Contains(t, out, "@秦风 unreachable", "another person's mention is body text")
+	require.Contains(t, out, stAccent.Render("@秦风"), "another person's mention carries the accent")
 	require.Contains(t, out, stAccent.Render(allName)+" all")
 	require.NotContains(t, out, allKey)
+}
+
+func TestRenderRows_DimsAMentionAChatOfTwoCannotReach(t *testing.T) {
+	msgs := []store.Message{{MessageID: "om_1", SenderID: "ou_peer", SenderName: "张三", Content: "@李四 看下",
+		MentionsJSON: `[{"id":"ou_a","key":"@_user_1","name":"李四"}]`, CreateMs: msgAt(23, 9, 0), RenderedAt: 1}}
+
+	group := baseStyle()
+	var out strings.Builder
+	for _, r := range renderRows(msgs, group) {
+		out.WriteString(segText(r))
+	}
+	require.Contains(t, out.String(), stAccent.Render("@李四"), "in a group the name reaches somebody")
+
+	pair := baseStyle()
+	pair.p2p, pair.peer = true, "ou_peer"
+	out.Reset()
+	for _, r := range renderRows(msgs, pair) {
+		out.WriteString(segText(r))
+	}
+	require.Contains(t, out.String(), stDim.Render("@李四"),
+		"neither side of this chat is 李四, so the @ reaches nobody in it")
+	require.NotContains(t, out.String(), stAccent.Render("@李四"))
 }
 
 func TestBodyRows_StickerDrawsThePictureInsteadOfItsPlaceholder(t *testing.T) {
@@ -591,4 +621,98 @@ func TestBodyRows_StickerWithoutItsPictureStandsIn(t *testing.T) {
 	msgs[0].ContentRaw = `{}`
 	require.Contains(t, rowText(renderRows(msgs, baseStyle())), "[Sticker]",
 		"a sticker body naming no picture keeps whatever text it has")
+}
+
+func TestRenderRows_AChatOfTwoNamesNobody(t *testing.T) {
+	msgs := []store.Message{said("om_1", "孙琪", "今天的构建挂了", 23, 9, 0)}
+	st := baseStyle()
+	st.p2p = true
+	rows := drawn(renderRows(msgs, st))
+
+	require.Contains(t, ansi.Strip(rows[0].text), "今天的构建挂了",
+		"with no name to spell, the block opens with its own body")
+	require.NotContains(t, rowText(rows), "孙琪", "the disc beside the block says who spoke")
+}
+
+func TestRenderRows_AGroupNamesTheSender(t *testing.T) {
+	msgs := []store.Message{said("om_1", "孙琪", "今天的构建挂了", 23, 9, 0)}
+	rows := drawn(renderRows(msgs, baseStyle()))
+
+	require.Len(t, rows, 2)
+	require.Equal(t, "孙琪", ansi.Strip(rows[0].text), "a group opens the block with the name")
+	require.Contains(t, ansi.Strip(rows[1].text), "今天的构建挂了")
+}
+
+func TestRenderRows_AChatOfTwoStillDrawsALineForABadge(t *testing.T) {
+	msgs := []store.Message{said("om_1", "孙琪", "改好了", 23, 9, 0)}
+	msgs[0].EditedAt = 7
+	st := baseStyle()
+	st.p2p = true
+	rows := drawn(renderRows(msgs, st))
+
+	require.Equal(t, "(Edited)", ansi.Strip(rows[0].text), "the badge has a line of its own, the name none")
+	require.Contains(t, ansi.Strip(rows[1].text), "改好了")
+}
+
+func TestRenderSearchRows_NamesTheSenderInsideAChatOfTwo(t *testing.T) {
+	msgs := []store.Message{said("om_1", "孙琪", "今天的构建挂了", 23, 9, 0)}
+	st := baseStyle()
+	st.p2p = true // the cursor happens to sit on a p2p chat
+	out := rowText(renderSearchRows(msgs, []store.Chat{{ChatID: "oc_1", Name: "平台组"}}, st))
+
+	require.Contains(t, out, "孙琪", "hits run across chats, so every block names its sender")
+	require.Contains(t, out, "平台组")
+}
+
+func TestRenderRows_TheBlockOpenerCarriesTheSendersDisc(t *testing.T) {
+	msgs := []store.Message{
+		said("om_1", "孙琪", "早", 23, 9, 0),
+		said("om_2", "孙琪", "方案我看了", 23, 9, 1),
+	}
+	st := baseStyle()
+	st.avatars = map[string]string{"ou_孙琪": "users/ou_a.png"}
+	st.disc = func(file, id, name string, cols, rows int) picture {
+		require.Equal(t, "users/ou_a.png", file)
+		require.Equal(t, "ou_孙琪", id)
+		require.Equal(t, "孙琪", name)
+		require.Equal(t, avatarWidth, cols, "a disc is the size the chat list draws one")
+		require.Equal(t, avatarHeight, rows)
+		return picture{path: file, cols: cols, rows: rows, disc: true}
+	}
+	rows := drawn(renderRows(msgs, st))
+
+	require.True(t, rows[0].lead.pic.disc, "the disc is clipped to the circle the client draws")
+	require.Equal(t, 0, rows[0].lead.picRow)
+	require.Equal(t, 1, rows[1].lead.picRow,
+		"the disc is taller than a line, so it spans on into the message merged under it")
+	for i, r := range rows[2:] {
+		require.Zero(t, r.lead.pic.cols, "row %d repeats no disc; one block, one sender", i+2)
+		require.Equal(t, leadWidth, r.lead.cols(), "but it keeps the columns the disc took")
+	}
+}
+
+func TestRenderRows_AShortBlockStillDrawsTheWholeDisc(t *testing.T) {
+	msgs := []store.Message{said("om_1", "孙琪", "早", 23, 9, 0)}
+	st := baseStyle()
+	st.p2p = true // one line, no head line: the block is shorter than the disc
+	st.avatars = map[string]string{"ou_孙琪": "users/ou_a.png"}
+	st.disc = func(file, id, name string, cols, rows int) picture {
+		return picture{path: file, cols: cols, rows: rows, disc: true}
+	}
+	rows := drawn(renderRows(msgs, st))
+
+	require.Len(t, rows, avatarHeight, "the block is padded to the rows the circle needs")
+	require.Equal(t, 1, rows[1].lead.picRow, "or its bottom half would be cut off")
+	require.Empty(t, ansi.Strip(rows[1].text), "the row carries the disc and nothing else")
+	require.Equal(t, 0, rows[1].idx, "it belongs to the message, so a selection tints it along")
+}
+
+func TestRenderRows_SenderWithNoPictureFallsBackToTheColourBlock(t *testing.T) {
+	msgs := []store.Message{said("om_1", "孙琪", "早", 23, 9, 0)}
+	rows := drawn(renderRows(msgs, baseStyle()))
+
+	require.Zero(t, rows[0].lead.pic.cols, "a terminal that draws nothing still opens the block")
+	require.Equal(t, " 孙 ", ansi.Strip(rows[0].lead.box), "the block carries the first character of the name")
+	require.Equal(t, avatarWidth, lipgloss.Width(rows[0].lead.box))
+	require.Equal(t, avatarWidth, lipgloss.Width(rows[1].lead.box), "and the rest of it is blank")
 }

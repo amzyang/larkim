@@ -18,7 +18,7 @@ func drawingStyle(t *testing.T) msgStyle {
 		writeTestEmoji(t, dir, key)
 	}
 	st := baseStyle()
-	st.emojiDir = dir
+	st.dataDir = dir
 	st.place = picturesIn(dir).place
 	return st
 }

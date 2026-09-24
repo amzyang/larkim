@@ -45,7 +45,6 @@ var (
 	colAccent = lipgloss.Color("4")
 	colDim    = lipgloss.Color("8")
 	colErr    = lipgloss.Color("1")
-	colSelf   = lipgloss.Color("#d5e2fa")
 	// colChatSel and colChatSelText are the client's own tint for the chat it
 	// is on, kept off the shade ladder so the list reads the same wherever it
 	// is opened. The text colour rides along because the tint is light on
@@ -58,11 +57,14 @@ var (
 	stAccent = lipgloss.NewStyle().Foreground(colAccent)
 	stBold   = lipgloss.NewStyle().Bold(true)
 	stErr    = lipgloss.NewStyle().Foreground(colErr)
-	stSelf   = lipgloss.NewStyle().Foreground(colSelf)
-	// stMentionMe is the filled badge the client paints on the reader's own
-	// mention. White on an ANSI colour reads on every terminal theme, which is
-	// why the avatar block is drawn the same way.
-	stMentionMe = lipgloss.NewStyle().Foreground(lipgloss.Color("15")).Background(colAccent)
+	// The reader's own mention wears the filled badge the client paints it as:
+	// the brand blue it owns, closed by the same caps a chip is, and white on
+	// it. The fill is fixed rather than the terminal's blue because a badge
+	// carries its own background, and one shaded from the theme would land as a
+	// different signal on every palette.
+	colMentionMe    = lipgloss.Color("#3370ff")
+	stMentionMe     = lipgloss.NewStyle().Foreground(lipgloss.Color("#ffffff")).Background(colMentionMe)
+	stMentionMeEdge = lipgloss.NewStyle().Foreground(colMentionMe)
 	// stUnread is the terminal-palette stand-in for badgeRed, the disc stamped
 	// onto a picture: the header's count and the digits a row falls back to when
 	// no disc could be drawn both take it, so the three read as one signal.
@@ -188,13 +190,20 @@ func (m Model) messagesWidth() int {
 // details the store holds.
 func (m Model) msgStyleFor(width int, meta msgMeta) msgStyle {
 	st := msgStyle{width: width, height: m.picHeight(), self: m.deps.Self, now: time.Now(),
-		suffix: meta.suffix, people: meta.people, res: meta.res, parents: meta.parents,
+		suffix: meta.suffix, people: meta.people, avatars: meta.avatars,
+		res: meta.res, parents: meta.parents, dataDir: m.deps.DataDir,
 		outbox: m.outboxStates(), dots: m.dots, dark: m.dark}
+	if c, ok := m.currentChat(); ok {
+		st.p2p = c.ChatMode == "p2p"
+		if st.p2p {
+			st.peer = c.P2PTargetID
+		}
+	}
 	if m.replyTo != nil {
 		st.quoted = m.replyTo.MessageID
 	}
 	if m.pics != nil {
-		st.place, st.emojiDir = m.pics.place, m.deps.DataDir
+		st.place, st.disc = m.pics.place, m.pics.disc
 	}
 	return st
 }
@@ -211,6 +220,9 @@ func (m *Model) rebuildMessages() {
 // renderSearchRows is renderRows with each block's chat named on its sender
 // line, because search hits run across chats.
 func renderSearchRows(msgs []store.Message, chats []store.Chat, st msgStyle) []msgRow {
+	// Hits run across chats, so every block names its sender, and no @ in one
+	// is measured against the chat the cursor happens to sit on.
+	st.p2p, st.peer = false, ""
 	st.names = make(map[string]string, len(chats))
 	for _, c := range chats {
 		st.names[c.ChatID] = c.Name
@@ -241,17 +253,35 @@ func (m *Model) rebuildThread() {
 // would have nothing to colour. A row of pieces says for itself — body text
 // takes the tint under its emoji, a chip brings its own.
 func (m Model) rowLine(r msgRow, w int) (string, bool) {
+	lead := m.leadCells(r.lead)
+	w -= r.lead.cols()
 	if len(r.segs) > 0 {
-		return m.joinSegs(r.segs, w), r.tinted
+		return lead + m.joinSegs(r.segs, w), r.tinted
 	}
 	if r.pic.cols == 0 {
-		return fit(r.text, w), true
+		return lead + fit(r.text, w), true
 	}
 	cells := m.pics.cells(r.pic, r.picRow)
 	if cells == "" {
-		return fit("", w), false // still on its way to the terminal
+		return lead + fit("", w), false // still on its way to the terminal
 	}
-	return r.prefix + cells + strings.Repeat(" ", max(0, w-lipgloss.Width(r.prefix)-r.pic.cols)), false
+	return lead + cells + strings.Repeat(" ", max(0, w-r.pic.cols)), false
+}
+
+// leadCells draws the columns a row opens with. A disc is a picture the
+// terminal fills in, so it is placed the way any other one is; the block
+// standing in for it is ordinary text. A disc narrower than the column — a
+// file too small to fill it — is padded rather than stretched, so every body
+// line still starts at the same column.
+func (m Model) leadCells(l lead) string {
+	if l.pic.cols == 0 {
+		return l.box + l.mark
+	}
+	cells := m.pics.cells(l.pic, l.picRow)
+	if cells == "" {
+		cells = l.pic.gap() // still on its way to the terminal
+	}
+	return cells + strings.Repeat(" ", avatarWidth-l.pic.cols) + l.mark
 }
 
 // segCells draws one segment's picture, holding the cells it will fill while

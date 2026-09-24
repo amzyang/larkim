@@ -14,11 +14,9 @@ import (
 )
 
 const (
-	// gutterWidth is the two columns every row of a message opens with.
-	gutterWidth = 2
-	// rail marks the reader's own messages down their left edge. It is not
-	// the card frame's ▌, so a card of one's own still reads as a card.
-	rail = "▎"
+	// leadWidth is the columns every row of a message opens with: the sender's
+	// disc, drawn at the size the chat list draws one, then the marker column.
+	leadWidth = avatarWidth + 1
 	// runSpan is how long a sender's block stays open, measured from the
 	// message that opened it, so a name line still marks a sender coming back
 	// rather than a whole day collapsing into one block.
@@ -32,6 +30,10 @@ var imgRef = regexp.MustCompile(`!\[[^\]\n]*\]\((img_[A-Za-z0-9_-]+)\)|\[Image: 
 
 // msgRow is one rendered line of a message list and the message it belongs to.
 type msgRow struct {
+	// lead is the columns the row opens with: the sender's disc and the
+	// marker beside it. A day rule and a system notice carry none and take
+	// the whole width.
+	lead lead
 	text string
 	idx  int // index into the backing message slice
 	// plain marks a row that belongs to no message — a day separator, or the
@@ -41,11 +43,9 @@ type msgRow struct {
 	// pic is set on the rows a picture occupies, picRow being which of its
 	// rows this one is. Those rows carry an image rather than text, so they
 	// are neither fitted nor highlighted, and their text is only known once
-	// the terminal holds the picture. prefix is the gutter drawn to their
-	// left, which a picture inside a card has to extend with the card's edge.
+	// the terminal holds the picture.
 	pic    picture
 	picRow int
-	prefix string
 	// zone, when set, is the click target this row carries: the button a
 	// call's card ends with.
 	zone clickZone
@@ -98,10 +98,13 @@ type msgStyle struct {
 	// place sizes a picture for the pane. Nil draws a text stand-in instead,
 	// which is what a terminal without graphics gets.
 	place func(path string, maxCols, maxRows int) picture
-	// emojiDir holds the pictures cut out of the sprite sheet, which is what
-	// an emoji with no Unicode character is drawn as. Empty means they were
-	// never cut out, and the name stands in.
-	emojiDir string
+	// disc places a sender's picture as a circle: their avatar file, or one
+	// drawn from their name when they have none. Nil draws the colour block.
+	disc func(file, id, name string, cols, rows int) picture
+	// dataDir is where downloads live, the pictures cut out of the emoji
+	// sprite sheet among them. Empty is a pane with no store behind it, where
+	// an emoji falls back to its name.
+	dataDir string
 	// dark says which way the terminal's background leans, which is what picks
 	// the palette a code block is coloured from.
 	dark bool
@@ -109,6 +112,15 @@ type msgStyle struct {
 	// travels on the message itself; a reactor's does not — the block holds
 	// an id alone, and the contacts table is where a name for it lives.
 	people map[string]string
+	// avatars are the senders' downloaded pictures, by open id, relative to
+	// the data dir. A sender absent from it falls back to the colour block.
+	avatars map[string]string
+	// p2p drops the sender's name from the line that opens a block: in a chat
+	// of two, the disc beside the block already says which of them spoke.
+	p2p bool
+	// peer is who the reader is talking to in such a chat, which is how far an
+	// @ in it carries: a name that is neither of theirs reaches nobody here.
+	peer string
 }
 
 // emojiPics sizes the pictures cut out of the sprite sheet. The zero value
@@ -149,65 +161,135 @@ func (m Model) chatPics() emojiPics {
 // emojiChip is one reaction's picture beside a message, as wide as its own
 // shape asks for.
 func (st msgStyle) emojiChip(key string) picture {
-	return emojiPics{place: st.place, dir: st.emojiDir}.chip(key, emojiCols)
+	return emojiPics{place: st.place, dir: st.dataDir}.chip(key, emojiCols)
 }
 
 // emojiInline is one emoji's picture standing in a line of body text. It
 // carries no chip tint: inside a message an emoji is part of what was said,
 // not a reaction put on it afterwards.
 func (st msgStyle) emojiInline(key string) picture {
-	return emojiPics{place: st.place, dir: st.emojiDir}.pic(key, emojiCols)
+	return emojiPics{place: st.place, dir: st.dataDir}.pic(key, emojiCols)
 }
 
-// inner is the width a message body has, once the gutter is taken off.
-func (st msgStyle) inner() int { return st.width - gutterWidth }
+// inner is the width a message body has, once the lead is taken off.
+func (st msgStyle) inner() int { return st.width - leadWidth }
 
-// gutters are the two columns a message's rows open with. The first row
-// carries the marker that belongs to the message as a whole — the draft's
-// reply target, or the dot on an unread one — and the rest carry the rail.
-type gutters struct{ first, rest string }
-
-func (g *gutters) take() string {
-	if g.first != "" {
-		s := g.first
-		g.first = ""
-		return s
-	}
-	return g.rest
+// lead is the columns a row opens with: the sender's disc, then the one
+// column carrying the marks belonging to the message. Only the
+// row that opens a block draws a disc; the rest hold its cells blank so every
+// body line keeps the same column.
+type lead struct {
+	// pic is the sender's disc, picRow being which of its rows this one is.
+	// It is unset where there is no picture to place.
+	pic    picture
+	picRow int
+	box    string // what stands in the disc's cells: a colour block, or blanks
+	mark   string // one column: the unread dot, the reply mark
 }
 
-// gutterFor rails the reader's own messages, shaded by how far the send has
-// got, and picks the marker the message's first row opens with. The unread
-// dot is the block's, not the message's — a block is all read or all unread,
-// so repeating it under the sender line would say nothing new.
-func gutterFor(x store.Message, st msgStyle, opensBlock bool) gutters {
-	rest := strings.Repeat(" ", gutterWidth)
-	if x.SenderID == st.self {
-		rest = railStyle(x, st).Render(rail) + " "
+// cols is how much of a row the lead takes. A zero lead belongs to a row that
+// opens with nothing — a day rule, a system notice — which spans the pane.
+func (l lead) cols() int {
+	if l.box == "" && l.pic.cols == 0 {
+		return 0
 	}
-	first := rest
+	return leadWidth
+}
+
+// block is what a sender's run of messages shares: the disc drawn beside it,
+// handed out one row at a time.
+//
+// The disc belongs to the block rather than to the message that opened it,
+// because it is taller than one line: a run of two short messages draws the
+// top of the circle beside the first and the bottom beside the second.
+type block struct {
+	disc []lead
+	n    int
+	idx  int // the message the disc's leftover rows are charged to
+}
+
+// take is the next row of the disc, or the blank standing in once it is spent.
+func (b *block) take() lead {
+	if b.n < len(b.disc) {
+		l := b.disc[b.n]
+		b.n++
+		l.mark = " "
+		return l
+	}
+	return lead{box: strings.Repeat(" ", avatarWidth), mark: " "}
+}
+
+// openBlock starts a sender's run with the disc drawn beside it.
+func openBlock(x store.Message, st msgStyle) block {
+	return block{disc: senderDisc(x, st)}
+}
+
+// discTail is the rows of the disc the block never reached: a run of one short
+// line would otherwise draw the top of the circle and cut the rest off.
+func discTail(b *block) []msgRow {
+	var rows []msgRow
+	for b.n < len(b.disc) {
+		rows = append(rows, msgRow{lead: b.take(), idx: b.idx})
+	}
+	return rows
+}
+
+// leads are the leads one message's rows take: the block's disc while it
+// lasts, and the marker the message's own first row carries — the draft's
+// reply target, or the dot on an unread one. The dot is the block's, not the
+// message's: a block is all read or all unread, so repeating it under the
+// sender line would say nothing new.
+type leads struct {
+	b     *block
+	first string
+	used  bool
+}
+
+func (g *leads) take() lead {
+	l := g.b.take()
+	if !g.used {
+		g.used = true
+		if g.first != "" {
+			l.mark = g.first
+		}
+	}
+	return l
+}
+
+func leadFor(x store.Message, st msgStyle, b *block, opensBlock bool) leads {
+	g := leads{b: b}
 	switch {
 	case x.MessageID == st.quoted:
-		first = stAccent.Render("↩") + " "
+		g.first = stAccent.Render("↩")
 	case opensBlock && unread(x, st):
-		first = stAccent.Render("●") + " "
+		g.first = stAccent.Render("●")
 	}
-	return gutters{first: first, rest: rest}
+	return g
 }
 
-// railStyle shades a send that has not landed yet. Absent from the outbox is
-// the ordinary case — a message the store returned — which no zero value may
-// stand in for.
-func railStyle(x store.Message, st msgStyle) lipgloss.Style {
-	state, ok := st.outbox[x.MessageID]
-	switch {
-	case !ok:
-		return stSelf
-	case state == outFailed:
-		return stErr
-	default:
-		return stDim
+// senderDisc is the picture beside the block a sender opens, cut into the rows
+// it spans: the round avatar the client draws, at the size the chat list draws
+// one, or the colour block standing in for it where there is no picture to
+// place — no file downloaded yet, or a terminal that draws none.
+func senderDisc(x store.Message, st msgStyle) []lead {
+	name := senderLabel(x, "")
+	if st.disc != nil {
+		if pic := st.disc(st.avatars[x.SenderID], x.SenderID, name, avatarWidth, avatarHeight); pic.cols > 0 {
+			rows := make([]lead, 0, pic.rows)
+			for row := range pic.rows {
+				rows = append(rows, lead{pic: pic, picRow: row})
+			}
+			return rows
+		}
 	}
+	// The stand-in carries the name on its first line and nothing on the rest,
+	// the way the chat list draws the same block.
+	rows := []lead{{box: avatarBlock(x.SenderID, name, avatarWidth)}}
+	blank := avatarStyle(x.SenderID).Render(strings.Repeat(" ", avatarWidth))
+	for range avatarHeight - 1 {
+		rows = append(rows, lead{box: blank})
+	}
+	return rows
 }
 
 // unread reports whether a message still carries this visit's marker. The
@@ -219,12 +301,14 @@ func unread(x store.Message, st msgStyle) bool { return st.dots[x.MessageID] }
 // body that sender wrote next — split into days.
 func renderRows(msgs []store.Message, st msgStyle) []msgRow {
 	var rows []msgRow
+	var b block
 	day, prev, run := "", "", -1
-	// open starts a section — a day rule, a system notice, a sender's block —
-	// holding it off whatever came before with a blank line. A day rule is a
-	// divider in its own right and heads the day below it, so the first
-	// section under one takes no blank of its own. The line belongs to the
-	// message below it, so scrolling to that message brings its own air along.
+	// open starts a section — a system notice, a sender's block — holding it
+	// off whatever came before with a blank line. A day rule needs none on
+	// either side: it is a divider in its own right, and it heads the day
+	// below it, so the first section under one takes no blank of its own. The
+	// line belongs to the message below it, so scrolling to that message
+	// brings its own air along.
 	open := func(i int, underRule bool) {
 		if len(rows) > 0 && !underRule {
 			rows = append(rows, msgRow{idx: i, plain: true})
@@ -233,9 +317,14 @@ func renderRows(msgs []store.Message, st msgStyle) []msgRow {
 	for i, x := range msgs {
 		d := msgDay(x.CreateMs, st.now)
 		rule := d != day
+		// A day rule, a system notice and a new sender all end the run above
+		// them, so the disc beside it finishes before anything else is drawn.
+		opensBlock := rule || x.MsgType == "system" || run < 0 || !mergeable(msgs[run], x, st)
+		if opensBlock {
+			rows = append(rows, discTail(&b)...)
+		}
 		if rule {
-			open(i, false)
-			day, run = d, -1
+			day = d
 			rows = append(rows, msgRow{text: daySeparator(d, st.width), idx: i, plain: true})
 		}
 		if x.MsgType == "system" {
@@ -244,15 +333,19 @@ func renderRows(msgs []store.Message, st msgStyle) []msgRow {
 			prev, run = x.MessageID, -1
 			continue
 		}
-		opensBlock := run < 0 || !mergeable(msgs[run], x, st)
-		g := gutterFor(x, st, opensBlock)
 		if opensBlock {
 			open(i, rule)
-			rows = append(rows, msgRow{text: g.take() + headLine(x, st), idx: i})
-			// The blank under the sender line keeps the gutter, so the rail
-			// runs unbroken and a selection tints the block as one shape.
-			rows = append(rows, msgRow{text: g.take(), idx: i})
+			b = openBlock(x, st)
 			run = i
+		}
+		b.idx = i
+		g := leadFor(x, st, &b, opensBlock)
+		if opensBlock {
+			// A chat of two writes no head line unless the message carries a
+			// badge, so the disc lands on the first line of the body instead.
+			if head := headLine(x, st); head != "" {
+				rows = append(rows, msgRow{lead: g.take(), text: head, idx: i})
+			}
 		}
 		if q, ok := quoteRow(x, prev, i, st, &g); ok {
 			rows = append(rows, q)
@@ -261,7 +354,7 @@ func renderRows(msgs []store.Message, st msgStyle) []msgRow {
 		rows = append(rows, reactionRows(x, i, st, &g)...)
 		prev = x.MessageID
 	}
-	return rows
+	return append(rows, discTail(&b)...)
 }
 
 // mergeable reports whether a message can hide under the sender line that
@@ -277,23 +370,24 @@ func mergeable(head, x store.Message, st msgStyle) bool {
 }
 
 // solo reports whether a message carries something only a sender line of its
-// own can show.
+// own can show. A send still on its way is one: how far it has got is spelled
+// out on that line and nowhere else.
 func solo(x store.Message, st msgStyle) bool {
 	if (x.ThreadID != "" && x.MessagePosition >= 0) || x.EditedAt > 0 {
 		return true
 	}
-	state, ok := st.outbox[x.MessageID]
-	return ok && state == outFailed
+	_, ok := st.outbox[x.MessageID]
+	return ok
 }
 
 // quoteRow names the message a reply answers, above its body, the way the
 // Feishu client quotes it. A reply to the message right above says nothing
 // the list does not already show, so that one is left out.
-func quoteRow(x store.Message, prev string, idx int, st msgStyle, g *gutters) (msgRow, bool) {
+func quoteRow(x store.Message, prev string, idx int, st msgStyle, g *leads) (msgRow, bool) {
 	if x.ReplyTo == "" || x.ReplyTo == prev {
 		return msgRow{}, false
 	}
-	row := func(s string) msgRow { return msgRow{text: g.take() + stDim.Render(s), idx: idx} }
+	row := func(s string) msgRow { return msgRow{lead: g.take(), text: stDim.Render(s), idx: idx} }
 	parent, ok := st.parents[x.ReplyTo]
 	if !ok {
 		return row("▏↩ (not synced)"), true
@@ -326,36 +420,41 @@ func displaySender(x store.Message, self, suffix string) string {
 // headLine opens a block: who spoke, and the badges belonging to the message
 // that starts it. It carries no clock — a merged message has no line of its
 // own to spell one out on, so the status bar answers for every message alike.
+//
+// A chat of two names nobody: the disc says which of the two spoke, and a name
+// repeated down the pane says nothing else. The line is then drawn only for
+// the badges, and "" leaves the block to open with its own first body line.
 func headLine(x store.Message, st msgStyle) string {
-	head := displaySender(x, st.self, st.suffix[x.SenderID])
-	if x.SenderID == st.self {
-		head = stSelf.Render(head)
-	} else {
-		head = stBold.Render(head)
-	}
-	if st.names != nil {
-		name := st.names[x.ChatID]
-		if name == "" {
-			name = x.ChatID
+	var parts []string
+	if !st.p2p {
+		// The name is dim: the disc beside it is what picks a sender out of
+		// the list, and a bold name on every block would shout over the words.
+		name := stDim.Render(displaySender(x, st.self, st.suffix[x.SenderID]))
+		if st.names != nil {
+			chat := st.names[x.ChatID]
+			if chat == "" {
+				chat = x.ChatID
+			}
+			name = stAccent.Render(truncate(flatten(chat), 18)) + " " + name
 		}
-		head = stAccent.Render(truncate(flatten(name), 18)) + " " + head
+		parts = append(parts, name)
 	}
 	if x.ThreadID != "" && x.MessagePosition >= 0 {
-		head += stAccent.Render(" ⤷thread")
+		parts = append(parts, stAccent.Render("⤷thread"))
 	}
 	if x.EditedAt > 0 {
-		head += stDim.Render(" (Edited)")
+		parts = append(parts, stDim.Render("(Edited)"))
 	}
 	// Absent from the map is the ordinary case — a message the store
 	// returned — which no zero value may stand in for.
 	if state, ok := st.outbox[x.MessageID]; ok {
 		if state == outFailed {
-			head += stErr.Render(" (failed)")
+			parts = append(parts, stErr.Render("(failed)"))
 		} else {
-			head += stDim.Render(" (sending)")
+			parts = append(parts, stDim.Render("(sending)"))
 		}
 	}
-	return head
+	return strings.Join(parts, " ")
 }
 
 // systemRows draw a system message the way the client does: centred and
@@ -370,12 +469,12 @@ func systemRows(x store.Message, idx int, st msgStyle) []msgRow {
 
 // bodyRows render one message's content below its sender line: a card as a
 // framed block, a picture as the picture itself, everything else as text.
-func bodyRows(x store.Message, idx int, st msgStyle, g *gutters) []msgRow {
+func bodyRows(x store.Message, idx int, st msgStyle, g *leads) []msgRow {
 	inner := st.inner()
 	text := func(lines []string) []msgRow {
 		out := make([]msgRow, 0, len(lines))
 		for _, l := range lines {
-			out = append(out, msgRow{text: g.take() + l, idx: idx})
+			out = append(out, msgRow{lead: g.take(), text: l, idx: idx})
 		}
 		return out
 	}
@@ -390,14 +489,14 @@ func bodyRows(x store.Message, idx int, st msgStyle, g *gutters) []msgRow {
 	if x.RenderedAt == 0 {
 		return text(wrap(stDim.Render(expandEmoji(pendingText(x.MsgType, x.ContentRaw))), inner))
 	}
-	ms := mentionsIn(x.MentionsJSON, st.self)
+	ms := mentionsIn(x.MentionsJSON, st.self).facing(st.peer)
 	if c, ok := parseCard(x.Content); ok && x.MsgType == "interactive" {
 		return cardRows(c, x, idx, st, g, ms)
 	}
 	// A sticker renders as the text "[Sticker]", which names the picture
 	// nowhere: the key is in the body.
 	if key := stickerKey(x); key != "" {
-		return pictureRows(key, "", x, idx, st, g)
+		return pictureRows(key, x, idx, st, g)
 	}
 
 	var rows []msgRow
@@ -420,7 +519,7 @@ func bodyRows(x store.Message, idx int, st msgStyle, g *gutters) []msgRow {
 			}
 		}
 		for _, key := range keys {
-			rows = append(rows, pictureRows(key, "", x, idx, st, g)...)
+			rows = append(rows, pictureRows(key, x, idx, st, g)...)
 		}
 	}
 	return rows
@@ -428,12 +527,11 @@ func bodyRows(x store.Message, idx int, st msgStyle, g *gutters) []msgRow {
 
 // segRows draw one body line as the pieces the client's own emoji pictures
 // sit between, where a plain string cannot hold them.
-func segRows(segs []rowSeg, idx int, st msgStyle, g *gutters) []msgRow {
+func segRows(segs []rowSeg, idx int, st msgStyle, g *leads) []msgRow {
 	packed := wrapSegs(segs, st.inner())
 	out := make([]msgRow, 0, len(packed))
 	for _, row := range packed {
-		out = append(out, msgRow{idx: idx, tinted: true,
-			segs: append([]rowSeg{{text: g.take()}}, row...)})
+		out = append(out, msgRow{lead: g.take(), idx: idx, tinted: true, segs: row})
 	}
 	return out
 }
@@ -556,7 +654,7 @@ func segsWidth(segs []rowSeg) int {
 // The chips are packed by hand rather than wrapped: a picture stands in the
 // text as placeholder cells the terminal fills, and a wrap that measured them
 // as the characters they are would break one apart.
-func reactionRows(x store.Message, idx int, st msgStyle, g *gutters) []msgRow {
+func reactionRows(x store.Message, idx int, st msgStyle, g *leads) []msgRow {
 	if x.Deleted {
 		return nil
 	}
@@ -576,11 +674,10 @@ func reactionRows(x store.Message, idx int, st msgStyle, g *gutters) []msgRow {
 		// A row of nothing but characters is ordinary text, and stays so: the
 		// pieces exist for pictures, and a row made of them takes no selection
 		// tint. Only a strip that actually carries one gives that up.
-		row := msgRow{idx: idx}
+		row := msgRow{lead: g.take(), idx: idx}
 		if slices.ContainsFunc(line, func(s rowSeg) bool { return s.pic.cols > 0 }) {
-			row.segs = append([]rowSeg{{text: g.take()}}, line...)
+			row.segs = line
 		} else {
-			row.text = g.take()
 			for _, s := range line {
 				row.text += s.text
 			}
@@ -606,49 +703,56 @@ func reactionRows(x store.Message, idx int, st msgStyle, g *gutters) []msgRow {
 	return rows
 }
 
-// cardRows lay a card out below its sender line: the text lines carry the
-// frame themselves, and the pictures the body names are placed inside it.
-func cardRows(c card, x store.Message, idx int, st msgStyle, g *gutters, ms mentions) []msgRow {
-	edge := cardEdge()
+// cardRows lay a card out below its sender line: its text lines, and the
+// pictures the body names placed among them.
+func cardRows(c card, x store.Message, idx int, st msgStyle, g *leads, ms mentions) []msgRow {
 	var rows []msgRow
 	for _, cr := range renderCard(c, st.inner(), ms) {
 		if cr.imgKey == "" {
-			rows = append(rows, msgRow{text: g.take() + cr.text, idx: idx})
+			rows = append(rows, msgRow{lead: g.take(), text: cr.text, idx: idx})
 			continue
 		}
-		rows = append(rows, pictureRows(cr.imgKey, edge, x, idx, st, g)...)
+		rows = append(rows, pictureRows(cr.imgKey, x, idx, st, g)...)
 	}
 	return rows
 }
 
 // pictureRows reserve the cells a downloaded image will occupy, behind the
-// gutter and, inside a card, the card's own edge. A picture this terminal
-// cannot draw — no graphics protocol, not downloaded yet, a format the
-// decoder will not read — falls back to a one-line stand-in.
-func pictureRows(key, edge string, x store.Message, idx int, st msgStyle, g *gutters) []msgRow {
-	cols, label := st.inner()-lipgloss.Width(edge), "[图片]"
+// lead. A picture this terminal cannot draw — no graphics protocol, not
+// downloaded yet, a format the decoder will not read — falls back to a
+// one-line stand-in.
+func pictureRows(key string, x store.Message, idx int, st msgStyle, g *leads) []msgRow {
+	cols, label := st.inner(), "[图片]"
 	if x.MsgType == "sticker" {
 		cols, label = min(cols, stickerCols), "[表情]"
 	}
-	stand := func() []msgRow {
-		return []msgRow{{text: g.take() + edge + stDim.Render(label), idx: idx}}
-	}
-	if st.place == nil {
-		return stand()
-	}
-	path := ""
-	for _, r := range st.res[x.MessageID] {
-		if r.FileKey == key && r.Status == "done" {
-			path = r.LocalPath
-		}
-	}
-	pic := st.place(path, cols, st.height)
+	pic := placePicture(key, x, st, cols)
 	if pic.cols == 0 {
-		return stand()
+		return []msgRow{{lead: g.take(), text: stDim.Render(label), idx: idx}}
 	}
+	return picRows(pic, idx, g)
+}
+
+// placePicture sizes one of a message's downloaded pictures for the pane. A
+// zero size means there is nothing to draw: no graphics protocol, a key the
+// message does not carry, a download still on its way, or a format the
+// decoder will not read.
+func placePicture(key string, x store.Message, st msgStyle, cols int) picture {
+	if st.place == nil || key == "" {
+		return picture{}
+	}
+	r := attachRes(key, x, st)
+	if r.Status != "done" {
+		return picture{}
+	}
+	return st.place(r.LocalPath, cols, st.height)
+}
+
+// picRows hold a picture's cells, one row of the pane per cell row.
+func picRows(pic picture, idx int, g *leads) []msgRow {
 	rows := make([]msgRow, 0, pic.rows)
 	for row := range pic.rows {
-		rows = append(rows, msgRow{idx: idx, pic: pic, picRow: row, prefix: g.take() + edge})
+		rows = append(rows, msgRow{idx: idx, pic: pic, picRow: row, lead: g.take()})
 	}
 	return rows
 }

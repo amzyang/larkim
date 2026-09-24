@@ -24,13 +24,9 @@ var systemFonts = []string{
 	"/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
 }
 
-// avatarInitials is how many characters a generated avatar carries. Up to
-// four sit in a 2x2 grid, which is how the Feishu client draws a group with
-// no picture of its own.
-// avatarInitials is how many characters of a name the picture carries. Two
-// is what a disc holds at the size a terminal cell grid gives it; a third
-// would either run out of the shape or shrink past reading.
-const avatarInitials = 2
+// avatarInitials is how many characters of a name the picture carries. Up to
+// four sit in a 2x2 grid, which is how the Feishu client draws one.
+const avatarInitials = 4
 
 // generatedPalette are the background colours, dark enough for white glyphs.
 var generatedPalette = []color.RGBA{
@@ -62,9 +58,14 @@ var avatarFont = sync.OnceValue(func() *sfnt.Font {
 // avatarFace builds a face at the size one glyph gets, which depends on how
 // many share the disc and how large that disc is on screen.
 func avatarFace(glyphs, side int) font.Face {
-	size := float64(side) * 0.56 // one glyph, alone
-	if glyphs > 1 {
-		size = float64(side) * 0.35 // one of a pair, clear of the rim
+	// Each tier keeps the glyphs inside the disc: a row sits on a chord, not
+	// on the full width, so the more of them share one the smaller they go.
+	size := float64(side) * 0.54 // one glyph, alone
+	switch {
+	case glyphs > 2:
+		size = float64(side) * 0.29 // one cell of the 2x2 grid
+	case glyphs == 2:
+		size = float64(side) * 0.34 // one of a pair, clear of the rim
 	}
 	return faceAt(size)
 }
@@ -158,12 +159,19 @@ func maskDisc(m *image.RGBA) {
 }
 
 // glyphCell is the box one glyph owns: the whole avatar when it is alone, a
-// half-width column when two share it.
+// half-width column when two share it, a cell of the 2x2 grid beyond that. A
+// row the grid leaves short is centred, so three characters do not sit
+// lopsided against the rim.
 func glyphCell(count, i, w, h int) image.Rectangle {
 	if count <= 1 {
 		return image.Rect(0, 0, w, h)
 	}
-	return image.Rect(i*w/2, 0, (i+1)*w/2, h)
+	const cols = 2
+	rows := (count + cols - 1) / cols
+	row, col := i/cols, i%cols
+	cw, ch := w/cols, h/rows
+	x := (w-min(cols, count-row*cols)*cw)/2 + col*cw
+	return image.Rect(x, row*ch, x+cw, (row+1)*ch)
 }
 
 // drawGlyph centres one glyph in cell, on the face's own ascent and descent

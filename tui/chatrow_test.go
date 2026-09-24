@@ -266,11 +266,22 @@ func TestChatSummary_KeepsAMentionOfTheReaderVisibleThroughTheDim(t *testing.T) 
 		LastMentionsJSON: `[{"id":"ou_me","key":"@_user_1","name":"林岚"}]`}
 	row := renderChatRow(textAvatars{}, c, 0, "ou_me", testNow, 36, emojiPics{})
 	require.Contains(t, row.bottom, stMentionMe.Render("@林岚"))
-	require.Contains(t, ansi.Strip(row.bottom), "孙琪: @林岚 看下")
+	require.Contains(t, ansi.Strip(row.bottom), "孙琪: "+chipLeft+"@林岚"+chipRight+" 看下",
+		"the badge keeps its caps at summary width")
 
 	c.LastContent, c.LastMentionsJSON = "@_all all", ""
 	row = renderChatRow(textAvatars{}, c, 0, "ou_me", testNow, 36, emojiPics{})
 	require.Contains(t, ansi.Strip(row.bottom), "孙琪: @All all")
+}
+
+func TestChatSummary_LeavesAMentionOfSomebodyElseInTheRowsOwnDim(t *testing.T) {
+	c := store.Chat{ChatID: "oc_1", Name: "项目协作群", ChatMode: "group", LastMessageID: "om_1", LastRenderedAt: 1,
+		LastSenderName: "孙琪", LastSenderID: "ou_x", LastContent: "@李四 看下",
+		LastMentionsJSON: `[{"id":"ou_a","key":"@_user_1","name":"李四"}]`}
+	row := renderChatRow(textAvatars{}, c, 0, "ou_me", testNow, 36, emojiPics{})
+	require.Contains(t, row.bottom, stDim.Render("@李四"))
+	require.NotContains(t, row.bottom, stAccent.Render("@李四"),
+		"the summary is one line: colouring an @ that is not the reader's says nothing")
 }
 
 // reactedP2P is a one-to-one chat whose newest message collected reactions,

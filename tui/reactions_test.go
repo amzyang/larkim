@@ -94,7 +94,7 @@ func TestReactionChip_DrawsAPictureWhereNoCharacterCarriesTheEmoji(t *testing.T)
 	dir := t.TempDir()
 	writeTestEmoji(t, dir, "JIAYI")
 	st := baseStyle()
-	st.emojiDir = dir
+	st.dataDir = dir
 	st.place = picturesIn(dir).place
 
 	segs := reactionChip(emoji.Chip{Key: "JIAYI", Count: 2}, st)
@@ -125,7 +125,7 @@ func TestReactionChip_ReadsASkinToneAsTheEmojiItIsAToneOf(t *testing.T) {
 func picturesIn(dir string) *pictures {
 	return &pictures{dataDir: dir, cellW: 10, cellH: 20,
 		size: map[string]image.Point{}, failed: map[string]bool{},
-		id: map[string]int{}, used: map[string]int64{}}
+		id: map[string]int{}, used: map[string]int64{}, drew: map[string]bool{}}
 }
 
 // writeTestEmoji leaves one emoji picture where emojiChip will look for it.

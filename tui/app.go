@@ -248,6 +248,7 @@ func (m Model) picturePrepare() string {
 	collect := func(rows []msgRow, lo, hi int) {
 		for i := clamp(lo, 0, len(rows)); i < clamp(hi, 0, len(rows)) && len(pics) < picIDs; i++ {
 			take(rows[i].pic)
+			take(rows[i].lead.pic)
 			for _, s := range rows[i].segs {
 				take(s.pic)
 			}

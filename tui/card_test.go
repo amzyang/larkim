@@ -46,11 +46,8 @@ x
 	require.False(t, ok, "only the DSL parses as a card")
 }
 
-func TestRenderCard_FramesTheCardAndDropsTheMarkup(t *testing.T) {
+func TestRenderCard_LaysTheCardOutAndDropsTheMarkup(t *testing.T) {
 	out := cardLines(weeklyCard, 50)
-	for _, line := range strings.Split(out, "\n") {
-		require.True(t, strings.HasPrefix(line, cardRule+" "), "every line carries the card's edge: %q", line)
-	}
 	require.Contains(t, out, "设备版本周报")
 	require.Contains(t, out, "「兜底」", "the header tag rides with the title")
 	require.Contains(t, out, "待认领账号：13 个", "bold markers are styling, not text")

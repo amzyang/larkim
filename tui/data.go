@@ -102,8 +102,11 @@ type (
 // apart, the files a message's attachments were downloaded to, and the
 // messages this page replies to, which are often older than the page.
 type msgMeta struct {
-	suffix  map[string]string
-	people  map[string]string
+	suffix map[string]string
+	people map[string]string
+	// avatars are the senders' downloaded pictures, by open id, relative to
+	// the data dir. A contact with none is absent rather than empty.
+	avatars map[string]string
 	res     map[string][]store.Resource
 	parents map[string]store.Message
 }
@@ -148,6 +151,7 @@ func loadMeta(ctx context.Context, st *store.Store, msgs []store.Message) (msgMe
 	}
 	suffix := make(map[string]string, len(contacts))
 	people := make(map[string]string, len(contacts))
+	avatars := make(map[string]string, len(contacts))
 	for id, c := range contacts {
 		if s := c.AccountSuffix(); s != "" {
 			suffix[id] = s
@@ -155,12 +159,15 @@ func loadMeta(ctx context.Context, st *store.Store, msgs []store.Message) (msgMe
 		if c.Name != "" {
 			people[id] = c.Name
 		}
+		if f := c.AvatarFile(); f != "" {
+			avatars[id] = f
+		}
 	}
 	res, err := st.ResourcesForMessages(ctx, msgIDs)
 	if err != nil {
 		return msgMeta{}, err
 	}
-	return msgMeta{suffix: suffix, people: people, res: res, parents: parents}, nil
+	return msgMeta{suffix: suffix, people: people, avatars: avatars, res: res, parents: parents}, nil
 }
 
 func searchMessages(st *store.Store, query string) tea.Cmd {

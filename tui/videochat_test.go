@@ -44,8 +44,7 @@ func TestBodyRows_ALiveCallCardsTheMeetingWithAJoinButton(t *testing.T) {
 	join, ok := joinRow(rows)
 	require.True(t, ok, "a live call carries a join target: %q", out)
 	require.Equal(t, "lark://vc.feishu.cn/j/100000000", join.zone.url)
-	require.Equal(t, gutterWidth+lipgloss.Width(cardRule+" "), join.zone.x0,
-		"the target starts where the button is drawn")
+	require.Equal(t, leadWidth, join.zone.x0, "the target starts where the button is drawn")
 	require.Equal(t, join.zone.x0+lipgloss.Width(" Join "), join.zone.x1)
 }
 

@@ -23,22 +23,23 @@ const (
 // text message's mentions arrive already spelled as "@name", a post's do not.
 var atTag = regexp.MustCompile(`^<at user_id="([^"]*)"[^>]*>([^<]*)</at>`)
 
-// mentionKind is how loudly one @ run is drawn. Only a mention that reaches
-// the reader earns a colour: their own takes the filled badge the client
-// paints, @All the accent below it, and everyone else's reads as body text.
+// mentionKind is how loudly one @ run is drawn, which follows who it reaches:
+// the reader's own takes the filled badge the client paints, a name the room
+// can answer takes the accent, and one it cannot is drawn away.
 type mentionKind int
 
 const (
 	mentionPlain mentionKind = iota
 	mentionMe
 	mentionAll
+	mentionAway
 )
 
 // mentionRun is one @ run: key is how it stands in the rendered text, text is
-// what is drawn in its place.
+// what is drawn in its place, and id is who it names — @All names nobody.
 type mentionRun struct {
-	key, text string
-	kind      mentionKind
+	id, key, text string
+	kind          mentionKind
 }
 
 // mentions styles the @ runs of one message. Runs are carried for people the
@@ -47,7 +48,13 @@ type mentionRun struct {
 type mentions struct {
 	runs []mentionRun
 	self string
+	// peer is the person across from the reader, set only in a chat of two.
+	peer string
 	base lipgloss.Style
+	// other is how a mention of somebody else is drawn. A message body gives it
+	// the accent, the @ runs being the only colour the body carries; a chat row
+	// hands it the row's own dim instead, on() below.
+	other lipgloss.Style
 }
 
 // mentionsIn reads the `[{id,name}]` a message's rendering carries. The text
@@ -55,9 +62,10 @@ type mentions struct {
 // whole.
 func mentionsIn(mentionsJSON, self string) mentions {
 	m := mentions{
-		runs: []mentionRun{{key: allKey, text: allName, kind: mentionAll}},
-		self: self,
-		base: lipgloss.NewStyle(),
+		runs:  []mentionRun{{key: allKey, text: allName, kind: mentionAll}},
+		self:  self,
+		base:  lipgloss.NewStyle(),
+		other: stAccent,
 	}
 	var items []struct {
 		ID   string `json:"id"`
@@ -70,30 +78,62 @@ func mentionsIn(mentionsJSON, self string) mentions {
 		if it.Name == "" {
 			continue
 		}
-		run := mentionRun{key: "@" + it.Name, text: "@" + it.Name}
-		if self != "" && it.ID == self {
-			run.kind = mentionMe
-		}
-		m.runs = append(m.runs, run)
+		m.runs = append(m.runs, mentionRun{id: it.ID, key: "@" + it.Name, text: "@" + it.Name,
+			kind: m.kindOf(it.ID)})
 	}
 	slices.SortStableFunc(m.runs, func(a, b mentionRun) int { return len(b.key) - len(a.key) })
 	return m
 }
 
-// on draws the text around the mentions in base.
+// on draws the text around the mentions in base, and any @ that is not the
+// reader's own along with it: the line is one colour, so only a mention that
+// reaches them is worth breaking out of it.
 func (m mentions) on(base lipgloss.Style) mentions {
-	m.base = base
+	m.base, m.other = base, base
 	return m
 }
 
-func (m mentions) style(k mentionKind) lipgloss.Style {
-	switch k {
-	case mentionMe:
-		return stMentionMe
-	case mentionAll:
-		return stAccent
+// facing narrows the mentions to a chat of two. Nobody but the reader and the
+// person across from them is in the room, so a third name is a link to their
+// card rather than a call for attention, and is drawn away.
+func (m mentions) facing(peer string) mentions {
+	if peer == "" {
+		return m
 	}
-	return m.base
+	m.peer = peer
+	m.runs = slices.Clone(m.runs)
+	for i, r := range m.runs {
+		if r.id != "" {
+			m.runs[i].kind = m.kindOf(r.id)
+		}
+	}
+	return m
+}
+
+// kindOf places one mention by who it reaches.
+func (m mentions) kindOf(id string) mentionKind {
+	switch {
+	case m.self != "" && id == m.self:
+		return mentionMe
+	case m.peer != "" && id != m.peer:
+		return mentionAway
+	}
+	return mentionPlain
+}
+
+// draw paints one @ run. The reader's own is a filled badge closed by the caps
+// a reaction chip wears, so the two read as one shape; the rest are colour on
+// the line they sit in.
+func (m mentions) draw(r mentionRun) string {
+	switch r.kind {
+	case mentionMe:
+		return stMentionMeEdge.Render(chipLeft) + stMentionMe.Render(r.text) + stMentionMeEdge.Render(chipRight)
+	case mentionAll:
+		return stAccent.Render(r.text)
+	case mentionAway:
+		return stDim.Render(r.text)
+	}
+	return m.other.Render(r.text)
 }
 
 // render draws a stretch of message text that carries no markup of its own:
@@ -114,7 +154,7 @@ func (m mentions) render(s string) string {
 			continue
 		}
 		plain(s[last:i])
-		b.WriteString(m.style(run.kind).Render(run.text))
+		b.WriteString(m.draw(run))
 		i += n
 		last = i
 		// The client sets a mention off as a chip; here it is the space the
@@ -164,9 +204,5 @@ func (m mentions) tagRun(id, name string) mentionRun {
 	if name == "" {
 		name = id
 	}
-	run := mentionRun{text: "@" + name}
-	if m.self != "" && id == m.self {
-		run.kind = mentionMe
-	}
-	return run
+	return mentionRun{id: id, text: "@" + name, kind: m.kindOf(id)}
 }

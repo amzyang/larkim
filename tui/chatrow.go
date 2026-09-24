@@ -13,10 +13,11 @@ import (
 )
 
 const (
-	chatRowHeight = 2 // avatar height, and the two text lines beside it
-	chatRowGap    = 1 // blank line holding one chat's two lines off the next
-	chatRowStride = chatRowHeight + chatRowGap
 	avatarWidth   = 4 // 4x2 cells is about square on a terminal grid
+	avatarHeight  = 2
+	chatRowHeight = avatarHeight // the avatar, and the two text lines beside it
+	chatRowGap    = 1            // blank line holding one chat's two lines off the next
+	chatRowStride = chatRowHeight + chatRowGap
 	avatarGap     = 1
 	minTitleWidth = 2 // a title never shrinks past one glyph plus the ellipsis
 )
@@ -67,10 +68,11 @@ const muteGlyph = ""
 // pane's right edge — a bullet or a middle dot disappears there.
 const mutedDot = "●"
 
-// chatHash is a chat's stable colour seed, so it always looks the same.
-func chatHash(chatID string) uint32 {
+// idHash is a chat's or a person's stable colour seed, so the same one always
+// looks the same.
+func idHash(id string) uint32 {
 	h := fnv.New32a()
-	h.Write([]byte(chatID))
+	h.Write([]byte(id))
 	return h.Sum32()
 }
 
@@ -78,26 +80,29 @@ func chatHash(chatID string) uint32 {
 // these reads on every terminal theme, which a computed shade would not.
 var avatarPalette = []string{"1", "2", "3", "4", "5", "6"}
 
-// avatarBlock is the text stand-in for a chat's picture: a two-line colour
-// block carrying the chat's initial, shaded from the chat id so a chat always
-// looks the same.
-func avatarBlock(c store.Chat) (string, string) {
-	st := lipgloss.NewStyle().Bold(true).
+// avatarStyle is the colour a block takes, shaded from an id so the same chat
+// or the same person always looks the same.
+func avatarStyle(id string) lipgloss.Style {
+	return lipgloss.NewStyle().Bold(true).
 		Foreground(lipgloss.Color("15")).
-		Background(lipgloss.Color(avatarPalette[int(chatHash(c.ChatID))%len(avatarPalette)]))
+		Background(lipgloss.Color(avatarPalette[int(idHash(id))%len(avatarPalette)]))
+}
 
+// avatarBlock is the text stand-in for a picture: a w-wide colour block
+// carrying the first character of a name. It is one line, because the two
+// lists that draw it give the column different heights.
+func avatarBlock(id, name string, w int) string {
 	initial := "?"
-	for _, r := range flatten(c.Name) {
+	for _, r := range flatten(name) {
 		initial = string(r)
 		break
 	}
-	pad := avatarWidth - lipgloss.Width(initial)
+	pad := w - lipgloss.Width(initial)
 	if pad < 0 {
-		initial, pad = "?", avatarWidth-1
+		initial, pad = "?", w-1
 	}
 	left := pad / 2
-	return st.Render(strings.Repeat(" ", left) + initial + strings.Repeat(" ", pad-left)),
-		st.Render(strings.Repeat(" ", avatarWidth))
+	return avatarStyle(id).Render(strings.Repeat(" ", left) + initial + strings.Repeat(" ", pad-left))
 }
 
 // chatTime buckets a timestamp the way the Feishu client does: the closer it

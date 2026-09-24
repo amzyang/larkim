@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"image"
+	"image/png"
 	"os"
 	"path/filepath"
 	"strings"
@@ -32,6 +33,9 @@ type picture struct {
 	// cell background under a placement, so an emoji reads as a reaction
 	// without a second picture cut with the tint baked into it.
 	chip bool
+	// disc clips the picture to the circle the client draws an avatar in.
+	// Unlike chip it changes the pixels, so it travels in the key.
+	disc bool
 }
 
 // gap holds a picture's cells while it is still on its way to the terminal.
@@ -43,7 +47,13 @@ func (p picture) gap() string {
 	return s
 }
 
-func (p picture) key() string { return fmt.Sprintf("%s|%dx%d", p.path, p.cols, p.rows) }
+func (p picture) key() string {
+	k := fmt.Sprintf("%s|%dx%d", p.path, p.cols, p.rows)
+	if p.disc {
+		k += "|disc"
+	}
+	return k
+}
 
 // pictures draws message images through the kitty graphics protocol, the same
 // virtual placements the chat avatars use. A nil *pictures is a terminal
@@ -62,6 +72,10 @@ type pictures struct {
 	id    map[string]int
 	used  map[string]int64
 	clock int64
+	// drew records which generated discs are on disk, so a person with no
+	// avatar file has one drawn once rather than every time a pane lays out.
+	// False is a machine with no usable font, where nothing can be drawn.
+	drew map[string]bool
 }
 
 // newPictures picks the renderer the terminal can show, by the same narrow
@@ -74,7 +88,7 @@ func newPictures(dataDir string, env func(string) string) *pictures {
 		return nil
 	}
 	return &pictures{dataDir: dataDir, size: map[string]image.Point{}, failed: map[string]bool{},
-		id: map[string]int{}, used: map[string]int64{}}
+		id: map[string]int{}, used: map[string]int64{}, drew: map[string]bool{}}
 }
 
 // setCellSize records the terminal's cell size and drops every placement,
@@ -130,6 +144,67 @@ func (p *pictures) place(path string, maxCols, maxRows int) picture {
 	cols := clamp((w+cw-1)/cw, 1, maxCols)
 	rows := clamp((h+ch-1)/ch, 1, maxRows)
 	return picture{path: abs, cols: cols, rows: rows, w: w, h: h}
+}
+
+// generatedDir holds the discs drawn for people who have no avatar file. It
+// sits beside the downloaded ones and is rebuilt on demand, so deleting it
+// costs nothing.
+var generatedDir = filepath.Join("resources", "avatars", "generated")
+
+// disc places a person's picture as the circle the client draws: their avatar
+// file, or one drawn from their name when they have none. A zero size means
+// neither could be had — no graphics, no file and no font — and the caller
+// falls back to the colour block.
+func (p *pictures) disc(file, id, name string, cols, rows int) picture {
+	if p == nil {
+		return picture{}
+	}
+	if file != "" {
+		if pic := p.place(file, cols, rows); pic.cols > 0 {
+			pic.disc = true
+			return pic
+		}
+	}
+	path, ok := p.drawn(id, name, cols, rows)
+	if !ok {
+		return picture{}
+	}
+	// A drawn disc carries its own circle, cut at the size it was drawn.
+	return p.place(path, cols, rows)
+}
+
+// drawn is the file holding the disc drawn for a person with no avatar of
+// their own, writing it the first time it is asked for. It is drawn square
+// rather than to the whole box, so the circle stays a circle on a cell grid
+// that is not exactly half as wide as it is tall.
+func (p *pictures) drawn(id, name string, cols, rows int) (string, bool) {
+	cw, ch := p.cell()
+	side := min(cols*cw, rows*ch)
+	path := filepath.Join(p.dataDir, generatedDir, fmt.Sprintf("%s-%d.png", id, side))
+	if ok, seen := p.drew[path]; seen {
+		return path, ok
+	}
+	p.drew[path] = p.writeDisc(path, id, name, side)
+	return path, p.drew[path]
+}
+
+func (p *pictures) writeDisc(path, id, name string, side int) bool {
+	if _, err := os.Stat(path); err == nil {
+		return true // drawn on an earlier run, at this very cell size
+	}
+	img := generateAvatar(name, idHash(id), side, side)
+	if img == nil {
+		return false // no font on this machine; the colour block takes over
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return false
+	}
+	f, err := os.Create(path)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	return png.Encode(f, img) == nil
 }
 
 // pixels is the file's size, decoded from its header once.
@@ -206,6 +281,15 @@ func (p *pictures) prepare(pics []picture) string {
 		if err != nil {
 			p.failed[pic.path] = true
 			continue
+		}
+		if pic.disc {
+			// The circle is cut from the picture's own pixels, not from the
+			// canvas: the box is rounded up to whole cells, and masking the
+			// slack along with it would flatten the arc where the picture ends.
+			drawn := image.Rect(0, 0, pic.w, pic.h)
+			for _, f := range frames {
+				maskDisc(f.SubImage(drawn).(*image.RGBA))
+			}
 		}
 		id := p.take(key)
 		err = transmitPicture(&out, id, frames[0], pic.cols, pic.rows)

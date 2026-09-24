@@ -145,9 +145,9 @@ func TestModelAvatarPrepare_OnlyCoversWhatIsOnScreen(t *testing.T) {
 
 func TestInitials_SkipsTheDecorationGroupNamesOpenWith(t *testing.T) {
 	for _, tc := range []struct{ name, want string }{
-		{"程序化养号", "程序"},
-		{"【语言】示例问题及需求沟通群", "语言"},
-		{"H程序化直播暖场", "H程"},
+		{"程序化养号", "程序化养"},
+		{"【语言】示例问题及需求沟通群", "语言示例"},
+		{"H程序化直播暖场", "H程序化"},
 		{"李明", "李明"},
 		{"孙琪", "孙琪"},
 		{"- _ ·", ""},
@@ -165,6 +165,15 @@ func TestGlyphCell_LaysGlyphsOutByCount(t *testing.T) {
 	require.Equal(t, image.Rect(0, 0, 40, h), glyphCell(2, 0, w, h))
 	require.Equal(t, image.Rect(40, 0, w, h), glyphCell(2, 1, w, h),
 		"two sit side by side")
+
+	require.Equal(t, image.Rect(0, 0, 40, 20), glyphCell(4, 0, w, h))
+	require.Equal(t, image.Rect(40, 0, w, 20), glyphCell(4, 1, w, h))
+	require.Equal(t, image.Rect(0, 20, 40, h), glyphCell(4, 2, w, h))
+	require.Equal(t, image.Rect(40, 20, w, h), glyphCell(4, 3, w, h),
+		"four fall into a 2x2 grid, in reading order")
+
+	require.Equal(t, image.Rect(20, 20, 60, h), glyphCell(3, 2, w, h),
+		"a row the grid leaves short is centred")
 }
 
 func TestKittyAvatars_DrawsAtTheCellSizeTheTerminalReports(t *testing.T) {

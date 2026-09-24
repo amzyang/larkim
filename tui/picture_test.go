@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"image"
 	"os"
 	"path/filepath"
 	"testing"
@@ -173,4 +174,89 @@ func TestPictures_DrawsEveryFormatFeishuSends(t *testing.T) {
 		require.NotZero(t, pic.cols, "%s is an image message like any other", name)
 		require.NotEmpty(t, p.prepare([]picture{pic}), "%s reaches the terminal", name)
 	}
+}
+
+func TestPicturePlace_ADiscKeepsAKeyOfItsOwn(t *testing.T) {
+	plain := picture{path: "a.png", cols: 2, rows: 1}
+	disc := plain
+	disc.disc = true
+	require.NotEqual(t, plain.key(), disc.key(),
+		"the mask changes the pixels, so the two cannot share an image id")
+}
+
+func TestPicturesPrepare_ADiscIsClippedToTheCircle(t *testing.T) {
+	dir := t.TempDir()
+	path := writeFilledPNG(t, dir, "a.png", 40, 40)
+	plain := picturesIn(dir).place(path, 2, 1)
+	require.Equal(t, 2, plain.cols, "a square picture one row tall is two columns wide")
+	disc := plain
+	disc.disc = true
+
+	// The file is opaque everywhere, so the two transmissions can only differ
+	// where the mask cleared the corners.
+	sent := func(pic picture) string {
+		p := picturesIn(dir)
+		out := p.prepare([]picture{pic})
+		require.NotEmpty(t, out)
+		require.Contains(t, p.id, pic.key())
+		return out
+	}
+	require.NotEqual(t, sent(plain), sent(disc), "the disc is transmitted with its corners cut")
+}
+
+func TestPicturesDisc_PlacesTheDownloadedFileAsACircle(t *testing.T) {
+	dir := t.TempDir()
+	file := writeFilledPNG(t, dir, "a.png", 240, 240)
+	p := picturesIn(dir)
+
+	pic := p.disc(file, "ou_a", "孙琪", avatarWidth, avatarHeight)
+	require.Equal(t, avatarWidth, pic.cols)
+	require.Equal(t, avatarHeight, pic.rows)
+	require.True(t, pic.disc, "a downloaded picture is clipped to the circle")
+	require.NoDirExists(t, filepath.Join(dir, generatedDir), "nothing is drawn for somebody who has a picture")
+}
+
+func TestPicturesDisc_DrawsOneForSomebodyWithNoFile(t *testing.T) {
+	dir := t.TempDir()
+	p := picturesIn(dir)
+
+	pic := p.disc("", "ou_a", "孙琪", avatarWidth, avatarHeight)
+	if pic.cols == 0 {
+		t.Skip("no system font to draw a disc with")
+	}
+	require.Equal(t, avatarWidth, pic.cols)
+	require.Equal(t, avatarHeight, pic.rows)
+	require.False(t, pic.disc, "the drawn picture is a circle already; masking it again says nothing")
+
+	// Square rather than the whole box: a circle cut to an oblong box would
+	// come out a capsule.
+	cfg, err := os.Open(pic.path)
+	require.NoError(t, err)
+	defer cfg.Close()
+	img, _, err := image.DecodeConfig(cfg)
+	require.NoError(t, err)
+	require.Equal(t, img.Width, img.Height)
+}
+
+func TestPicturesDisc_DrawsEachPersonOnce(t *testing.T) {
+	dir := t.TempDir()
+	p := picturesIn(dir)
+	pic := p.disc("", "ou_a", "孙琪", avatarWidth, avatarHeight)
+	if pic.cols == 0 {
+		t.Skip("no system font to draw a disc with")
+	}
+
+	require.NoError(t, os.Remove(pic.path), "the file is not read again, so removing it proves the memo")
+	require.Equal(t, pic, p.disc("", "ou_a", "孙琪", avatarWidth, avatarHeight))
+}
+
+func TestPicturesDisc_AFileThatCannotBeReadFallsBackToADrawnOne(t *testing.T) {
+	dir := t.TempDir()
+	p := picturesIn(dir)
+
+	pic := p.disc("missing.png", "ou_a", "孙琪", avatarWidth, avatarHeight)
+	if pic.cols == 0 {
+		t.Skip("no system font to draw a disc with")
+	}
+	require.Contains(t, pic.path, generatedDir)
 }

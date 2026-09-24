@@ -88,7 +88,7 @@ func TestRenderMessages_MarksTheQuotedMessage(t *testing.T) {
 	m.msgIdx = len(m.msgs) - 1
 	m.replyTo, m.mode, m.focus = &m.msgs[m.msgIdx], modeInsert, paneInput
 	m.layout()
-	require.Contains(t, ansi.Strip(m.renderMessages(m.bodyHeight())), "↩ ",
-		"the gutter says which message the open draft answers")
+	require.Contains(t, ansi.Strip(m.renderMessages(m.bodyHeight())), "↩",
+		"the lead says which message the open draft answers")
 	require.Equal(t, before, len(m.msgRows), "aiming the draft adds no row, so the list stays where it was")
 }

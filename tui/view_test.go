@@ -353,3 +353,18 @@ func TestHighlightChat_KeepsARunsOwnColours(t *testing.T) {
 	require.GreaterOrEqual(t, strings.Count(line, "48;2;231;238;252"), 3,
 		"the tint is re-applied after every embedded style: %q", line)
 }
+
+func TestRenderSearchRows_DoesNotLendOneChatsPeerToAnothers(t *testing.T) {
+	msgs := []store.Message{{MessageID: "om_1", ChatID: "oc_g", SenderID: "ou_x", SenderName: "孙琪",
+		Content: "@李四 看下", MentionsJSON: `[{"id":"ou_a","key":"@_user_1","name":"李四"}]`,
+		CreateMs: msgAt(23, 9, 0), RenderedAt: 1}}
+	st := baseStyle()
+	st.p2p, st.peer = true, "ou_peer"
+
+	var out strings.Builder
+	for _, r := range renderSearchRows(msgs, []store.Chat{{ChatID: "oc_g", Name: "平台组"}}, st) {
+		out.WriteString(segText(r))
+	}
+	require.Contains(t, out.String(), stAccent.Render("@李四"),
+		"hits run across chats, so the one the cursor sits on lends them nothing")
+}

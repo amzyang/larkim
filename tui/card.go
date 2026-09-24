@@ -7,14 +7,6 @@ import (
 	"charm.land/lipgloss/v2"
 )
 
-// cardRule is the left edge that stands for the card's frame. One column of
-// it costs less than a box and still separates the card from plain messages.
-const cardRule = "▌"
-
-// cardEdge is that frame with the gap that sets a row's content off it, which
-// is what every framed row opens with.
-func cardEdge() string { return stAccent.Render(cardRule) + " " }
-
 var (
 	stCardTitle = lipgloss.NewStyle().Bold(true).Foreground(colAccent)
 
@@ -99,11 +91,10 @@ func cardUnescape(s string) string {
 // renderCard draws a card the way the Feishu client frames one: a title band,
 // the body, and the actions as buttons on a row of their own.
 func renderCard(c card, width int, ms mentions) []cardRow {
-	inner := max(4, width-2)
 	var out []cardRow
 	add := func(s string) {
-		for _, line := range wrap(s, inner) {
-			out = append(out, cardRow{text: cardEdge() + line})
+		for _, line := range wrap(s, width) {
+			out = append(out, cardRow{text: line})
 		}
 	}
 
@@ -124,7 +115,7 @@ func renderCard(c card, width int, ms mentions) []cardRow {
 		trimmed := strings.TrimSpace(line)
 		switch img := cardImage.FindStringSubmatch(trimmed); {
 		case trimmed == "---":
-			add(stDim.Render(strings.Repeat("─", inner)))
+			add(stDim.Render(strings.Repeat("─", width)))
 		case img != nil:
 			out = append(out, cardRow{imgKey: img[1]})
 		case cardActionLine.MatchString(line):

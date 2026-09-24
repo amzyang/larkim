@@ -34,17 +34,15 @@ func joinLink(x store.Message) string {
 // videoChatRows card a call the way the client draws one: the topic, with
 // how long it ran (or that it is still running) at the right, the meeting
 // number, and, while it runs, the button that joins it.
-func videoChatRows(v sync.VideoChat, idx int, st msgStyle, g *gutters) []msgRow {
-	edge := cardEdge()
-	inner := st.inner() - lipgloss.Width(edge)
+func videoChatRows(v sync.VideoChat, idx int, st msgStyle, g *leads) []msgRow {
+	inner := st.inner()
 	var rows []msgRow
 	// A row's click target, when it has one, is the whole of what the row
-	// draws, sitting past the gutter and the frame.
+	// draws, sitting past the lead.
 	line := func(s, url string) {
-		prefix := g.take() + edge
-		row := msgRow{text: prefix + s, idx: idx}
+		row := msgRow{lead: g.take(), text: s, idx: idx}
 		if url != "" {
-			x0 := lipgloss.Width(prefix)
+			x0 := row.lead.cols()
 			row.zone = clickZone{x0: x0, x1: x0 + lipgloss.Width(s), url: url}
 		}
 		rows = append(rows, row)
