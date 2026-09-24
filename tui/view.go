@@ -138,7 +138,7 @@ func (m Model) messagesWidth() int {
 // details the store holds.
 func (m Model) msgStyleFor(width int, meta msgMeta) msgStyle {
 	st := msgStyle{width: width, height: m.picHeight(), self: m.deps.Self, now: time.Now(),
-		suffix: meta.suffix, res: meta.res, parents: meta.parents, outbox: m.outboxStates()}
+		suffix: meta.suffix, res: meta.res, parents: meta.parents, outbox: m.outboxStates(), dots: m.dots}
 	if m.replyTo != nil {
 		st.quoted = m.replyTo.MessageID
 	}

@@ -76,6 +76,12 @@ type Model struct {
 	msgTop   int // first visible line of the message pane
 	msgRows  []msgRow
 	msgSince int64 // when set, the page starts here instead of at the newest messages
+	// dots holds the messages the unread marker is drawn against, gathered as
+	// pages arrive and dropped on the way into another chat. Opening a chat
+	// takes its messages as read at once, so a marker read straight off the
+	// store would go out under the reader's eyes; this visit keeps showing
+	// what was waiting when it began, and the next one starts clean.
+	dots map[string]bool
 	// pendingChat is a chat whose page has been asked for but not arrived. The
 	// panes stay on the chat they are showing until it does, so a cursor
 	// running down the list never leaves a blank behind it.
@@ -302,11 +308,12 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		default:
 			return m, nil
 		}
+		m.markDots(msg.msgs)
 		m.msgsBase, m.meta = msg.msgs, msg.meta
 		m.applyOutbox()
 		if m.searching {
 			// The cursor and viewport index m.searchResults, not m.msgs.
-			return m, markConsumed(m.deps.Store, msg.msgs)
+			return m, m.takeRead(msg.chatID, msg.msgs)
 		}
 		m.msgIdx = len(m.msgs) - 1
 		if i := indexOfID(m.msgs, wasOn); !atEnd && i >= 0 {
@@ -326,7 +333,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.msgTop = clamp(firstRow(m.msgRows, m.msgIdx)-row, 0, max(0, len(m.msgRows)-m.listHeight()))
 		}
 		m.scrollMessagesToSelection()
-		return m, markConsumed(m.deps.Store, msg.msgs)
+		return m, m.takeRead(msg.chatID, msg.msgs)
 	case searchMsg:
 		m.searching, m.searchQuery, m.searchResults, m.searchMeta = true, msg.query, msg.msgs, msg.meta
 		m.msgIdx, m.msgTop = 0, 0
@@ -343,6 +350,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		wasOn := idAt(m.thread, m.threadIdx)
+		m.markDots(msg.msgs)
 		m.threadBase, m.threadMeta = msg.msgs, msg.meta
 		m.applyOutbox()
 		if m.threadIdx >= len(m.thread) {
@@ -446,12 +454,36 @@ func (m *Model) openChatFrom(chatID string, sinceMs int64) tea.Cmd {
 // ever left showing one chat under another's name.
 func (m *Model) enterChat() {
 	m.searching, m.searchResults, m.searchQuery = false, nil, ""
+	m.dots = nil
 	m.chatID, m.msgSince = m.pendingChat, m.pendingSince
 	m.pendingChat, m.pendingSince = "", 0
 	m.msgs, m.msgsBase, m.msgRows, m.msgIdx, m.msgTop = nil, nil, nil, 0, 0
 	m.threadOpen, m.threadID, m.thread, m.threadBase, m.threadRows = false, "", nil, nil, nil
 	m.replyTo, m.inThrd = nil, false
 	m.selectCurrentChat()
+}
+
+// markDots keeps the unread markers of a page that has just arrived. A page
+// is read against the state it was queried with, before takeRead clears it,
+// so a marker lit on one page stays lit through the reload that clearing
+// causes.
+func (m *Model) markDots(msgs []store.Message) {
+	for _, x := range msgs {
+		if x.IsReadRemote != nil && !*x.IsReadRemote && x.LocalReadAt == 0 {
+			if m.dots == nil {
+				m.dots = map[string]bool{}
+			}
+			m.dots[x.MessageID] = true
+		}
+	}
+}
+
+// takeRead records that the reader has had a chat's page in front of them:
+// consumed for the CLI cursor, read for the badge. Both run on every page,
+// reloads included, so the chat being watched does not light up again as
+// messages land in it.
+func (m Model) takeRead(chatID string, msgs []store.Message) tea.Cmd {
+	return tea.Batch(markConsumed(m.deps.Store, msgs), markChatRead(m.deps.Store, chatID))
 }
 
 // selectCurrentChat puts the cursor on the chat being opened within the

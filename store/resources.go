@@ -149,11 +149,26 @@ func (s *Store) ReadCheckCount(ctx context.Context, messageID string) (int, erro
 }
 
 // unreadBadge is what the chat list treats as unread: a live main-flow
-// message Feishu still reports as unseen. Thread replies are out — a thread
-// exists so that answering an old topic does not pull the whole chat back
-// into everyone's view — so neither the counter nor the chat's place in the
-// list moves for one.
-const unreadBadge = `r.is_read_remote = 0 AND m.deleted = 0 AND m.message_position >= 0`
+// message Feishu still reports as unseen and no larkim reader has had in
+// front of them. Both flags can only witness that a message was seen, so
+// reading either one as "seen" adds no false unread. Thread replies are out —
+// a thread exists so that answering an old topic does not pull the whole chat
+// back into everyone's view — so neither the counter nor the chat's place in
+// the list moves for one.
+const unreadBadge = `r.is_read_remote = 0 AND r.local_read_at = 0 AND m.deleted = 0 AND m.message_position >= 0`
+
+// MarkChatRead takes every message the chat's badge counts as seen locally.
+// Feishu has no mark-read call, so this is the only way a badge falls without
+// leaving larkim. consumed_at is left alone: that cursor belongs to the CLI
+// consumers, not to a reader looking at the pane. Matching no row — the
+// ordinary case on a chat already read — writes nothing, so the data_rev
+// trigger stays quiet and the TUI does not reload itself in a circle.
+func (s *Store) MarkChatRead(ctx context.Context, chatID string, now int64) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE read_state SET local_read_at = ?
+ WHERE message_id IN (SELECT m.message_id FROM messages m JOIN read_state r ON r.message_id = m.message_id
+   WHERE m.chat_id = ? AND `+unreadBadge+`)`, now, chatID)
+	return err
+}
 
 // UnreadCount is every message Feishu still reports as unread, thread replies
 // included: the sync backlog behind the read-status poller, not what the chat

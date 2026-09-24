@@ -318,10 +318,10 @@ func TestRenderRows_SplitsABlockAtASystemMessage(t *testing.T) {
 }
 
 func TestRenderRows_SplitsABlockWhenTheReadStateDiffers(t *testing.T) {
-	read, unread := true, false
 	msgs := []store.Message{said("om_1", "孙琪", "早", 23, 9, 0), said("om_2", "孙琪", "在吗", 23, 9, 1)}
-	msgs[0].IsReadRemote, msgs[1].IsReadRemote = &read, &unread
-	rows := renderRows(msgs, baseStyle())
+	st := baseStyle()
+	st.dots = map[string]bool{"om_2": true}
+	rows := renderRows(msgs, st)
 	require.Equal(t, 2, blocks(rows, "孙琪"), "the unread dot heads a block, so a block is all read or all unread")
 	require.Equal(t, "● ", gutterOf(rows[3]), "the dot opens the unread block")
 }
@@ -451,10 +451,10 @@ func TestRenderRows_EveryMessageOwnsARow(t *testing.T) {
 }
 
 func TestRenderRows_DotsTheBlockRatherThanEveryUnreadMessage(t *testing.T) {
-	unread := false
 	msgs := []store.Message{said("om_1", "孙琪", "会推迟了", 23, 9, 0), said("om_2", "孙琪", "改到三点", 23, 9, 1)}
-	msgs[0].IsReadRemote, msgs[1].IsReadRemote = &unread, &unread
-	rows := renderRows(msgs, baseStyle())
+	st := baseStyle()
+	st.dots = map[string]bool{"om_1": true, "om_2": true}
+	rows := renderRows(msgs, st)
 	require.Equal(t, 1, blocks(rows, "孙琪"), "one unread block")
 	require.Equal(t, 1, strings.Count(rowText(rows), "●"), "a block is all unread, so one dot says it")
 }

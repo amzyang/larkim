@@ -29,7 +29,7 @@ TUI 左侧会话列表按飞书桌面端的信息密度重做：头像 + 两行�
 - **会话名**：`chats.name`；为空时用 `chat_id`。p2p 对方的企业邮箱前缀带数字尾号时（`liming01`），名字后追加该尾号：`李明 (01)`。尾号不参与截断，截断只作用于姓名部分。
 - **BOT 徽章**：p2p 会话看 `chats.p2p_target_type = 'bot'`；群聊看最新消息的 `sender_type = 'app'`。
 - **状态标签**：p2p 对方的个人状态（`On Leave`、`出差`、`会议中`），取 `personal_status.title`。仅 p2p 会话显示。
-- **未读数**：主消息流里 `read_state.is_read_remote = 0` 的计数，accent 色；免打扰会话画成淡色。thread 回复不计——见「排序与可见性」。
+- **未读数**：主消息流里飞书仍报未读、且在 larkim 里也没被读过的计数（`read_state.is_read_remote = 0` 且 `local_read_at = 0`），accent 色；免打扰会话画成淡色。thread 回复不计——见「排序与可见性」。
 - **时间戳**：会话最新消息时间，按自然日分档——今天 `HH:mm`，昨天 `昨天`，本周内 `周一`…`周日`，本年内 `MM-DD`，跨年 `YYYY-MM-DD`。
 
 宽度不足时右对齐部分先占位，BOT 与状态标签保留，会话名承担截断（尾部 `…`），下限 2 列。
@@ -79,7 +79,7 @@ TUI 左侧会话列表按飞书桌面端的信息密度重做：头像 + 两行�
 | p2p 头像 | `contacts.avatar_path`，经 `chats` 的联系人 join 取出 | 联系人详情回填 |
 | p2p 对方账号尾号 | `contacts.enterprise_email` 的前缀，同一个 join | 联系人详情回填 |
 | 最新消息 | `chats.last_*` 冷存列 | 见「冷存摘要」 |
-| 未读数 | `read_state.is_read_remote = 0` 且 `messages.message_position >= 0` | 随同步轮询；打开会话时对该会话立即重查一次 |
+| 未读数 | `read_state.is_read_remote = 0` 且 `local_read_at = 0` 且 `messages.message_position >= 0` | 随同步轮询；打开会话时对该会话立即重查一次，并把该会话主流未读整批记为本地已读 |
 | mute | `lark-cli api POST /open-apis/im/v1/chat_user_setting/batch_get_mute_status --as user` | 随 chats 全量刷新 |
 | 个人状态 | `lark-cli contact user_profiles batch_query`，`query_option.include_personal_status = true` | 随联系人刷新 |
 | 草稿 / 发送失败 | `drafts` 表 | TUI 写入 |

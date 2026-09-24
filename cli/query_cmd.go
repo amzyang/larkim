@@ -250,6 +250,9 @@ func (a *App) messagesShowCmd() *cobra.Command {
 			if m.IsReadRemote != nil {
 				fmt.Fprintf(a.Out, "read (feishu): %v\n", *m.IsReadRemote)
 			}
+			if m.LocalReadAt != 0 {
+				fmt.Fprintf(a.Out, "read (local): %s\n", fmtMs(m.LocalReadAt))
+			}
 			if m.ConsumedAt != 0 {
 				fmt.Fprintf(a.Out, "consumed:    %s\n", fmtMs(m.ConsumedAt))
 			}

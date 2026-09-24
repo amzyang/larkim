@@ -2,7 +2,7 @@
 
 Database: `larkim db path` (default `~/.larkim/larkim.db`). WAL mode; readers never block the daemon. The authoritative DDL is `larkim schema` (embedded migrations in `store/migrations/`). All timestamps are Unix **milliseconds** in UTC unless the column name says otherwise.
 
-Ownership: the daemon (or an embedded syncer holding `daemon.lock`) writes every table except `read_state.consumed_at`, which belongs to consumers (CLI, TUI).
+Ownership: the daemon (or an embedded syncer holding `daemon.lock`) writes every table except `read_state.consumed_at` and `read_state.local_read_at`, which belong to consumers (CLI, TUI).
 
 ## chats
 
@@ -67,13 +67,16 @@ Canonical ordering: `ORDER BY create_ms, message_position, id`.
 
 ## read_state
 
-Per-message read state, joined on `message_id`. Rows exist only for messages that were checked or consumed.
+Per-message read state, joined on `message_id`. Rows exist only for messages that were checked, read or consumed.
 
 | column | meaning |
 |---|---|
-| `is_read_remote` | NULL unknown, 0 unread, 1 read, as reported by Feishu for the current user. The flag is a per-message read receipt, which flips only on messages the user actually viewed; it is not the client's chat-level badge. Messages older than the 7-day polling horizon go back to NULL, since nothing can refresh them. A chat's badge counts the rows where this is 0 on a live message with a non-negative `message_position`; thread replies are left out |
+| `is_read_remote` | NULL unknown, 0 unread, 1 read, as reported by Feishu for the current user. The flag is a per-message read receipt, which flips only on messages the user actually viewed; it is not the client's chat-level badge. Messages older than the 7-day polling horizon go back to NULL, since nothing can refresh them |
 | `remote_checked_at`, `check_count`, `next_check_at` | polling schedule for the remote flag |
-| `consumed_at` | local: a larkim consumer marked the message as seen (`larkim mark consumed`); never written by the daemon |
+| `local_read_at` | local: the reader had the message in front of them in larkim, which is set for a whole chat at once when it is opened. Feishu offers no way to write a read receipt, so this is what lets a badge fall without leaving larkim; the Feishu client's own red dot is unaffected |
+| `consumed_at` | local: a larkim consumer marked the message as seen (`larkim mark consumed`), a processing cursor for scripts rather than a record of a person reading; never written by the daemon |
+
+A chat's badge counts the rows where `is_read_remote` is 0 and `local_read_at` is 0 on a live message with a non-negative `message_position`; thread replies are left out. Both flags can only witness that a message was seen, so taking either one as read adds no false unread.
 
 ## resources
 
@@ -113,10 +116,10 @@ SELECT rev FROM data_rev;  -- changed since last poll? re-read what you display
 ## Example queries
 
 ```sql
--- Unread-by-me messages from the last day, newest first
+-- Unread-by-me messages from the last day, newest first, on the badge's rule
 SELECT m.message_id, m.chat_id, m.sender_name, m.content
 FROM messages m LEFT JOIN read_state r ON r.message_id = m.message_id
-WHERE m.create_ms > (unixepoch() - 86400) * 1000 AND r.is_read_remote = 0 AND m.deleted = 0
+WHERE m.create_ms > (unixepoch() - 86400) * 1000 AND r.is_read_remote = 0 AND r.local_read_at = 0 AND m.deleted = 0
 ORDER BY m.create_ms DESC;
 
 -- A thread in order

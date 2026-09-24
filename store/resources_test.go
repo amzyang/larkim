@@ -226,3 +226,86 @@ func TestUnreadCountsByChat_SkipsThreadReplies(t *testing.T) {
 	total, _ := s.UnreadCount(ctx)
 	require.Equal(t, int64(2), total, "the backlog measure counts the reply all the same")
 }
+
+func TestMarkChatRead_ClearsTheBadgeOfOneChat(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+	_, err := s.UpsertMessages(ctx, []Message{
+		msgAt("om_a1", "oc_a", 10, 1, "one"),
+		msgAt("om_a2", "oc_a", 20, 1, "two"),
+		msgAt("om_b", "oc_b", 30, 1, "elsewhere"),
+	}, 1)
+	require.NoError(t, err)
+	markUnread(t, s, "om_a1")
+	markUnread(t, s, "om_a2")
+	markUnread(t, s, "om_b")
+
+	require.NoError(t, s.MarkChatRead(ctx, "oc_a", 5000))
+
+	counts, err := s.UnreadCountsByChat(ctx)
+	require.NoError(t, err)
+	require.Equal(t, map[string]int64{"oc_b": 1}, counts, "the chat that was read carries no badge")
+
+	total, _ := s.UnreadCount(ctx)
+	require.Equal(t, int64(3), total, "the poller's backlog is about Feishu, which still has all three unread")
+
+	m, _ := s.GetMessage(ctx, "om_a1")
+	require.Equal(t, int64(5000), m.LocalReadAt)
+	require.False(t, *m.IsReadRemote, "the remote receipt is untouched: larkim cannot write it")
+}
+
+func TestMarkChatRead_LeavesThreadRepliesAndReadMessagesAlone(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+	reply := msgAt("om_reply", "oc_a", 20, -3, "answered an old topic")
+	reply.ThreadID = "omt_1"
+	deleted := msgAt("om_gone", "oc_a", 30, 1, "recalled")
+	deleted.Deleted = true
+	_, err := s.UpsertMessages(ctx, []Message{msgAt("om_seen", "oc_a", 10, 1, "read"), reply, deleted}, 1)
+	require.NoError(t, err)
+	read := true
+	require.NoError(t, s.SetReadStatus(ctx, "om_seen", &read, 100, 0))
+	markUnread(t, s, "om_reply")
+	markUnread(t, s, "om_gone")
+
+	require.NoError(t, s.MarkChatRead(ctx, "oc_a", 5000))
+
+	for _, id := range []string{"om_seen", "om_reply", "om_gone"} {
+		m, _ := s.GetMessage(ctx, id)
+		require.Zero(t, m.LocalReadAt, "%s is outside what the badge counts, so reading the chat says nothing about it", id)
+	}
+}
+
+func TestMarkChatRead_KeepsTheConsumedCursor(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+	_, err := s.UpsertMessages(ctx, []Message{msgAt("om_a", "oc_a", 10, 1, "one")}, 1)
+	require.NoError(t, err)
+	markUnread(t, s, "om_a")
+	require.NoError(t, s.MarkConsumed(ctx, []string{"om_a"}, 4000))
+
+	require.NoError(t, s.MarkChatRead(ctx, "oc_a", 5000))
+
+	m, _ := s.GetMessage(ctx, "om_a")
+	require.Equal(t, int64(4000), m.ConsumedAt, "the CLI cursor is not what a reader moves")
+	require.Equal(t, int64(5000), m.LocalReadAt)
+}
+
+func TestMarkChatRead_WritesNothingWhenTheChatIsAlreadyRead(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+	_, err := s.UpsertMessages(ctx, []Message{msgAt("om_a", "oc_a", 10, 1, "one")}, 1)
+	require.NoError(t, err)
+	markUnread(t, s, "om_a")
+	require.NoError(t, s.MarkChatRead(ctx, "oc_a", 5000))
+
+	before, err := s.DataRev(ctx)
+	require.NoError(t, err)
+	require.NoError(t, s.MarkChatRead(ctx, "oc_a", 6000))
+	after, err := s.DataRev(ctx)
+	require.NoError(t, err)
+
+	require.Equal(t, before, after, "an inert call must not wake the watchers that reload on it")
+	m, _ := s.GetMessage(ctx, "om_a")
+	require.Equal(t, int64(5000), m.LocalReadAt, "the first reading is when it was read")
+}

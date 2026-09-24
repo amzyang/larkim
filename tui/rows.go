@@ -53,6 +53,7 @@ type msgStyle struct {
 	suffix  map[string]string           // sender open id → account suffix
 	res     map[string][]store.Resource // attachments, by message id
 	outbox  map[string]outboxState      // the sends still on their way, by the id their rows carry
+	dots    map[string]bool             // the messages this visit draws the unread marker on
 	// names labels each message's chat on its sender line. It is set for
 	// search results, which run across chats; inside one chat, naming it on
 	// every block says nothing.
@@ -95,7 +96,7 @@ func gutterFor(x store.Message, st msgStyle, opensBlock bool) gutters {
 	switch {
 	case x.MessageID == st.quoted:
 		first = stAccent.Render("↩") + " "
-	case opensBlock && unread(x):
+	case opensBlock && unread(x, st):
 		first = stAccent.Render("●") + " "
 	}
 	return gutters{first: first, rest: rest}
@@ -116,8 +117,10 @@ func railStyle(x store.Message, st msgStyle) lipgloss.Style {
 	}
 }
 
-// unread reports whether Feishu still has a message down as unread.
-func unread(x store.Message) bool { return x.IsReadRemote != nil && !*x.IsReadRemote }
+// unread reports whether a message still carries this visit's marker. The
+// answer is the set the panes gathered as pages arrived, not the store's own
+// flags, which opening the chat has already cleared.
+func unread(x store.Message, st msgStyle) bool { return st.dots[x.MessageID] }
 
 // renderRows lays messages out as blocks — a sender line followed by every
 // body that sender wrote next — split into days.
@@ -157,7 +160,7 @@ func mergeable(head, x store.Message, st msgStyle) bool {
 	// and only its magnitude can decide whether the block is still open.
 	gap := x.CreateMs - head.CreateMs
 	return head.SenderID == x.SenderID && head.SenderName == x.SenderName &&
-		head.ChatID == x.ChatID && unread(head) == unread(x) &&
+		head.ChatID == x.ChatID && unread(head, st) == unread(x, st) &&
 		max(gap, -gap) <= runSpan.Milliseconds() && !solo(x, st)
 }
 

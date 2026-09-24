@@ -37,12 +37,13 @@ type Message struct {
 	// From read_state; IsReadRemote is nil when never checked.
 	IsReadRemote *bool `json:"is_read_remote"`
 	ConsumedAt   int64 `json:"consumed_at"`
+	LocalReadAt  int64 `json:"local_read_at"`
 }
 
 const messageColumns = `m.id, m.message_id, m.chat_id, m.msg_type, m.sender_id, m.sender_type, m.sender_name,
  m.content_raw, m.content, m.create_ms, m.update_ms, m.message_position, m.updated, m.deleted, m.deleted_seen_at,
  m.thread_id, m.reply_to, m.mentions_json, m.reactions_json, m.raw_json, m.rendered_at, m.edited_at, m.first_seen_at, m.last_seen_at,
- r.is_read_remote, COALESCE(r.consumed_at, 0)`
+ r.is_read_remote, COALESCE(r.consumed_at, 0), COALESCE(r.local_read_at, 0)`
 
 // messageFrom is the FROM clause every message query selects messageColumns from.
 const messageFrom = `FROM messages m LEFT JOIN read_state r ON r.message_id = m.message_id`
@@ -53,7 +54,7 @@ func scanMessage(sc scanner) (Message, error) {
 	err := sc.Scan(&m.ID, &m.MessageID, &m.ChatID, &m.MsgType, &m.SenderID, &m.SenderType, &m.SenderName,
 		&m.ContentRaw, &m.Content, &m.CreateMs, &m.UpdateMs, &m.MessagePosition, &m.Updated, &m.Deleted, &m.DeletedSeenAt,
 		&m.ThreadID, &m.ReplyTo, &m.MentionsJSON, &m.ReactionsJSON, &m.RawJSON, &m.RenderedAt, &m.EditedAt, &m.FirstSeenAt, &m.LastSeenAt,
-		&isRead, &m.ConsumedAt)
+		&isRead, &m.ConsumedAt, &m.LocalReadAt)
 	if isRead.Valid {
 		v := isRead.Bool
 		m.IsReadRemote = &v

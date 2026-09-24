@@ -80,3 +80,30 @@ func TestListChats_ThreadRootCountsAsMainFlow(t *testing.T) {
 	require.Equal(t, []string{"oc_topic", "oc_recent"}, chatIDs(chats),
 		"opening a thread is a main-flow event")
 }
+
+func TestListChats_DropsALocallyReadChatOutOfTheUnreadGroup(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+	for _, id := range []string{"oc_recent", "oc_stale"} {
+		require.NoError(t, s.EnsureChat(ctx, id, 1))
+	}
+	_, err := s.UpsertMessages(ctx, []Message{
+		msgAt("om_recent", "oc_recent", 800, 1, "read"),
+		msgAt("om_stale", "oc_stale", 100, 1, "unread"),
+	}, 1)
+	require.NoError(t, err)
+	markUnread(t, s, "om_stale")
+	require.Equal(t, []string{"oc_stale", "oc_recent"}, chatIDs(listChats(t, s)))
+
+	require.NoError(t, s.MarkChatRead(ctx, "oc_stale", 5000))
+
+	require.Equal(t, []string{"oc_recent", "oc_stale"}, chatIDs(listChats(t, s)),
+		"reading a chat in larkim settles it back into date order")
+}
+
+func listChats(t *testing.T, s *Store) []Chat {
+	t.Helper()
+	chats, err := s.ListChats(context.Background(), ChatQuery{})
+	require.NoError(t, err)
+	return chats
+}
