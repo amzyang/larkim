@@ -214,6 +214,11 @@ func lastMessageSummary(c store.Chat) string {
 	if card, ok := parseCard(c.LastContent); ok {
 		return flatten(strings.TrimSpace(card.title + " " + card.tags))
 	}
+	// An attachment renders into markup naming its keys, which says nothing
+	// on a summary line; the body behind it names the file itself.
+	if a, ok := attachmentOf(c.LastMsgType, c.LastContentRaw); ok {
+		return attachGist(a)
+	}
 	return flatten(c.LastContent)
 }
 

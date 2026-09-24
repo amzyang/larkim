@@ -87,14 +87,14 @@ func renderIDs(src []yankSource) (string, string) {
 func renderRaw(src []yankSource) (string, string) {
 	if len(src) == 1 {
 		text := indentJSON(src[0].raw, "")
-		return text, "copied raw json · " + humanBytes(len(text))
+		return text, "copied raw json · " + humanBytes(int64(len(text)))
 	}
 	parts := make([]string, len(src))
 	for i, s := range src {
 		parts[i] = indentJSON(s.raw, "  ")
 	}
 	text := "[\n  " + strings.Join(parts, ",\n  ") + "\n]"
-	return text, fmt.Sprintf("copied %d json · %s", len(src), humanBytes(len(text)))
+	return text, fmt.Sprintf("copied %d json · %s", len(src), humanBytes(int64(len(text))))
 }
 
 // indentJSON makes a stored payload readable without a trip through jq. One
@@ -133,9 +133,9 @@ func renderContent(src []yankSource) (string, string) {
 	text := strings.Join(parts, "\n\n")
 	if len(src) == 1 {
 		if unrendered {
-			return text, "copied raw body (unrendered) · " + humanBytes(len(text))
+			return text, "copied raw body (unrendered) · " + humanBytes(int64(len(text)))
 		}
-		return text, "copied content · " + humanBytes(len(text))
+		return text, "copied content · " + humanBytes(int64(len(text)))
 	}
-	return text, fmt.Sprintf("copied %s · %s", plural(len(parts), "msg", "msgs"), humanBytes(len(text)))
+	return text, fmt.Sprintf("copied %s · %s", plural(len(parts), "msg", "msgs"), humanBytes(int64(len(text))))
 }

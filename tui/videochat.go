@@ -21,16 +21,6 @@ func videoChatOf(x store.Message) (sync.VideoChat, bool) {
 	return sync.ParseVideoChat(x.ContentRaw)
 }
 
-// joinLink is the call a message is still worth joining, and "" once it has
-// ended or when the body names no meeting to dial.
-func joinLink(x store.Message) string {
-	v, ok := videoChatOf(x)
-	if !ok || !v.Live() || v.MeetNumber == "" {
-		return ""
-	}
-	return feishuMeetingLink(v.MeetNumber)
-}
-
 // videoChatRows card a call the way the client draws one: the topic, with
 // how long it ran (or that it is still running) at the right, the meeting
 // number, and, while it runs, the button that joins it.
@@ -43,7 +33,7 @@ func videoChatRows(v sync.VideoChat, idx int, st msgStyle, g *leads) []msgRow {
 		row := msgRow{lead: g.take(), text: s, idx: idx}
 		if url != "" {
 			x0 := row.lead.cols()
-			row.zone = clickZone{x0: x0, x1: x0 + lipgloss.Width(s), url: url}
+			row.zone = clickZone{x0: x0, x1: x0 + lipgloss.Width(s), url: url, note: "joining the meeting"}
 		}
 		rows = append(rows, row)
 	}

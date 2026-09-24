@@ -195,8 +195,12 @@ func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
-// humanBytes sizes a copy the way a person judges it at a glance.
-func humanBytes(n int) string {
+// humanBytes sizes a copy or an attachment the way a person judges it at a
+// glance.
+func humanBytes(n int64) string {
+	if n < 1024 {
+		return fmt.Sprintf("%d B", n)
+	}
 	switch kb := float64(n) / 1024; {
 	case kb < 10:
 		return fmt.Sprintf("%.1f KB", kb)

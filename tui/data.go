@@ -400,13 +400,14 @@ func feishuMeetingLink(meetNumber string) string {
 	return "lark://vc.feishu.cn/j/" + meetNumber
 }
 
-// joinMeeting takes the reader into a call. It takes the screen: joining is
-// what the keypress or the click asked for.
-func joinMeeting(d Deps, link string) tea.Cmd {
+// openZone hands over what a row's target points at: a meeting to join, or an
+// attachment's own file on this machine. It takes the screen, which is what
+// the keypress or the click asked for.
+func openZone(d Deps, z clickZone) tea.Cmd {
 	return func() tea.Msg {
-		if err := d.OpenURL(link, false); err != nil {
+		if err := d.OpenURL(z.url, false); err != nil {
 			return errMsg{err}
 		}
-		return noticeMsg{"joining the meeting"}
+		return noticeMsg{z.note}
 	}
 }

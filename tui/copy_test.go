@@ -311,7 +311,7 @@ func TestUpdate_ContextMessageReportsSizeAndSetsTheClipboard(t *testing.T) {
 	require.NotNil(t, cmd)
 
 	mm, _ = m.Update(contextMsg{text: strings.Repeat("x", 205), n: 0, chat: "平台组"})
-	require.Equal(t, "copied 0 msgs · 0.2 KB · 平台组", mm.(Model).notice)
+	require.Equal(t, "copied 0 msgs · 205 B · 平台组", mm.(Model).notice)
 	mm, _ = m.Update(contextMsg{text: "x", n: 1, chat: "x"})
 	require.Contains(t, mm.(Model).notice, "copied 1 msg ·")
 }

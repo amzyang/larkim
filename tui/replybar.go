@@ -51,6 +51,9 @@ func replyGist(x store.Message) string {
 	case x.RenderedAt == 0:
 		return flatten(expandEmoji(pendingText(x.MsgType, x.ContentRaw)))
 	}
+	if a, ok := attachmentOf(x.MsgType, x.ContentRaw); ok {
+		return attachGist(a)
+	}
 	keys, rest := splitImages(x.Content)
 	if text := flatten(expandEmoji(plainInline(rest))); text != "" {
 		return text

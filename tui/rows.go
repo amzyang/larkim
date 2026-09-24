@@ -46,8 +46,8 @@ type msgRow struct {
 	// the terminal holds the picture.
 	pic    picture
 	picRow int
-	// zone, when set, is the click target this row carries: the button a
-	// call's card ends with.
+	// zone, when set, is the click target this row carries: a call's join
+	// button, or the card an attachment is drawn as.
 	zone clickZone
 	// segs, when set, is the row's text in pieces so that pictures can sit
 	// inside a line rather than take one of their own: a reaction carries an
@@ -67,6 +67,9 @@ type msgRow struct {
 type clickZone struct {
 	x0, x1 int
 	url    string
+	// note is what the status bar says once the target is handed over. A
+	// target names what it leads to better than the link it carries does.
+	note string
 }
 
 func (z clickZone) hit(x int) bool { return z.url != "" && x >= z.x0 && x < z.x1 }
@@ -101,9 +104,10 @@ type msgStyle struct {
 	// disc places a sender's picture as a circle: their avatar file, or one
 	// drawn from their name when they have none. Nil draws the colour block.
 	disc func(file, id, name string, cols, rows int) picture
-	// dataDir is where downloads live, the pictures cut out of the emoji
-	// sprite sheet among them. Empty is a pane with no store behind it, where
-	// an emoji falls back to its name.
+	// dataDir is where downloads live: the pictures cut out of the emoji
+	// sprite sheet, and the attachments a card opens. Empty is a pane with no
+	// store behind it, where an emoji falls back to its name and nothing
+	// opens.
 	dataDir string
 	// dark says which way the terminal's background leans, which is what picks
 	// the palette a code block is coloured from.
@@ -485,6 +489,11 @@ func bodyRows(x store.Message, idx int, st msgStyle, g *leads) []msgRow {
 	// waiting for a rendering: the button matters most in the first seconds.
 	if v, ok := videoChatOf(x); ok {
 		return videoChatRows(v, idx, st, g)
+	}
+	// An attachment's body likewise names the whole card, and the text a
+	// rendering would bring is the markup the card replaces.
+	if a, ok := attachmentOf(x.MsgType, x.ContentRaw); ok {
+		return attachRows(a, x, idx, st, g)
 	}
 	if x.RenderedAt == 0 {
 		return text(wrap(stDim.Render(expandEmoji(pendingText(x.MsgType, x.ContentRaw))), inner))

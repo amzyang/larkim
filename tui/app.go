@@ -460,7 +460,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, refreshReactions(m.deps, msg.chatID)
 	case contextMsg:
-		return m.notify(fmt.Sprintf("copied %s · %s · %s", plural(msg.n, "msg", "msgs"), humanBytes(len(msg.text)), msg.chat), false),
+		return m.notify(fmt.Sprintf("copied %s · %s · %s", plural(msg.n, "msg", "msgs"), humanBytes(int64(len(msg.text))), msg.chat), false),
 			tea.SetClipboard(msg.text)
 	case tea.MouseClickMsg:
 		return m.onClick(tea.Mouse(msg))
@@ -644,6 +644,22 @@ func (m Model) selected() (store.Message, bool) {
 		}
 	}
 	return store.Message{}, false
+}
+
+// selectedZone is the click target the selected message draws, so the
+// keyboard reaches the button the mouse can press. A message that draws more
+// than one is opened by its first: a card's own target sits above the text.
+func (m Model) selectedZone() (clickZone, bool) {
+	rows, idx := m.msgRows, m.msgIdx
+	if m.focus == paneThread {
+		rows, idx = m.threadRows, m.threadIdx
+	}
+	for _, r := range rows {
+		if r.idx == idx && r.zone.url != "" {
+			return r.zone, true
+		}
+	}
+	return clickZone{}, false
 }
 
 // rightOpen reports whether the third pane (thread or assistant) is shown.
@@ -847,12 +863,13 @@ func (m Model) onNormalKey(s string) (tea.Model, tea.Cmd) {
 	case "v":
 		return m.startVisual()
 	case "o":
+		// What the selected message draws answers first: a running call is
+		// opened by joining it, an attachment by the file it brought down.
+		// A message carrying neither is opened where it was said.
+		if z, ok := m.selectedZone(); ok {
+			return m, openZone(m.deps, z)
+		}
 		if sel, ok := m.selected(); ok {
-			// While a call is running, opening it in Feishu means joining
-			// it; once it has ended, the message is all there is to open.
-			if link := joinLink(sel); link != "" {
-				return m, joinMeeting(m.deps, link)
-			}
 			return m, openInFeishu(m.deps, sel.ChatID, sel.MessagePosition)
 		}
 		if m.chatID != "" {
@@ -1541,7 +1558,7 @@ func (m Model) onClick(ms tea.Mouse) (tea.Model, tea.Cmd) {
 		// button, not for the message it sits on. Pane content starts one
 		// column inside the border the pane is drawn with.
 		if z, ok := zoneAt(m.msgRows, m.msgTop+row, ms.X-chatsWidth-1); ok {
-			return m, joinMeeting(m.deps, z.url)
+			return m, openZone(m.deps, z)
 		}
 		if idx := rowAt(m.msgRows, m.msgTop+row); idx >= 0 {
 			m.msgIdx = idx
@@ -1552,7 +1569,7 @@ func (m Model) onClick(ms tea.Mouse) (tea.Model, tea.Cmd) {
 		}
 	case paneThread:
 		if z, ok := zoneAt(m.threadRows, m.threadTop+row, ms.X-(m.width-m.rightWidth())-1); ok {
-			return m, joinMeeting(m.deps, z.url)
+			return m, openZone(m.deps, z)
 		}
 		if idx := rowAt(m.threadRows, m.threadTop+row); idx >= 0 {
 			m.threadIdx = idx

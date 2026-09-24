@@ -22,16 +22,6 @@ func callMessage(contentRaw string, renderedAt int64) []store.Message {
 		ContentRaw: contentRaw, Content: "[Video call]", CreateMs: msgAt(23, 9, 0), RenderedAt: renderedAt}}
 }
 
-// joinRow is the row carrying the join target, and false when none does.
-func joinRow(rows []msgRow) (msgRow, bool) {
-	for _, r := range rows {
-		if r.zone.url != "" {
-			return r, true
-		}
-	}
-	return msgRow{}, false
-}
-
 func TestBodyRows_ALiveCallCardsTheMeetingWithAJoinButton(t *testing.T) {
 	rows := renderRows(callMessage(liveCall, 1), baseStyle())
 	out := rowText(rows)
@@ -41,7 +31,7 @@ func TestBodyRows_ALiveCallCardsTheMeetingWithAJoinButton(t *testing.T) {
 	require.Contains(t, out, "Join")
 	require.NotContains(t, out, "[Video call]", "the card replaces the placeholder, it does not repeat it")
 
-	join, ok := joinRow(rows)
+	join, ok := zoneRow(rows)
 	require.True(t, ok, "a live call carries a join target: %q", out)
 	require.Equal(t, "lark://vc.feishu.cn/j/100000000", join.zone.url)
 	require.Equal(t, leadWidth, join.zone.x0, "the target starts where the button is drawn")
@@ -55,7 +45,7 @@ func TestBodyRows_AnEndedCallShowsItsLengthAndNoWayIn(t *testing.T) {
 	require.Contains(t, out, "32s", "the span stands where the live marker was")
 	require.NotContains(t, out, "Join")
 	require.NotContains(t, out, "live")
-	_, ok := joinRow(rows)
+	_, ok := zoneRow(rows)
 	require.False(t, ok, "a call that has ended is not joinable")
 }
 
@@ -65,14 +55,14 @@ func TestBodyRows_ACallCardsBeforeItsRenderingLands(t *testing.T) {
 	rows := renderRows(callMessage(liveCall, 0), baseStyle())
 	out := rowText(rows)
 	require.Contains(t, out, "Meeting ID: 100 000 000")
-	_, ok := joinRow(rows)
+	_, ok := zoneRow(rows)
 	require.True(t, ok)
 }
 
 func TestBodyRows_ACallBodyLarkimCannotReadKeepsTheRendering(t *testing.T) {
 	rows := renderRows(callMessage("not json", 1), baseStyle())
 	require.Contains(t, rowText(rows), "[Video call]")
-	_, ok := joinRow(rows)
+	_, ok := zoneRow(rows)
 	require.False(t, ok)
 }
 
@@ -81,7 +71,7 @@ func TestBodyRows_ACallWithoutAMeetingNumberOffersNoJoin(t *testing.T) {
 	out := rowText(rows)
 	require.Contains(t, out, "项目协作群 - 张三的视频会议")
 	require.NotContains(t, out, "Meeting ID")
-	_, ok := joinRow(rows)
+	_, ok := zoneRow(rows)
 	require.False(t, ok, "nothing to dial")
 }
 

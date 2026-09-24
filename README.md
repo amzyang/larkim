@@ -45,7 +45,7 @@ larkim tui
 
 `larkim tui` shows chats, the selected chat's messages and, when opened, a thread pane, plus a composer. The chat header names the chat, marked with a glyph for its kind, and a rule under it parts the header from the list. If no daemon holds the data-dir lock the TUI syncs in-process. Colours follow the terminal palette and its light or dark background. Below 114 columns the thread or assistant pane takes the place of the messages pane; the TUI needs at least 60×12. A reply carries the message it answers quoted above its body — sender and gist on one line — unless that message is the one right above it.
 
-The message list is split where the calendar day changes, and each message is headed by its sender — the selected one also spells out its time. Official emoji are drawn as emoji, interactive cards as a titled block with their buttons, and system messages centred and muted. On kitty, images are drawn in place once they have been downloaded; elsewhere they read as `[图片]`.
+The message list is split where the calendar day changes, and each message is headed by its sender — the selected one also spells out its time. Official emoji are drawn as emoji, interactive cards as a titled block with their buttons, and system messages centred and muted. On kitty, images are drawn in place once they have been downloaded; elsewhere they read as `[图片]`. An attachment is carded the way the client draws one: a video as its cover frame under how long it runs, a voice message as that length, and any other file as its name beside its size. `o` or a click opens the downloaded file.
 
 | keys | action |
 |---|---|
@@ -57,7 +57,7 @@ The message list is split where the calendar day changes, and each message is he
 | `t` | toggle the thread pane for the selected message |
 | `.` `x` | a message appears as `(sending)` the moment Enter is pressed; one Feishu refused is marked `(failed)` — `.` sends it again under the same idempotency key, `x` drops it |
 | `y` `v` | copy the agent context · start a range selection (`j`/`k` extend, `y` copies, `Esc` cancels) |
-| `o` | open in the Feishu client |
+| `o` | open what the message draws: a call to join, an attachment's own file, else the message in the Feishu client |
 | `/` | filter chats |
 | `:search <text>` | cross-chat full-text search in the messages pane; Enter jumps to the hit, Esc leaves |
 | `a` / `:ai …` | assistant in the right pane: `summary`, `draft <how>` (result lands in the composer), `todo`, or any question about the open chat |
