@@ -37,6 +37,12 @@ const botBadge = "🤖"
 // which is what lets it sit dim behind the summary.
 const muteGlyph = ""
 
+// mutedDot stands for the do-not-disturb chats that have something waiting.
+// It carries no number: a chat the reader silenced is not one to be counted
+// at. A filled circle is the smallest glyph that still reads alone at the
+// pane's right edge — a bullet or a middle dot disappears there.
+const mutedDot = "●"
+
 // chatHash is a chat's stable colour seed, so it always looks the same.
 func chatHash(chatID string) uint32 {
 	h := fnv.New32a()
@@ -214,13 +220,14 @@ func renderChatRow(av avatars, c store.Chat, unread int64, self string, now time
 }
 
 // counterStyle shades the unread count the way the avatar's own badge is
-// shaded, so the text fallback and the picture say the same thing about a
-// do-not-disturb chat.
+// shaded. A picture that could not be built leaves its chat on the text
+// fallback while its neighbours keep their discs, so the two have to agree on
+// the colour as well as on what do-not-disturb looks like.
 func counterStyle(c store.Chat) lipgloss.Style {
 	if c.Muted {
 		return stDim
 	}
-	return stAccent
+	return stUnread
 }
 
 // muteMark tells a do-not-disturb chat apart. The counter on the avatar goes
@@ -247,4 +254,64 @@ func padBetween(left, right string, w int) string {
 	}
 	left = lipgloss.NewStyle().MaxWidth(w - rw - gap).Inline(true).Render(left)
 	return left + strings.Repeat(" ", w-rw-lipgloss.Width(left)) + right
+}
+
+// chatsHeader is the list's title row: the pane's name carrying the number of
+// chats waiting, and, at the far right, the dot that says the do-not-disturb
+// ones have something too. The dot sits in the column every row's mute mark
+// is right-aligned to, so the setting reads down a single column.
+func chatsHeader(chats []store.Chat, unread map[string]int64, filter string, w int) string {
+	n, muted := unreadChats(chats, unread)
+	count, dot := "", ""
+	if label := badgeLabel(n); label != "" {
+		count = stUnread.Render(superscript(label))
+	}
+	if muted {
+		dot = stDim.Render(mutedDot)
+	}
+	title := "Chats"
+	if filter != "" {
+		title = "Chats /" + filter
+	}
+	room := w - lipgloss.Width(count) - lipgloss.Width(dot) - 1
+	return padBetween(stBold.Render(truncate(title, room))+count, dot, w)
+}
+
+// unreadChats counts the chats waiting for an answer and reports whether any
+// on do-not-disturb is among them. Muted chats stay out of the count: the
+// reader asked not to be counted at for them, and the dot is all the header
+// says about them. The filter is not applied — hiding rows is a lens on the
+// list, not a change to what is waiting.
+func unreadChats(chats []store.Chat, unread map[string]int64) (n int64, muted bool) {
+	for _, c := range chats {
+		switch {
+		case unread[c.ChatID] <= 0:
+		case c.Muted:
+			muted = true
+		default:
+			n++
+		}
+	}
+	return n, muted
+}
+
+// superDigits are the superscript forms of 0-9, in order. Unicode scatters
+// them over three blocks and only 4-9 run consecutively, so the table spells
+// them out rather than offsetting from a base rune.
+var superDigits = []rune("⁰¹²³⁴⁵⁶⁷⁸⁹")
+
+// superscript raises a counter's digits so the header reads as one word with
+// a number hung off it rather than as two fields. Every rune it emits is one
+// cell wide, which is what lets the row keep its column budget.
+func superscript(s string) string {
+	return strings.Map(func(r rune) rune {
+		switch {
+		case r >= '0' && r <= '9':
+			return superDigits[r-'0']
+		case r == '+':
+			return '⁺'
+		default:
+			return -1
+		}
+	}, s)
 }

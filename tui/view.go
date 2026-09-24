@@ -42,6 +42,10 @@ var (
 	// mention. White on an ANSI colour reads on every terminal theme, which is
 	// why the avatar block is drawn the same way.
 	stMentionMe = lipgloss.NewStyle().Foreground(lipgloss.Color("15")).Background(colAccent)
+	// stUnread is the terminal-palette stand-in for badgeRed, the disc stamped
+	// onto a picture: the header's count and the digits a row falls back to when
+	// no disc could be drawn both take it, so the three read as one signal.
+	stUnread = lipgloss.NewStyle().Foreground(colErr).Bold(true)
 
 	// sgrReset is the sequence that ends a styled run; lipgloss writes the
 	// short spelling, a hand-written line may carry the long one.
@@ -356,11 +360,7 @@ func (m Model) renderChats(h int) string {
 	for len(lines) < h-headerHeight {
 		lines = append(lines, fit("", w))
 	}
-	title := "Chats"
-	if m.chatFilter != "" {
-		title = "Chats /" + m.chatFilter
-	}
-	content := fit(stBold.Render(truncate(title, w)), w) + "\n" + strings.Join(lines, "\n")
+	content := chatsHeader(m.chats, m.unread, m.chatFilter, w) + "\n" + strings.Join(lines, "\n")
 	return paneStyle(m.focus == paneChats, w).Height(h).Render(content)
 }
 
