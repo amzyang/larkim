@@ -3,9 +3,12 @@ package tui
 import (
 	"context"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
+	"github.com/amzyang/larkim/emoji"
 	"github.com/amzyang/larkim/store"
 	"github.com/amzyang/larkim/sync"
 	"github.com/charmbracelet/x/ansi"
@@ -125,6 +128,17 @@ func TestPicker_SaysTooShortRatherThanOpeningBlind(t *testing.T) {
 	require.Contains(t, m.notice, "too short")
 }
 
+func TestPicker_SurvivesAResizeBelowItsOwnHeight(t *testing.T) {
+	// Opening is refused under minHeight, but nothing closes the picker when
+	// the terminal shrinks under it, and the picture pass runs at any height.
+	m := press(t, pickerModel(t), "e")
+	require.Equal(t, modeEmoji, m.mode)
+	next, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 8})
+	shrunk := next.(Model)
+	require.Empty(t, shrunk.pickerVisible(), "a terminal with no room offers no emoji")
+	require.Contains(t, ansi.Strip(shrunk.View().Content), "terminal too small")
+}
+
 func TestPicker_LeavesTheMessageOnScreenBehindIt(t *testing.T) {
 	// The reader has to see what they are reacting to, so the picker takes the
 	// composer's rows and the panes give up exactly those.
@@ -134,9 +148,66 @@ func TestPicker_LeavesTheMessageOnScreenBehindIt(t *testing.T) {
 	require.Contains(t, ansi.Strip(m.View().Content), "react", "the frame names what is being reacted to")
 }
 
+func TestRenderPicker_StandsInTheComposersBoxRatherThanBesideIt(t *testing.T) {
+	shut := pickerModel(t)
+	open := press(t, shut, "e")
+	require.Equal(t, lipgloss.Width(shut.renderInput()), lipgloss.Width(open.renderPicker()),
+		"the chooser replaces the composer, so it takes the same columns")
+	for i, line := range strings.Split(open.View().Content, "\n") {
+		require.Equal(t, open.width, lipgloss.Width(line), "line %d is not the screen's width", i)
+	}
+}
+
+// pickerKeyCol is the column a picker line opens its key in, which is what
+// stays still or steps sideways as the emoji beside it changes shape.
+func pickerKeyCol(t *testing.T, m Model, key string) int {
+	t.Helper()
+	e, ok := emoji.ByKey(key)
+	require.True(t, ok)
+	line := ansi.Strip(m.joinSegs(m.pickerLine(emoji.Hit{Emoji: e}, false, 60), 60))
+	at := strings.Index(line, e.Key)
+	require.GreaterOrEqual(t, at, 0, "%s names its key", key)
+	return lipgloss.Width(line[:at])
+}
+
+func TestPickerLine_KeepsTheKeyColumnStillUnderAnEmojiOfAnyShape(t *testing.T) {
+	m := press(t, pickerModel(t), "e")
+	e, ok := emoji.ByKey("OK")
+	require.True(t, ok)
+	require.Empty(t, e.Glyph, "OK is drawn as a word, which no character carries")
+	require.Equal(t, pickerKeyCol(t, m, "THUMBSUP"), pickerKeyCol(t, m, "OK"),
+		"a wide character and the stand-in dot open the same column")
+}
+
+func TestPickerLine_DrawsTheClientsPictureWhereNoCharacterCarriesTheEmoji(t *testing.T) {
+	m := press(t, pickerModel(t), "e")
+	writeTestEmoji(t, m.deps.DataDir, "OK")
+	m.pics = picturesIn(m.deps.DataDir)
+
+	e, ok := emoji.ByKey("OK")
+	require.True(t, ok)
+	segs := m.pickerLine(emoji.Hit{Emoji: e}, false, 60)
+	require.Len(t, segs, 3, "the mark, the picture and the rest of the line")
+	require.Positive(t, segs[1].pic.cols)
+	require.Equal(t, 1, segs[1].pic.rows, "a picture on a line of text is one row tall")
+	require.Equal(t, pickerKeyCol(t, m, "THUMBSUP"), pickerKeyCol(t, m, "OK"),
+		"a picture opens the same column a character does")
+}
+
+func TestModelPicturePrepare_ClaimsWhatTheOpenPickerOffers(t *testing.T) {
+	m := press(t, pickerModel(t), "e")
+	writeTestEmoji(t, m.deps.DataDir, "OK")
+	m.pics = picturesIn(m.deps.DataDir)
+	require.Equal(t, "OK", m.picker.hits[0].Emoji.Key, "an empty query opens on the client's own first emoji")
+
+	require.NotEmpty(t, m.picturePrepare())
+	_, pic := m.pickerIcon(m.picker.hits[0].Emoji)
+	require.NotEmpty(t, m.pics.cells(pic, 0), "the emoji is drawable on the frame the chooser opens")
+}
+
 func TestPicker_MarksAnEmojiTheReaderAlreadyChose(t *testing.T) {
 	m := press(t, pickerModel(t), "e", "z", "a", "n")
-	line := ansi.Strip(m.pickerLine(m.picker.hits[0], true, 60))
+	line := ansi.Strip(m.joinSegs(m.pickerLine(m.picker.hits[0], true, 60), 60))
 	require.Contains(t, line, "✓", "choosing it again takes the reaction back, and the line says so")
 }
 

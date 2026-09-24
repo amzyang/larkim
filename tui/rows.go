@@ -80,9 +80,9 @@ type msgStyle struct {
 	// place sizes a picture for the pane. Nil draws a text stand-in instead,
 	// which is what a terminal without graphics gets.
 	place func(path string, maxCols, maxRows int) picture
-	// emojiDir holds the pictures `larkim emoji sync` cut out of the Lark
-	// client, which is what an emoji with no Unicode character is drawn as.
-	// Empty means they were never cut out, and the name stands in.
+	// emojiDir holds the pictures cut out of the sprite sheet, which is what
+	// an emoji with no Unicode character is drawn as. Empty means they were
+	// never cut out, and the name stands in.
 	emojiDir string
 	// people names a reaction's operators, by open id. A sender's name
 	// travels on the message itself; a reactor's does not — the block holds
@@ -90,9 +90,9 @@ type msgStyle struct {
 	people map[string]string
 }
 
-// emojiPics sizes the pictures `larkim emoji sync` cut out of the Lark
-// client. The zero value draws none, which is what a terminal without
-// graphics, or a data dir they were never cut into, gets.
+// emojiPics sizes the pictures cut out of the sprite sheet. The zero value
+// draws none, which is what a terminal without graphics, or a data dir they
+// were never cut into, gets.
 type emojiPics struct {
 	place func(path string, maxCols, maxRows int) picture
 	dir   string
@@ -108,7 +108,8 @@ func (p emojiPics) pic(key string, cols int) picture {
 	return p.place(emoji.Path(p.dir, key), cols, 1)
 }
 
-// chatPics sizes the reaction pictures a chat row draws.
+// chatPics sizes the emoji pictures drawn inside a line of text: a chat
+// row's reactions, and the emoji the picker offers.
 func (m Model) chatPics() emojiPics {
 	if m.pics == nil {
 		return emojiPics{}

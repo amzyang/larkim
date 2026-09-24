@@ -248,7 +248,15 @@ func (m Model) picturePrepare() string {
 			}
 		}
 	}
-	// The chat list is claimed first. Its reactions are a handful of icons
+	// The picker is what the reader is looking at while it is open, so the
+	// emoji it offers are claimed before anything behind it.
+	if m.mode == modeEmoji {
+		for _, hit := range m.pickerVisible() {
+			_, pic := m.pickerIcon(hit.Emoji)
+			take(pic)
+		}
+	}
+	// The chat list is claimed next. Its reactions are a handful of icons
 	// that many rows draw from the same ids, and unlike the message bands
 	// below it reaches for nothing off screen.
 	vis := m.visibleChats()

@@ -195,7 +195,7 @@ func (m *Model) rebuildThread() {
 // tint has nothing to colour.
 func (m Model) rowLine(r msgRow, w int) (string, bool) {
 	if len(r.segs) > 0 {
-		return m.segLine(r, w), true
+		return m.joinSegs(r.segs, w), true
 	}
 	if r.pic.cols == 0 {
 		return fit(r.text, w), false
@@ -207,13 +207,13 @@ func (m Model) rowLine(r msgRow, w int) (string, bool) {
 	return r.prefix + cells + strings.Repeat(" ", max(0, w-lipgloss.Width(r.prefix)-r.pic.cols)), true
 }
 
-// segLine draws a row whose pictures sit inside its text. It pads rather than
-// fits: MaxWidth measures a picture's placeholder cells as the characters they
-// are and would cut one out of its cluster, and the row was packed to the
-// pane's width when it was built, so there is nothing to cut.
-func (m Model) segLine(r msgRow, w int) string {
+// joinSegs draws a line whose pictures sit inside its text. It pads rather
+// than fits: MaxWidth measures a picture's placeholder cells as the characters
+// they are and would cut one out of its cluster, and the pieces were packed to
+// the pane's width when they were built, so there is nothing to cut.
+func (m Model) joinSegs(segs []rowSeg, w int) string {
 	var b strings.Builder
-	for _, s := range r.segs {
+	for _, s := range segs {
 		if s.pic.cols == 0 {
 			b.WriteString(s.text)
 			continue

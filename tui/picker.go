@@ -7,6 +7,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/amzyang/larkim/emoji"
 	"github.com/amzyang/larkim/store"
 )
@@ -64,9 +65,19 @@ func (m Model) openPicker() (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// pickerRows is how many emoji fit under the panes at this height.
+// pickerRows is how many emoji fit under the panes at this height. It floors at
+// zero because a resize can shrink the terminal under an open picker: View
+// refuses to draw below minHeight, but picturePrepare still runs on every
+// message and would slice the hits on a negative count.
 func (m Model) pickerRows() int {
-	return min(pickerRows, m.height-statusHeight-pickerChrome-minListRows)
+	return max(0, min(pickerRows, m.height-statusHeight-pickerChrome-minListRows))
+}
+
+// pickerVisible is the hits the chooser has room for. The renderer draws
+// exactly these and the picture pass claims exactly their pictures, so the two
+// cannot drift into preparing one emoji and drawing another.
+func (m Model) pickerVisible() []emoji.Hit {
+	return m.picker.hits[m.picker.top:min(len(m.picker.hits), m.picker.top+m.pickerRows())]
 }
 
 // minListRows is what the message panes keep when the picker is open: enough
@@ -152,18 +163,19 @@ func react(d Deps, messageID, key string, on bool) tea.Cmd {
 	}
 }
 
-// renderPicker draws the chooser in the composer's place: the message being
-// reacted to on the frame, the query and hit count, then the emoji.
+// renderPicker draws the chooser in the composer's place, over exactly the
+// box the composer would have drawn: the message being reacted to on the
+// frame, the query and hit count, then the emoji.
 func (m Model) renderPicker() string {
-	w := m.width - 4
+	w := m.width - 2
 	rows := m.pickerRows()
 	head := stBold.Render("react") + stDim.Render(" · "+truncate(flatten(pickerTarget(m.picker.target, m.deps.Self)), max(4, w-10)))
 	count := stDim.Render(strconv.Itoa(len(m.picker.hits)) + "/" + strconv.Itoa(m.emoji.Len()))
 	query := padBetween(stAccent.Render("› ")+m.picker.query+stAccent.Render("▏"), count, w)
 
-	lines := []string{head, query}
-	for i := m.picker.top; i < len(m.picker.hits) && len(lines) < rows+2; i++ {
-		lines = append(lines, fit(m.pickerLine(m.picker.hits[i], i == m.picker.idx, w), w))
+	lines := []string{fit(head, w), query}
+	for i, h := range m.pickerVisible() {
+		lines = append(lines, m.joinSegs(m.pickerLine(h, m.picker.top+i == m.picker.idx, w), w))
 	}
 	if len(m.picker.hits) == 0 {
 		lines = append(lines, fit(stDim.Render("  no emoji matches "+m.picker.query), w))
@@ -171,20 +183,36 @@ func (m Model) renderPicker() string {
 	for len(lines) < rows+2 {
 		lines = append(lines, fit("", w))
 	}
-	lines = append(lines, stDim.Render("↑↓ move · enter react · esc cancel"))
+	lines = append(lines, fit(stDim.Render("↑↓ move · enter react · esc cancel"), w))
 	return paneStyle(true, w).Render(strings.Join(lines, "\n"))
 }
 
+// pickerIconCols is the column every emoji is drawn in, character or picture
+// alike. A fixed width is what keeps the key and name columns from stepping a
+// cell sideways under a single-width character.
+const pickerIconCols = 2
+
+// pickerIcon draws an emoji the way the message strip will once it is chosen:
+// the Unicode character where one carries the same feeling, the client's own
+// picture where none does, and a bare dot where the pictures were never cut
+// out. Exactly one of the two is set.
+func (m Model) pickerIcon(e emoji.Emoji) (string, picture) {
+	if e.Glyph != "" {
+		return fit(e.Glyph, pickerIconCols), picture{}
+	}
+	if pic := m.chatPics().pic(e.Key, pickerIconCols); pic.cols > 0 {
+		return strings.Repeat(" ", pickerIconCols-pic.cols), pic
+	}
+	return fit(stDim.Render("·"), pickerIconCols), picture{}
+}
+
 // pickerLine draws one emoji: the emoji itself, the key Feishu speaks, and the
-// name the query matched with the matched runes marked.
-func (m Model) pickerLine(h emoji.Hit, selected bool, w int) string {
+// name the query matched with the matched runes marked. It comes back in
+// pieces because the emoji may be a picture, which only the renderer can place.
+func (m Model) pickerLine(h emoji.Hit, selected bool, w int) []rowSeg {
 	mark := "  "
 	if selected {
 		mark = stAccent.Render("▸ ")
-	}
-	glyph := h.Emoji.Glyph
-	if glyph == "" {
-		glyph = "·"
 	}
 	name := h.Emoji.ZH
 	if m.picker.mine[emoji.Fold(h.Emoji.Key)] {
@@ -192,11 +220,17 @@ func (m Model) pickerLine(h emoji.Hit, selected bool, w int) string {
 		// say so before they press enter.
 		name += stAccent.Render(" ✓")
 	}
-	line := mark + glyph + " " + fit(stDim.Render(h.Emoji.Key), min(24, w/3)) + " " + name
 	if h.Term != "" && h.Term != h.Emoji.ZH {
-		line += stDim.Render(" " + markMatch(h.Term, h.Positions))
+		name += stDim.Render(" " + markMatch(h.Term, h.Positions))
 	}
-	return line
+	keyCols := min(24, w/3)
+	tail := " " + fit(stDim.Render(h.Emoji.Key), keyCols) + " " +
+		truncate(name, max(0, w-lipgloss.Width(mark)-pickerIconCols-keyCols-2))
+	icon, pic := m.pickerIcon(h.Emoji)
+	if pic.cols > 0 {
+		return []rowSeg{{text: mark}, {pic: pic}, {text: icon + tail}}
+	}
+	return []rowSeg{{text: mark + icon + tail}}
 }
 
 // markMatch underlines the runes of a term the query landed on, so a hit
