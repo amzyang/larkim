@@ -23,6 +23,11 @@ const (
 	inputHeight      = 3
 	statusHeight     = 1
 	headerHeight     = 1 // title row of every list pane
+	// msgHeaderHeight is what the messages pane spends on its own head: the
+	// title row plus the rule under it. The chat's name is bold and so is a
+	// sender line, so without the rule the first message reads as part of the
+	// header.
+	msgHeaderHeight = headerHeight + 1
 
 	// chipLeft and chipRight are the powerline half-circles that round a chip
 	// off, drawn from the Nerd Font this terminal maps U+E0B0-U+E0C8 to.
@@ -142,12 +147,16 @@ func (m Model) bodyHeight() int {
 // listHeight is the number of rows a list pane shows below its title.
 func (m Model) listHeight() int { return max(1, m.bodyHeight()-headerHeight) }
 
+// msgListHeight is listHeight for the messages pane, which spends a second row
+// on the rule under its title.
+func (m Model) msgListHeight() int { return max(1, m.bodyHeight()-msgHeaderHeight) }
+
 // picHeight is the tallest a picture may be. It is the list height with the
 // composer at its shortest rather than the current one: sizing to the live
 // pane would re-encode and re-send every picture on screen each time the reply
 // bar opens, for one row of difference.
 func (m Model) picHeight() int {
-	return max(1, m.height-inputHeight-statusHeight-headerHeight-4) // input border + pane border
+	return max(1, m.height-inputHeight-statusHeight-msgHeaderHeight-4) // input border + pane border
 }
 
 // chatListHeight is how many whole chats the chat pane shows; a chat is never
@@ -323,7 +332,7 @@ func zoneAt(rows []msgRow, line, x int) (clickZone, bool) {
 }
 
 func (m *Model) scrollMessagesToSelection() {
-	m.msgTop = scrollTo(m.msgRows, m.msgIdx, m.msgTop, m.listHeight())
+	m.msgTop = scrollTo(m.msgRows, m.msgIdx, m.msgTop, m.msgListHeight())
 }
 
 func (m *Model) scrollThreadToSelection() {
@@ -344,7 +353,10 @@ func scrollTo(rows []msgRow, idx, top, h int) int {
 	return clamp(top, 0, max(0, len(rows)-h))
 }
 
-// hit maps screen coordinates to a pane and the row inside its body.
+// hit maps screen coordinates to a pane and the row inside its list. A row of
+// -1 is the pane's own head — its title, and the rule the messages pane draws
+// under one — which indexes nothing: added to a scrolled offset it would land
+// on a real row.
 func (m Model) hit(x, y int) (pane, int) {
 	body := m.bodyHeight()
 	if y >= 1+body+1 && y < 1+body+1+m.composerHeight()+2 {
@@ -353,14 +365,22 @@ func (m Model) hit(x, y int) (pane, int) {
 	if y < 1 || y > body {
 		return -1, 0
 	}
-	row := y - 1 - headerHeight
+	listRow := func(head int) int {
+		if row := y - 1 - head; row >= 0 {
+			return row
+		}
+		return -1
+	}
 	switch {
 	case x < chatsWidth:
-		return paneChats, row / chatRowStride
+		if row := listRow(headerHeight); row >= 0 {
+			return paneChats, row / chatRowStride
+		}
+		return paneChats, -1
 	case m.rightOpen() && x >= m.width-m.rightWidth():
-		return paneThread, row
+		return paneThread, listRow(headerHeight)
 	default:
-		return paneMessages, row
+		return paneMessages, listRow(msgHeaderHeight)
 	}
 }
 
@@ -479,7 +499,7 @@ func (m Model) renderMessages(h int) string {
 	w := m.messagesWidth() - 2
 	header := m.renderHeader(w)
 	lines := make([]string, 0, h)
-	for i := m.msgTop; i < len(m.msgRows) && len(lines) < h-headerHeight; i++ {
+	for i := m.msgTop; i < len(m.msgRows) && len(lines) < h-msgHeaderHeight; i++ {
 		r := m.msgRows[i]
 		line, tint := m.rowLine(r, w)
 		if tint && !r.plain && m.inSelection(paneMessages, r.idx) {
@@ -490,10 +510,11 @@ func (m Model) renderMessages(h int) string {
 	if len(m.msgRows) == 0 {
 		lines = append(lines, fit(stDim.Render("no messages synced for this chat yet"), w))
 	}
-	for len(lines) < h-headerHeight {
+	for len(lines) < h-msgHeaderHeight {
 		lines = append(lines, fit("", w))
 	}
-	return paneStyle(m.focus == paneMessages, w).Height(h).Render(header + "\n" + strings.Join(lines, "\n"))
+	content := header + "\n" + paneRule(w) + "\n" + strings.Join(lines, "\n")
+	return paneStyle(m.focus == paneMessages, w).Height(h).Render(content)
 }
 
 func (m Model) renderAI(h int) string {
@@ -526,12 +547,36 @@ func (m Model) renderHeader(w int) string {
 	if name == "" {
 		name = "(unnamed)"
 	}
-	parts := []string{stBold.Render(name), c.ChatMode, stAccent.Render(c.ChatID)}
+	title := stBold.Render(name)
+	if g := chatModeGlyph(c.ChatMode); g != "" {
+		title = stDim.Render(g) + " " + title
+	}
+	parts := []string{title}
 	if c.SyncError != "" {
 		parts = append(parts, stErr.Render("history unavailable"))
 	}
 	return fit(strings.Join(parts, stDim.Render(" · ")), w)
 }
+
+// chatModeGlyph says what kind of chat the header names. The glyphs come from
+// the Nerd Font the terminal maps the private use area to, so each holds to a
+// single column and takes the colour it is given — the same arrangement
+// botBadge and muteGlyph rely on.
+func chatModeGlyph(mode string) string {
+	switch mode {
+	case "p2p":
+		return "\uf007"
+	case "group":
+		return "\uf0c0"
+	case "topic":
+		return "\uf075"
+	}
+	return ""
+}
+
+// paneRule parts a pane's title from the list under it. It spans the whole
+// content width so its ends meet the border the pane is drawn with.
+func paneRule(w int) string { return stDim.Render(strings.Repeat("─", max(0, w))) }
 
 func (m Model) renderThread(h int) string {
 	w := m.rightWidth() - 2

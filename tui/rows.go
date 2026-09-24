@@ -664,10 +664,14 @@ func splitImages(line string) (keys []string, rest string) {
 	return keys, rest
 }
 
-// daySeparator splits the list where the calendar day changes.
+// daySeparator splits the list where the calendar day changes. An odd number
+// of columns to share goes to the right arm rather than being dropped: fit
+// would pad the shortfall with a space, and the rule would stop one column
+// short of the pane edge.
 func daySeparator(label string, width int) string {
-	rule := max(0, (width-lipgloss.Width(label)-2)/2)
-	return stDim.Render(strings.Repeat("─", rule) + " " + label + " " + strings.Repeat("─", rule))
+	room := max(0, width-lipgloss.Width(label)-2)
+	left := room / 2
+	return stDim.Render(strings.Repeat("─", left) + " " + label + " " + strings.Repeat("─", room-left))
 }
 
 // centre pads a line so it sits in the middle of w columns. Wrapping pads to

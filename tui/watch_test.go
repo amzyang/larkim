@@ -149,7 +149,7 @@ func TestOnWheel_CarriesTheCursorIntoView(t *testing.T) {
 	top := m.msgTop
 	require.Positive(t, top, "the wheel has to have somewhere to scroll")
 	require.GreaterOrEqual(t, lastRow(m.msgRows, m.msgIdx), top)
-	require.Less(t, firstRow(m.msgRows, m.msgIdx), top+m.listHeight())
+	require.Less(t, firstRow(m.msgRows, m.msgIdx), top+m.msgListHeight())
 
 	// The cursor is what a reload scrolls back to, so one the wheel left
 	// behind drags the viewport down again.

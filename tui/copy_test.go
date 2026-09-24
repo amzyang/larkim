@@ -34,7 +34,7 @@ func highlighted(m Model) []int {
 	bg := ansi.Style{}.BackgroundColor(m.th.sel.GetBackground()).String()
 	var out []int
 	lines := strings.Split(m.renderMessages(m.bodyHeight()), "\n")
-	for i, line := range lines[2:] { // past the top border and the header
+	for i, line := range lines[3:] { // past the top border, the header and its rule
 		row := m.msgTop + i
 		if row < len(m.msgRows) && strings.Contains(line, bg) {
 			if idx := m.msgRows[row].idx; !slices.Contains(out, idx) {

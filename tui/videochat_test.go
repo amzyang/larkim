@@ -130,7 +130,7 @@ func callPage(t *testing.T, contentRaw string) (Model, *[]openCall) {
 // clickAt presses the left button at a column of a row of the messages pane,
 // in the same coordinates the terminal reports.
 func clickAt(m Model, row, x int) tea.Cmd {
-	_, cmd := m.onClick(tea.Mouse{Button: tea.MouseLeft, X: chatsWidth + 1 + x, Y: row + 1 + headerHeight})
+	_, cmd := m.onClick(tea.Mouse{Button: tea.MouseLeft, X: chatsWidth + 1 + x, Y: row + 1 + msgHeaderHeight})
 	return cmd
 }
 

@@ -375,7 +375,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.repinSelection(wasOn)
 		m.rebuildMessages()
 		if !atEnd {
-			m.msgTop = clamp(firstRow(m.msgRows, m.msgIdx)-row, 0, max(0, len(m.msgRows)-m.listHeight()))
+			m.msgTop = clamp(firstRow(m.msgRows, m.msgIdx)-row, 0, max(0, len(m.msgRows)-m.msgListHeight()))
 		}
 		m.scrollMessagesToSelection()
 		return m, m.takeRead(msg.chatID, msg.msgs)
@@ -1518,6 +1518,11 @@ func (m Model) onClick(ms tea.Mouse) (tea.Model, tea.Cmd) {
 		m.mode = modeNormal
 		m.input.Blur()
 		m.focus = p
+		// The pane's head takes the focus and nothing else: there is no row
+		// under the click to put the cursor on.
+		if row < 0 {
+			return m, nil
+		}
 	}
 	switch p {
 	case paneChats:
@@ -1574,8 +1579,8 @@ func (m Model) onWheel(ms tea.Mouse) (tea.Model, tea.Cmd) {
 		vis := m.visibleChats()
 		m.chatTop = clamp(m.chatTop+step, 0, max(0, len(vis)-m.chatListHeight()))
 	case paneMessages:
-		m.msgTop = clamp(m.msgTop+step, 0, max(0, len(m.msgRows)-m.listHeight()))
-		m.msgIdx = cursorInWindow(m.msgRows, m.msgIdx, m.msgTop, m.listHeight())
+		m.msgTop = clamp(m.msgTop+step, 0, max(0, len(m.msgRows)-m.msgListHeight()))
+		m.msgIdx = cursorInWindow(m.msgRows, m.msgIdx, m.msgTop, m.msgListHeight())
 	case paneThread:
 		m.threadTop = clamp(m.threadTop+step, 0, max(0, len(m.threadRows)-m.listHeight()))
 		m.threadIdx = cursorInWindow(m.threadRows, m.threadIdx, m.threadTop, m.listHeight())

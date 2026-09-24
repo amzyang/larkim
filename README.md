@@ -43,7 +43,7 @@ larkim tui
 
 ## TUI
 
-`larkim tui` shows chats, the selected chat's messages and, when opened, a thread pane, plus a composer. The chat header carries the chat id. If no daemon holds the data-dir lock the TUI syncs in-process. Colours follow the terminal palette and its light or dark background. Below 114 columns the thread or assistant pane takes the place of the messages pane; the TUI needs at least 60×12. A reply carries the message it answers quoted above its body — sender and gist on one line — unless that message is the one right above it.
+`larkim tui` shows chats, the selected chat's messages and, when opened, a thread pane, plus a composer. The chat header names the chat, marked with a glyph for its kind, and a rule under it parts the header from the list. If no daemon holds the data-dir lock the TUI syncs in-process. Colours follow the terminal palette and its light or dark background. Below 114 columns the thread or assistant pane takes the place of the messages pane; the TUI needs at least 60×12. A reply carries the message it answers quoted above its body — sender and gist on one line — unless that message is the one right above it.
 
 The message list is split where the calendar day changes, and each message is headed by its sender — the selected one also spells out its time. Official emoji are drawn as emoji, interactive cards as a titled block with their buttons, and system messages centred and muted. On kitty, images are drawn in place once they have been downloaded; elsewhere they read as `[图片]`.
 

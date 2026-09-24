@@ -97,7 +97,9 @@ func TestHit_MapsPanesBelowTitles(t *testing.T) {
 	require.Equal(t, 1, row, "the next chat starts a stride on")
 	p, row = m.hit(chatsWidth+5, 3)
 	require.Equal(t, paneMessages, p)
-	require.Equal(t, 1, row, "message body rows start below the header")
+	require.Equal(t, 0, row, "message body rows start below the rule, not below the title")
+	_, row = m.hit(chatsWidth+5, 4)
+	require.Equal(t, 1, row, "and step one at a time from there")
 	m = withThread(m)
 	p, row = m.hit(m.width-5, 3)
 	require.Equal(t, paneThread, p)
@@ -308,7 +310,7 @@ func TestMove_StepsThroughEveryMessageAcrossMergedBlocks(t *testing.T) {
 	for i := range m.msgs {
 		require.Equal(t, i, m.msgIdx, "j stops on every message, not on every block")
 		require.GreaterOrEqual(t, firstRow(m.msgRows, i), m.msgTop, "the selected message is on screen")
-		require.Less(t, lastRow(m.msgRows, i), m.msgTop+m.listHeight())
+		require.Less(t, lastRow(m.msgRows, i), m.msgTop+m.msgListHeight())
 		mm, _ := m.move(1)
 		m = mm.(Model)
 	}
@@ -317,12 +319,12 @@ func TestMove_StepsThroughEveryMessageAcrossMergedBlocks(t *testing.T) {
 func TestModelPicHeight_DoesNotMoveWithTheReplyBar(t *testing.T) {
 	m := sized(120, 40)
 	was := m.picHeight()
-	require.Equal(t, m.listHeight(), was, "a picture may fill the pane it is drawn in")
+	require.Equal(t, m.msgListHeight(), was, "a picture may fill the pane it is drawn in")
 
 	m.replyTo = &store.Message{MessageID: "om_1"}
 	require.Equal(t, was, m.picHeight(),
 		"opening the reply bar must not resize every picture on screen")
-	require.Equal(t, m.listHeight()+1, m.picHeight(), "at the cost of one row while it is open")
+	require.Equal(t, m.msgListHeight()+1, m.picHeight(), "at the cost of one row while it is open")
 }
 
 func TestHighlightChat_FocusedRowTakesTheFixedTint(t *testing.T) {
