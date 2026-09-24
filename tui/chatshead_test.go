@@ -115,3 +115,10 @@ func TestCounterStyle_MatchesThePictureItStandsInFor(t *testing.T) {
 		"a chat whose picture failed sits beside discs drawn in the unread red")
 	require.Equal(t, stDim, counterStyle(store.Chat{Muted: true}))
 }
+
+func TestChatsHeader_FilterTakesTheDotsColumnWhenNoDotIsDrawn(t *testing.T) {
+	chats, unread := headChats("u")
+	line := head(t, chats, unread, strings.Repeat("x", 60), 36)
+	require.True(t, strings.HasSuffix(line, "…¹"),
+		"with no dot there is no column to keep clear of: %q", line)
+}

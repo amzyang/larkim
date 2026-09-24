@@ -178,7 +178,10 @@ func loadChats(st *store.Store) tea.Cmd {
 		if err != nil {
 			return errMsg{err}
 		}
-		unread, _ := st.UnreadCountsByChat(context.Background())
+		unread, err := st.UnreadCountsByChat(context.Background())
+		if err != nil {
+			return errMsg{err}
+		}
 		return chatsLoadedMsg{chats: chats, unread: unread}
 	}
 }

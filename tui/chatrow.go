@@ -273,7 +273,13 @@ func chatsHeader(chats []store.Chat, unread map[string]int64, filter string, w i
 	if filter != "" {
 		title = "Chats /" + filter
 	}
-	room := w - lipgloss.Width(count) - lipgloss.Width(dot) - 1
+	// The gap follows padBetween's rule: without a dot there is nothing for
+	// the title to keep clear of, so it gets that column too.
+	gap := 0
+	if dot != "" {
+		gap = 1
+	}
+	room := w - lipgloss.Width(count) - lipgloss.Width(dot) - gap
 	return padBetween(stBold.Render(truncate(title, room))+count, dot, w)
 }
 
