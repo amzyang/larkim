@@ -20,7 +20,16 @@ type Resource struct {
 	LastError     string `json:"last_error,omitempty"`
 }
 
-const resourceColumns = `message_id, file_key, type, local_path, size_bytes, status, attempts, next_attempt_at, last_error`
+const resourceColumns = `r.message_id, r.file_key, r.type, r.local_path, r.size_bytes, r.status, r.attempts, r.next_attempt_at, r.last_error`
+
+// resourceFrom is the FROM clause the due queries select from: a resource is
+// ordered by the message that carries it.
+const resourceFrom = `FROM resources r JOIN messages m ON m.message_id = r.message_id`
+
+// resourceDue is a resource worth another attempt: never fetched, or failed
+// with its scheduled retry now owed. It takes the current time as its one
+// parameter.
+const resourceDue = `(r.status = 'pending' OR (r.status = 'failed' AND r.next_attempt_at > 0 AND r.next_attempt_at <= ?))`
 
 func scanResource(sc scanner) (Resource, error) {
 	var r Resource
@@ -66,16 +75,25 @@ func (s *Store) MarkResourceFailed(ctx context.Context, messageID, fileKey, reas
 }
 
 // ResourceMessagesDue returns message ids with pending or retryable
-// resources, newest messages first.
+// resources, newest messages first. Stickers are left out: nothing downloads
+// them, so asking lark-cli for their messages would buy nothing.
 func (s *Store) ResourceMessagesDue(ctx context.Context, now int64, limit int) ([]string, error) {
-	return queryAll(ctx, s.db, scanOne[string], `SELECT DISTINCT r.message_id FROM resources r JOIN messages m ON m.message_id = r.message_id
- WHERE (r.status = 'pending' OR (r.status = 'failed' AND r.next_attempt_at > 0 AND r.next_attempt_at <= ?))
+	return queryAll(ctx, s.db, scanOne[string], `SELECT DISTINCT r.message_id `+resourceFrom+`
+ WHERE r.type <> 'sticker' AND `+resourceDue+`
+ ORDER BY m.create_ms DESC LIMIT ?`, now, limit)
+}
+
+// StickerResourcesDue returns sticker rows still waiting for their picture,
+// newest messages first.
+func (s *Store) StickerResourcesDue(ctx context.Context, now int64, limit int) ([]Resource, error) {
+	return queryAll(ctx, s.db, scanResource, `SELECT `+resourceColumns+` `+resourceFrom+`
+ WHERE r.type = 'sticker' AND `+resourceDue+`
  ORDER BY m.create_ms DESC LIMIT ?`, now, limit)
 }
 
 // ResourcesFor lists the resources of one message.
 func (s *Store) ResourcesFor(ctx context.Context, messageID string) ([]Resource, error) {
-	return queryAll(ctx, s.db, scanResource, `SELECT `+resourceColumns+` FROM resources WHERE message_id = ? ORDER BY file_key`, messageID)
+	return queryAll(ctx, s.db, scanResource, `SELECT `+resourceColumns+` FROM resources r WHERE r.message_id = ? ORDER BY r.file_key`, messageID)
 }
 
 // ResourceCounts summarizes resource states.
@@ -203,7 +221,7 @@ func (s *Store) MessagesAfterIDForScan(ctx context.Context, rowID int64, limit i
 		err := sc.Scan(&r.ID, &r.MessageID, &r.MsgType, &r.ContentRaw)
 		return r, err
 	}, `SELECT id, message_id, msg_type, content_raw FROM messages
- WHERE id > ? AND deleted = 0 AND msg_type IN ('image','file','audio','media','video','post') ORDER BY id LIMIT ?`, rowID, limit)
+ WHERE id > ? AND deleted = 0 AND msg_type IN ('image','file','audio','media','video','post','sticker') ORDER BY id LIMIT ?`, rowID, limit)
 }
 
 // ResourcesForMessages lists the resources of many messages at once, keyed by
@@ -211,7 +229,7 @@ func (s *Store) MessagesAfterIDForScan(ctx context.Context, rowID int64, limit i
 func (s *Store) ResourcesForMessages(ctx context.Context, messageIDs []string) (map[string][]Resource, error) {
 	out := make(map[string][]Resource, len(messageIDs))
 	for chunk := range slices.Chunk(messageIDs, 500) {
-		rows, err := queryAll(ctx, s.db, scanResource, `SELECT `+resourceColumns+` FROM resources WHERE message_id IN `+inClause(len(chunk))+` ORDER BY message_id, file_key`, anySlice(chunk)...)
+		rows, err := queryAll(ctx, s.db, scanResource, `SELECT `+resourceColumns+` FROM resources r WHERE r.message_id IN `+inClause(len(chunk))+` ORDER BY r.message_id, r.file_key`, anySlice(chunk)...)
 		if err != nil {
 			return nil, err
 		}

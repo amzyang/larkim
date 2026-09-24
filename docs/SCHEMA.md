@@ -85,14 +85,16 @@ A chat's badge counts the rows where `is_read_remote` is 0 and `local_read_at` i
 
 ## resources
 
-Attachments of a message, one row per key: an `image` or `file` body's key, the keys embedded in a rich-text post, and the images an `interactive` card holds in its attachment table.
+Attachments of a message, one row per key: an `image` or `file` body's key, the keys embedded in a rich-text post, the images an `interactive` card holds in its attachment table, and the picture a `sticker` names.
 
 | column | meaning |
 |---|---|
-| `type` | `image` or `file` |
-| `local_path` | path relative to the data dir once `status = done` |
+| `type` | `image`, `file` or `sticker` |
+| `local_path` | path relative to the data dir once `status = done`; stickers land in `resources/stickers/<file_key>.<ext>` |
 | `status` | `pending`, `done`, `failed`, `skipped` (over `resources.max_bytes`) |
 | `attempts`, `next_attempt_at`, `last_error` | retry bookkeeping |
+
+Feishu's resource API refuses a sticker's `file_key` (`234002 Unauthorized`) under every identity, so a sticker picture is copied out of the Lark client's own storage on this machine instead; a sticker the client has never drawn stays `failed`.
 
 ## messages_fts
 

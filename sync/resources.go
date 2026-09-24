@@ -44,9 +44,10 @@ func ResourceRetryDelay(attempts int) time.Duration {
 	return ReadCheckDelay(attempts)
 }
 
-// ExtractResources lists the downloadable attachment keys referenced by a
-// message body. Stickers are not downloadable and merge-forwards carry their
-// resources on the inner messages.
+// ExtractResources lists the attachment keys referenced by a message body.
+// Merge-forwards carry their resources on the inner messages. A sticker's key
+// is listed like any other, though nothing downloads it: copyStickers takes
+// that picture out of the Lark client's own storage.
 func ExtractResources(messageID, msgType, contentRaw string) []store.Resource {
 	var out []store.Resource
 	add := func(key, typ string) {
@@ -69,6 +70,8 @@ func ExtractResources(messageID, msgType, contentRaw string) []store.Resource {
 		add(str(body["image_key"]), "image")
 	case "file", "audio", "media", "video":
 		add(str(body["file_key"]), "file")
+	case "sticker":
+		add(str(body["file_key"]), "sticker")
 	case "post":
 		walkPost(body, add)
 	case "interactive":

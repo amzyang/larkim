@@ -19,7 +19,8 @@ func TestExtractResources(t *testing.T) {
 	post := `{"zh_cn":{"title":"t","content":[[{"tag":"text","text":"x"},{"tag":"img","image_key":"img_p"}],[{"tag":"media","file_key":"file_m"},{"tag":"img","image_key":"img_p"}]]}}`
 	rs = ExtractResources("om", "post", post)
 	require.Len(t, rs, 2, "duplicates collapse")
-	require.Empty(t, ExtractResources("om", "sticker", `{"file_key":"x"}`))
+	require.Equal(t, []store.Resource{{MessageID: "om", FileKey: "v3_s", Type: "sticker"}},
+		ExtractResources("om", "sticker", `{"file_key":"v3_s"}`))
 	require.Empty(t, ExtractResources("om", "text", `not json`))
 }
 

@@ -45,6 +45,9 @@ type Options struct {
 	// DataDir is where lark-cli downloads land (resources/ below it); empty
 	// disables downloads.
 	DataDir string
+	// ClientDir is where the Lark client keeps its per-account storage, the
+	// only local source of sticker pictures; empty leaves stickers unfilled.
+	ClientDir string
 	// MaxBytes skips attachments larger than this (0 = unlimited).
 	MaxBytes int64
 }
@@ -68,6 +71,7 @@ func OptionsFrom(cfg config.Config) Options {
 		AvatarsPerTick:        5,
 		ContactDetailsPerTick: larkcli.MaxUserIDsPerSearch,
 		DataDir:               cfg.DataDir,
+		ClientDir:             DefaultClientDir(),
 		MaxBytes:              cfg.Resources.MaxBytes,
 	}
 }
@@ -132,6 +136,7 @@ type Report struct {
 	Members    int // chat members recorded
 	Muted      int // chats whose do-not-disturb setting was answered
 	Avatars    int // avatar files stored
+	Stickers   int // sticker pictures copied out of the Lark client
 	Contacts   int // contacts whose identity fields were resolved
 }
 
@@ -256,14 +261,21 @@ func (s *Syncer) tick(ctx context.Context, now time.Time) (Report, error) {
 	}
 	rep.Downloaded = n
 
-	// 7. Poll whether the user has read recent messages from others.
+	// 7. Copy sticker pictures out of the Lark client's own storage.
+	n, err = s.copyStickers(ctx, now)
+	if err != nil {
+		return rep, fmt.Errorf("stickers: %w", err)
+	}
+	rep.Stickers = n
+
+	// 8. Poll whether the user has read recent messages from others.
 	n, err = s.pollReadStatus(ctx, now)
 	if err != nil {
 		return rep, fmt.Errorf("read status: %w", err)
 	}
 	rep.ReadChecks = n
 
-	// 8. Repair recent history, refresh members, fetch avatars: a few each.
+	// 9. Repair recent history, refresh members, fetch avatars: a few each.
 	if rep.Repaired, err = s.repairSlice(ctx, now); err != nil {
 		return rep, fmt.Errorf("repair: %w", err)
 	}
