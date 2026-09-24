@@ -78,12 +78,11 @@ var (
 	stChipCells = lipgloss.NewStyle().Background(colChip)
 	stChipEdge  = lipgloss.NewStyle().Foreground(colChip)
 
-	// A card's button is the chip's shape filled darker: a button is a block
-	// of colour with its label on it, not bracketed text, and the caps carry
-	// the padding so the label needs none of its own.
-	colBtn    = lipgloss.Color("#9db4e0")
-	stBtn     = lipgloss.NewStyle().Foreground(colChatSelText).Background(colBtn)
-	stBtnEdge = lipgloss.NewStyle().Foreground(colBtn)
+	// A card's button is a filled rectangle darker than the chip: a block of
+	// colour with its label on it, not bracketed text, and the padding sits
+	// inside the fill so the label needs none of its own.
+	colBtn = lipgloss.Color("#9db4e0")
+	stBtn  = lipgloss.NewStyle().Foreground(colChatSelText).Background(colBtn).Padding(0, 1)
 
 	// sgrReset is the sequence that ends a styled run; lipgloss writes the
 	// short spelling, a hand-written line may carry the long one.

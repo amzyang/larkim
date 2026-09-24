@@ -46,7 +46,7 @@ func TestBodyRows_ALiveCallCardsTheMeetingWithAJoinButton(t *testing.T) {
 	require.Equal(t, "lark://vc.feishu.cn/j/100000000", join.zone.url)
 	require.Equal(t, gutterWidth+lipgloss.Width(cardRule+" "), join.zone.x0,
 		"the target starts where the button is drawn")
-	require.Equal(t, join.zone.x0+lipgloss.Width(chipLeft+"Join"+chipRight), join.zone.x1)
+	require.Equal(t, join.zone.x0+lipgloss.Width(" Join "), join.zone.x1)
 }
 
 func TestBodyRows_AnEndedCallShowsItsLengthAndNoWayIn(t *testing.T) {

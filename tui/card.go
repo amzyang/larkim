@@ -145,8 +145,7 @@ func renderCard(c card, width int, ms mentions) []cardRow {
 func renderCardActions(line string) string {
 	var buttons []string
 	for _, m := range cardAction.FindAllStringSubmatch(line, -1) {
-		label := stBtn.Render(expandEmoji(strings.TrimSpace(m[1])))
-		buttons = append(buttons, stBtnEdge.Render(chipLeft)+label+stBtnEdge.Render(chipRight))
+		buttons = append(buttons, stBtn.Render(expandEmoji(strings.TrimSpace(m[1]))))
 	}
 	return strings.Join(buttons, " ")
 }

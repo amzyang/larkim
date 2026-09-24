@@ -73,8 +73,7 @@ func videoChatRows(v sync.VideoChat, idx int, st msgStyle, g *gutters) []msgRow 
 		line(stDim.Render("Meeting ID: "+spacedMeetNumber(v.MeetNumber)), "")
 	}
 	if v.Live() && v.MeetNumber != "" {
-		button := stBtnEdge.Render(chipLeft) + stBtn.Render("Join") + stBtnEdge.Render(chipRight)
-		line(button, feishuMeetingLink(v.MeetNumber))
+		line(stBtn.Render("Join"), feishuMeetingLink(v.MeetNumber))
 	}
 	return rows
 }
