@@ -10,6 +10,14 @@
 - 自己显示为「你」，参与者不加颜色或下划线
 - 联系人里查不到的 operator 不写 open id，计入 +n
 
+## 在会话列表中展示 reactions
+
+- 仅 p2p，群聊的 reaction 留在消息面板
+- 只显示 emoji icon（unicode 字符或图片），不显示计数与参与者
+- 放在 summary 行最前面：`{reaction icons} {summary}`
+- 最多 3 个；既没有字符也没有图片的 emoji 直接省略
+- 撤回的消息不显示
+
 ## 在消息列表中添加、移除对消息的 reaction
 
 ## 在 terminal 中展示 emoji

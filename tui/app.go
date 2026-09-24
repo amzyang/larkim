@@ -233,14 +233,14 @@ func (m Model) picturePrepare() string {
 	h := m.listHeight()
 	var pics []picture
 	seen := map[string]bool{}
-	collect := func(rows []msgRow, lo, hi int) {
-		take := func(p picture) {
-			if p.cols == 0 || seen[p.key()] || len(pics) >= picIDs {
-				return
-			}
-			seen[p.key()] = true
-			pics = append(pics, p)
+	take := func(p picture) {
+		if p.cols == 0 || seen[p.key()] || len(pics) >= picIDs {
+			return
 		}
+		seen[p.key()] = true
+		pics = append(pics, p)
+	}
+	collect := func(rows []msgRow, lo, hi int) {
 		for i := clamp(lo, 0, len(rows)); i < clamp(hi, 0, len(rows)) && len(pics) < picIDs; i++ {
 			take(rows[i].pic)
 			for _, s := range rows[i].segs {
@@ -248,8 +248,18 @@ func (m Model) picturePrepare() string {
 			}
 		}
 	}
-	// The rows on screen are claimed first, so a pane crowded with pictures
-	// spends the id space on what the reader is looking at.
+	// The chat list is claimed first. Its reactions are a handful of icons
+	// that many rows draw from the same ids, and unlike the message bands
+	// below it reaches for nothing off screen.
+	vis := m.visibleChats()
+	pcs := m.chatPics()
+	for i := m.chatTop; i < len(vis) && i < m.chatTop+m.chatListHeight(); i++ {
+		for _, s := range chatChips(vis[i], pcs) {
+			take(s.pic)
+		}
+	}
+	// Then the rows on screen, so a pane crowded with pictures spends what is
+	// left on what the reader is looking at.
 	for _, band := range [][2]int{{0, h}, {h, 2 * h}, {-h, 0}} {
 		collect(m.msgRows, m.msgTop+band[0], m.msgTop+band[1])
 		collect(m.threadRows, m.threadTop+band[0], m.threadTop+band[1])

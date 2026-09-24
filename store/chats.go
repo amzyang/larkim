@@ -43,8 +43,11 @@ type Chat struct {
 	// LastMentionsJSON is that message's rendered mentions, the same
 	// `[{key,id,name}]` messages.mentions_json holds.
 	LastMentionsJSON string `json:"last_mentions_json,omitempty"`
-	LastRenderedAt   int64  `json:"last_rendered_at,omitempty"`
-	LastDeleted      bool   `json:"last_deleted,omitempty"`
+	// LastReactionsJSON is that message's reaction block, the same shape
+	// messages.reactions_json holds.
+	LastReactionsJSON string `json:"last_reactions_json,omitempty"`
+	LastRenderedAt    int64  `json:"last_rendered_at,omitempty"`
+	LastDeleted       bool   `json:"last_deleted,omitempty"`
 
 	// Muted is the user's do-not-disturb setting, which only a lookup of its
 	// own reports; MuteCheckedAt stamps that lookup's last answer.
@@ -82,7 +85,7 @@ func (c Chat) AvatarFile() string {
 // callers can order by them.
 const chatColumns = `c.chat_id, c.name, c.description, c.chat_mode, c.chat_status, c.owner_id, c.external, c.p2p_target_id, c.p2p_target_type,
  c.avatar_url, c.avatar_path, c.cursor_ms, c.backfill_done_at, c.members_synced_at, c.first_seen_at, c.last_seen_at, c.left_at, c.sync_error, c.repaired_at, c.raw_json,
- c.last_message_id, c.last_message_ms, c.last_sender_id, c.last_sender_name, c.last_sender_type, c.last_msg_type, c.last_content, c.last_content_raw, c.last_mentions_json, c.last_rendered_at, c.last_deleted,
+ c.last_message_id, c.last_message_ms, c.last_sender_id, c.last_sender_name, c.last_sender_type, c.last_msg_type, c.last_content, c.last_content_raw, c.last_mentions_json, c.last_reactions_json, c.last_rendered_at, c.last_deleted,
  c.muted, c.mute_checked_at,
  (SELECT count(*) FROM messages m WHERE m.chat_id = c.chat_id) AS message_count,
  COALESCE(NULLIF(ct.enterprise_email, ''), ct.email, '') AS peer_account,
@@ -92,7 +95,7 @@ func scanChat(sc scanner) (Chat, error) {
 	var c Chat
 	err := sc.Scan(&c.ChatID, &c.Name, &c.Description, &c.ChatMode, &c.ChatStatus, &c.OwnerID, &c.External, &c.P2PTargetID, &c.P2PTargetType,
 		&c.AvatarURL, &c.AvatarPath, &c.CursorMs, &c.BackfillDoneAt, &c.MembersSyncedAt, &c.FirstSeenAt, &c.LastSeenAt, &c.LeftAt, &c.SyncError, &c.RepairedAt, &c.RawJSON,
-		&c.LastMessageID, &c.LastMessageMs, &c.LastSenderID, &c.LastSenderName, &c.LastSenderType, &c.LastMsgType, &c.LastContent, &c.LastContentRaw, &c.LastMentionsJSON, &c.LastRenderedAt, &c.LastDeleted,
+		&c.LastMessageID, &c.LastMessageMs, &c.LastSenderID, &c.LastSenderName, &c.LastSenderType, &c.LastMsgType, &c.LastContent, &c.LastContentRaw, &c.LastMentionsJSON, &c.LastReactionsJSON, &c.LastRenderedAt, &c.LastDeleted,
 		&c.Muted, &c.MuteCheckedAt,
 		&c.MessageCount, &c.PeerAccount, &c.PeerAvatarPath)
 	return c, err
@@ -280,13 +283,13 @@ func FoldName(s string) string {
 // carry a negative message_position and are left out, so the list shows what
 // the chat's main flow shows; thread roots have a non-negative position and
 // do count.
-const chatSummaryQuery = `SELECT message_id, create_ms, sender_id, sender_name, sender_type, msg_type, content, content_raw, mentions_json, rendered_at, deleted
+const chatSummaryQuery = `SELECT message_id, create_ms, sender_id, sender_name, sender_type, msg_type, content, content_raw, mentions_json, reactions_json, rendered_at, deleted
  FROM messages WHERE chat_id = ? AND message_position >= 0
  ORDER BY create_ms DESC, message_position DESC, id DESC LIMIT 1`
 
 const chatSummaryUpdate = `UPDATE chats SET
  last_message_id = ?, last_message_ms = ?, last_sender_id = ?, last_sender_name = ?, last_sender_type = ?,
- last_msg_type = ?, last_content = ?, last_content_raw = ?, last_mentions_json = ?, last_rendered_at = ?, last_deleted = ?
+ last_msg_type = ?, last_content = ?, last_content_raw = ?, last_mentions_json = ?, last_reactions_json = ?, last_rendered_at = ?, last_deleted = ?
  WHERE chat_id = ?`
 
 // refreshChatSummary recomputes one chat's cold-stored newest message inside
@@ -296,12 +299,12 @@ func refreshChatSummary(ctx context.Context, tx *sql.Tx, chatID string) error {
 	var c Chat
 	err := tx.QueryRowContext(ctx, chatSummaryQuery, chatID).Scan(
 		&c.LastMessageID, &c.LastMessageMs, &c.LastSenderID, &c.LastSenderName, &c.LastSenderType,
-		&c.LastMsgType, &c.LastContent, &c.LastContentRaw, &c.LastMentionsJSON, &c.LastRenderedAt, &c.LastDeleted)
+		&c.LastMsgType, &c.LastContent, &c.LastContentRaw, &c.LastMentionsJSON, &c.LastReactionsJSON, &c.LastRenderedAt, &c.LastDeleted)
 	if err != nil && err != sql.ErrNoRows {
 		return fmt.Errorf("chat summary %s: %w", chatID, err)
 	}
 	_, err = tx.ExecContext(ctx, chatSummaryUpdate,
 		c.LastMessageID, c.LastMessageMs, c.LastSenderID, c.LastSenderName, c.LastSenderType,
-		c.LastMsgType, c.LastContent, c.LastContentRaw, c.LastMentionsJSON, c.LastRenderedAt, c.LastDeleted, chatID)
+		c.LastMsgType, c.LastContent, c.LastContentRaw, c.LastMentionsJSON, c.LastReactionsJSON, c.LastRenderedAt, c.LastDeleted, chatID)
 	return err
 }

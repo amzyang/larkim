@@ -108,6 +108,14 @@ func (p emojiPics) pic(key string, cols int) picture {
 	return p.place(emoji.Path(p.dir, key), cols, 1)
 }
 
+// chatPics sizes the reaction pictures a chat row draws.
+func (m Model) chatPics() emojiPics {
+	if m.pics == nil {
+		return emojiPics{}
+	}
+	return emojiPics{place: m.pics.place, dir: m.deps.DataDir}
+}
+
 // emojiPic is one emoji's picture beside a message, as wide as its own shape
 // asks for.
 func (st msgStyle) emojiPic(key string) picture {

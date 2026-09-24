@@ -17,7 +17,7 @@ var testNow = time.Date(2026, 9, 23, 10, 0, 0, 0, time.Local)
 func at(d time.Duration) int64 { return testNow.Add(d).UnixMilli() }
 
 func plainRow(c store.Chat, unread int64, w int) (string, string) {
-	r := renderChatRow(textAvatars{}, c, unread, "ou_me", testNow, w)
+	r := renderChatRow(textAvatars{}, c, unread, "ou_me", testNow, w, emojiPics{})
 	return ansi.Strip(r.top), ansi.Strip(r.bottom)
 }
 
@@ -144,7 +144,7 @@ func TestRenderChatRow_KeepsTheRightEdgeAlignedAndBothLinesInWidth(t *testing.T)
 		LastMessageID: "om_1", LastMessageMs: at(-30 * time.Hour),
 		LastSenderName: "林岚", LastContent: strings.Repeat("很长的内容", 20), LastRenderedAt: 1,
 	}
-	r := renderChatRow(textAvatars{}, long, 12, "ou_me", testNow, w)
+	r := renderChatRow(textAvatars{}, long, 12, "ou_me", testNow, w, emojiPics{})
 	require.Equal(t, chatTextWidth(w), lipgloss.Width(r.top), "the text half fills its column exactly")
 	require.Equal(t, chatTextWidth(w), lipgloss.Width(r.bottom))
 	require.Equal(t, avatarWidth, lipgloss.Width(r.avatarTop), "and the avatar keeps its own")
@@ -201,7 +201,7 @@ func TestRenderChatRow_LeavesTheCountToAPictureThatCarriesIt(t *testing.T) {
 	c := store.Chat{ChatID: "oc_1", Name: "Alpha", ChatMode: "group",
 		LastMessageID: "om_1", LastMessageMs: at(-time.Hour), LastSenderName: "Bob", LastContent: "hi"}
 
-	on := ansi.Strip(renderChatRow(badgedAvatars{}, c, 12, "ou_me", testNow, 40).top)
+	on := ansi.Strip(renderChatRow(badgedAvatars{}, c, 12, "ou_me", testNow, 40, emojiPics{}).top)
 	require.NotContains(t, on, "12", "the avatar shows it, so the title line keeps the room")
 
 	off, _ := plainRow(c, 12, 40)
@@ -216,7 +216,7 @@ func TestRenderChatRow_MarksAMutedChat(t *testing.T) {
 	require.NotContains(t, bottom, muteGlyph)
 
 	c.Muted = true
-	row := renderChatRow(textAvatars{}, c, 0, "ou_me", testNow, 40)
+	row := renderChatRow(textAvatars{}, c, 0, "ou_me", testNow, 40, emojiPics{})
 	require.Contains(t, ansi.Strip(row.bottom), muteGlyph, "a muted chat with nothing unread still says so")
 	require.Equal(t, chatTextWidth(40), lipgloss.Width(row.bottom), "and the mark stays inside the row")
 }
@@ -233,9 +233,9 @@ func TestRenderChatRow_GreysTheCounterOfAMutedChat(t *testing.T) {
 	c := store.Chat{ChatID: "oc_1", Name: "Alpha", ChatMode: "group",
 		LastMessageID: "om_1", LastMessageMs: at(-time.Hour), LastSenderName: "Bob", LastContent: "hi"}
 
-	loud := renderChatRow(textAvatars{}, c, 3, "ou_me", testNow, 40).top
+	loud := renderChatRow(textAvatars{}, c, 3, "ou_me", testNow, 40, emojiPics{}).top
 	c.Muted = true
-	quiet := renderChatRow(textAvatars{}, c, 3, "ou_me", testNow, 40).top
+	quiet := renderChatRow(textAvatars{}, c, 3, "ou_me", testNow, 40, emojiPics{}).top
 
 	require.Contains(t, ansi.Strip(loud), "3")
 	require.Contains(t, ansi.Strip(quiet), "3", "the count is still there")
@@ -247,11 +247,85 @@ func TestChatSummary_KeepsAMentionOfTheReaderVisibleThroughTheDim(t *testing.T) 
 	c := store.Chat{ChatID: "oc_1", Name: "项目协作群", ChatMode: "group", LastMessageID: "om_1", LastRenderedAt: 1,
 		LastSenderName: "孙琪", LastSenderID: "ou_x", LastContent: "@林岚 看下",
 		LastMentionsJSON: `[{"id":"ou_me","key":"@_user_1","name":"林岚"}]`}
-	row := renderChatRow(textAvatars{}, c, 0, "ou_me", testNow, 36)
+	row := renderChatRow(textAvatars{}, c, 0, "ou_me", testNow, 36, emojiPics{})
 	require.Contains(t, row.bottom, stMentionMe.Render("@林岚"))
 	require.Contains(t, ansi.Strip(row.bottom), "孙琪: @林岚 看下")
 
 	c.LastContent, c.LastMentionsJSON = "@_all all", ""
-	row = renderChatRow(textAvatars{}, c, 0, "ou_me", testNow, 36)
+	row = renderChatRow(textAvatars{}, c, 0, "ou_me", testNow, 36, emojiPics{})
 	require.Contains(t, ansi.Strip(row.bottom), "孙琪: @All all")
+}
+
+// reactedP2P is a one-to-one chat whose newest message collected reactions,
+// in the order the keys are given.
+func reactedP2P(keys ...string) store.Chat {
+	var counts, details []string
+	for i, k := range keys {
+		counts = append(counts, `{"reaction_type":"`+k+`","count":"2"}`)
+		details = append(details, fmt.Sprintf(`{"emoji_type":%q,"action_time":"%d","operator":{"operator_id":"ou_a"}}`, k, 1790155040+i))
+	}
+	return store.Chat{ChatID: "oc_peer", Name: "张三", ChatMode: "p2p",
+		LastMessageID: "om_1", LastMessageMs: at(-time.Hour), LastRenderedAt: 1,
+		LastSenderID: "ou_me", LastSenderName: "林岚", LastContent: "明天上午的排期",
+		LastReactionsJSON: `{"counts":[` + strings.Join(counts, ",") + `],"details":[` + strings.Join(details, ",") + `]}`}
+}
+
+func TestChatSummary_LeadsAP2PLineWithTheReactionIcons(t *testing.T) {
+	_, bottom := plainRow(reactedP2P("THUMBSUP", "HEART"), 0, 40)
+	require.True(t, strings.HasPrefix(bottom, "👍 ❤️ 你: 明天上午的排期"), "got %q", bottom)
+	require.NotContains(t, bottom, "2", "in a chat of two, how many reacted says nothing")
+}
+
+func TestChatSummary_LeavesAGroupsReactionsToTheMessagePane(t *testing.T) {
+	c := reactedP2P("THUMBSUP")
+	c.ChatMode, c.Name = "group", "平台组"
+	_, bottom := plainRow(c, 0, 40)
+	require.NotContains(t, bottom, "👍", "a group's reactions need the room to say whose they are")
+}
+
+func TestChatSummary_DropsTheReactionsOfARecalledMessage(t *testing.T) {
+	c := reactedP2P("THUMBSUP")
+	c.LastDeleted = true
+	_, bottom := plainRow(c, 0, 40)
+	require.NotContains(t, bottom, "👍", "the client drops a recalled message's reactions with its body")
+	require.Contains(t, bottom, "撤回了一条消息")
+}
+
+func TestChatSummary_ShowsNoMoreThanThreeReactions(t *testing.T) {
+	_, bottom := plainRow(reactedP2P("THUMBSUP", "HEART", "ROSE", "MUSCLE"), 0, 44)
+	require.True(t, strings.HasPrefix(bottom, "👍 ❤️ 🌹 你:"), "got %q", bottom)
+	require.NotContains(t, bottom, "💪", "past three the icons crowd out the message behind them")
+}
+
+func TestChatSummary_LeavesOutAnEmojiItCanDrawNoWayAtAll(t *testing.T) {
+	// No graphics here and no pictures cut out, so OK has neither a character
+	// nor a picture. Its name at the head of the line would cost more room
+	// than the message it sits in front of.
+	_, bottom := plainRow(reactedP2P("OK", "THUMBSUP"), 0, 40)
+	require.True(t, strings.HasPrefix(bottom, "👍 你:"), "got %q", bottom)
+	require.NotContains(t, bottom, "[OK]")
+}
+
+func TestChatSummary_KeepsTheBodyClearOfTheReactions(t *testing.T) {
+	const w = 31
+	c := reactedP2P("THUMBSUP", "HEART", "ROSE")
+	c.LastContent = strings.Repeat("很长的内容", 20)
+	row := renderChatRow(textAvatars{}, c, 0, "ou_me", testNow, w, emojiPics{})
+	require.Equal(t, chatTextWidth(w), lipgloss.Width(row.bottom), "the line fills its column exactly")
+	require.True(t, strings.HasPrefix(ansi.Strip(row.bottom), "👍 ❤️ 🌹 "), "the icons are what survives, the body gives way")
+}
+
+func TestChatSummary_DrawsAReactionNoCharacterCarriesAsAPicture(t *testing.T) {
+	dir := t.TempDir()
+	writeTestEmoji(t, dir, "OK")
+	pics := emojiPics{dir: dir, place: picturesIn(dir).place}
+
+	const w = 40
+	row := renderChatRow(textAvatars{}, reactedP2P("OK"), 0, "ou_me", testNow, w, pics)
+	require.Empty(t, row.bottom, "a picture in the line is what puts it in pieces")
+	require.Positive(t, row.segs[0].pic.cols, "the icon is the client's own picture")
+	require.Equal(t, 1, row.segs[0].pic.rows, "an icon on a line of text is one row tall")
+	require.LessOrEqual(t, row.segs[0].pic.cols, chatChipCols, "narrower here than beside a message")
+	require.Equal(t, chatTextWidth(w), segsWidth(row.segs), "the line still fills its column exactly")
+	require.Contains(t, ansi.Strip(row.segs[len(row.segs)-1].text), "你: 明天上午的排期")
 }

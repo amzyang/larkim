@@ -132,6 +132,7 @@ type Report struct {
 	History    int // messages discovered by the historical search slice
 	Downloaded int // attachments stored
 	ReadChecks int // read-status answers recorded
+	Reactions  int // p2p chats whose newest message was asked about
 	Repaired   int // messages re-listed by the repair pass
 	Members    int // chat members recorded
 	Muted      int // chats whose do-not-disturb setting was answered
@@ -274,6 +275,13 @@ func (s *Syncer) tick(ctx context.Context, now time.Time) (Report, error) {
 		return rep, fmt.Errorf("read status: %w", err)
 	}
 	rep.ReadChecks = n
+
+	// 8b. Keep the chat list's reactions current for the liveliest p2p chats.
+	n, err = s.reactionsSlice(ctx)
+	if err != nil {
+		return rep, fmt.Errorf("reactions: %w", err)
+	}
+	rep.Reactions = n
 
 	// 9. Repair recent history, refresh members, fetch avatars: a few each.
 	if rep.Repaired, err = s.repairSlice(ctx, now); err != nil {

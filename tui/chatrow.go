@@ -2,11 +2,13 @@ package tui
 
 import (
 	"hash/fnv"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
 
 	"charm.land/lipgloss/v2"
+	"github.com/amzyang/larkim/emoji"
 	"github.com/amzyang/larkim/store"
 )
 
@@ -23,6 +25,10 @@ const (
 type chatRow struct {
 	avatarTop, avatarBottom string
 	top, bottom             string // text only, already fitted to textWidth
+	// segs, when set, is the bottom line in pieces, because a reaction on it
+	// is a picture the terminal fills in rather than a character. It stands
+	// in for bottom, which is then empty.
+	segs []rowSeg
 }
 
 // chatTextWidth is how much of a w-wide pane the text half of a row gets.
@@ -197,10 +203,84 @@ func lastMessageSummary(c store.Chat) string {
 	return flatten(c.LastContent)
 }
 
+// chatChipLimit is how many reactions a chat row shows. Past three the icons
+// crowd out the message they sit in front of.
+const chatChipLimit = 3
+
+// chatChipCols is how wide one reaction picture is drawn in the chat list.
+// The text half of the pane is narrow, so a picture gets half of what it gets
+// beside a message.
+const chatChipCols = 2
+
+// chatChips are the reactions on a p2p chat's newest message, as the icons
+// alone: in a chat of two, who reacted and how many did is not in question. A
+// group's stay in the message pane, where there is room to say whose they
+// are. A recall takes them with the body, the way the client does.
+//
+// An emoji this terminal can draw neither as a character nor as a picture is
+// left out rather than spelled: its name at the head of the line would cost
+// more room than the message behind it.
+func chatChips(c store.Chat, pics emojiPics) []rowSeg {
+	if c.ChatMode != "p2p" || c.LastDeleted {
+		return nil
+	}
+	var out []rowSeg
+	shown := 0
+	for _, chip := range emoji.Summary(c.LastReactionsJSON, "") {
+		if shown == chatChipLimit {
+			break
+		}
+		e, known := emoji.ByKey(chip.Key)
+		var seg rowSeg
+		switch {
+		case !known:
+			continue
+		case e.Glyph != "":
+			seg = rowSeg{text: e.Glyph}
+		default:
+			pic := pics.pic(e.Key, chatChipCols)
+			if pic.cols == 0 {
+				continue
+			}
+			seg = rowSeg{pic: pic}
+		}
+		if shown > 0 {
+			out = append(out, rowSeg{text: " "})
+		}
+		out = append(out, seg)
+		shown++
+	}
+	return out
+}
+
+// chatSummaryLine is the row's second line: the reactions the chat collected,
+// then who said what, then the mute mark at the far edge. It comes back in
+// pieces only when a reaction is a picture — a line of characters stays one
+// string, which is what lets a selection tint it.
+func chatSummaryLine(c store.Chat, self string, pics emojiPics, w int) (string, []rowSeg) {
+	chips := chatChips(c, pics)
+	room := w - segsWidth(chips)
+	if len(chips) > 0 {
+		room-- // the space that keeps the summary clear of the icons
+	}
+	body := padBetween(chatSummary(c, self), muteMark(c), max(0, room))
+	if len(chips) == 0 {
+		return body, nil
+	}
+	if !slices.ContainsFunc(chips, func(s rowSeg) bool { return s.pic.cols > 0 }) {
+		var b strings.Builder
+		for _, s := range chips {
+			b.WriteString(s.text)
+		}
+		return b.String() + " " + body, nil
+	}
+	return "", append(chips, rowSeg{text: " " + body})
+}
+
 // renderChatRow lays one chat out over two lines of w columns, avatar
 // included. Right-aligned fields are placed first and the title absorbs what
 // is left, so the right edge stays aligned however long a name is.
-func renderChatRow(av avatars, c store.Chat, unread int64, self string, now time.Time, w int) chatRow {
+func renderChatRow(av avatars, c store.Chat, unread int64, self string, now time.Time, w int, pics emojiPics) chatRow {
 	avatarTop, avatarBottom, badged := av.cells(c, unread)
 	textWidth := chatTextWidth(w)
 
@@ -218,11 +298,13 @@ func renderChatRow(av avatars, c store.Chat, unread int64, self string, now time
 	room := textWidth - lipgloss.Width(right) - lipgloss.Width(bot) - lipgloss.Width(suffix) - 1
 	title := stBold.Render(personName(truncate(name, max(minTitleWidth, room)), suffix)) + bot
 
+	bottom, segs := chatSummaryLine(c, self, pics, textWidth)
 	return chatRow{
 		avatarTop:    avatarTop,
 		avatarBottom: avatarBottom,
 		top:          padBetween(title, right, textWidth),
-		bottom:       padBetween(chatSummary(c, self), muteMark(c), textWidth),
+		bottom:       bottom,
+		segs:         segs,
 	}
 }
 

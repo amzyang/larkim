@@ -380,11 +380,38 @@ func (m Model) renderChats(h int) string {
 		}
 		return avatar + text
 	}
+	// A summary carrying a reaction picture is padded rather than fitted:
+	// MaxWidth measures a placeholder as the characters it is and would cut
+	// one out of its cluster. The pieces were packed to the row's width when
+	// it was built, so there is nothing to cut.
+	segLine := func(avatar string, segs []rowSeg, selected bool) string {
+		text := gap
+		for _, s := range segs {
+			if s.pic.cols == 0 {
+				text += s.text
+				continue
+			}
+			cells := m.pics.cells(s.pic, 0)
+			if cells == "" {
+				cells = strings.Repeat(" ", s.pic.cols) // still on its way to the terminal
+			}
+			text += cells
+		}
+		text += strings.Repeat(" ", max(0, w-avatarWidth-lipgloss.Width(text)))
+		if selected {
+			text = m.highlight(text, m.focus == paneChats)
+		}
+		return avatar + text
+	}
 	lines := make([]string, 0, h)
 	for i := m.chatTop; i < len(vis) && len(lines)+chatRowHeight <= h-headerHeight; i++ {
-		r := renderChatRow(m.avatars, vis[i], m.unread[vis[i].ChatID], m.deps.Self, now, w)
+		r := renderChatRow(m.avatars, vis[i], m.unread[vis[i].ChatID], m.deps.Self, now, w, m.chatPics())
 		sel := i == m.chatIdx
-		lines = append(lines, line(r.avatarTop, r.top, sel), line(r.avatarBottom, r.bottom, sel))
+		bottom := line(r.avatarBottom, r.bottom, sel)
+		if len(r.segs) > 0 {
+			bottom = segLine(r.avatarBottom, r.segs, sel)
+		}
+		lines = append(lines, line(r.avatarTop, r.top, sel), bottom)
 	}
 	// A trailing row that cannot show both its lines is left out entirely.
 	for len(lines) < h-headerHeight {

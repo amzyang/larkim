@@ -26,6 +26,7 @@ One row per chat the user is (or was) in, from `GET /im/v1/chats` with `types=p2
 | `last_sender_id`, `last_sender_name`, `last_sender_type` | that message's sender |
 | `last_msg_type`, `last_content`, `last_content_raw` | that message's type and body; `last_content` is empty until `last_rendered_at` is set |
 | `last_mentions_json` | that message's rendered mentions, the shape `messages.mentions_json` holds; empty until the rendering lands |
+| `last_reactions_json` | that message's reaction block, the shape `messages.reactions_json` holds; empty while nobody has reacted |
 | `last_rendered_at`, `last_deleted` | that message's rendering state and recall flag |
 | `muted`, `mute_checked_at` | the user's do-not-disturb setting and when it was last answered; 0 means it has never been asked |
 
@@ -58,7 +59,7 @@ One row per message id, from the raw message API (`create_ms` is millisecond pre
 | `thread_id` | `omt_…` for thread roots and replies |
 | `reply_to` | parent message of a direct reply |
 | `mentions_json` | rendered mentions, `[{key,id,name}]` |
-| `reactions_json` | reaction summary, `{counts:[{reaction_type,count}], details:[{emoji_type,operator:{operator_id,operator_type},…}]}`; empty when the message carries none. `count` is a **string**. `counts` is the server's total; `details` is one page of the individual reactions, so it may not name every reactor |
+| `reactions_json` | reaction summary, `{counts:[{reaction_type,count}], details:[{emoji_type,operator:{operator_id,operator_type},action_time,…}]}`; empty when the message carries none. `count` and `action_time` are **strings**, the latter in Unix seconds. `counts` is the server's total and arrives alphabetically; `details` is one page of the individual reactions, so it may not name every reactor. The client's own order is by each emoji's earliest `action_time` |
 | `raw_json` | the API item as received |
 | `rendered_at` | 0 = rendering pending (also reset when `update_ms` changes) |
 
@@ -66,7 +67,7 @@ A `system` message is its `template` with the values the same body carries fille
 
 Feishu closes a call with a `system` message whose template is a single space. The API carries no text for it, so the rendering comes from the newest `video_chat` message before it in the same chat, whose `end_time` falls within five seconds of the marker's `create_ms`: `Meeting ended: 32s`, over the two largest units (`32s`, `24m28s`, `1h52m`). A p2p call leaves no `video_chat` message behind, so those read `Call ended`.
 
-`reactions_json` is the one column that keeps changing after a message is rendered, and it does not ride the rendering pass: Feishu leaves `update_ms` alone when somebody reacts, so `rendered_at` is never reset and the renderer never comes back. It is refreshed on its own, for the newest 20 messages of a chat, when that chat is opened in the TUI — at most once every 30 seconds per chat. A message further back than that keeps whatever summary its rendering left, so a consumer that needs current reactions must ask Feishu itself rather than trust an old row.
+`reactions_json` is the one column that keeps changing after a message is rendered, and it does not ride the rendering pass: Feishu leaves `update_ms` alone when somebody reacts, so `rendered_at` is never reset and the renderer never comes back. Two passes refresh it on its own. Every sync tick asks about the newest message of the 20 liveliest p2p chats, which is one batched call and what keeps `chats.last_reactions_json` current for the chat list. Opening a chat in the TUI asks about its newest 20 messages, at most once every 30 seconds per chat. Anything outside both keeps whatever summary its rendering left, so a consumer that needs current reactions must ask Feishu itself rather than trust an old row.
 
 Canonical ordering: `ORDER BY create_ms, message_position, id`.
 

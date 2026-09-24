@@ -150,13 +150,28 @@ func (s *Store) UpdateRendered(ctx context.Context, messageID, content, mentions
 // triggers watch content, so a reaction never churns the index, while the
 // data revision trigger fires all the same and the panes reload.
 //
+// When the message is its chat's newest, the chat's cold-stored summary picks
+// the block up in the same transaction, which is what puts a reaction on the
+// chat list.
+//
 // An unchanged summary is not written at all: the revision trigger counts
 // every UPDATE, value changed or not, and a refresh that re-states what the
 // row already holds would have every open pane reload for nothing.
 func (s *Store) UpdateReactions(ctx context.Context, messageID, reactionsJSON string) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE messages SET reactions_json = ? WHERE message_id = ? AND reactions_json <> ?`,
-		reactionsJSON, messageID, reactionsJSON)
-	return err
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `UPDATE messages SET reactions_json = ? WHERE message_id = ? AND reactions_json <> ?`,
+		reactionsJSON, messageID, reactionsJSON); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE chats SET last_reactions_json = ? WHERE last_message_id = ? AND last_reactions_json <> ?`,
+		reactionsJSON, messageID, reactionsJSON); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // UnrenderedMessageIDs returns up to limit live message ids that still need

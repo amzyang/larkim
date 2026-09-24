@@ -173,3 +173,46 @@ func TestUpdateRendered_CarriesMentionsIntoTheSummary(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, summaryOf(t, s, "oc_a").LastMentionsJSON, "a newer message brings its own mentions, or none")
 }
+
+func TestUpdateReactions_ReachesTheChatSummary(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+	require.NoError(t, s.EnsureChat(ctx, "oc_a", 1))
+	_, err := s.UpsertMessages(ctx, []Message{msgAt("om_1", "oc_a", 100, 1, "hi")}, 1)
+	require.NoError(t, err)
+
+	const block = `{"counts":[{"reaction_type":"OK","count":"1"}]}`
+	require.NoError(t, s.UpdateReactions(ctx, "om_1", block))
+
+	require.Equal(t, block, summaryOf(t, s, "oc_a").LastReactionsJSON)
+}
+
+func TestUpdateReactions_LeavesOlderMessagesOutOfTheSummary(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+	require.NoError(t, s.EnsureChat(ctx, "oc_a", 1))
+	_, err := s.UpsertMessages(ctx, []Message{
+		msgAt("om_1", "oc_a", 100, 1, "older"),
+		msgAt("om_2", "oc_a", 200, 2, "newest"),
+	}, 1)
+	require.NoError(t, err)
+
+	require.NoError(t, s.UpdateReactions(ctx, "om_1", `{"counts":[{"reaction_type":"OK","count":"1"}]}`))
+
+	require.Empty(t, summaryOf(t, s, "oc_a").LastReactionsJSON,
+		"the older message's reactions must not leak into the summary")
+}
+
+func TestUpsertMessages_ClearsTheSummaryReactionsWhenANewerMessageArrives(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+	require.NoError(t, s.EnsureChat(ctx, "oc_a", 1))
+	_, err := s.UpsertMessages(ctx, []Message{msgAt("om_1", "oc_a", 100, 1, "hi")}, 1)
+	require.NoError(t, err)
+	require.NoError(t, s.UpdateReactions(ctx, "om_1", `{"counts":[{"reaction_type":"OK","count":"1"}]}`))
+
+	_, err = s.UpsertMessages(ctx, []Message{msgAt("om_2", "oc_a", 200, 2, "newest")}, 1)
+	require.NoError(t, err)
+
+	require.Empty(t, summaryOf(t, s, "oc_a").LastReactionsJSON, "the new message carries none of its own yet")
+}
