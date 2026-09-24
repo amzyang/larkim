@@ -14,6 +14,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - 派生物（FTS 索引、汇总/缓存表、TUI 状态、构建产物）坏了就重建或重新 sync，不写兼容层、不留迁移期 fallback
 - 运行环境只考虑本机（macOS + kitty + 已安装的 lark-cli），不为其他 OS、终端、Go 版本或未安装依赖做适配，除非需求明确要求
 
+## Privacy
+
+- 测试数据来自本人真实飞书账号，含个人、同事与公司信息：真实内容只留本机（`~/.larkim`、`dev.yaml`、`/plans/` 均已 gitignore），进仓库的一切（测试、docs、issue 复现、commit message）只能是虚构数据
+- 人物用固定化名：`林岚`（self）/`张三`/`李四`/`王五`/`构建机器人`，邮箱 `@example.com`，home 路径 `/Users/linlan`；群名用泛化职能名（`平台组`、`项目协作群`）
+- ID 写语义化短假值（`oc_quiet`、`om_elsewhere`、`ou_a`、`cli_c`）；真实 ID 形如 `om_x100b6473dc29d8b0c10f2c17de29001`、`img_v3_0215r_…`，一眼可辨，不要粘进来
+- 把 lark-cli 响应、SQL 结果、TUI scrollback 贴进 docs 或 issue 前逐项替换：message/chat/user/file key、人名、群名、邮箱、手机号、消息正文；不含身份的聚合数字（行数、分组计数）可原样保留
+- 复现用最小构造用例，不整段粘真实会话；不新增追踪真实导出或 db dump 的文件
+
 ## Commands
 
 - Build: `just build`（输出 `./larkim`）；Test: `just test`；Vet: `just vet`

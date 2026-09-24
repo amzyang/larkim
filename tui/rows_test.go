@@ -204,20 +204,20 @@ func TestRenderRows_QuoteIsCutToTheWidth(t *testing.T) {
 
 // noticeCard is a bot card whose whole body is one picture, the shape a
 // scheduled notice takes.
-const noticeCard = `<card title="9月费用计提通知">
-🖼️ image(img_key:img_v3_0215q_75a20b7d)
+const noticeCard = `<card title="每日构建报告">
+🖼️ image(img_key:img_v3_notice)
 
 
 </card>`
 
 func cardMessage() []store.Message {
-	return []store.Message{{MessageID: "om_1", MsgType: "interactive", SenderName: "财务AI助手",
+	return []store.Message{{MessageID: "om_1", MsgType: "interactive", SenderName: "构建机器人",
 		Content: noticeCard, CreateMs: msgAt(23, 9, 0), RenderedAt: 1}}
 }
 
 func TestBodyRows_CardPictureDrawsInsideTheFrame(t *testing.T) {
 	st := baseStyle()
-	st.res = map[string][]store.Resource{"om_1": {{FileKey: "img_v3_0215q_75a20b7d", LocalPath: "a.png", Status: "done"}}}
+	st.res = map[string][]store.Resource{"om_1": {{FileKey: "img_v3_notice", LocalPath: "a.png", Status: "done"}}}
 	st.place = func(path string, maxCols, maxRows int) picture {
 		require.Equal(t, "a.png", path)
 		require.Less(t, maxCols, st.width, "the frame and the gutter take their columns first")
@@ -233,7 +233,7 @@ func TestBodyRows_CardPictureDrawsInsideTheFrame(t *testing.T) {
 	require.Len(t, pics, 3, "one row per cell row of the picture")
 	require.Contains(t, ansi.Strip(pics[0].prefix), cardRule, "a picture inside a card keeps the card's edge")
 	out := rowText(rows)
-	require.Contains(t, out, "9月费用计提通知")
+	require.Contains(t, out, "每日构建报告")
 	require.NotContains(t, out, "img_key:", "the picture is drawn, not spelled out")
 }
 

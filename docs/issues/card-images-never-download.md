@@ -18,7 +18,7 @@ larkim 侧链路是通的：`sync.ExtractResources` 走 `walkCardAttachment`（`
 飞书接口本身对卡片图完全放行，不是权限或接口能力问题：
 
 ```
-lark-cli api GET '/open-apis/im/v1/messages/om_x100b6473dc29d8b0c10f2c17de29001/resources/img_v3_0215r_d45062ad-a6a0-4f1a-89c9-7cf10a3be78g' \
+lark-cli api GET '/open-apis/im/v1/messages/om_card/resources/img_v3_card_a' \
   --params '{"type":"image"}' -o /tmp/card.png
 # => image/png, 417858 bytes, 720x405
 ```
@@ -26,7 +26,7 @@ lark-cli api GET '/open-apis/im/v1/messages/om_x100b6473dc29d8b0c10f2c17de29001/
 而同一条消息走 mget 拿不到任何资源：
 
 ```
-lark-cli im +messages-mget --message-ids om_x100b6473dc29d8b0c10f2c17de29001 --download-resources
+lark-cli im +messages-mget --message-ids om_card --download-resources
 # => 返回体无 resources 字段
 ```
 
@@ -44,9 +44,9 @@ lark-cli 另有一个按 key 直连下载的 shortcut，绕开缺失的提取器
 
 ```
 cd ~/.larkim/resources
-lark-cli im +messages-resources-download --message-id om_x100b6473dc29d8b0c10f2c17de29001 \
-  --file-key img_v3_0215r_6151b5b4-d347-4157-aaba-f5000681637g --type image \
-  --output lark-im-resources/img_v3_0215r_6151b5b4-d347-4157-aaba-f5000681637g
+lark-cli im +messages-resources-download --message-id om_card \
+  --file-key img_v3_card_b --type image \
+  --output lark-im-resources/img_v3_card_b
 # => {"saved_path":"…/lark-im-resources/img_v3_….png","size_bytes":41936}
 ```
 
