@@ -80,3 +80,17 @@ func TestUpdate_TheUnreadMarkerIsGoneOnTheNextVisit(t *testing.T) {
 	require.Empty(t, m.dots, "a chat already read has nothing waiting")
 	require.False(t, strings.Contains(rowText(renderRows(m.msgs, m.msgStyleFor(60, m.meta))), "●"))
 }
+
+func TestUpdate_SearchHitsKeepTheirUnreadMarker(t *testing.T) {
+	m, st := readModel(t)
+	require.NoError(t, st.UpdateRendered(context.Background(), "om_a", "在吗", "", "", 1))
+
+	msg, ok := searchMessages(st, "在吗")().(searchMsg)
+	require.True(t, ok)
+	require.Len(t, msg.msgs, 1)
+	next, _ := m.update(msg)
+	m = next.(Model)
+
+	require.True(t, m.dots["om_a"], "a hit Feishu still reports unread carries a marker")
+	require.Contains(t, rowText(m.msgRows), "●")
+}

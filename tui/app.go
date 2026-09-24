@@ -335,6 +335,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.scrollMessagesToSelection()
 		return m, m.takeRead(msg.chatID, msg.msgs)
 	case searchMsg:
+		m.markDots(msg.msgs)
 		m.searching, m.searchQuery, m.searchResults, m.searchMeta = true, msg.query, msg.msgs, msg.meta
 		m.msgIdx, m.msgTop = 0, 0
 		m = m.focusMessages()

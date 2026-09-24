@@ -67,7 +67,7 @@ Canonical ordering: `ORDER BY create_ms, message_position, id`.
 
 ## read_state
 
-Per-message read state, joined on `message_id`. Rows exist only for messages that were checked, read or consumed.
+Per-message read state, joined on `message_id`. Rows exist only for messages that were checked or consumed; `local_read_at` updates rows that already exist and never creates one.
 
 | column | meaning |
 |---|---|
