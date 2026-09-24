@@ -38,14 +38,71 @@ SELECT m.msg_type, r.status, count(*) FROM resources r JOIN messages m USING(mes
 -- post|done|526  image|done|318  file|done|21  media|done|13  audio|done|1
 ```
 
-## 修复要两边动
+## 修复方案（不改 lark-cli）
 
-1. **lark-cli**：`extractResourceRefs` 补 `interactive` 分支，读
-   `json_attachment.images[*].origin_key`（`json_attachment` 可能是内联对象，也可能是
-   嵌套的 JSON 字符串）。larkim 的 `walkCardAttachment` 已有等价实现，可直接搬。
-2. **larkim**：光修 lark-cli 补不回历史数据。899 行里 873 行 `attempts=5`、
-   `next_attempt_at=0`，`store.ResourceMessagesDue` 永不再选中它们。需要一条迁移把这些
-   `failed` 行重置回 `pending`，形制参考 `0008_rescan_card_images.sql`。
+lark-cli 另有一个按 key 直连下载的 shortcut，绕开缺失的提取器。卡片图与转发图均已验证可取：
+
+```
+cd ~/.larkim/resources
+lark-cli im +messages-resources-download --message-id om_x100b6473dc29d8b0c10f2c17de29001 \
+  --file-key img_v3_0215r_6151b5b4-d347-4157-aaba-f5000681637g --type image \
+  --output lark-im-resources/img_v3_0215r_6151b5b4-d347-4157-aaba-f5000681637g
+# => {"saved_path":"…/lark-im-resources/img_v3_….png","size_bytes":41936}
+```
+
+`--output` 的路径策略允许 cwd 根，而 `ExecClient.Dir` 已是 `cfg.ResourcesDir()`（`cli/root.go`），
+落盘位置与 `--download-resources` 一致，扩展名由 lark-cli 按 Content-Type 追加。
+
+### 1. 客户端原语
+
+`larkcli.Client` 增加一个方法，`ExecClient` 与 `Fake` 各自实现：
+
+```go
+DownloadResource(ctx context.Context, messageID, fileKey, typ string) (Resource, error)
+```
+
+`ExecClient` 执行上面那条命令，解出 `{saved_path, size_bytes}` 填进 `larkcli.Resource`。
+
+### 2. downloadPending 把「lark-cli 没返回」当回退点
+
+```go
+res, ok := got[id][p.FileKey]
+if !ok {
+    if direct >= directPerTick { continue }   // 留到下一 tick，不消耗 attempts
+    direct++
+    res, err = s.Client.DownloadResource(ctx, id, p.FileKey, p.Type)
+    if err != nil { /* failResource，记真实错误 */ }
+}
+// 往下仍走 storeResource：stat、MaxBytes、Rel 全部复用
+```
+
+取回退而非按 `msg_type` 分流：miss 检测本身是精确的，larkim 不必维护一份「lark-cli 支持哪些类型」
+的镜像判断；上游补齐后这条分支自然不再触发，也不会重复下载。
+
+预算是必需的。`DownloadPerTick = 1`（50 条消息/tick），而 lark-cli 调用全局串行；一个 tick 内 fork
+几十次会把 3s 的 tick 拖成分钟级并饿死 read-status、render 等步骤。取 `directPerTick = 10`，
+899 条积压约 4.5 分钟清完。预算用尽必须 `continue`，走 `failResource` 会白耗 attempts。
+
+### 3. 回填历史行
+
+873 行已 `attempts=5`、`next_attempt_at=0`，`store.ResourceMessagesDue` 永不再选中它们。
+迁移形制参考 `0008_rescan_card_images.sql`：
+
+```sql
+-- 0012_retry_card_images.sql
+UPDATE resources SET status = 'pending', attempts = 0, next_attempt_at = 0, last_error = ''
+WHERE status = 'failed' AND last_error = 'not returned by lark-cli';
+```
+
+按 `last_error` 限定，避免复活真正失败的行。
+
+### 4. 测试
+
+`Fake` 记录 `DownloadResource` 的调用并支持注入错误：
+
+- mget 不返回该 key 时直连被调用，资源行变 `done`
+- 超出预算的 key 保持 `pending`，`attempts` 不变
+- 直连失败时 `last_error` 记录真实原因
 
 ## 同类缺口：merge_forward 图片
 
@@ -53,9 +110,12 @@ SELECT m.msg_type, r.status, count(*) FROM resources r JOIN messages m USING(mes
 本机 35 条 merge_forward 里 24 条正文含 `![Image](img_v3_…)`，对应 `resources` 行数为 0，
 这些图同样只显示 `[图片]`。
 
-lark-cli 支持下载转发图（`extractMergeForwardResourceRefs`，按顶层容器 id 寻址，
-子消息 id 会被接口拒为 `234003 File not in msg`），缺的是 larkim 不登记行、于是从未发起请求。
-根因在 larkim 侧，与卡片图是两处独立改动。
+`merge_forward` 的 `content_raw` 是字面量 `Merged and Forwarded Message`，图片 key 只存在于
+渲染后的正文里。因此提取只能放在 `storeRendered` 之后，用 `tui/rows.go` 那条 `imgRef` 同形的正则
+扫 `content` 注册资源行，下一 tick 由上面的直连路径取——按顶层容器 id 寻址已验证可行
+（子消息 id 会被接口拒为 `234003 File not in msg`）。
+
+这是第二个提取来源，与卡片图是两处独立改动，分开提交。
 
 ## 无影响的已知偏差
 
