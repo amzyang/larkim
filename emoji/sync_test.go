@@ -1,8 +1,6 @@
 package emoji
 
 import (
-	"image"
-	"image/color"
 	"image/png"
 	"os"
 	"path/filepath"
@@ -11,34 +9,16 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// fakeSprite writes a sheet big enough to hold every rectangle the table names.
-func fakeSprite(t *testing.T, dir string) {
-	t.Helper()
-	w, h := 0, 0
-	for _, e := range All() {
-		w = max(w, e.Rect[0]+e.Rect[2])
-		h = max(h, e.Rect[1]+e.Rect[3])
-	}
-	img := image.NewRGBA(image.Rect(0, 0, w, h))
-	img.Set(0, 0, color.RGBA{R: 1, A: 255})
-	require.NoError(t, os.MkdirAll(dir, 0o700))
-	f, err := os.Create(filepath.Join(dir, "sprite-min.png"))
-	require.NoError(t, err)
-	defer f.Close()
-	require.NoError(t, png.Encode(f, img))
-}
-
 func TestSync_CutsOneFilePerEmoji(t *testing.T) {
-	assets, data := filepath.Join(t.TempDir(), "assets"), t.TempDir()
-	fakeSprite(t, assets)
+	data := t.TempDir()
 
-	n, err := Sync(assets, data)
+	n, err := Sync(data)
 	require.NoError(t, err)
 	require.Equal(t, len(All())-countGlyphOnly(), n)
 
 	entries, err := os.ReadDir(Dir(data))
 	require.NoError(t, err)
-	require.Len(t, entries, n, "every emoji is cut out once, under its own name")
+	require.Len(t, entries, n+1, "every emoji is cut out once, beside the stamp naming the sheet")
 
 	// The picture keeps the rectangle the client gave it.
 	e, ok := ByKey("THUMBSUP")
@@ -52,11 +32,45 @@ func TestSync_CutsOneFilePerEmoji(t *testing.T) {
 	require.Equal(t, e.Rect[3], cfg.Height)
 }
 
-func TestSync_SaysWhichFileIsMissingRatherThanCarryingOn(t *testing.T) {
-	// Without the pictures the message list falls back to naming the emoji,
-	// which already works, so a failed cut has to be loud rather than silent.
-	_, err := Sync(t.TempDir(), t.TempDir())
-	require.ErrorContains(t, err, "emoji sprite")
+func TestEnsure_LeavesAlreadyCutPicturesAlone(t *testing.T) {
+	data := t.TempDir()
+	_, err := Ensure(data)
+	require.NoError(t, err)
+
+	// Every later start reads the stamp and stops there, so starting costs
+	// nothing once the sheet in this binary has been cut.
+	untouched := filepath.Join(Dir(data), "untouched")
+	require.NoError(t, os.WriteFile(untouched, nil, 0o600))
+	n, err := Ensure(data)
+	require.NoError(t, err)
+	require.Zero(t, n)
+	require.FileExists(t, untouched)
+}
+
+func TestEnsure_CutsAgainWhenTheStampNamesAnotherSheet(t *testing.T) {
+	data := t.TempDir()
+	_, err := Ensure(data)
+	require.NoError(t, err)
+	stale := filepath.Join(Dir(data), "STALE.png")
+	require.NoError(t, os.WriteFile(stale, nil, 0o600))
+	require.NoError(t, os.WriteFile(stampPath(data), []byte("an older sheet"), 0o600))
+
+	n, err := Ensure(data)
+	require.NoError(t, err)
+	require.Positive(t, n)
+	require.NoFileExists(t, stale, "the cut is written whole, so a dropped emoji keeps no picture")
+}
+
+func TestEnsure_CutsAgainWhenThePicturesWereDeleted(t *testing.T) {
+	data := t.TempDir()
+	_, err := Ensure(data)
+	require.NoError(t, err)
+	require.NoError(t, os.RemoveAll(Dir(data)))
+
+	n, err := Ensure(data)
+	require.NoError(t, err)
+	require.Positive(t, n)
+	require.FileExists(t, Path(data, "THUMBSUP"))
 }
 
 func TestPath_IsTheFoldedKeySoNoTwoEmojiShareAFile(t *testing.T) {

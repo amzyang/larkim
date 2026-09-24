@@ -9,6 +9,7 @@ import (
 
 	"github.com/amzyang/larkim/ai"
 	"github.com/amzyang/larkim/config"
+	"github.com/amzyang/larkim/emoji"
 	"github.com/amzyang/larkim/sync"
 	"github.com/amzyang/larkim/tui"
 	"github.com/spf13/cobra"
@@ -61,6 +62,12 @@ func (a *App) tuiCmd() *cobra.Command {
 				}()
 			} else if !errors.Is(err, sync.ErrLocked) {
 				return err
+			}
+			// The pictures are cut from the sheet this binary carries, so a build
+			// with a newer sheet cuts them again rather than asking anyone to.
+			// Failing costs only the pictures: the list names what it cannot draw.
+			if _, err := emoji.Ensure(a.cfg.DataDir); err != nil {
+				captureError(err)
 			}
 			return tui.Run(ctx, deps)
 		},

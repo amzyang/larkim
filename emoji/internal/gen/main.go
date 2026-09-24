@@ -74,6 +74,7 @@ type entry struct {
 func main() {
 	src := flag.String("assets", assetsDir, "the client's assets/emoji directory")
 	out := flag.String("out", "table.go", "the file to write")
+	sheet := flag.String("sheet", "sprite-min.png", "where to copy the client's sprite sheet")
 	flag.Parse()
 
 	var meta spriteMeta
@@ -122,7 +123,22 @@ func main() {
 	}
 	slices.SortFunc(entries, func(a, b entry) int { return strings.Compare(a.Key, b.Key) })
 	write(*out, entries, toneBases(meta.KeyMap, i18n, entries))
-	fmt.Fprintf(os.Stderr, "gen: wrote %d emoji to %s\n", len(entries), *out)
+	copySheet(filepath.Join(*src, "sprite-min.png"), *sheet)
+	fmt.Fprintf(os.Stderr, "gen: wrote %d emoji to %s, sheet to %s\n", len(entries), *out, *sheet)
+}
+
+// copySheet carries the sprite sheet into the package, where go:embed puts it
+// in the binary. The rectangles in table.go address this exact sheet, so a
+// table written from one client version and a sheet from another would cut the
+// wrong pictures out.
+func copySheet(src, dst string) {
+	b, err := os.ReadFile(src)
+	if err != nil {
+		log.Fatal(err)
+	}
+	if err := os.WriteFile(dst, b, 0o644); err != nil {
+		log.Fatal(err)
+	}
 }
 
 // skip drops the keys a picker must not offer: the skin-tone variants of an
