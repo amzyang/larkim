@@ -26,7 +26,7 @@ func TestRenderInput_QuotesTheMessageBeingRepliedTo(t *testing.T) {
 	require.Contains(t, out, "林岚", "the quoted sender is named")
 	require.Contains(t, out, "@Announcement hey", "the quoted message reads as text, not as an id")
 	require.NotContains(t, out, "om_x", "the id is not what a person recognises a message by")
-	require.Contains(t, out, "i to write", "the composer keeps its full writing area below the quote")
+	require.Equal(t, inputHeight, m.composerRows().input, "the quote does not eat into the writing area")
 	require.Equal(t, m.composerHeight()+2, lipgloss.Height(m.renderInput()))
 }
 
@@ -40,8 +40,8 @@ func TestRenderInput_ThreadReplyIsMarkedApart(t *testing.T) {
 
 func TestRenderInput_NoQuoteWithoutAReplyTarget(t *testing.T) {
 	m := sized(120, 30)
-	require.Equal(t, inputHeight, m.composerHeight())
-	require.Equal(t, inputHeight+2, lipgloss.Height(m.renderInput()))
+	require.Equal(t, restingComposer, m.composerHeight(), "the writing area and the badge row")
+	require.Equal(t, restingComposer+2, lipgloss.Height(m.renderInput()))
 }
 
 func TestView_ReplyBarKeepsTheTerminalHeight(t *testing.T) {
@@ -68,6 +68,10 @@ func TestReplyGist_NamesWhatHasNoText(t *testing.T) {
 	require.Equal(t, "one two", replyGist(store.Message{MsgType: "text", Content: "one\ntwo", RenderedAt: 1}), "the quote stays on one line")
 	require.Equal(t, "docs", replyGist(store.Message{MsgType: "text", Content: "[docs](https://x.example)", RenderedAt: 1}),
 		"a link quotes its label, not its target")
+
+	card := weeklyCard
+	card.Content = "<card title=\"旧渲染\">\n待认领账号：13 个\n</card>"
+	require.Equal(t, "设备版本周报 「兜底」", replyGist(card), "a card quotes what it is called")
 }
 
 func TestOnInsertKey_CtrlRDropsTheQuoteAndKeepsTheDraft(t *testing.T) {

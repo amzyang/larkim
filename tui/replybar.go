@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"charm.land/lipgloss/v2"
+	"github.com/amzyang/larkim/card"
 	"github.com/amzyang/larkim/store"
 )
 
@@ -11,20 +12,73 @@ import (
 // screen says a draft can outlive its target.
 const replyBarHint = "^r drops the quote"
 
-// composerHeight is the inner height of the composer: the writing area, and
-// above it the row quoting the message a reply will attach to.
-func (m Model) composerHeight() int {
-	// The emoji picker stands where the composer does, so the panes above it
-	// give up exactly the rows it takes and the message being reacted to stays
-	// on screen.
-	if m.mode == modeEmoji {
-		return m.pickerRows() + pickerChrome - 2 // the border is counted outside
-	}
-	if m.replyTo != nil {
-		return inputHeight + 1
-	}
-	return inputHeight
+const (
+	// composerMaxRows is as tall as the writing area grows. Past this the
+	// message panes are giving up more than the draft is worth.
+	composerMaxRows = 10
+	// previewMaxRows is as tall as the rendered draft gets shown.
+	previewMaxRows = 6
+)
+
+// composerRows is how the composer's inner height is split, so the box, the
+// textarea and the panes above cannot disagree about who owns which row.
+type composerRows struct {
+	quote   int // the message a reply will attach to
+	preview int // the draft as the message list will draw it
+	input   int // the writing area
+	badge   int // the row naming the message type the draft will be sent as
 }
+
+func (r composerRows) total() int { return r.quote + r.preview + r.input + r.badge }
+
+// composerRows claims rows in the order the reader needs them: the quote and
+// the badge are one line each, the writing area grows with the draft, and the
+// preview lives on whatever is left. The thing being typed into outranks the
+// preview, so on a short terminal the preview shrinks and then goes.
+//
+// The badge row is claimed in every mode, including the ones that never draw a
+// badge. A box that changed height with the mode would jump the panes above it
+// every time the reader pressed i or e, which costs more than the row.
+func (m Model) composerRows() composerRows {
+	var r composerRows
+	if m.replyTo != nil {
+		r.quote = 1
+	}
+	r.badge = 1
+	r.input = inputHeight
+	if m.mode != modeInsert {
+		return r
+	}
+	// Growing the composer and previewing the draft are both extras, so they
+	// spend only the rows left once the panes above have the floor the emoji
+	// picker also leaves them. The composer at rest is not held to it: that
+	// is the box this client has always drawn.
+	extra := max(0, m.height-statusHeight-4-minListRows-r.total()) // composer border + pane border
+	grow := clamp(draftRows(m.input.Value(), m.input.Width())-inputHeight, 0, min(extra, composerMaxRows-inputHeight))
+	r.input += grow
+	if m.previewOpen && m.draft.kind != kindText {
+		r.preview = clamp(extra-grow, 0, previewMaxRows)
+	}
+	return r
+}
+
+// draftRows is how many rows a draft takes once the composer wraps it.
+// textarea.LineCount counts logical lines, so a long paragraph typed without
+// a newline reports one row while occupying several.
+func draftRows(value string, width int) int {
+	if width < 1 {
+		return 1
+	}
+	n := 0
+	for _, line := range strings.Split(value, "\n") {
+		n += max(1, (lipgloss.Width(line)+width-1)/width)
+	}
+	return max(1, n)
+}
+
+// composerHeight is the inner height of the composer, and of the emoji picker
+// that stands in its place.
+func (m Model) composerHeight() int { return m.composerRows().total() }
 
 // renderReplyBar quotes the reply's target above the composer the way the
 // Feishu client does — who wrote it and how it reads — because a message id
@@ -53,6 +107,9 @@ func replyGist(x store.Message) string {
 	}
 	if a, ok := attachmentOf(x.MsgType, x.ContentRaw); ok {
 		return attachGist(a)
+	}
+	if c, ok := card.Parse(x.ContentRaw); ok {
+		return flatten(expandEmoji(cardGist(c)))
 	}
 	keys, rest := splitImages(x.Content)
 	if text := flatten(expandEmoji(plainInline(rest))); text != "" {

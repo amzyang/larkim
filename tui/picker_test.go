@@ -47,13 +47,34 @@ func pickerModel(t *testing.T) Model {
 func press(t *testing.T, m Model, keys ...string) Model {
 	t.Helper()
 	for _, k := range keys {
-		next, _ := m.onKey(tea.KeyPressMsg{Code: []rune(k)[0], Text: k})
-		if len(k) > 1 {
-			next, _ = m.onKey(tea.KeyPressMsg{Code: keyCode(k)})
-		}
+		next, _ := m.onKey(keyMsg(k))
 		m = next.(Model)
 	}
 	return m
+}
+
+// keyMsg spells a key the way the terminal delivers it under the kitty
+// protocol: modifiers ride on Mod rather than folding into another key, and
+// only an unmodified character carries text.
+func keyMsg(name string) tea.KeyPressMsg {
+	k := tea.KeyPressMsg{}
+	for {
+		rest, ok := strings.CutPrefix(name, "ctrl+")
+		if !ok {
+			if rest, ok = strings.CutPrefix(name, "alt+"); !ok {
+				break
+			}
+			k.Mod |= tea.ModAlt
+		} else {
+			k.Mod |= tea.ModCtrl
+		}
+		name = rest
+	}
+	k.Code = keyCode(name)
+	if k.Mod == 0 && len([]rune(name)) == 1 {
+		k.Text = name
+	}
+	return k
 }
 
 func keyCode(name string) rune {
@@ -68,6 +89,10 @@ func keyCode(name string) rune {
 		return tea.KeyDown
 	case "backspace":
 		return tea.KeyBackspace
+	case "left":
+		return tea.KeyLeft
+	case "right":
+		return tea.KeyRight
 	}
 	return []rune(name)[0]
 }
@@ -82,25 +107,25 @@ func TestOpenPicker_ArmsAgainstTheSelectedMessage(t *testing.T) {
 
 func TestPicker_FiltersAsTheReaderTypes(t *testing.T) {
 	m := press(t, pickerModel(t), "e", "z", "a", "n")
-	require.Equal(t, "zan", m.picker.query)
+	require.Equal(t, "zan", m.picker.input.Value())
 	require.Equal(t, "THUMBSUP", m.picker.hits[0].Emoji.Key)
 	require.Less(t, len(m.picker.hits), m.emoji.Len(), "the list narrows")
 
 	m = press(t, m, "backspace", "backspace", "backspace")
-	require.Equal(t, "", m.picker.query)
+	require.Equal(t, "", m.picker.input.Value())
 	require.Len(t, m.picker.hits, m.emoji.Len(), "and opens back up")
 }
 
 func TestPicker_MovesOnArrowsBecauseTheQueryOwnsTheLetters(t *testing.T) {
 	m := press(t, pickerModel(t), "e")
 	first := m.picker.hits[0].Emoji.Key
-	m = press(t, m, "down", "down")
-	require.Equal(t, 2, m.picker.idx)
+	m = press(t, m, "right", "down")
+	require.Equal(t, 1+pickerCols, m.picker.idx, "the arrows cross a column and a row of the grid")
 	require.NotEqual(t, first, m.picker.hits[m.picker.idx].Emoji.Key)
 
 	// j is a letter, so it filters rather than moving.
 	m = press(t, m, "j")
-	require.Equal(t, "j", m.picker.query)
+	require.Equal(t, "j", m.picker.input.Value())
 	require.Zero(t, m.picker.idx, "a new query puts the cursor back on the best hit")
 }
 
@@ -119,24 +144,43 @@ func TestPicker_RemembersWhatWasChosen(t *testing.T) {
 	require.Equal(t, []string{"ROSE"}, m.emoji.Recent())
 }
 
-func TestPicker_SaysTooShortRatherThanOpeningBlind(t *testing.T) {
+func TestPicker_OpensOnTheSmallestTerminalTheClientDraws(t *testing.T) {
+	// The chooser is the composer's own box, so any terminal that can write a
+	// message can offer an emoji.
 	m := pickerModel(t)
 	m.height = minHeight
 	m.layout()
 	m = press(t, m, "e")
-	require.Equal(t, modeNormal, m.mode)
-	require.Contains(t, m.notice, "too short")
+	require.Equal(t, modeEmoji, m.mode)
+	require.Equal(t, m.height, lipgloss.Height(m.View().Content))
 }
 
-func TestPicker_SurvivesAResizeBelowItsOwnHeight(t *testing.T) {
-	// Opening is refused under minHeight, but nothing closes the picker when
-	// the terminal shrinks under it, and the picture pass runs at any height.
+func TestPicker_SurvivesAResizeBelowWhatTheClientDraws(t *testing.T) {
+	// Nothing closes the picker when the terminal shrinks under the size the
+	// client draws at, and the picture pass runs at any height.
 	m := press(t, pickerModel(t), "e")
 	require.Equal(t, modeEmoji, m.mode)
 	next, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 8})
 	shrunk := next.(Model)
-	require.Empty(t, shrunk.pickerVisible(), "a terminal with no room offers no emoji")
+	require.Len(t, shrunk.pickerVisible(), shrunk.pickerRows()*pickerCols)
+	require.NotPanics(t, func() { shrunk.picturePrepare() })
 	require.Contains(t, ansi.Strip(shrunk.View().Content), "terminal too small")
+}
+
+func TestPicker_GridScrollsByWholeRows(t *testing.T) {
+	m := press(t, pickerModel(t), "e")
+	rows := m.pickerRows()
+	require.Positive(t, rows)
+	second := m.picker.hits[pickerCols].Emoji.Key
+
+	// One row past the bottom scrolls the grid by exactly one row, so no emoji
+	// changes column under the reader.
+	for range rows {
+		m = press(t, m, "down")
+	}
+	require.Equal(t, 1, m.picker.top)
+	require.Equal(t, second, m.pickerVisible()[0].Emoji.Key, "what was the second row opens the grid")
+	require.Len(t, m.pickerVisible(), rows*pickerCols)
 }
 
 func TestPicker_LeavesTheMessageOnScreenBehindIt(t *testing.T) {
@@ -153,6 +197,9 @@ func TestRenderPicker_StandsInTheComposersBoxRatherThanBesideIt(t *testing.T) {
 	open := press(t, shut, "e")
 	require.Equal(t, lipgloss.Width(shut.renderInput()), lipgloss.Width(open.renderPicker()),
 		"the chooser replaces the composer, so it takes the same columns")
+	require.Equal(t, lipgloss.Height(shut.renderInput()), lipgloss.Height(open.renderPicker()),
+		"and exactly the same rows, so nothing above it moves")
+	require.Equal(t, shut.bodyHeight(), open.bodyHeight(), "the panes keep their height")
 	for i, line := range strings.Split(open.View().Content, "\n") {
 		require.Equal(t, open.width, lipgloss.Width(line), "line %d is not the screen's width", i)
 	}
@@ -164,13 +211,13 @@ func pickerKeyCol(t *testing.T, m Model, key string) int {
 	t.Helper()
 	e, ok := emoji.ByKey(key)
 	require.True(t, ok)
-	line := ansi.Strip(m.joinSegs(m.pickerLine(emoji.Hit{Emoji: e}, false, 60), 60))
+	line := ansi.Strip(m.joinSegs(m.pickerCell(emoji.Hit{Emoji: e}, false, 60), 60))
 	at := strings.Index(line, e.Key)
 	require.GreaterOrEqual(t, at, 0, "%s names its key", key)
 	return lipgloss.Width(line[:at])
 }
 
-func TestPickerLine_KeepsTheKeyColumnStillUnderAnEmojiOfAnyShape(t *testing.T) {
+func TestPickerCell_KeepsTheKeyColumnStillUnderAnEmojiOfAnyShape(t *testing.T) {
 	m := press(t, pickerModel(t), "e")
 	e, ok := emoji.ByKey("OK")
 	require.True(t, ok)
@@ -179,14 +226,14 @@ func TestPickerLine_KeepsTheKeyColumnStillUnderAnEmojiOfAnyShape(t *testing.T) {
 		"a wide character and the stand-in dot open the same column")
 }
 
-func TestPickerLine_DrawsTheClientsPictureWhereNoCharacterCarriesTheEmoji(t *testing.T) {
+func TestPickerCell_DrawsTheClientsPictureWhereNoCharacterCarriesTheEmoji(t *testing.T) {
 	m := press(t, pickerModel(t), "e")
 	writeTestEmoji(t, m.deps.DataDir, "OK")
 	m.pics = picturesIn(m.deps.DataDir)
 
 	e, ok := emoji.ByKey("OK")
 	require.True(t, ok)
-	segs := m.pickerLine(emoji.Hit{Emoji: e}, false, 60)
+	segs := m.pickerCell(emoji.Hit{Emoji: e}, false, 60)
 	require.Len(t, segs, 3, "the mark, the picture and the rest of the line")
 	require.Positive(t, segs[1].pic.cols)
 	require.Equal(t, 1, segs[1].pic.rows, "a picture on a line of text is one row tall")
@@ -207,7 +254,7 @@ func TestModelPicturePrepare_ClaimsWhatTheOpenPickerOffers(t *testing.T) {
 
 func TestPicker_MarksAnEmojiTheReaderAlreadyChose(t *testing.T) {
 	m := press(t, pickerModel(t), "e", "z", "a", "n")
-	line := ansi.Strip(m.joinSegs(m.pickerLine(m.picker.hits[0], true, 60), 60))
+	line := ansi.Strip(m.joinSegs(m.pickerCell(m.picker.hits[0], true, 60), 60))
 	require.Contains(t, line, "✓", "choosing it again takes the reaction back, and the line says so")
 }
 
@@ -252,7 +299,7 @@ func TestOpenPicker_TakesAMessageWhoseBodyIsNotRenderedYet(t *testing.T) {
 
 func TestOpenPicker_RefusesASendStillOnItsWay(t *testing.T) {
 	m := pickerModel(t)
-	m.enqueue(outboxItem{localID: "local_1", chatID: "oc_team", text: "稍等", createMs: 200})
+	m.enqueue(outboxItem{localID: "local_1", chatID: "oc_team", msgType: "text", body: "稍等", createMs: 200})
 	m.applyOutbox()
 	m.msgIdx = len(m.msgs) - 1
 	require.Equal(t, "local_1", m.msgs[m.msgIdx].MessageID)
@@ -265,4 +312,33 @@ func TestOpenPicker_RefusesASendStillOnItsWay(t *testing.T) {
 func TestStatus_NamesThePickerWhileItIsOpen(t *testing.T) {
 	m := press(t, pickerModel(t), "e")
 	require.Contains(t, fmtStatus(m), "REACT", "the mode line says which keys are live")
+}
+
+func TestPicker_FilterErasesTheWayReadlineDoes(t *testing.T) {
+	m := press(t, pickerModel(t), "e", "z", "a", "n")
+	m = press(t, m, "ctrl+h")
+	require.Equal(t, "za", m.picker.input.Value(), "the kitty protocol tells ctrl+h from backspace, and both erase a rune")
+
+	m = press(t, m, "ctrl+w")
+	require.Equal(t, "", m.picker.input.Value(), "a filter is one word, so erasing the word empties it")
+	require.Len(t, m.picker.hits, m.emoji.Len(), "and the list opens back up")
+
+	m = press(t, m, "z", "a", "n", "ctrl+a", "ctrl+d")
+	require.Equal(t, "an", m.picker.input.Value(), "the cursor moves, it does not only sit at the end")
+
+	m = press(t, m, "ctrl+e", "ctrl+u")
+	require.Equal(t, "", m.picker.input.Value(), "ctrl+u erases back from the cursor")
+}
+
+func TestView_PanesStandStillWhateverModeTheReaderIsIn(t *testing.T) {
+	// The bottom box is the same height in every mode, so pressing i, e or :
+	// moves nothing above it.
+	m := pickerModel(t)
+	body := m.bodyHeight()
+	for _, k := range []string{"i", "esc", "e", "esc", ":", "esc", "/", "esc"} {
+		m = press(t, m, k)
+		require.Equal(t, body, m.bodyHeight(), "%q moved the panes", k)
+		require.Equal(t, m.height, lipgloss.Height(m.View().Content), "%q left the screen a different height", k)
+	}
+	require.Equal(t, modeNormal, m.mode)
 }

@@ -21,8 +21,12 @@ const (
 	minWidth         = chatsWidth + minMessagesWidth
 	minHeight        = 12
 	inputHeight      = 3
-	statusHeight     = 1
-	headerHeight     = 1 // title row of every list pane
+	// restingComposer is the composer's inner height with nothing claimed
+	// beyond the writing area and the badge row under it. Every mode draws the
+	// box at least this tall, so switching mode never moves the panes.
+	restingComposer = inputHeight + 1
+	statusHeight    = 1
+	headerHeight    = 1 // title row of every list pane
 	// msgHeaderHeight is what the messages pane spends on its own head: the
 	// title row plus the rule under it. The chat's name is bold and so is a
 	// sender line, so without the rule the first message reads as part of the
@@ -129,8 +133,9 @@ func composerStyles(dark bool) textarea.Styles {
 
 func (m *Model) layout() {
 	m.input.SetWidth(max(10, m.width-2))
-	m.input.SetHeight(inputHeight)
+	m.input.SetHeight(m.composerRows().input)
 	m.cmdline.SetWidth(max(10, m.width-4))
+	m.rebuildPreview()
 	m.rebuildMessages()
 	m.rebuildThread()
 	m.clampChat()
@@ -158,7 +163,7 @@ func (m Model) msgListHeight() int { return max(1, m.bodyHeight()-msgHeaderHeigh
 // pane would re-encode and re-send every picture on screen each time the reply
 // bar opens, for one row of difference.
 func (m Model) picHeight() int {
-	return max(1, m.height-inputHeight-statusHeight-msgHeaderHeight-4) // input border + pane border
+	return max(1, m.height-restingComposer-statusHeight-msgHeaderHeight-4) // input border + pane border
 }
 
 // chatListHeight is how many whole chats the chat pane shows; a chat is never
@@ -206,6 +211,27 @@ func (m Model) msgStyleFor(width int, meta msgMeta) msgStyle {
 		st.place, st.disc = m.pics.place, m.pics.disc
 	}
 	return st
+}
+
+// rebuildPreview draws the draft as the message list will draw it, through
+// the same rows a sent message takes, so what is previewed and what is sent
+// cannot describe different messages.
+func (m *Model) rebuildPreview() {
+	m.previewRows = nil
+	if !m.previewOpen || m.mode != modeInsert || m.draft.kind == kindText {
+		return
+	}
+	it := outboxItem{localID: "preview", chatID: m.chatID, msgType: m.draft.kind.msgType(),
+		body: m.draft.body, images: m.draft.uploads()}
+	meta := msgMeta{suffix: m.meta.suffix, people: m.meta.people, avatars: m.meta.avatars}
+	resPending(&meta, []outboxItem{it})
+	st := m.msgStyleFor(m.width-2, meta)
+	// The body alone, not renderRows: a sender line, a day rule and a time
+	// belong to a message that exists, and none of them would tell the
+	// reader anything the composer above does not already say.
+	var b block
+	g := leads{b: &b}
+	m.previewRows = bodyRows(it.message(m.deps.Self, m.selfName), 0, st, &g)
 }
 
 func (m *Model) rebuildMessages() {
@@ -635,7 +661,48 @@ func (m Model) renderInput() string {
 	if m.replyTo != nil {
 		content = m.renderReplyBar(w) + "\n" + content
 	}
+	r := m.composerRows()
+	if r.preview > 0 {
+		lines := make([]string, 0, r.preview)
+		for _, row := range m.previewRows[:min(len(m.previewRows), r.preview)] {
+			line, _ := m.rowLine(row, w)
+			lines = append(lines, line)
+		}
+		content = strings.Join(lines, "\n") + "\n" + paneRule(w) + "\n" + content
+	}
+	if r.badge > 0 {
+		content += "\n" + m.renderBadge(w)
+	}
 	return paneStyle(m.focus == paneInput, w).Height(h).Render(fitBlock(content, w, h))
+}
+
+// composerHint names the two keys the composer's own mode owns, and writeHint
+// the one key that reaches that mode. They sit on the badge row rather than in
+// the placeholder, which a draft covers up and which would go on telling a
+// reader already in insert mode to start writing.
+const (
+	composerHint = "Enter send · Shift+Enter newline"
+	writeHint    = "i to write"
+)
+
+// renderBadge names the message type the draft will be sent as, so the
+// composer's choice is never a surprise Enter springs on the reader. Outside
+// insert mode the row names the key that opens it instead of the keys that
+// send.
+func (m Model) renderBadge(w int) string {
+	left := stChipEdge.Render(chipLeft) + stChip.Render(m.draft.kind.msgType()) + stChipEdge.Render(chipRight)
+	hint := stDim.Render(composerHint)
+	if m.mode != modeInsert {
+		hint = stDim.Render(writeHint)
+	}
+	room := max(0, w-lipgloss.Width(left)-lipgloss.Width(hint)-2)
+	if m.draftErr != nil {
+		return padBetween(left+" "+stErr.Render(truncate(m.draftErr.Error(), room)), hint, w)
+	}
+	if d := m.draft.detail(); d != "" {
+		left += " " + stDim.Render(truncate(d, room))
+	}
+	return padBetween(left, hint, w)
 }
 
 func (m Model) renderStatus() string {

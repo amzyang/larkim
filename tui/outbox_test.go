@@ -64,7 +64,7 @@ func TestSubmit_AcceptsASecondMessageWhileTheFirstIsInFlight(t *testing.T) {
 
 func TestApplyOutbox_DropsTheRowOnceTheRealMessageLands(t *testing.T) {
 	m, _ := newOutboxModel(t)
-	m.enqueue(outboxItem{localID: "local-1", chatID: "oc_1", text: "hi", state: outSent, messageID: "om_1", createMs: 10})
+	m.enqueue(outboxItem{localID: "local-1", chatID: "oc_1", msgType: "text", body: "hi", state: outSent, messageID: "om_1", createMs: 10})
 	m.msgsBase = []store.Message{{MessageID: "om_1", ChatID: "oc_1", Content: "hi", RenderedAt: 1, CreateMs: 20}}
 
 	m.applyOutbox()
@@ -75,7 +75,7 @@ func TestApplyOutbox_DropsTheRowOnceTheRealMessageLands(t *testing.T) {
 
 func TestUpdate_KeepsTheBubbleWhenTheIngestFails(t *testing.T) {
 	m, _ := newOutboxModel(t)
-	m.enqueue(outboxItem{localID: "local-1", chatID: "oc_1", text: "hi", state: outSent, messageID: "om_1", createMs: 10})
+	m.enqueue(outboxItem{localID: "local-1", chatID: "oc_1", msgType: "text", body: "hi", state: outSent, messageID: "om_1", createMs: 10})
 	m.applyOutbox()
 
 	mm, _ := m.Update(ingestedMsg{localID: "local-1", err: errors.New("mget failed")})
@@ -87,7 +87,7 @@ func TestUpdate_KeepsTheBubbleWhenTheIngestFails(t *testing.T) {
 
 func TestUpdate_RetiresTheBubbleOnceTheIngestWorked(t *testing.T) {
 	m, _ := newOutboxModel(t)
-	m.enqueue(outboxItem{localID: "local-1", chatID: "oc_1", text: "hi", state: outSent, messageID: "om_1", createMs: 10})
+	m.enqueue(outboxItem{localID: "local-1", chatID: "oc_1", msgType: "text", body: "hi", state: outSent, messageID: "om_1", createMs: 10})
 	m.applyOutbox()
 
 	mm, _ := m.Update(ingestedMsg{localID: "local-1"})
@@ -123,7 +123,7 @@ func TestRetryFailed_ReusesTheIdempotencyKey(t *testing.T) {
 
 func TestDiscardFailed_DropsTheRowUnderTheCursor(t *testing.T) {
 	m, _ := newOutboxModel(t)
-	m.enqueue(outboxItem{localID: "local-1", chatID: "oc_1", text: "hi", state: outFailed, createMs: 10})
+	m.enqueue(outboxItem{localID: "local-1", chatID: "oc_1", msgType: "text", body: "hi", state: outFailed, createMs: 10})
 	m.applyOutbox()
 	m.msgIdx = len(m.msgs) - 1
 
@@ -136,7 +136,7 @@ func TestDiscardFailed_DropsTheRowUnderTheCursor(t *testing.T) {
 
 func TestDiscardFailed_LeavesAMessageStillOnItsWay(t *testing.T) {
 	m, _ := newOutboxModel(t)
-	m.enqueue(outboxItem{localID: "local-1", chatID: "oc_1", text: "hi", state: outSending, createMs: 10})
+	m.enqueue(outboxItem{localID: "local-1", chatID: "oc_1", msgType: "text", body: "hi", state: outSending, createMs: 10})
 	m.applyOutbox()
 	m.msgIdx = len(m.msgs) - 1
 
@@ -149,7 +149,7 @@ func TestDiscardFailed_LeavesAMessageStillOnItsWay(t *testing.T) {
 func TestApplyOutbox_QuotesAParentAlreadyOnThePage(t *testing.T) {
 	m, _ := newOutboxModel(t)
 	m.msgsBase = []store.Message{{MessageID: "om_1", ChatID: "oc_1", Content: "question", RenderedAt: 1, CreateMs: 10}}
-	m.enqueue(outboxItem{localID: "local-1", chatID: "oc_1", replyTo: "om_1", text: "answer", createMs: 20})
+	m.enqueue(outboxItem{localID: "local-1", chatID: "oc_1", replyTo: "om_1", msgType: "text", body: "answer", createMs: 20})
 
 	m.applyOutbox()
 
@@ -160,7 +160,7 @@ func TestApplyOutbox_PutsAThreadReplyInBothPanes(t *testing.T) {
 	m, _ := newOutboxModel(t)
 	m.threadID = "omt_1"
 	m.enqueue(outboxItem{localID: "local-1", chatID: "oc_1", threadID: "omt_1", replyTo: "om_1",
-		inThread: true, text: "in thread", createMs: 20})
+		inThread: true, msgType: "text", body: "in thread", createMs: 20})
 
 	m.applyOutbox()
 

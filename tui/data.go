@@ -2,9 +2,13 @@ package tui
 
 import (
 	"context"
+	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -39,6 +43,17 @@ type Deps struct {
 	// OpenURL hands an applink to the desktop client. New fills it when nil;
 	// tests replace it to keep the real `open` out of the run.
 	OpenURL func(url string, background bool) error
+	// Env reads the environment the external editor is named in. New fills it
+	// when nil; tests replace it to keep a real editor out of the run.
+	Env func(string) string
+	// Clipboard reports what the system clipboard holds, staging an image
+	// into stageDir. New fills it when nil; tests replace it to keep
+	// osascript and the machine's own clipboard out of the run.
+	Clipboard func(stageDir string) (clip, error)
+	// Fetch downloads a remote image a draft names, returning the bytes and
+	// the response content type. New fills it with sync.HTTPFetch; tests
+	// replace it to keep the network out of the run.
+	Fetch func(ctx context.Context, url string) ([]byte, string, error)
 }
 
 const (
@@ -77,7 +92,16 @@ type (
 	sentMsg struct {
 		localID   string
 		messageID string
-		err       error
+		// keys are the image keys this attempt uploaded, in the order the
+		// draft names them. They come back even when the send then failed,
+		// so a retry is one more send rather than one more upload.
+		keys []string
+		err  error
+	}
+	// pastedMsg answers a read of the clipboard.
+	pastedMsg struct {
+		clip clip
+		err  error
 	}
 	// ingestedMsg answers the fetch that follows a send, which is what puts
 	// the real row in the store.
@@ -290,24 +314,145 @@ func readSyncStatus(st *store.Store) tea.Cmd {
 	return func() tea.Msg { return syncStatus(st) }
 }
 
-// sendText hands a chat one message. localID doubles as the idempotency key,
+// sendMsg hands a chat one message. localID doubles as the idempotency key,
 // so a retry under the same id is the send Feishu already knows about rather
 // than a second delivery.
-func sendText(d Deps, localID string, target larkcli.Target, text string) tea.Cmd {
+func sendMsg(d Deps, localID string, target larkcli.Target, msg larkcli.Outgoing, imgs []draftImage, done []string) tea.Cmd {
 	return func() tea.Msg {
+		msg, keys, err := uploadImages(d, msg, imgs, done)
+		if err != nil {
+			return sentMsg{localID: localID, keys: keys, err: err}
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), sendTimeout)
 		defer cancel()
-		sent, err := d.Client.Send(ctx, target, larkcli.Text(text), localID)
-		return sentMsg{localID: localID, messageID: sent.MessageID, err: err}
+		sent, err := d.Client.Send(ctx, target, msg, localID)
+		return sentMsg{localID: localID, messageID: sent.MessageID, keys: keys, err: err}
 	}
 }
 
-func replyText(d Deps, localID, messageID, text string, inThread bool) tea.Cmd {
+func replyMsg(d Deps, localID, messageID string, msg larkcli.Outgoing, inThread bool, imgs []draftImage, done []string) tea.Cmd {
 	return func() tea.Msg {
+		msg, keys, err := uploadImages(d, msg, imgs, done)
+		if err != nil {
+			return sentMsg{localID: localID, keys: keys, err: err}
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), sendTimeout)
 		defer cancel()
-		sent, err := d.Client.Reply(ctx, messageID, larkcli.Text(text), inThread, localID)
-		return sentMsg{localID: localID, messageID: sent.MessageID, err: err}
+		sent, err := d.Client.Reply(ctx, messageID, msg, inThread, localID)
+		return sentMsg{localID: localID, messageID: sent.MessageID, keys: keys, err: err}
+	}
+}
+
+// uploadImages puts a draft's files on Feishu and swaps the placeholders in
+// the body for the keys that came back. done carries the keys an earlier
+// attempt already uploaded, so a retry is one more send rather than one more
+// upload leaving an orphan key behind. Uploads run one at a time because
+// lark-cli calls are serialised anyway, and each gets its own deadline rather
+// than sharing one budget with the send that follows.
+func uploadImages(d Deps, msg larkcli.Outgoing, imgs []draftImage, done []string) (larkcli.Outgoing, []string, error) {
+	if len(imgs) == 0 {
+		return msg, nil, nil
+	}
+	keys := make([]string, 0, len(imgs))
+	for i, img := range imgs {
+		key := img.key
+		switch {
+		case i < len(done):
+			key = done[i]
+		case img.local != "":
+			up, err := uploadOne(d, img.local)
+			if err != nil {
+				return msg, keys, err
+			}
+			key = up
+		case img.url != "":
+			path, err := fetchRemote(d, img.url)
+			if err != nil {
+				return msg, keys, err
+			}
+			up, err := uploadOne(d, path)
+			os.Remove(path)
+			if err != nil {
+				return msg, keys, err
+			}
+			key = up
+		}
+		keys = append(keys, key)
+		msg.Markdown = strings.Replace(msg.Markdown, img.key, key, 1)
+		if msg.ImageKey == img.key {
+			msg.ImageKey = key
+		}
+	}
+	return msg, keys, nil
+}
+
+// uploadOne puts one file on Feishu under a deadline of its own, rather than
+// sharing one budget with the send and every other image behind it.
+func uploadOne(d Deps, path string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), sendTimeout)
+	defer cancel()
+	key, err := d.Client.UploadImage(ctx, path)
+	if err != nil {
+		return "", fmt.Errorf("upload %s: %w", filepath.Base(path), err)
+	}
+	return key, nil
+}
+
+// remoteCeiling is what the shared fetcher reads at most. It truncates rather
+// than failing, so a body that comes back at exactly the ceiling is refused:
+// uploading a half-downloaded picture is worse than refusing to send.
+const remoteCeiling = 8 << 20
+
+// fetchRemote downloads an image a draft named by URL and writes it where
+// UploadImage can take it, since lark-cli uploads a path rather than bytes.
+func fetchRemote(d Deps, url string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), sendTimeout)
+	defer cancel()
+	body, ctype, err := d.Fetch(ctx, url)
+	if err != nil {
+		return "", fmt.Errorf("fetch %s: %w", url, err)
+	}
+	if len(body) == 0 {
+		return "", fmt.Errorf("fetch %s: empty response", url)
+	}
+	if len(body) >= remoteCeiling {
+		return "", fmt.Errorf("%s is at least %s, over the %s limit",
+			url, humanBytes(int64(len(body))), humanBytes(remoteCeiling))
+	}
+	f, err := os.CreateTemp("", "larkim-remote-*"+remoteExt(ctype))
+	if err != nil {
+		return "", err
+	}
+	_, werr := f.Write(body)
+	cerr := f.Close()
+	if err := firstErr(werr, cerr); err != nil {
+		os.Remove(f.Name())
+		return "", err
+	}
+	return f.Name(), nil
+}
+
+// remoteExt names the temp file after what the server said it sent. Feishu
+// sniffs the bytes, so this only has to be plausible, never authoritative.
+func remoteExt(contentType string) string {
+	switch {
+	case strings.Contains(contentType, "jpeg"), strings.Contains(contentType, "jpg"):
+		return ".jpg"
+	case strings.Contains(contentType, "gif"):
+		return ".gif"
+	case strings.Contains(contentType, "webp"):
+		return ".webp"
+	default:
+		return ".png"
+	}
+}
+
+// pasteClipboard reads the clipboard off the Update loop: the osascript round
+// trip takes long enough to be seen as a stutter if it ran inline.
+func pasteClipboard(d Deps) tea.Cmd {
+	return func() tea.Msg {
+		c, err := d.Clipboard(filepath.Join(d.DataDir, pastedDir))
+		return pastedMsg{clip: c, err: err}
 	}
 }
 

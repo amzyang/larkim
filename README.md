@@ -53,6 +53,12 @@ The message list is split where the calendar day changes, and each message is he
 | `Tab` `Shift+Tab` `h` `l` | change focused pane |
 | `Enter` | open chat · open thread · reply |
 | `i` `r` `R` | write · reply · reply in thread (Enter sends, Shift+Enter newline, Esc back) |
+| composer | the draft is markdown: one that uses any of it goes out as a Feishu rich-text post, anything else as plain text, and one that is a single `![](…)` goes out as an image. The badge under the draft names which, along with the files it will upload or the path it cannot find. |
+| rich text | a post is sent exactly as typed and drawn as a document: heading levels, `•`/`◦` bullets with indent, a quote gutter, rules and real tables. Plain text messages stay literal. |
+| images | write `![alt](~/Desktop/shot.png)` or `![alt](./a.png)`; the file is uploaded when Enter is pressed and the picture draws in the message list straight away. A `https://` address is downloaded and uploaded at send time, and an `img_…` key Feishu already holds is used as-is. Feishu caps a message image at 10 MB, and a remote one at 8 MB. |
+| `Ctrl+o` | toggle the preview, which draws a post or an image draft the way the message list will. The writing area grows with the draft up to ten rows; neither takes rows the message panes need. |
+| `Ctrl+g` | hand the draft to `$VISUAL` or `$EDITOR` (else `vi`) as a `.md` file, so a long message is written with markdown highlighting. Saving brings the text back; quitting without saving leaves the draft alone. |
+| `Ctrl+v` | paste whatever the clipboard holds: a screenshot is staged under `~/.larkim/resources/pasted/` and referenced as an image, a file copied in Finder is referenced where it already sits (or, if it is not an image, its path goes in as text), and text lands at the cursor. Staged images are pruned after a week. Use `Ctrl+v` rather than `Cmd+v` for images — kitty turns `Cmd+v` into a text-only paste, so it cannot see image data. |
 | `Ctrl+r` | drop the quote from the open draft; the quoted message is named above the composer and marked `↩replying` in the list |
 | `t` | toggle the thread pane for the selected message |
 | `.` `x` | a message appears as `(sending)` the moment Enter is pressed; one Feishu refused is marked `(failed)` — `.` sends it again under the same idempotency key, `x` drops it |
@@ -61,7 +67,7 @@ The message list is split where the calendar day changes, and each message is he
 | `/` | filter chats |
 | `:search <text>` | cross-chat full-text search in the messages pane; Enter jumps to the hit, Esc leaves |
 | `a` / `:ai …` | assistant in the right pane: `summary`, `draft <how>` (result lands in the composer), `todo`, or any question about the open chat |
-| `:` `;` | command line: `:copy <200\|7d\|all>` `:goto <chat>` `:send <chat\|ou_> <text>` `:sync` `:q` |
+| `:` `;` | command line: `:copy <200\|7d\|all>` `:goto <chat>` `:send <chat\|ou_> <text>` `:preview` `:sync` `:q` |
 | mouse | click focuses and selects, double-click opens, wheel scrolls |
 
 Shift+Enter needs a terminal with the kitty keyboard protocol (kitty, Ghostty, WezTerm); elsewhere use Alt+Enter or Ctrl+J for newlines.

@@ -329,3 +329,15 @@ func (p *pictures) take(key string) int {
 	p.id[key], p.used[key] = id, p.clock
 	return id
 }
+
+// forget drops every placement without touching what was learned about the
+// files themselves. Something else has owned the screen — an external editor,
+// say — so the terminal no longer holds the images that were transmitted for
+// it, while their sizes and the discs already on disk are still true.
+func (p *pictures) forget() {
+	if p == nil {
+		return
+	}
+	p.id = map[string]int{}
+	p.used = map[string]int64{}
+}

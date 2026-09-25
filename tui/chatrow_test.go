@@ -158,7 +158,7 @@ func TestRenderChatRow_KeepsTheRightEdgeAlignedAndBothLinesInWidth(t *testing.T)
 }
 
 func TestRenderChats_LeavesTheOddLineBlankRatherThanHalveAChat(t *testing.T) {
-	m := sized(130, 30)
+	m := sized(130, 31)
 	fit := m.chatListHeight()
 	require.Equal(t, 1, m.listHeight()-(fit*chatRowStride-chatRowGap),
 		"this size is the interesting one: one line over what the chats take")
@@ -179,7 +179,7 @@ func TestRenderChats_LeavesTheOddLineBlankRatherThanHalveAChat(t *testing.T) {
 }
 
 func TestRenderChats_SeparatesEachChatFromTheNextButNotFromTheFoot(t *testing.T) {
-	m := sized(130, 29)
+	m := sized(130, 30)
 	fit := m.chatListHeight()
 	require.Equal(t, 0, m.listHeight()-(fit*chatRowStride-chatRowGap),
 		"this size is the interesting one: the chats take the body exactly")

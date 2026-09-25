@@ -3,6 +3,7 @@ package tui
 import (
 	"slices"
 
+	"github.com/amzyang/larkim/larkcli"
 	"github.com/amzyang/larkim/store"
 )
 
@@ -20,12 +21,20 @@ const (
 // both the row's identity and the send's idempotency key, so retrying is the
 // same send rather than a second one.
 type outboxItem struct {
-	localID   string
-	chatID    string
-	threadID  string
-	replyTo   string
-	inThread  bool
-	text      string
+	localID  string
+	chatID   string
+	threadID string
+	replyTo  string
+	inThread bool
+	msgType  string // "text", "post" or "image"
+	// send is the body on the wire; body is what the bubble draws, which is
+	// the shape lark-cli renders this message back into after ingest.
+	send larkcli.Outgoing
+	body string
+	// images are the files this send has to upload first, and keys the ones
+	// it already did, which is what keeps a retry from uploading twice.
+	images    []draftImage
+	keys      []string
 	state     outboxState
 	messageID string // set once Feishu answered
 	createMs  int64
@@ -41,8 +50,8 @@ func (it outboxItem) message(selfID, selfName string) store.Message {
 	}
 	return store.Message{
 		MessageID: it.localID, ChatID: it.chatID, ThreadID: it.threadID, ReplyTo: it.replyTo,
-		MsgType: "text", SenderID: selfID, SenderType: "user", SenderName: selfName,
-		Content: it.text, CreateMs: it.createMs, MessagePosition: position, RenderedAt: 1,
+		MsgType: it.msgType, SenderID: selfID, SenderType: "user", SenderName: selfName,
+		Content: it.body, CreateMs: it.createMs, MessagePosition: position, RenderedAt: 1,
 	}
 }
 
@@ -88,6 +97,36 @@ func (m *Model) applyOutbox() {
 	})...)
 	quotePending(&m.meta, m.msgsBase, m.outbox)
 	quotePending(&m.threadMeta, m.threadBase, m.outbox)
+	resPending(&m.meta, m.outbox)
+	resPending(&m.threadMeta, m.outbox)
+}
+
+// resPending lets a pending image draw the file the user picked. The download
+// row a picture needs is normally written by the syncer once Feishu answers,
+// which is far too late for a bubble that is already on screen; the original
+// is right here on disk, so it stands in until the real row lands.
+func resPending(meta *msgMeta, items []outboxItem) {
+	for _, it := range items {
+		var rows []store.Resource
+		for _, img := range it.images {
+			if img.local == "" {
+				continue
+			}
+			rows = append(rows, store.Resource{
+				MessageID: it.localID, FileKey: img.key, Type: "image",
+				Status: "done", LocalPath: img.local,
+			})
+		}
+		if rows == nil {
+			continue
+		}
+		if meta.res == nil {
+			meta.res = map[string][]store.Resource{}
+		}
+		// Assigned rather than appended: a pane redraws far more often than
+		// an outbox item changes, and an item's images never do.
+		meta.res[it.localID] = rows
+	}
 }
 
 // pendingRows draws the items a pane wants. One whose message has already

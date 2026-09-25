@@ -20,6 +20,7 @@ import (
 	"github.com/amzyang/larkim/emoji"
 	"github.com/amzyang/larkim/larkcli"
 	"github.com/amzyang/larkim/store"
+	"github.com/amzyang/larkim/sync"
 	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/google/uuid"
@@ -140,6 +141,17 @@ type Model struct {
 	cmdline textinput.Model
 	replyTo *store.Message
 	inThrd  bool
+	// draft is what the composer holds, resolved on every keystroke so the
+	// badge names the message type — and any refused path — before Enter
+	// commits to it. files resolves the paths a draft names.
+	draft    draftPlan
+	draftErr error
+	files    draftFiles
+	// previewOpen shows the draft as the message list will draw it. It is on
+	// by default because the preview only appears for a post or an image,
+	// which is exactly when the draft does not read as what it will become.
+	previewOpen bool
+	previewRows []msgRow
 	// outbox holds the messages the user submitted that the store does not
 	// carry yet, and selfName names their sender until it does.
 	outbox   []outboxItem
@@ -162,7 +174,6 @@ func New(d Deps) Model {
 	ta := textarea.New()
 	ta.Prompt = ""
 	ta.ShowLineNumbers = false
-	ta.Placeholder = "i to write · Enter sends · Shift+Enter newline"
 	ta.KeyMap.InsertNewline = key.NewBinding(key.WithKeys("shift+enter", "alt+enter", "ctrl+j"))
 	ta.SetHeight(3)
 	ti := textinput.New()
@@ -170,11 +181,22 @@ func New(d Deps) Model {
 	if d.OpenURL == nil {
 		d.OpenURL = openURL
 	}
-	m := Model{deps: d, input: ta, cmdline: ti, focus: paneChats, focused: true,
+	if d.Env == nil {
+		d.Env = os.Getenv
+	}
+	if d.Clipboard == nil {
+		d.Clipboard = readClipboard
+	}
+	if d.Fetch == nil {
+		d.Fetch = sync.HTTPFetch
+	}
+	prunePasted(d.DataDir, time.Now())
+	m := Model{deps: d, input: ta, cmdline: ti, focus: paneChats, focused: true, previewOpen: true,
 		readRefreshed:     map[string]time.Time{},
 		reactionRefreshed: map[string]time.Time{},
 		emoji:             emoji.NewReactionIndex(),
-		avatars:           newAvatars(d.DataDir, os.Getenv), pics: newPictures(d.DataDir, os.Getenv)}
+		avatars:           newAvatars(d.DataDir, d.Env), pics: newPictures(d.DataDir, d.Env),
+		files: osDraftFiles()}
 	m.emoji.LoadRecent(d.DataDir)
 	m.setBackground(color.Black, true)
 	return m
@@ -254,6 +276,10 @@ func (m Model) picturePrepare() string {
 			}
 		}
 	}
+	// The draft being previewed is claimed first, on the same rule: a picture
+	// the reader is looking at outranks one behind it. Without this the
+	// preview reserves cells the terminal was never handed.
+	collect(m.previewRows, 0, len(m.previewRows))
 	// The picker is what the reader is looking at while it is open, so the
 	// emoji it offers are claimed before anything behind it.
 	if m.mode == modeEmoji {
@@ -413,6 +439,9 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, pollSyncStatus(m.deps.Store)
 	case sentMsg:
 		it := m.outboxAt(msg.localID)
+		if it != nil && len(msg.keys) > len(it.keys) {
+			it.keys = msg.keys
+		}
 		if msg.err != nil {
 			note := "send failed: " + msg.err.Error()
 			if it != nil {
@@ -426,6 +455,54 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			it.state, it.messageID = outSent, msg.messageID
 		}
 		return m, ingestCmd(m.deps, msg.localID, msg.messageID)
+	case pastedMsg:
+		if msg.err != nil {
+			return m.notify("paste: "+msg.err.Error(), true), nil
+		}
+		switch msg.clip.kind {
+		case clipEmpty:
+			return m.notify("the clipboard is empty", true), nil
+		case clipText:
+			m.input.InsertString(msg.clip.text)
+		case clipImage:
+			m.input.InsertString(imageRef(msg.clip.path))
+		case clipFile:
+			// larkim has no file message to send, so a file it cannot draw
+			// goes in as the path a person would have typed to name it.
+			if isImagePath(msg.clip.path) {
+				m.input.InsertString(imageRef(msg.clip.path))
+			} else {
+				m.input.InsertString(msg.clip.path)
+			}
+		}
+		m.replan()
+		m.layout()
+		return m.notify("", false), nil
+	case editedMsg:
+		if msg.path != "" {
+			defer os.Remove(msg.path)
+		}
+		if msg.err != nil {
+			// The editor was quit without saving, or could not run at all;
+			// either way the draft in the composer is the one to keep.
+			m.pics.forget()
+			m.layout()
+			return m.notify("editor: "+msg.err.Error(), true), nil
+		}
+		b, err := os.ReadFile(msg.path)
+		if err != nil {
+			m.pics.forget()
+			m.layout()
+			return m.notify("editor: "+err.Error(), true), nil
+		}
+		// Taken verbatim, empty included: that is the user clearing the draft.
+		m.input.SetValue(string(b))
+		m.replan()
+		// The editor owned the screen, so every placement it cleared has to be
+		// transmitted again before the panes are drawn.
+		m.pics.forget()
+		m.layout()
+		return m.notify("", false), nil
 	case ingestedMsg:
 		// The message is on Feishu either way. A fetch that failed only means
 		// the row is not local yet, so the bubble stays up and the next sync
@@ -472,16 +549,38 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m.forward(msg)
 }
 
-// forward passes a message to the focused text component.
+// forward passes a message to the focused text component. A paste arrives
+// this way — bracketed from the terminal, or as the textarea's own reply to
+// ctrl+v — and changes the draft as surely as a keystroke does, so the badge
+// and the panes are brought back in step here too.
 func (m Model) forward(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	switch m.mode {
 	case modeInsert:
+		before := m.composerRows()
 		m.input, cmd = m.input.Update(msg)
+		m.tookDraft(before)
 	case modeCommand, modeFilter:
 		m.cmdline, cmd = m.cmdline.Update(msg)
+	case modeEmoji:
+		return m.typeIntoFilter(msg)
 	}
 	return m, cmd
+}
+
+// tookDraft brings the badge, the preview and the panes back in step after
+// the composer took something in: before is the row split as it stood
+// beforehand, and the writing area grows with the draft while the preview
+// appears with its type, so either one moves everything above the box. The
+// split is blind to the draft's text, so the preview is redrawn even when
+// nothing above the box moves.
+func (m *Model) tookDraft(before composerRows) {
+	m.replan()
+	if before != m.composerRows() {
+		m.layout()
+		return
+	}
+	m.rebuildPreview()
 }
 
 func (m Model) notify(text string, isErr bool) Model {
@@ -531,10 +630,9 @@ func (m *Model) markDots(msgs []store.Message) {
 	}
 }
 
-// takeRead records that the reader has had a chat's page in front of them:
-// consumed for the CLI cursor, read for the badge. Both run on every page,
-// reloads included, so the chat being watched does not light up again as
-// messages land in it.
+// takeRead records that the reader has had a chat's page in front of them,
+// which is what drops the badge. It runs on every page, reloads included, so
+// the chat being watched does not light up again as messages land in it.
 //
 // The Feishu client keeps a red dot of its own, which only the client itself
 // can drop. A page that arrived with something waiting therefore also walks
@@ -735,6 +833,7 @@ func (m Model) onKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) onInsertKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	before := m.composerRows()
 	switch k.String() {
 	case "esc":
 		m.mode = modeNormal
@@ -743,11 +842,24 @@ func (m Model) onInsertKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "ctrl+r":
 		m.setReply(nil, false)
 		return m, nil
+	case "ctrl+o":
+		m.previewOpen = !m.previewOpen
+		m.layout()
+		return m, nil
+	case "ctrl+v":
+		// Intercepted before the textarea, whose own ctrl+v shells out to
+		// pbpaste and so can only ever see text.
+		return m, pasteClipboard(m.deps)
+	case "ctrl+g":
+		// Intercepted before the textarea, which binds ctrl+g to select-all.
+		// A chat composer has far more use for a real editor than for that.
+		return m, editExternally(m.deps.Env, m.input.Value())
 	case "enter":
 		return m.submit()
 	}
 	var cmd tea.Cmd
 	m.input, cmd = m.input.Update(k)
+	m.tookDraft(before)
 	return m, cmd
 }
 
@@ -1266,9 +1378,15 @@ func (m Model) startInsert(replyTo *store.Message, inThread bool) (tea.Model, te
 	}
 	m.mode = modeInsert
 	m.focus = paneInput
+	// Planned before setReply lays the panes out, so the session's first
+	// frame previews the draft the composer actually holds.
+	m.replan()
 	m.setReply(replyTo, inThread)
 	return m, m.input.Focus()
 }
+
+// replan re-resolves the draft after anything that can change it.
+func (m *Model) replan() { m.draft, m.draftErr = m.files.planDraft(m.input.Value()) }
 
 // submit puts the draft on screen before it puts it on the wire: the bubble
 // is what says the message went, so nothing holds a second one back either.
@@ -1277,7 +1395,13 @@ func (m Model) submit() (tea.Model, tea.Cmd) {
 	if text == "" {
 		return m, nil
 	}
-	it := outboxItem{localID: uuid.NewString(), chatID: m.chatID, text: text, createMs: time.Now().UnixMilli()}
+	p, err := m.files.planDraft(text)
+	if err != nil {
+		// A path the user mistyped: the draft stays put so it can be fixed.
+		return m.notify(err.Error(), true), nil
+	}
+	it := outboxItem{localID: uuid.NewString(), chatID: m.chatID, msgType: p.kind.msgType(),
+		send: p.send, body: p.body, images: p.uploads(), createMs: time.Now().UnixMilli()}
 	if m.replyTo != nil {
 		it.chatID, it.replyTo, it.inThread = m.replyTo.ChatID, m.replyTo.MessageID, m.inThrd
 		if m.inThrd {
@@ -1287,6 +1411,7 @@ func (m Model) submit() (tea.Model, tea.Cmd) {
 	cmd := m.sendItem(it)
 	m.enqueue(it)
 	m.input.Reset()
+	m.replan()
 	m.setReply(nil, false)
 	m.refreshPanes()
 	if i := indexOfID(m.msgs, it.localID); i >= 0 {
@@ -1300,9 +1425,9 @@ func (m Model) submit() (tea.Model, tea.Cmd) {
 // sendItem is the command that puts one outbox item on the wire.
 func (m Model) sendItem(it outboxItem) tea.Cmd {
 	if it.replyTo != "" {
-		return replyText(m.deps, it.localID, it.replyTo, it.text, it.inThread)
+		return replyMsg(m.deps, it.localID, it.replyTo, it.send, it.inThread, it.images, it.keys)
 	}
-	return sendText(m.deps, it.localID, larkcli.Target{ChatID: it.chatID}, it.text)
+	return sendMsg(m.deps, it.localID, larkcli.Target{ChatID: it.chatID}, it.send, it.images, it.keys)
 }
 
 // refreshPanes redraws both message lists after the outbox changed, keeping
@@ -1374,17 +1499,29 @@ func (m Model) runCommand(line string) (tea.Model, tea.Cmd) {
 		if !ok || strings.TrimSpace(text) == "" {
 			return m.notify("usage: :send <chat|oc_|ou_> <text>", true), nil
 		}
+		p, err := m.files.planDraft(text)
+		if err != nil {
+			return m.notify(err.Error(), true), nil
+		}
 		// No outbox item: :send can fire at a chat no pane is showing, and
 		// at a user whose chat id only Feishu knows.
 		if strings.HasPrefix(ref, "ou_") {
-			return m.notify("sending…", false), sendText(m.deps, "", larkcli.Target{UserID: ref}, strings.TrimSpace(text))
+			return m.notify("sending…", false), sendMsg(m.deps, "", larkcli.Target{UserID: ref}, p.send, p.uploads(), nil)
 		}
 		for _, c := range m.chats {
 			if c.ChatID == ref || c.Name == ref {
-				return m.notify("sending…", false), sendText(m.deps, "", larkcli.Target{ChatID: c.ChatID}, strings.TrimSpace(text))
+				return m.notify("sending…", false), sendMsg(m.deps, "", larkcli.Target{ChatID: c.ChatID}, p.send, p.uploads(), nil)
 			}
 		}
 		return m.notify("unknown chat "+ref, true), nil
+	case "preview":
+		m.previewOpen = !m.previewOpen
+		m.layout()
+		note := "preview off"
+		if m.previewOpen {
+			note = "preview on"
+		}
+		return m.notify(note, false), nil
 	case "search", "s":
 		if len(strings.TrimSpace(rest)) == 0 {
 			return m.notify("usage: :search <text>", true), nil
@@ -1497,6 +1634,7 @@ func (m Model) onAIChunk(c ai.Chunk) (tea.Model, tea.Cmd) {
 	m.aiBusy = false
 	if m.aiDraft && strings.TrimSpace(m.aiText) != "" {
 		m.input.SetValue(strings.TrimSpace(m.aiText))
+		m.replan()
 		return m.notify("draft placed in the composer: i to edit, Enter to send", false), nil
 	}
 	return m.notify("", false), nil
@@ -1623,9 +1761,15 @@ const helpText = `NORMAL      j/k move · gg/G ends · Ctrl+d/u page · Tab/Shif
             . send a failed message again · x drop it
 VISUAL      v starts in the messages or thread pane · j/k extend · Y or yy/yr/yc copy and leave · Esc cancels
 INSERT      Enter send · Shift+Enter newline · ^r drop the quote · Esc back
-EMOJI       e opens it · type to filter (Chinese, pinyin or initials) · ↑↓ move · Enter react · Esc cancel
+            markdown sends as a post · ![](path) sends an image
+            the badge under the draft names the type and the files it will upload
+            ^o previews a post or an image the way the message list will draw it
+            ^g opens the draft in $VISUAL or $EDITOR as a markdown file
+            ^v pastes an image, a file path or text from the clipboard
+EMOJI       e opens it · type to filter (Chinese, pinyin or initials) · ↑↓←→ move · Enter react · Esc cancel
+            the filter takes the readline keys: ^w a word, ^u to the start, ^a/^e ends
             an emoji already yours is marked ✓, and choosing it takes the reaction back
-COMMAND     :copy <200|7d|all> · :goto <chat> · :react <emoji> · :send <chat|ou_> <text> · :search <text> · :sync · :q
+COMMAND     :copy <200|7d|all> · :goto <chat> · :react <emoji> · :send <chat|ou_> <text> · :search <text> · :preview · :sync · :q
 ASSISTANT   a or :ai [summary | draft <how> | todo | <question>] · answer streams in the right pane · Esc closes
 MOUSE       click focuses and selects · double-click opens · click Join to enter a call
             wheel scrolls`
