@@ -543,7 +543,7 @@ func (m *Model) markDots(msgs []store.Message) {
 // reader's eyes as well as the one just opened: a message landing in it
 // relights the client's dot, and the page it arrives on drops it again.
 func (m Model) takeRead(chatID string, msgs []store.Message) tea.Cmd {
-	cmds := []tea.Cmd{markConsumed(m.deps.Store, msgs), markChatRead(m.deps.Store, chatID)}
+	cmds := []tea.Cmd{markChatRead(m.deps.Store, chatID)}
 	if unreadWaiting(msgs) {
 		cmds = append(cmds, clearFeishuBadge(m.deps, chatID))
 	}

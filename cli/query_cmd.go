@@ -131,7 +131,6 @@ func (a *App) messagesListCmd() *cobra.Command {
 	f.IntVar(&contextN, "context", 20, "messages on each side of --around")
 	f.BoolVar(&q.IncludeDeleted, "include-deleted", false, "include recalled messages")
 	f.BoolVar(&q.Unread, "unread", false, "only messages Feishu reports as unread by you")
-	f.BoolVar(&q.Unconsumed, "unconsumed", false, "only messages not yet marked consumed locally")
 	f.StringVar(&order, "order", "desc", "asc | desc by create time")
 	f.IntVar(&q.Limit, "limit", 50, "max rows")
 	f.IntVar(&q.Offset, "offset", 0, "rows to skip")
@@ -252,9 +251,6 @@ func (a *App) messagesShowCmd() *cobra.Command {
 			}
 			if m.LocalReadAt != 0 {
 				fmt.Fprintf(a.Out, "read (local): %s\n", fmtMs(m.LocalReadAt))
-			}
-			if m.ConsumedAt != 0 {
-				fmt.Fprintf(a.Out, "consumed:    %s\n", fmtMs(m.ConsumedAt))
 			}
 			fmt.Fprintf(a.Out, "\n%s\n\nraw: %s\n", m.Content, m.ContentRaw)
 			for _, r := range resources {

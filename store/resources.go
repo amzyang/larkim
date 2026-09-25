@@ -146,7 +146,7 @@ func (s *Store) ExpireReadStatus(ctx context.Context, beforeMs int64) (int64, er
 }
 
 // SetReadStatus stores the remote read flag (nil = still unknown) and the
-// next check time, leaving consumed_at alone.
+// next check time.
 func (s *Store) SetReadStatus(ctx context.Context, messageID string, isRead *bool, checkedAt, nextCheckAt int64) error {
 	var v sql.NullBool
 	if isRead != nil {

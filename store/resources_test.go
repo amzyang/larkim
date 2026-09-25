@@ -98,12 +98,10 @@ func TestReadStatus_CandidatesAndSchedule(t *testing.T) {
 	unreadN, _ := s.UnreadCount(ctx)
 	require.Equal(t, int64(1), unreadN)
 
-	require.NoError(t, s.MarkConsumed(ctx, []string{"om_a"}, 4000))
 	read := true
 	require.NoError(t, s.SetReadStatus(ctx, "om_a", &read, 4000, 0))
 	m, _ := s.GetMessage(ctx, "om_a")
 	require.True(t, *m.IsReadRemote)
-	require.Equal(t, int64(4000), m.ConsumedAt, "consumed_at survives read-status updates")
 	n, _ = s.ReadCheckCount(ctx, "om_a")
 	require.Equal(t, 2, n)
 	q.DueAt = 1e12
@@ -254,41 +252,23 @@ func TestMarkChatRead_ClearsTheBadgeOfOneChat(t *testing.T) {
 	require.False(t, *m.IsReadRemote, "the remote receipt is untouched: larkim cannot write it")
 }
 
-func TestMarkChatRead_LeavesThreadRepliesAndReadMessagesAlone(t *testing.T) {
+func TestMarkChatRead_LeavesReadAndDeletedMessagesAlone(t *testing.T) {
 	s := openTest(t)
 	ctx := context.Background()
-	reply := msgAt("om_reply", "oc_a", 20, -3, "answered an old topic")
-	reply.ThreadID = "omt_1"
 	deleted := msgAt("om_gone", "oc_a", 30, 1, "recalled")
 	deleted.Deleted = true
-	_, err := s.UpsertMessages(ctx, []Message{msgAt("om_seen", "oc_a", 10, 1, "read"), reply, deleted}, 1)
+	_, err := s.UpsertMessages(ctx, []Message{msgAt("om_seen", "oc_a", 10, 1, "read"), deleted}, 1)
 	require.NoError(t, err)
 	read := true
 	require.NoError(t, s.SetReadStatus(ctx, "om_seen", &read, 100, 0))
-	markUnread(t, s, "om_reply")
 	markUnread(t, s, "om_gone")
 
 	require.NoError(t, s.MarkChatRead(ctx, "oc_a", 5000))
 
-	for _, id := range []string{"om_seen", "om_reply", "om_gone"} {
+	for _, id := range []string{"om_seen", "om_gone"} {
 		m, _ := s.GetMessage(ctx, id)
-		require.Zero(t, m.LocalReadAt, "%s is outside what the badge counts, so reading the chat says nothing about it", id)
+		require.Zero(t, m.LocalReadAt, "%s is nothing the reader has waiting, so reading the chat says nothing about it", id)
 	}
-}
-
-func TestMarkChatRead_KeepsTheConsumedCursor(t *testing.T) {
-	s := openTest(t)
-	ctx := context.Background()
-	_, err := s.UpsertMessages(ctx, []Message{msgAt("om_a", "oc_a", 10, 1, "one")}, 1)
-	require.NoError(t, err)
-	markUnread(t, s, "om_a")
-	require.NoError(t, s.MarkConsumed(ctx, []string{"om_a"}, 4000))
-
-	require.NoError(t, s.MarkChatRead(ctx, "oc_a", 5000))
-
-	m, _ := s.GetMessage(ctx, "om_a")
-	require.Equal(t, int64(4000), m.ConsumedAt, "the CLI cursor is not what a reader moves")
-	require.Equal(t, int64(5000), m.LocalReadAt)
 }
 
 func TestMarkChatRead_WritesNothingWhenTheChatIsAlreadyRead(t *testing.T) {

@@ -64,7 +64,7 @@ func New(version, buildDSN string) *cobra.Command {
 	root.PersistentFlags().StringVar(&app.sentryFlag, "sentry-dsn", "", "Sentry DSN for crash reporting (overrides SENTRY_DSN and the build-time default; empty disables)")
 	root.SetFlagErrorFunc(func(_ *cobra.Command, err error) error { return &usageError{err} })
 	root.AddCommand(app.syncCmd(), app.statusCmd(), app.daemonCmd(), app.chatsCmd(), app.messagesCmd(), app.contactsCmd(),
-		app.sendCmd(), app.replyCmd(), app.watchCmd(), app.markCmd(), app.silenceCmd(), app.tuiCmd(), app.dbCmd(), app.schemaCmd(),
+		app.sendCmd(), app.replyCmd(), app.watchCmd(), app.silenceCmd(), app.tuiCmd(), app.dbCmd(), app.schemaCmd(),
 		app.emojiCmd(), app.sentryCmd())
 	return root
 }

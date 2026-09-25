@@ -133,11 +133,7 @@ func TestListMessages_FiltersAndOrders(t *testing.T) {
 	got, _ = s.ListMessages(ctx, MessageQuery{MsgType: "image"})
 	require.Equal(t, []string{"om_2"}, ids(got))
 
-	require.NoError(t, s.MarkConsumed(ctx, []string{"om_1"}, 999))
-	got, _ = s.ListMessages(ctx, MessageQuery{ChatID: "oc_a", Unconsumed: true})
-	require.Equal(t, []string{"om_2"}, ids(got))
 	got, _ = s.ListMessages(ctx, MessageQuery{ChatID: "oc_a"})
-	require.Equal(t, int64(999), got[0].ConsumedAt)
 	require.Nil(t, got[0].IsReadRemote)
 }
 

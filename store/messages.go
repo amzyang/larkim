@@ -40,14 +40,13 @@ type Message struct {
 	LastSeenAt    int64  `json:"last_seen_at"`
 	// From read_state; IsReadRemote is nil when never checked.
 	IsReadRemote *bool `json:"is_read_remote"`
-	ConsumedAt   int64 `json:"consumed_at"`
 	LocalReadAt  int64 `json:"local_read_at"`
 }
 
 const messageColumns = `m.id, m.message_id, m.chat_id, m.msg_type, m.sender_id, m.sender_type, m.sender_name,
  m.content_raw, m.content, m.create_ms, m.update_ms, m.message_position, m.updated, m.deleted, m.silenced, m.deleted_seen_at,
  m.thread_id, m.reply_to, m.mentions_json, m.reactions_json, m.raw_json, m.rendered_at, m.edited_at, m.first_seen_at, m.last_seen_at,
- r.is_read_remote, COALESCE(r.consumed_at, 0), COALESCE(r.local_read_at, 0)`
+ r.is_read_remote, COALESCE(r.local_read_at, 0)`
 
 // messageFrom is the FROM clause every message query selects messageColumns from.
 const messageFrom = `FROM messages m LEFT JOIN read_state r ON r.message_id = m.message_id`
@@ -58,7 +57,7 @@ func scanMessage(sc scanner) (Message, error) {
 	err := sc.Scan(&m.ID, &m.MessageID, &m.ChatID, &m.MsgType, &m.SenderID, &m.SenderType, &m.SenderName,
 		&m.ContentRaw, &m.Content, &m.CreateMs, &m.UpdateMs, &m.MessagePosition, &m.Updated, &m.Deleted, &m.Silenced, &m.DeletedSeenAt,
 		&m.ThreadID, &m.ReplyTo, &m.MentionsJSON, &m.ReactionsJSON, &m.RawJSON, &m.RenderedAt, &m.EditedAt, &m.FirstSeenAt, &m.LastSeenAt,
-		&isRead, &m.ConsumedAt, &m.LocalReadAt)
+		&isRead, &m.LocalReadAt)
 	if isRead.Valid {
 		v := isRead.Bool
 		m.IsReadRemote = &v
@@ -309,7 +308,6 @@ type MessageQuery struct {
 	ExcludeThreadReplies bool
 	IncludeDeleted       bool
 	Unread               bool // is_read_remote = 0
-	Unconsumed           bool // consumed_at = 0
 	Desc                 bool
 	Limit                int
 	Offset               int
@@ -360,9 +358,6 @@ func (s *Store) ListMessages(ctx context.Context, q MessageQuery) ([]Message, er
 	if q.Unread {
 		add("r.is_read_remote = 0")
 	}
-	if q.Unconsumed {
-		add("COALESCE(r.consumed_at, 0) = 0")
-	}
 	query := `SELECT ` + messageColumns + ` ` + messageFrom
 	if len(where) > 0 {
 		query += " WHERE " + strings.Join(where, " AND ")
@@ -388,22 +383,6 @@ func (s *Store) MaxMessageRowID(ctx context.Context) (int64, error) {
 		return 0, err
 	}
 	return id.Int64, nil
-}
-
-// MarkConsumed records local consumption of messages.
-func (s *Store) MarkConsumed(ctx context.Context, ids []string, now int64) error {
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-	for _, id := range ids {
-		if _, err := tx.ExecContext(ctx, `INSERT INTO read_state(message_id, consumed_at) VALUES (?, ?)
- ON CONFLICT(message_id) DO UPDATE SET consumed_at = CASE WHEN read_state.consumed_at = 0 THEN excluded.consumed_at ELSE read_state.consumed_at END`, id, now); err != nil {
-			return err
-		}
-	}
-	return tx.Commit()
 }
 
 // ThreadReplyCounts counts the live replies of each thread id in a chat,

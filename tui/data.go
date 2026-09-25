@@ -252,22 +252,6 @@ func loadThread(st *store.Store, threadID string) tea.Cmd {
 	}
 }
 
-func markConsumed(st *store.Store, msgs []store.Message) tea.Cmd {
-	ids := make([]string, 0, len(msgs))
-	for _, m := range msgs {
-		if m.ConsumedAt == 0 {
-			ids = append(ids, m.MessageID)
-		}
-	}
-	if len(ids) == 0 {
-		return nil
-	}
-	return func() tea.Msg {
-		_ = st.MarkConsumed(context.Background(), ids, time.Now().UnixMilli())
-		return nil
-	}
-}
-
 // markChatRead takes the chat's unread messages as read locally, which is
 // what makes its badge fall: Feishu offers no way to say a message was read.
 func markChatRead(st *store.Store, chatID string) tea.Cmd {

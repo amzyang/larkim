@@ -24,8 +24,6 @@ larkim messages show om_xxx                    # rendering, raw body, downloaded
 larkim messages thread om_xxx
 larkim messages list --query "发布 计划"         # full-text search (every term must match; CJK substrings work)
 larkim messages list --unread                  # Feishu says you have not read these yet
-larkim messages list --unconsumed              # not yet processed by a local consumer
-larkim mark consumed om_xxx om_yyy             # local flag only; Feishu's red dot is untouched
 larkim silence                                 # configured silence rules and what each one matches
 larkim sync --backfill-days 7                  # one tick in the foreground (daemon must be stopped)
 larkim db path && larkim schema                # for direct SQLite consumers, see docs/SCHEMA.md
