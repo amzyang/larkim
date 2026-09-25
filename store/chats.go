@@ -87,6 +87,17 @@ func (c Chat) AvatarFile() string {
 	return avatarFile(c.AvatarPath)
 }
 
+// AvatarSeed is the identity a drawn stand-in belongs to, which for p2p is the
+// peer rather than the chat: the chat list and a message block have to land on
+// the same colour for the same person, and only the peer's id is common to
+// both. Mirrors AvatarFile, whose picture already comes from the peer.
+func (c Chat) AvatarSeed() string {
+	if c.ChatMode == "p2p" && c.P2PTargetID != "" {
+		return c.P2PTargetID
+	}
+	return c.ChatID
+}
+
 // chatColumns selects from `chats c`; the derived columns are named so
 // callers can order by them.
 const chatColumns = `c.chat_id, c.name, c.description, c.chat_mode, c.chat_status, c.owner_id, c.external, c.p2p_target_id, c.p2p_target_type,

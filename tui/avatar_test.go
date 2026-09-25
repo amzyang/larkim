@@ -519,3 +519,20 @@ func TestUpdate_AResizeAsksForTheCellSizeAgain(t *testing.T) {
 	m.update(uv.CellSizeEvent{Width: 9, Height: 19})
 	require.NotContains(t, m.pics.id, "live", "a cell size that moved drops what was drawn for the old grid")
 }
+
+func TestKittyAvatars_DrawsAP2PPeerInTheColourTheirMessagesTake(t *testing.T) {
+	if avatarFont() == nil {
+		t.Skip("no system font on this machine")
+	}
+	k := newKittyAvatars(t.TempDir())
+	w, h := k.box()
+	x, y := bodyPixel(min(w, h))
+
+	c := store.Chat{ChatID: "oc_quiet", Name: "构建机器人", ChatMode: "p2p", P2PTargetID: "ou_a"}
+	require.Equal(t, generatedPalette[int(idHash("ou_a"))%len(generatedPalette)], pixAt(k.picture(c), x, y),
+		"the row and the sender's message blocks stand for one peer, so both take one colour")
+
+	top, _, _ := textAvatars{}.cells(c, 0)
+	require.Equal(t, avatarBlock("ou_a", c.Name, avatarWidth), top,
+		"the colour block the terminal falls back to seeds from the same peer")
+}

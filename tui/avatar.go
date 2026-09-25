@@ -31,8 +31,8 @@ type avatars interface {
 type textAvatars struct{}
 
 func (textAvatars) cells(c store.Chat, _ int64) (string, string, bool) {
-	return avatarBlock(c.ChatID, c.Name, avatarWidth),
-		avatarStyle(c.ChatID).Render(strings.Repeat(" ", avatarWidth)), false
+	return avatarBlock(c.AvatarSeed(), c.Name, avatarWidth),
+		avatarStyle(c.AvatarSeed()).Render(strings.Repeat(" ", avatarWidth)), false
 }
 func (textAvatars) prepare([]store.Chat, map[string]int64) string { return "" }
 
@@ -198,7 +198,7 @@ func (k *kittyAvatars) picture(c store.Chat) *image.RGBA {
 			return img
 		}
 	}
-	return generateAvatar(c.Name, idHash(c.ChatID), w, h, c.ChatMode != "p2p")
+	return generateAvatar(c.Name, idHash(c.AvatarSeed()), w, h, c.ChatMode != "p2p")
 }
 
 // take assigns an image id to chatID, reclaiming the least recently prepared

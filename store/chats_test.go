@@ -137,3 +137,12 @@ func listChats(t *testing.T, s *Store) []Chat {
 	require.NoError(t, err)
 	return chats
 }
+
+func TestChat_AvatarSeedIsThePeerForP2P(t *testing.T) {
+	p2p := Chat{ChatID: "oc_quiet", ChatMode: "p2p", P2PTargetID: "ou_a"}
+	require.Equal(t, "ou_a", p2p.AvatarSeed(),
+		"the chat list and the message pane draw the same peer, so both seed from the peer")
+	require.Equal(t, "oc_quiet", Chat{ChatID: "oc_quiet", ChatMode: "p2p"}.AvatarSeed(),
+		"a peer the contact sync has not resolved leaves the chat as the only identity")
+	require.Equal(t, "oc_quiet", Chat{ChatID: "oc_quiet", ChatMode: "group", P2PTargetID: "ou_a"}.AvatarSeed())
+}
