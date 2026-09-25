@@ -198,7 +198,7 @@ func (k *kittyAvatars) picture(c store.Chat) *image.RGBA {
 			return img
 		}
 	}
-	return generateAvatar(c.Name, idHash(c.ChatID), w, h)
+	return generateAvatar(c.Name, idHash(c.ChatID), w, h, c.ChatMode != "p2p")
 }
 
 // take assigns an image id to chatID, reclaiming the least recently prepared

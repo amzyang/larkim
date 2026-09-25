@@ -18,35 +18,57 @@ import (
 // avatar. They are read from the machine rather than embedded because a CJK
 // face is tens of megabytes, and this only ever runs on macOS. STHeiti is
 // left out: x/image/font/sfnt rejects its cmap.
-var systemFonts = []string{
-	"/System/Library/Fonts/Hiragino Sans GB.ttc",
-	"/System/Library/Fonts/Supplemental/Songti.ttc",
-	"/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
+//
+// Each entry names the bold face of its collection. Four glyphs sharing a
+// disc the terminal sized leaves each about eleven pixels, where a regular
+// weight's stems fall under one pixel and grey out; x/image rasterises the
+// outline without running the font's hinting bytecode, so nothing snaps them
+// back onto the grid.
+var systemFonts = []struct {
+	path string
+	face int
+}{
+	{"/System/Library/Fonts/Hiragino Sans GB.ttc", 2},    // W6
+	{"/System/Library/Fonts/Supplemental/Songti.ttc", 1}, // SC Bold
+	{"/System/Library/Fonts/Supplemental/Arial Unicode.ttf", 0},
 }
 
 // avatarInitials is how many characters of a name the picture carries. Up to
 // four sit in a 2x2 grid, which is how the Feishu client draws one.
 const avatarInitials = 4
 
-// generatedPalette are the background colours, dark enough for white glyphs.
+// generatedPalette are the accents a drawn avatar takes, the ten the Feishu
+// client offers a group picking its own disc. Four are darkened from the
+// client's own values: it can afford a lighter accent because the glyph it
+// pairs them with is a fat pictogram, not hairline CJK strokes at a third of
+// the disc. Every one here clears 4.1:1 against white, which holds whichever
+// side of the pair the white lands on.
 var generatedPalette = []color.RGBA{
-	{R: 0xC0, G: 0x39, B: 0x2B, A: 0xFF},
-	{R: 0x27, G: 0x8B, B: 0x50, A: 0xFF},
-	{R: 0xB7, G: 0x7A, B: 0x1F, A: 0xFF},
-	{R: 0x2E, G: 0x6D, B: 0xB8, A: 0xFF},
-	{R: 0x8E, G: 0x44, B: 0xAD, A: 0xFF},
-	{R: 0x16, G: 0x8A, B: 0x8A, A: 0xFF},
+	{R: 0x35, G: 0x6F, B: 0xF5, A: 0xFF},
+	{R: 0x60, G: 0x69, B: 0xEC, A: 0xFF},
+	{R: 0x15, G: 0x85, B: 0xB2, A: 0xFF},
+	{R: 0x17, G: 0x8C, B: 0x7B, A: 0xFF},
+	{R: 0x2B, G: 0x8F, B: 0x38, A: 0xFF},
+	{R: 0xC2, G: 0x60, B: 0x0E, A: 0xFF},
+	{R: 0xE7, G: 0x3B, B: 0x34, A: 0xFF},
+	{R: 0xD5, G: 0x3D, B: 0x90, A: 0xFF},
+	{R: 0xC0, G: 0x42, B: 0xC1, A: 0xFF},
+	{R: 0x8D, G: 0x53, B: 0xEF, A: 0xFF},
 }
+
+// avatarWhite is the other half of every pair: the glyphs of the filled
+// style, the body of the outlined one.
+var avatarWhite = color.RGBA{R: 0xFF, G: 0xFF, B: 0xFF, A: 0xFF}
 
 // avatarFont is the parsed font, resolved once. A machine with none of them
 // yields nil, which sends callers back to the colour block.
 var avatarFont = sync.OnceValue(func() *sfnt.Font {
-	for _, path := range systemFonts {
-		b, err := os.ReadFile(path)
+	for _, sf := range systemFonts {
+		b, err := os.ReadFile(sf.path)
 		if err != nil {
 			continue
 		}
-		f, err := parseFace(b)
+		f, err := parseFace(b, sf.face)
 		if err != nil {
 			continue
 		}
@@ -55,11 +77,11 @@ var avatarFont = sync.OnceValue(func() *sfnt.Font {
 	return nil
 })
 
-// avatarFace builds a face at the size one glyph gets, which depends on how
-// many share the disc and how large that disc is on screen.
-func avatarFace(glyphs, side int) font.Face {
-	// Each tier keeps the glyphs inside the disc: a row sits on a chord, not
-	// on the full width, so the more of them share one the smaller they go.
+// avatarFace builds a face at the size one glyph gets and reports that size,
+// which is also the cell the glyph is laid out in. Each tier keeps the block
+// they form inside the disc: the more glyphs share one, the wider the block
+// and so the smaller they go.
+func avatarFace(glyphs, side int) (font.Face, int) {
 	size := float64(side) * 0.54 // one glyph, alone
 	switch {
 	case glyphs > 2:
@@ -67,7 +89,7 @@ func avatarFace(glyphs, side int) font.Face {
 	case glyphs == 2:
 		size = float64(side) * 0.34 // one of a pair, clear of the rim
 	}
-	return faceAt(size)
+	return faceAt(size), int(math.Round(size))
 }
 
 // faceAt builds a face whose em box is px pixels tall.
@@ -83,8 +105,8 @@ func faceAt(px float64) font.Face {
 	return face
 }
 
-// parseFace reads either a single font or the first face of a collection.
-func parseFace(b []byte) (*sfnt.Font, error) {
+// parseFace reads either a single font or one face of a collection.
+func parseFace(b []byte, face int) (*sfnt.Font, error) {
 	if f, err := sfnt.Parse(b); err == nil {
 		return f, nil
 	}
@@ -92,27 +114,37 @@ func parseFace(b []byte) (*sfnt.Font, error) {
 	if err != nil {
 		return nil, err
 	}
-	return col.Font(0)
+	return col.Font(face)
 }
 
-// generateAvatar draws a stand-in picture for a chat with no avatar file: a
-// colour disc carrying the first characters of its name. Returns nil when
-// no usable font was found, which leaves the colour block in charge.
-func generateAvatar(name string, hash uint32, w, h int) *image.RGBA {
+// generateAvatar draws a stand-in picture for a chat with no avatar file, a
+// disc carrying the first characters of its name. outlined picks the second
+// of the two styles the client offers — white body, accent rim, accent
+// glyphs — which is what a group gets; a person or a bot gets the filled one,
+// so a stand-in never reads as the wrong kind of chat. Returns nil when no
+// usable font was found, which leaves the colour block in charge.
+func generateAvatar(name string, hash uint32, w, h int, outlined bool) *image.RGBA {
 	text := []rune(initials(name))
-	face := avatarFace(len(text), min(w, h))
+	face, em := avatarFace(len(text), min(w, h))
 	if face == nil {
 		return nil
 	}
+	accent := generatedPalette[int(hash)%len(generatedPalette)]
+	body, ink := accent, avatarWhite
+	if outlined {
+		body, ink = ink, accent
+	}
 	m := image.NewRGBA(image.Rect(0, 0, w, h))
-	bg := generatedPalette[int(hash)%len(generatedPalette)]
 	for i := 0; i < len(m.Pix); i += 4 {
-		m.Pix[i], m.Pix[i+1], m.Pix[i+2], m.Pix[i+3] = bg.R, bg.G, bg.B, bg.A
+		m.Pix[i], m.Pix[i+1], m.Pix[i+2], m.Pix[i+3] = body.R, body.G, body.B, body.A
 	}
 	for i, r := range text {
-		drawGlyph(m, face, string(r), glyphCell(len(text), i, w, h))
+		drawGlyph(m, face, string(r), ink, glyphCell(len(text), i, w, h, em))
 	}
 	maskDisc(m)
+	if outlined {
+		strokeDisc(m, accent)
+	}
 	return m
 }
 
@@ -120,28 +152,32 @@ func generateAvatar(name string, hash uint32, w, h int) *image.RGBA {
 // the full disc, the shape the client gives every avatar.
 const discRadius = 0.5
 
+// discEdge is how far x, y lies from the rim of the disc a w by h picture
+// carries, positive inside and negative out. A box the cell grid made oblong
+// keeps the disc's radius and rounds only what the shorter side reaches,
+// which is what stops the circle turning into an ellipse.
+func discEdge(w, h float64, x, y int) float64 {
+	r := math.Min(w, h) * discRadius
+	// Half-extents of the rectangle the corner arcs are centred on.
+	ex, ey := w/2-r, h/2-r
+	dx := math.Max(math.Abs(float64(x)+0.5-w/2)-ex, 0)
+	dy := math.Max(math.Abs(float64(y)+0.5-h/2)-ey, 0)
+	return r - math.Hypot(dx, dy)
+}
+
 // maskDisc clips the picture to the disc the client draws, so the list reads
 // as one column of circles whether a chat brought a picture or had one drawn
 // for it. The terminal shows through what is cleared, which is why the rim
 // fades rather than stepping: there is no background colour here to blend
 // against.
-//
-// A box the cell grid made oblong keeps the disc's radius and rounds only
-// what the shorter side reaches, which is what stops the circle turning into
-// an ellipse.
 func maskDisc(m *image.RGBA) {
 	b := m.Bounds()
 	w, h := float64(b.Dx()), float64(b.Dy())
-	r := math.Min(w, h) * discRadius
-	// Half-extents of the rectangle the corner arcs are centred on.
-	ex, ey := w/2-r, h/2-r
 	for y := range b.Dy() {
 		for x := range b.Dx() {
-			dx := math.Max(math.Abs(float64(x)+0.5-w/2)-ex, 0)
-			dy := math.Max(math.Abs(float64(y)+0.5-h/2)-ey, 0)
 			// Coverage over the last pixel of the edge, which is all the
 			// anti-aliasing a shape this size needs.
-			cover := r - math.Hypot(dx, dy) + 0.5
+			cover := discEdge(w, h, x, y) + 0.5
 			if cover >= 1 {
 				continue
 			}
@@ -158,26 +194,56 @@ func maskDisc(m *image.RGBA) {
 	}
 }
 
-// glyphCell is the box one glyph owns: the whole avatar when it is alone, a
-// half-width column when two share it, a cell of the 2x2 grid beyond that. A
-// row the grid leaves short is centred, so three characters do not sit
-// lopsided against the rim.
-func glyphCell(count, i, w, h int) image.Rectangle {
-	if count <= 1 {
-		return image.Rect(0, 0, w, h)
+// ringWidth is the outlined style's rim as a share of the disc, the client's
+// own proportion. The floor keeps it drawn at all on a disc a few dozen
+// pixels across, where the share alone rounds away.
+const ringWidth = 0.028
+
+// strokeDisc lays the outlined style's rim over an already masked picture.
+// The band is clipped to the disc on its outer side, so the rim inherits the
+// anti-aliased edge the mask cut rather than stepping past it.
+func strokeDisc(m *image.RGBA, c color.RGBA) {
+	b := m.Bounds()
+	w, h := float64(b.Dx()), float64(b.Dy())
+	t := math.Max(1, math.Min(w, h)*ringWidth)
+	for y := range b.Dy() {
+		for x := range b.Dx() {
+			d := discEdge(w, h, x, y)
+			cover := math.Min(math.Min(d+0.5, 1), math.Min(t-d+0.5, 1))
+			if cover <= 0 {
+				continue
+			}
+			i := m.PixOffset(x, y)
+			src := [4]uint8{c.R, c.G, c.B, c.A}
+			// color.RGBA is alpha-premultiplied, so every channel blends the
+			// same way.
+			for k := range 4 {
+				m.Pix[i+k] = uint8(float64(src[k])*cover + float64(m.Pix[i+k])*(1-cover))
+			}
+		}
 	}
-	const cols = 2
+}
+
+// glyphCell is the box one glyph owns: a cell the size of its own em, in a
+// grid of at most two columns centred on the picture. Sizing the cell to the
+// glyph rather than to a share of the picture is what holds the block
+// together in the middle; quartering the picture instead spreads four glyphs
+// until they graze the rim and leave a hole between them. A row the grid
+// leaves short is centred within the block, so three characters do not sit
+// lopsided.
+func glyphCell(count, i, w, h, em int) image.Rectangle {
+	cols := min(count, 2)
 	rows := (count + cols - 1) / cols
 	row, col := i/cols, i%cols
-	cw, ch := w/cols, h/rows
-	x := (w-min(cols, count-row*cols)*cw)/2 + col*cw
-	return image.Rect(x, row*ch, x+cw, (row+1)*ch)
+	x := (w-min(cols, count-row*cols)*em)/2 + col*em
+	y := (h-rows*em)/2 + row*em
+	return image.Rect(x, y, x+em, y+em)
 }
 
 // drawGlyph centres one glyph in cell, on the face's own ascent and descent
 // so a character without descenders still sits in the middle.
-func drawGlyph(dst *image.RGBA, face font.Face, s string, cell image.Rectangle) {
-	d := &font.Drawer{Dst: dst, Src: image.NewUniform(color.White), Face: face}
+func drawGlyph(dst *image.RGBA, face font.Face, s string, ink color.RGBA, cell image.Rectangle) {
+	d := &font.Drawer{Dst: dst, Src: image.NewUniform(ink), Face: face}
 	mt := face.Metrics()
 	x := cell.Min.X + (cell.Dx()-d.MeasureString(s).Round())/2
 	y := cell.Min.Y + (cell.Dy()+(mt.Ascent-mt.Descent).Round())/2
@@ -273,7 +339,7 @@ func drawBadge(m *image.RGBA, n int64, muted bool) bool {
 	}
 	fillRounded(m, rect.Inset(-int(math.Ceil(badgeRing))), h/2+badgeRing, color.RGBA{})
 	fillRounded(m, rect, h/2, fill)
-	drawGlyph(m, face, label, rect)
+	drawGlyph(m, face, label, avatarWhite, rect)
 	return true
 }
 

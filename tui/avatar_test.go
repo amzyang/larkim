@@ -157,22 +157,22 @@ func TestInitials_SkipsTheDecorationGroupNamesOpenWith(t *testing.T) {
 	}
 }
 
-func TestGlyphCell_LaysGlyphsOutByCount(t *testing.T) {
-	const w, h = 80, 40 // an oblong box, as real terminal cells give
-	require.Equal(t, image.Rect(0, 0, w, h), glyphCell(1, 0, w, h),
-		"one glyph owns the whole box")
+func TestGlyphCell_PacksTheGlyphsIntoACentredBlock(t *testing.T) {
+	const w, h, em = 80, 40, 12 // an oblong box, as real terminal cells give
+	require.Equal(t, image.Rect(34, 14, 46, 26), glyphCell(1, 0, w, h, em),
+		"one glyph sits in the middle, not spread over the whole box")
 
-	require.Equal(t, image.Rect(0, 0, 40, h), glyphCell(2, 0, w, h))
-	require.Equal(t, image.Rect(40, 0, w, h), glyphCell(2, 1, w, h),
-		"two sit side by side")
+	require.Equal(t, image.Rect(28, 14, 40, 26), glyphCell(2, 0, w, h, em))
+	require.Equal(t, image.Rect(40, 14, 52, 26), glyphCell(2, 1, w, h, em),
+		"two sit side by side, touching, astride the centre")
 
-	require.Equal(t, image.Rect(0, 0, 40, 20), glyphCell(4, 0, w, h))
-	require.Equal(t, image.Rect(40, 0, w, 20), glyphCell(4, 1, w, h))
-	require.Equal(t, image.Rect(0, 20, 40, h), glyphCell(4, 2, w, h))
-	require.Equal(t, image.Rect(40, 20, w, h), glyphCell(4, 3, w, h),
-		"four fall into a 2x2 grid, in reading order")
+	require.Equal(t, image.Rect(28, 8, 40, 20), glyphCell(4, 0, w, h, em))
+	require.Equal(t, image.Rect(40, 8, 52, 20), glyphCell(4, 1, w, h, em))
+	require.Equal(t, image.Rect(28, 20, 40, 32), glyphCell(4, 2, w, h, em))
+	require.Equal(t, image.Rect(40, 20, 52, 32), glyphCell(4, 3, w, h, em),
+		"four fall into a 2x2 block, in reading order")
 
-	require.Equal(t, image.Rect(20, 20, 60, h), glyphCell(3, 2, w, h),
+	require.Equal(t, image.Rect(34, 20, 46, 32), glyphCell(3, 2, w, h, em),
 		"a row the grid leaves short is centred")
 }
 
@@ -203,35 +203,69 @@ func TestKittyAvatars_ANewCellSizeRedrawsEverything(t *testing.T) {
 		"pictures drawn for the old cell size would be resampled, so they are drawn again")
 }
 
-func TestGenerateAvatar_InksTheGlyphsOntoTheBackground(t *testing.T) {
+// pixAt reads one pixel as the premultiplied bytes the picture stores, so a
+// test can compare it against the palette entry that painted it.
+func pixAt(m *image.RGBA, x, y int) color.RGBA {
+	i := m.PixOffset(x, y)
+	return color.RGBA{R: m.Pix[i], G: m.Pix[i+1], B: m.Pix[i+2], A: m.Pix[i+3]}
+}
+
+// countPix is how many pixels carry exactly c.
+func countPix(m *image.RGBA, c color.RGBA) int {
+	n := 0
+	for i := 0; i < len(m.Pix); i += 4 {
+		if m.Pix[i] == c.R && m.Pix[i+1] == c.G && m.Pix[i+2] == c.B && m.Pix[i+3] == c.A {
+			n++
+		}
+	}
+	return n
+}
+
+// bodyPixel is a point inside the disc but clear of both the glyph block and
+// the rim, so it shows whatever colour fills the avatar.
+func bodyPixel(side int) (int, int) { return side/2 + side*35/100, side / 2 }
+
+func TestGenerateAvatar_FillsTheDiscAndInksItInWhite(t *testing.T) {
 	if avatarFont() == nil {
 		t.Skip("no system font on this machine")
 	}
-	m := generateAvatar("程序化养号", 0, avatarPixels, avatarPixels)
+	accent := generatedPalette[0]
+	m := generateAvatar("程序化养号", 0, avatarPixels, avatarPixels, false)
 	require.NotNil(t, m)
 	require.Equal(t, image.Rect(0, 0, avatarPixels, avatarPixels), m.Bounds())
 
-	// The glyphs are white on a coloured square, so count the fully white pixels.
-	rgba := m
-	white := 0
-	for i := 0; i < len(rgba.Pix); i += 4 {
-		if rgba.Pix[i] == 0xFF && rgba.Pix[i+1] == 0xFF && rgba.Pix[i+2] == 0xFF {
-			white++
-		}
-	}
-	require.Greater(t, white, 200, "the glyphs leave a visible amount of ink")
+	x, y := bodyPixel(avatarPixels)
+	require.Equal(t, accent, pixAt(m, x, y), "the filled style carries the accent as its body")
+	require.Greater(t, countPix(m, avatarWhite), 200, "the glyphs leave a visible amount of ink")
 
-	plain := generateAvatar("", 0, avatarPixels, avatarPixels)
-	for i := 0; i < len(plain.Pix); i += 4 {
-		require.NotEqual(t, uint8(0xFF), plain.Pix[i], "a nameless chat gets a bare colour square")
+	plain := generateAvatar("", 0, avatarPixels, avatarPixels, false)
+	require.Zero(t, countPix(plain, avatarWhite), "a nameless chat gets a bare colour disc")
+}
+
+func TestGenerateAvatar_OutlinesAWhiteDiscInTheAccentItInksWith(t *testing.T) {
+	if avatarFont() == nil {
+		t.Skip("no system font on this machine")
 	}
+	accent := generatedPalette[0]
+	m := generateAvatar("程序化养号", 0, avatarPixels, avatarPixels, true)
+	require.NotNil(t, m)
+
+	x, y := bodyPixel(avatarPixels)
+	require.Equal(t, avatarWhite, pixAt(m, x, y), "the outlined style carries a white body")
+	require.Greater(t, countPix(m, accent), 200, "the glyphs are inked in the accent")
+	require.Equal(t, accent, pixAt(m, avatarPixels/2, 1), "and so is the rim")
+
+	plain := generateAvatar("", 0, avatarPixels, avatarPixels, true)
+	require.Greater(t, countPix(plain, accent), 0, "a nameless chat still gets its rim")
+	require.Equal(t, avatarWhite, pixAt(plain, avatarPixels/2, avatarPixels/2),
+		"with nothing inside it")
 }
 
 func TestMaskDisc_ClearsEverythingOutsideTheCircle(t *testing.T) {
 	if avatarFont() == nil {
 		t.Skip("no system font on this machine")
 	}
-	m := generateAvatar("程序化养号", 0, avatarPixels, avatarPixels)
+	m := generateAvatar("程序化养号", 0, avatarPixels, avatarPixels, false)
 
 	for _, p := range []image.Point{{X: 0, Y: 0}, {X: avatarPixels - 1, Y: 0},
 		{X: 0, Y: avatarPixels - 1}, {X: avatarPixels - 1, Y: avatarPixels - 1}} {
@@ -284,6 +318,23 @@ func TestKittyAvatars_MasksTheFileAvatarToADisc(t *testing.T) {
 	require.Zero(t, a, "the square the CDN serves is cut to the disc the client draws")
 	_, _, _, a = img.At(w/2, h/2).RGBA()
 	require.Equal(t, uint32(0xFFFF), a, "the picture itself is untouched")
+}
+
+func TestKittyAvatars_OutlinesAGroupAndFillsAPerson(t *testing.T) {
+	if avatarFont() == nil {
+		t.Skip("no system font on this machine")
+	}
+	k := newKittyAvatars(t.TempDir())
+	w, h := k.box()
+	x, y := bodyPixel(min(w, h))
+
+	group := k.picture(store.Chat{ChatID: "oc_a", Name: "平台组", ChatMode: "group"})
+	require.Equal(t, avatarWhite, pixAt(group, x, y),
+		"a group without a picture takes the outlined style, as the client draws it")
+
+	person := k.picture(store.Chat{ChatID: "oc_a", Name: "林岚", ChatMode: "p2p"})
+	require.Equal(t, generatedPalette[int(idHash("oc_a"))%len(generatedPalette)], pixAt(person, x, y),
+		"a person takes the filled one, so a stand-in never reads as the wrong kind of chat")
 }
 
 func TestBadgeLabel_CapsAtNinetyNinePlus(t *testing.T) {

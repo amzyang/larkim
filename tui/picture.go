@@ -192,7 +192,9 @@ func (p *pictures) writeDisc(path, id, name string, side int) bool {
 	if _, err := os.Stat(path); err == nil {
 		return true // drawn on an earlier run, at this very cell size
 	}
-	img := generateAvatar(name, idHash(id), side, side)
+	// Filled, never outlined: this panel only ever draws a sender, and the
+	// outlined style is what the chat list gives a group.
+	img := generateAvatar(name, idHash(id), side, side, false)
 	if img == nil {
 		return false // no font on this machine; the colour block takes over
 	}
