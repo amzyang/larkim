@@ -800,16 +800,16 @@ func (m Model) forward(msg tea.Msg) (tea.Model, tea.Cmd) {
 // tookDraft brings the badge, the preview and the panes back in step after
 // the composer took something in: before is the row split as it stood
 // beforehand, and the writing area grows with the draft while the preview
-// appears with its type, so either one moves everything above the box. The
-// split is blind to the draft's text, so the preview is redrawn even when
-// nothing above the box moves.
+// grows with what the draft renders to, so either one moves everything above
+// the box. The preview is redrawn first because the split is measured against
+// its rows; reading the split off the previous keystroke's preview would
+// leave the panes above sized for a box the composer no longer draws.
 func (m *Model) tookDraft(before composerRows) {
 	m.replan()
+	m.rebuildPreview()
 	if before != m.composerRows() {
 		m.layout()
-		return
 	}
-	m.rebuildPreview()
 }
 
 func (m Model) notify(text string, isErr bool) Model {

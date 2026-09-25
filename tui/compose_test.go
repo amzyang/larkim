@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -534,4 +535,23 @@ func TestRenderBadge_NamesARemoteImage(t *testing.T) {
 	badge := ansi.Strip(m.renderBadge(m.width - 2))
 	require.Contains(t, badge, "image")
 	require.Contains(t, badge, "example.com")
+}
+
+// A draft that renders to fewer rows than the preview band could hold must
+// still leave the badge on the composer's last row: the band is drawn above
+// the badge, so rows it claims without filling pad the box underneath.
+func TestComposerRows_ShortPreviewLeavesNoRowUnderBadge(t *testing.T) {
+	m := sized(120, 40)
+	m.mode, m.previewOpen = modeInsert, true
+	m.input.SetValue("- abc\n- def")
+	m.input.Focus()
+	m.replan()
+	m.layout()
+
+	require.Less(t, len(m.previewRows), previewMaxRows, "the fixture has to be shorter than the band allows")
+
+	lines := strings.Split(ansi.Strip(m.renderInput()), "\n")
+	last := lines[len(lines)-2] // the row above the box's bottom border
+	require.Contains(t, last, m.draft.kind.msgType(), "the badge is the composer's last row")
+	require.Equal(t, len(m.previewRows), m.composerRows().preview, "the band claims only the rows the preview has")
 }

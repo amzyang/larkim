@@ -55,15 +55,15 @@ func TestComposerBand_ResolvesPreviewRuleAndInput(t *testing.T) {
 	require.Positive(t, r.quote, "and a quote, so composerAbove over-fills the box")
 
 	above := m.composerAbove(m.width - 2)
-	clip := max(0, len(above)+r.input+r.badge-r.total())
-	require.Positive(t, clip, "the preview's rule row is unbudgeted, so the box clips")
+	require.Equal(t, r.total(), len(above)+r.input+r.badge,
+		"the box draws exactly the rows the split claimed, so it neither pads nor clips")
 
-	for row := range r.preview - clip {
+	for row := range r.preview {
 		require.Equal(t, bandPreview, m.composerBand(row), "row %d", row)
 	}
-	require.Equal(t, bandOther, m.composerBand(r.preview-clip), "the rule under the preview is not the preview")
+	require.Equal(t, bandOther, m.composerBand(r.preview), "the rule under the preview is not the preview")
 
-	first := len(above) - clip
+	first := len(above)
 	require.Equal(t, bandOther, m.composerBand(first-1), "the quote is not the writing area")
 	for row := first; row < first+r.input; row++ {
 		require.Equal(t, bandInput, m.composerBand(row), "row %d", row)

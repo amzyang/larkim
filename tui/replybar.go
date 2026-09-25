@@ -25,17 +25,24 @@ const (
 type composerRows struct {
 	quote   int // the message a reply will attach to
 	preview int // the draft as the message list will draw it
+	rule    int // the line parting the preview from the writing area
 	pum     int // the completion popup, which sits closest to what it completes
 	input   int // the writing area
 	badge   int // the row naming the message type the draft will be sent as
 }
 
-func (r composerRows) total() int { return r.quote + r.preview + r.pum + r.input + r.badge }
+func (r composerRows) total() int {
+	return r.quote + r.preview + r.rule + r.pum + r.input + r.badge
+}
 
 // composerRows claims rows in the order the reader needs them: the quote and
 // the badge are one line each, the writing area grows with the draft, and the
-// preview lives on whatever is left. The thing being typed into outranks the
-// preview, so on a short terminal the preview shrinks and then goes.
+// preview takes what is left over, up to the rows it has to show. The thing
+// being typed into outranks the preview, so on a short terminal the preview
+// shrinks and then goes.
+//
+// The preview band is measured against previewRows, so a caller that changes
+// the draft rebuilds the preview before reading the split back.
 //
 // The badge row is claimed in every mode, including the ones that never draw a
 // badge. A box that changed height with the mode would jump the panes above it
@@ -63,7 +70,15 @@ func (m Model) composerRows() composerRows {
 		// from, where the preview only shows what they have already written.
 		r.pum = clamp(len(m.pum.hits), 0, min(pumMaxRows, extra-grow))
 		if m.previewOpen && m.draft.kind != kindText {
-			r.preview = clamp(extra-grow-r.pum, 0, previewMaxRows)
+			// Held to the rows the preview has as well as the rows there is
+			// room for, and one row short of them for the rule the band is
+			// drawn over. Every row the box draws has to be claimed: the box
+			// pads an under-filled one below the badge, which is drawn last,
+			// and drops the top off an over-filled one.
+			r.preview = clamp(extra-grow-r.pum-1, 0, min(previewMaxRows, len(m.previewRows)))
+			if r.preview > 0 {
+				r.rule = 1
+			}
 		}
 	case modeTarget:
 		// The chooser grows to its list the way the writing area grows to a
@@ -113,18 +128,13 @@ const (
 )
 
 // composerBand reads the same row split renderInput draws and cursorAt counts.
-// composerAbove hands the box more rows than composerRows claimed — the rule
-// under the preview is unbudgeted — so fitBlock clips from the top, and the
-// same clip is applied here or the caret and the wheel disagree about which
-// row the writing area starts on.
 func (m Model) composerBand(row int) composerBand {
 	r := m.composerRows()
-	above := m.composerAbove(m.width - 2)
-	clip := max(0, len(above)+r.input+r.badge-r.total())
+	first := len(m.composerAbove(m.width - 2))
 	switch {
-	case r.preview > 0 && row >= 0 && row+clip < r.preview:
+	case row >= 0 && row < r.preview:
 		return bandPreview
-	case row >= len(above)-clip && row < len(above)-clip+r.input:
+	case row >= first && row < first+r.input:
 		return bandInput
 	}
 	return bandOther
@@ -132,7 +142,9 @@ func (m Model) composerBand(row int) composerBand {
 
 // composerAbove is what the box draws over the writing area, top row first.
 // renderInput lays these rows out and cursorAt counts them, and the two must
-// not disagree about which row the writing area starts on.
+// not disagree about which row the writing area starts on. It draws exactly
+// the rows composerRows claimed above the writing area, so the box neither
+// pads nor clips.
 func (m Model) composerAbove(w int) []string {
 	var lines []string
 	if r := m.composerRows(); r.preview > 0 {

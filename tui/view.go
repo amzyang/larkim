@@ -668,12 +668,7 @@ func (m Model) cursorAt() *tea.Cursor {
 	// insert blurs the composer, so the caret is asked of a focused copy.
 	ta := m.input
 	ta.Focus()
-	above := m.composerAbove(w)
-	r := m.composerRows()
-	// fitBlock drops rows off the top of an over-filled box, lifting the
-	// writing area above the rows that claim to sit over it.
-	clip := max(0, len(above)+r.input+r.badge-r.total())
-	return place(ta.Cursor(), 1, top+len(above)-clip)
+	return place(ta.Cursor(), 1, top+len(m.composerAbove(w)))
 }
 
 // textinputCursor is where a text input's caret sits, in cells. bubbles counts
