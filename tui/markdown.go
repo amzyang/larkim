@@ -29,7 +29,7 @@ const mdIndent = 2
 func mdRows(body string, x store.Message, idx int, st msgStyle, g *leads, ms mentions) []msgRow {
 	src := []byte(strings.ReplaceAll(body, "\r", ""))
 	d := mdDoc{src: src, x: x, idx: idx, st: st, g: g, ms: ms}
-	return d.blocks(mdParser.Parse(src), 0)
+	return d.blocks(mdParser.Parse(src), 0, 0)
 }
 
 // mdDoc is what every block of one body is drawn against: the source it was
@@ -46,18 +46,21 @@ type mdDoc struct {
 }
 
 // blocks walks one level of the document. depth is how far the blocks are
-// nested inside lists and quotes, which is what their indent is drawn from.
-func (d mdDoc) blocks(parent ast.Node, depth int) []msgRow {
+// nested inside lists and quotes, which is what a bullet's shape is drawn
+// from; indent is the columns that nesting has already charged them, which a
+// list sets from the marker it draws rather than from the depth, so a wide
+// marker moves the text rather than pushing the row past the pane.
+func (d mdDoc) blocks(parent ast.Node, depth, indent int) []msgRow {
 	var rows []msgRow
 	for n := parent.FirstChild(); n != nil; n = n.NextSibling() {
-		rows = append(rows, d.block(n, depth)...)
+		rows = append(rows, d.block(n, depth, indent)...)
 	}
 	return rows
 }
 
-func (d mdDoc) block(n ast.Node, depth int) []msgRow {
-	pad := strings.Repeat(" ", depth*mdIndent)
-	room := max(4, d.st.inner()-depth*mdIndent)
+func (d mdDoc) block(n ast.Node, depth, indent int) []msgRow {
+	pad := strings.Repeat(" ", indent)
+	room := max(4, d.st.inner()-indent)
 	text := func(lines []string) []msgRow {
 		out := make([]msgRow, 0, len(lines))
 		for _, l := range lines {
@@ -76,7 +79,7 @@ func (d mdDoc) block(n ast.Node, depth int) []msgRow {
 
 	case ast.KindBlockquote:
 		var rows []msgRow
-		for _, r := range d.blocks(n, depth+1) {
+		for _, r := range d.blocks(n, depth+1, indent+mdIndent) {
 			// The gutter replaces the indent the nesting already paid for, so
 			// a quote does not drift further right than its contents need.
 			r.reindent(pad+"  ", pad+stDim.Render("│")+" ")
@@ -85,7 +88,7 @@ func (d mdDoc) block(n ast.Node, depth int) []msgRow {
 		return rows
 
 	case ast.KindList:
-		return d.list(n.(*ast.List), depth)
+		return d.list(n.(*ast.List), depth, indent)
 
 	case ast.KindCodeBlock:
 		c := n.(*ast.CodeBlock)
@@ -101,7 +104,7 @@ func (d mdDoc) block(n ast.Node, depth int) []msgRow {
 	}
 	// Anything with children larkim has no frame for still shows its content.
 	if n.HasChildren() {
-		return d.blocks(n, depth)
+		return d.blocks(n, depth, indent)
 	}
 	return nil
 }
@@ -115,7 +118,14 @@ func mdHeadingStyle(level int) lipgloss.Style {
 	return stBold
 }
 
-func (d mdDoc) list(l *ast.List, depth int) []msgRow {
+func (d mdDoc) list(l *ast.List, depth, indent int) []msgRow {
+	// One step for the whole list, taken from its last marker: "10." is the
+	// widest thing it draws, and an item indented less than its neighbour
+	// would read as nesting rather than as the same level.
+	step := mdIndent
+	if l.IsOrdered() {
+		step = len(strconv.Itoa(l.Start+l.ChildCount()-1)) + 2 // the dot, then the gap
+	}
 	var rows []msgRow
 	n := l.Start
 	for item := l.FirstChild(); item != nil; item = item.NextSibling() {
@@ -127,14 +137,13 @@ func (d mdDoc) list(l *ast.List, depth int) []msgRow {
 			marker = strconv.Itoa(n) + "."
 			n++
 		}
-		inner := d.blocks(item, depth+1)
-		for i := range inner {
-			if i == 0 {
-				// The marker takes the place of the first line's indent, so
-				// the text of every item starts at the same column.
-				inner[i].reindent(strings.Repeat(" ", (depth+1)*mdIndent),
-					strings.Repeat(" ", depth*mdIndent)+stDim.Render(marker)+" ")
-			}
+		inner := d.blocks(item, depth+1, indent+step)
+		if len(inner) > 0 {
+			// The marker takes the place of the first line's indent, so the
+			// text of every item starts at the same column.
+			inner[0].reindent(strings.Repeat(" ", indent+step),
+				strings.Repeat(" ", indent)+stDim.Render(marker)+
+					strings.Repeat(" ", step-lipgloss.Width(marker)))
 		}
 		rows = append(rows, inner...)
 	}
