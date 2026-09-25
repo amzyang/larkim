@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"encoding/json/jsontext"
 	"fmt"
 	"slices"
 	"strings"
@@ -131,6 +132,20 @@ func (s *Store) UpsertMessages(ctx context.Context, msgs []Message, now int64) (
 	return n, tx.Commit()
 }
 
+// compactJSON is the stored form of every JSON column: one canonical spelling,
+// no insignificant whitespace. The bodies arrive from lark-cli, which indents
+// its output, and namesSelf matches the id inside mentions_json as text — a
+// needle cannot carry the formatting of a program larkim does not own. Input
+// that does not parse is stored as it came: the column is a payload, and
+// dropping it would lose more than an odd spelling costs.
+func compactJSON(s string) string {
+	v := jsontext.Value(s)
+	if v.Compact() != nil {
+		return s
+	}
+	return string(v)
+}
+
 // UpdateRendered stores the human-readable rendering of a message. When the
 // message is its chat's newest, the chat's cold-stored summary picks up the
 // rendering in the same transaction.
@@ -141,7 +156,7 @@ func (s *Store) UpdateRendered(ctx context.Context, messageID, content, mentions
 	}
 	defer tx.Rollback()
 	if _, err := tx.ExecContext(ctx, `UPDATE messages SET content = ?, mentions_json = ?, reactions_json = ?, rendered_at = ? WHERE message_id = ?`,
-		content, mentionsJSON, reactionsJSON, now, messageID); err != nil {
+		content, compactJSON(mentionsJSON), compactJSON(reactionsJSON), now, messageID); err != nil {
 		return err
 	}
 	// A contains rule reads the rendering, so this is where a card first
@@ -177,6 +192,7 @@ func (s *Store) UpdateRendered(ctx context.Context, messageID, content, mentions
 // every UPDATE, value changed or not, and a refresh that re-states what the
 // row already holds would have every open pane reload for nothing.
 func (s *Store) UpdateReactions(ctx context.Context, messageID, reactionsJSON string) error {
+	reactionsJSON = compactJSON(reactionsJSON)
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err

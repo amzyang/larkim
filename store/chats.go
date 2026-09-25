@@ -277,6 +277,11 @@ const unreadJoin = `LEFT JOIN (` + unreadAggregate + `) u ON u.chat_id = c.chat_
 // namesSelf tests whether a message names one person. The needle carries the
 // JSON field around the id so that one open id cannot match another that
 // merely starts with it.
+//
+// Matching text rather than parsing rests on mentions_json being stored
+// minified, which compactJSON guarantees on every write. lark-cli indents what
+// it prints, so a row written around that normalisation matches nothing and
+// takes the @ marker and the mentions panel down with it, silently.
 const namesSelf = `instr(m.mentions_json, '"id":"' || ? || '"') > 0`
 
 // atMeExpr flags a chat holding an unread message that names the reader. It

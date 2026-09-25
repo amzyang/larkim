@@ -147,3 +147,45 @@ func TestMentionsOf_LeavesOutSilencedMessages(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, hits)
 }
+
+// prettyMentions is how lark-cli actually prints a mention block: indented,
+// with a space after every colon. Every other test here writes the compact
+// spelling by hand, which is why the needle could stop matching real rows
+// without a test noticing.
+const prettyMentions = `[
+  {
+    "key": "@_user_1",
+    "id": "ou_me",
+    "name": "林岚"
+  }
+]`
+
+func TestListChats_AtMeMatchesMentionsAsLarkCliPrintsThem(t *testing.T) {
+	s := atMeStore(t, prettyMentions, 0)
+
+	assert.True(t, listOne(t, s, "ou_me").UnreadMention,
+		"the stored spelling of a mention is the store's own, not lark-cli's")
+}
+
+func TestMentionsOf_FindsMentionsAsLarkCliPrintsThem(t *testing.T) {
+	s := atMeStore(t, prettyMentions, 0)
+
+	found, err := s.MentionsOf(t.Context(), "ou_me", 10)
+	require.NoError(t, err)
+	require.Len(t, found, 1)
+	assert.Equal(t, "om_at", found[0].MessageID)
+}
+
+// A body that does not parse is still the only copy of what arrived.
+func TestUpdateRendered_KeepsUnparsableJSONAsItCame(t *testing.T) {
+	s, ctx := openTest(t), t.Context()
+	require.NoError(t, s.EnsureChat(ctx, "oc_quiet", 1))
+	_, err := s.UpsertMessages(ctx, []Message{msgAt("om_a", "oc_quiet", 100, 1, "hi")}, 1)
+	require.NoError(t, err)
+
+	require.NoError(t, s.UpdateRendered(ctx, "om_a", "hi", "{not json", "", 150))
+
+	m, err := s.GetMessage(ctx, "om_a")
+	require.NoError(t, err)
+	assert.Equal(t, "{not json", m.MentionsJSON)
+}

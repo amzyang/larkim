@@ -65,6 +65,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `docs/SCHEMA.md` 是对外契约（直连 SQLite 的消费者依赖它），改列必须同步更新
 - 时间戳一律 Unix 毫秒 UTC；消息顺序 `ORDER BY create_ms, message_position, id`；`message_position = -1` 表示 thread 回复
 - FTS5 用 trigram 分词（unicode61 把整段 CJK 当一个 token），MATCH 仅对 ≥3 字符词有效，短词走 `instr` 回退
+- JSON 列（`mentions_json`、`reactions_json`、`chats.last_*_json`）一律存最小化形式，由 store 的 `compactJSON` 在写入时保证；`namesSelf` 按文本匹配 id 就靠这条。lark-cli 的输出是缩进的，绕过 `UpdateRendered`/`UpdateReactions` 直接写这几列会让 @我 标记和 `:mentions` 面板静默失效
 - 单写者：只有持 `daemon.lock` 的进程写同步数据，其他进程只能写 `read_state.local_read_at`；外部消费者的处理进度由消费者自持，库里不记
 - 发给飞书的时间必须用 `larkTimeLayout`，绝不输出 `Z`（`messages/search` 原样转发）
 

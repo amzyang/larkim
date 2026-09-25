@@ -60,7 +60,7 @@ One row per message id, from the raw message API (`create_ms` is millisecond pre
 | `deleted_seen_at` | when the recall was first observed; `content_raw` keeps the last known body |
 | `thread_id` | `omt_…` for thread roots and replies |
 | `reply_to` | parent message of a direct reply |
-| `mentions_json` | rendered mentions, `[{key,id,name}]` |
+| `mentions_json` | rendered mentions, `[{key,id,name}]`. Stored minified, like every JSON column here, so an id can be matched as text |
 | `reactions_json` | reaction summary, `{counts:[{reaction_type,count}], details:[{emoji_type,operator:{operator_id,operator_type},action_time,…}]}`; empty when the message carries none. `count` and `action_time` are **strings**, the latter in Unix seconds. `counts` is the server's total and arrives alphabetically; `details` is one page of the individual reactions, so it may not name every reactor. The client's own order is by each emoji's earliest `action_time` |
 | `raw_json` | the API item as received |
 | `rendered_at` | 0 = rendering pending (also reset when `update_ms` changes) |
