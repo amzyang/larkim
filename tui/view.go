@@ -136,11 +136,18 @@ func (m *Model) layout() {
 	m.input.SetHeight(m.composerRows().input)
 	m.cmdline.SetWidth(max(10, m.width-4))
 	m.rebuildPreview()
+	// A resize rewraps every row, so each pane is held by the message on its
+	// top row rather than scrolled back to its cursor: a resize is not a
+	// cursor move, and layout also runs on a paste and on the editor's return.
+	msgA := topAnchor(m.msgRows, m.msgs, m.msgTop)
+	msgTail := atTail(m.msgRows, m.msgTop, m.msgListHeight())
+	thrA := topAnchor(m.threadRows, m.thread, m.threadTop)
+	thrTail := atTail(m.threadRows, m.threadTop, m.listHeight())
 	m.rebuildMessages()
 	m.rebuildThread()
 	m.clampChat()
-	m.scrollMessagesToSelection()
-	m.scrollThreadToSelection()
+	m.msgTop = holdTop(m.msgRows, m.msgs, msgA, msgTail, m.msgTop, m.msgListHeight())
+	m.threadTop = holdTop(m.threadRows, m.thread, thrA, thrTail, m.threadTop, m.listHeight())
 	if m.foldRight() && m.focus == paneMessages {
 		m.focus = paneThread
 	}
@@ -357,19 +364,6 @@ func lastRow(rows []msgRow, idx int) int {
 	return last
 }
 
-// cursorInWindow pulls the cursor into the rows a scroll left on screen. The
-// cursor is what a reload scrolls back to, so one left behind off screen drags
-// the viewport back down with it the next time the store changes.
-func cursorInWindow(rows []msgRow, idx, top, h int) int {
-	switch {
-	case lastRow(rows, idx) < top:
-		return rowAt(rows, top)
-	case firstRow(rows, idx) >= top+h:
-		return rowAt(rows, min(top+h, len(rows))-1)
-	}
-	return idx
-}
-
 func rowAt(rows []msgRow, line int) int {
 	if line < 0 || line >= len(rows) {
 		return -1
@@ -387,6 +381,16 @@ func zoneAt(rows []msgRow, line, x int) (clickZone, bool) {
 	return z, z.hit(x)
 }
 
+// holdTop is where a rebuilt pane's viewport lands: at the new bottom when it
+// was already showing the last line, and on the message its top row held
+// otherwise.
+func holdTop(rows []msgRow, msgs []store.Message, a lineAnchor, tail bool, fall, h int) int {
+	if tail {
+		return max(0, len(rows)-h)
+	}
+	return a.line(rows, msgs, h, fall)
+}
+
 func (m *Model) scrollMessagesToSelection() {
 	m.msgTop = scrollTo(m.msgRows, m.msgIdx, m.msgTop, m.msgListHeight())
 }
@@ -394,6 +398,37 @@ func (m *Model) scrollMessagesToSelection() {
 func (m *Model) scrollThreadToSelection() {
 	m.threadTop = scrollTo(m.threadRows, m.threadIdx, m.threadTop, m.listHeight())
 }
+
+// lineAnchor is the line a pane's top row sits on, held as the message that
+// owns it plus the offset inside that message's rows. A reload renumbers every
+// line and a resize rewraps them, so a raw line index would slide the view.
+type lineAnchor struct {
+	id  string
+	off int
+}
+
+func topAnchor(rows []msgRow, msgs []store.Message, top int) lineAnchor {
+	if top <= 0 || top >= len(rows) {
+		return lineAnchor{}
+	}
+	idx := rows[top].idx
+	return lineAnchor{idAt(msgs, idx), top - firstRow(rows, idx)}
+}
+
+// line is where the anchor's message starts now, or fall when the page no
+// longer carries it.
+func (a lineAnchor) line(rows []msgRow, msgs []store.Message, h, fall int) int {
+	i := indexOfID(msgs, a.id)
+	if i < 0 {
+		return clamp(fall, 0, max(0, len(rows)-h))
+	}
+	return clamp(firstRow(rows, i)+a.off, 0, max(0, len(rows)-h))
+}
+
+// atTail reports whether the last line is on screen, which is what makes an
+// arriving message scroll the view. It is the viewport's own question: a
+// cursor the wheel left parked on the newest message must not answer it.
+func atTail(rows []msgRow, top, h int) bool { return top >= max(0, len(rows)-h) }
 
 func scrollTo(rows []msgRow, idx, top, h int) int {
 	if len(rows) == 0 {

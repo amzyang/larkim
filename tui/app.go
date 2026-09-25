@@ -78,8 +78,13 @@ type Model struct {
 	avatars           avatars
 	pics              *pictures // message images; nil on a terminal without graphics
 	chatFilter        string
-	chatIdx           int
-	chatTop           int
+	// filterPin is what a cancelled filter puts back. Opening the filter takes
+	// the chat pane and typing into it renumbers the list, so a session that
+	// ends in nothing has to restore what it borrowed rather than leave the
+	// reader somewhere they never asked to be.
+	filterPin filterPin
+	chatIdx   int
+	chatTop   int
 
 	chatID string
 	// msgs is what the pane indexes: the rows the store returned, held in
@@ -358,24 +363,28 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.focused = false
 		return m, nil
 	case chatsLoadedMsg:
-		was := chatIDAt(m.visibleChats(), m.chatIdx)
+		vis := m.visibleChats()
+		wasCursor, wasTop := chatIDAt(vis, m.chatIdx), chatIDAt(vis, m.chatTop)
 		m.chats, m.unread = msg.chats, msg.unread
 		if m.openingChat() == "" && len(m.chats) > 0 {
 			return m, m.openChat(m.chats[0].ChatID)
 		}
-		m.repinChat(was)
+		m.repinChat(wasCursor, wasTop)
 		return m, nil
 	case messagesLoadedMsg:
-		// A reload is not a cursor move. The reader's place is held by message
-		// id and the screen row it sits on, because a page that slid a message
-		// off its head renumbers every row under the cursor; only a cursor
-		// already on the newest message follows the one that arrives.
+		// A reload is not a cursor move. Cursor and viewport are held apart,
+		// each by the message it was on, because a page that slid a message off
+		// its head renumbers every row: the cursor keeps its own message, and
+		// the view keeps the message on its top row. Only a view already
+		// showing the last line follows the message that arrives, and only a
+		// cursor already on the newest message goes with it.
 		wasOn, atEnd := idAt(m.msgs, m.msgIdx), m.msgIdx >= len(m.msgs)-1
-		row := firstRow(m.msgRows, m.msgIdx) - m.msgTop
+		anchor := topAnchor(m.msgRows, m.msgs, m.msgTop)
+		tailed := atTail(m.msgRows, m.msgTop, m.msgListHeight())
 		switch msg.chatID {
 		case m.pendingChat:
 			m.enterChat()
-			wasOn, atEnd = "", true
+			wasOn, atEnd, tailed = "", true, true
 		case m.chatID:
 		default:
 			return m, nil
@@ -391,7 +400,8 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if i := indexOfID(m.msgs, wasOn); !atEnd && i >= 0 {
 			m.msgIdx = i
 		}
-		if m.pendingSelect != "" {
+		jumped := m.pendingSelect != ""
+		if jumped {
 			for i, x := range m.msgs {
 				if x.MessageID == m.pendingSelect {
 					m.msgIdx = i
@@ -401,10 +411,12 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.repinSelection(wasOn)
 		m.rebuildMessages()
-		if !atEnd {
-			m.msgTop = clamp(firstRow(m.msgRows, m.msgIdx)-row, 0, max(0, len(m.msgRows)-m.msgListHeight()))
+		if jumped {
+			// Landing on a search hit is a cursor move, so this one scrolls.
+			m.scrollMessagesToSelection()
+		} else {
+			m.msgTop = holdTop(m.msgRows, m.msgs, anchor, tailed, m.msgTop, m.msgListHeight())
 		}
-		m.scrollMessagesToSelection()
 		return m, m.takeRead(msg.chatID, msg.msgs)
 	case searchMsg:
 		m.markDots(msg.msgs)
@@ -423,6 +435,8 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		wasOn := idAt(m.thread, m.threadIdx)
+		anchor := topAnchor(m.threadRows, m.thread, m.threadTop)
+		tailed := atTail(m.threadRows, m.threadTop, m.listHeight())
 		m.markDots(msg.msgs)
 		m.threadBase, m.threadMeta = msg.msgs, msg.meta
 		m.applyOutbox()
@@ -431,6 +445,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.repinSelection(wasOn)
 		m.rebuildThread()
+		m.threadTop = holdTop(m.threadRows, m.thread, anchor, tailed, m.threadTop, m.listHeight())
 		return m, nil
 	case revMsg:
 		return m, tea.Batch(waitForRev(m.revs), m.reloadCurrent())
@@ -660,25 +675,30 @@ func (m *Model) selectCurrentChat() {
 		m.chatIdx = idx
 	}
 	m.clampChat()
+	m.scrollChatToCursor()
 }
 
-// repinChat puts the cursor back on was — the chat it was pointing at before
-// the reload — and keeps that chat on the screen row it was already on. Chats
-// sort by newest message, so a message landing in a quiet chat carries it tens
-// of rows; an index kept across the swap would follow the row rather than the
-// chat, and following the chat without moving the viewport with it throws the
-// cursor to the edge of the pane. A filter being typed owns the cursor
-// instead.
-func (m *Model) repinChat(was string) {
-	vis := m.visibleChats()
-	if idx := indexOfChat(vis, was); idx >= 0 && m.mode != modeFilter {
-		row := clamp(m.chatIdx-m.chatTop, 0, max(0, m.chatListHeight()-1))
-		m.chatIdx = idx
-		m.chatTop = idx - row
+// repinChat carries the cursor and the viewport across a reload, each by the
+// chat it was on. Chats sort by newest message, so a message landing in a
+// quiet chat carries it tens of rows; an index kept across the swap would
+// follow the row rather than the chat.
+//
+// The two are pinned apart: the viewport holds the chat on its top row and the
+// cursor holds its own. Pulling the viewport onto the cursor is what throws a
+// wheel scroll away a second after the reader spent it, and the message pane's
+// head already names the chat that is open. A filter being typed owns both.
+func (m *Model) repinChat(wasCursor, wasTop string) {
+	if m.mode == modeFilter {
+		m.clampChat()
+		return
 	}
-	// renderChats indexes the list straight from chatTop, so it has to land
-	// inside a list that may also have grown shorter.
-	m.chatTop = clamp(m.chatTop, 0, max(0, len(vis)-m.chatListHeight()))
+	vis := m.visibleChats()
+	if idx := indexOfChat(vis, wasCursor); idx >= 0 {
+		m.chatIdx = idx
+	}
+	if top := indexOfChat(vis, wasTop); top >= 0 {
+		m.chatTop = top
+	}
 	m.clampChat()
 }
 
@@ -786,18 +806,20 @@ func (m Model) visibleChats() []store.Chat {
 	return out
 }
 
+// clampChat keeps the cursor and the viewport inside the list. Neither is
+// pulled to the other: a wheel scroll is allowed to park the cursor off
+// screen, and only a cursor move scrolls the list back to it.
 func (m *Model) clampChat() {
 	n := len(m.visibleChats())
-	if m.chatIdx >= n {
-		m.chatIdx = n - 1
-	}
-	if m.chatIdx < 0 {
-		m.chatIdx = 0
-	}
+	m.chatIdx = clamp(m.chatIdx, 0, max(0, n-1))
+	m.chatTop = clamp(m.chatTop, 0, max(0, n-m.chatListHeight()))
+}
+
+// scrollChatToCursor brings the chat under the cursor onto the screen. Only a
+// cursor move spends it, so a wheel scroll that parked the cursor off screen
+// survives until the reader moves it again.
+func (m *Model) scrollChatToCursor() {
 	h := m.chatListHeight()
-	if h <= 0 {
-		return
-	}
 	if m.chatIdx < m.chatTop {
 		m.chatTop = m.chatIdx
 	}
@@ -882,6 +904,14 @@ func (m Model) onCommandKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+// filterPin holds a filter session's borrowings: the pane the reader was in,
+// and the chats the cursor and the top row sat on. The chats are held by id
+// because typing renumbers the list under both.
+type filterPin struct {
+	focus       pane
+	cursor, top string
+}
+
 func (m Model) onFilterKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch k.String() {
 	case "esc":
@@ -889,12 +919,14 @@ func (m Model) onFilterKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.cmdline.Blur()
 		m.cmdline.Reset()
 		m.chatFilter = ""
-		m.selectCurrentChat()
+		m.focus = m.filterPin.focus
+		m.repinChat(m.filterPin.cursor, m.filterPin.top)
 		return m, nil
 	case "enter":
 		m.mode = modeNormal
 		m.cmdline.Blur()
 		m.clampChat()
+		m.scrollChatToCursor()
 		return m, m.openHighlighted()
 	}
 	var cmd tea.Cmd
@@ -988,6 +1020,8 @@ func (m Model) onNormalKey(s string) (tea.Model, tea.Cmd) {
 			return m, openInFeishu(m.deps, m.chatID, 0)
 		}
 	case "/":
+		vis := m.visibleChats()
+		m.filterPin = filterPin{m.focus, chatIDAt(vis, m.chatIdx), chatIDAt(vis, m.chatTop)}
 		m.mode = modeFilter
 		m.focus = paneChats
 		m.cmdline.Prompt = "/"
@@ -1293,6 +1327,7 @@ func (m Model) move(n int) (tea.Model, tea.Cmd) {
 	case paneChats:
 		m.chatIdx = clamp(m.chatIdx+n, 0, len(m.visibleChats())-1)
 		m.clampChat()
+		m.scrollChatToCursor()
 		return m, m.moveToChat(time.Now())
 	case paneMessages:
 		count := len(m.msgs)
@@ -1736,10 +1771,8 @@ func (m Model) onWheel(ms tea.Mouse) (tea.Model, tea.Cmd) {
 		m.chatTop = clamp(m.chatTop+step, 0, max(0, len(vis)-m.chatListHeight()))
 	case paneMessages:
 		m.msgTop = clamp(m.msgTop+step, 0, max(0, len(m.msgRows)-m.msgListHeight()))
-		m.msgIdx = cursorInWindow(m.msgRows, m.msgIdx, m.msgTop, m.msgListHeight())
 	case paneThread:
 		m.threadTop = clamp(m.threadTop+step, 0, max(0, len(m.threadRows)-m.listHeight()))
-		m.threadIdx = cursorInWindow(m.threadRows, m.threadIdx, m.threadTop, m.listHeight())
 	}
 	return m, nil
 }

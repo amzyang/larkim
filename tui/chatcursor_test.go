@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/amzyang/larkim/store"
 	"github.com/stretchr/testify/require"
 )
@@ -30,28 +31,32 @@ func reorder(chats []store.Chat, from, to int) []store.Chat {
 	return append(append(append([]store.Chat{}, rest[:to]...), c), rest[to:]...)
 }
 
-func TestRepinChat_HoldsTheRowTheCursorSitsOn(t *testing.T) {
+func TestRepinChat_CursorAndViewportFollowTheirOwnChats(t *testing.T) {
 	m := sized(120, 36)
 	m.chatID, m.chatIdx, m.chatTop = "oc_40", 40, 34
-	row := m.chatIdx - m.chatTop
-
+	// Moving 40 down to 45 walks 41..45 up one place each, carrying both the
+	// cursor's chat and the chat on the top row with it.
 	m.chats = reorder(m.chats, 40, 45)
-	m.repinChat(m.chatID)
+	m.repinChat("oc_40", "oc_34")
 
 	require.Equal(t, 45, m.chatIdx, "the cursor follows the chat, not the row")
-	require.Equal(t, row, m.chatIdx-m.chatTop, "and the chat stays on the screen row it was on")
+	require.Equal(t, 34, m.chatTop, "and the viewport follows the chat on its top row")
+	require.Equal(t, 11, m.chatIdx-m.chatTop, "so the cursor moved down the screen and the list did not move")
 }
 
-func TestRepinChat_StaysInsideTheListWhenTheChatMovesToTheTop(t *testing.T) {
+func TestRepinChat_ViewportHoldsItsTopRowWhenTheCursorsChatIsCarriedAway(t *testing.T) {
 	m := sized(120, 36)
 	m.chatID, m.chatIdx, m.chatTop = "oc_40", 40, 30
 
+	// A message lands in the chat under the cursor and carries it to the top.
+	// The Feishu client does not scroll the sidebar after it; the message
+	// pane's head is what names the chat that is open.
 	m.chats = reorder(m.chats, 40, 1)
-	m.repinChat(m.chatID)
+	m.repinChat("oc_40", "oc_30")
 
-	require.Equal(t, 1, m.chatIdx)
-	require.GreaterOrEqual(t, m.chatTop, 0, "renderChats indexes the list straight from chatTop")
-	require.Less(t, m.chatIdx-m.chatTop, m.chatListHeight(), "the cursor is on screen")
+	require.Equal(t, 1, m.chatIdx, "the cursor follows its chat")
+	require.Equal(t, 31, m.chatTop, "the chat on the top row stayed on the top row")
+	require.Less(t, m.chatIdx, m.chatTop, "the cursor is allowed off screen")
 }
 
 func TestRepinChat_StaysInsideTheListWhenItShrinks(t *testing.T) {
@@ -60,7 +65,7 @@ func TestRepinChat_StaysInsideTheListWhenItShrinks(t *testing.T) {
 
 	m.chats = m.chats[:3]
 	m.chatID = "oc_1"
-	m.repinChat(m.chatID)
+	m.repinChat(m.chatID, "oc_30")
 
 	require.Equal(t, 1, m.chatIdx)
 	require.GreaterOrEqual(t, m.chatTop, 0)
@@ -160,4 +165,47 @@ func TestChatsLoaded_ACursorAheadOfTheOpenChatKeepsItsPlace(t *testing.T) {
 
 	require.Equal(t, 40, m.chatIdx, "a reload belongs to the list, not to the cursor")
 	require.Equal(t, 34, m.chatTop)
+}
+
+// wheelChats turns the wheel n notches over the chat list, the way a hand does
+// when it is looking for a chat it can see rather than moving the cursor.
+func wheelChats(m Model, n int, b tea.MouseButton) Model {
+	for range n {
+		mm, _ := m.onWheel(tea.Mouse{Button: b, X: 5, Y: 5})
+		m = mm.(Model)
+	}
+	return m
+}
+
+func TestOnWheel_ChatsKeepsItsScrollAcrossAReload(t *testing.T) {
+	m := sized(120, 36)
+	m.chatID, m.chatIdx, m.chatTop = "oc_0", 0, 0
+
+	m = wheelChats(m, 3, tea.MouseWheelDown)
+	top := m.chatTop
+	require.Positive(t, top, "the wheel has to have somewhere to scroll")
+	require.Less(t, m.chatIdx, top, "the wheel left the cursor off screen")
+
+	mm, _ := m.update(chatsLoadedMsg{chats: m.chats})
+	m = mm.(Model)
+
+	require.Equal(t, top, m.chatTop, "a reload must not undo a wheel scroll")
+	require.Equal(t, 0, m.chatIdx, "and must not move the cursor either")
+
+	// Nothing downstream may assume the cursor is among the rows being drawn.
+	require.NotPanics(t, func() { m.renderChats(m.bodyHeight()) })
+	require.NotPanics(t, func() { m.avatarPrepare() })
+}
+
+func TestScrollChatToCursor_ACursorMoveBringsTheListBack(t *testing.T) {
+	m := sized(120, 36)
+	m.focus, m.chatID, m.chatIdx, m.chatTop = paneChats, "oc_0", 0, 0
+	m = wheelChats(m, 3, tea.MouseWheelDown)
+	require.Less(t, m.chatIdx, m.chatTop)
+
+	mm, _ := m.move(1)
+	m = mm.(Model)
+
+	require.GreaterOrEqual(t, m.chatIdx, m.chatTop, "moving the cursor is what scrolls back to it")
+	require.Less(t, m.chatIdx, m.chatTop+m.chatListHeight())
 }

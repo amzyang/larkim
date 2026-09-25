@@ -266,7 +266,7 @@ func TestRenderStatus_StaysOneLine(t *testing.T) {
 func TestChatsLoaded_CursorFollowsItsOwnChat(t *testing.T) {
 	m := sized(120, 36)
 	m.chatID = "oc_3"
-	m.repinChat(m.chatID)
+	m.repinChat(m.chatID, chatIDAt(m.visibleChats(), m.chatTop))
 	require.Equal(t, "oc_3", m.visibleChats()[m.chatIdx].ChatID)
 
 	// A message in another chat re-sorts the list; the cursor belongs to the
@@ -307,6 +307,9 @@ func TestSelection_TheSelectedMessageShowsItsTime(t *testing.T) {
 func TestMove_StepsThroughEveryMessageAcrossMergedBlocks(t *testing.T) {
 	m := sized(120, 24)
 	m.focus, m.msgIdx = paneMessages, 0
+	// A pane with nothing in it yet counts as sitting at its tail, so the first
+	// build lands on the newest message; this walk starts at the oldest.
+	m.scrollMessagesToSelection()
 	for i := range m.msgs {
 		require.Equal(t, i, m.msgIdx, "j stops on every message, not on every block")
 		require.GreaterOrEqual(t, firstRow(m.msgRows, i), m.msgTop, "the selected message is on screen")
@@ -367,4 +370,42 @@ func TestRenderSearchRows_DoesNotLendOneChatsPeerToAnothers(t *testing.T) {
 	}
 	require.Contains(t, out.String(), stAccent.Render("@李四"),
 		"hits run across chats, so the one the cursor sits on lends them nothing")
+}
+
+func TestOnFilterKey_CancellingAnEmptyFilterChangesNothing(t *testing.T) {
+	m := sized(120, 36)
+	m.focus, m.chatID, m.chatIdx, m.chatTop = paneMessages, "oc_0", 0, 0
+	m = wheelChats(m, 3, tea.MouseWheelDown)
+	before := [3]int{int(m.focus), m.chatIdx, m.chatTop}
+
+	mm, _ := m.onNormalKey("/")
+	m = mm.(Model)
+	mm, _ = m.onFilterKey(tea.KeyPressMsg{Code: tea.KeyEscape})
+	m = mm.(Model)
+
+	require.Equal(t, modeNormal, m.mode)
+	require.Empty(t, m.chatFilter)
+	require.Equal(t, before, [3]int{int(m.focus), m.chatIdx, m.chatTop},
+		"opening the filter and leaving it without typing must change nothing")
+}
+
+func TestOnFilterKey_CancellingPutsTheReaderBackWhereTheyWere(t *testing.T) {
+	m := sized(120, 36)
+	m.focus, m.chatID, m.chatIdx, m.chatTop = paneMessages, "oc_0", 40, 34
+	onCursor, onTop := "oc_40", "oc_34"
+
+	mm, _ := m.onNormalKey("/")
+	m = mm.(Model)
+	for _, r := range "群 7" {
+		mm, _ = m.onFilterKey(tea.KeyPressMsg{Code: r, Text: string(r)})
+		m = mm.(Model)
+	}
+	require.NotEmpty(t, m.chatFilter, "the filter has to have taken the keys")
+	mm, _ = m.onFilterKey(tea.KeyPressMsg{Code: tea.KeyEscape})
+	m = mm.(Model)
+
+	require.Empty(t, m.chatFilter, "esc drops the filter")
+	require.Equal(t, paneMessages, m.focus, "and hands the pane back")
+	require.Equal(t, onCursor, chatIDAt(m.visibleChats(), m.chatIdx), "the cursor is on the chat it was on")
+	require.Equal(t, onTop, chatIDAt(m.visibleChats(), m.chatTop), "and the list is where it was")
 }
