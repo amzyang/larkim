@@ -97,3 +97,27 @@ func TestResolveDocLinks_ReadsLinksFromBodiesStoredBeforeTitlesWere(t *testing.T
 	v, _, _ = s.Store.GetState(ctx, KeyDocScanID)
 	require.NotEmpty(t, v, "the cursor moves so later ticks cost an empty query")
 }
+
+func TestResolveDocLinks_WaitsBeforeAskingAgainAboutADocumentLeftUnanswered(t *testing.T) {
+	s, f, clk := newSyncer(t)
+	ctx := context.Background()
+	f.DocsSilent["docx/AbC123"] = true
+	docMessage(t, s, "om_1", "https://example.feishu.cn/docx/AbC123")
+
+	n, err := s.resolveDocLinks(ctx, clk.t)
+	require.NoError(t, err)
+	require.Zero(t, n, "neither named nor refused is nothing to record")
+	require.Equal(t, 1, callsTo(f, "doc-titles"))
+
+	_, err = s.resolveDocLinks(ctx, clk.t.Add(time.Minute))
+	require.NoError(t, err)
+	require.Equal(t, 1, callsTo(f, "doc-titles"),
+		"a tick is three seconds; asking every one of them spends the drive quota on the same silence")
+
+	f.Docs["docx/AbC123"] = larkcli.DocTitle{Type: "docx", Title: "排期"}
+	delete(f.DocsSilent, "docx/AbC123")
+	_, err = s.resolveDocLinks(ctx, clk.t.Add(docRetryEvery))
+	require.NoError(t, err)
+	labels, _ := s.Store.DocLabels(ctx)
+	require.Equal(t, "排期", labels["docx/AbC123"].Title, "the document is still worth a title")
+}

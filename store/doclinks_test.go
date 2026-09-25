@@ -65,6 +65,23 @@ func TestFindDocRefs_ReadsEveryDocumentABodyLinksTo(t *testing.T) {
 		"the full stop after a URL belongs to the sentence")
 }
 
+func TestDeferDocLinks_PushesBackWhatCameBackUnanswered(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+	ref := DocRef{"docx", "AbC123"}
+	require.NoError(t, s.AddPendingDocLinks(ctx, []DocRef{ref}))
+
+	rev := mustRev(t, s)
+	require.NoError(t, s.DeferDocLinks(ctx, []DocRef{ref}, 1000))
+	require.Equal(t, rev, mustRev(t, s), "nothing a reader can see has changed")
+
+	due, err := s.DocLinksDue(ctx, 999, 10)
+	require.NoError(t, err)
+	require.Empty(t, due, "the row is out of the running until its clock comes round")
+	due, _ = s.DocLinksDue(ctx, 1000, 10)
+	require.Equal(t, []DocRef{ref}, due, "a document still without a title is worth another ask")
+}
+
 func TestDocLinks_Lifecycle(t *testing.T) {
 	s := openTest(t)
 	ctx := context.Background()

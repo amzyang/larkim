@@ -68,6 +68,11 @@ type Fake struct {
 	// the request spells it. A document listed nowhere comes back denied, as
 	// one the identity cannot read does.
 	Docs map[string]DocTitle
+	// DocsSilent are documents DocTitles leaves out of both lists, keyed like
+	// Docs. The endpoint answers per token, and the echo a title is matched
+	// back by is optional upstream, so a token can come back neither named
+	// nor refused.
+	DocsSilent map[string]bool
 	// Apps are the apps AppDetail can resolve, by app id.
 	Apps map[string]AppDetail
 	// SentKeys records the idempotency key of every send, in order, so a
@@ -103,6 +108,7 @@ func NewFake() *Fake {
 		Details:          map[string]UserDetail{},
 		Apps:             map[string]AppDetail{},
 		Docs:             map[string]DocTitle{},
+		DocsSilent:       map[string]bool{},
 		Self:             Identity{AppID: "cli_test", UserOpenID: "ou_self"},
 	}
 }
@@ -442,7 +448,11 @@ func (f *Fake) DocTitles(_ context.Context, refs []DocRef) (DocTitles, error) {
 	defer f.mu.Unlock()
 	var out DocTitles
 	for _, r := range refs {
-		d, ok := f.Docs[r.Type+"/"+r.Token]
+		key := r.Type + "/" + r.Token
+		if f.DocsSilent[key] {
+			continue
+		}
+		d, ok := f.Docs[key]
 		if !ok {
 			out.Denied = append(out.Denied, r)
 			continue

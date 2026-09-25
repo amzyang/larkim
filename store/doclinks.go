@@ -148,6 +148,28 @@ func (s *Store) MarkDocDenied(ctx context.Context, ref DocRef) error {
 	return err
 }
 
+// DeferDocLinks pushes back documents a batch asked about but came back
+// without an answer for. The endpoint answers per token, and a token named
+// in neither list leaves its row exactly as it was; without a clock of its
+// own such a row is due again on the very next tick, for good.
+func (s *Store) DeferDocLinks(ctx context.Context, refs []DocRef, at int64) error {
+	if len(refs) == 0 {
+		return nil
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for _, r := range refs {
+		if _, err := tx.ExecContext(ctx, `UPDATE doc_titles
+ SET next_attempt_at = ? WHERE doc_type = ? AND token = ?`, at, r.Type, r.Token); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
 // DocLabels reads every document a pane could need to name. A personal
 // archive holds these in the thousands at most, so one read beats working
 // out which links the rows on screen happen to spell.
