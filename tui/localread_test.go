@@ -35,7 +35,7 @@ func readModel(t *testing.T) (Model, *store.Store) {
 // does, running whatever the model asks for in return.
 func arrive(t *testing.T, m Model, st *store.Store, chatID string) Model {
 	t.Helper()
-	msg, ok := loadMessages(st, chatID, 0, "")().(messagesLoadedMsg)
+	msg, ok := loadMessages(Deps{Store: st}, chatID, 0)().(messagesLoadedMsg)
 	require.True(t, ok)
 	next, cmd := m.update(msg)
 	collect(cmd)

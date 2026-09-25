@@ -67,7 +67,9 @@ func (m Model) openForward() (tea.Model, tea.Cmd) {
 	m.fwd = forwarder{msg: x, input: in}
 	m.fwd.hits = m.fwdSearch("")
 	m.layout()
-	return m, m.fwd.input.Focus()
+	// The chats are already in hand, so the chooser opens on them and the
+	// people drop in behind once the table has been read.
+	return m, tea.Batch(m.fwd.input.Focus(), loadContacts(m.deps))
 }
 
 // fwdSearch narrows the places a message can go. Chats come before people, in
@@ -207,11 +209,14 @@ func (m Model) renderForward() string {
 	return paneStyle(true, w).Render(strings.Join(append(lines[:rows+1], gist), "\n"))
 }
 
-// loadContacts fills the list the forward chooser offers people from.
-func loadContacts(st *store.Store) tea.Cmd {
+// loadContacts fills the list the forward chooser offers people from. It reads
+// the whole contacts table, raw_json and all, so it is asked for when a pane
+// that needs it opens rather than on every refresh.
+func loadContacts(d Deps) tea.Cmd {
 	return func() tea.Msg {
-		people, err := st.ListContacts(context.Background(), 0)
+		people, err := d.Store.ListContacts(context.Background(), 0)
 		if err != nil {
+			d.log().Error("load contacts", "err", err)
 			return contactsLoadedMsg{}
 		}
 		return contactsLoadedMsg{people: people}

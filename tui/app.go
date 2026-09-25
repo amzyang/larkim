@@ -6,7 +6,6 @@ import (
 	"context"
 	"fmt"
 	"image/color"
-	"log/slog"
 	"os"
 	"slices"
 	"strings"
@@ -265,7 +264,7 @@ func New(d Deps) Model {
 		d.Fetch = sync.HTTPFetch
 	}
 	if d.Log == nil {
-		d.Log = slog.New(slog.DiscardHandler)
+		d.Log = discardLog
 	}
 	// After the logger: the opener is the one hand-over to a subprocess the
 	// TUI makes, and it logs the argv it builds.
@@ -313,8 +312,7 @@ func (m Model) Init() tea.Cmd {
 	// Asking for the cell size lets avatars be drawn at the exact pixels they
 	// will occupy; resampling is what makes small glyphs mushy.
 	cmds := tea.Batch(tea.RequestBackgroundColor, tea.Raw(ansi.WindowOp(ansi.RequestCellSizeWinOp)),
-		loadChats(m.deps.Store, m.deps.Self), loadContacts(m.deps.Store),
-		readSyncStatus(m.deps.Store), pollSyncStatus(m.deps.Store), waitForRev(m.revs),
+		loadChats(m.deps), readSyncStatus(m.deps.Store), pollSyncStatus(m.deps.Store), waitForRev(m.revs),
 		loadSelfName(m.deps.Store, m.deps.Self))
 	return tea.Batch(cmds, m.chatPollCmd())
 }
@@ -579,6 +577,12 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case contactsLoadedMsg:
 		m.contacts = msg.people
+		// The chooser opened on the chats alone; the people it now reaches go
+		// in behind them, which leaves a cursor already on a chat where it was.
+		if m.mode == modeForward {
+			m.fwd.hits = m.fwdSearch(m.fwd.input.Value())
+			m.fwd.move(0, m.fwdRows())
+		}
 		return m, nil
 	case forwardedMsg:
 		if msg.err != nil {
@@ -835,7 +839,7 @@ func (m *Model) openChatFrom(chatID string, sinceMs int64) tea.Cmd {
 	keep := m.saveComposer()
 	m.pendingChat, m.pendingSince = chatID, sinceMs
 	m.selectCurrentChat()
-	return tea.Batch(keep, loadMessages(m.deps.Store, chatID, sinceMs, m.deps.Self),
+	return tea.Batch(keep, loadMessages(m.deps, chatID, sinceMs),
 		scheduleReadRefresh(chatID), scheduleReactionRefresh(chatID))
 }
 
@@ -1025,16 +1029,16 @@ func (m *Model) openThread(threadID string) tea.Cmd {
 	m.threadID = threadID
 	m.threadIdx, m.threadTop = 0, 0
 	m.layout()
-	return loadThread(m.deps.Store, threadID)
+	return loadThread(m.deps, threadID)
 }
 
 func (m Model) reloadCurrent() tea.Cmd {
-	cmds := []tea.Cmd{loadChats(m.deps.Store, m.deps.Self), loadContacts(m.deps.Store)}
+	cmds := []tea.Cmd{loadChats(m.deps)}
 	if m.chatID != "" {
-		cmds = append(cmds, loadMessages(m.deps.Store, m.chatID, m.msgSince, m.deps.Self))
+		cmds = append(cmds, loadMessages(m.deps, m.chatID, m.msgSince))
 	}
 	if m.threadOpen {
-		cmds = append(cmds, loadThread(m.deps.Store, m.threadID))
+		cmds = append(cmds, loadThread(m.deps, m.threadID))
 	}
 	return tea.Batch(cmds...)
 }

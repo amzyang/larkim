@@ -31,7 +31,14 @@ func (m Model) toggleInfo() (tea.Model, tea.Cmd) {
 	m.infoOpen, m.infoTop = true, 0
 	m.threadOpen, m.aiOpen = false, false
 	m.layout()
-	return m, loadInfo(m.deps, m.chatID)
+	cmds := []tea.Cmd{loadInfo(m.deps, m.chatID)}
+	// A chat of two answers with the person across from it, whom the contacts
+	// table names because a pair keeps no roster. A group's card draws nobody
+	// the roster has not already brought, so it pays for no such read.
+	if c, ok := m.currentChat(); ok && c.ChatMode == "p2p" {
+		cmds = append(cmds, loadContacts(m.deps))
+	}
+	return m, tea.Batch(cmds...)
 }
 
 // loadInfo fetches the roster. Everything else the pane draws is already on
@@ -40,6 +47,7 @@ func loadInfo(d Deps, chatID string) tea.Cmd {
 	return func() tea.Msg {
 		members, err := d.Store.ChatMembers(context.Background(), chatID)
 		if err != nil {
+			d.log().Error("load chat members", "chat_id", chatID, "err", err)
 			return infoLoadedMsg{chatID: chatID}
 		}
 		return infoLoadedMsg{chatID: chatID, members: members}

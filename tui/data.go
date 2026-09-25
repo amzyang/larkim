@@ -64,6 +64,14 @@ type Deps struct {
 	Log *slog.Logger
 }
 
+// discardLog stands in for a Deps built by hand — in a test — which has no
+// logger of its own.
+var discardLog = slog.New(slog.DiscardHandler)
+
+// log is where a load that failed goes. A failed load degrades the pane rather
+// than the page, so nothing about it reaches the screen.
+func (d Deps) log() *slog.Logger { return cmp.Or(d.Log, discardLog) }
+
 const (
 	messagePageSize  = 200
 	anchoredPageSize = 2000 // from a search hit onwards
@@ -292,9 +300,9 @@ func waitForAI(ch <-chan ai.Chunk) tea.Cmd {
 // loadChats reads the sidebar in one query. The badge counts ride on the rows
 // they belong to, so a chat's number and its place can never come from two
 // different revisions of the database.
-func loadChats(st *store.Store, self string) tea.Cmd {
+func loadChats(d Deps) tea.Cmd {
 	return func() tea.Msg {
-		chats, err := st.ListChats(context.Background(), store.ChatQuery{Self: self})
+		chats, err := d.Store.ListChats(context.Background(), store.ChatQuery{Self: d.Self})
 		if err != nil {
 			return errMsg{err}
 		}
@@ -306,8 +314,9 @@ func loadChats(st *store.Store, self string) tea.Cmd {
 		}
 		// A draft the store cannot answer for costs the list its marker, not
 		// its rows: the chats are what the reader asked for.
-		drafts, err := st.Drafts(context.Background())
+		drafts, err := d.Store.Drafts(context.Background())
 		if err != nil {
+			d.log().Error("load drafts", "err", err)
 			drafts = nil
 		}
 		return chatsLoadedMsg{chats: chats, unread: unread, drafts: drafts}
@@ -323,45 +332,47 @@ func messageQuery(chatID string, sinceMs int64) store.MessageQuery {
 	return store.MessageQuery{ChatID: chatID, Desc: true, Limit: messagePageSize}
 }
 
-func loadMessages(st *store.Store, chatID string, sinceMs int64, self string) tea.Cmd {
+func loadMessages(d Deps, chatID string, sinceMs int64) tea.Cmd {
 	q := messageQuery(chatID, sinceMs)
 	return func() tea.Msg {
 		ctx := context.Background()
-		rows, err := st.ListMessages(ctx, q)
+		rows, err := d.Store.ListMessages(ctx, q)
 		if err != nil {
 			return errMsg{err}
 		}
 		if q.Desc {
 			slices.Reverse(rows)
 		}
-		meta, err := loadMeta(ctx, st, rows)
+		meta, err := loadMeta(ctx, d.Store, rows)
 		if err != nil {
 			return errMsg{err}
 		}
 		// A draft the store cannot answer for costs the composer its text, not
 		// the reader their page.
-		draft, err := st.LoadDraft(ctx, chatID)
+		draft, err := d.Store.LoadDraft(ctx, chatID)
 		if err != nil {
+			d.log().Error("load draft", "chat_id", chatID, "err", err)
 			draft = store.Draft{ChatID: chatID}
 		}
 		// A roster the store cannot answer for costs @ completion its
 		// candidates, not the reader their page.
-		roster, err := st.ChatRoster(ctx, chatID, self)
+		roster, err := d.Store.ChatRoster(ctx, chatID, d.Self)
 		if err != nil {
+			d.log().Error("load roster", "chat_id", chatID, "err", err)
 			roster = nil
 		}
 		return messagesLoadedMsg{chatID: chatID, msgs: rows, meta: meta, draft: draft, roster: roster}
 	}
 }
 
-func loadThread(st *store.Store, threadID string) tea.Cmd {
+func loadThread(d Deps, threadID string) tea.Cmd {
 	return func() tea.Msg {
 		ctx := context.Background()
-		rows, err := st.ListMessages(ctx, store.MessageQuery{ThreadID: threadID, Limit: threadPageSize})
+		rows, err := d.Store.ListMessages(ctx, store.MessageQuery{ThreadID: threadID, Limit: threadPageSize})
 		if err != nil {
 			return errMsg{err}
 		}
-		meta, err := loadMeta(ctx, st, rows)
+		meta, err := loadMeta(ctx, d.Store, rows)
 		if err != nil {
 			return errMsg{err}
 		}
@@ -815,8 +826,8 @@ func saveDraft(d Deps, chatID, text, replyTo string, inThread bool) tea.Cmd {
 		err := d.Store.SaveDraft(context.Background(), store.Draft{
 			ChatID: chatID, Text: text, ReplyTo: replyTo, InThread: inThread,
 		}, time.Now().UnixMilli())
-		if err != nil && d.Log != nil {
-			d.Log.Error("save draft", "chat", chatID, "err", err)
+		if err != nil {
+			d.log().Error("save draft", "chat_id", chatID, "err", err)
 		}
 		return draftSavedMsg{}
 	}

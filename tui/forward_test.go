@@ -170,3 +170,19 @@ func TestRenderForward_KeepsTheCursorVisibleOnEveryDestination(t *testing.T) {
 		m.fwd.move(1, m.fwdRows())
 	}
 }
+
+// The contacts table is read when the chooser opens, not on every refresh, so
+// the people arrive after the box is already on screen.
+func TestForward_TakesInContactsThatArriveAfterItOpened(t *testing.T) {
+	m, _ := fwdModel(t)
+	people := m.contacts
+	m.contacts = nil
+	next, _ := m.openForward()
+	m = next.(Model)
+	require.NotContains(t, fwdNames(m.fwd.hits), "李四", "nobody is offered before the table is read")
+
+	next, _ = m.Update(contactsLoadedMsg{people: people})
+	m = next.(Model)
+
+	assert.Contains(t, fwdNames(m.fwd.hits), "李四")
+}
