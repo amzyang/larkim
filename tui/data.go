@@ -162,6 +162,11 @@ type msgMeta struct {
 	// the data dir. A contact with none is absent rather than empty.
 	avatars map[string]string
 	res     map[string][]store.Resource
+	// docs names the Feishu documents linked to from any message, by
+	// store.DocRef.Key. It is not scoped to this page: a personal archive
+	// holds these in the thousands at most, and working out which links the
+	// rows happen to spell costs more than reading them all.
+	docs    map[string]store.DocLabel
 	parents map[string]store.Message
 }
 
@@ -221,7 +226,11 @@ func loadMeta(ctx context.Context, st *store.Store, msgs []store.Message) (msgMe
 	if err != nil {
 		return msgMeta{}, err
 	}
-	return msgMeta{suffix: suffix, people: people, avatars: avatars, res: res, parents: parents}, nil
+	docs, err := st.DocLabels(ctx)
+	if err != nil {
+		return msgMeta{}, err
+	}
+	return msgMeta{suffix: suffix, people: people, avatars: avatars, res: res, docs: docs, parents: parents}, nil
 }
 
 // searchLimits bound each group. Messages get the most because they are what

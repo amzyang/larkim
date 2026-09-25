@@ -193,6 +193,11 @@ func TestOnNormalKey_OStillOpensTheMessageWhenItLeadsNowhere(t *testing.T) {
 func TestTargetHint_SaysWhereEachKindLeads(t *testing.T) {
 	require.Equal(t, "git.example.com", targetHint([]string{"https://git.example.com/a/b"}))
 	require.Equal(t, "Feishu", targetHint([]string{"lark://vc.feishu.cn/j/100000000"}))
+	require.Equal(t, "docx", targetHint([]string{"https://example.feishu.cn/docx/AbC123"}),
+		"a row showing a title no longer shows the token, and every document in a tenant shares one host")
+	require.Equal(t, "sheet", targetHint([]string{"https://example.feishu.cn/sheets/Xyz789"}))
+	require.Equal(t, "example.feishu.cn", targetHint([]string{"https://example.feishu.cn/minutes/obcnAbC123"}),
+		"what is not a document is still named by where it leads")
 	require.Equal(t, "resources", targetHint([]string{"/data/resources/a.png"}))
 	require.Equal(t, "3 files", targetHint([]string{"/a.png", "/b.png", "/c.png"}))
 	require.Empty(t, targetHint(nil))

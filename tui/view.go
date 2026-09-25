@@ -205,7 +205,7 @@ func (m Model) messagesWidth() int {
 func (m Model) msgStyleFor(width int, meta msgMeta) msgStyle {
 	st := msgStyle{width: width, height: m.picHeight(), self: m.deps.Self, now: time.Now(),
 		suffix: meta.suffix, people: meta.people, avatars: meta.avatars,
-		res: meta.res, parents: meta.parents, dataDir: m.deps.DataDir,
+		res: meta.res, docs: meta.docs, parents: meta.parents, dataDir: m.deps.DataDir,
 		outbox: m.outboxStates(), dots: m.dots, dark: m.dark}
 	if c, ok := m.currentChat(); ok {
 		st.p2p = c.ChatMode == "p2p"
@@ -230,7 +230,7 @@ func (m *Model) rebuildPreview() {
 	if m.previewOpen && m.mode == modeInsert && m.draft.kind != kindText {
 		it := outboxItem{localID: "preview", chatID: m.chatID, msgType: m.draft.kind.msgType(),
 			body: m.draft.body, images: m.draft.uploads()}
-		meta := msgMeta{suffix: m.meta.suffix, people: m.meta.people, avatars: m.meta.avatars}
+		meta := msgMeta{suffix: m.meta.suffix, people: m.meta.people, avatars: m.meta.avatars, docs: m.meta.docs}
 		resPending(&meta, []outboxItem{it})
 		st := m.msgStyleFor(m.width-2, meta)
 		// The body alone, not renderRows: a sender line, a day rule and a time

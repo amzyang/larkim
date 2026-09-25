@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/amzyang/larkim/store"
+
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 )
@@ -146,8 +148,11 @@ func (m Model) targetLine(z clickZone, i int, w int) string {
 }
 
 // targetHint says where a target leads, in the terms the reader chooses by:
-// the host for a link, the folder for a file on this machine, and the client
-// for an applink, which is not a place a browser would go.
+// the host for a link, the document type for a Feishu document, the folder
+// for a file on this machine, and the client for an applink, which is not a
+// place a browser would go. The document type earns its place because a row
+// showing a title no longer shows the token that told two documents apart,
+// and every document in a tenant shares one host.
 func targetHint(urls []string) string {
 	if len(urls) == 0 {
 		return ""
@@ -160,6 +165,9 @@ func targetHint(urls []string) string {
 	case strings.HasPrefix(u, "lark://"):
 		return "Feishu"
 	case strings.HasPrefix(u, "http://"), strings.HasPrefix(u, "https://"):
+		if ref, ok := store.ParseDocURL(u); ok {
+			return ref.Type
+		}
 		if parsed, err := url.Parse(u); err == nil && parsed.Host != "" {
 			return parsed.Host
 		}

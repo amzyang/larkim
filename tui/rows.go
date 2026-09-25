@@ -133,6 +133,7 @@ type msgStyle struct {
 	parents map[string]store.Message    // the messages these replies answer, by parent id
 	suffix  map[string]string           // sender open id → account suffix
 	res     map[string][]store.Resource // attachments, by message id
+	docs    map[string]store.DocLabel   // Feishu documents linked to, by store.DocRef.Key
 	outbox  map[string]outboxState      // the sends still on their way, by the id their rows carry
 	dots    map[string]bool             // the messages this visit draws the unread marker on
 	// names labels each message's chat on its sender line. It is set for
@@ -217,6 +218,18 @@ func (st msgStyle) emojiChip(key string) picture {
 // not a reaction put on it afterwards.
 func (st msgStyle) emojiInline(key string) picture {
 	return emojiPics{place: st.place, dir: st.dataDir}.pic(key, emojiCols)
+}
+
+// docLabel names the Feishu document a URL addresses, when one has been read
+// for it. A URL that names no document, or one whose title has not been read
+// yet, is left as the address it is.
+func (st msgStyle) docLabel(url string) (store.DocLabel, bool) {
+	ref, ok := store.ParseDocURL(url)
+	if !ok {
+		return store.DocLabel{}, false
+	}
+	l, ok := st.docs[ref.Key()]
+	return l, ok
 }
 
 // inner is the width a message body has, once the lead is taken off.
@@ -589,7 +602,7 @@ func bodyRows(x store.Message, idx int, st msgStyle, g *leads) []msgRow {
 	for _, line := range strings.Split(content, "\n") {
 		keys, rest := splitImages(line)
 		if len(keys) == 0 || strings.TrimSpace(rest) != "" {
-			if segs := inlineSegs(rest, ms, st.emojiInline); segs != nil {
+			if segs := inlineSegs(rest, ms, st.emojiInline, st.docLabel); segs != nil {
 				rows = append(rows, segRows(segs, "", idx, st, g)...)
 			} else {
 				rows = append(rows, text(wrap(renderInline(rest, ms), inner))...)

@@ -157,7 +157,7 @@ func (d mdDoc) paragraph(n ast.Node, pad string, room int) []msgRow {
 	for _, line := range strings.Split(mdSource(n, d.src), "\n") {
 		keys, rest := splitImages(line)
 		if len(keys) == 0 || strings.TrimSpace(rest) != "" {
-			if segs := inlineSegs(rest, d.ms, d.st.emojiInline); segs != nil {
+			if segs := inlineSegs(rest, d.ms, d.st.emojiInline, d.st.docLabel); segs != nil {
 				rows = append(rows, segRows(segs, pad, d.idx, d.st, d.g)...)
 			} else {
 				for _, l := range wrap(renderInline(rest, d.ms), room) {

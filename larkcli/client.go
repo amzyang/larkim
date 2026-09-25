@@ -84,6 +84,10 @@ type Client interface {
 	// Forward sends an existing message on to another chat or person. The
 	// idempotency key deduplicates for an hour, the way a send's does.
 	Forward(ctx context.Context, messageID string, target Target, idempotencyKey string) (SentMessage, error)
+	// DocTitles names Feishu documents by token. A document this identity
+	// cannot read comes back under Denied rather than failing the call, so one
+	// unreadable link does not cost the rest of the batch their titles.
+	DocTitles(ctx context.Context, refs []DocRef) (DocTitles, error)
 	// Whoami returns the current user identity without hitting the IM API.
 	Whoami(ctx context.Context) (Identity, error)
 }

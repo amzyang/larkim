@@ -64,6 +64,10 @@ type Fake struct {
 	// SendErr injects an error into Send alone, which is how a test gets an
 	// upload that landed behind a send that did not.
 	SendErr error
+	// Docs are the documents DocTitles can name, by "<doc_type>/<token>" as
+	// the request spells it. A document listed nowhere comes back denied, as
+	// one the identity cannot read does.
+	Docs map[string]DocTitle
 	// Apps are the apps AppDetail can resolve, by app id.
 	Apps map[string]AppDetail
 	// SentKeys records the idempotency key of every send, in order, so a
@@ -98,6 +102,7 @@ func NewFake() *Fake {
 		MembersTruncated: map[string]bool{},
 		Details:          map[string]UserDetail{},
 		Apps:             map[string]AppDetail{},
+		Docs:             map[string]DocTitle{},
 		Self:             Identity{AppID: "cli_test", UserOpenID: "ou_self"},
 	}
 }
@@ -425,6 +430,25 @@ func (f *Fake) UserDetails(_ context.Context, openIDs []string) ([]UserDetail, e
 		if d, ok := f.Details[id]; ok {
 			out = append(out, d)
 		}
+	}
+	return out, nil
+}
+
+func (f *Fake) DocTitles(_ context.Context, refs []DocRef) (DocTitles, error) {
+	if err := f.record("doc-titles"); err != nil {
+		return DocTitles{}, err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out DocTitles
+	for _, r := range refs {
+		d, ok := f.Docs[r.Type+"/"+r.Token]
+		if !ok {
+			out.Denied = append(out.Denied, r)
+			continue
+		}
+		d.Ref = r
+		out.Found = append(out.Found, d)
 	}
 	return out, nil
 }

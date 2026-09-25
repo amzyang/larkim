@@ -143,6 +143,27 @@ WHERE mr.message_id = 'om_xxx' ORDER BY r.file_key;
 
 Feishu's resource API refuses a sticker's `file_key` (`234002 Unauthorized`) under every identity, so a sticker picture is copied out of the Lark client's own storage on this machine instead; a sticker the client has never drawn stays `failed`.
 
+## doc_titles
+
+A Feishu document link arrives in a message as a bare URL and nothing else: the preview the client draws beside it is rendered there and then, out of a callback the owning app answers, and no API hands it to anyone else. `doc_titles` is what larkim reads instead, one row per document, so a link shared around a dozen chats is named once.
+
+| column | meaning |
+|---|---|
+| `doc_type` | the type the URL path spells: `docx`, `doc`, `sheet`, `bitable`, `wiki`, `file`, `mindnote`, `slides`, `folder` |
+| `token` | the token after it; with `doc_type` this is the primary key |
+| `title` | the document's name once `status = done` |
+| `resolved_type` | what a `wiki` node turned out to wrap, which is the type worth showing; empty until resolved |
+| `status` | `pending`, `done`, `denied` |
+| `next_attempt_at` | when the title is worth reading again on a `done` row, `0` on a `pending` one, unused on a `denied` one |
+
+The identity is the URL's spelling, not the document the server resolves it to: `/open-apis/drive/v1/metas/batch_query` takes `doc_type: "wiki"` and answers with the document the node holds, so the resolved token is knowable only after the call while the next message carrying that wiki URL has to find this row before one.
+
+`denied` covers all three ways the endpoint refuses a document — an unsupported type (`970002`), no permission (`970003`), and no such document (`970005`). None of them changes by asking again, and a reader is told the same thing by each, so a `denied` row is an answer rather than a failure to retry.
+
+```sql
+SELECT doc_type, token, title, resolved_type FROM doc_titles WHERE status = 'done';
+```
+
 ## messages_fts
 
 FTS5 external-content index over `messages(content, sender_name)` with the trigram tokenizer, kept in step by triggers. Query it with `MATCH` for terms of three or more characters (`SELECT rowid FROM messages_fts WHERE messages_fts MATCH '"发布计划"'`); shorter terms need `instr()` on `messages.content`.

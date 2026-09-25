@@ -123,3 +123,78 @@ func rowSegText(r msgRow) string {
 func trimCols(line string, x0, x1 int) string {
 	return strings.TrimSpace(ansi.Truncate(ansi.TruncateLeft(line, x0, ""), x1-x0, ""))
 }
+
+// docStyle names documents the way a loaded pane does, keyed as
+// store.DocRef.Key spells it.
+func docStyle(docs map[string]store.DocLabel) msgStyle {
+	st := baseStyle()
+	st.docs = docs
+	return st
+}
+
+func TestBodyRows_AFeishuDocumentIsDrawnAsTheDocument(t *testing.T) {
+	st := docStyle(map[string]store.DocLabel{"docx/AbC123": {Title: "季度排期", Type: "docx"}})
+	url := "https://example.feishu.cn/docx/AbC123?from=from_copylink#doxcnBlock"
+	rows := bodyOf("排期 "+url+" 见此", st)
+
+	zones := rowZones(rows)
+	require.Len(t, zones, 1)
+	require.Equal(t, []string{url}, zones[0].urls,
+		"the document is named by its title, but following it still opens the address that was shared")
+	require.Equal(t, "季度排期", zones[0].label)
+
+	line := ansi.Strip(rowSegText(rows[len(rows)-1]))
+	require.Contains(t, line, "📄 季度排期")
+	require.NotContains(t, line, "AbC123", "a token says nothing about what it opens")
+}
+
+func TestBodyRows_ADocumentOutOfReachKeepsItsAddress(t *testing.T) {
+	st := docStyle(map[string]store.DocLabel{"docx/Nope456": {Type: "docx", Denied: true}})
+	url := "https://example.feishu.cn/docx/Nope456"
+	rows := bodyOf(url, st)
+
+	zones := rowZones(rows)
+	require.Len(t, zones, 1)
+	require.Equal(t, []string{url}, zones[0].urls, "the reader can still try it, as they can in the client")
+	line := ansi.Strip(rowSegText(rows[len(rows)-1]))
+	require.Contains(t, line, "🔒", "the client marks one it cannot open rather than saying nothing")
+	require.Contains(t, line, "Nope456")
+}
+
+func TestBodyRows_AnUnreadDocumentIsLeftAsItsAddress(t *testing.T) {
+	url := "https://example.feishu.cn/docx/AbC123"
+	rows := bodyOf(url, docStyle(nil))
+
+	zones := rowZones(rows)
+	require.Len(t, zones, 1)
+	require.Equal(t, url, zones[0].label, "nothing has been read for it yet, so there is nothing to show instead")
+	require.NotContains(t, ansi.Strip(rowSegText(rows[len(rows)-1])), "📄")
+}
+
+func TestBodyRows_ADocumentTitleWrappedAcrossRowsOpensFromEitherHalf(t *testing.T) {
+	st := docStyle(map[string]store.DocLabel{
+		"docx/AbC123": {Title: "第三季度招生转化链路复盘与下季度排期安排", Type: "docx"}})
+	st.width = 28
+	rows := bodyOf("https://example.feishu.cn/docx/AbC123", st)
+
+	zones := rowZones(rows)
+	require.Greater(t, len(zones), 1, "a title too long for one row is drawn across several")
+	for _, z := range zones {
+		require.Equal(t, []string{"https://example.feishu.cn/docx/AbC123"}, z.urls,
+			"every part of a wrapped title leads to the same document")
+	}
+}
+
+func TestBodyRows_ANonDocumentFeishuLinkIsLeftAlone(t *testing.T) {
+	// A form is shared under a token of its own, and minutes are not a
+	// document type at all; both stay the addresses they are.
+	for _, url := range []string{
+		"https://example.feishu.cn/share/base/form/shrcnAbC123",
+		"https://example.feishu.cn/minutes/obcnAbC123",
+	} {
+		rows := bodyOf(url, docStyle(map[string]store.DocLabel{"docx/AbC123": {Title: "季度排期", Type: "docx"}}))
+		zones := rowZones(rows)
+		require.Len(t, zones, 1, url)
+		require.Equal(t, url, zones[0].label, url)
+	}
+}

@@ -802,6 +802,57 @@ func (c *ExecClient) AppDetail(ctx context.Context, appID string) (AppDetail, er
 	return AppDetail{AppID: resp.App.AppID, Name: resp.App.AppName, AvatarURL: resp.App.AvatarURL}, nil
 }
 
+// MaxDocTokensPerBatch is the documented cap of drive/v1/metas/batch_query.
+const MaxDocTokensPerBatch = 200
+
+// DocTitles reads document metadata as the user, not the app: a title is
+// worth showing only if the reader could open the document, and the app's
+// own reach over the tenant's drive is neither the same set nor a subset.
+// A /wiki/ token needs no unwrapping first — the endpoint takes doc_type
+// "wiki" and answers with the document the node holds.
+func (c *ExecClient) DocTitles(ctx context.Context, refs []DocRef) (DocTitles, error) {
+	if len(refs) == 0 {
+		return DocTitles{}, nil
+	}
+	data, err := c.runAs(ctx, "user", "api", "POST", "/open-apis/drive/v1/metas/batch_query",
+		"--data", jsonArg(map[string]any{"request_docs": refs}))
+	if err != nil {
+		return DocTitles{}, err
+	}
+	var resp struct {
+		Metas []struct {
+			DocType string `json:"doc_type"`
+			Title   string `json:"title"`
+			// Asked echoes the request, which is the only way back to a wiki
+			// node: doc_token beside it is the document the node resolved to.
+			Asked DocRef `json:"request_doc_info"`
+		} `json:"metas"`
+		Failed []struct {
+			Token string `json:"token"`
+			Code  int    `json:"code"`
+		} `json:"failed_list"`
+	}
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return DocTitles{}, fmt.Errorf("decode doc titles: %w", err)
+	}
+	out := DocTitles{Found: make([]DocTitle, 0, len(resp.Metas))}
+	for _, m := range resp.Metas {
+		out.Found = append(out.Found, DocTitle{Ref: m.Asked, Type: m.DocType, Title: m.Title})
+	}
+	// failed_list names the token that was asked for, not the type it was
+	// asked under, so the request is what says which document it was.
+	byToken := make(map[string]DocRef, len(refs))
+	for _, r := range refs {
+		byToken[r.Token] = r
+	}
+	for _, f := range resp.Failed {
+		if ref, ok := byToken[f.Token]; ok {
+			out.Denied = append(out.Denied, ref)
+		}
+	}
+	return out, nil
+}
+
 // MaxUserDetailsBatch is the documented cap of contact/v3/users/batch.
 const MaxUserDetailsBatch = 50
 

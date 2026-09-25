@@ -36,10 +36,13 @@ type Options struct {
 	RenderPerTick     int // batches of 50
 	DownloadPerTick   int // batches of 50 messages with due resources
 	ReadStatusPerTick int // batches of 50; the fallback behind probeReadStatus
-	RepairEvery       time.Duration
-	RepairPerTick     int
-	MembersPerTick    int
-	AvatarsPerTick    int
+	// DocLinksPerTick bounds one tick's document-title reads, in batches of
+	// larkcli.MaxDocTokensPerBatch.
+	DocLinksPerTick int
+	RepairEvery     time.Duration
+	RepairPerTick   int
+	MembersPerTick  int
+	AvatarsPerTick  int
 	// ContactDetailsPerTick bounds one tick's identity backfill; SearchUsers
 	// splits it into as many `+search-user` calls as it needs.
 	ContactDetailsPerTick int
@@ -66,6 +69,7 @@ func OptionsFrom(cfg config.Config) Options {
 		RenderPerTick:         4,
 		DownloadPerTick:       1,
 		ReadStatusPerTick:     1,
+		DocLinksPerTick:       1,
 		RepairEvery:           cfg.RepairEvery,
 		RepairPerTick:         3,
 		MembersPerTick:        2,
@@ -160,6 +164,7 @@ type Report struct {
 	Muted      int // chats whose do-not-disturb setting was answered
 	Avatars    int // avatar files stored
 	Stickers   int // sticker pictures copied out of the Lark client
+	DocLinks   int // document links named or settled as out of reach
 	Contacts   int // contacts whose identity fields were resolved
 }
 
@@ -371,14 +376,22 @@ func (s *Syncer) tick(ctx context.Context, now time.Time) (Report, error) {
 	}
 	rep.Stickers = n
 
-	// 11. Poll whether the user has read recent messages from others.
+	// 11. Name the documents linked to from messages.
+	n, err = s.resolveDocLinks(ctx, now)
+	if err != nil {
+		return rep, fmt.Errorf("doc links: %w", err)
+	}
+	rep.DocLinks = n
+	s.changed(n)
+
+	// 12. Poll whether the user has read recent messages from others.
 	n, err = s.pollReadStatus(ctx, now)
 	if err != nil {
 		return rep, fmt.Errorf("read status: %w", err)
 	}
 	rep.ReadChecks = n
 
-	// 12. Keep the chat list's reactions current for the liveliest p2p chats.
+	// 13. Keep the chat list's reactions current for the liveliest p2p chats.
 	if Due(s.stateTime(ctx, KeyReactionsAt), reactionsEvery, now) {
 		n, err = s.reactionsSlice(ctx, now)
 		if err != nil {
@@ -387,7 +400,7 @@ func (s *Syncer) tick(ctx context.Context, now time.Time) (Report, error) {
 		rep.Reactions = n
 	}
 
-	// 13. Repair recent history, refresh members, fetch avatars: a few each.
+	// 14. Repair recent history, refresh members, fetch avatars: a few each.
 	if rep.Repaired, err = s.repairSlice(ctx, now); err != nil {
 		return rep, fmt.Errorf("repair: %w", err)
 	}
@@ -905,7 +918,10 @@ func (s *Syncer) storeRendered(ctx context.Context, r larkcli.RenderedMessage, n
 	if err := s.Store.UpdateRendered(ctx, r.MessageID, text, rawString(r.Mentions), rawString(r.Reactions), now.UnixMilli()); err != nil {
 		return err
 	}
-	return s.Store.AddPendingResources(ctx, ExtractRendered(r.MessageID, r.MsgType, text))
+	if err := s.Store.AddPendingResources(ctx, ExtractRendered(r.MessageID, r.MsgType, text)); err != nil {
+		return err
+	}
+	return s.Store.AddPendingDocLinks(ctx, store.FindDocRefs(text))
 }
 
 func rawString(r json.RawMessage) string {

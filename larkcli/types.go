@@ -189,3 +189,27 @@ func unquoteInt(b []byte, dst *int64) error {
 	*dst = n
 	return nil
 }
+
+// DocRef is a Feishu document as a URL spells it: the type named in the path,
+// and the token after it.
+type DocRef struct {
+	Type  string `json:"doc_type"`
+	Token string `json:"doc_token"`
+}
+
+// DocTitle is one named document. Type is what it turned out to be, which
+// differs from the requested type for a wiki node: the server unwraps one to
+// the document it holds.
+type DocTitle struct {
+	Ref   DocRef
+	Type  string
+	Title string
+}
+
+// DocTitles splits a batch by what came back. A refusal is per document and
+// permanent — an unsupported type, no permission, or no such document — so
+// Denied is an answer rather than a failure to retry.
+type DocTitles struct {
+	Found  []DocTitle
+	Denied []DocRef
+}

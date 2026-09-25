@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/amzyang/larkim/emoji"
+	"github.com/amzyang/larkim/store"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -22,9 +23,9 @@ var emojiSpelling = regexp.MustCompile(`:([A-Za-z0-9_]{1,32}):|\[([^\[\]\n]{1,12
 // which the client draws as a picture of its own. It reports nothing for a
 // line holding neither, leaving it on the ordinary text path: the pieces cost
 // the wrapping that a whole string gets for free.
-func inlineSegs(line string, ms mentions, pic func(key string) picture) []rowSeg {
+func inlineSegs(line string, ms mentions, pic func(key string) picture, doc func(url string) (store.DocLabel, bool)) []rowSeg {
 	cuts := linkCuts(line)
-	cuts = append(cuts, autoLinkCuts(line, cuts)...)
+	cuts = append(cuts, autoLinkCuts(line, cuts, doc)...)
 	cuts = append(cuts, emojiCuts(line, cuts, pic)...)
 	if len(cuts) == 0 {
 		return nil
@@ -86,7 +87,7 @@ var bareURL = regexp.MustCompile(`https?://[^\s<>"'\x60\[\]()]*[^\s<>"'\x60\[\](
 
 // autoLinkCuts finds the URLs a line writes out, skipping any inside a link
 // already spelled with a label: that one has been cut, target and all.
-func autoLinkCuts(line string, links []inlineCut) []inlineCut {
+func autoLinkCuts(line string, links []inlineCut, doc func(url string) (store.DocLabel, bool)) []inlineCut {
 	var cuts []inlineCut
 	for _, m := range bareURL.FindAllStringIndex(line, -1) {
 		if slices.ContainsFunc(links, func(l inlineCut) bool { return m[0] < l.hi && m[1] > l.lo }) {
@@ -95,10 +96,53 @@ func autoLinkCuts(line string, links []inlineCut) []inlineCut {
 		url := line[m[0]:m[1]]
 		// A written-out URL carries no label to style, so it is styled here;
 		// a spelled link gets that from renderInline along with the rest.
+		text, label := stLink.Render(url), url
+		if l, ok := doc(url); ok {
+			// The client draws a Feishu document link as the document, not as
+			// its address: a token says nothing about what it opens. A
+			// document out of reach keeps its URL, which is all the client
+			// leaves of one too, marked by the lock it draws beside it.
+			if l.Denied {
+				// No space before the address: a space is where the wrapper
+				// breaks a run, and a URL too long for the row would leave the
+				// mark stranded on a line of its own, or worse, sitting
+				// against whatever text came before it.
+				text = lockGlyph + text
+			} else if title := flatten(l.Title); title != "" {
+				text, label = docGlyph(l.Type)+" "+stLink.Render(title), title
+			}
+		}
 		cuts = append(cuts, inlineCut{lo: m[0], hi: m[1], seg: rowSeg{
-			text: stLink.Render(url), urls: []string{url}, label: url, note: "opening " + url}})
+			text: text, urls: []string{url}, label: label, note: "opening " + label}})
 	}
 	return cuts
+}
+
+// lockGlyph marks a document this identity cannot open, the way the client
+// marks one: the link stays, and the mark beside it says why following it
+// will not help.
+const lockGlyph = "🔒"
+
+// docGlyph marks a document by the family its type puts it in, the way
+// fileGlyph does for an attachment. Every glyph is a wide character, so a
+// title starts in the same column whichever family it is.
+func docGlyph(docType string) string {
+	switch docType {
+	case "sheet":
+		return "📊"
+	case "bitable":
+		return "🗂"
+	case "mindnote":
+		return "🧠"
+	case "slides":
+		return "📽"
+	case "folder":
+		return "📁"
+	case "file":
+		return "📎"
+	default:
+		return "📄"
+	}
 }
 
 // emojiCuts finds the emoji a line spells that no Unicode character carries,
