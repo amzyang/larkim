@@ -35,6 +35,8 @@ Output is a table on a terminal and JSON when piped or with `--json`.
 larkim send --to linlan@example.com --text "hi"     # email, name or ou_ id
 larkim send --chat "项目协作群" --text "hi"          # chat name or oc_ id
 larkim reply om_xxx --text "ok" --in-thread
+larkim send --chat "平台组" --markdown $'## 发布说明\n\n- 修复了 A'   # rich-text post
+larkim send --chat "平台组" --image ~/Desktop/shot.png              # uploaded, then sent
 larkim watch --chat "项目协作群"                     # stream new messages
 larkim tui
 ```

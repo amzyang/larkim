@@ -297,7 +297,7 @@ func sendText(d Deps, localID string, target larkcli.Target, text string) tea.Cm
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), sendTimeout)
 		defer cancel()
-		sent, err := d.Client.SendText(ctx, target, text, localID)
+		sent, err := d.Client.Send(ctx, target, larkcli.Text(text), localID)
 		return sentMsg{localID: localID, messageID: sent.MessageID, err: err}
 	}
 }
@@ -306,7 +306,7 @@ func replyText(d Deps, localID, messageID, text string, inThread bool) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), sendTimeout)
 		defer cancel()
-		sent, err := d.Client.ReplyText(ctx, messageID, text, inThread, localID)
+		sent, err := d.Client.Reply(ctx, messageID, larkcli.Text(text), inThread, localID)
 		return sentMsg{localID: localID, messageID: sent.MessageID, err: err}
 	}
 }

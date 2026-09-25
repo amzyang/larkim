@@ -47,13 +47,21 @@ type Fake struct {
 	ListErr map[string]error
 	// DetailsErr injects an error into UserDetails alone.
 	DetailsErr error
+	// SendErr injects an error into Send alone, which is how a test gets an
+	// upload that landed behind a send that did not.
+	SendErr error
 	// Apps are the apps AppDetail can resolve, by app id.
 	Apps map[string]AppDetail
 	// SentKeys records the idempotency key of every send, in order, so a
 	// test can tell a retry from a second delivery.
 	SentKeys []string
+	// Sent records the body of every send, in the same order as SentKeys.
+	Sent []Outgoing
+	// Uploads records the path of every image upload, in order.
+	Uploads  []string
 	Calls    []string
 	sent     int
+	uploaded int
 }
 
 // NewFake returns an empty Fake with a default identity.
@@ -387,12 +395,46 @@ func (f *Fake) SearchChats(_ context.Context, query string) ([]RawChat, error) {
 	return out, nil
 }
 
-func (f *Fake) SendText(_ context.Context, target Target, text, idempotencyKey string) (SentMessage, error) {
+// body is what lark-cli would put in the message's content column for this
+// kind, and rendered is what it would render that content back to. Keeping
+// both here lets a test follow a send all the way through ingest.
+func (o Outgoing) body() (msgType, content, rendered string) {
+	switch {
+	case o.Markdown != "":
+		// Built by the same function the wire uses, so the two cannot drift.
+		return "post", postContent(o.Markdown), o.Markdown
+	case o.ImageKey != "":
+		key, _ := json.Marshal(o.ImageKey)
+		return "image", `{"image_key":` + string(key) + `}`, "[Image: " + o.ImageKey + "]"
+	default:
+		text, _ := json.Marshal(o.Text)
+		return "text", `{"text":` + string(text) + `}`, o.Text
+	}
+}
+
+func (f *Fake) UploadImage(_ context.Context, path string) (string, error) {
+	f.mu.Lock()
+	f.Uploads = append(f.Uploads, path)
+	f.mu.Unlock()
+	if err := f.record("image-upload"); err != nil {
+		return "", err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.uploaded++
+	return fmt.Sprintf("img_fake_%d", f.uploaded), nil
+}
+
+func (f *Fake) Send(_ context.Context, target Target, msg Outgoing, idempotencyKey string) (SentMessage, error) {
 	f.mu.Lock()
 	f.SentKeys = append(f.SentKeys, idempotencyKey)
+	f.Sent = append(f.Sent, msg)
 	f.mu.Unlock()
 	if err := f.record("send"); err != nil {
 		return SentMessage{}, err
+	}
+	if f.SendErr != nil {
+		return SentMessage{}, f.SendErr
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -402,21 +444,23 @@ func (f *Fake) SendText(_ context.Context, target Target, text, idempotencyKey s
 	if chat == "" {
 		chat = "oc_p2p_" + target.UserID
 	}
-	m := RawMessage{MessageID: id, ChatID: chat, MsgType: "text", CreateTime: Millis(time.Now().UnixMilli()),
-		Sender: RawSender{ID: f.Self.UserOpenID, SenderType: "user"}, Body: RawBody{Content: `{"text":"` + text + `"}`}}
+	msgType, content, rendered := msg.body()
+	m := RawMessage{MessageID: id, ChatID: chat, MsgType: msgType, CreateTime: Millis(time.Now().UnixMilli()),
+		Sender: RawSender{ID: f.Self.UserOpenID, SenderType: "user"}, Body: RawBody{Content: content}}
 	m.Raw, _ = json.Marshal(map[string]string{"message_id": id})
 	f.Messages[id] = m
+	f.Rendered[id] = RenderedMessage{MessageID: id, ChatID: chat, MsgType: msgType, Content: rendered, Raw: m.Raw}
 	return SentMessage{MessageID: id, ChatID: chat}, nil
 }
 
-func (f *Fake) ReplyText(ctx context.Context, messageID, text string, inThread bool, key string) (SentMessage, error) {
+func (f *Fake) Reply(ctx context.Context, messageID string, msg Outgoing, inThread bool, key string) (SentMessage, error) {
 	f.mu.Lock()
 	parent, ok := f.Messages[messageID]
 	f.mu.Unlock()
 	if !ok {
 		return SentMessage{}, &Error{ExitCode: ExitAPI, Type: "api", Subtype: "not_found", Message: "message not found"}
 	}
-	s, err := f.SendText(ctx, Target{ChatID: parent.ChatID}, text, key)
+	s, err := f.Send(ctx, Target{ChatID: parent.ChatID}, msg, key)
 	if err != nil {
 		return s, err
 	}

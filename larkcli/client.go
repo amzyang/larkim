@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"time"
 )
 
@@ -57,10 +58,15 @@ type Client interface {
 	UserDetails(ctx context.Context, openIDs []string) ([]UserDetail, error)
 	// SearchChats finds group chats by name keyword.
 	SearchChats(ctx context.Context, query string) ([]RawChat, error)
-	// SendText sends a plain-text message to a chat or a user.
-	SendText(ctx context.Context, target Target, text string, idempotencyKey string) (SentMessage, error)
-	// ReplyText replies to a message, optionally inside its thread.
-	ReplyText(ctx context.Context, messageID, text string, inThread bool, idempotencyKey string) (SentMessage, error)
+	// Send posts one message body to a chat or a user.
+	Send(ctx context.Context, target Target, msg Outgoing, idempotencyKey string) (SentMessage, error)
+	// Reply answers a message, optionally inside its thread.
+	Reply(ctx context.Context, messageID string, msg Outgoing, inThread bool, idempotencyKey string) (SentMessage, error)
+	// UploadImage registers a local image and returns its key. Callers upload
+	// before sending because lark-cli's --image refuses an absolute path and
+	// resolves a relative one against the client's Dir, while images create
+	// takes any path.
+	UploadImage(ctx context.Context, path string) (string, error)
 	// Whoami returns the current user identity without hitting the IM API.
 	Whoami(ctx context.Context) (Identity, error)
 }
@@ -70,6 +76,31 @@ type Target struct {
 	ChatID string
 	UserID string
 }
+
+// Outgoing is one message body: exactly one field is set, which is what picks
+// the Feishu message type. lark-cli's content flags are mutually exclusive, so
+// a body that set two would be refused by the subprocess rather than here.
+type Outgoing struct {
+	Text     string // msg_type text
+	Markdown string // msg_type post
+	ImageKey string // msg_type image; a key, never a path
+}
+
+// Text is an Outgoing carrying plain text.
+func Text(s string) Outgoing { return Outgoing{Text: s} }
+
+// Markdown is an Outgoing lark-cli converts into a rich-text post.
+func Markdown(s string) Outgoing { return Outgoing{Markdown: s} }
+
+// Image is an Outgoing naming an already-uploaded image.
+func Image(key string) Outgoing { return Outgoing{ImageKey: key} }
+
+// imageKey is how Feishu spells the handle it gives an uploaded picture.
+var imageKey = regexp.MustCompile(`^img_[A-Za-z0-9_-]+$`)
+
+// IsImageKey reports whether ref names a picture Feishu already holds, which
+// is what tells a key apart from a path that still has to be uploaded.
+func IsImageKey(ref string) bool { return imageKey.MatchString(ref) }
 
 // Error is a failed lark-cli invocation decoded from its stderr envelope.
 type Error struct {

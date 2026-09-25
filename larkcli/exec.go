@@ -713,8 +713,23 @@ func (c *ExecClient) SearchChats(ctx context.Context, query string) ([]RawChat, 
 	return decodeItems[RawChat](data, "chats")
 }
 
-func (c *ExecClient) SendText(ctx context.Context, target Target, text, idempotencyKey string) (SentMessage, error) {
-	args := []string{"im", "+messages-send", "--text", text}
+// flags is the content flag the body asks for. Send and Reply share it so the
+// two cannot drift apart on which field wins.
+func (o Outgoing) flags() []string {
+	switch {
+	case o.Markdown != "":
+		// Not --markdown: that flag rewrites H1-H3 into H4/H5 before sending,
+		// and the rewrite lands in what this client stores and draws.
+		return []string{"--msg-type", "post", "--content", postContent(o.Markdown)}
+	case o.ImageKey != "":
+		return []string{"--image", o.ImageKey}
+	default:
+		return []string{"--text", o.Text}
+	}
+}
+
+func (c *ExecClient) Send(ctx context.Context, target Target, msg Outgoing, idempotencyKey string) (SentMessage, error) {
+	args := append([]string{"im", "+messages-send"}, msg.flags()...)
 	if target.ChatID != "" {
 		args = append(args, "--chat-id", target.ChatID)
 	} else {
@@ -726,8 +741,8 @@ func (c *ExecClient) SendText(ctx context.Context, target Target, text, idempote
 	return c.sent(ctx, args...)
 }
 
-func (c *ExecClient) ReplyText(ctx context.Context, messageID, text string, inThread bool, idempotencyKey string) (SentMessage, error) {
-	args := []string{"im", "+messages-reply", "--message-id", messageID, "--text", text}
+func (c *ExecClient) Reply(ctx context.Context, messageID string, msg Outgoing, inThread bool, idempotencyKey string) (SentMessage, error) {
+	args := append([]string{"im", "+messages-reply", "--message-id", messageID}, msg.flags()...)
 	if inThread {
 		args = append(args, "--reply-in-thread")
 	}
@@ -735,6 +750,34 @@ func (c *ExecClient) ReplyText(ctx context.Context, messageID, text string, inTh
 		args = append(args, "--idempotency-key", idempotencyKey)
 	}
 	return c.sent(ctx, args...)
+}
+
+// postContent is the rich-text body Feishu stores for a markdown draft: one md
+// element under a single locale, which is the shape that comes back verbatim.
+func postContent(markdown string) string {
+	text, _ := json.Marshal(markdown)
+	return `{"zh_cn":{"content":[[{"tag":"md","text":` + string(text) + `}]]}}`
+}
+
+// UploadImage registers a local file as a message image. The raw images create
+// command is used rather than +messages-send --image because that flag refuses
+// an absolute path and resolves a relative one against c.Dir, which leaves no
+// way to name a file the user picked anywhere else.
+func (c *ExecClient) UploadImage(ctx context.Context, path string) (string, error) {
+	data, err := c.run(ctx, "im", "images", "create", "--data", `{"image_type":"message"}`, "--file", path)
+	if err != nil {
+		return "", err
+	}
+	var resp struct {
+		ImageKey string `json:"image_key"`
+	}
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return "", fmt.Errorf("decode image upload: %w", err)
+	}
+	if resp.ImageKey == "" {
+		return "", fmt.Errorf("image upload returned no key")
+	}
+	return resp.ImageKey, nil
 }
 
 func (c *ExecClient) sent(ctx context.Context, args ...string) (SentMessage, error) {

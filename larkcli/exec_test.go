@@ -2,6 +2,7 @@ package larkcli
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -293,6 +294,91 @@ echo '{"ok":true,"identity":"user","data":{"items":[]}}'`)
 	require.Len(t, lines, 2, "%d ids do not fit one call of %d", len(ids), MaxChatIDsPerMuteCall)
 	require.Equal(t, MaxChatIDsPerMuteCall, strings.Count(lines[0], ",")+1)
 	require.Equal(t, 5, strings.Count(lines[1], ",")+1, "the last call holds the remainder")
+}
+
+func TestOutgoing_FlagsPickTheMessageType(t *testing.T) {
+	require.Equal(t, []string{"--text", "hi"}, Text("hi").flags())
+	require.Equal(t,
+		[]string{"--msg-type", "post", "--content", `{"zh_cn":{"content":[[{"tag":"md","text":"## hi"}]]}}`},
+		Markdown("## hi").flags())
+	require.Equal(t, []string{"--image", "img_a"}, Image("img_a").flags())
+	// An empty body is still a text send, which is what an empty draft would be.
+	require.Equal(t, []string{"--text", ""}, Outgoing{}.flags())
+}
+
+func TestExecClient_SendMarkdownUsesContentNotTheMarkdownFlag(t *testing.T) {
+	c := fakeBinary(t, `
+echo "$*" > "$(dirname "$0")/args"
+echo '{"ok":true,"identity":"user","data":{"message_id":"om_new","chat_id":"oc_quiet"}}'`)
+	sent, err := c.Send(context.Background(), Target{ChatID: "oc_quiet"}, Markdown("# 发布说明"), "cli_c")
+	require.NoError(t, err)
+	require.Equal(t, "om_new", sent.MessageID)
+	args, err := os.ReadFile(filepath.Join(c.Dir, "args"))
+	require.NoError(t, err)
+	// --markdown would have demoted the heading to #### on the way out.
+	require.NotContains(t, string(args), "--markdown")
+	require.Equal(t,
+		`im +messages-send --msg-type post --content {"zh_cn":{"content":[[{"tag":"md","text":"# 发布说明"}]]}} `+
+			"--chat-id oc_quiet --idempotency-key cli_c --as user --json",
+		strings.TrimSpace(string(args)))
+}
+
+func TestPostContent_EscapesTheMarkdown(t *testing.T) {
+	var body struct {
+		ZhCn struct {
+			Content [][]struct {
+				Tag  string `json:"tag"`
+				Text string `json:"text"`
+			} `json:"content"`
+		} `json:"zh_cn"`
+	}
+	md := "他说\"好\"\n# 标题\n\n| a |\n|---|"
+	require.NoError(t, json.Unmarshal([]byte(postContent(md)), &body))
+	require.Equal(t, "md", body.ZhCn.Content[0][0].Tag)
+	require.Equal(t, md, body.ZhCn.Content[0][0].Text, "the draft survives the wrapper verbatim")
+}
+
+func TestExecClient_SendImageUsesTheImageFlag(t *testing.T) {
+	c := fakeBinary(t, `
+echo "$*" > "$(dirname "$0")/args"
+echo '{"ok":true,"identity":"user","data":{"message_id":"om_new","chat_id":"oc_p2p_ou_a"}}'`)
+	_, err := c.Send(context.Background(), Target{UserID: "ou_a"}, Image("img_shot"), "")
+	require.NoError(t, err)
+	args, err := os.ReadFile(filepath.Join(c.Dir, "args"))
+	require.NoError(t, err)
+	require.Equal(t, "im +messages-send --image img_shot --user-id ou_a --as user --json", strings.TrimSpace(string(args)))
+}
+
+func TestExecClient_ReplyInThreadKeepsTheBodyFlag(t *testing.T) {
+	c := fakeBinary(t, `
+echo "$*" > "$(dirname "$0")/args"
+echo '{"ok":true,"identity":"user","data":{"message_id":"om_new","chat_id":"oc_quiet"}}'`)
+	_, err := c.Reply(context.Background(), "om_elsewhere", Markdown("- a\n- b"), true, "cli_c")
+	require.NoError(t, err)
+	args, err := os.ReadFile(filepath.Join(c.Dir, "args"))
+	require.NoError(t, err)
+	require.Contains(t, string(args), "im +messages-reply --message-id om_elsewhere --msg-type post --content")
+	require.Contains(t, string(args), "--reply-in-thread --idempotency-key cli_c")
+}
+
+func TestExecClient_UploadImagePassesTheAbsolutePath(t *testing.T) {
+	c := fakeBinary(t, `
+echo "$*" > "$(dirname "$0")/args"
+echo '{"ok":true,"identity":"user","data":{"image_key":"img_v3_shot"}}'`)
+	key, err := c.UploadImage(context.Background(), "/Users/linlan/Desktop/shot.png")
+	require.NoError(t, err)
+	require.Equal(t, "img_v3_shot", key)
+	args, err := os.ReadFile(filepath.Join(c.Dir, "args"))
+	require.NoError(t, err)
+	require.Equal(t,
+		`im images create --data {"image_type":"message"} --file /Users/linlan/Desktop/shot.png --as user --json`,
+		strings.TrimSpace(string(args)))
+}
+
+func TestExecClient_UploadImageRefusesAnEmptyKey(t *testing.T) {
+	c := fakeBinary(t, `echo '{"ok":true,"identity":"user","data":{}}'`)
+	_, err := c.UploadImage(context.Background(), "/Users/linlan/Desktop/shot.png")
+	require.ErrorContains(t, err, "no key")
 }
 
 func TestMGetRaw_AsksForTheRealCardBody(t *testing.T) {
