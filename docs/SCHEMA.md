@@ -2,7 +2,7 @@
 
 Database: `larkim db path` (default `~/.larkim/larkim.db`). WAL mode; readers never block the daemon. The authoritative DDL is `larkim schema` (embedded migrations in `store/migrations/`). All timestamps are Unix **milliseconds** in UTC unless the column name says otherwise.
 
-Ownership: the daemon (or an embedded syncer holding `daemon.lock`) writes every table except `read_state.local_read_at`, which belongs to the TUI. How far a reader outside larkim has got is its own state, not a column here; see [Consumer cursors](#consumer-cursors).
+Ownership: the daemon (or an embedded syncer holding `daemon.lock`) writes every table except `read_state.local_read_at` and `drafts`, which belong to the TUI. How far a reader outside larkim has got is its own state, not a column here; see [Consumer cursors](#consumer-cursors).
 
 ## chats
 
@@ -89,6 +89,32 @@ Per-message read state, joined on `message_id`. Rows exist only for messages who
 
 A chat's badge counts the rows where `is_read_remote` is 0 and `local_read_at` is 0 on a live, unsilenced message with a non-negative `message_position`; thread replies are left out. Both flags can only witness that a message was seen, so taking either one as read adds no false unread. Marking a chat read is deliberately wider than the badge: it takes every live row with both flags still unset in the chat, silenced messages and thread replies included, because the chat's page put them in front of the reader too. Anything that page shows but marking read cannot collect keeps its flags for good, and the unread marker beside it relights on every visit.
 
+## drafts
+
+What the reader has typed but not sent, one row per chat. Consumer-owned, like
+`read_state.local_read_at`: the daemon never writes it, and it is outside the
+`data_rev` triggers, since the process that writes a draft is the one that
+displays it.
+
+| column | meaning |
+|---|---|
+| `chat_id` | `oc_…` primary key |
+| `text` | the unsent composer contents; a row exists only while this is non-empty |
+| `reply_to` | the message the draft answers, empty for none |
+| `in_thread` | whether that reply lands inside the thread rather than the main flow |
+| `updated_at` | last write |
+
+The composer is one widget shared by every chat, so this table is what keeps a
+half-written message from following the reader into the next chat. It is
+written when the reader leaves a chat, when the terminal loses focus and on
+quit — not on every keystroke. Two TUIs on one chat: last write wins, and
+nothing detects the conflict. Clearing the composer deletes the row rather than
+storing an empty one, so the chat list has nothing to draw a marker from.
+
+A send that Feishu refused is not kept here. It stays in the TUI's in-memory
+outbox as a `(failed)` bubble the reader resends with `.` or drops with `x`, so
+it does not survive the process.
+
 ## resources, message_resources
 
 A Feishu resource key is globally unique, so `resources` holds one row per key: what the bytes are and whether they arrived. `message_resources` holds the references — which messages name which key — and many messages routinely share one, because a notification card's header picture is in every card its sender posts.
@@ -119,7 +145,7 @@ FTS5 external-content index over `messages(content, sender_name)` with the trigr
 
 ## contacts, chat_members
 
-`contacts` caches users and bots seen as chat members or senders (`open_id`, `name`, `email`, `p2p_chat_id`, `avatar_url`, `avatar_path`). `avatar_url = 'none'` means the user has no fetchable avatar; `avatar_path = '-'` means the download failed and is not retried. `chat_members` maps `chat_id` → `member_id` with the time the membership was last confirmed; group member lists refresh daily.
+`contacts` caches users and bots seen as chat members or senders (`open_id`, `name`, `email`, `p2p_chat_id`, `avatar_url`, `avatar_path`). `avatar_url = 'none'` means the user has no fetchable avatar; `avatar_path = '-'` means the download failed and is not retried. `chat_members` maps `chat_id` → `member_id` with `member_type` (`user` or `bot`) and the time the membership was last confirmed; group member lists refresh daily. A p2p chat keeps no rows — its pair is `chats.p2p_target_id` and the reader.
 
 `enterprise_email`, `department` and `is_cross_tenant` come from a separate identity lookup, marked by `detail_checked_at`; a non-zero `detail_checked_at` with empty fields means the lookup ran and the tenant did not return that user. The number ending the `enterprise_email` local part (`liming01`) is the tenant's own disambiguator for same-named colleagues.
 

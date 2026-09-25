@@ -17,6 +17,27 @@ func TestSendCmd_RefusesAnythingButOneBody(t *testing.T) {
 	require.NoError(t, outgoingFlags{text: "hi"}.check())
 	require.NoError(t, outgoingFlags{markdown: "## hi"}.check())
 	require.NoError(t, outgoingFlags{image: "a.png"}.check())
+	require.NoError(t, outgoingFlags{file: "a.pdf"}.check())
+	require.ErrorContains(t, outgoingFlags{image: "a.png", file: "a.pdf"}.check(), "exactly one")
+}
+
+func TestSendCmd_FileFlagUploadsFirst(t *testing.T) {
+	f := larkcli.NewFake()
+	path := filepath.Join(t.TempDir(), "发布说明.pdf")
+	require.NoError(t, os.WriteFile(path, []byte("pdf"), 0o644))
+
+	msg, err := outgoingFlags{file: path}.outgoing(context.Background(), f)
+	require.NoError(t, err)
+	require.Equal(t, "file_fake_1", msg.FileKey)
+	require.Equal(t, []string{path}, f.Uploads)
+}
+
+func TestSendCmd_FileFlagPassesAKeyThrough(t *testing.T) {
+	f := larkcli.NewFake()
+	msg, err := outgoingFlags{file: "file_v3_report"}.outgoing(context.Background(), f)
+	require.NoError(t, err)
+	require.Equal(t, "file_v3_report", msg.FileKey)
+	require.Empty(t, f.Uploads, "a key Feishu already holds needs no upload")
 }
 
 func TestSendCmd_TextIsStillVerbatim(t *testing.T) {
@@ -71,11 +92,11 @@ func TestExpandPath_ResolvesTildeAndRelativePaths(t *testing.T) {
 func TestSendCmd_FlagValidationRunsBeforeAnythingElse(t *testing.T) {
 	dir := t.TempDir()
 	_, err := run(t, dir, "send", "--chat", "oc_quiet")
-	require.ErrorContains(t, err, "exactly one of --text, --markdown or --image")
+	require.ErrorContains(t, err, "exactly one of --text, --markdown, --image or --file")
 
 	_, err = run(t, dir, "send", "--chat", "oc_quiet", "--to", "ou_a", "--text", "hi")
 	require.ErrorContains(t, err, "exactly one of --to or --chat")
 
 	_, err = run(t, dir, "reply", "om_elsewhere", "--text", "hi", "--markdown", "## hi")
-	require.ErrorContains(t, err, "exactly one of --text, --markdown or --image")
+	require.ErrorContains(t, err, "exactly one of --text, --markdown, --image or --file")
 }

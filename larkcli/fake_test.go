@@ -28,7 +28,7 @@ func TestFake_SendMarkdownStoresAPostBody(t *testing.T) {
 	m := f.Messages[sent.MessageID]
 	require.Equal(t, "post", m.MsgType)
 	require.Equal(t,
-		`{"zh_cn":{"content":[[{"tag":"md","text":"## 发布说明\n\n- 修复了 A"}]]}}`,
+		`{"zh_cn":{"content":[[{"tag":"md","text":"## 发布说明"}],[{"tag":"text","text":""}],[{"tag":"md","text":"- 修复了 A"}]]}}`,
 		m.Body.Content)
 	// The md tag passes through unrendered, so ingest brings the draft back.
 	require.Equal(t, "## 发布说明\n\n- 修复了 A", f.Rendered[sent.MessageID].Content)

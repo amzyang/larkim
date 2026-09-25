@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -175,7 +176,7 @@ func (c *ExecClient) runAs(ctx context.Context, identity string, args ...string)
 		// A refusal that lark-cli reported on stdout with a zero exit is the
 		// one failure exec cannot see, so it is logged here instead.
 		e := decodeError(exitCode, stdout)
-		c.logger().WarnContext(ctx, "lark-cli refused", "argv", argvLine(args), "code", e.Code, "error", e.Message, "log_id", e.LogID)
+		c.logger().WarnContext(ctx, "lark-cli refused", "argv", ArgvLine(args), "code", e.Code, "error", e.Message, "log_id", e.LogID)
 		return nil, e
 	}
 	return env.Data, nil
@@ -534,20 +535,28 @@ func (c *ExecClient) ReadStatus(ctx context.Context, ids []string) ([]ReadStatus
 	return resp.Items, resp.Invalid, nil
 }
 
+// ChatMembers reads a chat's roster through the shortcut rather than the raw
+// members endpoint, which answers with users alone: a bot only ever sees the
+// message that names it, so a roster without the bots cannot be completed
+// against. No --page-size, because --page-all already asks for the largest.
 func (c *ExecClient) ChatMembers(ctx context.Context, chatID string) ([]ChatMember, error) {
-	params := map[string]any{"member_id_type": "open_id", "page_size": 100}
-	data, err := c.run(ctx, "api", "GET", "/open-apis/im/v1/chats/"+chatID+"/members",
-		"--params", jsonArg(params), "--page-all", "--page-limit", "0")
+	data, err := c.run(ctx, "im", "+chat-members-list", "--chat-id", chatID,
+		"--member-types", "user,bot", "--member-id-type", "open_id",
+		"--page-all", "--page-limit", "0")
 	if err != nil {
 		return nil, err
 	}
 	var resp struct {
-		Items []ChatMember `json:"items"`
+		Users []ChatMember `json:"users"`
+		Bots  []ChatMember `json:"bots"`
 	}
 	if err := json.Unmarshal(data, &resp); err != nil {
 		return nil, fmt.Errorf("decode members: %w", err)
 	}
-	return resp.Items, nil
+	for i := range resp.Bots {
+		resp.Bots[i].IsBot = true
+	}
+	return append(resp.Users, resp.Bots...), nil
 }
 
 // MaxChatIDsPerMuteCall is the upstream cap on one mute lookup.
@@ -839,6 +848,8 @@ func (o Outgoing) flags() []string {
 		return []string{"--msg-type", "post", "--content", postContent(o.Markdown)}
 	case o.ImageKey != "":
 		return []string{"--image", o.ImageKey}
+	case o.FileKey != "":
+		return []string{"--file", o.FileKey}
 	default:
 		return []string{"--text", o.Text}
 	}
@@ -869,10 +880,75 @@ func (c *ExecClient) Reply(ctx context.Context, messageID string, msg Outgoing, 
 }
 
 // postContent is the rich-text body Feishu stores for a markdown draft: one md
-// element under a single locale, which is the shape that comes back verbatim.
+// element per paragraph, with an empty text element standing in for every
+// blank line between them. Feishu expands an md element into paragraphs of its
+// own and drops the blank lines inside it, and an empty paragraph sent as an
+// empty array is stripped on the way in, so a line carrying an empty text
+// element is the only spelling of a gap that survives the round trip.
 func postContent(markdown string) string {
-	text, _ := json.Marshal(markdown)
-	return `{"zh_cn":{"content":[[{"tag":"md","text":` + string(text) + `}]]}}`
+	var b strings.Builder
+	b.WriteString(`{"zh_cn":{"content":[`)
+	for i, para := range postParagraphs(markdown) {
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		if para == "" {
+			b.WriteString(`[{"tag":"text","text":""}]`)
+			continue
+		}
+		text, _ := json.Marshal(para)
+		b.WriteString(`[{"tag":"md","text":` + string(text) + `}]`)
+	}
+	b.WriteString(`]}}`)
+	return b.String()
+}
+
+// mdFenceLine opens or closes a fenced code block. The composer has a fence of
+// its own to classify drafts by; this one is not shared with it because the
+// two answer different questions and neither is worth a package.
+var mdFenceLine = regexp.MustCompile("^ {0,3}(`{3,}|~{3,})")
+
+// postParagraphs cuts a markdown body at the blank lines between its blocks,
+// which come back as empty strings. A blank line inside a fence is code, so
+// the fence stays whole, and the blank lines around the body are dropped:
+// nobody typed a gap there.
+func postParagraphs(markdown string) []string {
+	var out, cur []string
+	var fence string
+	flush := func() {
+		if len(cur) > 0 {
+			out = append(out, strings.Join(cur, "\n"))
+			cur = nil
+		}
+	}
+	for _, line := range strings.Split(markdown, "\n") {
+		switch {
+		case fence != "":
+			cur = append(cur, line)
+			// A closing fence is at least as long as the one that opened the
+			// block, which is what the prefix test comes to.
+			if strings.HasPrefix(strings.TrimSpace(line), fence) {
+				fence = ""
+			}
+		case mdFenceLine.MatchString(line):
+			cur = append(cur, line)
+			fence = mdFenceLine.FindStringSubmatch(line)[1]
+		case strings.TrimSpace(line) == "":
+			flush()
+			out = append(out, "")
+		default:
+			cur = append(cur, line)
+		}
+	}
+	flush()
+	start, end := 0, len(out)
+	for start < end && out[start] == "" {
+		start++
+	}
+	for end > start && out[end-1] == "" {
+		end--
+	}
+	return out[start:end]
 }
 
 // UploadImage registers a local file as a message image. The raw images create
@@ -894,6 +970,62 @@ func (c *ExecClient) UploadImage(ctx context.Context, path string) (string, erro
 		return "", fmt.Errorf("image upload returned no key")
 	}
 	return resp.ImageKey, nil
+}
+
+// UploadFile registers a local file as a message attachment, for the same
+// reason UploadImage does not go through the send flag: --file refuses an
+// absolute path and resolves a relative one against c.Dir.
+//
+// file_type is always stream. The enum's named types (pdf, doc, mp4, …) only
+// change the icon Feishu draws, and guessing one from an extension would be a
+// guess the server can already make; stream is what it falls back to anyway.
+func (c *ExecClient) UploadFile(ctx context.Context, path string) (string, error) {
+	name := filepath.Base(path)
+	body, err := json.Marshal(map[string]string{"file_type": "stream", "file_name": name})
+	if err != nil {
+		return "", err
+	}
+	data, err := c.run(ctx, "im", "files", "create", "--data", string(body), "--file", path)
+	if err != nil {
+		return "", err
+	}
+	var resp struct {
+		FileKey string `json:"file_key"`
+	}
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return "", fmt.Errorf("decode file upload: %w", err)
+	}
+	if resp.FileKey == "" {
+		return "", fmt.Errorf("file upload returned no key")
+	}
+	return resp.FileKey, nil
+}
+
+// Recall takes a message back. Whether this identity may — it sent it, and the
+// window has not closed — is Feishu's to answer, so nothing is checked here:
+// a local guess at the limit would refuse sends the server would have taken.
+func (c *ExecClient) Recall(ctx context.Context, messageID string) error {
+	_, err := c.run(ctx, "im", "messages", "delete", "--message-id", messageID)
+	return err
+}
+
+// Forward sends an existing message on. receive_id_type follows the target, so
+// a chat and a person are told apart by which field is set, as everywhere else.
+func (c *ExecClient) Forward(ctx context.Context, messageID string, target Target, idempotencyKey string) (SentMessage, error) {
+	idType, receiveID := "chat_id", target.ChatID
+	if target.ChatID == "" {
+		idType, receiveID = "open_id", target.UserID
+	}
+	body, err := json.Marshal(map[string]string{"receive_id": receiveID})
+	if err != nil {
+		return SentMessage{}, err
+	}
+	args := []string{"im", "messages", "forward", "--message-id", messageID,
+		"--receive-id-type", idType, "--data", string(body)}
+	if idempotencyKey != "" {
+		args = append(args, "--uuid", idempotencyKey)
+	}
+	return c.sent(ctx, args...)
 }
 
 func (c *ExecClient) sent(ctx context.Context, args ...string) (SentMessage, error) {

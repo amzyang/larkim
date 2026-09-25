@@ -81,12 +81,26 @@ type (
 	chatsLoadedMsg struct {
 		chats  []store.Chat
 		unread map[string]int64
+		// drafts is every chat's unsent composer state, fetched with the list
+		// rather than per row so the marker costs one query a refresh.
+		drafts map[string]store.Draft
 	}
 	messagesLoadedMsg struct {
 		chatID string
 		msgs   []store.Message
 		meta   msgMeta
+		// draft rides with the page so the composer fills at the same moment
+		// the panes swap over, rather than a frame later. It is applied only
+		// when this page is the one entering the chat — a reload must not
+		// stomp what is being typed.
+		draft store.Draft
+		// roster is who is in the chat, for @ completion and for turning the
+		// names it inserted into tags on the way out.
+		roster []store.Contact
 	}
+	// draftSavedMsg closes a fire-and-forget draft write. Nothing acts on it;
+	// it exists because a tea.Cmd has to return a message.
+	draftSavedMsg   struct{}
 	threadLoadedMsg struct {
 		threadID string
 		msgs     []store.Message
@@ -278,9 +292,9 @@ func waitForAI(ch <-chan ai.Chunk) tea.Cmd {
 // loadChats reads the sidebar in one query. The badge counts ride on the rows
 // they belong to, so a chat's number and its place can never come from two
 // different revisions of the database.
-func loadChats(st *store.Store) tea.Cmd {
+func loadChats(st *store.Store, self string) tea.Cmd {
 	return func() tea.Msg {
-		chats, err := st.ListChats(context.Background(), store.ChatQuery{})
+		chats, err := st.ListChats(context.Background(), store.ChatQuery{Self: self})
 		if err != nil {
 			return errMsg{err}
 		}
@@ -290,7 +304,13 @@ func loadChats(st *store.Store) tea.Cmd {
 				unread[c.ChatID] = c.UnreadCount
 			}
 		}
-		return chatsLoadedMsg{chats: chats, unread: unread}
+		// A draft the store cannot answer for costs the list its marker, not
+		// its rows: the chats are what the reader asked for.
+		drafts, err := st.Drafts(context.Background())
+		if err != nil {
+			drafts = nil
+		}
+		return chatsLoadedMsg{chats: chats, unread: unread, drafts: drafts}
 	}
 }
 
@@ -303,7 +323,7 @@ func messageQuery(chatID string, sinceMs int64) store.MessageQuery {
 	return store.MessageQuery{ChatID: chatID, Desc: true, Limit: messagePageSize}
 }
 
-func loadMessages(st *store.Store, chatID string, sinceMs int64) tea.Cmd {
+func loadMessages(st *store.Store, chatID string, sinceMs int64, self string) tea.Cmd {
 	q := messageQuery(chatID, sinceMs)
 	return func() tea.Msg {
 		ctx := context.Background()
@@ -318,7 +338,19 @@ func loadMessages(st *store.Store, chatID string, sinceMs int64) tea.Cmd {
 		if err != nil {
 			return errMsg{err}
 		}
-		return messagesLoadedMsg{chatID: chatID, msgs: rows, meta: meta}
+		// A draft the store cannot answer for costs the composer its text, not
+		// the reader their page.
+		draft, err := st.LoadDraft(ctx, chatID)
+		if err != nil {
+			draft = store.Draft{ChatID: chatID}
+		}
+		// A roster the store cannot answer for costs @ completion its
+		// candidates, not the reader their page.
+		roster, err := st.ChatRoster(ctx, chatID, self)
+		if err != nil {
+			roster = nil
+		}
+		return messagesLoadedMsg{chatID: chatID, msgs: rows, meta: meta, draft: draft, roster: roster}
 	}
 }
 
@@ -374,21 +406,23 @@ func readSyncStatus(st *store.Store) tea.Cmd {
 	return func() tea.Msg { return syncStatus(st) }
 }
 
-// sendMsg hands a chat one message. localID doubles as the idempotency key,
-// so a retry under the same id is the send Feishu already knows about rather
-// than a second delivery.
-// waited builds the context for a lark-cli call a keypress is waiting on. It
+// waited builds the context for a lark-cli call somebody is waiting on. It
 // takes the interactive lane, so a send or a reaction does not queue behind
 // the syncer's sweeps — those run every few seconds, so the shared line is
-// occupied more often than not. Timer-driven refreshes stay on the default
-// lane: nobody is held up by them, and the interactive line is narrow.
+// occupied more often than not. Most timer-driven refreshes stay on the
+// default lane, since nobody is held up by them and the interactive line is
+// narrow; the open chat's poll is the exception, because the words on screen
+// are what it is fetching.
 func waited(d time.Duration) (context.Context, context.CancelFunc) {
 	return context.WithTimeout(larkcli.WithLane(context.Background(), larkcli.LaneInteractive), d)
 }
 
-func sendMsg(d Deps, localID string, target larkcli.Target, msg larkcli.Outgoing, imgs []draftImage, done []string) tea.Cmd {
+// sendMsg hands a chat one message. localID doubles as the idempotency key,
+// so a retry under the same id is the send Feishu already knows about rather
+// than a second delivery.
+func sendMsg(d Deps, localID string, target larkcli.Target, msg larkcli.Outgoing, imgs []draftImage, file draftFile, done []string) tea.Cmd {
 	return func() tea.Msg {
-		msg, keys, err := uploadImages(d, msg, imgs, done)
+		msg, keys, err := uploadDraft(d, msg, imgs, file, done)
 		if err != nil {
 			return sentMsg{localID: localID, keys: keys, err: err}
 		}
@@ -399,9 +433,9 @@ func sendMsg(d Deps, localID string, target larkcli.Target, msg larkcli.Outgoing
 	}
 }
 
-func replyMsg(d Deps, localID, messageID string, msg larkcli.Outgoing, inThread bool, imgs []draftImage, done []string) tea.Cmd {
+func replyMsg(d Deps, localID, messageID string, msg larkcli.Outgoing, inThread bool, imgs []draftImage, file draftFile, done []string) tea.Cmd {
 	return func() tea.Msg {
-		msg, keys, err := uploadImages(d, msg, imgs, done)
+		msg, keys, err := uploadDraft(d, msg, imgs, file, done)
 		if err != nil {
 			return sentMsg{localID: localID, keys: keys, err: err}
 		}
@@ -418,7 +452,23 @@ func replyMsg(d Deps, localID, messageID string, msg larkcli.Outgoing, inThread 
 // upload leaving an orphan key behind. Uploads run one at a time because
 // lark-cli calls are serialised anyway, and each gets its own deadline rather
 // than sharing one budget with the send that follows.
-func uploadImages(d Deps, msg larkcli.Outgoing, imgs []draftImage, done []string) (larkcli.Outgoing, []string, error) {
+func uploadDraft(d Deps, msg larkcli.Outgoing, imgs []draftImage, file draftFile, done []string) (larkcli.Outgoing, []string, error) {
+	// An attachment and a set of pictures never arrive together: Feishu
+	// carries a file as a message of its own.
+	if file.local != "" {
+		if len(done) > 0 {
+			msg.FileKey = done[0]
+			return msg, done, nil
+		}
+		ctx, cancel := waited(sendTimeout)
+		defer cancel()
+		key, err := d.Client.UploadFile(ctx, file.local)
+		if err != nil {
+			return msg, nil, fmt.Errorf("upload %s: %w", filepath.Base(file.local), err)
+		}
+		msg.FileKey = key
+		return msg, []string{key}, nil
+	}
 	if len(imgs) == 0 {
 		return msg, nil, nil
 	}
@@ -529,14 +579,27 @@ func pasteClipboard(d Deps) tea.Cmd {
 // the panes draw comes from the store like every other.
 func ingestCmd(d Deps, localID, messageID string) tea.Cmd {
 	return func() tea.Msg {
-		ctx, cancel := waited(sendTimeout)
-		defer cancel()
-		s := d.Syncer
-		if s == nil {
-			s = &sync.Syncer{Client: d.Client, Store: d.Store, Clock: sync.RealClock{}, Log: d.Log}
-		}
-		return ingestedMsg{localID: localID, err: s.IngestIDs(ctx, []string{messageID})}
+		return ingestedMsg{localID: localID, err: ingestMessage(d, messageID)}
 	}
+}
+
+// syncerFor is the syncer a write uses to pull what it changed back into the
+// store. The injected one when this process holds the lock, a throwaway
+// otherwise: ingest is an idempotent upsert of ids Feishu just answered for,
+// so it is safe beside a daemon and is what lets a write land without one.
+func syncerFor(d Deps) *sync.Syncer {
+	if d.Syncer != nil {
+		return d.Syncer
+	}
+	return &sync.Syncer{Client: d.Client, Store: d.Store, Clock: sync.RealClock{}, Log: d.Log}
+}
+
+// ingestMessage pulls one message back from Feishu into the store, so what a
+// send, a recall or a forward just did shows up without waiting for a tick.
+func ingestMessage(d Deps, messageID string) error {
+	ctx, cancel := waited(sendTimeout)
+	defer cancel()
+	return syncerFor(d).IngestIDs(ctx, []string{messageID})
 }
 
 // loadSelfName names the account this process signed in as, which is all a
@@ -570,18 +633,36 @@ func feishuChatLink(chatID string, position int64) string {
 // what puts a message's pictures in a single viewer window with the rest in
 // its sidebar — the way the client opens them — instead of scattering them
 // over as many windows as the message had pictures.
-func openURL(targets []string, background bool) error {
+func openURL(log *slog.Logger, targets []string, background bool) error {
 	args := targets
 	if background {
 		args = append([]string{"-g"}, targets...)
 	}
-	return exec.Command("open", args...).Run()
+	// -g is decided here, not by the caller, so this is the only place the
+	// argv exists whole. It is logged the way lark-cli's is: quoted, nothing
+	// elided, paste-able back into a shell to see what macOS was asked.
+	log.Debug("open", "argv", "open "+larkcli.ArgvLine(args))
+	// open reports why it refused on stderr and nothing but a status to the
+	// caller, so dropping stderr would leave every failure as "exit status 1".
+	cmd := exec.Command("open", args...)
+	var stderr strings.Builder
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		if msg := strings.TrimSpace(stderr.String()); msg != "" {
+			return fmt.Errorf("open: %w: %s", err, msg)
+		}
+		return fmt.Errorf("open: %w", err)
+	}
+	return nil
 }
 
 // openInFeishu opens a chat (optionally at a message position) in the desktop client.
 func openInFeishu(d Deps, chatID string, position int64) tea.Cmd {
 	return func() tea.Msg {
 		if err := d.OpenURL([]string{feishuChatLink(chatID, position)}, false); err != nil {
+			// The notice bar holds the message and is gone at the next
+			// keypress; which chat was asked for only exists here.
+			d.Log.Error("open in feishu", "chat_id", chatID, "position", position, "err", err)
 			return errMsg{err}
 		}
 		return noticeMsg{"opened in Feishu"}
@@ -595,7 +676,10 @@ func openInFeishu(d Deps, chatID string, position int64) tea.Cmd {
 func clearFeishuBadge(d Deps, chatID string) tea.Cmd {
 	return func() tea.Msg {
 		if err := d.OpenURL([]string{feishuChatLink(chatID, 0)}, true); err != nil {
-			return errMsg{err}
+			// Best effort, and fired by a chat switch rather than by a request
+			// to open anything: an error banner here would blame the reader's
+			// navigation for a dot only the client still draws.
+			d.Log.Warn("clear feishu badge", "chat_id", chatID, "err", err)
 		}
 		return nil
 	}
@@ -617,6 +701,10 @@ func openZone(d Deps, z clickZone) tea.Cmd {
 			return nil
 		}
 		if err := d.OpenURL(z.urls, false); err != nil {
+			// The notice bar has room for the message but not for what was
+			// handed over, and a zone carries as many targets as the message
+			// had attachments.
+			d.Log.Error("open zone", "targets", z.urls, "err", err)
 			return errMsg{err}
 		}
 		return noticeMsg{z.note}
@@ -713,4 +801,23 @@ func ingestThenOpen(d Deps, msg store.Message) tea.Cmd {
 type openHitMsg struct {
 	chatID, messageID string
 	sinceMs           int64
+}
+
+// saveDraft writes the composer's state under the chat it was typed in. It is
+// fire-and-forget: a draft is a convenience, and a chat switch must not wait on
+// the disk. A failure is logged rather than shown, since the reader is already
+// looking at the next chat by the time it could be.
+func saveDraft(d Deps, chatID, text, replyTo string, inThread bool) tea.Cmd {
+	if chatID == "" {
+		return nil
+	}
+	return func() tea.Msg {
+		err := d.Store.SaveDraft(context.Background(), store.Draft{
+			ChatID: chatID, Text: text, ReplyTo: replyTo, InThread: inThread,
+		}, time.Now().UnixMilli())
+		if err != nil && d.Log != nil {
+			d.Log.Error("save draft", "chat", chatID, "err", err)
+		}
+		return draftSavedMsg{}
+	}
 }

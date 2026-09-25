@@ -27,10 +27,15 @@ type Button struct {
 }
 
 // Card is an interactive message taken apart: what the Feishu client draws in
-// the header band, and the body below it.
+// the header band, the body below it, and the one line the sender wrote for
+// the places a card is named rather than drawn.
 type Card struct {
 	Title, Subtitle, Tags string
-	Blocks                []Block
+	// Summary is what the sending app calls the card where there is room for
+	// a line and no more: the chat list and the notification. It is the
+	// card's own words for itself, so it beats anything read off the body.
+	Summary string
+	Blocks  []Block
 }
 
 // Parse reads the card out of a message's raw content. It reports false for
@@ -57,13 +62,14 @@ func Parse(contentRaw string) (Card, bool) {
 		}
 		c.Tags = strings.Join(tags, " ")
 	}
+	c.Summary = strings.TrimSpace(d.Config.Summary.Content)
 	att := attachedOf(env.Attachment)
 	w := writer{images: att.images, people: att.people}
 	if d.Body != nil {
 		w.elements(d.Body.children())
 	}
 	c.Blocks = w.done()
-	if c.Title == "" && c.Subtitle == "" && c.Tags == "" && len(c.Blocks) == 0 {
+	if c.Title == "" && c.Subtitle == "" && c.Tags == "" && c.Summary == "" && len(c.Blocks) == 0 {
 		return Card{}, false
 	}
 	return c, true
@@ -102,8 +108,17 @@ type envelope struct {
 // carries its children, which children() settles, so the version itself
 // decides nothing here.
 type doc struct {
-	Header *elem `json:"header"`
-	Body   *elem `json:"body"`
+	Header *elem  `json:"header"`
+	Body   *elem  `json:"body"`
+	Config config `json:"config"`
+}
+
+// config is the card's settings, of which only the summary says anything a
+// reader outside the client would see.
+type config struct {
+	Summary struct {
+		Content string `json:"content"`
+	} `json:"summary"`
 }
 
 // elem is one node of the card tree: a tag naming what it is, and the property

@@ -98,7 +98,7 @@ func (s *Syncer) membersSlice(ctx context.Context, now time.Time) (int, error) {
 		}
 		contacts := make([]store.Contact, 0, len(members))
 		for _, m := range members {
-			contacts = append(contacts, store.Contact{OpenID: m.MemberID, Name: m.Name})
+			contacts = append(contacts, store.Contact{OpenID: m.MemberID, Name: m.Name, IsBot: m.IsBot})
 		}
 		if err := s.Store.UpsertContacts(ctx, contacts, now.UnixMilli()); err != nil {
 			return total, err

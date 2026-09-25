@@ -24,10 +24,18 @@ func cardHead(c card.Card) string {
 	return strings.Join(parts, " ")
 }
 
-// cardGist is what a card says on one line: the band it is titled by, or the
-// first thing its body says when it carries no band. The markers a document
-// spells its structure with say nothing at this width.
+// cardGist is what a card says on one line: the summary the sender wrote for
+// exactly this, the band it is titled by, or the first thing its body says
+// when it carries neither. The markers a document spells its structure with
+// say nothing at this width.
+//
+// The summary comes first because that is the line the client shows in its
+// own chat list, and a band is often the same few words on every card a bot
+// posts, where the summary names the one alarm this card is about.
 func cardGist(c card.Card) string {
+	if c.Summary != "" {
+		return c.Summary
+	}
 	if head := strings.TrimSpace(c.Title + " " + c.Tags); head != "" {
 		return head
 	}

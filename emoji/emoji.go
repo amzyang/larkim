@@ -37,8 +37,10 @@ type Emoji struct {
 	// Order is the emoji's place in the client's own panel, which is the order
 	// a picker falls back to when nothing has been typed.
 	Order int
-	// NoReaction marks another tenant's culture emoji, which Feishu refuses as
-	// a reaction however it reaches this client.
+	// NoReaction marks an emoji Feishu refuses as a reaction however it reaches
+	// this client: another tenant's culture emoji, and the Unicode ones in
+	// common.go, which are characters a message carries rather than keys the
+	// reaction API knows.
 	NoReaction bool
 }
 

@@ -88,6 +88,28 @@ func ExtractResources(messageID, msgType, contentRaw string) []store.ResourceRef
 	return out
 }
 
+// ImageRef matches the two ways lark-cli names an image in rendered text: the
+// markdown form inside a rich-text post, and the whole body of an image
+// message. Registration and the message list read the same shapes, so a
+// picture the list leaves a placeholder for is one that was queued.
+var ImageRef = regexp.MustCompile(`!\[[^\]\n]*\]\((img_[A-Za-z0-9_-]+)\)|\[Image: (img_[A-Za-z0-9_-]+)\]`)
+
+// ExtractRendered lists the attachment keys a message names only once it has
+// been rendered. A forwarded bundle's own body is the literal string "Merged
+// and Forwarded Message", so the pictures inside it exist nowhere but the
+// rendering. They are registered against the bundle, which is also the id
+// they download by: the resource endpoint refuses a child message's id.
+func ExtractRendered(messageID, msgType, content string) []store.ResourceRef {
+	if msgType != "merge_forward" {
+		return nil
+	}
+	var out []store.ResourceRef
+	for _, m := range ImageRef.FindAllStringSubmatch(content, -1) {
+		out = append(out, store.ResourceRef{MessageID: messageID, FileKey: m[1] + m[2], Type: "image"})
+	}
+	return out
+}
+
 // walkCardAttachment collects the image keys a card keeps in its attachment
 // table. The card body only names an imageID that points here, so the key
 // exists nowhere else; the table's shape is the same whatever card_schema the
@@ -166,6 +188,7 @@ func (s *Syncer) registerExistingResources(ctx context.Context) error {
 	var rs []store.ResourceRef
 	for _, r := range rows {
 		rs = append(rs, ExtractResources(r.MessageID, r.MsgType, r.ContentRaw)...)
+		rs = append(rs, ExtractRendered(r.MessageID, r.MsgType, r.Content)...)
 		after = max(after, r.ID)
 	}
 	if len(rows) < resourceScanBatch {
@@ -340,6 +363,11 @@ func (s *Syncer) RefreshReadStatus(ctx context.Context, chatID string) (int, err
 // rendering left it.
 const reactionWindow = larkcli.MaxMessageIDsPerReactionCall
 
+// reactionsEvery paces the chat list's reaction refresh. Nothing about a
+// reaction is urgent while the chat is closed — the one being read is re-asked
+// on open — and this is the half minute the TUI already holds one chat off for.
+const reactionsEvery = 30 * time.Second
+
 // RefreshReactions re-asks Feishu who reacted to the newest messages of one
 // chat. Nothing else keeps a reaction summary current: Feishu does not move a
 // message's update_time when somebody reacts, so the rendering pass, which is
@@ -373,7 +401,7 @@ func (s *Syncer) RefreshReactions(ctx context.Context, chatID string) (int, erro
 // liveliest, which is the window a reaction is likely to land in. The rest
 // keep whatever their last rendering or visit left, and the TUI refreshes a
 // chat's whole window when it is opened.
-func (s *Syncer) reactionsSlice(ctx context.Context) (int, error) {
+func (s *Syncer) reactionsSlice(ctx context.Context, now time.Time) (int, error) {
 	chats, err := s.Store.ListChats(ctx, store.ChatQuery{Mode: "p2p", Limit: reactionWindow})
 	if err != nil {
 		return 0, err
@@ -396,7 +424,7 @@ func (s *Syncer) reactionsSlice(ctx context.Context) (int, error) {
 			return 0, err
 		}
 	}
-	return len(ids), nil
+	return len(ids), s.setStateTime(ctx, KeyReactionsAt, now)
 }
 
 // React puts one emoji on a message, or takes the reader's own back, and

@@ -129,11 +129,11 @@ func TestExec_NilLoggerDiscards(t *testing.T) {
 
 func TestArgvLine_QuotesWhatAShellWouldNeedQuoted(t *testing.T) {
 	require.Equal(t, `api GET /open-apis/im/v1/messages`,
-		argvLine([]string{"api", "GET", "/open-apis/im/v1/messages"}))
+		ArgvLine([]string{"api", "GET", "/open-apis/im/v1/messages"}))
 	require.Equal(t, `im +messages-send --text 'hello there'`,
-		argvLine([]string{"im", "+messages-send", "--text", "hello there"}))
-	require.Equal(t, `--text 'it'\''s fine'`, argvLine([]string{"--text", "it's fine"}))
-	require.Equal(t, `--text ''`, argvLine([]string{"--text", ""}))
+		ArgvLine([]string{"im", "+messages-send", "--text", "hello there"}))
+	require.Equal(t, `--text 'it'\''s fine'`, ArgvLine([]string{"--text", "it's fine"}))
+	require.Equal(t, `--text ''`, ArgvLine([]string{"--text", ""}))
 }
 
 func TestPages_IgnoresTheOtherProgressLines(t *testing.T) {

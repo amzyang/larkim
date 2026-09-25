@@ -22,13 +22,17 @@ func TestReport_ChangedOnlyWhenSomethingLanded(t *testing.T) {
 	require.True(t, Report{Repaired: 1}.changed())
 }
 
-// runOneTick runs the loop for exactly one tick by cancelling from OnChange,
-// which fires once the tick is over.
+// runOneTick runs the loop for exactly one tick. OnChange also fires as the
+// tick writes, so the tick stamp is what says the tick is over.
 func runOneTick(t *testing.T, s *Syncer) {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	s.OnChange = cancel
+	s.OnChange = func() {
+		if v, ok, _ := s.Store.GetState(ctx, KeyLastTickAt); ok && v != "" {
+			cancel()
+		}
+	}
 	_ = s.Run(ctx)
 }
 

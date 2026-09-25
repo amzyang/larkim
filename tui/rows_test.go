@@ -499,7 +499,7 @@ func TestRenderSearchRows_KeepsABlockInsideOneChat(t *testing.T) {
 	b := said("om_2", "孙琪", "命中二", 23, 9, 1)
 	b.ChatID = "oc_2"
 	chats := []store.Chat{{ChatID: "oc_1", Name: "甲群"}, {ChatID: "oc_2", Name: "乙群"}}
-	rows := renderSearchRows(messageHits(a, b), chats, baseStyle())
+	rows := renderSearchRows(messageHits(a, b), chats, "Messages", baseStyle())
 	require.Equal(t, 2, blocks(rows, "孙琪"), "a hit in another chat needs its own head to carry that chat's name")
 	out := rowText(rows)
 	require.Contains(t, out, "甲群")
@@ -512,7 +512,7 @@ func TestRenderSearchRows_SplitsABlockWhenHitsAreHoursApart(t *testing.T) {
 	newer := said("om_2", "孙琪", "命中二", 23, 15, 0)
 	older := said("om_1", "孙琪", "命中一", 23, 9, 0)
 	chats := []store.Chat{{ChatID: "oc_1", Name: "甲群"}}
-	rows := renderSearchRows(messageHits(newer, older), chats, baseStyle())
+	rows := renderSearchRows(messageHits(newer, older), chats, "Messages", baseStyle())
 	require.Equal(t, 2, blocks(rows, "孙琪"), "six hours apart is not one burst, whichever way the list runs")
 }
 
@@ -655,7 +655,7 @@ func TestRenderSearchRows_NamesTheSenderInsideAChatOfTwo(t *testing.T) {
 	msgs := []store.Message{said("om_1", "孙琪", "今天的构建挂了", 23, 9, 0)}
 	st := baseStyle()
 	st.p2p = true // the cursor happens to sit on a p2p chat
-	out := rowText(renderSearchRows(messageHits(msgs...), []store.Chat{{ChatID: "oc_1", Name: "平台组"}}, st))
+	out := rowText(renderSearchRows(messageHits(msgs...), []store.Chat{{ChatID: "oc_1", Name: "平台组"}}, "Messages", st))
 
 	require.Contains(t, out, "孙琪", "hits run across chats, so every block names its sender")
 	require.Contains(t, out, "平台组")

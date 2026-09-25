@@ -88,6 +88,7 @@ const (
 	// KeyHistoryCursor is the start of the next day-slice of historical search;
 	// history is complete once it reaches the live window.
 	KeyHistoryCursor = "history_cursor_ms"
+	KeyReactionsAt   = "reactions_at"
 )
 
 // historySlice is how much history one tick searches.
@@ -109,10 +110,11 @@ type Syncer struct {
 	Log    *slog.Logger
 	// OnError, when set, observes every failed tick (for crash reporting).
 	OnError func(error)
-	// OnChange, when set, fires at the end of every tick, failed ones
+	// OnChange, when set, fires whenever a tick has written something a
+	// reader displays, and once more at the end of every tick, failed ones
 	// included, so an in-process consumer can compare revisions at once
-	// instead of at its next poll. A tick that wrote nothing still fires:
-	// the comparison is what decides, not this.
+	// instead of at its next poll. A tick that wrote nothing still fires at
+	// its end: the comparison is what decides, not this.
 	OnChange func()
 	// Fetch downloads avatars; nil disables avatar files.
 	Fetch Fetcher
@@ -194,6 +196,16 @@ func (s *Syncer) Tick(ctx context.Context) (Report, error) {
 	return rep, err
 }
 
+// changed prompts an in-process consumer to compare revisions now rather than
+// at its next poll. A tick writes a message in stages — the body, then the
+// rendering that makes it readable, then its pictures — and a reader watching
+// the chat wants each as it lands, not all of them a sweep later.
+func (s *Syncer) changed(n int) {
+	if n > 0 && s.OnChange != nil {
+		s.OnChange()
+	}
+}
+
 func (s *Syncer) tick(ctx context.Context, now time.Time) (Report, error) {
 	var rep Report
 	if status, _, _ := s.Store.GetState(ctx, KeyStatus); status == StatusNeedsLogin {
@@ -227,8 +239,25 @@ func (s *Syncer) tick(ctx context.Context, now time.Time) (Report, error) {
 	if err := s.setStateTime(ctx, KeyWatermark, coveredEnd); err != nil {
 		return rep, err
 	}
+	s.changed(rep.New)
 
-	// 1b. Historical discovery: one day-slice of cross-chat search per tick,
+	// 2. Render and fetch what the fast path just found, ahead of the sweeps
+	// below. A body lands unrendered, so a reader watching the chat sees the
+	// message named by its type until a rendering replaces it; doing it here
+	// rather than after the sweeps is the difference between a flicker and
+	// half a minute of placeholder. A tick that found nothing skips it, which
+	// is most of them.
+	if rep.New > 0 {
+		if rep.Rendered, err = s.renderPending(ctx, "", s.Opt.RenderPerTick*50, now); err != nil {
+			return rep, fmt.Errorf("render: %w", err)
+		}
+		if rep.Downloaded, err = s.downloadPending(ctx, now); err != nil {
+			return rep, fmt.Errorf("resources: %w", err)
+		}
+		s.changed(rep.Rendered + rep.Downloaded)
+	}
+
+	// 3. Historical discovery: one day-slice of cross-chat search per tick,
 	// from now-BackfillDays up to the live window. Far cheaper than listing
 	// every chat, so recent history fills in within minutes.
 	n, err := s.historySlice(ctx, rep.Window.Start, now)
@@ -237,7 +266,7 @@ func (s *Syncer) tick(ctx context.Context, now time.Time) (Report, error) {
 	}
 	rep.History = n
 
-	// 2. Full chat listing, and the per-user settings it does not carry.
+	// 4. Full chat listing, and the per-user settings it does not carry.
 	if Due(s.stateTime(ctx, KeyChatsRefreshed), s.Opt.ChatsRefreshEvery, now) {
 		n, err := s.refreshChats(ctx, now)
 		if err != nil {
@@ -249,7 +278,7 @@ func (s *Syncer) tick(ctx context.Context, now time.Time) (Report, error) {
 		}
 	}
 
-	// 3. Slow path: reconcile the most active chats.
+	// 5. Slow path: reconcile the most active chats.
 	if Due(s.stateTime(ctx, KeySlowPathAt), s.Opt.SlowPathEvery, now) {
 		n, err := s.slowPath(ctx, now)
 		if err != nil {
@@ -258,49 +287,52 @@ func (s *Syncer) tick(ctx context.Context, now time.Time) (Report, error) {
 		rep.SlowPath = n
 	}
 
-	// 4. Backfill a few chats per tick so live data keeps flowing.
+	// 6. Backfill a few chats per tick so live data keeps flowing.
 	n, err = s.backfillSlice(ctx, now)
 	if err != nil {
 		return rep, fmt.Errorf("backfill: %w", err)
 	}
 	rep.Backfilled = n
 
-	// 5. Render human-readable text for new or edited messages.
-	n, err = s.renderPending(ctx, now)
+	// 7. Render and fetch whatever the sweeps above added.
+	n, err = s.renderPending(ctx, "", s.Opt.RenderPerTick*50, now)
 	if err != nil {
 		return rep, fmt.Errorf("render: %w", err)
 	}
-	rep.Rendered = n
+	rep.Rendered += n
 
-	// 6. Download attachments that are pending or due for retry.
+	// 8. Download attachments that are pending or due for retry.
 	n, err = s.downloadPending(ctx, now)
 	if err != nil {
 		return rep, fmt.Errorf("resources: %w", err)
 	}
-	rep.Downloaded = n
+	rep.Downloaded += n
+	s.changed(rep.Rendered + rep.Downloaded)
 
-	// 7. Copy sticker pictures out of the Lark client's own storage.
+	// 9. Copy sticker pictures out of the Lark client's own storage.
 	n, err = s.copyStickers(ctx, now)
 	if err != nil {
 		return rep, fmt.Errorf("stickers: %w", err)
 	}
 	rep.Stickers = n
 
-	// 8. Poll whether the user has read recent messages from others.
+	// 10. Poll whether the user has read recent messages from others.
 	n, err = s.pollReadStatus(ctx, now)
 	if err != nil {
 		return rep, fmt.Errorf("read status: %w", err)
 	}
 	rep.ReadChecks = n
 
-	// 8b. Keep the chat list's reactions current for the liveliest p2p chats.
-	n, err = s.reactionsSlice(ctx)
-	if err != nil {
-		return rep, fmt.Errorf("reactions: %w", err)
+	// 11. Keep the chat list's reactions current for the liveliest p2p chats.
+	if Due(s.stateTime(ctx, KeyReactionsAt), reactionsEvery, now) {
+		n, err = s.reactionsSlice(ctx, now)
+		if err != nil {
+			return rep, fmt.Errorf("reactions: %w", err)
+		}
+		rep.Reactions = n
 	}
-	rep.Reactions = n
 
-	// 9. Repair recent history, refresh members, fetch avatars: a few each.
+	// 12. Repair recent history, refresh members, fetch avatars: a few each.
 	if rep.Repaired, err = s.repairSlice(ctx, now); err != nil {
 		return rep, fmt.Errorf("repair: %w", err)
 	}
@@ -354,7 +386,12 @@ func (s *Syncer) historySlice(ctx context.Context, liveStart, now time.Time) (in
 		cur = now.AddDate(0, 0, -s.Opt.BackfillDays)
 	}
 	if !cur.Before(liveStart) {
-		return 0, nil
+		// The live window advances every tick, so a cursor left on its edge is
+		// behind again by the next one and history re-searches a stretch the
+		// live path already covered. Keeping it abreast of now ends that for
+		// good. An outage needs no catch-up here either: the watermark stalls
+		// with the loop, so the next live window spans the whole gap itself.
+		return 0, s.setStateTime(ctx, KeyHistoryCursor, now)
 	}
 	w := Window{Start: cur, End: cur.Add(historySlice)}
 	if w.End.After(liveStart) {
@@ -629,13 +666,15 @@ func (s *Syncer) pullChat(ctx context.Context, chatID string, since, until, now 
 }
 
 // renderPending renders messages without attachments; those with pending
-// downloads are rendered by downloadPending in the same lark-cli call.
-func (s *Syncer) renderPending(ctx context.Context, now time.Time) (int, error) {
+// downloads are rendered by downloadPending in the same lark-cli call. An
+// empty chatID takes them from every chat; the chat somebody is reading names
+// itself, so its own arrivals are not stuck behind a backlog elsewhere.
+func (s *Syncer) renderPending(ctx context.Context, chatID string, limit int, now time.Time) (int, error) {
 	total, err := s.renderLocal(ctx, now)
 	if err != nil {
 		return total, err
 	}
-	ids, err := s.Store.UnrenderedMessageIDs(ctx, s.Opt.RenderPerTick*50)
+	ids, err := s.Store.UnrenderedMessageIDs(ctx, chatID, limit)
 	if err != nil {
 		return total, err
 	}
@@ -682,9 +721,14 @@ func (s *Syncer) renderLocal(ctx context.Context, now time.Time) (int, error) {
 	return len(pending), nil
 }
 
-// storeRendered saves a rendered message's text, mentions and reactions.
+// storeRendered saves a rendered message's text, mentions and reactions, and
+// registers the pictures that exist nowhere but that text.
 func (s *Syncer) storeRendered(ctx context.Context, r larkcli.RenderedMessage, now time.Time) error {
-	return s.Store.UpdateRendered(ctx, r.MessageID, renderedText(r), rawString(r.Mentions), rawString(r.Reactions), now.UnixMilli())
+	text := renderedText(r)
+	if err := s.Store.UpdateRendered(ctx, r.MessageID, text, rawString(r.Mentions), rawString(r.Reactions), now.UnixMilli()); err != nil {
+		return err
+	}
+	return s.Store.AddPendingResources(ctx, ExtractRendered(r.MessageID, r.MsgType, text))
 }
 
 func rawString(r json.RawMessage) string {

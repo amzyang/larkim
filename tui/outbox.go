@@ -26,14 +26,18 @@ type outboxItem struct {
 	threadID string
 	replyTo  string
 	inThread bool
-	msgType  string // "text", "post" or "image"
+	msgType  string // "text", "post", "image" or "file"
 	// send is the body on the wire; body is what the bubble draws, which is
 	// the shape lark-cli renders this message back into after ingest.
 	send larkcli.Outgoing
 	body string
-	// images are the files this send has to upload first, and keys the ones
-	// it already did, which is what keeps a retry from uploading twice.
+	// images are the pictures this send has to upload first, file the
+	// attachment it carries instead, and keys the ones already uploaded,
+	// which is what keeps a retry from uploading twice. A file message
+	// carries no pictures and a picture message no file, so at most one of
+	// the first two is ever set.
 	images    []draftImage
+	file      draftFile
 	keys      []string
 	state     outboxState
 	messageID string // set once Feishu answered

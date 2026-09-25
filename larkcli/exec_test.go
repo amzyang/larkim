@@ -323,7 +323,13 @@ echo '{"ok":true,"identity":"user","data":{"message_id":"om_new","chat_id":"oc_q
 		strings.TrimSpace(string(args)))
 }
 
-func TestPostContent_EscapesTheMarkdown(t *testing.T) {
+// postParas decodes a body back into the paragraphs it spells, each one named
+// by the tag it carries and the text under it.
+func postParas(t *testing.T, markdown string) [][]struct {
+	Tag  string `json:"tag"`
+	Text string `json:"text"`
+} {
+	t.Helper()
 	var body struct {
 		ZhCn struct {
 			Content [][]struct {
@@ -332,10 +338,44 @@ func TestPostContent_EscapesTheMarkdown(t *testing.T) {
 			} `json:"content"`
 		} `json:"zh_cn"`
 	}
-	md := "他说\"好\"\n# 标题\n\n| a |\n|---|"
-	require.NoError(t, json.Unmarshal([]byte(postContent(md)), &body))
-	require.Equal(t, "md", body.ZhCn.Content[0][0].Tag)
-	require.Equal(t, md, body.ZhCn.Content[0][0].Text, "the draft survives the wrapper verbatim")
+	require.NoError(t, json.Unmarshal([]byte(postContent(markdown)), &body))
+	return body.ZhCn.Content
+}
+
+func TestPostContent_EscapesTheMarkdown(t *testing.T) {
+	paras := postParas(t, "他说\"好\"\n| a |\n|---|")
+	require.Len(t, paras, 1)
+	require.Equal(t, "md", paras[0][0].Tag)
+	require.Equal(t, "他说\"好\"\n| a |\n|---|", paras[0][0].Text, "the draft survives the wrapper verbatim")
+}
+
+func TestPostContent_BlankLineBecomesAnEmptyTextParagraph(t *testing.T) {
+	// Feishu drops a blank line inside an md element and strips an empty
+	// paragraph sent as an empty array, so the gap is spelled this one way.
+	require.Equal(t,
+		`{"zh_cn":{"content":[[{"tag":"md","text":"## 发布说明"}],[{"tag":"text","text":""}],[{"tag":"md","text":"正文"}]]}}`,
+		postContent("## 发布说明\n\n正文"))
+}
+
+func TestPostContent_ConsecutiveBlankLinesEachBecomeAGap(t *testing.T) {
+	paras := postParas(t, "上\n\n\n下")
+	require.Len(t, paras, 4)
+	require.Equal(t, "", paras[1][0].Text)
+	require.Equal(t, "text", paras[1][0].Tag)
+	require.Equal(t, "text", paras[2][0].Tag)
+}
+
+func TestPostContent_KeepsAFenceWhole(t *testing.T) {
+	md := "看代码：\n\n```go\nfunc a() {\n\n}\n```\n\n就这些"
+	paras := postParas(t, md)
+	require.Len(t, paras, 5)
+	require.Equal(t, "```go\nfunc a() {\n\n}\n```", paras[2][0].Text, "a blank line inside a fence is code")
+}
+
+func TestPostContent_DropsTheBlankLinesAroundTheBody(t *testing.T) {
+	paras := postParas(t, "\n\n正文\n\n")
+	require.Len(t, paras, 1)
+	require.Equal(t, "正文", paras[0][0].Text)
 }
 
 func TestExecClient_SendImageUsesTheImageFlag(t *testing.T) {
@@ -393,4 +433,28 @@ echo '{"ok":true,"identity":"user","data":{"items":[]}}'`)
 	// Without it an interactive message arrives as a placeholder telling the
 	// reader to upgrade, carrying neither the card nor its attachment table.
 	require.Contains(t, string(args), `"card_msg_content_type":"raw_card_content"`)
+}
+
+func TestChatMembers_SplitsUsersFromBots(t *testing.T) {
+	c := fakeBinary(t, `
+echo "$*" > "$(dirname "$0")/argv"
+echo "[page 1] fetching..." >&2
+echo "Found 1 user(s) and 1 bot(s)" >&2
+cat <<'JSON'
+{"ok":true,"identity":"user","data":{"chat_id":"oc_team","user_total":1,"bot_total":1,
+ "users":[{"member_id":"ou_a","member_id_type":"open_id","name":"张三","tenant_key":"t1"}],
+ "bots":[{"member_id":"ou_bot","app_id":"cli_c","name":"构建机器人","tenant_key":"t1"}],
+ "truncations":[],"has_more":false}}
+JSON`)
+
+	members, err := c.ChatMembers(context.Background(), "oc_team")
+
+	require.NoError(t, err)
+	require.Len(t, members, 2)
+	require.Equal(t, ChatMember{MemberID: "ou_a", MemberType: "open_id", Name: "张三"}, members[0])
+	require.Equal(t, ChatMember{MemberID: "ou_bot", Name: "构建机器人", IsBot: true}, members[1])
+
+	argv, err := os.ReadFile(filepath.Join(c.Dir, "argv"))
+	require.NoError(t, err)
+	require.Contains(t, string(argv), "im +chat-members-list --chat-id oc_team --member-types user,bot")
 }

@@ -37,13 +37,14 @@ larkim send --chat "项目协作群" --text "hi"          # chat name or oc_ id
 larkim reply om_xxx --text "ok" --in-thread
 larkim send --chat "平台组" --markdown $'## 发布说明\n\n- 修复了 A'   # rich-text post
 larkim send --chat "平台组" --image ~/Desktop/shot.png              # uploaded, then sent
+larkim send --chat "平台组" --file ~/Desktop/发布说明.pdf            # any other file, same way
 larkim watch --chat "项目协作群"                     # stream new messages
 larkim tui
 ```
 
 ## TUI
 
-`larkim tui` shows chats, the selected chat's messages and, when opened, a thread pane, plus a composer. The chat header names the chat, marked with a glyph for its kind, and a rule under it parts the header from the list. If no daemon holds the data-dir lock the TUI syncs in-process. Colours follow the terminal palette and its light or dark background. Below 114 columns the thread or assistant pane takes the place of the messages pane; the TUI needs at least 60×12. A reply carries the message it answers quoted above its body — sender and gist on one line — unless that message is the one right above it.
+`larkim tui` shows chats, the selected chat's messages and, when opened, a thread pane, plus a composer. The chat header names the chat, marked with a glyph for its kind, and a rule under it parts the header from the list. If no daemon holds the data-dir lock the TUI syncs in-process. Colours follow the terminal palette and its light or dark background. Below 114 columns the thread or assistant pane takes the place of the messages pane; the TUI needs at least 78×12. A reply carries the message it answers quoted above its body — sender and gist on one line — unless that message is the one right above it.
 
 The message list is split where the calendar day changes, and each message is headed by its sender — the selected one also spells out its time. Official emoji are drawn as emoji, interactive cards as a titled block with their buttons, and system messages centred and muted. On kitty, images are drawn in place once they have been downloaded; elsewhere they read as `[图片]`. An attachment is carded the way the client draws one: a video as its cover frame under how long it runs, a voice message as that length, and any other file as its name beside its size. `o` or a click opens the downloaded file.
 
@@ -53,30 +54,40 @@ The message list is split where the calendar day changes, and each message is he
 | `Tab` `Shift+Tab` `h` `l` | change focused pane |
 | `Enter` | open chat · open thread · reply |
 | `i` `r` `R` | write · reply · reply in thread (Enter sends, Shift+Enter newline, Esc back) |
-| composer | the draft is markdown: one that uses any of it goes out as a Feishu rich-text post, anything else as plain text, and one that is a single `![](…)` goes out as an image. The badge under the draft names which, along with the files it will upload or the path it cannot find. |
+| composer | the draft is markdown: one that uses any of it goes out as a Feishu rich-text post, anything else as plain text, one that is a single `![](…)` goes out as an image and one that is a single `[](…)` naming a local file goes out as that file. The badge under the draft names which, along with the files it will upload or the path it cannot find. |
 | rich text | a post is sent exactly as typed and drawn as a document: heading levels, `•`/`◦` bullets with indent, a quote gutter, rules and real tables. Plain text messages stay literal. |
+| files | write `[名字](~/Desktop/报告.pdf)` — an ordinary markdown link, the `!`-less form of an image reference. A draft that is one such link and nothing else goes out as a file message; the target has to be a file this machine holds, so `[点这里](https://…)` stays an ordinary link in a post. A `file_…` key Feishu already holds is used as-is. Feishu caps an attachment at 30 MB. Video and voice go as plain files, not as a player or a voice bar |
 | images | write `![alt](~/Desktop/shot.png)` or `![alt](./a.png)`; the file is uploaded when Enter is pressed and the picture draws in the message list straight away. A `https://` address is downloaded and uploaded at send time, and an `img_…` key Feishu already holds is used as-is. Feishu caps a message image at 10 MB, and a remote one at 8 MB. |
+| `@` `:` `[` | completion, without leaving the draft: `@` offers who this chat reaches, `:` and `[` offer emoji. The popup opens over the writing area as you type and narrows on Chinese, pinyin or initials, the way `/` does; `Tab` or `Enter` accepts, `Ctrl+n`/`Ctrl+p` move, `Esc` dismisses and leaves what you typed as text. A trigger inside a word opens nothing, so `http://`, `14:30` and an email address are left alone, and an emoji trigger waits for two letters, so a lone `:` or `[` is punctuation |
+| `@` | the people in the chat, the bots in it and you, with `@All` ahead of them in a group. A chat of two offers the pair it is, and no `@All` — there is nobody else there to shout at. Accepting writes the plain `@名字` you would have typed, and the tag Feishu actually notifies on is built from it at send time — so the draft stays ordinary text you can keep editing |
+| `:` `[` | an emoji goes in as its character where one carries it, and as the bracketed Chinese name Feishu's own text messages spell — `[完成]` — where none does. `[` is the same completion reached the way that spelling reads. Feishu's whole set is offered, plus the Unicode emoji it has no answer for |
 | `Ctrl+o` | toggle the preview, which draws a post or an image draft the way the message list will. The writing area grows with the draft up to ten rows; neither takes rows the message panes need. |
 | `Ctrl+g` | hand the draft to `$VISUAL` or `$EDITOR` (else `vi`) as a `.md` file, so a long message is written with markdown highlighting. Saving brings the text back; quitting without saving leaves the draft alone. |
-| `Ctrl+v` | paste whatever the clipboard holds: a screenshot is staged under `~/.larkim/resources/pasted/` and referenced as an image, a file copied in Finder is referenced where it already sits (or, if it is not an image, its path goes in as text), and text lands at the cursor. Staged images are pruned after a week. Use `Ctrl+v` rather than `Cmd+v` for images — kitty turns `Cmd+v` into a text-only paste, so it cannot see image data. |
+| `Ctrl+v` | paste whatever the clipboard holds: a screenshot is staged under `~/.larkim/resources/pasted/` and referenced as an image, a file copied in Finder is referenced where it already sits — as a picture when it is one, otherwise as an attachment, and text lands at the cursor. Staged images are pruned after a week. Use `Ctrl+v` rather than `Cmd+v` for images — kitty turns `Cmd+v` into a text-only paste, so it cannot see image data. |
 | `Ctrl+r` | drop the quote from the open draft; the quoted message is named above the composer and marked `↩replying` in the list |
+| `n` `N` | jump to the next or previous chat with something waiting and open it, wrapping round the list; muted chats are skipped, as they are in the header's count |
+| `I` | the open chat's own card in the right pane, in place of the thread: what kind of chat it is, its description, `external` and `dissolved` badges, and the members the daily refresh last saw, with the owner marked. A chat of two draws the person instead — enterprise email, department, and whether they are outside this tenant |
+| `f` | forward the selected message. The chooser lists chats first, then the people no chat reaches yet, filtered the same way `/` filters; the message being sent on is named under the list. Unlike `D` it asks nothing further — picking a destination is already the deliberate step. Merge-forward is not offered: that API takes bot identity only |
+| `D` | recall your own message. It asks `y/n` first, because a recall is visible to everyone who was in the chat and cannot be undone; whether the window has closed is Feishu's answer, not a guess made here. Editing a sent message is not offered: that API takes bot identity only, so recall-and-resend is the correction path |
 | `t` | toggle the thread pane for the selected message |
 | `.` `x` | a message appears as `(sending)` the moment Enter is pressed; one Feishu refused is marked `(failed)` — `.` sends it again under the same idempotency key, `x` drops it |
-| `y` `v` | copy the agent context · start a range selection (`j`/`k` extend, `y` copies, `Esc` cancels) |
+| `Y` `yy` `yr` `yc` `v` | copy the agent context · the message id · its raw json · its text · start a range selection (`j`/`k` extend, `Y` copies, `Esc` cancels) |
 | `o` | open what the message draws: a call to join, an attachment's own file, else the message in the Feishu client |
+| `e` | react to the selected message: type to filter the emoji, `Enter` puts the highlighted one on, `Esc` leaves |
 | `/` | filter chats |
-| `:search <text>` | cross-chat full-text search in the messages pane; Enter jumps to the hit, Esc leaves |
+| `Ctrl+f` / `:search <text>` | search messages, chats and people in one panel, all three under the same cursor: the store answers as the query is typed and Feishu is asked once it stands still, `Enter` opens the hit, `Esc` leaves |
 | `a` / `:ai …` | assistant in the right pane: `summary`, `draft <how>` (result lands in the composer), `todo`, or any question about the open chat |
-| `:` `;` | command line: `:copy <200\|7d\|all>` `:goto <chat>` `:send <chat\|ou_> <text>` `:preview` `:sync` `:q` |
+| `:mentions` | everything that @'d you, across every chat, newest first; Enter jumps to it. A chat holding an unread mention wears an `@` badge in the list until it is read, however many messages have landed since |
+| `:` `;` | command line: `:copy <200\|7d\|all>` `:goto <chat>` `:send <chat\|ou_> <text>` `:react <emoji>` `:mentions` `:preview` `:sync` `:q` |
 | mouse | click focuses and selects, double-click opens, wheel scrolls |
 
 Shift+Enter needs a terminal with the kitty keyboard protocol (kitty, Ghostty, WezTerm); elsewhere use Alt+Enter or Ctrl+J for newlines.
 
 ### Agent context
 
-`y` puts the conversation on the clipboard in a fixed format built for pasting into a coding agent: a header naming the chat, the people in it and who you are, then one tagged block per message carrying its id, time, sender, mentions, reply and thread links, reactions and attachment paths. Message bodies are copied verbatim, so the block boundary carries a random suffix generated per copy. The export ends with a `larkim messages list --before …` command the agent can run to page further back.
+`Y` puts the conversation on the clipboard in a fixed format built for pasting into a coding agent: a header naming the chat, the people in it and who you are, then one tagged block per message carrying its id, time, sender, mentions, reply and thread links, reactions and attachment paths. Message bodies are copied verbatim, so the block boundary carries a random suffix generated per copy. The export ends with a `larkim messages list --before …` command the agent can run to page further back.
 
-What `y` covers depends on the focus: the message under the cursor, the whole `v` selection, or — from the chats pane — the highlighted chat's last day, at most ten messages. `:copy 200`, `:copy 7d` and `:copy all` always cover the open chat, whatever has focus. Thread replies are folded out of a chat export and counted on their root instead; to copy a thread's contents, open it and press `y` there.
+What `Y` covers depends on the focus: the message under the cursor, the whole `v` selection, or — from the chats pane — the highlighted chat's last day, at most ten messages. `:copy 200`, `:copy 7d` and `:copy all` always cover the open chat, whatever has focus. Thread replies are folded out of a chat export and counted on their root instead; to copy a thread's contents, open it and press `Y` there.
 
 ## How it syncs
 

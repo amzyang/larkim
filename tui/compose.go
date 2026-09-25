@@ -20,6 +20,7 @@ const (
 	kindText draftKind = iota
 	kindPost
 	kindImage
+	kindFile
 )
 
 func (k draftKind) msgType() string {
@@ -28,6 +29,8 @@ func (k draftKind) msgType() string {
 		return "post"
 	case kindImage:
 		return "image"
+	case kindFile:
+		return "file"
 	default:
 		return "text"
 	}
@@ -42,7 +45,13 @@ var (
 	// loneImage is a draft that is one image and nothing else, which is the
 	// only shape that becomes an image message rather than a post.
 	loneImage = regexp.MustCompile(`^!\[([^\]\n]*)\]\((?:<([^>\n]+)>|([^)\s]+))\)$`)
+	// loneLink is a draft that is one ordinary markdown link and nothing else.
+	// Whether it is a file message or a post is not decided here: it turns on
+	// the target naming a file that exists, which planDraft answers because it
+	// is the half of the composer allowed to touch the disk.
+	loneLink = regexp.MustCompile(`^\[([^\]\n]*)\]\((?:<([^>\n]+)>|([^)\s]+))\)$`)
 
+	headingLine  = regexp.MustCompile(`^ {0,3}#{1,6} +\S`)
 	mdQuote      = regexp.MustCompile(`^ {0,3}> `)
 	mdBullet     = regexp.MustCompile(`^ {0,3}[-*+] \S`)
 	mdOrdered    = regexp.MustCompile(`^ {0,3}\d{1,9}[.)] \S`)
@@ -114,6 +123,18 @@ type draftPlan struct {
 	send   larkcli.Outgoing
 	body   string
 	images []draftImage
+	// file is the attachment a lone link resolved to, set only for kindFile.
+	// Feishu carries a file as a message of its own, so there is at most one.
+	file draftFile
+}
+
+// draftFile is the attachment a draft names. local is the resolved absolute
+// path, empty when the draft named a key Feishu already holds.
+type draftFile struct {
+	ref   string
+	local string
+	key   string
+	size  int64
 }
 
 // draftFiles resolves the paths a draft names. Both fields are injected so a
@@ -134,6 +155,20 @@ func osDraftFiles() draftFiles {
 func (f draftFiles) planDraft(draft string) (draftPlan, error) {
 	draft = strings.TrimSpace(draft)
 	p := draftPlan{kind: classify(draft), body: draft}
+
+	// A lone link whose target is a file on this machine is an attachment, not
+	// a post about a URL. The disk is what tells the two apart, so this is
+	// decided here rather than in classify, which stays pure.
+	if g := loneLink.FindStringSubmatch(draft); g != nil {
+		if file, ok, ferr := f.resolveFile(cmp.Or(g[2], g[3])); ok {
+			p.kind, p.file = kindFile, file
+			p.body = "[File: " + cmp.Or(file.key, filepath.Base(file.local)) + "]"
+			if file.key != "" {
+				p.send = larkcli.File(file.key)
+			}
+			return p, ferr
+		}
+	}
 
 	var err error
 	wire := mdImage.ReplaceAllStringFunc(draft, func(m string) string {
@@ -213,6 +248,50 @@ func (f draftFiles) resolveImage(ref string, n int) (draftImage, error) {
 	return img, nil
 }
 
+// maxFileBytes is Feishu's own cap on a message attachment.
+const maxFileBytes = 30 << 20
+
+// resolveFile answers whether a lone link names an attachment, and what it
+// resolves to. ok is false when the target is not a file this machine holds —
+// a URL, a missing path, a directory — which leaves the draft the post it
+// already was, so an ordinary link in a message is untouched.
+//
+// A target that is a file but cannot be sent comes back ok with an error: the
+// reader meant to attach it, so the badge has to say why it will not go rather
+// than silently turning the draft back into a link.
+func (f draftFiles) resolveFile(ref string) (draftFile, bool, error) {
+	if larkcli.IsFileKey(ref) {
+		return draftFile{ref: ref, key: ref}, true, nil
+	}
+	if strings.HasPrefix(ref, "http://") || strings.HasPrefix(ref, "https://") {
+		return draftFile{}, false, nil
+	}
+	path := ref
+	switch {
+	case ref == "~" || strings.HasPrefix(ref, "~/"):
+		if f.Home == "" {
+			return draftFile{}, false, nil
+		}
+		path = filepath.Join(f.Home, strings.TrimPrefix(strings.TrimPrefix(ref, "~"), "/"))
+	case strings.HasPrefix(ref, "~"):
+		return draftFile{}, false, nil
+	}
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return draftFile{}, false, nil
+	}
+	st, err := f.Stat(abs)
+	if err != nil || st.IsDir() {
+		return draftFile{}, false, nil
+	}
+	file := draftFile{ref: ref, local: abs, size: st.Size()}
+	if st.Size() > maxFileBytes {
+		return file, true, fmt.Errorf("%s is %s, over the %s limit",
+			filepath.Base(abs), humanBytes(st.Size()), humanBytes(maxFileBytes))
+	}
+	return file, true, nil
+}
+
 // uploads are the images that still have to reach Feishu.
 func (p draftPlan) uploads() []draftImage {
 	var out []draftImage
@@ -228,6 +307,10 @@ func (p draftPlan) uploads() []draftImage {
 // or how many pictures a post is carrying.
 func (p draftPlan) detail() string {
 	switch {
+	case p.kind == kindFile && p.file.local != "":
+		return filepath.Base(p.file.local) + " · " + humanBytes(p.file.size)
+	case p.kind == kindFile:
+		return p.file.key
 	case p.kind == kindImage && p.images[0].local != "":
 		return filepath.Base(p.images[0].local)
 	case p.kind == kindImage && p.images[0].url != "":
@@ -238,6 +321,17 @@ func (p draftPlan) detail() string {
 		return fmt.Sprintf("· %d images", len(p.uploads()))
 	}
 	return ""
+}
+
+// fileRef is a draft's reference to an attachment on disk, the ordinary
+// markdown link an image reference is the `!` form of. The label is the file's
+// own name, so the draft reads as what it will send.
+func fileRef(path string) string {
+	name := filepath.Base(path)
+	if strings.ContainsAny(path, " \t") {
+		return "[" + name + "](<" + path + ">)"
+	}
+	return "[" + name + "](" + path + ")"
 }
 
 // imageRef is a draft's reference to a picture on disk. A path holding a space

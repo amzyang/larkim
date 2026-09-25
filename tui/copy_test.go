@@ -316,11 +316,13 @@ func TestUpdate_ContextMessageReportsSizeAndSetsTheClipboard(t *testing.T) {
 	require.Contains(t, mm.(Model).notice, "copied 1 msg ·")
 }
 
-func TestHelpText_DocumentsTheCopyKeys(t *testing.T) {
-	require.Contains(t, helpText, "Y copy agent context")
-	require.Contains(t, helpText, "yy id · yr raw json · yc content")
-	require.Contains(t, helpText, "v select a range")
-	require.Contains(t, helpText, ":copy <200|7d|all>")
+func TestHelp_DocumentsTheCopyKeys(t *testing.T) {
+	require.True(t, helpHas("Y copy agent context"))
+	require.True(t, helpHas("yy copy the message id"))
+	require.True(t, helpHas("yr copy the raw json"))
+	require.True(t, helpHas("yc copy the content"))
+	require.True(t, helpHas("v select a range"))
+	require.True(t, helpHas(":copy <200|7d|all>"))
 }
 
 var _ tea.Cmd = copyContext(Deps{}, copySpec{})

@@ -172,3 +172,26 @@ func (s *Store) SetContactAvatarPath(ctx context.Context, openID, path string) e
 	_, err := s.db.ExecContext(ctx, `UPDATE contacts SET avatar_path = ? WHERE open_id = ?`, path, openID)
 	return err
 }
+
+// MentionsOf returns the messages naming the reader, newest first, across
+// every chat. The marker on a chat row says somebody is waiting; this is the
+// list that says who, and it is answered from mentions_json alone — no round
+// trip, since the rendering pass already resolved every @ into an open id.
+//
+// Unread and read alike: a mention the reader has already seen is still the
+// thing they were asked about, and dropping it the moment the chat is opened
+// would empty the list exactly when it is being used. Silenced messages are
+// left out, on the same rule as the badge: a rule that says "do not pull me by
+// this" holds here too.
+func (s *Store) MentionsOf(ctx context.Context, self string, limit int) ([]Message, error) {
+	if self == "" {
+		return nil, nil
+	}
+	if limit <= 0 {
+		limit = 100
+	}
+	return queryAll(ctx, s.db, scanMessage,
+		`SELECT `+messageColumns+` `+messageFrom+
+			` WHERE m.deleted = 0 AND m.silenced = 0 AND `+namesSelf+
+			` ORDER BY m.create_ms DESC LIMIT ?`, self, limit)
+}

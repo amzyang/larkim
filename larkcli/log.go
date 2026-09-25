@@ -14,7 +14,7 @@ import (
 // lane, so queued measures how long it waited for one: with the lanes in
 // place, that wait is the difference between a slow gateway and a busy sweep.
 func (c *ExecClient) logRequest(ctx context.Context, call uint64, args []string, l Lane, queued time.Duration) {
-	c.logger().DebugContext(ctx, "lark-cli request", "call", call, "argv", argvLine(args),
+	c.logger().DebugContext(ctx, "lark-cli request", "call", call, "argv", ArgvLine(args),
 		"lane", l, "queued", queued)
 }
 
@@ -28,7 +28,7 @@ func (c *ExecClient) logResponse(ctx context.Context, call uint64, args []string
 	}
 	if exitCode != 0 {
 		e := decodeError(exitCode, stderr)
-		attrs := []any{"call", call, "argv", argvLine(args), "dur", dur, "exit", exitCode,
+		attrs := []any{"call", call, "argv", ArgvLine(args), "dur", dur, "exit", exitCode,
 			"type", e.Type, "subtype", e.Subtype, "code", e.Code, "log_id", e.LogID,
 			"retry_after", e.RetryAfter}
 		if e.APICode != 0 {
@@ -55,14 +55,14 @@ func (c *ExecClient) logFailure(ctx context.Context, call uint64, args []string,
 	if errors.Is(err, context.Canceled) {
 		level = slog.LevelDebug
 	}
-	c.logger().Log(ctx, level, "lark-cli failed", "call", call, "argv", argvLine(args), "err", err)
+	c.logger().Log(ctx, level, "lark-cli failed", "call", call, "argv", ArgvLine(args), "err", err)
 	return err
 }
 
-// argvLine renders argv for a log line. Nothing is elided and anything that
+// ArgvLine renders argv for a log line. Nothing is elided and anything that
 // needs it is quoted, so the line can be pasted back into a shell as it
 // stands.
-func argvLine(args []string) string {
+func ArgvLine(args []string) string {
 	quoted := make([]string, len(args))
 	for i, a := range args {
 		quoted[i] = shellQuote(a)

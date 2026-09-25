@@ -40,6 +40,12 @@ type Chat struct {
 	LastMsgType    string `json:"last_msg_type,omitempty"`
 	LastContent    string `json:"last_content,omitempty"`
 	LastContentRaw string `json:"-"`
+	// UnreadMention says an unread message in this chat names the reader.
+	// Derived per query like UnreadCount, never stored: it answers "is
+	// somebody waiting on me here", which the last_* summary cannot, since a
+	// mention stops being the newest message as soon as anyone replies.
+	UnreadMention bool `json:"unread_mention,omitempty"`
+
 	// LastMentionsJSON is that message's rendered mentions, the same
 	// `[{key,id,name}]` messages.mentions_json holds.
 	LastMentionsJSON string `json:"last_mentions_json,omitempty"`
@@ -125,7 +131,7 @@ func scanChat(sc scanner) (Chat, error) {
 // scanListChat reads chatColumns plus the unread count ListChats appends.
 func scanListChat(sc scanner) (Chat, error) {
 	var c Chat
-	return c, sc.Scan(append(chatDest(&c), &c.UnreadCount)...)
+	return c, sc.Scan(append(chatDest(&c), &c.UnreadCount, &c.UnreadMention)...)
 }
 
 // UpsertChats inserts or refreshes chats from a listing; sync-owned columns
@@ -245,14 +251,29 @@ type ChatQuery struct {
 	Search      string // case-insensitive substring of name
 	IncludeLeft bool
 	Limit       int
+	// Self is the reader's open id, which is what UnreadMention is measured
+	// against. Empty leaves every chat's flag false rather than matching
+	// everything: instr with an empty needle answers 1 on any string.
+	Self string
 }
 
 // unreadJoin counts each chat's badge, on the same rule the badge is drawn
 // by. One grouped pass rather than a correlated subquery per row, and it
 // rides in the listing itself so a chat's number and its place cannot come
 // from two different revisions of the database.
-const unreadJoin = `LEFT JOIN (SELECT m.chat_id, count(*) AS n FROM messages m JOIN read_state r ON r.message_id = m.message_id
+const unreadJoin = `LEFT JOIN (SELECT m.chat_id, count(*) AS n, %s AS at_me FROM messages m JOIN read_state r ON r.message_id = m.message_id
  WHERE ` + unreadCounted + ` GROUP BY m.chat_id) u ON u.chat_id = c.chat_id `
+
+// namesSelf tests whether a message names one person. The needle carries the
+// JSON field around the id so that one open id cannot match another that
+// merely starts with it.
+const namesSelf = `instr(m.mentions_json, '"id":"' || ? || '"') > 0`
+
+// atMeExpr flags a chat holding an unread message that names the reader. It
+// rides the unread aggregate rather than the chat's last_* summary, because a
+// mention five messages back is still waiting: the client keeps the marker on
+// the chat until it is read, not until it is pushed off the summary line.
+const atMeExpr = `MAX(` + namesSelf + `)`
 
 // ListChats returns the chats newest message first. Unread does not lift a
 // chat: reading one is news about the reader, not about the chat, and a sort
@@ -272,7 +293,14 @@ func (s *Store) ListChats(ctx context.Context, q ChatQuery) ([]Chat, error) {
 	if !q.IncludeLeft {
 		where = append(where, "c.left_at = 0")
 	}
-	tail := unreadJoin
+	// The aggregate's placeholder comes before any WHERE of its own, so the
+	// reader's id goes to the front of the argument list.
+	atMe := "0"
+	if q.Self != "" {
+		atMe = atMeExpr
+		args = append([]any{q.Self}, args...)
+	}
+	tail := fmt.Sprintf(unreadJoin, atMe)
 	if len(where) > 0 {
 		tail += "WHERE " + strings.Join(where, " AND ") + " "
 	}
@@ -287,7 +315,7 @@ func (s *Store) ListChats(ctx context.Context, q ChatQuery) ([]Chat, error) {
 	tail += "ORDER BY c.last_unsilenced_ms DESC, c.last_message_ms DESC, c.name, c.chat_id LIMIT ?"
 	args = append(args, limit)
 	return queryAll(ctx, s.db, scanListChat,
-		`SELECT `+chatColumns+`, COALESCE(u.n, 0) AS unread_count FROM chats c LEFT JOIN contacts ct ON ct.open_id = c.p2p_target_id `+tail, args...)
+		`SELECT `+chatColumns+`, COALESCE(u.n, 0) AS unread_count, COALESCE(u.at_me, 0) AS at_me FROM chats c LEFT JOIN contacts ct ON ct.open_id = c.p2p_target_id `+tail, args...)
 }
 
 func (s *Store) queryChats(ctx context.Context, tail string, args ...any) ([]Chat, error) {

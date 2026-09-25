@@ -63,6 +63,37 @@ func botMark(senderType string) string {
 // which is what lets it sit dim behind the summary.
 const muteGlyph = ""
 
+// draftGlyph fills the row's own slot: what the reader left unsent in this
+// chat. It comes from the Nerd Font, so it takes the colour it is given and
+// holds to a single column. A send Feishu refused is not drawn here — it keeps
+// its place in the message list as a (failed) bubble the outbox can resend.
+const draftGlyph = ""
+
+// selfMark is the row's own slot: the draft waiting in this chat. It carries
+// its trailing space, so a chat with nothing unsent gives the whole line to
+// the summary rather than an indent that means nothing.
+func selfMark(d store.Draft) string {
+	if d.Empty() {
+		return ""
+	}
+	return stDim.Render(draftGlyph) + " "
+}
+
+// atMeMark is the other half of the row's marker pair: somebody in this chat
+// is waiting on the reader by name. It wears the same filled blue badge the
+// message list paints the reader's own mention with, so the chat list and the
+// message behind it read as one signal.
+//
+// It outranks the reaction chips and takes their slot, which is what the
+// client does: being named is the louder of the two, and at 38 columns only
+// one of them fits in front of the summary.
+func atMeMark(c store.Chat) string {
+	if !c.UnreadMention {
+		return ""
+	}
+	return stMentionMe.Render("@")
+}
+
 // mutedDot stands for the do-not-disturb chats that have something waiting.
 // It carries no number: a chat the reader silenced is not one to be counted
 // at. A filled circle is the smallest glyph that still reads alone at the
@@ -142,6 +173,12 @@ func msgTypeLabel(msgType string) string {
 		return "[个人名片]"
 	case "merge_forward":
 		return "[合并转发]"
+	case "post":
+		return "[富文本]"
+	case "calendar":
+		return "[日程]"
+	case "share_calendar_event":
+		return "[日程分享]"
 	case "system":
 		return "[系统消息]"
 	case "":
@@ -220,7 +257,18 @@ func lastMessageSummary(c store.Chat) string {
 	if a, ok := attachmentOf(c.LastMsgType, c.LastContentRaw); ok {
 		return attachGist(a)
 	}
-	return flatten(c.LastContent)
+	// A picture renders into a reference naming its key, which is fifty
+	// characters of markup that would crowd the words beside it off the line.
+	// The pane draws the picture itself; here it is only worth naming when
+	// there are no words to show instead.
+	keys, rest := splitImages(c.LastContent)
+	if text := flatten(rest); text != "" {
+		return text
+	}
+	if len(keys) > 0 {
+		return "[图片]"
+	}
+	return ""
 }
 
 // chatChipLimit is how many reactions a chat row shows. Past three the icons
@@ -280,28 +328,36 @@ func chatChips(c store.Chat, pics emojiPics) []rowSeg {
 	return append([]rowSeg{{text: stChipEdge.Render(chipLeft)}}, out...)
 }
 
-// chatSummaryLine is the row's second line: the reactions the chat collected,
-// then who said what, then the mute mark at the far edge. It comes back in
-// pieces only when a reaction is a picture — a line of characters stays one
-// string, which is what lets a selection tint it.
-func chatSummaryLine(c store.Chat, self string, pics emojiPics, w int) (string, []rowSeg) {
+// chatSummaryLine is the row's second line: what the reader left unsent, then
+// the reactions the chat collected, then who said what, then the mute mark at
+// the far edge. It comes back in pieces only when a reaction is a picture — a
+// line of characters stays one string, which is what lets a selection tint it.
+func chatSummaryLine(c store.Chat, d store.Draft, self string, pics emojiPics, w int) (string, []rowSeg) {
+	mine := selfMark(d)
 	chips := chatChips(c, pics)
-	room := w - segsWidth(chips)
+	if at := atMeMark(c); at != "" {
+		chips = []rowSeg{{text: at}}
+	}
+	room := w - segsWidth(chips) - lipgloss.Width(mine)
 	if len(chips) > 0 {
 		room-- // the space that keeps the summary clear of the icons
 	}
 	body := padBetween(chatSummary(c, self), muteMark(c), max(0, room))
 	if len(chips) == 0 {
-		return body, nil
+		return mine + body, nil
 	}
 	if !slices.ContainsFunc(chips, func(s rowSeg) bool { return s.pic.cols > 0 }) {
 		var b strings.Builder
 		for _, s := range chips {
 			b.WriteString(s.text)
 		}
-		return b.String() + " " + body, nil
+		return mine + b.String() + " " + body, nil
 	}
-	return "", append(chips, rowSeg{text: " " + body})
+	segs := append(chips, rowSeg{text: " " + body})
+	if mine == "" {
+		return "", segs
+	}
+	return "", append([]rowSeg{{text: mine}}, segs...)
 }
 
 // markName styles a name with the runes a filter landed on underlined. The
@@ -339,7 +395,7 @@ func markName(s string, pos []int, base lipgloss.Style) string {
 // is left, so the right edge stays aligned however long a name is. mark is
 // the runes of the name the filter landed on, empty when there is no filter
 // or the hit came through pinyin.
-func renderChatRow(av avatars, c store.Chat, unread int64, self string, now time.Time, w int, pics emojiPics, mark []int) chatRow {
+func renderChatRow(av avatars, c store.Chat, d store.Draft, unread int64, self string, now time.Time, w int, pics emojiPics, mark []int) chatRow {
 	avatarTop, avatarBottom, badged := av.cells(c, unread)
 	textWidth := chatTextWidth(w)
 
@@ -357,7 +413,7 @@ func renderChatRow(av avatars, c store.Chat, unread int64, self string, now time
 	room := textWidth - lipgloss.Width(right) - lipgloss.Width(bot) - lipgloss.Width(suffix) - 1
 	title := markName(personName(truncate(name, max(minTitleWidth, room)), suffix), mark, stBold) + bot
 
-	bottom, segs := chatSummaryLine(c, self, pics, textWidth)
+	bottom, segs := chatSummaryLine(c, d, self, pics, textWidth)
 	return chatRow{
 		avatarTop:    avatarTop,
 		avatarBottom: avatarBottom,

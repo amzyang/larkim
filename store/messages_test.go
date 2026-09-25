@@ -19,7 +19,7 @@ func TestUnrenderedLocalMessages_TakeTheirOwnQueue(t *testing.T) {
 	}, 1)
 	require.NoError(t, err)
 
-	ids, err := s.UnrenderedMessageIDs(ctx, 10)
+	ids, err := s.UnrenderedMessageIDs(ctx, "", 10)
 	require.NoError(t, err)
 	require.Equal(t, []string{"om_text"}, ids, "the messages larkim renders itself never reach lark-cli")
 

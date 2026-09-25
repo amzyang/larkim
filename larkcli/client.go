@@ -46,7 +46,7 @@ type Client interface {
 	DeleteReaction(ctx context.Context, messageID, reactionID string) error
 	// ReadStatus reports whether the current user has read each message.
 	ReadStatus(ctx context.Context, ids []string) (items []ReadStatus, invalid []string, err error)
-	// ChatMembers lists user members of a chat.
+	// ChatMembers lists the users and the bots in a chat.
 	ChatMembers(ctx context.Context, chatID string) ([]ChatMember, error)
 	// MuteStatus reports the user's do-not-disturb setting per chat. unknown
 	// carries the chats the API declined to answer for, which a caller must
@@ -72,6 +72,16 @@ type Client interface {
 	// resolves a relative one against the client's Dir, while images create
 	// takes any path.
 	UploadImage(ctx context.Context, path string) (string, error)
+	// UploadFile registers a local file and returns its key, for the same
+	// reason UploadImage exists: the send flag will not take an absolute path.
+	UploadFile(ctx context.Context, path string) (string, error)
+	// Recall takes back a message. Feishu lets an identity recall only what it
+	// sent, and only inside its own time limit, so it answers the refusal
+	// rather than this deciding either.
+	Recall(ctx context.Context, messageID string) error
+	// Forward sends an existing message on to another chat or person. The
+	// idempotency key deduplicates for an hour, the way a send's does.
+	Forward(ctx context.Context, messageID string, target Target, idempotencyKey string) (SentMessage, error)
 	// Whoami returns the current user identity without hitting the IM API.
 	Whoami(ctx context.Context) (Identity, error)
 }
@@ -89,6 +99,7 @@ type Outgoing struct {
 	Text     string // msg_type text
 	Markdown string // msg_type post
 	ImageKey string // msg_type image; a key, never a path
+	FileKey  string // msg_type file; a key, never a path
 }
 
 // Text is an Outgoing carrying plain text.
@@ -96,6 +107,11 @@ func Text(s string) Outgoing { return Outgoing{Text: s} }
 
 // Markdown is an Outgoing lark-cli converts into a rich-text post.
 func Markdown(s string) Outgoing { return Outgoing{Markdown: s} }
+
+// File is an Outgoing naming an already-uploaded file. Feishu carries a file
+// as a message of its own rather than as something inside one, so a draft that
+// names a file names nothing else.
+func File(key string) Outgoing { return Outgoing{FileKey: key} }
 
 // Image is an Outgoing naming an already-uploaded image.
 func Image(key string) Outgoing { return Outgoing{ImageKey: key} }
@@ -106,6 +122,12 @@ var imageKey = regexp.MustCompile(`^img_[A-Za-z0-9_-]+$`)
 // IsImageKey reports whether ref names a picture Feishu already holds, which
 // is what tells a key apart from a path that still has to be uploaded.
 func IsImageKey(ref string) bool { return imageKey.MatchString(ref) }
+
+// fileKey is how Feishu spells the handle it gives an uploaded file.
+var fileKey = regexp.MustCompile(`^file_[A-Za-z0-9_-]+$`)
+
+// IsFileKey reports whether ref names a file Feishu already holds.
+func IsFileKey(ref string) bool { return fileKey.MatchString(ref) }
 
 // Error is a failed lark-cli invocation decoded from its stderr envelope.
 type Error struct {

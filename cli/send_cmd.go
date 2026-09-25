@@ -19,8 +19,8 @@ func (a *App) sendCmd() *cobra.Command {
 	var to, chat string
 	var body outgoingFlags
 	cmd := &cobra.Command{
-		Use:   "send --to <ou_|email> | --chat <oc_|name> --text|--markdown|--image <body>",
-		Short: "Send a text, markdown or image message to a user or a chat",
+		Use:   "send --to <ou_|email> | --chat <oc_|name> --text|--markdown|--image|--file <body>",
+		Short: "Send a text, markdown, image or file message to a user or a chat",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if (to == "") == (chat == "") {
@@ -72,30 +72,32 @@ func (a *App) sendCmd() *cobra.Command {
 	return cmd
 }
 
-// outgoingFlags are the three bodies a send can carry. They are exclusive the
-// way lark-cli's own content flags are, and --text stays verbatim: a script
-// piping a changelog into it must not start sending rich text.
+// outgoingFlags are the bodies a send can carry. They are exclusive the way
+// lark-cli's own content flags are, and --text stays verbatim: a script piping
+// a changelog into it must not start sending rich text.
 type outgoingFlags struct {
 	text     string
 	markdown string
 	image    string
+	file     string
 }
 
 func (o *outgoingFlags) register(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&o.text, "text", "", "plain text to send, verbatim")
 	cmd.Flags().StringVar(&o.markdown, "markdown", "", "markdown to send as a rich-text post")
 	cmd.Flags().StringVar(&o.image, "image", "", "image to send: a path, or an img_… key Feishu already holds")
+	cmd.Flags().StringVar(&o.file, "file", "", "file to send: a path, or a file_… key Feishu already holds")
 }
 
 func (o outgoingFlags) check() error {
 	n := 0
-	for _, v := range []string{o.text, o.markdown, o.image} {
+	for _, v := range []string{o.text, o.markdown, o.image, o.file} {
 		if strings.TrimSpace(v) != "" {
 			n++
 		}
 	}
 	if n != 1 {
-		return fmt.Errorf("pass exactly one of --text, --markdown or --image")
+		return fmt.Errorf("pass exactly one of --text, --markdown, --image or --file")
 	}
 	return nil
 }
@@ -119,6 +121,19 @@ func (o outgoingFlags) outgoing(ctx context.Context, client larkcli.Client) (lar
 			return larkcli.Outgoing{}, err
 		}
 		return larkcli.Image(key), nil
+	case strings.TrimSpace(o.file) != "":
+		if larkcli.IsFileKey(o.file) {
+			return larkcli.File(o.file), nil
+		}
+		path, err := expandPath(o.file)
+		if err != nil {
+			return larkcli.Outgoing{}, err
+		}
+		key, err := client.UploadFile(ctx, path)
+		if err != nil {
+			return larkcli.Outgoing{}, err
+		}
+		return larkcli.File(key), nil
 	default:
 		return larkcli.Text(o.text), nil
 	}

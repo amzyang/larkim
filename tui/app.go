@@ -47,6 +47,7 @@ const (
 	modeEmoji
 	modeSearch
 	modeTarget
+	modeForward
 )
 
 // Model is the Bubble Tea model.
@@ -57,7 +58,6 @@ type Model struct {
 	focus         pane
 	mode          mode
 	focused       bool
-	showHelp      bool
 	th            theme
 	// dark is which way the terminal's background leans, kept beside the
 	// theme shaded from it because a code block picks its palette by name
@@ -66,17 +66,46 @@ type Model struct {
 
 	chats  []store.Chat
 	unread map[string]int64
+	// drafts is every chat's unsent composer state, for the chat list's own
+	// marker. The open chat's draft lives in the composer, not here, so this
+	// map is one refresh behind for that one row — see draftForRow.
+	drafts map[string]store.Draft
 	// readRefreshed is when each chat last had its read status re-asked, so
 	// revisiting a chat does not spend a call every time.
 	readRefreshed map[string]time.Time
+	// chatPollInFlight holds the open chat's poll to one call at a time, so a
+	// slow one costs a skipped beat instead of a queue.
+	chatPollInFlight bool
+	// chatPollPausedUntil stands the poll down after the gateway refuses it.
+	chatPollPausedUntil time.Time
 	// targets is the chooser over what the selected message leads to, open
 	// only in modeTarget.
 	targets targets
 	// picker is the emoji chooser, open only in modeEmoji.
 	picker picker
-	// emoji is the searchable emoji set the picker offers, prepared once
+	// pum is the completion popup over the writing area, open only while
+	// something is being written.
+	pum pum
+	// confirm is the action waiting on y or n, if any. A zero value leaves
+	// every key on its ordinary path.
+	confirm confirmation
+	// fwd is the forward chooser, open only in modeForward.
+	fwd forwarder
+	// help is the ? overlay, which takes every key while it is open.
+	help helpPanel
+	// infoOpen draws the open chat's own card in the right-hand pane; info is
+	// its roster and infoTop the row it is scrolled to.
+	infoOpen bool
+	info     []store.Contact
+	infoTop  int
+	// contacts is everyone larkim knows, for the forward chooser: a colleague
+	// with no chat yet is still somewhere a message can go.
+	contacts []store.Contact
+	// emoji is the searchable emoji set the reaction picker offers, and
+	// emojiWrite the wider one a draft may carry. Both are prepared once,
 	// because the terms never change while the program runs.
-	emoji *emoji.Index
+	emoji      *emoji.Index
+	emojiWrite *emoji.Index
 	// chatIx spells the chat list for the filter, so `/` reaches a Chinese
 	// name through its pinyin.
 	chatIx *chatIndex
@@ -138,6 +167,10 @@ type Model struct {
 	// Search mode: the messages pane lists cross-chat hits.
 	searching   bool
 	searchQuery string
+	// mentions says the panel is showing what named the reader rather than a
+	// search. The rows are the same kind, so only the rule over them, the
+	// title and the absence of a query tell the two apart.
+	mentions bool
 	// searchHits are the rows the panel can open — messages, chats and
 	// people share one cursor, which is msgIdx. It is the two halves below
 	// in the order they are drawn, rebuilt whenever either of them lands.
@@ -165,6 +198,14 @@ type Model struct {
 	aiTop   int
 	aiChan  <-chan ai.Chunk
 
+	// roster is who is in the open chat: what @ completes against, and what
+	// turns the names it inserted into tags on the way out.
+	roster []store.Contact
+	// picked remembers which person each inserted name stood for, so two
+	// colleagues sharing a display name resolve to the one chosen. Keyed by
+	// name rather than by offset, because the draft goes on being edited.
+	picked map[string]string
+
 	input   textarea.Model
 	cmdline textinput.Model
 	replyTo *store.Message
@@ -180,6 +221,10 @@ type Model struct {
 	// which is exactly when the draft does not read as what it will become.
 	previewOpen bool
 	previewRows []msgRow
+	// previewTop is the first row of the preview on screen. The band is
+	// capped at previewMaxRows, so a post renders past it and the wheel is
+	// the only way to the rest.
+	previewTop int
 	// outbox holds the messages the user submitted that the store does not
 	// carry yet, and selfName names their sender until it does.
 	outbox   []outboxItem
@@ -210,9 +255,6 @@ func New(d Deps) Model {
 	ti := textinput.New()
 	ti.Prompt = ":"
 	ti.SetVirtualCursor(false)
-	if d.OpenURL == nil {
-		d.OpenURL = openURL
-	}
 	if d.Env == nil {
 		d.Env = os.Getenv
 	}
@@ -225,15 +267,25 @@ func New(d Deps) Model {
 	if d.Log == nil {
 		d.Log = slog.New(slog.DiscardHandler)
 	}
+	// After the logger: the opener is the one hand-over to a subprocess the
+	// TUI makes, and it logs the argv it builds.
+	if d.OpenURL == nil {
+		log := d.Log
+		d.OpenURL = func(targets []string, background bool) error {
+			return openURL(log, targets, background)
+		}
+	}
 	prunePasted(d.DataDir, time.Now())
 	m := Model{deps: d, input: ta, cmdline: ti, focus: paneChats, focused: true, previewOpen: true,
 		readRefreshed:     map[string]time.Time{},
 		reactionRefreshed: map[string]time.Time{},
 		emoji:             emoji.NewReactionIndex(),
+		emojiWrite:        emoji.NewComposerIndex(),
 		chatIx:            newChatIndex(),
 		avatars:           newAvatars(d.DataDir, d.Env), pics: newPictures(d.DataDir, d.Env),
 		files: osDraftFiles()}
 	m.emoji.LoadRecent(d.DataDir)
+	m.emojiWrite.LoadRecent(d.DataDir)
 	m.setBackground(color.Black, true)
 	return m
 }
@@ -260,9 +312,11 @@ func Run(ctx context.Context, d Deps) error {
 func (m Model) Init() tea.Cmd {
 	// Asking for the cell size lets avatars be drawn at the exact pixels they
 	// will occupy; resampling is what makes small glyphs mushy.
-	return tea.Batch(tea.RequestBackgroundColor, tea.Raw(ansi.WindowOp(ansi.RequestCellSizeWinOp)),
-		loadChats(m.deps.Store), readSyncStatus(m.deps.Store), pollSyncStatus(m.deps.Store), waitForRev(m.revs),
+	cmds := tea.Batch(tea.RequestBackgroundColor, tea.Raw(ansi.WindowOp(ansi.RequestCellSizeWinOp)),
+		loadChats(m.deps.Store, m.deps.Self), loadContacts(m.deps.Store),
+		readSyncStatus(m.deps.Store), pollSyncStatus(m.deps.Store), waitForRev(m.revs),
 		loadSelfName(m.deps.Store, m.deps.Self))
+	return tea.Batch(cmds, m.chatPollCmd())
 }
 
 // Update runs the handler, then hands the terminal any avatar the newly
@@ -315,12 +369,19 @@ func (m Model) picturePrepare() string {
 	// The draft being previewed is claimed first, on the same rule: a picture
 	// the reader is looking at outranks one behind it. Without this the
 	// preview reserves cells the terminal was never handed.
-	collect(m.previewRows, 0, len(m.previewRows))
+	collect(m.previewRows, m.previewTop, m.previewTop+m.composerRows().preview)
 	// The picker is what the reader is looking at while it is open, so the
 	// emoji it offers are claimed before anything behind it.
 	if m.mode == modeEmoji {
 		for _, hit := range m.pickerVisible() {
 			_, pic := m.pickerIcon(hit.Emoji)
+			take(pic)
+		}
+	}
+	// The completion popup stands over the writing area on the same rule.
+	for _, hit := range m.pumVisible() {
+		if hit.emoji.Key != "" {
+			_, pic := m.pickerIcon(hit.emoji)
 			take(pic)
 		}
 	}
@@ -389,14 +450,22 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case tea.FocusMsg:
 		m.focused = true
+		// Beats taken while blurred polled nothing, so the chat on screen may
+		// be a minute stale; catch it up now rather than on the next beat.
+		if id := m.claimChatPoll(time.Now()); id != "" {
+			m.chatPollInFlight = true
+			return m, pollChat(m.deps, id, m.openThreadID())
+		}
 		return m, nil
 	case tea.BlurMsg:
+		// The reader has gone to another window; what is in the composer has
+		// to survive the trip, since larkim may be quit from over there.
 		m.focused = false
-		return m, nil
+		return m, m.saveComposer()
 	case chatsLoadedMsg:
 		vis := m.visibleChats()
 		wasCursor, wasTop := chatIDAt(vis, m.chatIdx), chatIDAt(vis, m.chatTop)
-		m.chats, m.unread = msg.chats, msg.unread
+		m.chats, m.unread, m.drafts = msg.chats, msg.unread, msg.drafts
 		if m.openingChat() == "" && len(m.chats) > 0 {
 			return m, m.openChat(m.chats[0].ChatID)
 		}
@@ -428,11 +497,26 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if entering || !m.focused {
 			m.markDots(msg.msgs)
 		}
+		var infoCmd tea.Cmd
 		m.msgsBase, m.meta = msg.msgs, msg.meta
 		m.applyOutbox()
+		// Only the page that opens the chat carries its draft back into the
+		// composer; a reload would stomp whatever is being typed.
+		if entering {
+			m.restoreDraft(msg.draft, m.msgs)
+		}
+		if msg.chatID == m.chatID {
+			m.roster = msg.roster
+		}
+		// The info pane is about the chat being read, so it follows the reader
+		// rather than closing behind them.
+		if entering && m.infoOpen {
+			m.info, m.infoTop = nil, 0
+			infoCmd = loadInfo(m.deps, msg.chatID)
+		}
 		if m.searching {
 			// The cursor and viewport index m.searchResults, not m.msgs.
-			return m, m.takeRead(msg.chatID, msg.msgs)
+			return m, tea.Batch(m.takeRead(msg.chatID, msg.msgs), infoCmd)
 		}
 		m.msgIdx = len(m.msgs) - 1
 		if i := indexOfID(m.msgs, wasOn); !atEnd && i >= 0 {
@@ -463,7 +547,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.msgTop = holdTop(m.msgRows, m.msgs, anchor, tailed, m.msgTop, m.msgListHeight())
 		}
-		return m, m.takeRead(msg.chatID, msg.msgs)
+		return m, tea.Batch(m.takeRead(msg.chatID, msg.msgs), infoCmd)
 	case searchRestMsg:
 		if !m.claimSearch(msg.gen) {
 			return m, nil
@@ -482,6 +566,36 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if h.kind == hitMessage {
 				m.markDots([]store.Message{h.msg})
 			}
+		}
+		m.searchLocal, m.searchMeta = msg.hits, msg.meta
+		m.rebuildHits()
+		m.msgIdx, m.msgTop = 0, 0
+		m.rebuildMessages()
+		return m, nil
+	case infoLoadedMsg:
+		if msg.chatID == m.chatID {
+			m.info, m.infoTop = msg.members, 0
+		}
+		return m, nil
+	case contactsLoadedMsg:
+		m.contacts = msg.people
+		return m, nil
+	case forwardedMsg:
+		if msg.err != nil {
+			return m.notify("forward: "+msg.err.Error(), true), nil
+		}
+		return m.notify("forwarded", false), m.reloadCurrent()
+	case recalledMsg:
+		if msg.err != nil {
+			return m.notify("recall: "+msg.err.Error(), true), nil
+		}
+		return m.notify("recalled", false), m.reloadCurrent()
+	case mentionsLoadedMsg:
+		if !m.mentions {
+			return m, nil
+		}
+		for _, h := range msg.hits {
+			m.markDots([]store.Message{h.msg})
 		}
 		m.searchLocal, m.searchMeta = msg.hits, msg.meta
 		m.rebuildHits()
@@ -571,12 +685,13 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case clipImage:
 			m.input.InsertString(imageRef(msg.clip.path))
 		case clipFile:
-			// larkim has no file message to send, so a file it cannot draw
-			// goes in as the path a person would have typed to name it.
+			// A picture goes in as one so it draws in the list; anything else
+			// goes in as an attachment, which is what a file copied in Finder
+			// was meant to be.
 			if isImagePath(msg.clip.path) {
 				m.input.InsertString(imageRef(msg.clip.path))
 			} else {
-				m.input.InsertString(msg.clip.path)
+				m.input.InsertString(fileRef(msg.clip.path))
 			}
 		}
 		m.replan()
@@ -630,6 +745,18 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		return m, m.openChat(msg.chatID)
+	case chatPollDueMsg:
+		// The chain re-arms whether or not it polls: a blurred or daemon-backed
+		// beat still has to hand the next one on.
+		cmds := []tea.Cmd{scheduleChatPoll()}
+		if id := m.claimChatPoll(time.Now()); id != "" {
+			m.chatPollInFlight = true
+			cmds = append(cmds, pollChat(m.deps, id, m.openThreadID()))
+		}
+		return m, tea.Batch(cmds...)
+	case chatPolledMsg:
+		m.notePollResult(msg.err, time.Now())
+		return m, nil
 	case readRefreshDueMsg:
 		if !m.claimReadRefresh(msg.chatID, time.Now()) {
 			return m, nil
@@ -644,6 +771,11 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.notify(fmt.Sprintf("copied %s · %s · %s", plural(msg.n, "msg", "msgs"), humanBytes(int64(len(msg.text))), msg.chat), false),
 			tea.SetClipboard(msg.text)
 	case tea.MouseClickMsg:
+		if m.help.open {
+			// Nothing under the overlay is clickable, and a click is not a
+			// key the reader meant as "done reading".
+			return m, nil
+		}
 		return m.onClick(tea.Mouse(msg))
 	case tea.MouseWheelMsg:
 		return m.onWheel(tea.Mouse(msg))
@@ -698,11 +830,43 @@ func (m *Model) openChat(chatID string) tea.Cmd { return m.openChatFrom(chatID, 
 // time so a search hit older than the newest page can be shown. The panes only
 // change over once the page arrives — see enterChat.
 func (m *Model) openChatFrom(chatID string, sinceMs int64) tea.Cmd {
+	// The composer belongs to the chat that is still open, so its contents go
+	// back to that chat before the page for the next one is asked for.
+	keep := m.saveComposer()
 	m.pendingChat, m.pendingSince = chatID, sinceMs
 	m.selectCurrentChat()
-	return tea.Batch(loadMessages(m.deps.Store, chatID, sinceMs),
+	return tea.Batch(keep, loadMessages(m.deps.Store, chatID, sinceMs, m.deps.Self),
 		scheduleReadRefresh(chatID), scheduleReactionRefresh(chatID))
 }
+
+// draftForRow is the draft the chat list draws its marker from. The open chat
+// answers from the composer rather than from the map: its row is beside the
+// text being typed, so a marker one refresh behind would visibly disagree with
+// what is on screen.
+func (m Model) draftForRow(chatID string) store.Draft {
+	if chatID == m.chatID {
+		return store.Draft{ChatID: chatID, Text: strings.TrimSpace(m.input.Value())}
+	}
+	return m.drafts[chatID]
+}
+
+// saveComposer puts what the composer holds back under the chat it was typed
+// in. One widget serves every chat, so without this a half-written message
+// follows the reader into the next chat and is sent to the wrong person.
+func (m Model) saveComposer() tea.Cmd {
+	if m.chatID == "" {
+		return nil
+	}
+	replyTo := ""
+	if m.replyTo != nil {
+		replyTo = m.replyTo.MessageID
+	}
+	return saveDraft(m.deps, m.chatID, m.input.Value(), replyTo, m.inThrd)
+}
+
+// quit ends the program, keeping what is in the composer. Sequence, not Batch:
+// Quit ends the program, and a draft written alongside it would race the exit.
+func (m Model) quit() tea.Cmd { return tea.Sequence(m.saveComposer(), tea.Quit) }
 
 // enterChat swaps the panes over to the chat whose page has just arrived.
 // Everything the previous chat owned — its thread, the message being quoted,
@@ -717,6 +881,22 @@ func (m *Model) enterChat() {
 	m.threadOpen, m.threadID, m.thread, m.threadBase, m.threadRows = false, "", nil, nil, nil
 	m.replyTo, m.inThrd = nil, false
 	m.selectCurrentChat()
+}
+
+// restoreDraft fills the composer from the chat being entered. The quote is
+// put back with the text, since a draft that answers something is only that
+// draft while it still says what it answers.
+func (m *Model) restoreDraft(d store.Draft, msgs []store.Message) {
+	m.input.SetValue(d.Text)
+	m.input.MoveToEnd()
+	m.inThrd = d.InThread
+	m.replyTo = nil
+	if d.ReplyTo != "" {
+		if i := indexOfID(msgs, d.ReplyTo); i >= 0 {
+			m.replyTo = &msgs[i]
+		}
+	}
+	m.replan()
 }
 
 // markDots keeps the unread markers of a page that has just arrived. A page
@@ -849,9 +1029,9 @@ func (m *Model) openThread(threadID string) tea.Cmd {
 }
 
 func (m Model) reloadCurrent() tea.Cmd {
-	cmds := []tea.Cmd{loadChats(m.deps.Store)}
+	cmds := []tea.Cmd{loadChats(m.deps.Store, m.deps.Self), loadContacts(m.deps.Store)}
 	if m.chatID != "" {
-		cmds = append(cmds, loadMessages(m.deps.Store, m.chatID, m.msgSince))
+		cmds = append(cmds, loadMessages(m.deps.Store, m.chatID, m.msgSince, m.deps.Self))
 	}
 	if m.threadOpen {
 		cmds = append(cmds, loadThread(m.deps.Store, m.threadID))
@@ -932,7 +1112,7 @@ func (m Model) selectedZones() []clickZone {
 }
 
 // rightOpen reports whether the third pane (thread or assistant) is shown.
-func (m Model) rightOpen() bool { return m.threadOpen || m.aiOpen }
+func (m Model) rightOpen() bool { return m.threadOpen || m.aiOpen || m.infoOpen }
 
 func (m Model) currentChat() (store.Chat, bool) {
 	for _, c := range m.chats {
@@ -986,7 +1166,10 @@ func (m *Model) scrollChatToCursor() {
 func (m Model) onKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	s := k.String()
 	if s == "ctrl+c" {
-		return m, tea.Quit
+		return m, m.quit()
+	}
+	if m.help.open {
+		return m.onHelpKey(k)
 	}
 	switch m.mode {
 	case modeInsert:
@@ -997,6 +1180,8 @@ func (m Model) onKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m.onFilterKey(k)
 	case modeEmoji:
 		return m.onEmojiKey(k)
+	case modeForward:
+		return m.onForwardKey(k)
 	case modeTarget:
 		return m.onTargetKey(k)
 	case modeSearch:
@@ -1004,15 +1189,19 @@ func (m Model) onKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case modeVisual:
 		return m.onVisualKey(s)
 	}
-	if m.showHelp {
-		m.showHelp = false
-		return m, nil
-	}
 	return m.onNormalKey(s)
 }
 
 func (m Model) onInsertKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	before := m.composerRows()
+	// The popup answers first, because the keys it owns are ones the composer
+	// otherwise has: Enter would send, Tab and the arrows would reach the
+	// writing area.
+	if m.pumShowing() {
+		if next, cmd, took := m.onPumKey(k); took {
+			return next, cmd
+		}
+	}
 	switch k.String() {
 	case "esc":
 		m.mode = modeNormal
@@ -1038,6 +1227,10 @@ func (m Model) onInsertKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	}
 	var cmd tea.Cmd
 	m.input, cmd = m.input.Update(k)
+	// The run is re-read rather than watched for: the trigger can arrive by
+	// paste or be reached by moving the cursor, and neither is a keypress that
+	// says so.
+	m.takePum()
 	m.tookDraft(before)
 	return m, cmd
 }
@@ -1094,6 +1287,12 @@ func (m Model) onFilterKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) onNormalKey(s string) (tea.Model, tea.Cmd) {
+	// A pending confirmation owns the next key, whatever it is: leaving the
+	// ordinary bindings live under a "recall this? y/n" would let one press
+	// both answer the question and do something else.
+	if next, cmd, answered := m.answerConfirm(s); answered {
+		return next, cmd
+	}
 	if m.pendingY {
 		out, cmd, _ := m.onYankKey(s)
 		return out, cmd
@@ -1104,10 +1303,9 @@ func (m Model) onNormalKey(s string) (tea.Model, tea.Cmd) {
 	m.pendingG = false
 	switch s {
 	case "q":
-		return m, tea.Quit
+		return m, m.quit()
 	case "?":
-		m.showHelp = !m.showHelp
-		return m, nil
+		return m.openHelp(), nil
 	case "tab":
 		m.focus = m.nextPane(1)
 		return m, nil
@@ -1136,6 +1334,10 @@ func (m Model) onNormalKey(s string) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "G", "end":
 		return m.move(1 << 30)
+	case "n":
+		return m.jumpUnread(1)
+	case "N":
+		return m.jumpUnread(-1)
 	case "enter":
 		return m.activate()
 	case "e":
@@ -1155,6 +1357,12 @@ func (m Model) onNormalKey(s string) (tea.Model, tea.Cmd) {
 		return m.retryFailed()
 	case "x":
 		return m.discardFailed()
+	case "D":
+		return m.askRecall()
+	case "f":
+		return m.openForward()
+	case "I":
+		return m.toggleInfo()
 	case "t":
 		return m.toggleThread()
 	case "Y":
@@ -1482,6 +1690,22 @@ func (m Model) pageStep() int {
 	}
 }
 
+// scrollRight scrolls whichever of the assistant and the info pane holds the
+// shared right-hand column, and reports whether one did. Both are read rather
+// than walked, so they answer a movement key by scrolling where the thread
+// moves a cursor.
+func (m *Model) scrollRight(n int) bool {
+	switch {
+	case m.aiOpen:
+		m.aiTop = clamp(m.aiTop+n, 0, max(0, len(m.aiLines())-m.listHeight()))
+	case m.infoOpen:
+		m.infoTop = clamp(m.infoTop+n, 0, max(0, len(m.infoLines(m.rightWidth()-2))-m.listHeight()))
+	default:
+		return false
+	}
+	return true
+}
+
 // move shifts the selection in the focused list by n rows.
 func (m Model) move(n int) (tea.Model, tea.Cmd) {
 	switch m.focus {
@@ -1500,8 +1724,7 @@ func (m Model) move(n int) (tea.Model, tea.Cmd) {
 		m.rebuildMessages()
 		m.scrollMessagesToSelection()
 	case paneThread:
-		if m.aiOpen {
-			m.aiTop = clamp(m.aiTop+n, 0, max(0, len(m.aiLines())-m.listHeight()))
+		if m.scrollRight(n) {
 			return m, nil
 		}
 		m.threadIdx = clamp(m.threadIdx+n, 0, len(m.thread)-1)
@@ -1593,8 +1816,12 @@ func (m Model) submit() (tea.Model, tea.Cmd) {
 		// A path the user mistyped: the draft stays put so it can be fixed.
 		return m.notify(err.Error(), true), nil
 	}
+	// Names become tags only on the way out. The draft stays the ordinary text
+	// the reader typed, so it can go on being edited, and the bubble draws what
+	// they wrote until Feishu's own rendering comes back with the @ resolved.
+	p.send = m.tagMentions(p.send)
 	it := outboxItem{localID: uuid.NewString(), chatID: m.chatID, msgType: p.kind.msgType(),
-		send: p.send, body: p.body, images: p.uploads(), createMs: time.Now().UnixMilli()}
+		send: p.send, body: p.body, images: p.uploads(), file: p.file, createMs: time.Now().UnixMilli()}
 	if m.replyTo != nil {
 		it.chatID, it.replyTo, it.inThread = m.replyTo.ChatID, m.replyTo.MessageID, m.inThrd
 		if m.inThrd {
@@ -1615,12 +1842,21 @@ func (m Model) submit() (tea.Model, tea.Cmd) {
 	return m.notify("", false), cmd
 }
 
+// tagMentions rewrites the @ runs in a body into the tags Feishu notifies on.
+// Both the text and the post paths go through it: lark-cli normalizes <at> for
+// each, and a mention is worth as much in one as in the other.
+func (m Model) tagMentions(o larkcli.Outgoing) larkcli.Outgoing {
+	o.Text = resolveMentions(o.Text, m.picked, m.roster)
+	o.Markdown = resolveMentions(o.Markdown, m.picked, m.roster)
+	return o
+}
+
 // sendItem is the command that puts one outbox item on the wire.
 func (m Model) sendItem(it outboxItem) tea.Cmd {
 	if it.replyTo != "" {
-		return replyMsg(m.deps, it.localID, it.replyTo, it.send, it.inThread, it.images, it.keys)
+		return replyMsg(m.deps, it.localID, it.replyTo, it.send, it.inThread, it.images, it.file, it.keys)
 	}
-	return sendMsg(m.deps, it.localID, larkcli.Target{ChatID: it.chatID}, it.send, it.images, it.keys)
+	return sendMsg(m.deps, it.localID, larkcli.Target{ChatID: it.chatID}, it.send, it.images, it.file, it.keys)
 }
 
 // refreshPanes redraws both message lists after the outbox changed, keeping
@@ -1677,7 +1913,7 @@ func (m Model) runCommand(line string) (tea.Model, tea.Cmd) {
 	rest = strings.TrimSpace(rest)
 	switch name {
 	case "q", "quit":
-		return m, tea.Quit
+		return m, m.quit()
 	case "goto", "chat":
 		want := store.FoldName(rest)
 		for _, c := range m.chats {
@@ -1699,11 +1935,11 @@ func (m Model) runCommand(line string) (tea.Model, tea.Cmd) {
 		// No outbox item: :send can fire at a chat no pane is showing, and
 		// at a user whose chat id only Feishu knows.
 		if strings.HasPrefix(ref, "ou_") {
-			return m.notify("sending…", false), sendMsg(m.deps, "", larkcli.Target{UserID: ref}, p.send, p.uploads(), nil)
+			return m.notify("sending…", false), sendMsg(m.deps, "", larkcli.Target{UserID: ref}, p.send, p.uploads(), p.file, nil)
 		}
 		for _, c := range m.chats {
 			if c.ChatID == ref || c.Name == ref {
-				return m.notify("sending…", false), sendMsg(m.deps, "", larkcli.Target{ChatID: c.ChatID}, p.send, p.uploads(), nil)
+				return m.notify("sending…", false), sendMsg(m.deps, "", larkcli.Target{ChatID: c.ChatID}, p.send, p.uploads(), p.file, nil)
 			}
 		}
 		return m.notify("unknown chat "+ref, true), nil
@@ -1715,6 +1951,8 @@ func (m Model) runCommand(line string) (tea.Model, tea.Cmd) {
 			note = "preview on"
 		}
 		return m.notify(note, false), nil
+	case "mentions", "at":
+		return m.openMentions()
 	case "search", "s":
 		// The same panel ctrl+f opens, with the argument already in it: one
 		// implementation, two ways in.
@@ -1916,12 +2154,22 @@ func (m Model) onClick(ms tea.Mouse) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// wheelStep is how far one notch scrolls: rows for the lists, lines for the
+// message panes, and lines of the draft for the writing area.
+const wheelStep = 3
+
 func (m Model) onWheel(ms tea.Mouse) (tea.Model, tea.Cmd) {
-	p, _ := m.hit(ms.X, ms.Y)
-	step := 3
+	p, row := m.hit(ms.X, ms.Y)
+	step := wheelStep
 	if ms.Button == tea.MouseWheelUp {
-		step = -3
+		step = -wheelStep
 	} else if ms.Button != tea.MouseWheelDown {
+		return m, nil
+	}
+	// The help overlay covers the panes, so the wheel scrolls what is on
+	// screen rather than what the pointer would have been over.
+	if m.help.open {
+		m.helpScroll(step)
 		return m, nil
 	}
 	switch p {
@@ -1931,7 +2179,35 @@ func (m Model) onWheel(ms tea.Mouse) (tea.Model, tea.Cmd) {
 	case paneMessages:
 		m.msgTop = clamp(m.msgTop+step, 0, max(0, len(m.msgRows)-m.msgListHeight()))
 	case paneThread:
-		m.threadTop = clamp(m.threadTop+step, 0, max(0, len(m.threadRows)-m.listHeight()))
+		// The column is shared, and the wheel scrolls whichever of the three
+		// is drawn in it. The thread alone is scrolled by its own top, since
+		// the cursor walking it is what move() shifts instead.
+		if !m.scrollRight(step) {
+			m.threadTop = clamp(m.threadTop+step, 0, max(0, len(m.threadRows)-m.listHeight()))
+		}
+	case paneInput:
+		switch m.composerBand(row) {
+		case bandPreview:
+			m.previewTop = clamp(m.previewTop+step, 0, m.previewBottom())
+		case bandInput:
+			// Only the writing area answers: in every other mode the box is
+			// drawn by a chooser that owns those rows, and the textarea behind
+			// it is blurred.
+			if m.mode != modeInsert {
+				return m, nil
+			}
+			// textarea drags its viewport back to the caret on every update,
+			// so moving the caret is the only scroll its API reaches. The
+			// Feishu client leaves the caret where it was; there is no way to
+			// do that here without reimplementing the widget.
+			for range wheelStep {
+				if step < 0 {
+					m.input.CursorUp()
+				} else {
+					m.input.CursorDown()
+				}
+			}
+		}
 	}
 	return m, nil
 }
@@ -1942,35 +2218,6 @@ func clamp(v, lo, hi int) int {
 	}
 	return min(max(v, lo), hi)
 }
-
-// Help text shown by ?.
-const helpText = `NORMAL      j/k move · gg/G ends · Ctrl+d/u page · Tab/Shift+Tab focus · h/l panes
-            Enter open chat / thread / reply · i write · r reply · R reply in thread · t thread
-            Y copy agent context · yy id · yr raw json · yc content · v select a range
-            o open what the selected message carries: a link, a file, its pictures,
-              the call it invites to, or the message itself in Feishu
-            e react to the selected message
-            / filter chats · :/; command · q quit
-            . send a failed message again · x drop it
-VISUAL      v starts in the messages or thread pane · j/k extend · Y or yy/yr/yc copy and leave · Esc cancels
-INSERT      Enter send · Shift+Enter newline · ^r drop the quote · Esc back
-            markdown sends as a post · ![](path) sends an image
-            the badge under the draft names the type and the files it will upload
-            ^o previews a post or an image the way the message list will draw it
-            ^g opens the draft in $VISUAL or $EDITOR as a markdown file
-            ^v pastes an image, a file path or text from the clipboard
-OPEN        o opens it when a message carries more than one target
-            j/k move · Enter open · 1-9 the line it is drawn on · Esc cancel
-            each line names the target and where it leads, a link by its host
-            the last line opens the message in Feishu, whatever the list left out
-EMOJI       e opens it · type to filter (Chinese, pinyin or initials) · ↑↓←→ move · Enter react · Esc cancel
-            the filter takes the readline keys: ^w a word, ^u to the start, ^a/^e ends
-            an emoji already yours is marked ✓, and choosing it takes the reaction back
-COMMAND     :copy <200|7d|all> · :goto <chat> · :react <emoji> · :send <chat|ou_> <text> · :search <text> · :preview · :sync · :q
-ASSISTANT   a or :ai [summary | draft <how> | todo | <question>] · answer streams in the right pane · Esc closes
-MOUSE       click focuses and selects · double-click opens
-            click a link, a picture, a file card, a card button or Join to open it
-            wheel scrolls`
 
 func fmtStatus(m Model) string {
 	sync := "daemon"
@@ -2011,6 +2258,8 @@ func modeLabel(md mode) string {
 		return "VISUAL"
 	case modeEmoji:
 		return "REACT"
+	case modeForward:
+		return "FORWARD"
 	case modeSearch:
 		return "SEARCH"
 	case modeTarget:

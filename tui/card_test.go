@@ -27,6 +27,20 @@ func cardOf(elements string, attachment map[string]any) store.Message {
 		ContentRaw: string(env), CreateMs: msgAt(23, 9, 0), RenderedAt: 1}
 }
 
+// summarisedCard is the content of a card that names itself for the chat list:
+// one band over every card the bot posts, and a summary naming this one.
+func summarisedCard(summary string) string {
+	body := `{"schema":"2.0","config":{"summary":{"content":"` + summary + `"}},` +
+		`"header":{"tag":"card_header","property":{"title":{"tag":"plain_text","property":{"content":"告警"}}}},` +
+		`"body":{"tag":"body","property":{"elements":[{"tag":"markdown","property":{"elements":[` +
+		`{"tag":"plain_text","property":{"content":"1 分钟内出现 2 条异常"}}]}}]}}}`
+	env, err := json.Marshal(map[string]any{"json_card": body, "json_attachment": map[string]any{}, "card_schema": 2})
+	if err != nil {
+		panic(err)
+	}
+	return string(env)
+}
+
 // cardPictures is the attachment table of a card whose body names pictures.
 func cardPictures(keys map[string]string) map[string]any {
 	images := map[string]any{}
@@ -232,6 +246,14 @@ func TestCardGist_SaysWhatTheCardSays(t *testing.T) {
 	c, ok = card.Parse(cardOf(elHeading+","+elList, nil).ContentRaw)
 	require.True(t, ok)
 	require.Equal(t, "报表", cardGist(c))
+}
+
+// An alarm bot puts the same band on every card it posts and says which alarm
+// this one is in the summary, which is the line the client shows as well.
+func TestCardGist_TakesTheSummaryOverTheBand(t *testing.T) {
+	c, ok := card.Parse(summarisedCard("应用 order-api 普通预警"))
+	require.True(t, ok)
+	require.Equal(t, "应用 order-api 普通预警", cardGist(c))
 }
 
 func TestZoneAt_AClickPicksTheButtonItLandsOn(t *testing.T) {

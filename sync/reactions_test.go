@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/amzyang/larkim/larkcli"
 	"github.com/amzyang/larkim/store"
@@ -102,7 +103,7 @@ func TestReactionsSlice_AsksAboutTheNewestMessageOfTheP2PChatsAlone(t *testing.T
 	f.Reactions["om_p00"] = json.RawMessage(`{"counts":[{"reaction_type":"OK","count":"1"}]}`)
 	f.Calls = nil
 
-	n, err := s.reactionsSlice(ctx)
+	n, err := s.reactionsSlice(ctx, clk.Now())
 	require.NoError(t, err)
 	require.Equal(t, 1, n)
 	require.Equal(t, []string{"reaction-counts:om_p00"}, f.Calls,
@@ -124,7 +125,7 @@ func TestReactionsSlice_SkipsAChatWhoseNewestMessageWasRecalled(t *testing.T) {
 	require.NoError(t, err)
 	f.Calls = nil
 
-	n, err := s.reactionsSlice(ctx)
+	n, err := s.reactionsSlice(ctx, clk.Now())
 	require.NoError(t, err)
 	require.Zero(t, n)
 	require.Empty(t, f.Calls, "a recall takes the reactions with the body")
@@ -134,9 +135,43 @@ func TestReactionsSlice_AsksNoMoreThanOneBatchPerTick(t *testing.T) {
 	s, f, clk := newSyncer(t)
 	ids := p2pChats(t, s, f, clk, reactionWindow+5)
 
-	n, err := s.reactionsSlice(context.Background())
+	n, err := s.reactionsSlice(context.Background(), clk.Now())
 	require.NoError(t, err)
 	require.Equal(t, reactionWindow, n)
 	require.Equal(t, []string{"reaction-counts:" + strings.Join(ids[:reactionWindow], ",")}, f.Calls,
 		"the liveliest chats fill the batch; the rest wait for a tick where they are")
+}
+
+func TestReactionsSlice_AsksNoMoreOftenThanItsInterval(t *testing.T) {
+	s, f, clk := newSyncer(t)
+	ctx := t.Context()
+	s.Opt.BackfillPerTick = 0
+	s.Opt.RepairEvery = 0
+	p2pChats(t, s, f, clk, 1)
+
+	reactionCalls := func() int {
+		n := 0
+		for _, c := range f.Calls {
+			if strings.HasPrefix(c, "reaction-counts:") {
+				n++
+			}
+		}
+		return n
+	}
+
+	_, err := s.Tick(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1, reactionCalls(), "the first tick asks")
+
+	clk.t = clk.t.Add(5 * time.Second)
+	f.Calls = nil
+	_, err = s.Tick(ctx)
+	require.NoError(t, err)
+	require.Zero(t, reactionCalls(), "a tick five seconds later does not ask again")
+
+	clk.t = clk.t.Add(reactionsEvery)
+	f.Calls = nil
+	_, err = s.Tick(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1, reactionCalls(), "past the interval it asks again")
 }

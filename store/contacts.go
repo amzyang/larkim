@@ -1,6 +1,7 @@
 package store
 
 import (
+	"cmp"
 	"context"
 	"database/sql"
 	"slices"
@@ -191,6 +192,57 @@ func (s *Store) ContactsByIDs(ctx context.Context, ids []string) (map[string]Con
 		for _, c := range rows {
 			out[c.OpenID] = c
 		}
+	}
+	return out, nil
+}
+
+// ChatMembers is a chat's roster, joined to whatever the contacts table knows
+// about each member and ordered by name so the same chat always lists the same
+// way. A member the contacts table has never seen still comes back, named by
+// its open id, because leaving it out would say the chat is smaller than it is.
+//
+// Member lists refresh daily, so this answers what the last refresh saw.
+func (s *Store) ChatMembers(ctx context.Context, chatID string) ([]Contact, error) {
+	return queryAll(ctx, s.db, scanContact,
+		`SELECT m.member_id,
+		        COALESCE(c.name, ''), COALESCE(c.email, ''), COALESCE(c.enterprise_email, ''),
+		        COALESCE(c.department, ''), COALESCE(c.is_cross_tenant, 0), COALESCE(c.is_bot, 0),
+		        COALESCE(c.p2p_chat_id, ''), COALESCE(c.avatar_url, ''), COALESCE(c.avatar_path, ''),
+		        COALESCE(c.detail_checked_at, 0), COALESCE(c.updated_at, 0), COALESCE(c.raw_json, '')
+		 FROM chat_members m LEFT JOIN contacts c ON c.open_id = m.member_id
+		 WHERE m.chat_id = ?
+		 ORDER BY CASE WHEN COALESCE(c.name, '') = '' THEN 1 ELSE 0 END, c.name, m.member_id`, chatID)
+}
+
+// ChatRoster is who @ can name in a chat. A group answers with the member list
+// ChatMembers keeps; a chat of two has none kept for it, so the pair is read
+// off the chat itself, which is where the peer has been named all along.
+//
+// The peer comes first because it is who a mention in a chat of two means.
+func (s *Store) ChatRoster(ctx context.Context, chatID, self string) ([]Contact, error) {
+	c, err := s.GetChat(ctx, chatID)
+	if err != nil {
+		return nil, err
+	}
+	if c.ChatMode != "p2p" {
+		return s.ChatMembers(ctx, chatID)
+	}
+	known, err := s.ContactsByIDs(ctx, []string{c.P2PTargetID, self})
+	if err != nil {
+		return nil, err
+	}
+	// Most peers of a p2p chat, bots above all, are never fetched as contacts.
+	// The chat's own name is the peer's name — it is what the chat list draws
+	// them by — and the chat says which kind of peer it is.
+	peer := known[c.P2PTargetID]
+	peer.OpenID = c.P2PTargetID
+	peer.Name = cmp.Or(peer.Name, c.Name)
+	peer.IsBot = peer.IsBot || c.P2PTargetType == "bot"
+	out := []Contact{peer}
+	if self != "" && self != c.P2PTargetID {
+		me := known[self]
+		me.OpenID = self
+		out = append(out, me)
 	}
 	return out, nil
 }

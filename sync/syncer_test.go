@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"slices"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -102,7 +104,7 @@ func TestHistorySlice_WalksDayByDayUntilLive(t *testing.T) {
 	require.NoError(t, err)
 	require.Zero(t, rep.History, "caught up")
 	cur, _, _ := s.Store.GetState(ctx, KeyHistoryCursor)
-	require.Equal(t, now.Add(-2*time.Minute).UnixMilli(), mustInt(cur), "cursor stops at the live window start")
+	require.Equal(t, now.UnixMilli(), mustInt(cur), "cursor rests inside the live window, not on its moving edge")
 }
 
 func TestTick_BisectsTruncatedWindowAndPullsThreads(t *testing.T) {
@@ -415,4 +417,89 @@ func TestRenderLocal_TimesTheCallItsMarkerClosesForBothPanes(t *testing.T) {
 	c, err := s.Store.GetChat(ctx, "oc_a")
 	require.NoError(t, err)
 	require.Equal(t, "Meeting ended: 32s", c.LastContent, "the chat list reads the same rendering")
+}
+
+func TestTick_RendersNewMessagesBeforeSweeps(t *testing.T) {
+	s, f, clk := newSyncer(t)
+	ctx := context.Background()
+	f.Chats = []larkcli.RawChat{{ChatID: "oc_a", Name: "平台组", ChatMode: "group"}}
+	f.AddMessage(msg("om_new", "oc_a", clk.t.Add(-30*time.Second), "fresh"))
+
+	rep, err := s.Tick(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1, rep.New)
+
+	render := slices.Index(f.Calls, "render:false")
+	require.GreaterOrEqual(t, render, 0, "the new message was rendered")
+	sweep := slices.IndexFunc(f.Calls, func(c string) bool {
+		return strings.HasPrefix(c, "list:") || strings.HasPrefix(c, "chats:")
+	})
+	require.GreaterOrEqual(t, sweep, 0, "a sweep ran in the same tick")
+	require.Less(t, render, sweep, "a reader waits on the rendering; nobody waits on the sweeps")
+}
+
+func TestTick_NudgesAsEachStageLands(t *testing.T) {
+	s, f, clk := newSyncer(t)
+	ctx := context.Background()
+	var nudges int
+	s.OnChange = func() { nudges++ }
+	f.Chats = []larkcli.RawChat{{ChatID: "oc_a", Name: "平台组", ChatMode: "group"}}
+	f.AddMessage(msg("om_new", "oc_a", clk.t.Add(-30*time.Second), "fresh"))
+
+	_, err := s.Tick(ctx)
+	require.NoError(t, err)
+	require.Greater(t, nudges, 1, "a body and its rendering land at different moments")
+}
+
+func TestHistorySlice_StopsSearchingOnceCaughtUp(t *testing.T) {
+	s, f, clk := newSyncer(t)
+	ctx := t.Context()
+	s.Opt.BackfillDays = 1
+	s.Opt.BackfillPerTick = 0 // isolate the search-based history
+	s.Opt.RepairEvery = 0
+
+	// Warm up until history reaches the live window, advancing the clock the
+	// way Run does: a frozen clock freezes liveStart with it and hides the bug.
+	for range 3 {
+		_, err := s.Tick(ctx)
+		require.NoError(t, err)
+		clk.t = clk.t.Add(5 * time.Second)
+	}
+
+	f.Calls = nil
+	for range 3 {
+		_, err := s.Tick(ctx)
+		require.NoError(t, err)
+		clk.t = clk.t.Add(5 * time.Second)
+	}
+	require.Equal(t, []string{"search", "search", "search"}, f.Calls,
+		"one live search per tick; history is caught up and must not re-search behind it")
+}
+
+func TestHistorySlice_LiveWindowCoversAnOutageWithoutHistory(t *testing.T) {
+	s, f, clk := newSyncer(t)
+	ctx := t.Context()
+	s.Opt.BackfillDays = 1
+	s.Opt.BackfillPerTick = 0
+	s.Opt.RepairEvery = 0
+
+	for range 3 {
+		_, err := s.Tick(ctx)
+		require.NoError(t, err)
+		clk.t = clk.t.Add(5 * time.Second)
+	}
+
+	// The loop stops for ten minutes. The watermark stalls with it, so the
+	// next live window reaches back over the whole gap on its own.
+	gap := clk.t
+	clk.t = clk.t.Add(10 * time.Minute)
+	f.AddMessage(msg("om_gap", "oc_a", gap.Add(3*time.Minute), "sent while stopped"))
+
+	rep, err := s.Tick(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1, rep.New, "the live window spans the outage")
+	require.Zero(t, rep.History, "history stays out of it")
+	got, err := s.Store.GetMessage(ctx, "om_gap")
+	require.NoError(t, err)
+	require.Equal(t, "oc_a", got.ChatID)
 }

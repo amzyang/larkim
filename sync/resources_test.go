@@ -52,10 +52,10 @@ func TestTick_DownloadsResourcesAndAppliesSizeCap(t *testing.T) {
 	img := msg("om_img", "oc_a", clk.t.Add(-time.Minute), "")
 	img.MsgType, img.Body.Content = "image", `{"image_key":"img_small"}`
 	f.AddMessage(img)
-	fil := msg("om_file", "oc_a", clk.t.Add(-2*time.Minute), "")
+	fil := msg("om_file", "oc_a", clk.t.Add(-30*time.Second), "")
 	fil.MsgType, fil.Body.Content = "file", `{"file_key":"file_big"}`
 	f.AddMessage(fil)
-	lost := msg("om_lost", "oc_a", clk.t.Add(-3*time.Minute), "")
+	lost := msg("om_lost", "oc_a", clk.t.Add(-45*time.Second), "")
 	lost.MsgType, lost.Body.Content = "image", `{"image_key":"img_lost"}`
 	f.AddMessage(lost)
 	f.Resources["om_img"] = []larkcli.Resource{{MessageID: "om_img", Key: "img_small", Type: "image", LocalPath: small, SizeBytes: 4}}

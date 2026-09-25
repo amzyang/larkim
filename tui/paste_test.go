@@ -135,7 +135,7 @@ func TestPaste_ImageIntoProseBecomesAPost(t *testing.T) {
 	require.Len(t, m.draft.uploads(), 1)
 }
 
-func TestPaste_FileInsertsAReferenceOnlyForAnImage(t *testing.T) {
+func TestPaste_FileGoesInAsAPictureOrAnAttachment(t *testing.T) {
 	dir := t.TempDir()
 	shot := filepath.Join(dir, "shot.png")
 	pdf := filepath.Join(dir, "合同.pdf")
@@ -147,10 +147,19 @@ func TestPaste_FileInsertsAReferenceOnlyForAnImage(t *testing.T) {
 	require.Equal(t, imageRef(shot), m.input.Value())
 	require.Equal(t, kindImage, m.draft.kind)
 
+	// Pasted beside text the draft is a post carrying a link, because a file
+	// message carries nothing but the file.
 	m, _ = newOutboxModel(t)
 	m = pasteInto(t, m, "看这个 ", clip{kind: clipFile, path: pdf}, nil)
-	require.Equal(t, "看这个 "+pdf, m.input.Value(), "larkim has no file message, so the path goes in as text")
-	require.Equal(t, kindText, m.draft.kind)
+	require.Equal(t, "看这个 "+fileRef(pdf), m.input.Value())
+	require.Equal(t, kindPost, m.draft.kind)
+
+	// Pasted into an empty composer it is the attachment it was copied as.
+	m, _ = newOutboxModel(t)
+	m = pasteInto(t, m, "", clip{kind: clipFile, path: pdf}, nil)
+	require.Equal(t, fileRef(pdf), m.input.Value())
+	require.Equal(t, kindFile, m.draft.kind)
+	require.Equal(t, pdf, m.draft.file.local)
 }
 
 func TestPaste_PathWithSpacesIsWrappedInAngleBrackets(t *testing.T) {

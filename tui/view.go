@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"image/color"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -226,26 +227,33 @@ func (m Model) msgStyleFor(width int, meta msgMeta) msgStyle {
 // cannot describe different messages.
 func (m *Model) rebuildPreview() {
 	m.previewRows = nil
-	if !m.previewOpen || m.mode != modeInsert || m.draft.kind == kindText {
-		return
+	if m.previewOpen && m.mode == modeInsert && m.draft.kind != kindText {
+		it := outboxItem{localID: "preview", chatID: m.chatID, msgType: m.draft.kind.msgType(),
+			body: m.draft.body, images: m.draft.uploads()}
+		meta := msgMeta{suffix: m.meta.suffix, people: m.meta.people, avatars: m.meta.avatars}
+		resPending(&meta, []outboxItem{it})
+		st := m.msgStyleFor(m.width-2, meta)
+		// The body alone, not renderRows: a sender line, a day rule and a time
+		// belong to a message that exists, and none of them would tell the
+		// reader anything the composer above does not already say.
+		var b block
+		g := leads{b: &b}
+		m.previewRows = bodyRows(it.message(m.deps.Self, m.selfName), 0, st, &g)
 	}
-	it := outboxItem{localID: "preview", chatID: m.chatID, msgType: m.draft.kind.msgType(),
-		body: m.draft.body, images: m.draft.uploads()}
-	meta := msgMeta{suffix: m.meta.suffix, people: m.meta.people, avatars: m.meta.avatars}
-	resPending(&meta, []outboxItem{it})
-	st := m.msgStyleFor(m.width-2, meta)
-	// The body alone, not renderRows: a sender line, a day rule and a time
-	// belong to a message that exists, and none of them would tell the
-	// reader anything the composer above does not already say.
-	var b block
-	g := leads{b: &b}
-	m.previewRows = bodyRows(it.message(m.deps.Self, m.selfName), 0, st, &g)
+	// Clamped rather than reset: typing rebuilds the preview on every
+	// keystroke, and a reader who scrolled to the tail of a long post is still
+	// writing into it. A preview that closed has no rows, so this zeroes it.
+	m.previewTop = clamp(m.previewTop, 0, m.previewBottom())
 }
 
 func (m *Model) rebuildMessages() {
 	w := m.messagesWidth() - 2
 	if m.searching {
-		m.msgRows = renderSearchRows(m.searchHits, m.chats, m.msgStyleFor(w, m.searchMeta))
+		lead := "Messages"
+		if m.mentions {
+			lead = mentionsLabel
+		}
+		m.msgRows = renderSearchRows(m.searchHits, m.chats, lead, m.msgStyleFor(w, m.searchMeta))
 		return
 	}
 	m.msgRows = renderRows(m.msgs, m.msgStyleFor(w, m.meta))
@@ -254,7 +262,7 @@ func (m *Model) rebuildMessages() {
 // renderSearchRows lays the panel out: the message hits as message blocks,
 // then the chats and the people, each group under a rule of its own. Row
 // indices point at hits rather than messages, so one cursor walks all three.
-func renderSearchRows(hits []searchHit, chats []store.Chat, st msgStyle) []msgRow {
+func renderSearchRows(hits []searchHit, chats []store.Chat, lead string, st msgStyle) []msgRow {
 	// Hits run across chats, so every block names its sender, and no @ in one
 	// is measured against the chat the cursor happens to sit on.
 	st.p2p, st.peer = false, ""
@@ -277,7 +285,7 @@ func renderSearchRows(hits []searchHit, chats []store.Chat, st msgStyle) []msgRo
 	}
 	var rows []msgRow
 	if len(local) > 0 {
-		rows = append(rows, searchRule("Messages", st.width))
+		rows = append(rows, searchRule(lead, st.width))
 	}
 	rows = append(rows, renderRows(local, st)...)
 	if len(remote) > 0 {
@@ -524,7 +532,10 @@ func scrollTo(rows []msgRow, idx, top, h int) int {
 func (m Model) hit(x, y int) (pane, int) {
 	body := m.bodyHeight()
 	if y >= 1+body+1 && y < 1+body+1+m.composerHeight()+2 {
-		return paneInput, 0
+		// The row inside the box, counted past its top border. Borders land
+		// outside the box's own height, which composerBand reads as neither
+		// the preview nor the writing area.
+		return paneInput, y - (body + 3)
 	}
 	if y < 1 || y > body {
 		return -1, 0
@@ -569,9 +580,12 @@ func (m Model) View() tea.View {
 	if !m.foldRight() {
 		panes = append(panes, m.renderMessages(body))
 	}
-	if m.aiOpen {
+	switch {
+	case m.aiOpen:
 		panes = append(panes, m.renderAI(body))
-	} else if m.threadOpen {
+	case m.infoOpen:
+		panes = append(panes, m.renderInfo(body))
+	case m.threadOpen:
 		panes = append(panes, m.renderThread(body))
 	}
 	top := lipgloss.JoinHorizontal(lipgloss.Top, panes...)
@@ -581,6 +595,8 @@ func (m Model) View() tea.View {
 	switch m.mode {
 	case modeEmoji:
 		out.WriteString(m.renderPicker())
+	case modeForward:
+		out.WriteString(m.renderForward())
 	case modeTarget:
 		out.WriteString(m.renderTargets())
 	default:
@@ -588,9 +604,9 @@ func (m Model) View() tea.View {
 	}
 	out.WriteString("\n")
 	out.WriteString(m.renderStatus())
-	if m.showHelp {
-		v.Content = lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center,
-			paneStyle(true, m.width-4).Padding(0, 1).Render(helpText))
+	if m.help.open {
+		v.Content = lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, m.renderHelp())
+		v.Cursor = m.helpCursor()
 		return v
 	}
 	v.Content = out.String()
@@ -635,6 +651,8 @@ func (m Model) cursorAt() *tea.Cursor {
 		return place(textinputCursor(m.cmdline), 1, top)
 	case modeEmoji:
 		return place(textinputCursor(m.picker.input), 1+lipgloss.Width(pickerPrompt()), top)
+	case modeForward:
+		return place(textinputCursor(m.fwd.input), 1+lipgloss.Width(fwdPrompt()), top)
 	}
 	// bubbles reports no cursor for a blurred widget, and every mode but
 	// insert blurs the composer, so the caret is asked of a focused copy.
@@ -708,7 +726,7 @@ func (m Model) renderChats(h int) string {
 	last := m.chatTop + min(len(vis)-m.chatTop, chatsThatFit(h-headerHeight)) - 1
 	for i := m.chatTop; i <= last; i++ {
 		mark, _ := m.chatIx.match(vis[i], m.chatFilter)
-		r := renderChatRow(m.avatars, vis[i], m.unread[vis[i].ChatID], m.deps.Self, now, w, m.chatPics(), mark)
+		r := renderChatRow(m.avatars, vis[i], m.draftForRow(vis[i].ChatID), m.unread[vis[i].ChatID], m.deps.Self, now, w, m.chatPics(), mark)
 		sel := i == m.chatIdx
 		bottom := line(r.avatarBottom, r.bottom, sel)
 		if len(r.segs) > 0 {
@@ -767,6 +785,10 @@ func (m Model) renderAI(h int) string {
 }
 
 func (m Model) renderHeader(w int) string {
+	if m.mentions {
+		tail := fmt.Sprintf(" · %d · Esc to leave", len(m.searchHits))
+		return fit(stBold.Render(mentionsLabel)+stDim.Render(tail), w)
+	}
 	if m.searching {
 		// The store answers inside a keystroke and Feishu takes a round trip,
 		// so the line says which half is still out rather than leaving the
@@ -862,8 +884,14 @@ const (
 func (m Model) renderBadge(w int) string {
 	left := stChipEdge.Render(chipLeft) + stChip.Render(m.draft.kind.msgType()) + stChipEdge.Render(chipRight)
 	hint := stDim.Render(composerHint)
-	if m.mode != modeInsert {
+	switch {
+	case m.mode != modeInsert:
 		hint = stDim.Render(writeHint)
+	case m.pumShowing():
+		// The popup has taken Enter, so the row says so rather than going on
+		// promising a send. Its count rides here too, which is what keeps the
+		// popup itself to offers alone.
+		hint = stDim.Render(strconv.Itoa(m.pum.idx+1) + "/" + strconv.Itoa(len(m.pum.hits)) + " · " + pumHint)
 	}
 	room := max(0, w-lipgloss.Width(left)-lipgloss.Width(hint)-2)
 	if m.draftErr != nil {

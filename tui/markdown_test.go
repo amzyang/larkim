@@ -149,12 +149,17 @@ func TestMdRows_WrapsCJKByDisplayWidth(t *testing.T) {
 }
 
 func TestBodyRows_TextMessagesStayLiteral(t *testing.T) {
-	// A person typing "3 * 4 * 5" in a plain message means the asterisks, and
-	// a lone "- 甲" is how people answer, not a list.
+	// A person typing "3 * 4 * 5" in a plain message means the asterisks, a
+	// lone "- 甲" is how people answer, and the hashes and fences they typed
+	// are text: the client shows a plain message the way it was written.
 	msgs := []store.Message{{MessageID: "om_1", SenderName: "张三", SenderID: "ou_a", MsgType: "text",
-		Content: "- 甲\n3 * 4 * 5", CreateMs: msgAt(23, 9, 0), RenderedAt: 1}}
+		Content: "- 甲\n3 * 4 * 5\n# 标题\n```go\nx := 1\n```", CreateMs: msgAt(23, 9, 0), RenderedAt: 1}}
 	out := rowText(renderRows(msgs, baseStyle()))
 	require.Contains(t, out, "- 甲", "a text message is not markdown")
 	require.Contains(t, out, "3 * 4 * 5")
 	require.NotContains(t, out, "• 甲")
+	require.Contains(t, out, "# 标题", "the hashes are the sender's, not markup")
+	require.Contains(t, out, "```go", "a fence is not a code block")
+	require.Contains(t, out, "x := 1")
+	require.NotContains(t, out, codeRule, "nothing is framed as a block")
 }

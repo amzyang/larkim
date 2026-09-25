@@ -177,13 +177,13 @@ func TestRenderBadge_NamesTheKeyThatFitsTheMode(t *testing.T) {
 	require.NotContains(t, out, writeHint, "a reader already writing is not told to start")
 }
 
-func TestHelpText_DocumentsTheComposerTypes(t *testing.T) {
-	require.Contains(t, helpText, "markdown sends as a post")
-	require.Contains(t, helpText, "![](path) sends an image")
-	require.Contains(t, helpText, "the badge under the draft names the type")
-	require.Contains(t, helpText, "^o previews")
-	require.Contains(t, helpText, "^g opens the draft in $VISUAL or $EDITOR")
-	require.Contains(t, helpText, "^v pastes an image, a file path or text from the clipboard")
+func TestHelp_DocumentsTheComposerTypes(t *testing.T) {
+	require.True(t, helpHas("markdown sends as a post"))
+	require.True(t, helpHas("![](path) sends an image"))
+	require.True(t, helpHas("the badge under the draft names the type"))
+	require.True(t, helpHas("Ctrl+o previews a post or an image"))
+	require.True(t, helpHas("Ctrl+g opens the draft in $VISUAL or $EDITOR"))
+	require.True(t, helpHas("Ctrl+v pastes an image, a file path or text from the clipboard"))
 }
 
 // fakeFiles answers Stat for the paths named, so a test never touches the

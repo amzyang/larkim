@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"regexp"
 	"strconv"
 	"strings"
 
@@ -16,12 +15,6 @@ import (
 // card's ▌ so a block inside a message does not read as a card of its own.
 const codeRule = "▏"
 
-// codeFence matches the line a rich-text code block opens and closes with. It
-// is anchored to the whole line on purpose: lark-cli writes a card's code
-// block into the middle of a sentence, with no newline either side, and a
-// fence that is not a line of its own is not a block this list should frame.
-var codeFence = regexp.MustCompile("^```[ \t]*([A-Za-z0-9_+#-]*)[ \t]*$")
-
 // codeStyles are the two chroma palettes, picked by the terminal background.
 // GitHub's are tuned for a white and a near-black backing respectively, which
 // is as close as a fixed palette gets to the terminal it lands on.
@@ -29,29 +22,6 @@ const (
 	codeStyleLight = "github"
 	codeStyleDark  = "github-dark"
 )
-
-// takeCode collects the lines a fence opened at open holds, and reports the
-// index the body loop carries on from. A block Feishu never closed runs to the
-// end of the message, which is what the client shows while an edit is in
-// flight.
-func takeCode(lines []string, open int) (code []string, next int) {
-	for i := open + 1; i < len(lines); i++ {
-		if codeFence.MatchString(lines[i]) {
-			return trimBlank(lines[open+1 : i]), i
-		}
-	}
-	return trimBlank(lines[open+1:]), len(lines) - 1
-}
-
-// trimBlank drops the blank line lark-cli leaves between the last line of a
-// code block and its closing fence, which would otherwise draw a numbered row
-// with nothing on it.
-func trimBlank(lines []string) []string {
-	for len(lines) > 0 && strings.TrimSpace(lines[len(lines)-1]) == "" {
-		lines = lines[:len(lines)-1]
-	}
-	return lines
-}
 
 // codeRows draws a code block the way the Feishu client frames one: the lines
 // numbered down a rule, syntax coloured, and each cut to the pane rather than

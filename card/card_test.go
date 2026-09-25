@@ -208,3 +208,25 @@ func TestCard_MarkdownCopiesTheDocumentTheCardIs(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, "版本周报 最新 1211 「兜底」\n\n# 报表\n\n[认领]", c.Markdown())
 }
+
+// A card names itself for the chat list and the notification with a summary
+// of its own, which the body it draws says nothing about.
+func TestParse_ReadsTheSummaryTheSenderWroteForTheCard(t *testing.T) {
+	body := `{"schema":"2.0","config":{"summary":{"content":"应用 order-api 普通预警"}},` +
+		`"header":{"tag":"card_header","property":{"title":{"tag":"plain_text","property":{"content":"告警"}}}},` +
+		`"body":{"tag":"body","property":{"elements":[{"tag":"markdown","property":{"elements":[` +
+		`{"tag":"plain_text","property":{"content":"1 分钟内出现 2 条异常"}}]}}]}}}`
+
+	c, ok := Parse(envelopeJSON(body, nil))
+	require.True(t, ok)
+	require.Equal(t, "应用 order-api 普通预警", c.Summary)
+	require.Equal(t, "告警", c.Title)
+}
+
+// A card whose sender drew nothing still arrives when it says what it is.
+func TestParse_TakesACardThatIsOnlyItsSummary(t *testing.T) {
+	c, ok := Parse(envelopeJSON(`{"schema":"2.0","config":{"summary":{"content":"构建完成"}}}`, nil))
+	require.True(t, ok)
+	require.Equal(t, "构建完成", c.Summary)
+	require.Empty(t, c.Blocks)
+}

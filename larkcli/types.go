@@ -110,11 +110,13 @@ type ReadStatus struct {
 	IsRead    bool   `json:"is_read"`
 }
 
-// ChatMember is one entry of GET /im/v1/chats/{id}/members.
+// ChatMember is one member of a chat. IsBot carries no tag: the answer says
+// which kind a member is by the bucket it arrives in, not by a field.
 type ChatMember struct {
 	MemberID   string `json:"member_id"`
 	MemberType string `json:"member_id_type"`
 	Name       string `json:"name"`
+	IsBot      bool   `json:"-"`
 }
 
 // User is one entry of `contact +search-user`. EnterpriseEmail carries the

@@ -2,7 +2,6 @@ package tui
 
 import (
 	"encoding/json"
-	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -12,6 +11,7 @@ import (
 	"github.com/amzyang/larkim/card"
 	"github.com/amzyang/larkim/emoji"
 	"github.com/amzyang/larkim/store"
+	"github.com/amzyang/larkim/sync"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -24,16 +24,6 @@ const (
 	// rather than a whole day collapsing into one block.
 	runSpan = 5 * time.Minute
 )
-
-// headingLine matches an ATX heading and captures its text, whose hashes are
-// markup rather than something the reader typed. The composer's classifier
-// reads the same pattern.
-var headingLine = regexp.MustCompile(`^ {0,3}#{1,6} +(\S.*)$`)
-
-// imgRef matches the two ways lark-cli names an image in rendered text: the
-// markdown form inside a rich-text post, and the whole body of an image
-// message.
-var imgRef = regexp.MustCompile(`!\[[^\]\n]*\]\((img_[A-Za-z0-9_-]+)\)|\[Image: (img_[A-Za-z0-9_-]+)\]`)
 
 // msgRow is one rendered line of a message list and the message it belongs to.
 type msgRow struct {
@@ -596,21 +586,7 @@ func bodyRows(x store.Message, idx int, st msgStyle, g *leads) []msgRow {
 
 	var rows []msgRow
 	content := strings.ReplaceAll(strings.ReplaceAll(x.Content, "\r", ""), "\t", "    ")
-	lines := strings.Split(content, "\n")
-	for i := 0; i < len(lines); i++ {
-		line := lines[i]
-		if fence := codeFence.FindStringSubmatch(line); fence != nil {
-			code, next := takeCode(lines, i)
-			rows = append(rows, text(codeRows(code, fence[1], inner, st.dark))...)
-			i = next
-			continue
-		}
-		// A heading reads as its text, not its hashes: a body that arrives
-		// spelling one is showing markup, not something a reader typed.
-		if h := headingLine.FindStringSubmatch(line); h != nil {
-			rows = append(rows, text(wrap(stBold.Render(renderInline(h[1], ms)), inner))...)
-			continue
-		}
+	for _, line := range strings.Split(content, "\n") {
 		keys, rest := splitImages(line)
 		if len(keys) == 0 || strings.TrimSpace(rest) != "" {
 			if segs := inlineSegs(rest, ms, st.emojiInline); segs != nil {
@@ -937,8 +913,8 @@ func picRows(pic picture, idx int, g *leads) []msgRow {
 // splitImages pulls the image references out of one line and returns them
 // with what is left of the text.
 func splitImages(line string) (keys []string, rest string) {
-	rest = imgRef.ReplaceAllStringFunc(line, func(m string) string {
-		g := imgRef.FindStringSubmatch(m)
+	rest = sync.ImageRef.ReplaceAllStringFunc(line, func(m string) string {
+		g := sync.ImageRef.FindStringSubmatch(m)
 		keys = append(keys, g[1]+g[2])
 		return ""
 	})

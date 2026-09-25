@@ -97,7 +97,7 @@ func TestLoadRecent_LeavesTheListEmptyRatherThanFailing(t *testing.T) {
 	require.Empty(t, ix.Recent())
 
 	dir := t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(dir, recentFile), []byte("not json"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, reactionRecentFile), []byte("not json"), 0o600))
 	ix.LoadRecent(dir)
 	require.Empty(t, ix.Recent())
 }

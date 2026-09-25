@@ -365,7 +365,7 @@ func TestRenderSearchRows_DoesNotLendOneChatsPeerToAnothers(t *testing.T) {
 	st.p2p, st.peer = true, "ou_peer"
 
 	var out strings.Builder
-	for _, r := range renderSearchRows(messageHits(msgs...), []store.Chat{{ChatID: "oc_g", Name: "平台组"}}, st) {
+	for _, r := range renderSearchRows(messageHits(msgs...), []store.Chat{{ChatID: "oc_g", Name: "平台组"}}, "Messages", st) {
 		out.WriteString(segText(r))
 	}
 	require.Contains(t, out.String(), stAccent.Render("@李四"),

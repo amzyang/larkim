@@ -62,12 +62,12 @@ func TestUnrenderedMessageIDs_SkipsMessagesWithUnfinishedResources(t *testing.T)
 	require.NoError(t, s.MarkResourceDone(ctx, "k_done", "resources/k_done.jpg", 1))
 	require.NoError(t, s.MarkResourceSkipped(ctx, "k_skipped", 999, "too large"))
 
-	ids, err := s.UnrenderedMessageIDs(ctx, 10)
+	ids, err := s.UnrenderedMessageIDs(ctx, "", 10)
 	require.NoError(t, err)
 	require.Equal(t, []string{"om_plain", "om_done", "om_skipped"}, ids, "pending/failed downloads and deleted messages wait; newest first")
 
 	require.NoError(t, s.UpdateRendered(ctx, "om_plain", "hi", "", "", 2))
-	ids, _ = s.UnrenderedMessageIDs(ctx, 10)
+	ids, _ = s.UnrenderedMessageIDs(ctx, "", 10)
 	require.Equal(t, []string{"om_done", "om_skipped"}, ids)
 }
 

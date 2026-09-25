@@ -248,6 +248,7 @@ type ScanRow struct {
 	MessageID  string
 	MsgType    string
 	ContentRaw string
+	Content    string
 }
 
 // MessagesAfterIDForScan returns live media-bearing messages ingested after
@@ -256,10 +257,10 @@ type ScanRow struct {
 func (s *Store) MessagesAfterIDForScan(ctx context.Context, rowID int64, limit int) ([]ScanRow, error) {
 	return queryAll(ctx, s.db, func(sc scanner) (ScanRow, error) {
 		var r ScanRow
-		err := sc.Scan(&r.ID, &r.MessageID, &r.MsgType, &r.ContentRaw)
+		err := sc.Scan(&r.ID, &r.MessageID, &r.MsgType, &r.ContentRaw, &r.Content)
 		return r, err
-	}, `SELECT id, message_id, msg_type, content_raw FROM messages
- WHERE id > ? AND deleted = 0 AND msg_type IN ('image','file','audio','media','video','post','sticker') ORDER BY id LIMIT ?`, rowID, limit)
+	}, `SELECT id, message_id, msg_type, content_raw, content FROM messages
+ WHERE id > ? AND deleted = 0 AND msg_type IN ('image','file','audio','media','video','post','sticker','interactive','merge_forward') ORDER BY id LIMIT ?`, rowID, limit)
 }
 
 // ResourcesForMessages lists the resources of many messages at once, keyed by

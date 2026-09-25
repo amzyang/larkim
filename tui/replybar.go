@@ -25,11 +25,12 @@ const (
 type composerRows struct {
 	quote   int // the message a reply will attach to
 	preview int // the draft as the message list will draw it
+	pum     int // the completion popup, which sits closest to what it completes
 	input   int // the writing area
 	badge   int // the row naming the message type the draft will be sent as
 }
 
-func (r composerRows) total() int { return r.quote + r.preview + r.input + r.badge }
+func (r composerRows) total() int { return r.quote + r.preview + r.pum + r.input + r.badge }
 
 // composerRows claims rows in the order the reader needs them: the quote and
 // the badge are one line each, the writing area grows with the draft, and the
@@ -58,8 +59,11 @@ func (m Model) composerRows() composerRows {
 	case modeInsert:
 		grow := room(draftRows(m.input.Value(), m.input.Width()))
 		r.input += grow
+		// The popup outranks the preview: it is what the reader is choosing
+		// from, where the preview only shows what they have already written.
+		r.pum = clamp(len(m.pum.hits), 0, min(pumMaxRows, extra-grow))
 		if m.previewOpen && m.draft.kind != kindText {
-			r.preview = clamp(extra-grow, 0, previewMaxRows)
+			r.preview = clamp(extra-grow-r.pum, 0, previewMaxRows)
 		}
 	case modeTarget:
 		// The chooser grows to its list the way the writing area grows to a
@@ -91,13 +95,48 @@ func draftRows(value string, width int) int {
 // that stands in its place.
 func (m Model) composerHeight() int { return m.composerRows().total() }
 
+// previewBottom is as far as the preview band scrolls.
+func (m Model) previewBottom() int {
+	return max(0, len(m.previewRows)-m.composerRows().preview)
+}
+
+// composerBand names the part of the composer a row inside the box belongs to,
+// so the wheel scrolls what the pointer is over. Only the two scrollable parts
+// are named; the quote, the rule under the preview, the popup and the badge
+// are all bandOther, and so is a row outside the box.
+type composerBand int
+
+const (
+	bandOther composerBand = iota
+	bandPreview
+	bandInput
+)
+
+// composerBand reads the same row split renderInput draws and cursorAt counts.
+// composerAbove hands the box more rows than composerRows claimed — the rule
+// under the preview is unbudgeted — so fitBlock clips from the top, and the
+// same clip is applied here or the caret and the wheel disagree about which
+// row the writing area starts on.
+func (m Model) composerBand(row int) composerBand {
+	r := m.composerRows()
+	above := m.composerAbove(m.width - 2)
+	clip := max(0, len(above)+r.input+r.badge-r.total())
+	switch {
+	case r.preview > 0 && row >= 0 && row+clip < r.preview:
+		return bandPreview
+	case row >= len(above)-clip && row < len(above)-clip+r.input:
+		return bandInput
+	}
+	return bandOther
+}
+
 // composerAbove is what the box draws over the writing area, top row first.
 // renderInput lays these rows out and cursorAt counts them, and the two must
 // not disagree about which row the writing area starts on.
 func (m Model) composerAbove(w int) []string {
 	var lines []string
 	if r := m.composerRows(); r.preview > 0 {
-		for _, row := range m.previewRows[:min(len(m.previewRows), r.preview)] {
+		for _, row := range m.previewRows[m.previewTop:min(len(m.previewRows), m.previewTop+r.preview)] {
 			line, _ := m.rowLine(row, w)
 			lines = append(lines, line)
 		}
@@ -106,7 +145,9 @@ func (m Model) composerAbove(w int) []string {
 	if m.replyTo != nil {
 		lines = append(lines, m.renderReplyBar(w))
 	}
-	return lines
+	// Last, so the offers sit directly over the run being completed — which at
+	// the bottom of the screen is where a popup menu opens.
+	return append(lines, m.pumLines(w)...)
 }
 
 // renderReplyBar quotes the reply's target above the composer the way the

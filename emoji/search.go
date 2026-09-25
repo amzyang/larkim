@@ -31,15 +31,27 @@ type Index struct {
 	// recent is the emoji used most lately, newest first, which is what an
 	// empty query answers with: a person reaches for the same handful all day.
 	recent []string
+	// file is where this index's recent list lives. Two indexes sharing one
+	// file would each drop the other's keys through SetRecent, which keeps
+	// only what the index itself holds.
+	file string
 }
 
 // NewReactionIndex prepares the emoji that may be put on a message.
-func NewReactionIndex() *Index { return NewIndex(Emoji.Reactable) }
+func NewReactionIndex() *Index { return newIndex(reactionRecentFile, All(), Emoji.Reactable) }
 
-// NewIndex prepares the emoji that pass keep. A nil keep takes all of them.
-func NewIndex(keep func(Emoji) bool) *Index {
-	ix := &Index{mt: fuzzy.NewMatcher()}
-	for _, e := range All() {
+// NewComposerIndex prepares the emoji a draft may carry: Feishu's own, and the
+// Unicode ones it has no answer for. Everything here is either a character any
+// terminal draws or a name a Feishu text message spells, so the composer can
+// offer more than the reaction picker may.
+func NewComposerIndex() *Index {
+	return newIndex(composerRecentFile, slices.Concat(All(), Common()), nil)
+}
+
+// newIndex prepares the items that pass keep. A nil keep takes all of them.
+func newIndex(file string, items []Emoji, keep func(Emoji) bool) *Index {
+	ix := &Index{mt: fuzzy.NewMatcher(), file: file}
+	for _, e := range items {
 		if keep != nil && !keep(e) {
 			continue
 		}
@@ -128,15 +140,19 @@ func (ix *Index) rank(e Emoji) int {
 	return e.Order
 }
 
-// recentFile is where the picker's remembered list lives. It is derived data:
-// deleting it costs the ordering of an empty query and nothing else.
-const recentFile = "emoji-recent.json"
+// The remembered lists are derived data: deleting one costs the ordering of an
+// empty query and nothing else. Reacting and writing are separate acts, so they
+// are remembered apart.
+const (
+	reactionRecentFile = "emoji-recent.json"
+	composerRecentFile = "emoji-recent-write.json"
+)
 
 // LoadRecent fills the index's remembered list from the data dir. A file that
 // is missing or unreadable leaves the list empty, which is the state a first
 // run is in anyway.
 func (ix *Index) LoadRecent(dataDir string) {
-	b, err := os.ReadFile(filepath.Join(dataDir, recentFile))
+	b, err := os.ReadFile(filepath.Join(dataDir, ix.file))
 	if err != nil {
 		return
 	}
@@ -152,5 +168,5 @@ func (ix *Index) SaveRecent(dataDir string) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(dataDir, recentFile), b, 0o600)
+	return os.WriteFile(filepath.Join(dataDir, ix.file), b, 0o600)
 }

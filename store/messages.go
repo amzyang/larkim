@@ -194,16 +194,23 @@ func (s *Store) UpdateReactions(ctx context.Context, messageID, reactionsJSON st
 }
 
 // UnrenderedMessageIDs returns up to limit live message ids that still need
-// rendering, newest first. Messages with attachments still to download are
-// left out: the download step renders them in the same lark-cli call. The
-// types larkim renders from bodies it already holds are left out too;
-// UnrenderedLocalMessages owns them.
-func (s *Store) UnrenderedMessageIDs(ctx context.Context, limit int) ([]string, error) {
-	return queryAll(ctx, s.db, scanOne[string], `SELECT m.message_id FROM messages m
+// rendering, newest first. An empty chatID takes them from every chat.
+// Messages with attachments still to download are left out: the download step
+// renders them in the same lark-cli call. The types larkim renders from bodies
+// it already holds are left out too; UnrenderedLocalMessages owns them.
+func (s *Store) UnrenderedMessageIDs(ctx context.Context, chatID string, limit int) ([]string, error) {
+	q := `SELECT m.message_id FROM messages m
  WHERE m.rendered_at = 0 AND m.deleted = 0 AND m.msg_type NOT IN ('system', 'video_chat')
  AND NOT EXISTS (SELECT 1 FROM message_resources mr JOIN resources r ON r.file_key = mr.file_key
-   WHERE mr.message_id = m.message_id AND r.status IN ('pending', 'failed'))
- ORDER BY m.create_ms DESC LIMIT ?`, limit)
+   WHERE mr.message_id = m.message_id AND r.status IN ('pending', 'failed'))`
+	args := []any{}
+	if chatID != "" {
+		q += ` AND m.chat_id = ?`
+		args = append(args, chatID)
+	}
+	q += ` ORDER BY m.create_ms DESC LIMIT ?`
+	args = append(args, limit)
+	return queryAll(ctx, s.db, scanOne[string], q, args...)
 }
 
 // PendingLocalMessage is a message larkim renders itself, awaiting that

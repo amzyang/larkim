@@ -120,7 +120,7 @@ func (m *Model) closeSearch() {
 	m.mode = modeNormal
 	m.cmdline.Blur()
 	m.cmdline.Reset()
-	m.searching, m.searchQuery = false, ""
+	m.searching, m.searchQuery, m.mentions = false, "", false
 	m.searchLocal, m.searchRemote, m.searchHits = nil, nil, nil
 	m.msgIdx = len(m.msgs) - 1
 	m.rebuildMessages()
@@ -142,6 +142,12 @@ func (m Model) onSearchKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m.moveSelection(m.msgListHeight())
 	case "pgup":
 		return m.moveSelection(-m.msgListHeight())
+	}
+	// The mentions list has no query to edit: it is the answer to a fixed
+	// question, so a keystroke that would narrow a search does nothing here
+	// rather than narrowing something the reader cannot see.
+	if m.mentions {
+		return m, nil
 	}
 	// Everything else edits the query, which is why the panel moves on
 	// ctrl+n/ctrl+p rather than ctrl+d/ctrl+u: those already mean something

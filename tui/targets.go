@@ -99,18 +99,11 @@ func (m Model) chooseTarget(i int) (tea.Model, tea.Cmd) {
 }
 
 // move walks the list and scrolls to keep the cursor on screen.
-func (t *targets) move(d, rows int) {
-	if len(t.zones) == 0 {
-		return
-	}
-	t.idx = clamp(t.idx+d, 0, len(t.zones)-1)
-	t.top = clamp(t.top, max(0, t.idx-rows+1), t.idx)
-}
+func (t *targets) move(d, rows int) { moveCursor(&t.idx, &t.top, d, len(t.zones), rows) }
 
 // visible is the slice of targets the box has room for.
 func (m Model) targetsVisible() []clickZone {
-	lo := min(m.targets.top, len(m.targets.zones))
-	return m.targets.zones[lo:min(len(m.targets.zones), lo+m.targetRows())]
+	return window(m.targets.zones, m.targets.top, m.targetRows())
 }
 
 // renderTargets draws the chooser in the composer's place, filling exactly the

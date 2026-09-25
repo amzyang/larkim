@@ -59,6 +59,11 @@ type Fake struct {
 	SentKeys []string
 	// Sent records the body of every send, in the same order as SentKeys.
 	Sent []Outgoing
+	// Recalled records the id of every message taken back, in order.
+	Recalled []string
+	// Forwarded records each forward as "<message id>->
+	// <chat or user id>", in order.
+	Forwarded []string
 	// Uploads records the path of every image upload, in order.
 	Uploads  []string
 	Calls    []string
@@ -434,6 +439,9 @@ func (o Outgoing) body() (msgType, content, rendered string) {
 	case o.ImageKey != "":
 		key, _ := json.Marshal(o.ImageKey)
 		return "image", `{"image_key":` + string(key) + `}`, "[Image: " + o.ImageKey + "]"
+	case o.FileKey != "":
+		key, _ := json.Marshal(o.FileKey)
+		return "file", `{"file_key":` + string(key) + `}`, "[File: " + o.FileKey + "]"
 	default:
 		text, _ := json.Marshal(o.Text)
 		return "text", `{"text":` + string(text) + `}`, o.Text
@@ -451,6 +459,19 @@ func (f *Fake) UploadImage(_ context.Context, path string) (string, error) {
 	defer f.mu.Unlock()
 	f.uploaded++
 	return fmt.Sprintf("img_fake_%d", f.uploaded), nil
+}
+
+func (f *Fake) UploadFile(_ context.Context, path string) (string, error) {
+	f.mu.Lock()
+	f.Uploads = append(f.Uploads, path)
+	f.mu.Unlock()
+	if err := f.record("file-upload"); err != nil {
+		return "", err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.uploaded++
+	return fmt.Sprintf("file_fake_%d", f.uploaded), nil
 }
 
 func (f *Fake) Send(_ context.Context, target Target, msg Outgoing, idempotencyKey string) (SentMessage, error) {
@@ -479,6 +500,46 @@ func (f *Fake) Send(_ context.Context, target Target, msg Outgoing, idempotencyK
 	f.Messages[id] = m
 	f.Rendered[id] = RenderedMessage{MessageID: id, ChatID: chat, MsgType: msgType, Content: rendered, Raw: m.Raw}
 	return SentMessage{MessageID: id, ChatID: chat}, nil
+}
+
+func (f *Fake) Recall(_ context.Context, messageID string) error {
+	f.mu.Lock()
+	f.Recalled = append(f.Recalled, messageID)
+	f.mu.Unlock()
+	if err := f.record("recall:" + messageID); err != nil {
+		return err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	m, ok := f.Messages[messageID]
+	if !ok {
+		return fmt.Errorf("no such message %s", messageID)
+	}
+	m.Deleted = true
+	f.Messages[messageID] = m
+	return nil
+}
+
+func (f *Fake) Forward(ctx context.Context, messageID string, target Target, key string) (SentMessage, error) {
+	to := target.ChatID
+	if to == "" {
+		to = target.UserID
+	}
+	f.mu.Lock()
+	f.Forwarded = append(f.Forwarded, messageID+"->"+to)
+	f.mu.Unlock()
+	if err := f.record("forward:" + messageID); err != nil {
+		return SentMessage{}, err
+	}
+	f.mu.Lock()
+	src, ok := f.Messages[messageID]
+	f.mu.Unlock()
+	if !ok {
+		return SentMessage{}, fmt.Errorf("no such message %s", messageID)
+	}
+	// A forward lands as a new message carrying the original's body, which is
+	// what makes it ingestable like any other send.
+	return f.Send(ctx, target, Outgoing{Text: src.Body.Content}, key)
 }
 
 func (f *Fake) Reply(ctx context.Context, messageID string, msg Outgoing, inThread bool, key string) (SentMessage, error) {

@@ -279,3 +279,25 @@ func mustBots(t *testing.T, s *Syncer) []store.BotRef {
 	require.NoError(t, err)
 	return b
 }
+
+// A bot only sees the message that names it, so a roster has to record which
+// members are bots for @ to be able to offer them.
+func TestTick_MembersFileABotAsABot(t *testing.T) {
+	s, f, _ := newSyncer(t)
+	ctx := context.Background()
+	f.Chats = []larkcli.RawChat{{ChatID: "oc_g", Name: "平台组", ChatMode: "group"}}
+	f.Members["oc_g"] = []larkcli.ChatMember{
+		{MemberID: "ou_a", Name: "张三"},
+		{MemberID: "ou_bot", Name: "构建机器人", IsBot: true},
+	}
+
+	_, err := s.Tick(ctx)
+	require.NoError(t, err)
+
+	roster, err := s.Store.ChatRoster(ctx, "oc_g", "ou_me")
+	require.NoError(t, err)
+	require.Len(t, roster, 2)
+	require.Equal(t, "构建机器人", roster[1].Name)
+	require.True(t, roster[1].IsBot)
+	require.False(t, roster[0].IsBot)
+}
