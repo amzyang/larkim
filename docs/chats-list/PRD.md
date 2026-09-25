@@ -92,7 +92,7 @@ TUI 左侧会话列表按飞书桌面端的信息密度重做：头像 + 两行�
 | p2p 头像 | `contacts.avatar_path`，经 `chats` 的联系人 join 取出 | 联系人详情回填 |
 | p2p 对方账号尾号 | `contacts.enterprise_email` 的前缀，同一个 join | 联系人详情回填 |
 | 最新消息 | `chats.last_*` 冷存列 | 见「冷存摘要」 |
-| 未读数 | `read_state.is_read_remote = 0` 且 `local_read_at = 0` 且 `messages.message_position >= 0` | 随同步轮询；打开会话时对该会话立即重查一次，并把该会话页面上的未读整批记为本地已读（thread 回复也在页面上，一并记），同时后台把飞书客户端导航到该会话，让它自己的红点也落下来（见 [read-sync](../read-sync/PRD.md)） |
+| 未读数 | `read_state.is_read_remote = 0` 且 `local_read_at = 0` 且 `messages.message_position >= 0` | 随同步轮询；打开会话时对该会话立即重查一次。会话页面摆到读者眼前时——进入会话、从历史滚回消息流末尾、或终端重新获得焦点——把该会话页面上的未读整批记为本地已读（thread 回复也在页面上，一并记），同时后台把飞书客户端导航到该会话，让它自己的红点也落下来（见 [read-sync](../read-sync/PRD.md)） |
 | mute | `lark-cli api POST /open-apis/im/v1/chat_user_setting/batch_get_mute_status --as user` | 随 chats 全量刷新 |
 | 个人状态 | `lark-cli contact user_profiles batch_query`，`query_option.include_personal_status = true` | 随联系人刷新 |
 | 草稿 / 发送失败 | `drafts` 表 | TUI 写入 |

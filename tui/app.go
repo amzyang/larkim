@@ -135,6 +135,11 @@ type Model struct {
 	// store would go out under the reader's eyes; this visit keeps showing
 	// what was waiting when it began, and the next one starts clean.
 	dots map[string]bool
+	// readAt is the readKey the last takeRead answered. Holding it, rather
+	// than diffing against the model this update began with, is what keeps a
+	// view that leaves the tail and comes back from firing a second applink
+	// for the same message while the first one's write is still in flight.
+	readAt string
 	// pendingChat is a chat whose page has been asked for but not arrived. The
 	// panes stay on the chat they are showing until it does, so a cursor
 	// running down the list never leaves a blank behind it.
@@ -315,8 +320,9 @@ func (m Model) Init() tea.Cmd {
 	return tea.Batch(cmds, m.chatPollCmd())
 }
 
-// Update runs the handler, then hands the terminal any avatar the newly
-// visible chats need. Going through tea.Raw puts the sequence in the
+// Update runs the handler, takes as read whatever the handler left in front of
+// the reader, then hands the terminal any avatar the newly visible chats need.
+// Going through tea.Raw puts the sequence in the
 // renderer's own output buffer, under its lock, so it lands between frames
 // and after the alternate screen is up — which is the only screen a virtual
 // placement made earlier would not reach.
@@ -325,6 +331,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	nm, ok := next.(Model)
 	if !ok {
 		return next, cmd
+	}
+	// Reading is settled here rather than where a page arrives, because
+	// arriving is only one of the ways a page comes to be in front of the
+	// reader: scrolling back to the tail, closing the help overlay, widening
+	// the terminal out of the fold and returning to the window all reach it
+	// too, and each of them is an ordinary message through this seam.
+	if k := nm.readKey(atTail(nm.msgRows, nm.msgTop, nm.msgListHeight())); k != "" && k != nm.readAt {
+		nm.readAt = k
+		cmd = tea.Batch(cmd, nm.takeRead(nm.chatID, nm.msgsBase))
 	}
 	if _, raw := msg.(tea.RawMsg); raw {
 		// The sequence the last round handed the terminal arrives back here.
@@ -486,11 +501,14 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		default:
 			return m, nil
 		}
-		// A message landing in the chat the reader is watching is read as it
-		// lands, so it wears no marker. Only the page that opens a chat, and
-		// what arrives while the terminal is not focused, has something to
-		// say about what was missed.
-		if entering || !m.focused {
+		// A message landing where the reader is looking is read as it lands, so
+		// it wears no marker. Everything else has something to say about what
+		// was missed: the page that opens a chat, and whatever arrived while
+		// the pane was not in front of the reader — scrolled up its history,
+		// behind the search panel, or with the terminal in the background.
+		// The viewport asked about is the one the page landed in, before
+		// holdTop moves it.
+		if entering || !m.pageShown(tailed) {
 			m.markDots(msg.msgs)
 		}
 		var infoCmd tea.Cmd
@@ -512,7 +530,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.searching {
 			// The cursor and viewport index m.searchResults, not m.msgs.
-			return m, tea.Batch(m.takeRead(msg.chatID, msg.msgs), infoCmd)
+			return m, infoCmd
 		}
 		m.msgIdx = len(m.msgs) - 1
 		if i := indexOfID(m.msgs, wasOn); !atEnd && i >= 0 {
@@ -543,7 +561,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.msgTop = holdTop(m.msgRows, m.msgs, anchor, tailed, m.msgTop, m.msgListHeight())
 		}
-		return m, tea.Batch(m.takeRead(msg.chatID, msg.msgs), infoCmd)
+		return m, infoCmd
 	case searchRestMsg:
 		if !m.claimSearch(msg.gen) {
 			return m, nil
@@ -960,15 +978,20 @@ func (m *Model) clearBlockDots(msgs []store.Message, idx int, st msgStyle) {
 }
 
 // takeRead records that the reader has had a chat's page in front of them,
-// which is what drops the badge. It runs on every page, reloads included, so
-// the chat being watched does not light up again as messages land in it.
+// which is what drops the badge. readKey decides when that is true; this only
+// settles it.
 //
 // The Feishu client keeps a red dot of its own, which only the client itself
-// can drop. A page that arrived with something waiting therefore also walks
+// can drop. A page carrying something the badge counts therefore also walks
 // the client onto the chat, so reading here settles both badges rather than
 // leaving one lit for a later trip to Feishu. That covers the chat under the
 // reader's eyes as well as the one just opened: a message landing in it
-// relights the client's dot, and the page it arrives on drops it again.
+// relights the client's dot, and reaching it drops the dot again.
+//
+// unreadWaiting is the narrower of the two gates. readKey fires for anything
+// markChatRead would settle, thread replies included; only what the chat badge
+// counts is worth an applink, because the client will not drop its dot for a
+// reply the chat's message flow does not show.
 func (m Model) takeRead(chatID string, msgs []store.Message) tea.Cmd {
 	cmds := []tea.Cmd{markChatRead(m.deps.Store, m.deps.Log, chatID)}
 	if unreadWaiting(msgs) {

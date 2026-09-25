@@ -32,12 +32,14 @@ func readModel(t *testing.T) (Model, *store.Store) {
 }
 
 // arrive plays one page of a chat into the model the way the load command
-// does, running whatever the model asks for in return.
+// does, running whatever the model asks for in return. It goes through Update
+// rather than the dispatcher under it, because that outer pass is where a page
+// landing in front of the reader is taken as read.
 func arrive(t *testing.T, m Model, st *store.Store, chatID string) Model {
 	t.Helper()
 	msg, ok := loadMessages(Deps{Store: st}, chatID, 0)().(messagesLoadedMsg)
 	require.True(t, ok)
-	next, cmd := m.update(msg)
+	next, cmd := m.Update(msg)
 	collect(cmd)
 	return next.(Model)
 }
