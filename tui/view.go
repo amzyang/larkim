@@ -403,21 +403,31 @@ func (m Model) segCells(pic picture) string {
 	return pic.gap()
 }
 
-// joinSegs draws a line whose pictures sit inside its text. It pads rather
-// than fits: MaxWidth measures a picture's placeholder cells as the characters
-// they are and would cut one out of its cluster, and the pieces were packed to
-// the pane's width when they were built, so there is nothing to cut.
+// joinSegs draws a line whose pictures sit inside its text, piece by piece
+// against what the row has left. The pieces were packed to that width when
+// they were built, so this normally has nothing to cut; it cuts anyway because
+// a pane is drawn as wide as its widest row, and one row past its share pushes
+// the whole frame off the terminal, where every line wraps. Whole rows are
+// what the reader loses then, against the one column lost here.
 func (m Model) joinSegs(segs []rowSeg, w int) string {
 	var b strings.Builder
+	used := 0
 	for _, s := range segs {
-		if s.pic.cols == 0 {
-			b.WriteString(s.text)
+		if s.pic.cols > 0 {
+			// A picture goes in whole: its cells name one image to the
+			// terminal, and half of them name nothing.
+			if used+s.pic.cols > w {
+				break
+			}
+			b.WriteString(m.segCells(s.pic))
+			used += s.pic.cols
 			continue
 		}
-		b.WriteString(m.segCells(s.pic))
+		text := cut(s.text, w-used)
+		b.WriteString(text)
+		used += lipgloss.Width(text)
 	}
-	line := b.String()
-	return line + strings.Repeat(" ", max(0, w-lipgloss.Width(line)))
+	return b.String() + strings.Repeat(" ", max(0, w-used))
 }
 
 // firstRow is where a message's block starts — its day separator when it
@@ -701,20 +711,11 @@ func (m Model) renderChats(h int) string {
 		}
 		return avatar + text
 	}
-	// A summary carrying a reaction picture is padded rather than fitted:
-	// MaxWidth measures a placeholder as the characters it is and would cut
-	// one out of its cluster. The pieces were packed to the row's width when
-	// it was built, so there is nothing to cut.
+	// A summary carrying a reaction picture goes through joinSegs rather than
+	// fit: MaxWidth measures a placeholder as the characters it is and would
+	// cut one out of its cluster.
 	segLine := func(avatar string, segs []rowSeg, selected bool) string {
-		text := gap
-		for _, s := range segs {
-			if s.pic.cols == 0 {
-				text += s.text
-				continue
-			}
-			text += m.segCells(s.pic)
-		}
-		text += strings.Repeat(" ", max(0, w-avatarWidth-lipgloss.Width(text)))
+		text := gap + m.joinSegs(segs, w-avatarWidth-avatarGap)
 		if selected {
 			avatar = m.highlightAvatar(avatar, m.focus == paneChats)
 			text = m.highlightChat(text, m.focus == paneChats)
@@ -980,7 +981,7 @@ func flatten(s string) string {
 // fit cuts a styled line to w columns without wrapping and pads it to w so
 // row highlights span the pane.
 func fit(s string, w int) string {
-	s = lipgloss.NewStyle().MaxWidth(w).Inline(true).Render(s)
+	s = cut(lipgloss.NewStyle().Inline(true).Render(s), w)
 	if pad := w - lipgloss.Width(s); pad > 0 {
 		s += strings.Repeat(" ", pad)
 	}

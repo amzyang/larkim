@@ -44,7 +44,7 @@ func codeRows(code []string, lang string, width int, dark bool) []string {
 			gutter = stDim.Render(codeRule + " " + pad(strconv.Itoa(i+1), digits) + " ")
 		}
 		if ansi.StringWidth(line) > room {
-			line = ansi.Truncate(line, max(1, room-1), "…")
+			line = cut(line, max(1, room-1)) + "…"
 		}
 		out = append(out, gutter+line)
 	}

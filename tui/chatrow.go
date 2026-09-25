@@ -456,7 +456,7 @@ func padBetween(left, right string, w int) string {
 	if rw == 0 {
 		gap = 0
 	}
-	left = lipgloss.NewStyle().MaxWidth(w - rw - gap).Inline(true).Render(left)
+	left = cut(lipgloss.NewStyle().Inline(true).Render(left), w-rw-gap)
 	return left + strings.Repeat(" ", w-rw-lipgloss.Width(left)) + right
 }
 

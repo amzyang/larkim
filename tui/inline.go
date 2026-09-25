@@ -164,10 +164,11 @@ func wrapSegs(segs []rowSeg, w int) [][]rowSeg {
 			if head == "" {
 				// A row's worth of one unbreakable word: cut it, the way a
 				// wrapped body already cuts an overlong line.
-				head, rest = ansi.Truncate(text, w, ""), ansi.TruncateLeft(text, w, "")
+				head = cut(text, w)
 				if head == "" {
 					break
 				}
+				rest = cutLeft(text, ansi.StringWidth(head))
 			}
 			line, used = append(line, frag(head)), used+ansi.StringWidth(head)
 			if text = rest; text != "" {
@@ -198,5 +199,5 @@ func takeText(s string, avail int) (head, rest string) {
 		return "", s
 	}
 	// The break itself is a space the next row does not open with.
-	return head, strings.TrimLeft(ansi.TruncateLeft(s, ansi.StringWidth(head), ""), " ")
+	return head, strings.TrimLeft(cutLeft(s, ansi.StringWidth(head)), " ")
 }
