@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strings"
 )
 
 // Draft is one chat's unsent composer state. It is consumer-owned: the daemon
@@ -16,10 +17,12 @@ type Draft struct {
 	UpdatedAt int64  `json:"updated_at"`
 }
 
-// Empty reports whether the draft holds nothing worth keeping. A quote alone
-// is not worth keeping: reopening the chat on an empty composer that claims to
-// be answering something is a state the reader never chose.
-func (d Draft) Empty() bool { return d.Text == "" }
+// Empty reports whether the draft holds nothing worth keeping, and is the only
+// place that decides it. A quote alone is not worth keeping: reopening the chat
+// on an empty composer that claims to be answering something is a state the
+// reader never chose. Neither is whitespace, which the chat list would draw a
+// marker for and the reader would find nothing behind.
+func (d Draft) Empty() bool { return strings.TrimSpace(d.Text) == "" }
 
 // LoadDraft returns the draft for a chat, or the zero value when there is
 // none. A missing draft is the normal case, not an error.

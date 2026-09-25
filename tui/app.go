@@ -845,7 +845,7 @@ func (m *Model) openChatFrom(chatID string, sinceMs int64) tea.Cmd {
 // what is on screen.
 func (m Model) draftForRow(chatID string) store.Draft {
 	if chatID == m.chatID {
-		return store.Draft{ChatID: chatID, Text: strings.TrimSpace(m.input.Value())}
+		return store.Draft{ChatID: chatID, Text: m.input.Value()}
 	}
 	return m.drafts[chatID]
 }

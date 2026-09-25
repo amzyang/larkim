@@ -148,8 +148,24 @@ func TestDraftForRow_OpenChatAnswersFromTheComposer(t *testing.T) {
 	m.input.SetValue("  正在打字  ")
 	m.drafts = map[string]store.Draft{"oc_peer": {ChatID: "oc_peer", Text: "别处的"}}
 
-	assert.Equal(t, "正在打字", m.draftForRow("oc_group").Text, "the open row reads the live composer")
+	assert.Equal(t, "  正在打字  ", m.draftForRow("oc_group").Text, "the open row reads the live composer")
 	assert.Equal(t, "别处的", m.draftForRow("oc_peer").Text, "every other row reads the map")
+}
+
+// Whether a draft counts is store.Draft.Empty's to say, so the open row and
+// every other row answer it the same way: a composer holding only blanks marks
+// nothing, and marks nothing still once the reader has moved on.
+func TestDraftForRow_BlanksAreNotADraft(t *testing.T) {
+	m, st := draftModel(t)
+	m = enter(t, m, st, "oc_group")
+	m.input.SetValue("   ")
+
+	assert.Empty(t, selfMark(m.draftForRow("oc_group")))
+
+	collect(m.saveComposer())
+	all, err := st.Drafts(context.Background())
+	require.NoError(t, err)
+	assert.Empty(t, all, "blanks leave no row behind to mark the chat with later")
 }
 
 func TestSelfMark_DrawnOnlyForAChatHoldingADraft(t *testing.T) {

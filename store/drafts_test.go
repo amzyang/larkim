@@ -108,3 +108,14 @@ func TestSaveDraft_DoesNotAdvanceDataRev(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, before, after)
 }
+
+func TestSaveDraft_BlanksDeleteTheRow(t *testing.T) {
+	s, ctx := openTest(t), context.Background()
+	require.NoError(t, s.SaveDraft(ctx, Draft{ChatID: "oc_group", Text: "半句"}, 1))
+
+	require.NoError(t, s.SaveDraft(ctx, Draft{ChatID: "oc_group", Text: " \n\t "}, 2))
+
+	all, err := s.Drafts(ctx)
+	require.NoError(t, err)
+	assert.Empty(t, all)
+}
