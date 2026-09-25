@@ -13,6 +13,8 @@ func TestParseDocURL_ReadsTheDocumentThePathNames(t *testing.T) {
 		want DocRef
 	}{
 		{"https://example.feishu.cn/docx/AbC123", DocRef{"docx", "AbC123"}},
+		{"https://example.feishu.cn/docs/AbC123", DocRef{"doc", "AbC123"}},
+		{"https://feishu.cn/docx/AbC123", DocRef{"docx", "AbC123"}},
 		{"https://example.feishu.cn/wiki/AbC123", DocRef{"wiki", "AbC123"}},
 		{"https://example.feishu.cn/sheets/AbC123", DocRef{"sheet", "AbC123"}},
 		{"https://example.feishu.cn/base/AbC123", DocRef{"bitable", "AbC123"}},
@@ -38,6 +40,10 @@ func TestParseDocURL_IgnoresWhatFollowsThePath(t *testing.T) {
 func TestParseDocURL_LeavesWhatIsNotADocument(t *testing.T) {
 	for _, raw := range []string{
 		"https://example.com/docx/AbC123",
+		// Somebody else's domain that merely ends in the right letters. A
+		// title drawn in place of this URL would hide where it actually goes.
+		"https://evilfeishu.cn/docx/AbC123",
+		"https://feishu.cn.example.com/docx/AbC123",
 		"https://example.feishu.cn/client/chat/open",
 		"https://example.feishu.cn/calendar/AbC123",
 		"https://example.feishu.cn/j/1234567",

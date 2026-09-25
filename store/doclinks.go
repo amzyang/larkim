@@ -32,15 +32,16 @@ type DocLabel struct {
 
 // docPathTypes maps a URL path prefix onto the document type the metadata
 // API names it by. Longer prefixes come first so /drive/folder/ is not read
-// as a document called "folder", and two of the spellings differ from the
-// API's word for the same thing: /sheets/ is a sheet, /base/ is a bitable.
+// as a document called "folder", and three of the spellings differ from the
+// API's word for the same thing: /docs/ is a doc, /sheets/ is a sheet,
+// /base/ is a bitable.
 var docPathTypes = []struct{ prefix, docType string }{
 	{"/drive/folder/", "folder"},
 	{"/drive/file/", "file"},
 	{"/drive/shr/", "folder"},
 	{"/chat/drive/", "folder"},
 	{"/docx/", "docx"},
-	{"/doc/", "doc"},
+	{"/docs/", "doc"},
 	{"/sheets/", "sheet"},
 	{"/base/", "bitable"},
 	{"/bitable/", "bitable"},
@@ -61,7 +62,13 @@ var docURL = regexp.MustCompile(`https?://[\w.-]*feishu\.cn/[^\s<>"'` + "`" + `\
 // document look like a different one every time someone shares it.
 func ParseDocURL(raw string) (DocRef, bool) {
 	u, err := url.Parse(strings.TrimSpace(raw))
-	if err != nil || !strings.HasSuffix(u.Hostname(), "feishu.cn") {
+	if err != nil {
+		return DocRef{}, false
+	}
+	// Spelled out rather than tested as a suffix: evilfeishu.cn ends in
+	// feishu.cn too, and a link whose title has replaced it on screen is one
+	// whose host the reader no longer gets to read.
+	if h := u.Hostname(); h != "feishu.cn" && !strings.HasSuffix(h, ".feishu.cn") {
 		return DocRef{}, false
 	}
 	for _, m := range docPathTypes {
