@@ -68,6 +68,10 @@ type clickZone struct {
 	// a zone each so that pressing any of them opens the lot in one viewer,
 	// the one pressed first; everything else leads to a single place.
 	urls []string
+	// react is the emoji a reaction chip toggles when it is pressed. A chip is
+	// not a place to open: pressing one puts the reader's own reaction on the
+	// message or takes it back, which is what the client does.
+	react string
 	// label names the target the way the chooser lists it, and note is what
 	// the status bar says once it has been handed over. They differ because a
 	// list wants the thing and a status line wants the act.
@@ -75,7 +79,10 @@ type clickZone struct {
 	note  string
 }
 
-func (z clickZone) hit(x int) bool { return len(z.urls) > 0 && x >= z.x0 && x < z.x1 }
+// live reports whether the zone leads anywhere at all.
+func (z clickZone) live() bool { return len(z.urls) > 0 || z.react != "" }
+
+func (z clickZone) hit(x int) bool { return z.live() && x >= z.x0 && x < z.x1 }
 
 // placeZones recomputes a row's click targets from the widths of its pieces,
 // so a caller that has just changed a piece — a list marker taking the place
@@ -136,6 +143,10 @@ type msgStyle struct {
 	docs    map[string]store.DocLabel   // Feishu documents linked to, by store.DocRef.Key
 	outbox  map[string]outboxState      // the sends still on their way, by the id their rows carry
 	dots    map[string]bool             // the messages this visit draws the unread marker on
+	// reacts are the reaction presses Feishu has not answered yet, by message
+	// id then folded emoji key, laid over the stored summary so a press draws
+	// before it is sent.
+	reacts map[string]map[string]bool
 	// names labels each message's chat on its sender line. It is set for
 	// search results, which run across chats; inside one chat, naming it on
 	// every block says nothing.
@@ -756,7 +767,7 @@ func reactionRows(x store.Message, idx int, st msgStyle, g *leads) []msgRow {
 	if x.Deleted {
 		return nil
 	}
-	chips := emoji.Summary(x.ReactionsJSON, st.self)
+	chips := pendingChips(emoji.Summary(x.ReactionsJSON, st.self), st.reacts[x.MessageID], st.self)
 	if len(chips) == 0 {
 		return nil
 	}
@@ -764,6 +775,11 @@ func reactionRows(x store.Message, idx int, st msgStyle, g *leads) []msgRow {
 	const gap = "  "
 	var rows []msgRow
 	var line []rowSeg
+	// zones are the chips packed onto the line so far, in the strip's own
+	// columns; flush moves them behind the lead once the row exists. They are
+	// kept beside the pieces rather than derived from them because a chip is
+	// one piece or three depending on whether its emoji is a picture.
+	var zones []clickZone
 	width := 0
 	flush := func() {
 		if len(line) == 0 {
@@ -780,8 +796,12 @@ func reactionRows(x store.Message, idx int, st msgStyle, g *leads) []msgRow {
 				row.text += s.text
 			}
 		}
+		for _, z := range zones {
+			z.x0, z.x1 = z.x0+row.lead.cols(), z.x1+row.lead.cols()
+			row.zones = append(row.zones, z)
+		}
 		rows = append(rows, row)
-		line, width = nil, 0
+		line, zones, width = nil, nil, 0
 	}
 	for _, c := range chips {
 		segs := reactionChip(c, st)
@@ -794,6 +814,7 @@ func reactionRows(x store.Message, idx int, st msgStyle, g *leads) []msgRow {
 				width += len(gap)
 			}
 		}
+		zones = append(zones, clickZone{x0: width, x1: width + w, react: c.Key})
 		line = append(line, segs...)
 		width += w
 	}

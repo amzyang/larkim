@@ -206,7 +206,7 @@ func (m Model) msgStyleFor(width int, meta msgMeta) msgStyle {
 	st := msgStyle{width: width, height: m.picHeight(), self: m.deps.Self, now: time.Now(),
 		suffix: meta.suffix, people: meta.people, avatars: meta.avatars,
 		res: meta.res, docs: meta.docs, parents: meta.parents, dataDir: m.deps.DataDir,
-		outbox: m.outboxStates(), dots: m.dots, dark: m.dark}
+		outbox: m.outboxStates(), reacts: m.reactStates(), dots: m.dots, dark: m.dark}
 	if c, ok := m.currentChat(); ok {
 		st.p2p = c.ChatMode == "p2p"
 		if st.p2p {

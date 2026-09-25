@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -341,4 +342,121 @@ func TestView_PanesStandStillWhateverModeTheReaderIsIn(t *testing.T) {
 		require.Equal(t, m.height, lipgloss.Height(m.View().Content), "%q left the screen a different height", k)
 	}
 	require.Equal(t, modeNormal, m.mode)
+}
+
+// chipAt presses the chip carrying key on the strip the messages pane draws,
+// in the coordinates the terminal reports a click in.
+func chipAt(t *testing.T, m Model, key string) (Model, tea.Cmd) {
+	t.Helper()
+	for line, r := range m.msgRows {
+		for _, z := range r.zones {
+			if z.react != key {
+				continue
+			}
+			next, cmd := m.onClick(tea.Mouse{Button: tea.MouseLeft,
+				X: chatsWidth + 1 + z.x0, Y: line - m.msgTop + 1 + msgHeaderHeight})
+			return next.(Model), cmd
+		}
+	}
+	t.Fatalf("no %s chip on the page", key)
+	return m, nil
+}
+
+func TestPressChip_DrawsThePressBeforeItIsSent(t *testing.T) {
+	m := pickerModel(t)
+	before := rowText(m.msgRows)
+	require.Contains(t, before, "👍 你", "the reader already reacted, which is what a press takes back")
+	m, cmd := chipAt(t, m, "THUMBSUP")
+	require.NotNil(t, cmd)
+	require.Len(t, m.reacts, 1)
+	require.False(t, m.reacts[0].on, "pressing what the reader already put takes it back")
+	require.NotContains(t, rowText(m.msgRows), "👍", "the strip answers the press, not the round trip")
+}
+
+func TestPressChip_SecondPressGoesTheOtherWay(t *testing.T) {
+	m := pickerModel(t)
+	m, _ = chipAt(t, m, "THUMBSUP")
+	require.False(t, m.reacts[0].on)
+	// The chip is gone with the reaction, so the second press comes through
+	// the chooser the way a reader would reach an emoji nothing carries.
+	next, cmd := m.toggleReaction(m.msgs[0], "THUMBSUP")
+	m = next.(Model)
+	require.NotNil(t, cmd)
+	require.Len(t, m.reacts, 1, "the last press is what the reader means")
+	require.True(t, m.reacts[0].on, "the direction answers the strip the first press left")
+	require.Contains(t, rowText(m.msgRows), "👍 你")
+}
+
+func TestPressChip_LeavesTheCursorWhereItWas(t *testing.T) {
+	m := pickerModel(t)
+	m.msgIdx = 0
+	m, _ = chipAt(t, m, "THUMBSUP")
+	require.Equal(t, 0, m.msgIdx, "a press asked for the chip, not for the message under it")
+}
+
+func TestPressChip_StaysShutBesideADaemon(t *testing.T) {
+	m := pickerModel(t)
+	m.deps.Syncer = nil
+	m, cmd := chipAt(t, m, "THUMBSUP")
+	require.Nil(t, cmd)
+	require.Empty(t, m.reacts, "nothing is drawn for a press that was never sent")
+	require.Contains(t, m.notice, "sync lock")
+}
+
+func TestReactedMsg_TakesAFailedPressBackOffTheStrip(t *testing.T) {
+	m := pickerModel(t)
+	m, _ = chipAt(t, m, "THUMBSUP")
+	require.NotContains(t, rowText(m.msgRows), "👍")
+	next, _ := m.update(reactedMsg{p: m.reacts[0], err: errors.New("no network")})
+	m = next.(Model)
+	require.Empty(t, m.reacts)
+	require.Contains(t, rowText(m.msgRows), "👍 你", "the strip goes back to what Feishu holds")
+	require.Contains(t, m.notice, "no network")
+}
+
+func TestReactedMsg_AsksForTheSummaryRatherThanWaitingOnARevision(t *testing.T) {
+	m := pickerModel(t)
+	m, _ = chipAt(t, m, "THUMBSUP")
+	next, cmd := m.update(reactedMsg{p: m.reacts[0]})
+	m = next.(Model)
+	require.NotNil(t, cmd, "an answer that changed nothing bumps no revision to reload on")
+	require.Len(t, m.reacts, 1,
+		"taking it off now would flicker back to the summary the reload is about to replace")
+	require.True(t, m.reacts[0].answered)
+}
+
+func TestReactedMsg_StopsDrawingARemovalFeishuTookWithoutChangingAnything(t *testing.T) {
+	// Taking back a reaction Feishu no longer holds answers without moving the
+	// summary. The press must still go when the reload lands, or the strip
+	// keeps showing a reaction that is not there until the window runs out.
+	m := pickerModel(t)
+	m, _ = chipAt(t, m, "THUMBSUP")
+	require.NotContains(t, rowText(m.msgRows), "👍")
+	next, _ := m.update(reactedMsg{p: m.reacts[0]})
+	m = next.(Model)
+	m.applyOutbox()
+	m.layout()
+	require.Empty(t, m.reacts)
+	require.Contains(t, rowText(m.msgRows), "👍 你", "the strip goes back to what Feishu holds")
+}
+
+func TestReactedMsg_RollsBackOnlyThePressThatFailed(t *testing.T) {
+	m := pickerModel(t)
+	m, _ = chipAt(t, m, "THUMBSUP")
+	failed := m.reacts[0]
+	next, _ := m.toggleReaction(m.msgs[0], "THUMBSUP")
+	m = next.(Model)
+	next, _ = m.update(reactedMsg{p: failed, err: errors.New("no network")})
+	m = next.(Model)
+	require.Len(t, m.reacts, 1, "the press that failed is not the press now standing")
+	require.True(t, m.reacts[0].on)
+}
+
+func TestOpenPicker_MarksWhatAPressAlreadyPut(t *testing.T) {
+	m := pickerModel(t)
+	// Taking the reaction back means the chooser must stop marking it, even
+	// though the store still says the reader has it.
+	m, _ = chipAt(t, m, "THUMBSUP")
+	m = press(t, m, "e")
+	require.False(t, m.picker.mine["THUMBSUP"], "the tick follows the strip, not the summary behind it")
 }

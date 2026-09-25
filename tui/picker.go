@@ -3,7 +3,6 @@ package tui
 import (
 	"strconv"
 	"strings"
-	"time"
 
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
@@ -49,8 +48,10 @@ func (m Model) openPicker() (tea.Model, tea.Cmd) {
 	if m.outboxAt(x.MessageID) != nil {
 		return m.notify("that message has not reached Feishu yet", true), nil
 	}
+	// The strip the reader is looking at, presses and all: pressing e straight
+	// after clicking a chip has to mark what that click put there.
 	mine := map[string]bool{}
-	for _, c := range emoji.Summary(x.ReactionsJSON, m.deps.Self) {
+	for _, c := range m.drawnChips(x) {
 		if c.Mine {
 			mine[emoji.Fold(c.Key)] = true
 		}
@@ -138,37 +139,69 @@ func (p *picker) move(d, rows int) {
 }
 
 // choose puts the highlighted emoji on the message, or takes it back when the
-// reader already chose it. The send is optimistic in neither direction: the
-// picker closes, and the strip changes when Feishu has answered.
+// reader already chose it.
 func (m Model) choose() (tea.Model, tea.Cmd) {
 	if len(m.picker.hits) == 0 {
 		return m, nil
 	}
-	e := m.picker.hits[m.picker.idx].Emoji
-	on := !m.picker.mine[emoji.Fold(e.Key)]
 	target := m.picker.target
-	m.emoji.Use(e.Key)
-	if err := m.emoji.SaveRecent(m.deps.DataDir); err != nil {
-		// The list is derived data; losing it costs the ordering of an empty
-		// query, which is not worth interrupting the reaction for.
-		m = m.notify("could not remember "+e.ZH+": "+err.Error(), false)
-	}
+	key := m.picker.hits[m.picker.idx].Emoji.Key
 	m.mode = modeNormal
 	m.picker = picker{}
 	m.layout()
-	return m, react(m.deps, target.MessageID, e.Key, on)
+	return m.toggleReaction(target, key)
+}
+
+// toggleReaction puts the emoji on the message, or takes it back when it is
+// already the reader's. Every way of reacting — the chooser, :react, a press
+// on the chip itself — arrives here.
+//
+// The press is drawn before it is sent, and taken back off the strip only if
+// Feishu refuses it. A chip that moved only once the round trip came back
+// reads as a press that did not land, and the reader presses again.
+func (m Model) toggleReaction(x store.Message, key string) (tea.Model, tea.Cmd) {
+	if m.deps.Syncer == nil {
+		return m.notify("reacting needs the sync lock; the daemon holds it", true), nil
+	}
+	if x.Deleted {
+		return m.notify("select a message to react to", true), nil
+	}
+	if m.outboxAt(x.MessageID) != nil {
+		return m.notify("that message has not reached Feishu yet", true), nil
+	}
+	// A chip carries whatever key Feishu sent, which may be one this build has
+	// no entry for; remembering that would head an empty query with a name the
+	// picker cannot draw.
+	if e, known := emoji.ByKey(key); known {
+		m.emoji.Use(key)
+		if err := m.emoji.SaveRecent(m.deps.DataDir); err != nil {
+			// The list is derived data; losing it costs the ordering of an
+			// empty query, which is not worth interrupting the reaction for.
+			m = m.notify("could not remember "+e.ZH+": "+err.Error(), false)
+		}
+	}
+	p := m.pressReaction(x, key)
+	// layout rather than a bare rebuild: a press can open or close a strip,
+	// and the viewport is held by the message on its top row across the row
+	// the strip takes or gives back.
+	m.layout()
+	return m, react(m.deps, p)
+}
+
+// reactedMsg says how a press ended. The strip is drawn ahead of Feishu's
+// answer, so one that failed has to be taken back off it by name.
+type reactedMsg struct {
+	p   reactPending
+	err error
 }
 
 // react puts the emoji on the message and brings its summary back. The write
 // bumps the data revision, so the panes reload on their own.
-func react(d Deps, messageID, key string, on bool) tea.Cmd {
+func react(d Deps, p reactPending) tea.Cmd {
 	return func() tea.Msg {
-		ctx, cancel := waited(30 * time.Second)
+		ctx, cancel := waited(reactTimeout)
 		defer cancel()
-		if err := d.Syncer.React(ctx, messageID, key, on); err != nil {
-			return errMsg{err}
-		}
-		return nil
+		return reactedMsg{p: p, err: d.Syncer.React(ctx, p.messageID, p.emojiType, p.on)}
 	}
 }
 

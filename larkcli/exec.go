@@ -681,9 +681,9 @@ type Reaction struct {
 }
 
 // AddReaction puts one emoji on a message under the user's own name. Feishu
-// validates nothing here: an emoji_type it does not know is stored all the
-// same, as a reaction nobody's client can draw, so the caller must offer only
-// emoji the client itself ships.
+// checks the emoji_type against its own list and answers 231001 for anything
+// else, and the check is case-sensitive: the key has to carry the spelling
+// the client ships it under, not a folded one.
 func (c *ExecClient) AddReaction(ctx context.Context, messageID, emojiType string) (Reaction, error) {
 	data, err := c.run(ctx, "api", "POST", "/open-apis/im/v1/messages/"+messageID+"/reactions",
 		"--data", jsonArg(map[string]any{"reaction_type": map[string]string{"emoji_type": emojiType}}))

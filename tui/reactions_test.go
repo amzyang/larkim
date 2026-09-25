@@ -182,3 +182,115 @@ func TestReactionChip_KeepsOneChipInsideThePane(t *testing.T) {
 		}
 	}
 }
+
+// chipZones is a strip's click targets in the order they are drawn, across
+// however many rows the strip wrapped onto.
+func chipZones(rows []msgRow) []clickZone {
+	var out []clickZone
+	for _, r := range rows {
+		out = append(out, r.zones...)
+	}
+	return out
+}
+
+func TestReactionRows_MarksEveryChipAsAClickTarget(t *testing.T) {
+	msgs := []store.Message{{MessageID: "om_a", SenderID: "ou_a", SenderName: "张三",
+		Content: "这个方案我同意", CreateMs: msgAt(23, 9, 0), RenderedAt: 1, ReactionsJSON: twoReactions}}
+	zs := chipZones(renderRows(msgs, baseStyle()))
+	require.Len(t, zs, 2, "one target per chip, so a press reaches the emoji under it")
+	require.Equal(t, []string{"THUMBSUP", "JIAYI"}, []string{zs[0].react, zs[1].react})
+	require.Equal(t, leadWidth, zs[0].x0, "the strip opens where the sender's disc ends")
+	require.Less(t, zs[0].x1, zs[1].x0, "the gap between chips belongs to neither")
+	for _, z := range zs {
+		require.True(t, z.live(), "a chip leads somewhere even carrying no url")
+		require.True(t, z.hit(z.x0) && !z.hit(z.x1), "the range is half-open")
+	}
+}
+
+func TestReactionRows_ZonesLandOnTheChipTheyName(t *testing.T) {
+	msgs := []store.Message{{MessageID: "om_a", SenderID: "ou_a", SenderName: "张三",
+		Content: "这个方案我同意", CreateMs: msgAt(23, 9, 0), RenderedAt: 1, ReactionsJSON: twoReactions}}
+	rows := renderRows(msgs, baseStyle())
+	line := len(rows) - 1
+	strip := rows[line]
+	// Sliced by columns, not runes: a zone is measured in cells, and every
+	// emoji on the strip takes two of them for one rune. The zones count from
+	// the row's left edge, the text from where the lead ends.
+	drawn := ansi.Strip(strip.text)
+	at := func(z clickZone) string {
+		return cut(cutLeft(drawn, z.x0-strip.lead.cols()), z.x1-z.x0)
+	}
+	for _, tc := range []struct {
+		x    int
+		want string
+	}{
+		{strip.zones[0].x0, "👍 你 +2"},
+		{strip.zones[1].x0, "[+1] +1"},
+	} {
+		z, ok := zoneAt(rows, line, tc.x)
+		require.True(t, ok, "column %d is inside a chip", tc.x)
+		require.Contains(t, at(z), tc.want,
+			"the target covers the chip it names, not its neighbour")
+	}
+	_, ok := zoneAt(rows, line, strip.zones[0].x1)
+	require.False(t, ok, "the gap between two chips presses neither")
+}
+
+func TestReactionRows_WrapKeepsEachChipsTargetOnItsOwnRow(t *testing.T) {
+	keys := []string{"THUMBSUP", "ROSE", "HEART", "PARTY", "FIRE", "CAKE", "COFFEE", "BEER", "GIFT", "TROPHY"}
+	var counts []string
+	for _, key := range keys {
+		counts = append(counts, `{"reaction_type":"`+key+`","count":"1"}`)
+	}
+	msgs := []store.Message{{MessageID: "om_a", SenderID: "ou_a", SenderName: "张三",
+		Content: "庆祝", CreateMs: msgAt(23, 9, 0), RenderedAt: 1,
+		ReactionsJSON: `{"counts":[` + strings.Join(counts, ",") + `]}`}}
+	st := baseStyle()
+	st.width = 24
+	rows := renderRows(msgs, st)
+	var got []string
+	for _, r := range rows {
+		for _, z := range r.zones {
+			got = append(got, z.react)
+			require.GreaterOrEqual(t, z.x0, leadWidth, "a target never reaches into the lead")
+			require.LessOrEqual(t, z.x1, st.width, "a target never runs past the pane")
+		}
+	}
+	require.Equal(t, keys, got, "every chip is still pressable after the strip wrapped")
+}
+
+func TestReactionRows_DrawAPressAheadOfFeishusAnswer(t *testing.T) {
+	msgs := []store.Message{{MessageID: "om_a", SenderID: "ou_a", SenderName: "张三",
+		Content: "这个方案我同意", CreateMs: msgAt(23, 9, 0), RenderedAt: 1, ReactionsJSON: twoReactions}}
+	st := baseStyle()
+	st.reacts = map[string]map[string]bool{"om_a": {"JIAYI": true}}
+	out := rowText(renderRows(msgs, st))
+	require.Contains(t, out, "[+1] 你 +1", "the press draws before it is sent")
+	require.Contains(t, out, "👍 你 +2", "the chip beside it is left alone")
+}
+
+func TestReactionRows_ClosesAChipAPressEmptied(t *testing.T) {
+	msgs := []store.Message{{MessageID: "om_a", SenderID: "ou_a", SenderName: "张三",
+		Content: "同意", CreateMs: msgAt(23, 9, 0), RenderedAt: 1,
+		ReactionsJSON: `{"counts":[{"reaction_type":"THUMBSUP","count":"1"}],
+		  "details":[{"emoji_type":"THUMBSUP","operator":{"operator_id":"ou_me"}}]}`}}
+	st := baseStyle()
+	st.reacts = map[string]map[string]bool{"om_a": {"THUMBSUP": false}}
+	rows := renderRows(msgs, st)
+	require.Empty(t, chipZones(rows), "the strip went with the last reaction on it")
+	require.NotContains(t, rowText(rows), "👍")
+}
+
+func TestSelectedZones_LeavesReactionChipsOut(t *testing.T) {
+	m := New(Deps{Self: "ou_me"})
+	m.width, m.height = 120, 36
+	m.chatID = "oc_team"
+	m.msgsBase = []store.Message{{MessageID: "om_a", ChatID: "oc_team", SenderID: "ou_a", SenderName: "张三",
+		Content: "这个方案我同意", CreateMs: msgAt(23, 9, 0), RenderedAt: 1, ReactionsJSON: twoReactions}}
+	m.applyOutbox()
+	m.layout()
+	m.focus, m.msgIdx = paneMessages, 0
+	m.rebuildMessages()
+	require.NotEmpty(t, chipZones(m.msgRows), "the strip is drawn, so there is something to leave out")
+	require.Empty(t, m.selectedZones(), "o opens places; a chip is not one, and e reaches it instead")
+}

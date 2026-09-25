@@ -2,6 +2,7 @@ package tui
 
 import (
 	"slices"
+	"time"
 
 	"github.com/amzyang/larkim/larkcli"
 	"github.com/amzyang/larkim/store"
@@ -91,7 +92,8 @@ func (m Model) outboxStates() map[string]outboxState {
 
 // applyOutbox rebuilds both message lists from the rows the store returned
 // plus the sends still in flight. It is the only place msgs and thread are
-// put together.
+// put together, which is why the reaction presses are retired here too: this
+// runs exactly when a reload has brought Feishu's own answer in.
 func (m *Model) applyOutbox() {
 	m.msgs = append(slices.Clone(m.msgsBase), m.pendingRows(m.msgsBase, func(it outboxItem) bool {
 		return m.chatID != "" && it.chatID == m.chatID
@@ -103,6 +105,7 @@ func (m *Model) applyOutbox() {
 	quotePending(&m.threadMeta, m.threadBase, m.outbox)
 	resPending(&m.meta, m.outbox)
 	resPending(&m.threadMeta, m.outbox)
+	m.reacts = settleReacts(m.reacts, time.Now())
 }
 
 // resPending lets a pending image draw the file the user picked. The download

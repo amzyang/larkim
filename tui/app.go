@@ -223,6 +223,11 @@ type Model struct {
 	// carry yet, and selfName names their sender until it does.
 	outbox   []outboxItem
 	selfName string
+	// reacts holds the reaction presses Feishu has not answered yet, laid
+	// over the stored summaries so a press draws before it is sent. reactSeq
+	// names each one, so a press that failed takes back itself.
+	reacts   []reactPending
+	reactSeq int64
 
 	notice     string
 	noticeErr  bool
@@ -587,6 +592,21 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.notify("recall: "+msg.err.Error(), true), nil
 		}
 		return m.notify("recalled", false), m.reloadCurrent()
+	case reactedMsg:
+		if msg.err == nil {
+			// React brought the summary up to date in the same breath, so the
+			// panes are asked for it now rather than left to the revision
+			// watcher: a press Feishu answered without changing anything —
+			// taking back a reaction it no longer holds — bumps no revision,
+			// and waiting on one would leave the press drawn until it aged
+			// out. The press stays until that reload lands, so the strip does
+			// not flicker back to the summary it is about to replace.
+			m.answerReact(msg.p.seq)
+			return m, m.reloadCurrent()
+		}
+		m.dropReact(msg.p.seq)
+		m.layout()
+		return m.notify("react: "+msg.err.Error(), true), nil
 	case mentionsLoadedMsg:
 		if !m.mentions {
 			return m, nil
@@ -1062,6 +1082,23 @@ func (m Model) selected() (store.Message, bool) {
 	return store.Message{}, false
 }
 
+// messageAt is the message a row of a message pane belongs to. The messages
+// pane lists search hits while a query is open, and those index a different
+// slice than the open chat's.
+func (m Model) messageAt(p pane, idx int) (store.Message, bool) {
+	list := m.msgs
+	switch {
+	case p == paneThread:
+		list = m.thread
+	case m.searching:
+		list = m.searchMessages()
+	}
+	if idx < 0 || idx >= len(list) {
+		return store.Message{}, false
+	}
+	return list[idx], true
+}
+
 // searchMessages is the message hits alone, for the callers that can only do
 // something with a message.
 func (m Model) searchMessages() []store.Message {
@@ -1093,6 +1130,8 @@ func (m Model) selectedZones() []clickZone {
 			continue
 		}
 		for _, z := range r.zones {
+			// A reaction chip is not a place to open, and o is the open key;
+			// the keyboard reaches the chips through e instead.
 			if len(z.urls) == 0 || seen[z.urls[0]] {
 				continue
 			}
@@ -1977,30 +2016,15 @@ func (m Model) runReact(arg string) (tea.Model, tea.Cmd) {
 	if arg == "" {
 		return m.notify("usage: :react <emoji>", true), nil
 	}
-	if m.deps.Syncer == nil {
-		return m.notify("reacting needs the sync lock; the daemon holds it", true), nil
-	}
 	x, ok := m.selected()
-	if !ok || x.Deleted {
+	if !ok {
 		return m.notify("select a message to react to", true), nil
-	}
-	if m.outboxAt(x.MessageID) != nil {
-		return m.notify("that message has not reached Feishu yet", true), nil
 	}
 	hits := m.emoji.Search(arg)
 	if len(hits) == 0 {
 		return m.notify("no emoji matches "+arg, true), nil
 	}
-	e := hits[0].Emoji
-	on := true
-	for _, c := range emoji.Summary(x.ReactionsJSON, m.deps.Self) {
-		if c.Mine && emoji.Fold(c.Key) == emoji.Fold(e.Key) {
-			on = false
-		}
-	}
-	m.emoji.Use(e.Key)
-	_ = m.emoji.SaveRecent(m.deps.DataDir)
-	return m, react(m.deps, x.MessageID, e.Key, on)
+	return m.toggleReaction(x, hits[0].Emoji.Key)
 }
 
 // --- assistant ------------------------------------------------------------
@@ -2118,7 +2142,7 @@ func (m Model) onClick(ms tea.Mouse) (tea.Model, tea.Cmd) {
 		// button, not for the message it sits on. Pane content starts one
 		// column inside the border the pane is drawn with.
 		if z, ok := zoneAt(m.msgRows, m.msgTop+row, ms.X-chatsWidth-1); ok {
-			return m, openZone(m.deps, z)
+			return m.pressZone(paneMessages, m.msgRows, m.msgTop+row, z)
 		}
 		if idx := rowAt(m.msgRows, m.msgTop+row); idx >= 0 {
 			m.msgIdx = idx
@@ -2130,7 +2154,7 @@ func (m Model) onClick(ms tea.Mouse) (tea.Model, tea.Cmd) {
 		}
 	case paneThread:
 		if z, ok := zoneAt(m.threadRows, m.threadTop+row, ms.X-(m.width-m.rightWidth())-1); ok {
-			return m, openZone(m.deps, z)
+			return m.pressZone(paneThread, m.threadRows, m.threadTop+row, z)
 		}
 		if idx := rowAt(m.threadRows, m.threadTop+row); idx >= 0 {
 			m.threadIdx = idx
@@ -2144,6 +2168,23 @@ func (m Model) onClick(ms tea.Mouse) (tea.Model, tea.Cmd) {
 		return m.startInsert(m.replyTo, m.inThrd)
 	}
 	return m, nil
+}
+
+// pressZone answers a click on a target a row drew: a reaction chip toggles
+// the reader's own reaction, anything else is handed over to be opened.
+//
+// Pressing twice in a row is deliberately not deduplicated. The direction is
+// read off the strip on screen, which the first press has already changed, so
+// a double click adds and then takes back — which is what the client does.
+func (m Model) pressZone(p pane, rows []msgRow, line int, z clickZone) (tea.Model, tea.Cmd) {
+	if z.react == "" {
+		return m, openZone(m.deps, z)
+	}
+	x, ok := m.messageAt(p, rowAt(rows, line))
+	if !ok {
+		return m, nil
+	}
+	return m.toggleReaction(x, z.react)
 }
 
 // wheelStep is how far one notch scrolls: rows for the lists, lines for the

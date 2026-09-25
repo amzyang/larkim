@@ -79,7 +79,7 @@ The message list is split where the calendar day changes, and each message is he
 | `a` / `:ai …` | assistant in the right pane: `summary`, `draft <how>` (result lands in the composer), `todo`, or any question about the open chat |
 | `:mentions` | everything that @'d you, across every chat, newest first; Enter jumps to it. A chat holding an unread mention wears an `@` badge in the list until it is read, however many messages have landed since |
 | `:` `;` | command line: `:copy <200\|7d\|all>` `:goto <chat>` `:send <chat\|ou_> <text>` `:react <emoji>` `:mentions` `:preview` `:sync` `:q` |
-| mouse | click focuses and selects, double-click opens, wheel scrolls |
+| mouse | click focuses and selects, double-click opens, click a reaction to add yours or take it back, wheel scrolls |
 
 Shift+Enter needs a terminal with the kitty keyboard protocol (kitty, Ghostty, WezTerm); elsewhere use Alt+Enter or Ctrl+J for newlines.
 
