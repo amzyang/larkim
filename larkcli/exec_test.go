@@ -294,3 +294,17 @@ echo '{"ok":true,"identity":"user","data":{"items":[]}}'`)
 	require.Equal(t, MaxChatIDsPerMuteCall, strings.Count(lines[0], ",")+1)
 	require.Equal(t, 5, strings.Count(lines[1], ",")+1, "the last call holds the remainder")
 }
+
+func TestMGetRaw_AsksForTheRealCardBody(t *testing.T) {
+	c := fakeBinary(t, `
+echo "$*" > "$(dirname "$0")/args"
+echo '{"ok":true,"identity":"user","data":{"items":[]}}'`)
+	_, err := c.MGetRaw(context.Background(), []string{"om_elsewhere"})
+	require.NoError(t, err)
+
+	args, err := os.ReadFile(filepath.Join(c.Dir, "args"))
+	require.NoError(t, err)
+	// Without it an interactive message arrives as a placeholder telling the
+	// reader to upgrade, carrying neither the card nor its attachment table.
+	require.Contains(t, string(args), `"card_msg_content_type":"raw_card_content"`)
+}

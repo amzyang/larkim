@@ -276,7 +276,11 @@ func (c *ExecClient) MGetRaw(ctx context.Context, ids []string) ([]RawMessage, e
 	if len(ids) == 0 {
 		return nil, nil
 	}
-	params := map[string]any{"message_ids": ids, "with_sender_name": true}
+	// Without card_msg_content_type an interactive message comes back as a
+	// placeholder telling the reader to upgrade their client, which carries
+	// neither the card nor its attachment table. ListMessagesRaw asks for the
+	// real body; a card first seen by id has to arrive the same way.
+	params := map[string]any{"message_ids": ids, "with_sender_name": true, "card_msg_content_type": "raw_card_content"}
 	data, err := c.run(ctx, "api", "GET", "/open-apis/im/v1/messages/mget", "--params", jsonArg(params))
 	if err != nil {
 		return nil, err
