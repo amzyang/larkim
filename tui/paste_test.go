@@ -227,3 +227,11 @@ func TestPrunePasted_DropsOnlyWhatIsStale(t *testing.T) {
 	// A data dir that was never pasted into is not a reason to fail starting.
 	require.NotPanics(t, func() { prunePasted(t.TempDir(), now) })
 }
+
+func TestClipFlavour_WebSelectionIsHTMLBeforeItIsText(t *testing.T) {
+	// A browser puts the rich flavour on the pasteboard beside the plain one,
+	// so utf8 alone is not what decides.
+	require.Equal(t, clipHTML, clipFlavour("«class HTML», 138, «class utf8», 24, string, 24, Unicode text, 48"))
+	// A Finder copy carries HTML too; the file it names still wins.
+	require.Equal(t, clipFile, clipFlavour("«class furl», 25, «class HTML», 96, «class utf8», 11"))
+}

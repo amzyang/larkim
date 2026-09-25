@@ -17,10 +17,13 @@ const (
 	clipText
 	clipFile
 	clipImage
+	clipHTML
 )
 
 // clip is what the clipboard holds. clipImage carries a file larkim staged out
-// of the clipboard's image data; clipFile one that was already on disk.
+// of the clipboard's image data; clipFile one that was already on disk. There
+// is no clipHTML clip: a rich flavour is resolved to the markdown or the plain
+// text it stands for before it leaves readClipboard.
 type clip struct {
 	kind clipKind
 	text string // clipText
@@ -54,6 +57,8 @@ func clipFlavour(info string) clipKind {
 		return clipFile
 	case strings.Contains(info, "«class PNGf»"):
 		return clipImage
+	case strings.Contains(info, "«class HTML»"):
+		return clipHTML
 	case strings.Contains(info, "«class utf8»"):
 		return clipText
 	}
@@ -67,7 +72,7 @@ func readClipboard(stageDir string) (clip, error) {
 	if err != nil {
 		return clip{}, err
 	}
-	switch clipFlavour(info) {
+	switch flavour := clipFlavour(info); flavour {
 	case clipFile:
 		path, err := osa("POSIX path of (the clipboard as «class furl»)")
 		if err != nil {
@@ -80,17 +85,47 @@ func readClipboard(stageDir string) (clip, error) {
 			return clip{}, err
 		}
 		return clip{kind: clipImage, path: path}, nil
-	case clipText:
-		out, err := exec.Command("pbpaste").Output()
+	case clipHTML, clipText:
+		text, err := clipboardText(flavour)
 		if err != nil {
-			return clip{}, fmt.Errorf("pbpaste: %w", err)
+			return clip{}, err
 		}
-		if len(out) == 0 {
+		if text == "" {
 			return clip{}, nil
 		}
-		return clip{kind: clipText, text: string(out)}, nil
+		return clip{kind: clipText, text: text}, nil
 	}
 	return clip{}, nil
+}
+
+// clipboardText resolves a text-bearing flavour to what goes into the draft.
+// The plain flavour is read either way: it is what a rich copy falls back to
+// when the markdown it converts to carries no formatting.
+func clipboardText(flavour clipKind) (string, error) {
+	text, err := pbpaste()
+	if err != nil {
+		return "", err
+	}
+	if flavour != clipHTML {
+		return text, nil
+	}
+	raw, err := osa("the clipboard as «class HTML»")
+	if err != nil {
+		return "", err
+	}
+	md, err := htmlMarkdown(raw)
+	if err != nil {
+		return "", err
+	}
+	return pickPaste(md, text), nil
+}
+
+func pbpaste() (string, error) {
+	out, err := exec.Command("pbpaste").Output()
+	if err != nil {
+		return "", fmt.Errorf("pbpaste: %w", err)
+	}
+	return string(out), nil
 }
 
 // stageClipboardImage writes the clipboard's PNG data to a file of our own.
