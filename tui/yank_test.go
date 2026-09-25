@@ -266,3 +266,11 @@ func TestRenderRaw_AMalformedPayloadDoesNotTakeTheArrayDown(t *testing.T) {
 	require.Equal(t, "not json", indentJSON("not json", ""))
 	require.Empty(t, indentJSON("", ""), "a message stored without a payload has nothing to pretty-print")
 }
+
+func TestYankContent_CopiesACardAsTheDocumentItIs(t *testing.T) {
+	card := weeklyCard
+	card.Content = "<card title=\"旧渲染\">\n待认领账号：13 个\n</card>"
+	text, notice := yank(yankContent, []yankSource{messageYank(card)})
+	require.Equal(t, "设备版本周报 最新 1211 「兜底」\n\n待认领账号：13 个", text)
+	require.Contains(t, notice, "copied content")
+}

@@ -28,3 +28,14 @@ func TestTranscriptAndPrompt(t *testing.T) {
 	require.False(t, draft)
 	require.Equal(t, "谁提到了发布时间？", p)
 }
+
+// cardRaw is the raw content of a card whose body is a heading over a list —
+// the shape whose blocks a rendered text runs together.
+const cardRaw = `{"json_card":"{\"schema\":\"2.0\",\"header\":{\"tag\":\"card_header\",\"property\":{\"title\":{\"tag\":\"plain_text\",\"property\":{\"content\":\"\u53d1\u5e03\u62a5\u544a\"}}}},\"body\":{\"tag\":\"body\",\"property\":{\"elements\":[{\"tag\":\"markdown\",\"property\":{\"elements\":[{\"tag\":\"heading\",\"property\":{\"level\":1,\"elements\":[{\"tag\":\"plain_text\",\"property\":{\"content\":\"\u62a5\u8868\"}}]}},{\"tag\":\"list\",\"property\":{\"items\":[{\"type\":\"ul\",\"level\":0,\"elements\":[{\"tag\":\"plain_text\",\"property\":{\"content\":\"\u7532\"}}]}]}}]}}]}}}","json_attachment":{},"card_schema":2}`
+
+func TestTranscript_ACardReadsAsItsOwnDocument(t *testing.T) {
+	tr := Transcript("平台组", []store.Message{{SenderID: "ou_x", SenderName: "构建机器人", RenderedAt: 5,
+		ContentRaw: cardRaw, Content: "<card title=\"发布报告\">\n# 报表- 甲\n</card>"}}, "ou_me")
+	require.Contains(t, tr, "发布报告\n\n# 报表\n\n- 甲")
+	require.NotContains(t, tr, "<card")
+}

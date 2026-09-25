@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/amzyang/larkim/card"
 	"github.com/amzyang/larkim/store"
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
@@ -88,7 +89,9 @@ func Transcript(chatName string, msgs []store.Message, self string) string {
 			who += " (me)"
 		}
 		text := m.Content
-		if text == "" {
+		if c, ok := card.Parse(m.ContentRaw); ok {
+			text = c.Markdown()
+		} else if text == "" {
 			text = m.ContentRaw
 		}
 		fmt.Fprintf(&b, "[%s] %s: %s\n", time.UnixMilli(m.CreateMs).Local().Format("01-02 15:04"), who, strings.TrimSpace(text))

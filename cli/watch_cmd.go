@@ -9,6 +9,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/amzyang/larkim/card"
 	"github.com/amzyang/larkim/store"
 	"github.com/spf13/cobra"
 )
@@ -62,6 +63,9 @@ func senderLabel(m store.Message) string {
 }
 
 func contentLabel(m store.Message) string {
+	if c, ok := card.Parse(m.ContentRaw); ok {
+		return c.Markdown()
+	}
 	if m.RenderedAt == 0 {
 		return m.ContentRaw
 	}

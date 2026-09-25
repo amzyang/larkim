@@ -242,3 +242,16 @@ func TestRender_ThreadCountStaysOnTheRoot(t *testing.T) {
 	require.Equal(t, 1, strings.Count(out, `thread="2 replies"`), "only the root advertises the reply count")
 	require.Contains(t, out, `id=om_root t="2026-09-23T10:00:00+08:00" from="ou_a" uid=ou_a thread="2 replies"`)
 }
+
+// cardRaw is the raw content of a card whose body is a heading over a list —
+// the shape whose blocks a rendered text runs together.
+const cardRaw = `{"json_card":"{\"schema\":\"2.0\",\"header\":{\"tag\":\"card_header\",\"property\":{\"title\":{\"tag\":\"plain_text\",\"property\":{\"content\":\"\u53d1\u5e03\u62a5\u544a\"}}}},\"body\":{\"tag\":\"body\",\"property\":{\"elements\":[{\"tag\":\"markdown\",\"property\":{\"elements\":[{\"tag\":\"heading\",\"property\":{\"level\":1,\"elements\":[{\"tag\":\"plain_text\",\"property\":{\"content\":\"\u62a5\u8868\"}}]}},{\"tag\":\"list\",\"property\":{\"items\":[{\"type\":\"ul\",\"level\":0,\"elements\":[{\"tag\":\"plain_text\",\"property\":{\"content\":\"\u7532\"}}]}]}}]}}]}}}","json_attachment":{},"card_schema":2}`
+
+func TestRender_ACardBodyIsTheDocumentTheCardIs(t *testing.T) {
+	in := group()
+	in.Messages = []store.Message{{MessageID: "om_a", CreateMs: at(10, 0), SenderID: "ou_a", RenderedAt: 5,
+		ContentRaw: cardRaw, Content: "<card title=\"发布报告\">\n# 报表- 甲\n</card>"}}
+	out := Render(in)
+	require.Contains(t, out, "发布报告\n\n# 报表\n\n- 甲", "the card is read from its own JSON, block by block")
+	require.NotContains(t, out, "<card")
+}

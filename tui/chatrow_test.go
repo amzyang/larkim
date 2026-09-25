@@ -238,12 +238,14 @@ func TestRenderChatRow_MarksAMutedChat(t *testing.T) {
 	require.Equal(t, chatTextWidth(40), lipgloss.Width(row.bottom), "and the mark stays inside the row")
 }
 
-func TestChatSummary_NamesACardRatherThanItsMarkup(t *testing.T) {
+func TestChatSummary_NamesACardRatherThanItsContent(t *testing.T) {
 	c := store.Chat{ChatID: "oc_1", ChatMode: "group", LastMessageID: "om_1", LastRenderedAt: 1,
-		LastSenderName: "Factory-Dev", LastMsgType: "interactive", LastContent: weeklyCard}
+		LastSenderName: "构建机器人", LastMsgType: "interactive",
+		LastContentRaw: weeklyCard.ContentRaw, LastContent: "<card title=\"旧渲染\">\n待认领账号：13 个\n</card>"}
 	_, bottom := plainRow(c, 0, 36)
-	require.Contains(t, bottom, "设备版本周报")
-	require.NotContains(t, bottom, "<card")
+	require.Contains(t, bottom, "设备版本周报", "the summary is read from the card itself")
+	require.NotContains(t, bottom, "旧渲染")
+	require.NotContains(t, bottom, "待认领", "the body is a screen of its own, not a summary line")
 }
 
 func TestRenderChatRow_GreysTheCounterOfAMutedChat(t *testing.T) {

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/amzyang/larkim/card"
 	"github.com/amzyang/larkim/store"
 )
 
@@ -116,7 +117,12 @@ func renderContent(src []yankSource) (string, string) {
 	unrendered := false
 	for _, s := range src {
 		body := s.content
-		if !s.rendered {
+		switch c, ok := card.Parse(s.contentRaw); {
+		case ok:
+			// A card is its own document: the body is built from the card
+			// rather than from the text it renders to.
+			body = c.Markdown()
+		case !s.rendered:
 			body, unrendered = s.contentRaw, true
 		}
 		if s.deleted || body == "" {

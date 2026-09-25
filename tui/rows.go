@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"charm.land/lipgloss/v2"
+	"github.com/amzyang/larkim/card"
 	"github.com/amzyang/larkim/emoji"
 	"github.com/amzyang/larkim/store"
 )
@@ -500,12 +501,16 @@ func bodyRows(x store.Message, idx int, st msgStyle, g *leads) []msgRow {
 	if a, ok := attachmentOf(x.MsgType, x.ContentRaw); ok {
 		return attachRows(a, x, idx, st, g)
 	}
+	ms := mentionsIn(x.MentionsJSON, st.self).facing(st.peer)
+	// A card describes itself in full, so it is drawn as soon as it lands:
+	// waiting on a rendering would hold back the whole of what it says.
+	if x.MsgType == "interactive" {
+		if c, ok := card.Parse(x.ContentRaw); ok {
+			return cardRows(c, x, idx, st, g, ms)
+		}
+	}
 	if x.RenderedAt == 0 {
 		return text(wrap(stDim.Render(expandEmoji(pendingText(x.MsgType, x.ContentRaw))), inner))
-	}
-	ms := mentionsIn(x.MentionsJSON, st.self).facing(st.peer)
-	if c, ok := parseCard(x.Content); ok && x.MsgType == "interactive" {
-		return cardRows(c, x, idx, st, g, ms)
 	}
 	// A sticker renders as the text "[Sticker]", which names the picture
 	// nowhere: the key is in the body.
@@ -729,16 +734,28 @@ func reactionRows(x store.Message, idx int, st msgStyle, g *leads) []msgRow {
 	return rows
 }
 
-// cardRows lay a card out below its sender line: its text lines, and the
-// pictures the body names placed among them.
-func cardRows(c card, x store.Message, idx int, st msgStyle, g *leads, ms mentions) []msgRow {
+// cardRows lay a card out below its sender line: the header band, the body as
+// the document the card describes, and the pictures and buttons placed among
+// it.
+func cardRows(c card.Card, x store.Message, idx int, st msgStyle, g *leads, ms mentions) []msgRow {
 	var rows []msgRow
-	for _, cr := range renderCard(c, st.inner(), ms) {
-		if cr.imgKey == "" {
-			rows = append(rows, msgRow{lead: g.take(), text: cr.text, idx: idx})
-			continue
+	text := func(s string) {
+		for _, line := range wrap(s, st.inner()) {
+			rows = append(rows, msgRow{lead: g.take(), text: line, idx: idx})
 		}
-		rows = append(rows, pictureRows(cr.imgKey, x, idx, st, g)...)
+	}
+	if head := cardHead(c); head != "" {
+		text(head)
+	}
+	for _, b := range c.Blocks {
+		switch {
+		case b.ImageKey != "":
+			rows = append(rows, pictureRows(b.ImageKey, x, idx, st, g)...)
+		case len(b.Buttons) > 0:
+			text(cardButtons(b.Buttons))
+		default:
+			rows = append(rows, mdRows(b.Markdown, x, idx, st, g, ms)...)
+		}
 	}
 	return rows
 }

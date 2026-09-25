@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/amzyang/larkim/card"
 	"github.com/amzyang/larkim/store"
 )
 
@@ -138,7 +139,11 @@ func body(in Input, m store.Message) string {
 	}
 	var lines []string
 	text := m.Content
-	if text == "" {
+	if c, ok := card.Parse(m.ContentRaw); ok {
+		// A card is its own document: the text it renders to runs its blocks
+		// together, which a reader downstream cannot take apart again.
+		text = c.Markdown()
+	} else if text == "" {
 		text = m.ContentRaw
 	}
 	if text = strings.Trim(text, "\n"); text != "" {

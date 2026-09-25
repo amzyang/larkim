@@ -39,7 +39,10 @@ const (
 // what is drawn in its place, and id is who it names — @All names nobody.
 type mentionRun struct {
 	id, key, text string
-	kind          mentionKind
+	// mkey is the key the message spells this mention by — @_user_1 and the
+	// like — which is how a card body points at it.
+	mkey string
+	kind mentionKind
 }
 
 // mentions styles the @ runs of one message. Runs are carried for people the
@@ -69,6 +72,7 @@ func mentionsIn(mentionsJSON, self string) mentions {
 	}
 	var items []struct {
 		ID   string `json:"id"`
+		Key  string `json:"key"`
 		Name string `json:"name"`
 	}
 	if json.Unmarshal([]byte(mentionsJSON), &items) != nil {
@@ -78,8 +82,8 @@ func mentionsIn(mentionsJSON, self string) mentions {
 		if it.Name == "" {
 			continue
 		}
-		m.runs = append(m.runs, mentionRun{id: it.ID, key: "@" + it.Name, text: "@" + it.Name,
-			kind: m.kindOf(it.ID)})
+		m.runs = append(m.runs, mentionRun{id: it.ID, key: "@" + it.Name, mkey: it.Key,
+			text: "@" + it.Name, kind: m.kindOf(it.ID)})
 	}
 	slices.SortStableFunc(m.runs, func(a, b mentionRun) int { return len(b.key) - len(a.key) })
 	return m
@@ -200,6 +204,14 @@ func (m mentions) at(s string) (mentionRun, int, bool) {
 func (m mentions) tagRun(id, name string) mentionRun {
 	if id == "all" || id == allKey {
 		return mentionRun{text: allName, kind: mentionAll}
+	}
+	// A card names a mention by the key its attachment table pairs the
+	// sending app's id with, which is what ties it to the open id this reader
+	// knows the person by.
+	for _, r := range m.runs {
+		if r.mkey != "" && r.mkey == id {
+			return r
+		}
 	}
 	if name == "" {
 		name = id

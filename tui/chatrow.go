@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"charm.land/lipgloss/v2"
+	"github.com/amzyang/larkim/card"
 	"github.com/amzyang/larkim/emoji"
 	"github.com/amzyang/larkim/store"
 )
@@ -207,12 +208,12 @@ func chatSummary(c store.Chat, self string) string {
 }
 
 // lastMessageSummary is the chat's newest message pressed onto one line. A
-// card is named by its title: the DSL below it is a whole screen of markup
-// that says nothing at this width. Emoji are left for the styling pass, which
-// splits the line at its mentions first.
+// card is named by its title: the document below it is a whole screen of
+// content that says nothing at this width. Emoji are left for the styling
+// pass, which splits the line at its mentions first.
 func lastMessageSummary(c store.Chat) string {
-	if card, ok := parseCard(c.LastContent); ok {
-		return flatten(strings.TrimSpace(card.title + " " + card.tags))
+	if k, ok := card.Parse(c.LastContentRaw); ok {
+		return flatten(cardGist(k))
 	}
 	// An attachment renders into markup naming its keys, which says nothing
 	// on a summary line; the body behind it names the file itself.

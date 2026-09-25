@@ -245,17 +245,14 @@ func TestRenderRows_QuoteIsCutToTheWidth(t *testing.T) {
 	}
 }
 
-// noticeCard is a bot card whose whole body is one picture, the shape a
+// cardMessage is a bot card whose whole body is one picture, the shape a
 // scheduled notice takes.
-const noticeCard = `<card title="每日构建报告">
-🖼️ image(img_key:img_v3_notice)
-
-
-</card>`
-
 func cardMessage() []store.Message {
-	return []store.Message{{MessageID: "om_1", MsgType: "interactive", SenderName: "构建机器人",
-		Content: noticeCard, CreateMs: msgAt(23, 9, 0), RenderedAt: 1}}
+	m := cardHeaded("每日构建报告", "", "夜间",
+		`{"tag":"img","property":{"imageID":"2","alt":{"tag":"plain_text","property":{"content":"image"}}}}`,
+		cardPictures(map[string]string{"2": "img_v3_notice"}))
+	m.SenderName = "构建机器人"
+	return []store.Message{m}
 }
 
 func TestBodyRows_CardPictureDrawsInsideTheFrame(t *testing.T) {
