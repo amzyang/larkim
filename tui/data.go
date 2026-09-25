@@ -417,15 +417,20 @@ func readSyncStatus(st *store.Store) tea.Cmd {
 	return func() tea.Msg { return syncStatus(st) }
 }
 
-// waited builds the context for a lark-cli call somebody is waiting on. It
+// waited builds the context for a lark-cli call somebody pressed a key for. It
 // takes the interactive lane, so a send or a reaction does not queue behind
-// the syncer's sweeps — those run every few seconds, so the shared line is
-// occupied more often than not. Most timer-driven refreshes stay on the
-// default lane, since nobody is held up by them and the interactive line is
-// narrow; the open chat's poll is the exception, because the words on screen
-// are what it is fetching.
+// the syncer's sweeps or the open chat's beat — both run every few seconds, so
+// a shared line would be occupied more often than not.
 func waited(d time.Duration) (context.Context, context.CancelFunc) {
 	return context.WithTimeout(larkcli.WithLane(context.Background(), larkcli.LaneInteractive), d)
+}
+
+// beat builds the context for a timer-driven refresh of what is already on
+// screen. Nobody pressed a key for it, so it takes a lane of its own: sharing
+// the interactive line, the 1.5s beat's two calls held two of its three slots
+// and a send landed behind them.
+func beat(d time.Duration) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(larkcli.WithLane(context.Background(), larkcli.LaneBeat), d)
 }
 
 // sendMsg hands a chat one message. localID doubles as the idempotency key,

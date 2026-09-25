@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -44,8 +45,16 @@ type Fake struct {
 	// Truncate makes SearchMessageIDs report truncation when a window holds
 	// more than this many hits (0 disables).
 	Truncate int
+	// SearchHidden names messages SearchMessageIDs withholds, standing in for
+	// the search index running behind the message store.
+	SearchHidden []string
 	// SearchQueries records the keywords SearchMessages was asked for.
 	SearchQueries []string
+	// Enter runs at the top of every call, outside the lock, so a test can
+	// hold callers there and count how many arrive at once. Holding them
+	// inside the lock would show one at a time whatever the caller did. Set
+	// it before the calls start; nothing reads it under a lock.
+	Enter func(call string)
 	// Err, when set, is returned by every call until cleared.
 	Err error
 	// ListErr injects a per-container error into ListMessagesRaw.
@@ -107,6 +116,9 @@ func (f *Fake) AddMessage(m RawMessage) {
 }
 
 func (f *Fake) record(call string) error {
+	if f.Enter != nil {
+		f.Enter(call)
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.Calls = append(f.Calls, call)
@@ -122,7 +134,7 @@ func (f *Fake) SearchMessageIDs(_ context.Context, start, end time.Time) ([]Sear
 	var hits []SearchHit
 	for _, m := range f.Messages {
 		ct := m.CreateTime.Time()
-		if ct.Before(start) || ct.After(end) {
+		if ct.Before(start) || ct.After(end) || slices.Contains(f.SearchHidden, m.MessageID) {
 			continue
 		}
 		hits = append(hits, SearchHit{MessageID: m.MessageID, ChatID: m.ChatID, FromID: m.Sender.ID,

@@ -47,3 +47,14 @@ func TestWaited_TakesTheInteractiveLane(t *testing.T) {
 	_, ok := ctx.Deadline()
 	require.True(t, ok, "an interactive call still needs a deadline of its own")
 }
+
+// The 1.5s beat is not a keypress. Sharing the interactive lane, its listing
+// and the refresh riding along with it held two of three slots and a send
+// landed behind them.
+func TestBeat_TakesTheBeatLane(t *testing.T) {
+	ctx, cancel := beat(time.Second)
+	defer cancel()
+	require.Equal(t, larkcli.LaneBeat, larkcli.LaneOf(ctx))
+	_, ok := ctx.Deadline()
+	require.True(t, ok, "a beat still needs a deadline of its own")
+}

@@ -32,7 +32,7 @@ func (s *Syncer) RefreshChat(ctx context.Context, chatID, threadID string) (int,
 	}
 	now := s.now()
 	since := now.Add(-hotLookback)
-	n, err := s.pullChat(ctx, chatID, since, time.Time{}, now)
+	n, _, err := s.pullChat(ctx, chatID, since, time.Time{}, now)
 	if err != nil {
 		return 0, fmt.Errorf("refresh chat %s: %w", chatID, err)
 	}
@@ -41,7 +41,7 @@ func (s *Syncer) RefreshChat(ctx context.Context, chatID, threadID string) (int,
 		if err != nil {
 			return n, fmt.Errorf("refresh thread %s: %w", threadID, err)
 		}
-		m, err := s.upsertRaw(ctx, replies, now)
+		m, _, err := s.upsertRaw(ctx, replies, now)
 		if err != nil {
 			return n, err
 		}

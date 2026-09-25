@@ -68,16 +68,28 @@ func (m Model) openThreadID() string {
 }
 
 // pollChat re-lists the open chat straight from the message store. It takes
-// the interactive lane: this is the one timer-driven call a reader is actually
-// waiting on, and queueing it behind an attachment download on the background
-// lane would reintroduce the delay it exists to remove.
+// the beat lane: the words on screen are what it fetches, so queueing it
+// behind an attachment download on the background lane would reintroduce the
+// delay it exists to remove.
 func pollChat(d Deps, chatID, threadID string) tea.Cmd {
 	return func() tea.Msg {
-		ctx, cancel := waited(chatPollTimeout)
+		ctx, cancel := beat(chatPollTimeout)
 		defer cancel()
 		_, err := d.Syncer.RefreshChat(ctx, chatID, threadID)
 		return chatPolledMsg{err}
 	}
+}
+
+// rideAlong is the refresh that takes this beat's turn beside the listing.
+// Neither a read receipt nor a reaction moves a message's update_time, so the
+// listing alone never brings them; taking turns keeps both about three seconds
+// fresh for one extra call a beat, which the beat lane is wide enough to hold
+// beside the listing.
+func (m Model) rideAlong(chatID string) tea.Cmd {
+	if m.chatPollBeat%2 == 0 {
+		return refreshReadStatus(m.deps, chatID)
+	}
+	return refreshReactions(m.deps, chatID)
 }
 
 // notePollResult clears the in-flight flag and stands the beat down when the

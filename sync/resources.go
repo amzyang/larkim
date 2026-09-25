@@ -216,7 +216,7 @@ func (s *Syncer) downloadPending(ctx context.Context, now time.Time) (int, error
 		return 0, err
 	}
 	done := 0
-	for batch := range slices.Chunk(ids, 50) {
+	for batch := range slices.Chunk(ids, readStatusBatch) {
 		rendered, err := s.Client.MGetRendered(ctx, batch, true)
 		if err != nil {
 			return done, err
@@ -347,7 +347,61 @@ func (s *Syncer) pollReadStatus(ctx context.Context, now time.Time) (int, error)
 	if _, err := s.Store.ExpireReadStatus(ctx, now.Add(-readStatusHorizon).UnixMilli()); err != nil {
 		return 0, err
 	}
-	return s.checkReadStatus(ctx, now, store.ReadCheckQuery{DueAt: now.UnixMilli(), Limit: s.Opt.ReadStatusPerTick * 50})
+	n, err := s.probeReadStatus(ctx, now)
+	if err != nil {
+		return n, err
+	}
+	m, err := s.checkReadStatus(ctx, now, store.ReadCheckQuery{DueAt: now.UnixMilli(), Limit: s.Opt.ReadStatusPerTick * readStatusBatch})
+	return n + m, err
+}
+
+// readStatusBatch is how many message ids one read_status call carries, which
+// is what the probe spends in full and what the ladder below is paced in.
+const readStatusBatch = 50
+
+// probeReadStatus asks about one message per chat with unread messages: the
+// newest of them. What it is watching for is the user opening that chat in the
+// Feishu client, which the backoff ladder alone would notice a minute to six
+// hours later.
+//
+// An answer of "still unread" is dropped rather than recorded: the probe runs
+// every tick, and writing it would run the ladder's per-message schedule out
+// to its longest step on the very messages the ladder is the fallback for.
+// A flip to read is recorded and pulls the rest of that chat behind it — the
+// flag is a per-message receipt, not a chat-level badge, so the chat's other
+// messages have to be asked about in their own right.
+func (s *Syncer) probeReadStatus(ctx context.Context, now time.Time) (int, error) {
+	self, _, err := s.Store.GetState(ctx, KeySelfOpenID)
+	if err != nil || self == "" {
+		return 0, err
+	}
+	probes, err := s.Store.ReadStatusProbes(ctx, store.ReadCheckQuery{
+		Self: self, SinceMs: now.Add(-readStatusHorizon).UnixMilli(), Limit: readStatusBatch})
+	if err != nil || len(probes) == 0 {
+		return 0, err
+	}
+	byMessage := make(map[string]string, len(probes))
+	ids := make([]string, 0, len(probes))
+	for _, p := range probes {
+		byMessage[p.MessageID] = p.ChatID
+		ids = append(ids, p.MessageID)
+	}
+	items, _, err := s.Client.ReadStatus(ctx, ids)
+	if err != nil {
+		return 0, err
+	}
+	checked := 0
+	for _, it := range items {
+		if !it.IsRead {
+			continue
+		}
+		n, err := s.RefreshReadStatus(ctx, byMessage[it.MessageID])
+		if err != nil {
+			return checked, err
+		}
+		checked += n
+	}
+	return checked, nil
 }
 
 // RefreshReadStatus re-asks Feishu about one chat's unread messages right
@@ -363,10 +417,11 @@ func (s *Syncer) RefreshReadStatus(ctx context.Context, chatID string) (int, err
 // rendering left it.
 const reactionWindow = larkcli.MaxMessageIDsPerReactionCall
 
-// reactionsEvery paces the chat list's reaction refresh. Nothing about a
-// reaction is urgent while the chat is closed — the one being read is re-asked
-// on open — and this is the half minute the TUI already holds one chat off for.
-const reactionsEvery = 30 * time.Second
+// reactionsEvery paces the chat list's reaction refresh. It is one call
+// whatever the interval, and nothing else can bring a reaction: Feishu does
+// not move a message's update_time for one, so a chip missing from the list is
+// missing until this pass comes round. The open chat has its own beat.
+const reactionsEvery = 5 * time.Second
 
 // RefreshReactions re-asks Feishu who reacted to the newest messages of one
 // chat. Nothing else keeps a reaction summary current: Feishu does not move a
@@ -487,7 +542,7 @@ func (s *Syncer) checkReadStatus(ctx context.Context, now time.Time, q store.Rea
 		return 0, err
 	}
 	checked := 0
-	for batch := range slices.Chunk(ids, 50) {
+	for batch := range slices.Chunk(ids, readStatusBatch) {
 		items, invalid, err := s.Client.ReadStatus(ctx, batch)
 		if err != nil {
 			return checked, err

@@ -46,22 +46,13 @@ func TestLane_AcquireAdmitsUpToCapacity(t *testing.T) {
 func TestLaneOf_DefaultsToBackground(t *testing.T) {
 	require.Equal(t, LaneBackground, LaneOf(context.Background()))
 	require.Equal(t, LaneInteractive, LaneOf(WithLane(context.Background(), LaneInteractive)))
+	require.Equal(t, LaneBeat, LaneOf(WithLane(context.Background(), LaneBeat)))
 	require.Equal(t, LaneBackground, LaneOf(WithLane(context.Background(), LaneBackground)))
 }
 
 func TestExec_InteractiveDoesNotQueueBehindBackground(t *testing.T) {
 	c := slowBinary(t, "2")
-
-	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		_, _ = c.run(context.Background(), "api", "GET", "/slow")
-	}()
-	t.Cleanup(wg.Wait)
-
-	// Let the background call take its lane before the interactive one asks.
-	waitForLane(t, c.background())
+	occupy(t, c, LaneBackground)
 
 	start := time.Now()
 	_, err := c.run(WithLane(context.Background(), LaneInteractive), "api", "GET", "/quick")
@@ -70,41 +61,45 @@ func TestExec_InteractiveDoesNotQueueBehindBackground(t *testing.T) {
 		"an interactive call waited out a background sweep")
 }
 
+func TestExec_BeatDoesNotQueueBehindBackground(t *testing.T) {
+	c := slowBinary(t, "2")
+	occupy(t, c, LaneBackground)
+
+	start := time.Now()
+	_, err := c.run(WithLane(context.Background(), LaneBeat), "api", "GET", "/quick")
+	require.NoError(t, err)
+	require.Less(t, time.Since(start), time.Second,
+		"the open chat's beat waited out a background sweep")
+}
+
+func TestExec_InteractiveDoesNotQueueBehindTheBeat(t *testing.T) {
+	c := slowBinary(t, "2")
+	occupy(t, c, LaneBeat)
+
+	start := time.Now()
+	_, err := c.run(WithLane(context.Background(), LaneInteractive), "api", "GET", "/quick")
+	require.NoError(t, err)
+	require.Less(t, time.Since(start), time.Second,
+		"a keystroke waited out the beat it did not ask for")
+}
+
 func TestExec_BackgroundCallsStillQueue(t *testing.T) {
 	c := slowBinary(t, "1")
-
-	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		_, _ = c.run(context.Background(), "api", "GET", "/slow")
-	}()
-	t.Cleanup(wg.Wait)
-
-	waitForLane(t, c.background())
+	occupy(t, c, LaneBackground)
 
 	start := time.Now()
 	_, err := c.run(context.Background(), "api", "GET", "/second")
 	require.NoError(t, err)
 	require.GreaterOrEqual(t, time.Since(start), 500*time.Millisecond,
-		"the background lane admitted two sweeps at once")
+		"the background lane admitted more calls than its width")
 }
 
 func TestExec_TimeoutStartsAfterTheLaneIsFree(t *testing.T) {
 	c := slowBinary(t, "1")
-	// Shorter than the wait the second call is about to sit through, so a
+	// Shorter than the wait the next call is about to sit through, so a
 	// timeout clock started before the lane was free would expire on it.
 	c.Timeout = 600 * time.Millisecond
-
-	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		_, _ = c.run(context.Background(), "api", "GET", "/slow")
-	}()
-	t.Cleanup(wg.Wait)
-
-	waitForLane(t, c.background())
+	occupy(t, c, LaneBackground)
 
 	_, err := c.run(context.Background(), "api", "GET", "/second")
 	require.NoError(t, err, "the queued call spent its timeout waiting for the lane")
@@ -112,16 +107,7 @@ func TestExec_TimeoutStartsAfterTheLaneIsFree(t *testing.T) {
 
 func TestExec_CancelledCallGivesUpItsPlaceInLine(t *testing.T) {
 	c := slowBinary(t, "2")
-
-	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		_, _ = c.run(context.Background(), "api", "GET", "/slow")
-	}()
-	t.Cleanup(wg.Wait)
-
-	waitForLane(t, c.background())
+	occupy(t, c, LaneBackground)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	go func() {
@@ -140,16 +126,25 @@ func TestExec_ResolvePathFailsBeforeTakingALane(t *testing.T) {
 	_, err := c.run(context.Background(), "api", "GET", "/x")
 	require.Error(t, err)
 	// The lane must be free: a call that never ran must not hold one.
-	require.NoError(t, c.background().acquire(context.Background()))
+	require.NoError(t, c.laneFor(LaneBackground).acquire(context.Background()))
 }
 
-// waitForLane blocks until the lane is full, so a test can be sure the call it
-// started is the one holding it.
-func waitForLane(t *testing.T, l lane) {
+// occupy fills every slot in lane l with a slow call and waits until they are
+// all in flight, so the call a test times next is certainly behind them.
+func occupy(t *testing.T, c *ExecClient, l Lane) {
 	t.Helper()
+	line := c.laneFor(l)
+	var wg sync.WaitGroup
+	for range cap(line) {
+		wg.Go(func() {
+			_, _ = c.run(WithLane(context.Background(), l), "api", "GET", "/slow")
+		})
+	}
+	t.Cleanup(wg.Wait)
+
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
-		if len(l) == cap(l) {
+		if len(line) == cap(line) {
 			return
 		}
 		time.Sleep(5 * time.Millisecond)

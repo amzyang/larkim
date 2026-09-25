@@ -42,6 +42,18 @@ func msg(id, chat string, at time.Time, text string) larkcli.RawMessage {
 
 func msAt(t time.Time) larkcli.Millis { return larkcli.Millis(t.UnixMilli()) }
 
+// callsTo counts how often the fake was asked for one thing, for the tests
+// that care how many times a tick spends a call rather than in what order.
+func callsTo(f *larkcli.Fake, name string) int {
+	n := 0
+	for _, c := range f.Calls {
+		if c == name {
+			n++
+		}
+	}
+	return n
+}
+
 func TestTick_FirstRunDiscoversRendersAndBackfills(t *testing.T) {
 	s, f, clk := newSyncer(t)
 	ctx := context.Background()
@@ -75,13 +87,15 @@ func TestTick_FirstRunDiscoversRendersAndBackfills(t *testing.T) {
 	require.NotZero(t, chat.BackfillDoneAt)
 	require.Equal(t, now.Add(-30*time.Second).UnixMilli(), chat.CursorMs, "cursor = newest message listed by backfill")
 
-	// Second tick: nothing new; only the live search and one history slice.
+	// Second tick, past the search interval: nothing new; only the probe's
+	// listing of the head, the live search and one history slice.
 	f.Calls = nil
-	clk.t = now.Add(10 * time.Second)
+	clk.t = now.Add(searchEvery)
 	rep, err = s.Tick(ctx)
 	require.NoError(t, err)
 	require.Zero(t, rep.New)
-	require.Equal(t, []string{"search", "search"}, f.Calls)
+	require.Equal(t, []string{"chats:true", "list:chat:oc_a", "search", "search"}, f.Calls,
+		"the probe lists the head whether or not the ordering moved")
 }
 
 func TestHistorySlice_WalksDayByDayUntilLive(t *testing.T) {
@@ -174,7 +188,13 @@ func TestSlowPath_ReconcilesActiveChatsFromCursor(t *testing.T) {
 	s, f, clk := newSyncer(t)
 	ctx := context.Background()
 	now := clk.t
-	f.Chats = []larkcli.RawChat{{ChatID: "oc_a", Name: "Alpha", ChatMode: "group"}}
+	// oc_head takes the head of the active-time ordering, which the probe
+	// lists on every tick; oc_a sits below it, so only the slow path reaches it.
+	f.Chats = []larkcli.RawChat{
+		{ChatID: "oc_head", Name: "Head", ChatMode: "group"},
+		{ChatID: "oc_a", Name: "Alpha", ChatMode: "group"},
+	}
+	f.AddMessage(msg("om_head", "oc_head", now.Add(-time.Hour), "head"))
 	f.AddMessage(msg("om_1", "oc_a", now.Add(-time.Hour), "one"))
 	_, err := s.Tick(ctx)
 	require.NoError(t, err)
@@ -182,12 +202,16 @@ func TestSlowPath_ReconcilesActiveChatsFromCursor(t *testing.T) {
 	// A message the search index never surfaces lands outside the fast window.
 	f.AddMessage(msg("om_hidden", "oc_a", now.Add(-30*time.Minute), "hidden"))
 
+	f.Calls = nil
 	clk.t = now.Add(11 * time.Minute) // slow path due; fast window [wm-2m, now] misses -30m
 	rep, err := s.Tick(ctx)
 	require.NoError(t, err)
-	require.Equal(t, 2, rep.SlowPath, "om_1 re-listed from cursor-overlap plus om_hidden")
+	require.Equal(t, 3, rep.SlowPath, "both chats re-listed from cursor-overlap, and om_hidden with them")
 	_, err = s.Store.GetMessage(ctx, "om_hidden")
 	require.NoError(t, err)
+
+	require.Equal(t, 1, callsTo(f, "chats:true"),
+		"the slow path reconciles the ordering the probe already listed")
 }
 
 func mustInt(s string) int64 {
@@ -432,7 +456,9 @@ func TestTick_RendersNewMessagesBeforeSweeps(t *testing.T) {
 	render := slices.Index(f.Calls, "render:false")
 	require.GreaterOrEqual(t, render, 0, "the new message was rendered")
 	sweep := slices.IndexFunc(f.Calls, func(c string) bool {
-		return strings.HasPrefix(c, "list:") || strings.HasPrefix(c, "chats:")
+		// The activity probe ("chats:true") is discovery, not a sweep: it runs
+		// before the fast path so the fast path has something to render.
+		return strings.HasPrefix(c, "list:") || c == "chats:false"
 	})
 	require.GreaterOrEqual(t, sweep, 0, "a sweep ran in the same tick")
 	require.Less(t, render, sweep, "a reader waits on the rendering; nobody waits on the sweeps")
@@ -463,17 +489,17 @@ func TestHistorySlice_StopsSearchingOnceCaughtUp(t *testing.T) {
 	for range 3 {
 		_, err := s.Tick(ctx)
 		require.NoError(t, err)
-		clk.t = clk.t.Add(5 * time.Second)
+		clk.t = clk.t.Add(searchEvery)
 	}
 
 	f.Calls = nil
 	for range 3 {
 		_, err := s.Tick(ctx)
 		require.NoError(t, err)
-		clk.t = clk.t.Add(5 * time.Second)
+		clk.t = clk.t.Add(searchEvery)
 	}
-	require.Equal(t, []string{"search", "search", "search"}, f.Calls,
-		"one live search per tick; history is caught up and must not re-search behind it")
+	require.Equal(t, []string{"chats:true", "search", "chats:true", "search", "chats:true", "search"}, f.Calls,
+		"one live search per interval; history is caught up and must not re-search behind it")
 }
 
 func TestHistorySlice_LiveWindowCoversAnOutageWithoutHistory(t *testing.T) {
@@ -502,4 +528,151 @@ func TestHistorySlice_LiveWindowCoversAnOutageWithoutHistory(t *testing.T) {
 	got, err := s.Store.GetMessage(ctx, "om_gap")
 	require.NoError(t, err)
 	require.Equal(t, "oc_a", got.ChatID)
+}
+
+func TestActiveProbe_NamesChatsThatMovedUp(t *testing.T) {
+	s, f, clk := newSyncer(t)
+	ctx := t.Context()
+	s.Opt.BackfillPerTick = 0
+	s.Opt.RepairEvery = 0
+	f.Chats = []larkcli.RawChat{
+		{ChatID: "oc_a", Name: "平台组", ChatMode: "group"},
+		{ChatID: "oc_b", Name: "项目协作群", ChatMode: "group"},
+		{ChatID: "oc_c", Name: "张三", ChatMode: "p2p"},
+	}
+
+	rep, err := s.Tick(ctx)
+	require.NoError(t, err)
+	require.Zero(t, rep.Moved, "a first run has no ordering to compare against")
+
+	clk.t = clk.t.Add(5 * time.Second)
+	rep, err = s.Tick(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1, rep.Moved, "an unchanged ordering still names the head")
+
+	// A message in oc_c puts it at position 1, which is the whole signal.
+	f.Chats = []larkcli.RawChat{f.Chats[2], f.Chats[0], f.Chats[1]}
+	clk.t = clk.t.Add(5 * time.Second)
+	rep, err = s.Tick(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1, rep.Moved, "the promoted chat is the head, named once")
+	require.Zero(t, rep.Probed, "listing the head every tick must not report its old messages as news")
+
+	order, ok, err := s.Store.GetState(ctx, KeyActiveOrder)
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.JSONEq(t, `["oc_c","oc_a","oc_b"]`, order, "the probe records what it saw for the next tick")
+}
+
+func TestActiveProbe_UnreadableOrderCountsAsAFirstRun(t *testing.T) {
+	s, f, clk := newSyncer(t)
+	ctx := t.Context()
+	s.Opt.BackfillPerTick = 0
+	s.Opt.RepairEvery = 0
+	f.Chats = []larkcli.RawChat{{ChatID: "oc_a", ChatMode: "group"}, {ChatID: "oc_b", ChatMode: "group"}}
+	require.NoError(t, s.Store.SetState(ctx, KeyActiveOrder, "not json"))
+
+	rep, err := s.Tick(ctx)
+	require.NoError(t, err, "a corrupt value must not fail every tick")
+	require.Zero(t, rep.Moved, "with no ordering to compare against, not even the head is named")
+
+	f.Chats = []larkcli.RawChat{f.Chats[1], f.Chats[0]}
+	clk.t = clk.t.Add(5 * time.Second)
+	rep, err = s.Tick(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1, rep.Moved, "the tick that rewrote it sees the next move")
+}
+
+func TestActiveProbe_ReachesAMessageBeforeTheSearchDoes(t *testing.T) {
+	s, f, clk := newSyncer(t)
+	ctx := t.Context()
+	s.Opt.RepairEvery = 0
+	f.Chats = []larkcli.RawChat{
+		{ChatID: "oc_a", Name: "平台组", ChatMode: "group"},
+		{ChatID: "oc_b", Name: "项目协作群", ChatMode: "group"},
+	}
+	f.AddMessage(msg("om_seed", "oc_b", clk.t.Add(-time.Hour), "seed"))
+
+	// Warm up: backfill both chats so the probe has cursors to pull from.
+	for range 2 {
+		_, err := s.Tick(ctx)
+		require.NoError(t, err)
+		clk.t = clk.t.Add(5 * time.Second)
+	}
+
+	// A message in oc_b puts it at position 1. The search index has not caught
+	// up, which the fake stands in for by holding the hit back.
+	f.AddMessage(msg("om_fresh", "oc_b", clk.t.Add(-time.Second), "fresh"))
+	f.SearchHidden = []string{"om_fresh"}
+	f.Chats = []larkcli.RawChat{f.Chats[1], f.Chats[0]}
+	clk.t = clk.t.Add(searchEvery) // let the safety net run, so the order is visible
+	f.Calls = nil
+
+	rep, err := s.Tick(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1, rep.Moved)
+	require.Equal(t, 1, rep.Probed, "only the new message counts; the cursor overlap re-lists the chat's older one")
+	require.Zero(t, rep.New, "the search had nothing left to find")
+	require.Equal(t, []string{"chats:true", "list:chat:oc_b", "search", "render:false"},
+		f.Calls[:4], "the probe pulls before the search asks, and what it found is rendered with the rest")
+
+	m, err := s.Store.GetMessage(ctx, "om_fresh")
+	require.NoError(t, err)
+	require.Equal(t, "oc_b", m.ChatID)
+}
+
+func TestActiveProbe_ReachesASecondMessageInTheChatAlreadyAtTheHead(t *testing.T) {
+	s, f, clk := newSyncer(t)
+	ctx := t.Context()
+	s.Opt.RepairEvery = 0
+	f.Chats = []larkcli.RawChat{
+		{ChatID: "oc_a", Name: "平台组", ChatMode: "group"},
+		{ChatID: "oc_b", Name: "项目协作群", ChatMode: "group"},
+	}
+	f.AddMessage(msg("om_seed", "oc_a", clk.t.Add(-time.Hour), "seed"))
+	for range 2 {
+		_, err := s.Tick(ctx)
+		require.NoError(t, err)
+		clk.t = clk.t.Add(5 * time.Second)
+	}
+
+	// A reply into the chat already at position 1 leaves the ordering exactly
+	// as it was, so nothing about it moved; the head rule is what reaches it.
+	f.AddMessage(msg("om_reply", "oc_a", clk.t.Add(-time.Second), "reply"))
+	f.SearchHidden = []string{"om_reply"}
+
+	rep, err := s.Tick(ctx)
+	require.NoError(t, err)
+	require.Zero(t, rep.New, "the search index has not caught up")
+	require.Equal(t, 1, rep.Probed)
+
+	m, err := s.Store.GetMessage(ctx, "om_reply")
+	require.NoError(t, err)
+	require.Equal(t, "oc_a", m.ChatID)
+}
+
+func TestTick_SearchIsASafetyNetOnItsOwnInterval(t *testing.T) {
+	s, f, clk := newSyncer(t)
+	ctx := t.Context()
+	s.Opt.BackfillPerTick = 0
+	s.Opt.RepairEvery = 0
+	s.Opt.BackfillDays = 0 // history caught up from the start, so only the live search counts
+	f.Chats = []larkcli.RawChat{{ChatID: "oc_a", Name: "平台组", ChatMode: "group"}}
+	f.AddMessage(msg("om_seed", "oc_a", clk.t.Add(-time.Hour), "seed"))
+
+	_, err := s.Tick(ctx)
+	require.NoError(t, err)
+
+	clk.t = clk.t.Add(searchEvery - time.Second)
+	f.Calls = nil
+	_, err = s.Tick(ctx)
+	require.NoError(t, err)
+	require.Zero(t, callsTo(f, "search"), "inside the interval the probe carries discovery alone")
+	require.Contains(t, f.Calls, "chats:true", "the probe still runs every tick")
+
+	clk.t = clk.t.Add(time.Second)
+	f.Calls = nil
+	_, err = s.Tick(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1, callsTo(f, "search"), "past the interval the safety net runs once")
 }

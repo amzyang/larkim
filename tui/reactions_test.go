@@ -6,11 +6,9 @@ import (
 	"os"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/amzyang/larkim/emoji"
 	"github.com/amzyang/larkim/store"
-	"github.com/amzyang/larkim/sync"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/stretchr/testify/require"
 )
@@ -67,27 +65,6 @@ func TestRenderRows_DropsTheReactionsOfARecalledMessage(t *testing.T) {
 	out := rowText(renderRows(msgs, baseStyle()))
 	require.Contains(t, out, "(Recalled)")
 	require.NotContains(t, out, "👍", "the client drops a recalled message's reactions with its body")
-}
-
-func TestClaimReactionRefresh_AsksOnceAChatSettlesAndNotAgainForACooldown(t *testing.T) {
-	m := New(Deps{Self: "ou_me", Syncer: &sync.Syncer{}})
-	m.chatID = "oc_team"
-	now := testNow
-
-	require.True(t, m.claimReactionRefresh("oc_team", now))
-	require.False(t, m.claimReactionRefresh("oc_team", now.Add(reactionRefreshCooldown-time.Second)),
-		"a revisit inside the cooldown costs no call")
-	require.True(t, m.claimReactionRefresh("oc_team", now.Add(reactionRefreshCooldown)))
-	require.False(t, m.claimReactionRefresh("oc_elsewhere", now),
-		"the cursor moved on before the debounce elapsed")
-}
-
-func TestClaimReactionRefresh_StaysQuietBesideADaemon(t *testing.T) {
-	// The messages table belongs to whoever holds the data-dir lock; a TUI
-	// only reading alongside a daemon must not write it.
-	m := New(Deps{Self: "ou_me"})
-	m.chatID = "oc_team"
-	require.False(t, m.claimReactionRefresh("oc_team", testNow))
 }
 
 func TestReactionChip_DrawsAPictureWhereNoCharacterCarriesTheEmoji(t *testing.T) {

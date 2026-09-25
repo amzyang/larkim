@@ -65,7 +65,7 @@ func (s *Syncer) repairSlice(ctx context.Context, now time.Time) (int, error) {
 	}
 	total := 0
 	for _, c := range chats {
-		n, err := s.pullChat(ctx, c.ChatID, now.Add(-repairHorizon), time.Time{}, now)
+		n, _, err := s.pullChat(ctx, c.ChatID, now.Add(-repairHorizon), time.Time{}, now)
 		if err != nil {
 			if s.recordChatError(ctx, c.ChatID, err, now) {
 				continue

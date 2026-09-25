@@ -69,14 +69,13 @@ type Model struct {
 	// marker. The open chat's draft lives in the composer, not here, so this
 	// map is one refresh behind for that one row — see draftForRow.
 	drafts map[string]store.Draft
-	// readRefreshed is when each chat last had its read status re-asked, so
-	// revisiting a chat does not spend a call every time.
-	readRefreshed map[string]time.Time
 	// chatPollInFlight holds the open chat's poll to one call at a time, so a
 	// slow one costs a skipped beat instead of a queue.
 	chatPollInFlight bool
 	// chatPollPausedUntil stands the poll down after the gateway refuses it.
 	chatPollPausedUntil time.Time
+	// chatPollBeat counts polls so the refreshes riding along take turns.
+	chatPollBeat uint
 	// targets is the chooser over what the selected message leads to, open
 	// only in modeTarget.
 	targets targets
@@ -107,14 +106,10 @@ type Model struct {
 	emojiWrite *emoji.Index
 	// chatIx spells the chat list for the filter, so `/` reaches a Chinese
 	// name through its pinyin.
-	chatIx *chatIndex
-	// reactionRefreshed is when each chat last had its reactions re-asked.
-	// Nothing else keeps them current: Feishu does not move a message's
-	// update_time when somebody reacts, so the rendering pass never revisits.
-	reactionRefreshed map[string]time.Time
-	avatars           avatars
-	pics              *pictures // message images; nil on a terminal without graphics
-	chatFilter        string
+	chatIx     *chatIndex
+	avatars    avatars
+	pics       *pictures // message images; nil on a terminal without graphics
+	chatFilter string
 	// filterPin is what a cancelled filter puts back. Opening the filter takes
 	// the chat pane and typing into it renumbers the list, so a session that
 	// ends in nothing has to restore what it borrowed rather than leave the
@@ -276,12 +271,10 @@ func New(d Deps) Model {
 	}
 	prunePasted(d.DataDir, time.Now())
 	m := Model{deps: d, input: ta, cmdline: ti, focus: paneChats, focused: true, previewOpen: true,
-		readRefreshed:     map[string]time.Time{},
-		reactionRefreshed: map[string]time.Time{},
-		emoji:             emoji.NewReactionIndex(),
-		emojiWrite:        emoji.NewComposerIndex(),
-		chatIx:            newChatIndex(),
-		avatars:           newAvatars(d.DataDir, d.Env), pics: newPictures(d.DataDir, d.Env),
+		emoji:      emoji.NewReactionIndex(),
+		emojiWrite: emoji.NewComposerIndex(),
+		chatIx:     newChatIndex(),
+		avatars:    newAvatars(d.DataDir, d.Env), pics: newPictures(d.DataDir, d.Env),
 		files: osDraftFiles()}
 	m.emoji.LoadRecent(d.DataDir)
 	m.emojiWrite.LoadRecent(d.DataDir)
@@ -755,22 +748,18 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds := []tea.Cmd{scheduleChatPoll()}
 		if id := m.claimChatPoll(time.Now()); id != "" {
 			m.chatPollInFlight = true
-			cmds = append(cmds, pollChat(m.deps, id, m.openThreadID()))
+			m.chatPollBeat++
+			cmds = append(cmds, pollChat(m.deps, id, m.openThreadID()), m.rideAlong(id))
 		}
 		return m, tea.Batch(cmds...)
 	case chatPolledMsg:
 		m.notePollResult(msg.err, time.Now())
 		return m, nil
-	case readRefreshDueMsg:
-		if !m.claimReadRefresh(msg.chatID, time.Now()) {
+	case chatRefreshDueMsg:
+		if !m.claimChatRefresh(msg.chatID) {
 			return m, nil
 		}
-		return m, refreshReadStatus(m.deps, msg.chatID)
-	case reactionRefreshDueMsg:
-		if !m.claimReactionRefresh(msg.chatID, time.Now()) {
-			return m, nil
-		}
-		return m, refreshReactions(m.deps, msg.chatID)
+		return m, tea.Batch(refreshReadStatus(m.deps, msg.chatID), refreshReactions(m.deps, msg.chatID))
 	case contextMsg:
 		return m.notify(fmt.Sprintf("copied %s · %s · %s", plural(msg.n, "msg", "msgs"), humanBytes(int64(len(msg.text))), msg.chat), false),
 			tea.SetClipboard(msg.text)
@@ -839,8 +828,7 @@ func (m *Model) openChatFrom(chatID string, sinceMs int64) tea.Cmd {
 	keep := m.saveComposer()
 	m.pendingChat, m.pendingSince = chatID, sinceMs
 	m.selectCurrentChat()
-	return tea.Batch(keep, loadMessages(m.deps, chatID, sinceMs),
-		scheduleReadRefresh(chatID), scheduleReactionRefresh(chatID))
+	return tea.Batch(keep, loadMessages(m.deps, chatID, sinceMs), scheduleChatRefresh(chatID))
 }
 
 // draftForRow is the draft the chat list draws its marker from. The open chat

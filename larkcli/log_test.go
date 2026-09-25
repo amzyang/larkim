@@ -111,8 +111,11 @@ func TestExec_LogsAMissingBinaryWithoutTakingALane(t *testing.T) {
 func TestExec_KeepsACancelledCallOutOfTheWarnings(t *testing.T) {
 	c := fakeBinary(t, `sleep 5`)
 	buf := logged(c, slog.LevelInfo)
-	// Hold the only background lane so the next call can do nothing but wait.
-	require.NoError(t, c.background().acquire(context.Background()))
+	// Hold every background slot so the next call can do nothing but wait.
+	line := c.laneFor(LaneBackground)
+	for range cap(line) {
+		require.NoError(t, line.acquire(context.Background()))
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -143,6 +146,7 @@ func TestPages_IgnoresTheOtherProgressLines(t *testing.T) {
 
 func TestLane_Stringer(t *testing.T) {
 	require.Equal(t, "background", LaneBackground.String())
+	require.Equal(t, "beat", LaneBeat.String())
 	require.Equal(t, "interactive", LaneInteractive.String())
 }
 

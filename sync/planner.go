@@ -70,3 +70,33 @@ func UniqueStrings(xs []string) []string {
 	}
 	return out
 }
+
+// ActiveDelta names the chats worth listing after an active-time ordering
+// moved from prev to now. A chat that moved up has just received a message:
+// Feishu puts one that did at position 1. A chat absent from prev counts as
+// moved, since it can only have entered the page from below.
+//
+// The chat at the head is always named, whether or not it moved. It is already
+// as high as the ordering goes, so a second message into it changes nothing
+// the comparison can see — and the chat somebody just wrote in is the likeliest
+// to be written in again, which makes this the blind spot that would show up
+// most: every reply after the first in a conversation.
+//
+// An empty prev names nothing: a first run has no ordering to compare against,
+// and backfill is what covers a cold store.
+func ActiveDelta(prev, now []string) []string {
+	if len(prev) == 0 || len(now) == 0 {
+		return nil
+	}
+	was := make(map[string]int, len(prev))
+	for i, id := range prev {
+		was[id] = i
+	}
+	out := []string{now[0]}
+	for i, id := range now[1:] {
+		if before, seen := was[id]; !seen || i+1 < before {
+			out = append(out, id)
+		}
+	}
+	return out
+}

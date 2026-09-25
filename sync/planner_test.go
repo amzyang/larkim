@@ -45,3 +45,64 @@ func TestDueBackoffUnique(t *testing.T) {
 
 	require.Equal(t, []string{"a", "b"}, UniqueStrings([]string{"a", "", "b", "a"}))
 }
+
+func TestActiveDelta(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		prev, now []string
+		want      []string
+	}{
+		{
+			name: "a message promotes its chat to the front",
+			prev: []string{"oc_a", "oc_b", "oc_c"},
+			now:  []string{"oc_c", "oc_a", "oc_b"},
+			want: []string{"oc_c"},
+		},
+		{
+			name: "a chat entering the page counts as moved",
+			prev: []string{"oc_a", "oc_b"},
+			now:  []string{"oc_new", "oc_a", "oc_b"},
+			want: []string{"oc_new"},
+		},
+		{
+			name: "an unchanged ordering still names the head",
+			prev: []string{"oc_a", "oc_b", "oc_c"},
+			now:  []string{"oc_a", "oc_b", "oc_c"},
+			want: []string{"oc_a"},
+		},
+		{
+			name: "a first run names nothing",
+			prev: nil,
+			now:  []string{"oc_a", "oc_b"},
+			want: nil,
+		},
+		{
+			name: "an empty page names nothing",
+			prev: []string{"oc_a"},
+			now:  nil,
+			want: nil,
+		},
+		{
+			name: "a chat dropping off the page is not named",
+			prev: []string{"oc_a", "oc_b", "oc_c"},
+			now:  []string{"oc_a", "oc_b"},
+			want: []string{"oc_a"},
+		},
+		{
+			name: "two chats promoted in one window",
+			prev: []string{"oc_a", "oc_b", "oc_c", "oc_d"},
+			now:  []string{"oc_d", "oc_c", "oc_a", "oc_b"},
+			want: []string{"oc_d", "oc_c"},
+		},
+		{
+			name: "the head is named once, not twice, when it also moved",
+			prev: []string{"oc_a", "oc_b"},
+			now:  []string{"oc_b", "oc_a"},
+			want: []string{"oc_b"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.want, ActiveDelta(tc.prev, tc.now))
+		})
+	}
+}

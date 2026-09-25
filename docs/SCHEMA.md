@@ -21,6 +21,8 @@ One row per chat the user is (or was) in, from `GET /im/v1/chats` with `types=p2
 | `left_at` | non-zero when a full listing no longer contains the chat; reset when it reappears |
 | `sync_error` | last permanent API rejection (e.g. restricted-mode chats cannot be listed); such chats still receive messages via search |
 | `repaired_at` | when the last repair pass re-listed the chat's recent week |
+| `first_seen_at` | when the chat was first stored, whether by a full listing or by a message arriving from one larkim had not listed yet; never rewritten |
+| `last_seen_at` | when the chat was last confirmed present: a full listing restamps every row it carries. `left_at` is set by comparing this against the stamp of the listing that just finished, so a chat missing from one is the chat whose `last_seen_at` stayed behind |
 | `raw_json` | the API item as received |
 | `last_message_id`, `last_message_ms` | the chat's newest main-flow message; empty and 0 when it has none |
 | `last_sender_id`, `last_sender_name`, `last_sender_type` | that message's sender |
@@ -64,6 +66,8 @@ One row per message id, from the raw message API (`create_ms` is millisecond pre
 | `reactions_json` | reaction summary, `{counts:[{reaction_type,count}], details:[{emoji_type,operator:{operator_id,operator_type},action_time,…}]}`; empty when the message carries none. `count` and `action_time` are **strings**, the latter in Unix seconds. `counts` is the server's total and arrives alphabetically; `details` is one page of the individual reactions, so it may not name every reactor. The client's own order is by each emoji's earliest `action_time` |
 | `raw_json` | the API item as received |
 | `rendered_at` | 0 = rendering pending (also reset when `update_ms` changes) |
+| `first_seen_at` | when the message was first stored; never rewritten. `first_seen_at - create_ms` is how long it took larkim to find the message, which is the only end-to-end latency the database records |
+| `last_seen_at` | when a sync last saw the message in an API response. Every listing re-reads an overlap and the repair pass re-lists a week, so this moves on messages nothing about which changed |
 
 `silenced` is derived from the `silence` rules of the writer's config: a rule's `chat`, `sender` and `contains` fields are an AND, the rules are an OR, and `contains` reads `content` once the rendering lands and `content_raw` until then. The process holding `daemon.lock` stamps the flag as messages arrive and again when a rendering lands, and rebuilds the whole column when the rule set changes, so the column states what that process's config says — a reader that edits the config sees nothing until the writer restarts.
 

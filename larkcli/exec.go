@@ -44,12 +44,11 @@ const (
 	mgetBatch       = 50
 )
 
-// ExecClient runs the lark-cli binary as a subprocess. Calls run in two
-// lanes: the syncer's sweeps in one, what a reader is waiting on in the other,
-// so a keystroke never waits out a sweep. Widths are small on purpose —
-// lark-cli refreshes the user token under a cross-process file lock and the
-// gateway rate limit is per user, so the point of a second lane is latency,
-// not throughput.
+// ExecClient runs the lark-cli binary as a subprocess. Calls run in three
+// lanes — the syncer's sweeps, the open chat's beat, and what a person pressed
+// a key for — so neither a sweep nor a beat is ever in front of a keystroke.
+// The widths are also the only throttle in front of the gateway: lark-cli
+// carries no limiter of its own.
 type ExecClient struct {
 	// Path to the lark-cli binary; empty means DefaultPath then $PATH lookup.
 	Path string
@@ -63,8 +62,8 @@ type ExecClient struct {
 	// pair at debug level. Nil discards.
 	Log *slog.Logger
 
-	once   sync.Once
-	bg, fg lane
+	once         sync.Once
+	bg, beat, fg lane
 	// calls numbers the invocations so a request line and its response line
 	// can be paired, which the lanes make necessary: several calls are in
 	// flight at once and their lines interleave.
@@ -78,13 +77,14 @@ func (c *ExecClient) logger() *slog.Logger {
 	return c.Log
 }
 
-// background is the lane a call takes when nothing says otherwise. Tests reach
-// for it to hold it occupied.
-func (c *ExecClient) background() lane { c.lanes(); return c.bg }
+// laneFor exposes one line to tests, which hold it occupied to see what the
+// other lines do about it.
+func (c *ExecClient) laneFor(l Lane) lane { return c.lane(WithLane(context.Background(), l)) }
 
 func (c *ExecClient) lanes() {
 	c.once.Do(func() {
 		c.bg = make(lane, backgroundLane)
+		c.beat = make(lane, beatLane)
 		c.fg = make(lane, interactiveLane)
 	})
 }
@@ -92,10 +92,14 @@ func (c *ExecClient) lanes() {
 // lane picks the line this call waits in.
 func (c *ExecClient) lane(ctx context.Context) lane {
 	c.lanes()
-	if LaneOf(ctx) == LaneInteractive {
+	switch LaneOf(ctx) {
+	case LaneInteractive:
 		return c.fg
+	case LaneBeat:
+		return c.beat
+	default:
+		return c.bg
 	}
-	return c.bg
 }
 
 // ResolvePath returns the binary that will be executed. The npm package

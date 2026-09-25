@@ -415,3 +415,59 @@ func TestResourcesDueFor_AsksAgainOnceTheBackoffIsOwed(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, due, 1)
 }
+
+func TestReadStatusProbes_OneNewestMessagePerUnreadChat(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	_, err := s.UpsertMessages(ctx, []Message{
+		{MessageID: "om_a_old", ChatID: "oc_a", SenderID: "ou_x", CreateMs: 900, RawJSON: "{}"},
+		{MessageID: "om_a_new", ChatID: "oc_a", SenderID: "ou_x", CreateMs: 1200, RawJSON: "{}"},
+		{MessageID: "om_b", ChatID: "oc_b", SenderID: "ou_x", CreateMs: 1500, RawJSON: "{}"},
+		{MessageID: "om_mine", ChatID: "oc_c", SenderID: "ou_me", CreateMs: 1600, RawJSON: "{}"},
+		{MessageID: "om_ancient", ChatID: "oc_d", SenderID: "ou_x", CreateMs: 1, RawJSON: "{}"},
+	}, 1)
+	require.NoError(t, err)
+
+	q := ReadCheckQuery{Self: "ou_me", SinceMs: 100, Limit: 10}
+	ids, err := s.ReadStatusProbes(ctx, q)
+	require.NoError(t, err)
+	require.Equal(t, []ReadProbe{{"om_b", "oc_b"}, {"om_a_new", "oc_a"}}, ids,
+		"one probe per chat, its newest unread, newest chat first; own and out-of-horizon messages excluded")
+
+	// A far-out backoff is exactly what the probe is meant to overtake.
+	unread := false
+	require.NoError(t, s.SetReadStatus(ctx, "om_b", &unread, 1000, 9e12))
+	ids, err = s.ReadStatusProbes(ctx, q)
+	require.NoError(t, err)
+	require.Equal(t, []ReadProbe{{"om_b", "oc_b"}, {"om_a_new", "oc_a"}}, ids)
+
+	read := true
+	require.NoError(t, s.SetReadStatus(ctx, "om_b", &read, 2000, 0))
+	ids, err = s.ReadStatusProbes(ctx, q)
+	require.NoError(t, err)
+	require.Equal(t, []ReadProbe{{"om_a_new", "oc_a"}}, ids, "a chat with nothing unread left drops out")
+}
+
+func TestReadStatusProbes_SkipsMessagesNoAnswerCanReach(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	_, err := s.UpsertMessages(ctx, []Message{
+		{MessageID: "om_ctl", ChatID: "oc_ctl", SenderID: "ou_x", CreateMs: 2000, RawJSON: "{}"},
+		{MessageID: "om_seen_here", ChatID: "oc_seen_here", SenderID: "ou_x", CreateMs: 1900, RawJSON: "{}"},
+		{MessageID: "om_refused", ChatID: "oc_refused", SenderID: "ou_x", CreateMs: 1800, RawJSON: "{}"},
+		{MessageID: "om_answerable", ChatID: "oc_refused", SenderID: "ou_x", CreateMs: 1700, RawJSON: "{}"},
+	}, 1)
+	require.NoError(t, err)
+
+	unread := false
+	// Feishu answers about this one with an id it will not speak for.
+	require.NoError(t, s.SetReadStatus(ctx, "om_refused", nil, 1000, 9e12))
+	require.NoError(t, s.SetReadStatus(ctx, "om_answerable", &unread, 1000, 9e12))
+	require.NoError(t, s.SetReadStatus(ctx, "om_seen_here", &unread, 1000, 9e12))
+	require.NoError(t, s.MarkChatRead(ctx, "oc_seen_here", 1100))
+
+	probes, err := s.ReadStatusProbes(ctx, ReadCheckQuery{Self: "ou_me", SinceMs: 100, Limit: 10})
+	require.NoError(t, err)
+	require.Equal(t, []ReadProbe{{"om_ctl", "oc_ctl"}, {"om_answerable", "oc_refused"}}, probes,
+		"a refused id spends the chat's one slot on a question with no answer; a chat read here has no badge left to clear")
+}

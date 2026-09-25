@@ -163,11 +163,11 @@ func TestReactionsSlice_AsksNoMoreOftenThanItsInterval(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 1, reactionCalls(), "the first tick asks")
 
-	clk.t = clk.t.Add(5 * time.Second)
+	clk.t = clk.t.Add(reactionsEvery - time.Second)
 	f.Calls = nil
 	_, err = s.Tick(ctx)
 	require.NoError(t, err)
-	require.Zero(t, reactionCalls(), "a tick five seconds later does not ask again")
+	require.Zero(t, reactionCalls(), "a tick inside the interval does not ask again")
 
 	clk.t = clk.t.Add(reactionsEvery)
 	f.Calls = nil

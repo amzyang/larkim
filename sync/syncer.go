@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"slices"
 	"strconv"
+	stdsync "sync"
 	"time"
 
 	"github.com/amzyang/larkim/config"
@@ -34,7 +35,7 @@ type Options struct {
 	BackfillPerTick   int
 	RenderPerTick     int // batches of 50
 	DownloadPerTick   int // batches of 50 messages with due resources
-	ReadStatusPerTick int // batches of 50
+	ReadStatusPerTick int // batches of 50; the fallback behind probeReadStatus
 	RepairEvery       time.Duration
 	RepairPerTick     int
 	MembersPerTick    int
@@ -64,7 +65,7 @@ func OptionsFrom(cfg config.Config) Options {
 		BackfillPerTick:       10,
 		RenderPerTick:         4,
 		DownloadPerTick:       1,
-		ReadStatusPerTick:     4,
+		ReadStatusPerTick:     1,
 		RepairEvery:           cfg.RepairEvery,
 		RepairPerTick:         3,
 		MembersPerTick:        2,
@@ -85,14 +86,25 @@ const (
 	KeyLastTickAt     = "last_tick_at"
 	KeyChatsRefreshed = "chats_refreshed_at"
 	KeySlowPathAt     = "slow_path_at"
+	KeySearchAt       = "search_at"
 	// KeyHistoryCursor is the start of the next day-slice of historical search;
 	// history is complete once it reaches the live window.
 	KeyHistoryCursor = "history_cursor_ms"
 	KeyReactionsAt   = "reactions_at"
+	// KeyActiveOrder is the chat list's active-time ordering as the previous
+	// tick saw it; comparing against it names the chats that have since seen
+	// a message.
+	KeyActiveOrder = "active_order"
 )
 
 // historySlice is how much history one tick searches.
 const historySlice = 24 * time.Hour
+
+// searchEvery paces the cross-chat search. The activity probe is what carries
+// discovery now, so this is a reconciliation interval rather than a latency
+// one: short enough that an edit or a recall shows up while the reader still
+// has the chat on screen, long enough to leave the one background line free.
+const searchEvery = 30 * time.Second
 
 // Status values.
 const (
@@ -131,6 +143,11 @@ type Report struct {
 	Backfilled int
 	SlowPath   int
 	Chats      int
+	// Moved counts the chats the activity probe named. The head is named
+	// whether or not it moved, so a non-zero Moved says nothing about whether
+	// the tick landed anything; Probed is what does.
+	Moved      int
+	Probed     int // messages new to the store that the activity probe reached first
 	History    int // messages discovered by the historical search slice
 	Downloaded int // attachments stored
 	ReadChecks int // read-status answers recorded
@@ -148,7 +165,7 @@ type Report struct {
 // detail, a tick that landed something is a record.
 func (r Report) changed() bool {
 	return r.New > 0 || r.Rendered > 0 || r.Backfilled > 0 || r.SlowPath > 0 ||
-		r.Downloaded > 0 || r.History > 0 || r.Repaired > 0
+		r.Downloaded > 0 || r.History > 0 || r.Repaired > 0 || r.Probed > 0
 }
 
 func (s *Syncer) log() *slog.Logger {
@@ -223,31 +240,62 @@ func (s *Syncer) tick(ctx context.Context, now time.Time) (Report, error) {
 		s.log().Info("silence rules changed", "messages", silenced)
 	}
 
-	// 1. Fast path: discover new message ids across all chats.
-	rep.Window = FastWindow(s.stateTime(ctx, KeyWatermark), now, s.Opt.Overlap)
-	hits, coveredEnd, err := s.searchWindow(ctx, rep.Window)
+	// 1. Activity probe: the chat list sorted by active time puts a chat that
+	// has just seen a message at position 1, and it reads chat state rather
+	// than the search index the fast path below waits on, so it names a chat
+	// seconds before that search can find the message. Listing the chats it
+	// names has no such lag either, which is why this runs first: what it
+	// reaches is already stored by the time the search asks.
+	//
+	// The search below still runs on every tick and still covers these chats.
+	// It stays until the two have been measured against each other.
+	active, moved, err := s.activeProbe(ctx)
 	if err != nil {
-		return rep, fmt.Errorf("search: %w", err)
+		return rep, fmt.Errorf("active probe: %w", err)
 	}
-	rep.Hits = len(hits)
-	rep.Complete = coveredEnd.Equal(rep.Window.End)
-	rep.New, err = s.fetchUnknown(ctx, hits, now)
-	if err != nil {
-		return rep, err
+	rep.Moved = len(moved)
+	if _, rep.Probed, err = s.pullFromCursor(ctx, moved, "active probe", now); err != nil {
+		return rep, fmt.Errorf("active probe pull: %w", err)
 	}
-	rep.Upserted = rep.New
-	if err := s.setStateTime(ctx, KeyWatermark, coveredEnd); err != nil {
-		return rep, err
-	}
-	s.changed(rep.New)
+	rep.Upserted += rep.Probed
+	s.changed(rep.Probed)
 
-	// 2. Render and fetch what the fast path just found, ahead of the sweeps
+	// 2. Safety net: a cross-chat search over everything since the last one.
+	// The probe above reaches a message a good ten seconds earlier — measured
+	// against this very search — but it only sees the chat list's first page
+	// and only says that a chat has moved, so this still has to run for what
+	// the ordering cannot show: edits, recalls, and a chat the page missed.
+	// It does not have to run often, which is the point: the search index is
+	// what was slow, not the search.
+	rep.Window = FastWindow(s.stateTime(ctx, KeyWatermark), now, s.Opt.Overlap)
+	rep.Complete = true // no search, no window left uncovered by this tick
+	if Due(s.stateTime(ctx, KeySearchAt), searchEvery, now) {
+		hits, coveredEnd, err := s.searchWindow(ctx, rep.Window)
+		if err != nil {
+			return rep, fmt.Errorf("search: %w", err)
+		}
+		rep.Hits = len(hits)
+		rep.Complete = coveredEnd.Equal(rep.Window.End)
+		if rep.New, err = s.fetchUnknown(ctx, hits, now); err != nil {
+			return rep, err
+		}
+		rep.Upserted += rep.New
+		if err := s.setStateTime(ctx, KeyWatermark, coveredEnd); err != nil {
+			return rep, err
+		}
+		if err := s.setStateTime(ctx, KeySearchAt, now); err != nil {
+			return rep, err
+		}
+		s.changed(rep.New)
+	}
+
+	// 3. Render and fetch what discovery just found, ahead of the sweeps
 	// below. A body lands unrendered, so a reader watching the chat sees the
 	// message named by its type until a rendering replaces it; doing it here
 	// rather than after the sweeps is the difference between a flicker and
 	// half a minute of placeholder. A tick that found nothing skips it, which
 	// is most of them.
-	if rep.New > 0 {
+	if rep.New+rep.Probed > 0 {
 		if rep.Rendered, err = s.renderPending(ctx, "", s.Opt.RenderPerTick*50, now); err != nil {
 			return rep, fmt.Errorf("render: %w", err)
 		}
@@ -257,7 +305,7 @@ func (s *Syncer) tick(ctx context.Context, now time.Time) (Report, error) {
 		s.changed(rep.Rendered + rep.Downloaded)
 	}
 
-	// 3. Historical discovery: one day-slice of cross-chat search per tick,
+	// 4. Historical discovery: one day-slice of cross-chat search per tick,
 	// from now-BackfillDays up to the live window. Far cheaper than listing
 	// every chat, so recent history fills in within minutes.
 	n, err := s.historySlice(ctx, rep.Window.Start, now)
@@ -266,7 +314,7 @@ func (s *Syncer) tick(ctx context.Context, now time.Time) (Report, error) {
 	}
 	rep.History = n
 
-	// 4. Full chat listing, and the per-user settings it does not carry.
+	// 5. Full chat listing, and the per-user settings it does not carry.
 	if Due(s.stateTime(ctx, KeyChatsRefreshed), s.Opt.ChatsRefreshEvery, now) {
 		n, err := s.refreshChats(ctx, now)
 		if err != nil {
@@ -278,30 +326,30 @@ func (s *Syncer) tick(ctx context.Context, now time.Time) (Report, error) {
 		}
 	}
 
-	// 5. Slow path: reconcile the most active chats.
+	// 6. Slow path: reconcile the most active chats.
 	if Due(s.stateTime(ctx, KeySlowPathAt), s.Opt.SlowPathEvery, now) {
-		n, err := s.slowPath(ctx, now)
+		n, err := s.slowPath(ctx, active, now)
 		if err != nil {
 			return rep, fmt.Errorf("slow path: %w", err)
 		}
 		rep.SlowPath = n
 	}
 
-	// 6. Backfill a few chats per tick so live data keeps flowing.
+	// 7. Backfill a few chats per tick so live data keeps flowing.
 	n, err = s.backfillSlice(ctx, now)
 	if err != nil {
 		return rep, fmt.Errorf("backfill: %w", err)
 	}
 	rep.Backfilled = n
 
-	// 7. Render and fetch whatever the sweeps above added.
+	// 8. Render and fetch whatever the sweeps above added.
 	n, err = s.renderPending(ctx, "", s.Opt.RenderPerTick*50, now)
 	if err != nil {
 		return rep, fmt.Errorf("render: %w", err)
 	}
 	rep.Rendered += n
 
-	// 8. Download attachments that are pending or due for retry.
+	// 9. Download attachments that are pending or due for retry.
 	n, err = s.downloadPending(ctx, now)
 	if err != nil {
 		return rep, fmt.Errorf("resources: %w", err)
@@ -309,21 +357,21 @@ func (s *Syncer) tick(ctx context.Context, now time.Time) (Report, error) {
 	rep.Downloaded += n
 	s.changed(rep.Rendered + rep.Downloaded)
 
-	// 9. Copy sticker pictures out of the Lark client's own storage.
+	// 10. Copy sticker pictures out of the Lark client's own storage.
 	n, err = s.copyStickers(ctx, now)
 	if err != nil {
 		return rep, fmt.Errorf("stickers: %w", err)
 	}
 	rep.Stickers = n
 
-	// 10. Poll whether the user has read recent messages from others.
+	// 11. Poll whether the user has read recent messages from others.
 	n, err = s.pollReadStatus(ctx, now)
 	if err != nil {
 		return rep, fmt.Errorf("read status: %w", err)
 	}
 	rep.ReadChecks = n
 
-	// 11. Keep the chat list's reactions current for the liveliest p2p chats.
+	// 12. Keep the chat list's reactions current for the liveliest p2p chats.
 	if Due(s.stateTime(ctx, KeyReactionsAt), reactionsEvery, now) {
 		n, err = s.reactionsSlice(ctx, now)
 		if err != nil {
@@ -332,7 +380,7 @@ func (s *Syncer) tick(ctx context.Context, now time.Time) (Report, error) {
 		rep.Reactions = n
 	}
 
-	// 12. Repair recent history, refresh members, fetch avatars: a few each.
+	// 13. Repair recent history, refresh members, fetch avatars: a few each.
 	if rep.Repaired, err = s.repairSlice(ctx, now); err != nil {
 		return rep, fmt.Errorf("repair: %w", err)
 	}
@@ -417,7 +465,7 @@ func (s *Syncer) IngestIDs(ctx context.Context, ids []string) error {
 		if err != nil {
 			return err
 		}
-		if _, err := s.upsertRaw(ctx, msgs, now); err != nil {
+		if _, _, err := s.upsertRaw(ctx, msgs, now); err != nil {
 			return err
 		}
 		rendered, err := s.Client.MGetRendered(ctx, batch, false)
@@ -449,7 +497,7 @@ func (s *Syncer) fetchUnknown(ctx context.Context, hits []larkcli.SearchHit, now
 		if err != nil {
 			return total, fmt.Errorf("mget: %w", err)
 		}
-		n, err := s.upsertRaw(ctx, msgs, now)
+		n, _, err := s.upsertRaw(ctx, msgs, now)
 		if err != nil {
 			return total, err
 		}
@@ -458,38 +506,49 @@ func (s *Syncer) fetchUnknown(ctx context.Context, hits []larkcli.SearchHit, now
 	return total, nil
 }
 
-func (s *Syncer) upsertRaw(ctx context.Context, msgs []larkcli.RawMessage, now time.Time) (int, error) {
+// upsertRaw stores msgs and reports how many rows it wrote and, of those, how
+// many the store had never seen. Every listing re-reads an overlap, so the two
+// differ on most calls; a caller that runs every tick has to tell them apart
+// or it will report an idle chat as news forever.
+func (s *Syncer) upsertRaw(ctx context.Context, msgs []larkcli.RawMessage, now time.Time) (n, fresh int, err error) {
 	rows := make([]store.Message, 0, len(msgs))
+	ids := make([]string, 0, len(msgs))
 	chats := map[string]struct{}{}
 	var resources []store.ResourceRef
 	for _, m := range msgs {
 		rows = append(rows, ToRow(m))
+		ids = append(ids, m.MessageID)
 		chats[m.ChatID] = struct{}{}
 		if !m.Deleted {
 			resources = append(resources, ExtractResources(m.MessageID, m.MsgType, m.Body.Content)...)
 		}
 	}
+	unknown, err := s.Store.UnknownMessageIDs(ctx, UniqueStrings(ids))
+	if err != nil {
+		return 0, 0, err
+	}
+	fresh = len(unknown)
 	for id := range chats {
 		if err := s.Store.EnsureChat(ctx, id, now.UnixMilli()); err != nil {
-			return 0, err
+			return 0, 0, err
 		}
 	}
-	n, err := s.Store.UpsertMessages(ctx, rows, now.UnixMilli())
+	n, err = s.Store.UpsertMessages(ctx, rows, now.UnixMilli())
 	if err != nil {
-		return n, err
+		return n, fresh, err
 	}
 	// Every path that stores a message funnels through here, so this is where
 	// "the sweep ran but nothing landed" gets its answer.
-	s.log().DebugContext(ctx, "upsert", "rows", len(rows), "changed", n, "chats", len(chats))
+	s.log().DebugContext(ctx, "upsert", "rows", len(rows), "changed", n, "fresh", fresh, "chats", len(chats))
 	if err := s.Store.UpsertContacts(ctx, senderContacts(msgs), now.UnixMilli()); err != nil {
-		return n, err
+		return n, fresh, err
 	}
 	if s.Opt.DataDir != "" {
 		if err := s.Store.AddPendingResources(ctx, resources); err != nil {
-			return n, err
+			return n, fresh, err
 		}
 	}
-	return n, nil
+	return n, fresh, nil
 }
 
 // ToRow maps a raw API message onto its store row. Bot senders are keyed by
@@ -556,39 +615,77 @@ func (s *Syncer) refreshChats(ctx context.Context, now time.Time) (int, error) {
 	return len(rows), s.setStateTime(ctx, KeyChatsRefreshed, now)
 }
 
-func (s *Syncer) slowPath(ctx context.Context, now time.Time) (int, error) {
+// activeProbe records the active-time ordering of the chat list's first page
+// and names the chats that have moved up in it since the last tick. Feishu
+// puts a chat that just received a message at position 1, so the first page is
+// complete for this purpose however many chats there are. It answers with the
+// ordering as well, which is the listing every other step of the tick reads
+// the active chats from.
+func (s *Syncer) activeProbe(ctx context.Context) (order, moved []string, err error) {
 	chats, err := s.Client.ListChats(ctx, true)
 	if err != nil {
-		return 0, err
+		return nil, nil, err
 	}
-	if len(chats) > s.Opt.ActiveTopK {
-		chats = chats[:s.Opt.ActiveTopK]
-	}
-	total := 0
+	order = make([]string, 0, len(chats))
 	for _, c := range chats {
-		local, err := s.Store.GetChat(ctx, c.ChatID)
+		order = append(order, c.ChatID)
+	}
+	var prev []string
+	if raw, ok, err := s.Store.GetState(ctx, KeyActiveOrder); err != nil {
+		return nil, nil, err
+	} else if ok && raw != "" {
+		// A hand-edited or half-written value would otherwise fail every tick;
+		// treating it as a first run costs one cycle of blindness.
+		if err := json.Unmarshal([]byte(raw), &prev); err != nil {
+			s.log().WarnContext(ctx, "active order unreadable", "err", err)
+			prev = nil
+		}
+	}
+	enc, err := json.Marshal(order)
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := s.Store.SetState(ctx, KeyActiveOrder, string(enc)); err != nil {
+		return nil, nil, err
+	}
+	return order, ActiveDelta(prev, order), nil
+}
+
+// slowPath reconciles the chats at the head of active, the ordering the
+// probe already listed this tick.
+func (s *Syncer) slowPath(ctx context.Context, active []string, now time.Time) (int, error) {
+	total, _, err := s.pullFromCursor(ctx, active[:min(len(active), s.Opt.ActiveTopK)], "slow path", now)
+	if err != nil {
+		return total, err
+	}
+	return total, s.setStateTime(ctx, KeySlowPathAt, now)
+}
+
+// pullFromCursor re-lists each chat from its own cursor, less one overlap.
+// why names the caller in the log lines a skipped chat produces. A chat the
+// gateway refuses is recorded and stepped over; everything else stops the run.
+func (s *Syncer) pullFromCursor(ctx context.Context, chatIDs []string, why string, now time.Time) (total, fresh int, err error) {
+	ids := make([]string, 0, len(chatIDs))
+	since := make(map[string]time.Time, len(chatIDs))
+	for _, id := range chatIDs {
+		local, err := s.Store.GetChat(ctx, id)
 		if errors.Is(err, store.ErrNotFound) || (err == nil && local.BackfillDoneAt == 0) {
-			s.log().DebugContext(ctx, "slow path skip", "chat_id", c.ChatID, "reason", "not backfilled yet")
+			s.log().DebugContext(ctx, why+" skip", "chat_id", id, "reason", "not backfilled yet")
 			continue // backfill will cover it
 		}
 		if err != nil {
-			return total, err
+			return 0, 0, err
 		}
 		if local.SyncError != "" {
-			s.log().DebugContext(ctx, "slow path skip", "chat_id", c.ChatID, "reason", "chat rejected earlier", "err", local.SyncError)
+			s.log().DebugContext(ctx, why+" skip", "chat_id", id, "reason", "chat rejected earlier", "err", local.SyncError)
 			continue
 		}
-		since := time.UnixMilli(local.CursorMs).Add(-s.Opt.Overlap)
-		n, err := s.pullChat(ctx, c.ChatID, since, time.Time{}, now)
-		if err != nil {
-			if s.recordChatError(ctx, c.ChatID, err, now) {
-				continue
-			}
-			return total, err
-		}
-		total += n
+		ids = append(ids, id)
+		since[id] = time.UnixMilli(local.CursorMs).Add(-s.Opt.Overlap)
 	}
-	return total, s.setStateTime(ctx, KeySlowPathAt, now)
+	return s.pullChats(ctx, ids, now, func(ctx context.Context, id string) (int, int, error) {
+		return s.pullChat(ctx, id, since[id], time.Time{}, now)
+	})
 }
 
 func (s *Syncer) backfillSlice(ctx context.Context, now time.Time) (int, error) {
@@ -597,21 +694,92 @@ func (s *Syncer) backfillSlice(ctx context.Context, now time.Time) (int, error) 
 		return 0, err
 	}
 	since := now.AddDate(0, 0, -s.Opt.BackfillDays)
-	total := 0
-	for _, c := range chats {
-		n, err := s.pullChat(ctx, c.ChatID, since, time.Time{}, now)
+	ids := make([]string, len(chats))
+	for i, c := range chats {
+		ids[i] = c.ChatID
+	}
+	total, _, err := s.pullChats(ctx, ids, now, func(ctx context.Context, id string) (int, int, error) {
+		n, _, err := s.pullChat(ctx, id, since, time.Time{}, now)
 		if err != nil {
-			if s.recordChatError(ctx, c.ChatID, err, now) {
-				continue
-			}
-			return total, err
+			return 0, 0, err
 		}
-		total += n
-		if err := s.Store.SetChatBackfillDone(ctx, c.ChatID, now.UnixMilli()); err != nil {
-			return total, err
+		return n, 0, s.Store.SetChatBackfillDone(ctx, id, now.UnixMilli())
+	})
+	return total, err
+}
+
+// fanOut runs do against every item at once and answers per item, in order.
+// Nothing here bounds how many subprocesses that becomes: the lane inside
+// larkcli does, and goroutines past its width simply wait there, so the
+// concurrency has one place to be tuned.
+//
+// The first failure cancels the calls still in flight — answering a rate limit
+// with the rest of the sweep is what the limit is asking us not to do — so a
+// caller folds context.Canceled away and reports the answer the gateway gave
+// rather than the echo of one it did.
+func fanOut[T, R any](ctx context.Context, items []T, do func(context.Context, T) (R, error)) ([]R, []error) {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	out := make([]R, len(items))
+	errs := make([]error, len(items))
+	var wg stdsync.WaitGroup
+	for i, it := range items {
+		wg.Go(func() {
+			out[i], errs[i] = do(ctx, it)
+			if errs[i] != nil {
+				cancel()
+			}
+		})
+	}
+	wg.Wait()
+	return out, errs
+}
+
+// pullChats runs pull against every chat at once. A chat the gateway refuses
+// permanently is recorded and stepped over, as it was when this ran one chat
+// at a time; any other refusal ends the sweep.
+func (s *Syncer) pullChats(ctx context.Context, chatIDs []string, now time.Time, pull func(context.Context, string) (int, int, error)) (total, fresh int, err error) {
+	type pulled struct{ n, fresh int }
+	res, errs := fanOut(ctx, chatIDs, func(ctx context.Context, id string) (pulled, error) {
+		n, f, err := pull(ctx, id)
+		if err != nil && s.recordChatError(ctx, id, err, now) {
+			return pulled{}, nil
+		}
+		return pulled{n: n, fresh: f}, err
+	})
+
+	for i, r := range res {
+		total += r.n
+		fresh += r.fresh
+		// A sibling's failure cancelled this one before it had an answer of
+		// its own, so it has nothing to report that the sibling will not.
+		if errs[i] != nil && err == nil && !errors.Is(errs[i], context.Canceled) {
+			err = errs[i]
 		}
 	}
-	return total, nil
+	return total, fresh, err
+}
+
+// listThreads fetches every thread rooted in one chat's window at once, then
+// returns their replies in tids order so what reaches upsertRaw does not
+// depend on which goroutine finished first.
+func (s *Syncer) listThreads(ctx context.Context, tids []string, since, until time.Time) ([]larkcli.RawMessage, error) {
+	replies, errs := fanOut(ctx, tids, func(ctx context.Context, tid string) ([]larkcli.RawMessage, error) {
+		return s.Client.ListMessagesRaw(ctx, "thread", tid, since, until)
+	})
+
+	var out []larkcli.RawMessage
+	for i, err := range errs {
+		if err != nil {
+			if errors.Is(err, context.Canceled) {
+				continue // cancelled by a sibling, which carries the real answer
+			}
+			return nil, err
+		}
+		out = append(out, replies[i]...)
+	}
+	return out, nil
 }
 
 // recordChatError persists a permanent API rejection for one chat (for
@@ -631,10 +799,10 @@ func (s *Syncer) recordChatError(ctx context.Context, chatID string, err error, 
 
 // pullChat lists a chat container in [since, until] plus the threads rooted in
 // that range, upserts everything and advances the chat cursor.
-func (s *Syncer) pullChat(ctx context.Context, chatID string, since, until, now time.Time) (int, error) {
+func (s *Syncer) pullChat(ctx context.Context, chatID string, since, until, now time.Time) (n, fresh int, err error) {
 	msgs, err := s.Client.ListMessagesRaw(ctx, "chat", chatID, since, until)
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 	var threads []string
 	var maxMs int64
@@ -644,25 +812,24 @@ func (s *Syncer) pullChat(ctx context.Context, chatID string, since, until, now 
 		}
 		maxMs = max(maxMs, int64(m.CreateTime))
 	}
-	for _, tid := range UniqueStrings(threads) {
-		replies, err := s.Client.ListMessagesRaw(ctx, "thread", tid, since, until)
-		if err != nil {
-			return 0, err
-		}
-		msgs = append(msgs, replies...)
-	}
-	n, err := s.upsertRaw(ctx, msgs, now)
+	tids := UniqueStrings(threads)
+	replies, err := s.listThreads(ctx, tids, since, until)
 	if err != nil {
-		return n, err
+		return 0, 0, err
+	}
+	msgs = append(msgs, replies...)
+	n, fresh, err = s.upsertRaw(ctx, msgs, now)
+	if err != nil {
+		return n, fresh, err
 	}
 	s.log().DebugContext(ctx, "pull chat", "chat_id", chatID, "since", since, "until", until,
-		"messages", len(msgs), "threads", len(UniqueStrings(threads)), "upserted", n)
+		"messages", len(msgs), "threads", len(tids), "upserted", n, "fresh", fresh)
 	if maxMs > 0 {
 		if err := s.Store.SetChatCursor(ctx, chatID, maxMs); err != nil {
-			return n, err
+			return n, fresh, err
 		}
 	}
-	return n, nil
+	return n, fresh, nil
 }
 
 // renderPending renders messages without attachments; those with pending
@@ -781,7 +948,7 @@ func (s *Syncer) Run(ctx context.Context) error {
 			s.log().Log(ctx, level, "tick", "hits", rep.Hits, "new", rep.New, "rendered", rep.Rendered,
 				"backfilled", rep.Backfilled, "slow_path", rep.SlowPath, "history", rep.History,
 				"downloaded", rep.Downloaded, "repaired", rep.Repaired, "chats", rep.Chats,
-				"complete", rep.Complete)
+				"moved", rep.Moved, "probed", rep.Probed, "complete", rep.Complete)
 		}
 		s.SetStatus(ctx, err)
 		select {

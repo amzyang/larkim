@@ -3,23 +3,29 @@ package larkcli
 import "context"
 
 // Lane is which line of subprocesses a call takes. Background is the syncer's
-// sweeps, which nobody is waiting on; Interactive is what a person is waiting
-// on. The daemon ticks every few seconds, so one shared line is occupied more
-// often than not, and a keystroke behind a sweep waits out the whole sweep.
+// sweeps, which nobody is waiting on; Beat is the timer-driven refresh of what
+// is already on screen; Interactive is what a person pressed a key for. The
+// daemon ticks every few seconds and the open chat beats every 1.5s, so a
+// keystroke sharing either line waits out whatever that line is doing.
 type Lane int
 
 const (
 	// LaneBackground is the zero value, so a caller that says nothing cannot
-	// take the fast line by accident.
+	// take a faster line by accident.
 	LaneBackground Lane = iota
+	LaneBeat
 	LaneInteractive
 )
 
 func (l Lane) String() string {
-	if l == LaneInteractive {
+	switch l {
+	case LaneInteractive:
 		return "interactive"
+	case LaneBeat:
+		return "beat"
+	default:
+		return "background"
 	}
-	return "background"
 }
 
 type laneKey struct{}
@@ -55,11 +61,15 @@ func (l lane) acquire(ctx context.Context) error {
 
 func (l lane) release() { <-l }
 
-// Lane widths. Background is one because the sweeps are throughput-bound and
-// the gateway rate limit is per user, so a second sweep buys nothing.
-// Interactive is two so that sending a message does not queue behind a search
-// the reader is still typing.
+// Lane widths, which are this program's only rate control: lark-cli has no
+// client-side limiter, so whatever a lane admits reaches the gateway. Feishu
+// meters per API per app per tenant rather than per user, and the tier the IM
+// endpoints sit in allows far more than these widths can produce, so the
+// background line is sized for the fan-out of the per-chat pulls rather than
+// held at one. Beat holds the open chat's listing, the threads it follows and
+// the refresh riding along with it; interactive is left free for the person.
 const (
-	backgroundLane  = 1
-	interactiveLane = 2
+	backgroundLane  = 4
+	beatLane        = 3
+	interactiveLane = 3
 )

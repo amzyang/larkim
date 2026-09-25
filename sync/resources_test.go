@@ -309,3 +309,40 @@ func TestTick_AFailureThatMightPassNextTimeKeepsItsRetries(t *testing.T) {
 		require.NotEqual(t, "file_clip", e.Subject, "only a permanent failure goes on the record")
 	}
 }
+
+func TestTick_ReadProbeOvertakesTheBackoff(t *testing.T) {
+	s, f, clk := newSyncer(t)
+	ctx := t.Context()
+	f.Chats = []larkcli.RawChat{
+		{ChatID: "oc_a", Name: "平台组", ChatMode: "group"},
+		{ChatID: "oc_b", Name: "项目协作群", ChatMode: "group"},
+	}
+	for _, m := range []struct{ id, chat string }{{"om_a_old", "oc_a"}, {"om_a_new", "oc_a"}, {"om_b", "oc_b"}} {
+		raw := msg(m.id, m.chat, clk.t.Add(-time.Minute), "hi")
+		raw.Sender = larkcli.RawSender{ID: "ou_them", SenderType: "user"}
+		f.AddMessage(raw)
+	}
+	_, err := s.EnsureIdentity(ctx)
+	require.NoError(t, err)
+
+	rep, err := s.Tick(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 3, rep.ReadChecks, "the ladder's first pass asks about all three")
+
+	// Well inside the ladder's one-minute first step: only the probe can see
+	// this, and the whole chat has to come with it.
+	f.Read["om_a_old"], f.Read["om_a_new"] = true, true
+	clk.t = clk.t.Add(5 * time.Second)
+	rep, err = s.Tick(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 2, rep.ReadChecks, "the read chat is re-asked in full; the other is not")
+
+	for _, id := range []string{"om_a_old", "om_a_new"} {
+		m, err := s.Store.GetMessage(ctx, id)
+		require.NoError(t, err)
+		require.True(t, *m.IsReadRemote, id)
+	}
+	m, err := s.Store.GetMessage(ctx, "om_b")
+	require.NoError(t, err)
+	require.False(t, *m.IsReadRemote, "a chat whose probe came back unread keeps its schedule")
+}

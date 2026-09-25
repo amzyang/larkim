@@ -57,7 +57,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Bubble Tea/Bubbles/Lipgloss 用 `charm.land/...` v2 模块路径，不是 `github.com/charmbracelet/...`
 - SQLite 用 `modernc.org/sqlite`（纯 Go），构建 `CGO_ENABLED=0`
 - 无飞书 Go SDK：所有 API 访问经外部 `lark-cli` 子进程（`larkcli.ExecClient`），认证由 lark-cli 管理，larkim 不存凭据
-- lark-cli 调用在互斥锁下串行化（token 刷新走跨进程文件锁、限流按用户），不要并发调用
+- lark-cli 调用经 `larkcli` 的计数 lane 限流，背景清扫、屏幕节拍、按键各一条，lane 宽度即并发上限；
+  lane 用 `larkcli.WithLane` 挂在 context 上，不写进方法签名
+- lark-cli 自身没有客户端限流器，飞书频控按「每 API × 每应用 × 每租户」分级计，所以 lane 宽度是 larkim
+  唯一的速率控制点；加宽前先确认目标端点的频控等级
 
 ## Data contracts
 

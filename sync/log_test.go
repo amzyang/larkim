@@ -82,3 +82,10 @@ func TestErrClass_NamesWhyTheLoopBacksOff(t *testing.T) {
 	require.Equal(t, "api", errClass(&larkcli.Error{ExitCode: larkcli.ExitAPI}))
 	require.Equal(t, "other", errClass(context.DeadlineExceeded))
 }
+
+func TestReport_NamingTheHeadIsNotARecord(t *testing.T) {
+	require.False(t, Report{Moved: 1}.changed(),
+		"the probe names the head on every tick, so naming alone says nothing landed")
+	require.True(t, Report{Probed: 1}.changed(),
+		"reaching a message the store had not seen does")
+}

@@ -165,6 +165,38 @@ func (s *Store) ReadStatusCandidates(ctx context.Context, q ReadCheckQuery) ([]s
 	return queryAll(ctx, s.db, scanOne[string], sql, append(args, q.Limit)...)
 }
 
+// ReadProbe is one chat's newest unread message.
+type ReadProbe struct{ MessageID, ChatID string }
+
+// ReadStatusProbes returns one message id per chat that still has unread
+// messages: the newest of them, newest chats first. Reading a chat in the
+// Feishu client flips its messages in one go, so one id per chat is enough to
+// notice that it happened, and 50 chats fit in the single call that asking
+// about 50 messages of one chat would have cost.
+//
+// q.DueAt is ignored on purpose: the probe is the thing that overtakes the
+// per-message backoff.
+//
+// Two kinds of unread are left out, because a chat gets one slot and spending
+// it on either would leave the badge that chat does show waiting on the
+// ladder. A message Feishu refused to speak for comes back among the invalid
+// ids however often it is asked about, and one already read here shows nothing
+// a remote answer could take away.
+func (s *Store) ReadStatusProbes(ctx context.Context, q ReadCheckQuery) ([]ReadProbe, error) {
+	scan := func(sc scanner) (ReadProbe, error) {
+		var p ReadProbe
+		return p, sc.Scan(&p.MessageID, &p.ChatID)
+	}
+	// The bare columns belong to the max(m.create_ms) row: SQLite takes them
+	// from the row its single min/max aggregate selected.
+	return queryAll(ctx, s.db, scan, `SELECT message_id, chat_id FROM
+ (SELECT m.message_id AS message_id, m.chat_id AS chat_id, max(m.create_ms) AS newest `+messageFrom+`
+  WHERE m.sender_id <> ? AND m.deleted = 0 AND m.create_ms > ?
+   AND (r.message_id IS NULL OR r.is_read_remote = 0) AND COALESCE(r.local_read_at, 0) = 0
+  GROUP BY m.chat_id)
+ ORDER BY newest DESC LIMIT ?`, q.Self, q.SinceMs, q.Limit)
+}
+
 // ExpireReadStatus relaxes to unknown the unread flags of messages older than
 // beforeMs, which the polling horizon has put out of reach. Left at 0 they
 // would claim "unread" forever on evidence that can no longer be refreshed.
