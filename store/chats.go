@@ -68,7 +68,9 @@ type Chat struct {
 	Muted         bool  `json:"muted,omitempty"`
 	MuteCheckedAt int64 `json:"mute_checked_at,omitempty"`
 
-	// Derived for listings.
+	// MessageCount is filled by MessageCountsByChat, not by a listing: only
+	// the CLI's chat table shows it, and a per-row count on every listing
+	// would charge the TUI for a column it never draws.
 	MessageCount int64 `json:"message_count"`
 	// UnreadCount is the badge: main-flow messages Feishu still reports as
 	// unseen that no larkim reader has had in front of them, silenced ones
@@ -113,7 +115,6 @@ const chatColumns = `c.chat_id, c.name, c.description, c.chat_mode, c.chat_statu
  c.avatar_url, c.avatar_path, c.cursor_ms, c.backfill_done_at, c.members_synced_at, c.members_truncated, c.first_seen_at, c.last_seen_at, c.left_at, c.sync_error, c.repaired_at, c.raw_json,
  c.last_message_id, c.last_message_ms, c.last_sender_id, c.last_sender_name, c.last_sender_type, c.last_msg_type, c.last_content, c.last_content_raw, c.last_mentions_json, c.last_reactions_json, c.last_rendered_at, c.last_deleted, c.last_unsilenced_ms,
  c.muted, c.mute_checked_at,
- (SELECT count(*) FROM messages m WHERE m.chat_id = c.chat_id) AS message_count,
  COALESCE(NULLIF(ct.enterprise_email, ''), ct.email, '') AS peer_account,
  COALESCE(ct.avatar_path, '') AS peer_avatar_path`
 
@@ -123,7 +124,7 @@ func chatDest(c *Chat) []any {
 		&c.AvatarURL, &c.AvatarPath, &c.CursorMs, &c.BackfillDoneAt, &c.MembersSyncedAt, &c.MembersTruncated, &c.FirstSeenAt, &c.LastSeenAt, &c.LeftAt, &c.SyncError, &c.RepairedAt, &c.RawJSON,
 		&c.LastMessageID, &c.LastMessageMs, &c.LastSenderID, &c.LastSenderName, &c.LastSenderType, &c.LastMsgType, &c.LastContent, &c.LastContentRaw, &c.LastMentionsJSON, &c.LastReactionsJSON, &c.LastRenderedAt, &c.LastDeleted, &c.LastUnsilencedMs,
 		&c.Muted, &c.MuteCheckedAt,
-		&c.MessageCount, &c.PeerAccount, &c.PeerAvatarPath}
+		&c.PeerAccount, &c.PeerAvatarPath}
 }
 
 func scanChat(sc scanner) (Chat, error) {
@@ -260,12 +261,18 @@ type ChatQuery struct {
 	Self string
 }
 
-// unreadJoin counts each chat's badge, on the same rule the badge is drawn
-// by. One grouped pass rather than a correlated subquery per row, and it
-// rides in the listing itself so a chat's number and its place cannot come
+// unreadAggregate counts every chat's badge in one grouped pass, on the same
+// rule the badge is drawn by. The read_state_unread index is what makes it
+// cost what it counts: without one the planner can only drive the join from
+// messages, and the badge grows with the whole synced history instead of with
+// the few messages still unread.
+const unreadAggregate = `SELECT m.chat_id, count(*) AS n, %s AS at_me FROM messages m JOIN read_state r ON r.message_id = m.message_id
+ WHERE ` + unreadCounted + ` GROUP BY m.chat_id`
+
+// unreadJoin hangs that aggregate off the listing itself, rather than a
+// correlated subquery per row, so a chat's number and its place cannot come
 // from two different revisions of the database.
-const unreadJoin = `LEFT JOIN (SELECT m.chat_id, count(*) AS n, %s AS at_me FROM messages m JOIN read_state r ON r.message_id = m.message_id
- WHERE ` + unreadCounted + ` GROUP BY m.chat_id) u ON u.chat_id = c.chat_id `
+const unreadJoin = `LEFT JOIN (` + unreadAggregate + `) u ON u.chat_id = c.chat_id `
 
 // namesSelf tests whether a message names one person. The needle carries the
 // JSON field around the id so that one open id cannot match another that
@@ -319,6 +326,12 @@ func (s *Store) ListChats(ctx context.Context, q ChatQuery) ([]Chat, error) {
 	args = append(args, limit)
 	return queryAll(ctx, s.db, scanListChat,
 		`SELECT `+chatColumns+`, COALESCE(u.n, 0) AS unread_count, COALESCE(u.at_me, 0) AS at_me FROM chats c LEFT JOIN contacts ct ON ct.open_id = c.p2p_target_id `+tail, args...)
+}
+
+// MessageCountsByChat counts the stored messages of every chat that has one,
+// in a single grouped pass. Chats with nothing stored are absent.
+func (s *Store) MessageCountsByChat(ctx context.Context) (map[string]int64, error) {
+	return queryCounts(ctx, s.db, `SELECT chat_id, count(*) FROM messages GROUP BY chat_id`)
 }
 
 func (s *Store) queryChats(ctx context.Context, tail string, args ...any) ([]Chat, error) {

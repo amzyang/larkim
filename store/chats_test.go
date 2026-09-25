@@ -2,6 +2,8 @@ package store
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -145,4 +147,61 @@ func TestChat_AvatarSeedIsThePeerForP2P(t *testing.T) {
 	require.Equal(t, "oc_quiet", Chat{ChatID: "oc_quiet", ChatMode: "p2p"}.AvatarSeed(),
 		"a peer the contact sync has not resolved leaves the chat as the only identity")
 	require.Equal(t, "oc_quiet", Chat{ChatID: "oc_quiet", ChatMode: "group", P2PTargetID: "ou_a"}.AvatarSeed())
+}
+
+// explainPlan is the query plan SQLite chooses for q, one step per line.
+func explainPlan(t *testing.T, s *Store, q string, args ...any) string {
+	t.Helper()
+	scanDetail := func(sc scanner) (string, error) {
+		var id, parent, notused int64
+		var detail string
+		return detail, sc.Scan(&id, &parent, &notused, &detail)
+	}
+	steps, err := queryAll(t.Context(), s.db, scanDetail, `EXPLAIN QUERY PLAN `+q, args...)
+	require.NoError(t, err)
+	return strings.Join(steps, "\n")
+}
+
+// The badge has to cost what it counts. Driving the aggregate from messages
+// makes it grow with the whole synced history, which is what the
+// read_state_unread index exists to prevent; asserting the plan is the only
+// thing that holds that, since the counts come out the same either way.
+func TestListChats_UnreadAggregateDrivesFromReadState(t *testing.T) {
+	s := openTest(t)
+
+	plan := explainPlan(t, s, fmt.Sprintf(unreadAggregate, atMeExpr), "ou_me")
+
+	require.Contains(t, plan, "read_state_unread", "the unread set is what the aggregate walks")
+	require.NotContains(t, plan, "SCAN m", "and messages is probed by id, never scanned")
+}
+
+func TestMessageCountsByChat_CountsOnlyChatsThatHaveMessages(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	for _, id := range []string{"oc_quiet", "oc_busy", "oc_empty"} {
+		require.NoError(t, s.EnsureChat(ctx, id, 1))
+	}
+	_, err := s.UpsertMessages(ctx, []Message{
+		msgAt("om_a", "oc_busy", 100, 1, "一"),
+		msgAt("om_b", "oc_busy", 200, 1, "二"),
+		msgAt("om_c", "oc_busy", 300, -1, "in a thread"),
+		msgAt("om_d", "oc_quiet", 400, 1, "单独一条"),
+	}, 1)
+	require.NoError(t, err)
+
+	counts, err := s.MessageCountsByChat(ctx)
+	require.NoError(t, err)
+	require.Equal(t, map[string]int64{"oc_busy": 3, "oc_quiet": 1}, counts,
+		"every stored message counts, thread replies included; a chat with none is absent")
+}
+
+func TestListChats_DoesNotCountMessagesPerRow(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	require.NoError(t, s.EnsureChat(ctx, "oc_busy", 1))
+	_, err := s.UpsertMessages(ctx, []Message{msgAt("om_a", "oc_busy", 100, 1, "hello")}, 1)
+	require.NoError(t, err)
+
+	require.Equal(t, int64(0), listChats(t, s)[0].MessageCount,
+		"a listing leaves the count to MessageCountsByChat")
 }

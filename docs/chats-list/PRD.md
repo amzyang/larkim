@@ -113,7 +113,7 @@ TUI 左侧会话列表按飞书桌面端的信息密度重做：头像 + 两行�
 
 新增列：`last_message_id`、`last_message_ms`、`last_sender_id`、`last_sender_name`、`last_msg_type`、`last_summary`、`last_deleted`、`muted`、`mute_checked_at`。
 
-`message_count` 仍为相关子查询，是本次改动后 `ListChats` 上剩余的唯一逐行开销。
+`ListChats` 没有逐行子查询：未读徽章由一次分组聚合供给，走 `read_state(is_read_remote, local_read_at, message_id)` 索引，代价随未读条数而非消息总数增长；消息总数只有 CLI 的 chats 表用，由 `MessageCountsByChat` 单独查。
 
 ### contacts 新增列
 

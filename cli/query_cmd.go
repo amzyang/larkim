@@ -38,6 +38,15 @@ func (a *App) chatsCmd() *cobra.Command {
 				return err
 			}
 			rows = fuzzyChats(rows, search, q.Limit)
+			// The listing itself no longer counts messages per row; only this
+			// table and its JSON show the number, so it is fetched here.
+			counts, err := st.MessageCountsByChat(context.Background())
+			if err != nil {
+				return err
+			}
+			for i := range rows {
+				rows[i].MessageCount = counts[rows[i].ChatID]
+			}
 			if a.json() {
 				return a.printJSON(rows)
 			}
