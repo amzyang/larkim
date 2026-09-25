@@ -134,7 +134,10 @@ type Syncer struct {
 
 // Report summarizes one tick.
 type Report struct {
-	Window     Window
+	Window Window
+	// Searched says the cross-chat safety net ran this tick. Most ticks it
+	// does not, and Complete claims nothing about a tick that did not search.
+	Searched   bool
 	Complete   bool // the whole window was searched without truncation
 	Hits       int
 	New        int
@@ -256,6 +259,13 @@ func (s *Syncer) tick(ctx context.Context, now time.Time) (Report, error) {
 	rep.Moved = len(moved)
 	if _, rep.Probed, err = s.pullFromCursor(ctx, moved, "active probe", now); err != nil {
 		return rep, fmt.Errorf("active probe pull: %w", err)
+	}
+	// Recording the ordering is what consumes the delta: once written, the
+	// chats it named are no longer named. So it waits for the pull, and a
+	// failed pull leaves them named next tick rather than dropping them on
+	// the safety net half a minute out.
+	if err := s.setActiveOrder(ctx, active); err != nil {
+		return rep, fmt.Errorf("active order: %w", err)
 	}
 	rep.Upserted += rep.Probed
 	s.changed(rep.Probed)
@@ -615,12 +625,13 @@ func (s *Syncer) refreshChats(ctx context.Context, now time.Time) (int, error) {
 	return len(rows), s.setStateTime(ctx, KeyChatsRefreshed, now)
 }
 
-// activeProbe records the active-time ordering of the chat list's first page
-// and names the chats that have moved up in it since the last tick. Feishu
-// puts a chat that just received a message at position 1, so the first page is
+// activeProbe reads the active-time ordering of the chat list's first page and
+// names the chats that have moved up in it since the last tick. Feishu puts a
+// chat that just received a message at position 1, so the first page is
 // complete for this purpose however many chats there are. It answers with the
 // ordering as well, which is the listing every other step of the tick reads
-// the active chats from.
+// the active chats from, and which setActiveOrder stores once the caller has
+// acted on the delta.
 func (s *Syncer) activeProbe(ctx context.Context) (order, moved []string, err error) {
 	chats, err := s.Client.ListChats(ctx, true)
 	if err != nil {
@@ -641,14 +652,16 @@ func (s *Syncer) activeProbe(ctx context.Context) (order, moved []string, err er
 			prev = nil
 		}
 	}
+	return order, ActiveDelta(prev, order), nil
+}
+
+// setActiveOrder records the ordering the next tick compares against.
+func (s *Syncer) setActiveOrder(ctx context.Context, order []string) error {
 	enc, err := json.Marshal(order)
 	if err != nil {
-		return nil, nil, err
+		return err
 	}
-	if err := s.Store.SetState(ctx, KeyActiveOrder, string(enc)); err != nil {
-		return nil, nil, err
-	}
-	return order, ActiveDelta(prev, order), nil
+	return s.Store.SetState(ctx, KeyActiveOrder, string(enc))
 }
 
 // slowPath reconciles the chats at the head of active, the ordering the

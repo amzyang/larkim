@@ -676,3 +676,41 @@ func TestTick_SearchIsASafetyNetOnItsOwnInterval(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 1, callsTo(f, "search"), "past the interval the safety net runs once")
 }
+
+func TestActiveProbe_AFailedPullLeavesTheMovedChatsNamedNextTick(t *testing.T) {
+	s, f, clk := newSyncer(t)
+	ctx := t.Context()
+	s.Opt.BackfillPerTick = 0
+	s.Opt.RepairEvery = 0
+	f.Chats = []larkcli.RawChat{
+		{ChatID: "oc_a", Name: "平台组", ChatMode: "group"},
+		{ChatID: "oc_b", Name: "项目协作群", ChatMode: "group"},
+		{ChatID: "oc_c", Name: "张三", ChatMode: "p2p"},
+	}
+	backfilled(t, s, clk.t, "oc_a", "oc_b", "oc_c")
+
+	_, err := s.Tick(ctx)
+	require.NoError(t, err)
+
+	// oc_c moved up without reaching the head, which is the one position the
+	// next ordering cannot recover: at the head it would be named every tick
+	// regardless.
+	f.AddMessage(msg("om_late", "oc_c", clk.t, "late"))
+	f.SearchHidden = []string{"om_late"} // only the probe can reach it
+	f.Chats = []larkcli.RawChat{f.Chats[1], f.Chats[2], f.Chats[0]}
+	f.ListErr = map[string]error{"oc_c": errors.New("gateway said no")}
+	clk.t = clk.t.Add(5 * time.Second)
+
+	_, err = s.Tick(ctx)
+	require.Error(t, err)
+	order, ok, err := s.Store.GetState(ctx, KeyActiveOrder)
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.JSONEq(t, `["oc_a","oc_b","oc_c"]`, order, "a failed pull must not consume the delta it failed on")
+
+	f.ListErr = nil
+	clk.t = clk.t.Add(5 * time.Second)
+	rep, err := s.Tick(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1, rep.Probed, "the retained ordering names oc_c again")
+}
