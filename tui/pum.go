@@ -228,12 +228,7 @@ func (m Model) emojiHits(query string) []pumHit {
 	var out []pumHit
 	for _, h := range m.emojiWrite.Search(query) {
 		name := cmp.Or(h.Emoji.ZH, h.Emoji.EN, h.Emoji.Key)
-		label := stBold.Render(name)
-		if h.Term != "" && h.Term != name {
-			// The term says which spelling answered — which pinyin, which
-			// alias — because otherwise a hit reached that way looks arbitrary.
-			label += stDim.Render(" " + markMatch(h.Term, h.Positions))
-		}
+		label := emojiWords(h.Emoji.Key, name, stBold.Render(name), h.Term, h.Positions)
 		out = append(out, pumHit{insert: emojiInsert(h.Emoji), emoji: h.Emoji, label: label})
 	}
 	return out
@@ -298,7 +293,7 @@ func (m Model) acceptPum() Model {
 	}
 	if hit.emoji.Key != "" {
 		m.emojiWrite.Use(hit.emoji.Key)
-		if err := m.emojiWrite.SaveRecent(m.deps.DataDir); err != nil {
+		if err := m.emojiWrite.SaveUsed(m.deps.DataDir); err != nil {
 			// The list is derived data; losing it costs the ordering of an
 			// empty query, which is not worth interrupting the draft for.
 			m = m.notify("could not remember "+hit.insert+": "+err.Error(), false)
@@ -329,8 +324,9 @@ func (m Model) pumLines(w int) []string {
 }
 
 // pumLine draws one offer: the mark, the emoji where there is one, and the
-// words. It comes back as a string rather than pieces because only an emoji
-// carries a picture, and that one case is joined here.
+// words emojiHits already assembled. It comes back as a string rather than
+// pieces because only an emoji carries a picture, and that one case is joined
+// here.
 func (m Model) pumLine(h pumHit, selected bool, w int) string {
 	mark := "  "
 	if selected {
@@ -340,7 +336,7 @@ func (m Model) pumLine(h pumHit, selected bool, w int) string {
 		return fit(mark+h.label, w)
 	}
 	icon, pic := m.pickerIcon(h.emoji)
-	tail := " " + stDim.Render(h.emoji.Key) + " " + h.label
+	tail := " " + h.label
 	if pic.cols > 0 {
 		// A line carrying a picture is padded rather than fitted: fit measures
 		// a placeholder as the characters it is and would cut one out of its

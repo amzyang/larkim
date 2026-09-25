@@ -286,8 +286,8 @@ func New(d Deps) Model {
 		chatIx:     newChatIndex(),
 		avatars:    newAvatars(d.DataDir, d.Env), pics: newPictures(d.DataDir, d.Env),
 		files: osDraftFiles()}
-	m.emoji.LoadRecent(d.DataDir)
-	m.emojiWrite.LoadRecent(d.DataDir)
+	m.emoji.LoadUsed(d.DataDir)
+	m.emojiWrite.LoadUsed(d.DataDir)
 	m.setBackground(color.Black, true)
 	return m
 }

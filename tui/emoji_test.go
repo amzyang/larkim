@@ -23,3 +23,21 @@ func TestExpandEmoji_ReadsTheBracketedNameATextMessageCarries(t *testing.T) {
 	require.Equal(t, "点 [查看详情] 按钮", ansi.Strip(expandEmoji("点 [查看详情] 按钮")), "a bracketed noun is not an emoji")
 	require.Equal(t, "[图片]", ansi.Strip(expandEmoji("[图片]")), "the stand-ins this list draws itself stay")
 }
+
+func TestEmojiWords_DropsAPieceThatRepeatsOneAlreadyDrawn(t *testing.T) {
+	// Feishu's lettering emoji spell their own name, and their picture spells
+	// it a third time; the cell says it once.
+	require.Equal(t, "OK", ansi.Strip(emojiWords("OK", "OK", "OK", "", nil)))
+	require.Equal(t, "Yes", ansi.Strip(emojiWords("Yes", "Yes", "Yes", "yes", []int{0, 1, 2})),
+		"the term the query landed on spells the same word in another case")
+	require.Equal(t, "Yes ✓", ansi.Strip(emojiWords("Yes", "Yes", "Yes ✓", "", nil)),
+		"what the caller drew onto the name stays")
+}
+
+func TestEmojiWords_KeepsWhatSaysSomethingTheNameDoesNot(t *testing.T) {
+	require.Equal(t, "THUMBSUP 赞", ansi.Strip(emojiWords("THUMBSUP", "赞", "赞", "", nil)))
+	require.Equal(t, "THUMBSUP 赞 dianzan", ansi.Strip(emojiWords("THUMBSUP", "赞", "赞", "dianzan", []int{0})),
+		"the pinyin the query reached it through is why this hit came back")
+	require.Equal(t, "THUMBSUP 赞", ansi.Strip(emojiWords("THUMBSUP", "赞", "赞", "thumbsup", []int{0})),
+		"a term that spells the key is already on the line")
+}

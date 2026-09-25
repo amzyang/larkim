@@ -51,6 +51,14 @@ var (
 	colAccent = lipgloss.Color("4")
 	colDim    = lipgloss.Color("8")
 	colErr    = lipgloss.Color("1")
+	// colPick marks the emoji the picker's cursor stands on. It is green
+	// rather than the accent because on that grid the accent already means
+	// "yours" — the tick a cell the reader has reacted with carries — and the
+	// cursor has to be told from it at a glance. Bold rides along because most
+	// terminals answer it with the bright green, which carries the light
+	// themes that draw index 2 as olive.
+	colPick    = lipgloss.Color("2")
+	stPickerOn = lipgloss.NewStyle().Bold(true).Foreground(colPick)
 	// colChatSel and colChatSelText are the client's own tint for the chat it
 	// is on, kept off the shade ladder so the list reads the same wherever it
 	// is opened. The text colour rides along because the tint is light on
@@ -954,6 +962,12 @@ func paint(st lipgloss.Style, line string) string {
 	return st.Render(sgrReset.ReplaceAllStringFunc(line, func(s string) string { return s + sgr }))
 }
 
+// truncate cuts s to n columns, the last of them spent on an ellipsis saying
+// it was cut. The cut goes through cut rather than trimming runes: trimming
+// runes drops the reset that closes a colour as readily as the text it closed,
+// and the colour then runs on into whatever is drawn beside it — one picker
+// cell tinting its neighbour across the grid. cut also keeps a grapheme
+// cluster whole, so a keycap emoji is not left as a bare digit.
 func truncate(s string, n int) string {
 	if n <= 0 {
 		return ""
@@ -961,11 +975,7 @@ func truncate(s string, n int) string {
 	if lipgloss.Width(s) <= n {
 		return s
 	}
-	r := []rune(s)
-	for len(r) > 0 && lipgloss.Width(string(r)) > n-1 {
-		r = r[:len(r)-1]
-	}
-	return string(r) + "…"
+	return cut(s, n-1) + "…"
 }
 
 // flatten collapses newlines and tabs so one-line fields stay one line.

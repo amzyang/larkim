@@ -51,20 +51,20 @@ func TestCommonTerms_ReachAnEmojiThroughPinyinAndAlias(t *testing.T) {
 	}))
 }
 
-func TestRecent_TheTwoIndexesAreRememberedApart(t *testing.T) {
+func TestUsed_TheTwoIndexesAreRememberedApart(t *testing.T) {
 	dir := t.TempDir()
 	write, react := NewComposerIndex(), NewReactionIndex()
 
 	write.Use("rocket")
 	react.Use("THUMBSUP")
-	require.NoError(t, write.SaveRecent(dir))
-	require.NoError(t, react.SaveRecent(dir))
+	require.NoError(t, write.SaveUsed(dir))
+	require.NoError(t, react.SaveUsed(dir))
 
 	// Sharing one file would cost the composer its Unicode keys, which the
 	// reaction index drops because it does not hold them.
 	back := NewComposerIndex()
-	back.LoadRecent(dir)
-	require.Equal(t, []string{"ROCKET"}, back.Recent())
+	back.LoadUsed(dir)
+	require.Equal(t, []string{"ROCKET"}, back.Used())
 
 	files, err := os.ReadDir(dir)
 	require.NoError(t, err)

@@ -3,13 +3,16 @@ package tui
 import (
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/amzyang/larkim/emoji"
+	"github.com/amzyang/larkim/larkcli"
 	"github.com/amzyang/larkim/store"
 	"github.com/amzyang/larkim/sync"
 	"github.com/charmbracelet/x/ansi"
@@ -142,7 +145,7 @@ func TestPicker_RemembersWhatWasChosen(t *testing.T) {
 	require.Equal(t, "ROSE", m.picker.hits[0].Emoji.Key)
 	m = press(t, m, "enter")
 	require.Equal(t, modeNormal, m.mode)
-	require.Equal(t, []string{"ROSE"}, m.emoji.Recent())
+	require.Equal(t, []string{"ROSE"}, m.emoji.Used())
 }
 
 func TestPicker_OpensOnTheSmallestTerminalTheClientDraws(t *testing.T) {
@@ -263,7 +266,7 @@ func TestRunReact_TogglesOffWhatTheReaderAlreadyChose(t *testing.T) {
 	m := pickerModel(t)
 	next, cmd := m.runCommand("react zan")
 	require.NotNil(t, cmd)
-	require.Equal(t, []string{"THUMBSUP"}, next.(Model).emoji.Recent(),
+	require.Equal(t, []string{"THUMBSUP"}, next.(Model).emoji.Used(),
 		"naming it by pinyin reaches the same emoji the picker would")
 }
 
@@ -459,4 +462,142 @@ func TestOpenPicker_MarksWhatAPressAlreadyPut(t *testing.T) {
 	m, _ = chipAt(t, m, "THUMBSUP")
 	m = press(t, m, "e")
 	require.False(t, m.picker.mine["THUMBSUP"], "the tick follows the strip, not the summary behind it")
+}
+
+func TestPickerCell_SaysALetteringEmojisNameOnce(t *testing.T) {
+	// OK, Yes, No and OKR are spelled as their own name, and the picture in
+	// the icon column spells it again; the words beside it must not.
+	m := press(t, pickerModel(t), "e", "y", "e", "s")
+	i := slices.IndexFunc(m.picker.hits, func(h emoji.Hit) bool { return h.Emoji.Key == "Yes" })
+	require.GreaterOrEqual(t, i, 0)
+	line := ansi.Strip(m.joinSegs(m.pickerCell(m.picker.hits[i], false, 60), 60))
+	require.Equal(t, 1, strings.Count(strings.ToLower(line), "yes"), "line=%q", line)
+}
+
+func TestPickerCell_StillNamesTheKeyAndThePinyinThatReachedIt(t *testing.T) {
+	m := press(t, pickerModel(t), "e", "d", "z")
+	h := m.picker.hits[0]
+	require.Equal(t, "THUMBSUP", h.Emoji.Key)
+	line := ansi.Strip(m.joinSegs(m.pickerCell(h, false, 60), 60))
+	require.Contains(t, line, "THUMBSUP", "the key is what :react takes")
+	require.Contains(t, line, "赞")
+	require.Contains(t, line, "dz", "and the initials say why this hit came back")
+}
+
+func TestRenderPicker_NamesTheBandOnlyWhenItIsTheReadersOwn(t *testing.T) {
+	m := press(t, pickerModel(t), "e")
+	require.NotContains(t, ansi.Strip(m.renderPicker()), "frequently used",
+		"nothing reached for yet: the lead is the client's panel order, not this reader's habits")
+
+	m.emoji.Use("THUMBSUP")
+	m.picker.hits = m.emoji.Search("")
+	require.Contains(t, ansi.Strip(m.renderPicker()), "frequently used")
+
+	m = press(t, m, "z", "a", "n")
+	require.NotContains(t, ansi.Strip(m.renderPicker()), "frequently used",
+		"a narrowed query answers with what it matched, and the count says how much")
+}
+
+// withdrawnKey is an emoji the client took out of the reaction panel. Feishu
+// answers a reaction with it "reaction type is invalid", so the picker sends
+// it as a picture instead.
+const withdrawnKey = "GOODJOB"
+
+// pictureModel is pickerModel with a Feishu to send to and the withdrawn
+// emoji's picture already cut out, which is what emoji.Ensure leaves behind on
+// a real start.
+func pictureModel(t *testing.T) (Model, *larkcli.Fake) {
+	t.Helper()
+	m := pickerModel(t)
+	f := larkcli.NewFake()
+	m.deps.Client = f
+	require.NoError(t, os.MkdirAll(emoji.Dir(m.deps.DataDir), 0o700))
+	require.NoError(t, os.WriteFile(emoji.Path(m.deps.DataDir, withdrawnKey), []byte("png"), 0o600))
+	return m, f
+}
+
+func TestToggleReaction_SendsAWithdrawnEmojiAsAPictureInstead(t *testing.T) {
+	m, f := pictureModel(t)
+	next, cmd := m.toggleReaction(m.msgs[0], withdrawnKey)
+	m = next.(Model)
+	require.NotNil(t, cmd)
+	require.Empty(t, m.reacts, "nothing was put on the message; a picture answers it instead")
+	require.Len(t, m.outbox, 1)
+	require.Equal(t, "image", m.outbox[0].msgType)
+	require.Equal(t, "om_a", m.outbox[0].replyTo, "the picture answers the message the press was aimed at")
+	require.Equal(t, emoji.Path(m.deps.DataDir, withdrawnKey), m.outbox[0].images[0].local)
+	require.Contains(t, m.notice, "给力")
+
+	cmd() // the send itself
+	require.Equal(t, []string{emoji.Path(m.deps.DataDir, withdrawnKey)}, f.Uploads)
+}
+
+func TestToggleReaction_DrawsTheOutgoingPictureUnderTheMessage(t *testing.T) {
+	m, _ := pictureModel(t)
+	next, _ := m.toggleReaction(m.msgs[0], withdrawnKey)
+	m = next.(Model)
+	require.Len(t, m.msgs, 2, "the bubble stands in the chat while the picture is on its way")
+	require.Equal(t, m.outbox[0].localID, m.msgs[1].MessageID)
+}
+
+func TestToggleReaction_SendsAPictureWithoutTheSyncLock(t *testing.T) {
+	// The daemon holds the lock that reacting needs; sending a message does
+	// not go anywhere near it.
+	m, _ := pictureModel(t)
+	m.deps.Syncer = nil
+	next, cmd := m.toggleReaction(m.msgs[0], withdrawnKey)
+	require.NotNil(t, cmd)
+	require.Len(t, next.(Model).outbox, 1)
+}
+
+func TestToggleReaction_StillTakesBackAWithdrawnEmojiAlreadyOnTheMessage(t *testing.T) {
+	// Somebody reacted with it before the client withdrew it. Taking one's own
+	// back is a reaction, not a picture.
+	m, _ := pictureModel(t)
+	require.NoError(t, m.deps.Store.UpdateReactions(t.Context(), "om_a",
+		`{"counts":[{"reaction_type":"GOODJOB","count":"1"}],`+
+			`"details":[{"emoji_type":"GOODJOB","operator":{"operator_id":"ou_me"}}]}`))
+	m.msgsBase, _ = m.deps.Store.ListMessages(t.Context(), store.MessageQuery{ChatID: "oc_team", Limit: 10})
+	m.applyOutbox()
+	next, cmd := m.toggleReaction(m.msgs[0], withdrawnKey)
+	m = next.(Model)
+	require.NotNil(t, cmd)
+	require.Empty(t, m.outbox, "nothing is sent; the reaction is taken back")
+	require.Len(t, m.reacts, 1)
+	require.False(t, m.reacts[0].on)
+}
+
+func TestPickerCell_SaysWhichEmojiGoInAsAPicture(t *testing.T) {
+	m := pickerModel(t)
+	hits := m.emoji.Search("给力")
+	require.NotEmpty(t, hits)
+	require.Equal(t, withdrawnKey, hits[0].Emoji.Key, "the picker still finds it")
+	line := ansi.Strip(m.joinSegs(m.pickerCell(hits[0], true, 60), 60))
+	require.Contains(t, line, "图", "pressing enter sends a message, not a reaction, and the cell says so")
+}
+
+func TestPickerCell_MarksTheCellTheCursorStandsOn(t *testing.T) {
+	m := press(t, pickerModel(t), "e")
+	e, ok := emoji.ByKey("THUMBSUP")
+	require.True(t, ok)
+	on := m.joinSegs(m.pickerCell(emoji.Hit{Emoji: e}, true, 60), 60)
+	off := m.joinSegs(m.pickerCell(emoji.Hit{Emoji: e}, false, 60), 60)
+	require.Contains(t, on, stPickerOn.Render(e.ZH), "the cursor colours the name, not the mark alone")
+	require.NotContains(t, off, stPickerOn.Render(e.ZH))
+	// Past the mark the two cells are the same text: the colour is what the
+	// cursor adds, and it must not move the column the next emoji opens in.
+	require.Equal(t, strings.TrimPrefix(ansi.Strip(off), " "), strings.TrimPrefix(ansi.Strip(on), "\u25b8"))
+	require.Equal(t, lipgloss.Width(off), lipgloss.Width(on), "the colour costs the cell no column")
+}
+
+func TestPickerCell_MarksTheCursorOnAnEmojiDrawnAsAPicture(t *testing.T) {
+	m := press(t, pickerModel(t), "e")
+	writeTestEmoji(t, m.deps.DataDir, "OK")
+	m.pics = picturesIn(m.deps.DataDir)
+	e, ok := emoji.ByKey("OK")
+	require.True(t, ok)
+	segs := m.pickerCell(emoji.Hit{Emoji: e}, true, 60)
+	require.Len(t, segs, 3, "the mark, the picture and the rest of the line")
+	require.Contains(t, segs[2].text, stPickerOn.Render(e.ZH),
+		"the words carry the cursor where the icon is a placement the renderer fills")
 }

@@ -42,3 +42,27 @@ func drawEmoji(re *regexp.Regexp, s string, lookup func(string) (emoji.Emoji, bo
 		return m
 	})
 }
+
+// emojiWords joins the words drawn beside an emoji: the key Feishu speaks, the
+// name the client displays it under, and the term a query landed on.
+//
+// A piece that repeats one already drawn is dropped. Feishu's lettering emoji
+// spell their own name — OK, Yes, No, OKR — and their picture carries the word
+// too, so the cell would otherwise say it three times over; a query that
+// reached one of them through its key or its own name repeats it a fourth.
+//
+// The name arrives twice because the callers dress it differently — the picker
+// marks the reader's own reaction onto it, the popup bolds it — while the
+// comparison has to be made against the bare text.
+func emojiWords(key, name, drawn, term string, pos []int) string {
+	if !strings.EqualFold(key, name) {
+		drawn = stDim.Render(key) + " " + drawn
+	}
+	// A term that spells neither the key nor the name says which spelling
+	// answered — which pinyin, which alias — because otherwise a hit reached
+	// that way looks arbitrary.
+	if term != "" && !strings.EqualFold(term, name) && !strings.EqualFold(term, key) {
+		drawn += stDim.Render(" " + markMatch(term, pos))
+	}
+	return drawn
+}

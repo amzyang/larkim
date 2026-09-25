@@ -40,64 +40,88 @@ func TestSearch_OffersNothingFeishuWouldRefuse(t *testing.T) {
 	ix := NewReactionIndex()
 	require.Less(t, ix.Len(), len(All()))
 	for _, h := range ix.Search("") {
-		require.True(t, h.Emoji.Reactable(), "%s cannot be put on a message", h.Emoji.Key)
+		require.True(t, h.Emoji.Offerable(), "%s is not an emoji the client names", h.Emoji.Key)
 	}
-	require.Empty(t, ix.Search("zhuiqiujizhi"), "another tenant's culture emoji is not offered")
-	require.Empty(t, ix.Search("fighting"), "a spelling the client never offers is not either")
+	require.False(t, first(t, ix.Search("zhuiqiujizhi")).Reactable(),
+		"another tenant's culture emoji is offered, but as a picture rather than a reaction")
+	require.Empty(t, ix.Search("fighting"), "a spelling the client never offers is not offered here")
 }
 
-func TestSearch_PutsTheLastUsedFirstWhenNothingIsTyped(t *testing.T) {
+func TestSearch_PutsTheMostUsedFirstWhenNothingIsTyped(t *testing.T) {
 	ix := NewReactionIndex()
 	require.Equal(t, "OK", first(t, ix.Search("")).Key, "the client's own panel order, until something is used")
 
 	ix.Use("ROSE")
 	ix.Use("Coffee")
 	hits := ix.Search("")
-	require.Equal(t, "Coffee", hits[0].Emoji.Key, "the newest first")
+	require.Equal(t, "Coffee", hits[0].Emoji.Key, "between two used once, the later one")
 	require.Equal(t, "ROSE", hits[1].Emoji.Key)
 
 	ix.Use("ROSE")
-	require.Equal(t, "ROSE", first(t, ix.Search("")).Key, "using it again moves it back to the front, not into the list twice")
-	require.Equal(t, []string{"ROSE", "COFFEE"}, ix.Recent())
+	require.Equal(t, "ROSE", first(t, ix.Search("")).Key, "using it again moves it up, not into the list twice")
+	require.Equal(t, []string{"ROSE", "COFFEE"}, ix.Used())
 }
 
-func TestSetRecent_DropsWhatTheTableNoLongerHolds(t *testing.T) {
+func TestUse_RanksByHowOftenRatherThanHowLately(t *testing.T) {
+	// The point of the band: one reach for something rare does not unseat the
+	// emoji the reader works out of.
+	ix := NewReactionIndex()
+	for range 3 {
+		ix.Use("THUMBSUP")
+	}
+	ix.Use("ROSE")
+	require.Equal(t, []string{"THUMBSUP", "ROSE"}, ix.Used())
+	require.Equal(t, "THUMBSUP", first(t, ix.Search("")).Key)
+
+	// Only once it has been reached for as often does it take the front, and
+	// then it is the later of the two.
+	for range 2 {
+		ix.Use("ROSE")
+	}
+	require.Equal(t, []string{"ROSE", "THUMBSUP"}, ix.Used())
+}
+
+func TestSetUsed_DropsWhatTheTableNoLongerHolds(t *testing.T) {
 	// The list outlives the table: an emoji can leave Feishu's set, and a
 	// remembered key that no longer resolves must not sort ahead of real ones.
 	ix := NewReactionIndex()
-	ix.SetRecent([]string{"ROSE", "EMOJI_THAT_LEFT", "Lark_Emoji_Coffee_0"})
-	require.Equal(t, []string{"ROSE", "COFFEE"}, ix.Recent(), "and a folded spelling lands on the same entry")
+	ix.setUsed([]usage{{"ROSE", 3}, {"EMOJI_THAT_LEFT", 9}, {"Lark_Emoji_Coffee_0", 1}})
+	require.Equal(t, []string{"ROSE", "COFFEE"}, ix.Used(), "and a folded spelling lands on the same entry")
 }
 
 func TestUse_KeepsTheListToWhatAPersonCanHoldInMind(t *testing.T) {
 	ix := NewReactionIndex()
-	for _, h := range ix.Search("")[:MaxRecent+5] {
+	for _, h := range ix.Search("")[:MaxUsed+5] {
 		ix.Use(h.Emoji.Key)
 	}
-	require.Len(t, ix.Recent(), MaxRecent)
+	require.Len(t, ix.Used(), MaxUsed)
 }
 
-func TestRecent_SurvivesBetweenRuns(t *testing.T) {
+func TestUsed_SurvivesBetweenRuns(t *testing.T) {
 	dir := t.TempDir()
 	ix := NewReactionIndex()
 	ix.Use("ROSE")
+	ix.Use("ROSE")
 	ix.Use("Coffee")
-	require.NoError(t, ix.SaveRecent(dir))
+	require.NoError(t, ix.SaveUsed(dir))
 
 	next := NewReactionIndex()
-	next.LoadRecent(dir)
-	require.Equal(t, []string{"COFFEE", "ROSE"}, next.Recent())
+	next.LoadUsed(dir)
+	require.Equal(t, []string{"ROSE", "COFFEE"}, next.Used(), "counts and all, not just the order")
+	next.Use("LEMON")
+	require.Equal(t, []string{"ROSE", "LEMON", "COFFEE"}, next.Used(),
+		"a count that came back from the file still outranks a first use")
 }
 
-func TestLoadRecent_LeavesTheListEmptyRatherThanFailing(t *testing.T) {
+func TestLoadUsed_LeavesTheListEmptyRatherThanFailing(t *testing.T) {
 	// The list is derived data; a first run has no file and a corrupt one is
 	// worth no more than a first run.
 	ix := NewReactionIndex()
-	ix.LoadRecent(t.TempDir())
-	require.Empty(t, ix.Recent())
+	ix.LoadUsed(t.TempDir())
+	require.Empty(t, ix.Used())
 
 	dir := t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(dir, reactionRecentFile), []byte("not json"), 0o600))
-	ix.LoadRecent(dir)
-	require.Empty(t, ix.Recent())
+	require.NoError(t, os.WriteFile(filepath.Join(dir, reactionUsedFile), []byte("not json"), 0o600))
+	ix.LoadUsed(dir)
+	require.Empty(t, ix.Used())
 }

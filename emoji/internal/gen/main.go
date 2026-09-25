@@ -40,12 +40,26 @@ var tones = []string{"MediumLight", "MediumDark", "Medium", "Light", "Dark"}
 // ship and would otherwise crowd the picker.
 var yearly = regexp.MustCompile(`^\d{4}$`)
 
-// noReaction are other tenants' culture emoji. They reach this client through
-// the same table as everything else, but Feishu rejects them as reactions, so
-// the picker has to leave them out rather than write a reaction that fails.
-var noReaction = map[string]bool{
+// foreign are other tenants' culture emoji. They reach this client through the
+// same table as everything else and go inside a message fine, but Feishu
+// rejects them as reactions from any other tenant: "prohibit the use of custom
+// emojis from other companies".
+var foreign = map[string]bool{
 	"PursueUltimate": true, "CustomerSuccess": true,
 	"Responsible": true, "Ambitious": true,
+}
+
+// delisted are the emoji the client has withdrawn. The sprite still carries
+// them, so they draw on a message somebody reacted with them years ago, but
+// sending one now reaches the other side as "[Sensitive emoji]" and Feishu
+// refuses it as a reaction the same way it refuses a foreign one.
+//
+// Both lists are kept by hand: the client states them in its bundle rather
+// than in the assets this reads, and the pair of them is short enough that
+// parsing the bundle would cost more than a check after an upgrade.
+var delisted = map[string]bool{
+	"ATTENTION": true, "WELLDONE": true, "FOLLOWME": true,
+	"DETERGENT": true, "AWESOME": true, "GOODJOB": true,
 }
 
 // nonTerm strips everything a query could not carry from a search term.
@@ -119,7 +133,7 @@ func main() {
 			Key: key, ZH: names["zh-CN"], EN: names["en-US"],
 			Rect:  [4]int{box.X, box.Y, box.Width, box.Height},
 			Terms: terms(names["zh-CN"], names["en-US"], key, aliases[key]),
-			Order: pos, NoReaction: noReaction[key],
+			Order: pos, NoReaction: foreign[key] || delisted[key],
 		})
 	}
 	slices.SortFunc(entries, func(a, b entry) int { return strings.Compare(a.Key, b.Key) })

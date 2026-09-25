@@ -88,11 +88,19 @@ var (
 // wants Reactable instead.
 func All() []Emoji { return index() }
 
-// Reactable reports whether this emoji may be offered as a reaction. Two kinds
-// may not: another tenant's culture emoji, which Feishu rejects, and the bare
-// spellings that live in glyphs.go alone, which the client never offers and
-// which would land on a message as a reaction nobody can draw.
+// Reactable reports whether this emoji may be put on a message as a reaction.
+// Three kinds may not: another tenant's culture emoji and the ones the client
+// has withdrawn, both of which Feishu rejects outright, and the bare spellings
+// that live in glyphs.go alone, which the client never offers and which would
+// land on a message as a reaction nobody can draw.
 func (e Emoji) Reactable() bool { return e.ZH != "" && !e.NoReaction }
+
+// Offerable reports whether the picker lists this emoji at all. Everything the
+// client names is offered, reaction or not: one Feishu refuses as a reaction
+// still reaches the other side as the picture the client draws it with, which
+// is the only way it reaches them. The bare spellings are left out — they have
+// no name to search by and no rectangle to cut a picture from.
+func (e Emoji) Offerable() bool { return e.ZH != "" }
 
 // Fold puts the spellings of one emoji on a single lookup key: the client
 // sends both the bare `Rose` and the `Lark_Emoji_Rose_0` form.

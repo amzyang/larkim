@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -1010,11 +1011,56 @@ func postParagraphs(markdown string) []string {
 	return out[start:end]
 }
 
+// uploadRoot is where a file lark-cli may not read is staged before it is
+// handed over. lark-cli only opens a --file inside its own working directory,
+// /tmp or ~/files, and refuses everything else as "cannot open file"; /tmp is
+// the one of the three that holds whatever c.Dir is set to.
+const uploadRoot = "/tmp"
+
+// stageForUpload puts path somewhere lark-cli is allowed to read it and returns
+// that path with the cleanup for it. A file already under c.Dir is handed over
+// as it stands; everything else — a picture pasted into the composer, one
+// fetched from a link, an emoji cut out of the sprite sheet — lives outside
+// every directory lark-cli will open, so it is copied for the length of the
+// call.
+func (c *ExecClient) stageForUpload(path string) (string, func(), error) {
+	if c.Dir != "" {
+		if rel, err := filepath.Rel(c.Dir, path); err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			return path, func() {}, nil
+		}
+	}
+	src, err := os.Open(path)
+	if err != nil {
+		return "", nil, err
+	}
+	defer src.Close()
+	dst, err := os.CreateTemp(uploadRoot, "larkim-upload-*"+filepath.Ext(path))
+	if err != nil {
+		return "", nil, err
+	}
+	drop := func() { os.Remove(dst.Name()) }
+	if _, err := io.Copy(dst, src); err != nil {
+		dst.Close()
+		drop()
+		return "", nil, err
+	}
+	if err := dst.Close(); err != nil {
+		drop()
+		return "", nil, err
+	}
+	return dst.Name(), drop, nil
+}
+
 // UploadImage registers a local file as a message image. The raw images create
 // command is used rather than +messages-send --image because that flag refuses
 // an absolute path and resolves a relative one against c.Dir, which leaves no
 // way to name a file the user picked anywhere else.
 func (c *ExecClient) UploadImage(ctx context.Context, path string) (string, error) {
+	path, drop, err := c.stageForUpload(path)
+	if err != nil {
+		return "", err
+	}
+	defer drop()
 	data, err := c.run(ctx, "im", "images", "create", "--data", `{"image_type":"message"}`, "--file", path)
 	if err != nil {
 		return "", err
@@ -1039,11 +1085,16 @@ func (c *ExecClient) UploadImage(ctx context.Context, path string) (string, erro
 // change the icon Feishu draws, and guessing one from an extension would be a
 // guess the server can already make; stream is what it falls back to anyway.
 func (c *ExecClient) UploadFile(ctx context.Context, path string) (string, error) {
-	name := filepath.Base(path)
-	body, err := json.Marshal(map[string]string{"file_type": "stream", "file_name": name})
+	// The name Feishu shows is the one the reader picked, not the staged copy's.
+	body, err := json.Marshal(map[string]string{"file_type": "stream", "file_name": filepath.Base(path)})
 	if err != nil {
 		return "", err
 	}
+	path, drop, err := c.stageForUpload(path)
+	if err != nil {
+		return "", err
+	}
+	defer drop()
 	data, err := c.run(ctx, "im", "files", "create", "--data", string(body), "--file", path)
 	if err != nil {
 		return "", err

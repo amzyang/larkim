@@ -1,11 +1,13 @@
 package tui
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/amzyang/larkim/store"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -330,4 +332,13 @@ func emojiByBracket(draft string) (string, bool) {
 		return "", false
 	}
 	return g[1], true
+}
+
+func TestPumLine_SaysALetteringEmojisNameOnce(t *testing.T) {
+	m := newPumModel(t)
+	m = typeInto(m, ":yes")
+	i := slices.IndexFunc(m.pum.hits, func(h pumHit) bool { return h.emoji.Key == "Yes" })
+	require.GreaterOrEqual(t, i, 0)
+	line := ansi.Strip(m.pumLine(m.pum.hits[i], false, 60))
+	require.Equal(t, 1, strings.Count(strings.ToLower(line), "yes"), "line=%q", line)
 }

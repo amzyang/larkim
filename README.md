@@ -73,7 +73,7 @@ The message list is split where the calendar day changes, and each message is he
 | `.` `x` | a message appears as `(sending)` the moment Enter is pressed; one Feishu refused is marked `(failed)` — `.` sends it again under the same idempotency key, `x` drops it |
 | `Y` `yy` `yr` `yc` `v` | copy the agent context · the message id · its raw json · its text · start a range selection (`j`/`k` extend, `Y` copies, `Esc` cancels) |
 | `o` | open what the message draws: a call to join, an attachment's own file, else the message in the Feishu client |
-| `e` | react to the selected message: type to filter the emoji, `Enter` puts the highlighted one on, `Esc` leaves |
+| `e` | react to the selected message: an empty filter opens on the emoji you reach for most, the way the client's own panel opens on its frequently used band, type to narrow, `Enter` puts the highlighted one on, `Esc` leaves. Ten of Feishu's emoji are no longer reactions — six the client withdrew, four belonging to another tenant — and are marked `图`: choosing one replies with the picture instead, which is the only way it still reaches the other side |
 | `/` | filter chats |
 | `Ctrl+f` / `:search <text>` | search messages, chats and people in one panel, all three under the same cursor: the store answers as the query is typed and Feishu is asked once it stands still, `Enter` opens the hit, `Esc` leaves |
 | `a` / `:ai …` | assistant in the right pane: `summary`, `draft <how>` (result lands in the composer), `todo`, or any question about the open chat |

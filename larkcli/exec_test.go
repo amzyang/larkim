@@ -405,19 +405,25 @@ func TestExecClient_UploadImagePassesTheAbsolutePath(t *testing.T) {
 	c := fakeBinary(t, `
 echo "$*" > "$(dirname "$0")/args"
 echo '{"ok":true,"identity":"user","data":{"image_key":"img_v3_shot"}}'`)
-	key, err := c.UploadImage(context.Background(), "/Users/linlan/Desktop/shot.png")
+	// Inside the working directory, so the path reaches lark-cli untouched:
+	// the raw images create command is what takes an absolute path at all.
+	shot := filepath.Join(c.Dir, "shot.png")
+	require.NoError(t, os.WriteFile(shot, []byte("png"), 0o600))
+	key, err := c.UploadImage(t.Context(), shot)
 	require.NoError(t, err)
 	require.Equal(t, "img_v3_shot", key)
 	args, err := os.ReadFile(filepath.Join(c.Dir, "args"))
 	require.NoError(t, err)
 	require.Equal(t,
-		`im images create --data {"image_type":"message"} --file /Users/linlan/Desktop/shot.png --as user --json`,
+		`im images create --data {"image_type":"message"} --file `+shot+` --as user --json`,
 		strings.TrimSpace(string(args)))
 }
 
 func TestExecClient_UploadImageRefusesAnEmptyKey(t *testing.T) {
 	c := fakeBinary(t, `echo '{"ok":true,"identity":"user","data":{}}'`)
-	_, err := c.UploadImage(context.Background(), "/Users/linlan/Desktop/shot.png")
+	shot := filepath.Join(c.Dir, "shot.png")
+	require.NoError(t, os.WriteFile(shot, []byte("png"), 0o600))
+	_, err := c.UploadImage(t.Context(), shot)
 	require.ErrorContains(t, err, "no key")
 }
 
@@ -476,4 +482,63 @@ JSON`)
 	require.NoError(t, err)
 	require.True(t, truncated)
 	require.Len(t, members, 1)
+}
+
+// echoFile is a stand-in lark-cli that refuses a --file it may not read, the
+// way the real one does: it only opens a path inside its working directory,
+// /tmp or ~/files.
+const echoFile = `
+file=""
+while [ $# -gt 0 ]; do
+  if [ "$1" = "--file" ]; then file="$2"; fi
+  shift
+done
+case "$file" in
+  "$PWD"/*|/tmp/*|/private/tmp/*) ;;
+  *) echo "cannot open file: $file" >&2; exit 2 ;;
+esac
+echo "{\"ok\":true,\"identity\":\"user\",\"data\":{\"image_key\":\"img_v3_x\",\"file_key\":\"file_v3_x\",\"seen\":\"$file\"}}"
+`
+
+func TestUploadImage_StagesAFileLarkCLIMayNotRead(t *testing.T) {
+	c := fakeBinary(t, echoFile)
+	// ~/.larkim holds the pasted pictures, the fetched ones and the emoji cut
+	// out of the sprite; none of them sit under the resources directory.
+	outside := filepath.Join(t.TempDir(), "FOLLOWME.png")
+	require.NoError(t, os.WriteFile(outside, []byte("png"), 0o600))
+
+	key, err := c.UploadImage(t.Context(), outside)
+	require.NoError(t, err)
+	require.Equal(t, "img_v3_x", key)
+
+	left, err := filepath.Glob(filepath.Join(uploadRoot, "larkim-upload-*"))
+	require.NoError(t, err)
+	require.Empty(t, left, "the copy goes once the call is over")
+}
+
+func TestUploadImage_HandsOverAFileInsideTheWorkingDirectoryAsItStands(t *testing.T) {
+	c := fakeBinary(t, echoFile)
+	inside := filepath.Join(c.Dir, "shot.png")
+	require.NoError(t, os.WriteFile(inside, []byte("png"), 0o600))
+
+	staged, drop, err := c.stageForUpload(inside)
+	require.NoError(t, err)
+	defer drop()
+	require.Equal(t, inside, staged, "lark-cli opens its own working directory, so nothing is copied")
+}
+
+func TestUploadFile_StagesTheContentButKeepsTheReadersName(t *testing.T) {
+	c := fakeBinary(t, echoFile)
+	outside := filepath.Join(t.TempDir(), "季度复盘.pdf")
+	require.NoError(t, os.WriteFile(outside, []byte("pdf"), 0o600))
+
+	key, err := c.UploadFile(t.Context(), outside)
+	require.NoError(t, err)
+	require.Equal(t, "file_v3_x", key)
+}
+
+func TestUploadImage_SaysSoWhenThePictureIsGone(t *testing.T) {
+	c := fakeBinary(t, echoFile)
+	_, err := c.UploadImage(t.Context(), filepath.Join(t.TempDir(), "missing.png"))
+	require.ErrorIs(t, err, os.ErrNotExist)
 }

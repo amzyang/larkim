@@ -80,6 +80,30 @@ func TestTerms_CarryPinyinAndItsInitials(t *testing.T) {
 	require.True(t, pursue.NoReaction, "another tenant's culture emoji cannot be reacted with")
 }
 
+// The client withdrew these; Feishu answers a reaction with them "reaction
+// type is invalid". They stay in the sprite because an old message still draws
+// them, and stay in the picker because choosing one sends it as a picture.
+func TestReactable_LeavesOutTheEmojiTheClientWithdrew(t *testing.T) {
+	ix := NewReactionIndex()
+	for key, zh := range map[string]string{"ATTENTION": "来看我", "WELLDONE": "V5", "FOLLOWME": "互粉",
+		"DETERGENT": "去污粉", "AWESOME": "666", "GOODJOB": "给力"} {
+		e, ok := ByKey(key)
+		require.True(t, ok, "%s is still in the sprite, so a chip carrying it still draws", key)
+		require.Equal(t, zh, e.ZH)
+		require.False(t, e.Reactable(), "%s was withdrawn", key)
+		require.True(t, e.Offerable(), "%s is still reachable, as a picture", key)
+		require.Contains(t, keysOf(ix.Search(zh)), key, "the picker finds %s by name", key)
+	}
+}
+
+func keysOf(hits []Hit) []string {
+	out := make([]string, 0, len(hits))
+	for _, h := range hits {
+		out = append(out, h.Emoji.Key)
+	}
+	return out
+}
+
 // A glyph for a key the client no longer ships is dead weight that nothing
 // will ever look up, so the table is what bounds the hand-kept column.
 func TestGlyphs_HoldNoKeyTheClientStoppedShipping(t *testing.T) {

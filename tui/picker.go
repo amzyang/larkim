@@ -1,13 +1,17 @@
 package tui
 
 import (
+	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"github.com/amzyang/larkim/emoji"
+	"github.com/amzyang/larkim/larkcli"
 	"github.com/amzyang/larkim/store"
+	"github.com/google/uuid"
 )
 
 // pickerCols is how many emoji stand side by side. The picker is only as tall
@@ -160,25 +164,34 @@ func (m Model) choose() (tea.Model, tea.Cmd) {
 // Feishu refuses it. A chip that moved only once the round trip came back
 // reads as a press that did not land, and the reader presses again.
 func (m Model) toggleReaction(x store.Message, key string) (tea.Model, tea.Cmd) {
-	if m.deps.Syncer == nil {
-		return m.notify("reacting needs the sync lock; the daemon holds it", true), nil
-	}
 	if x.Deleted {
 		return m.notify("select a message to react to", true), nil
 	}
 	if m.outboxAt(x.MessageID) != nil {
 		return m.notify("that message has not reached Feishu yet", true), nil
 	}
+	// An emoji Feishu refuses as a reaction goes on the conversation as the
+	// picture the client draws it with — the only way it reaches the other
+	// side at all. Taking one back is still a reaction: it is already on the
+	// message, put there before the client withdrew it.
+	e, known := emoji.ByKey(key)
+	asPicture := known && !e.Reactable() && !mineOn(m.drawnChips(x), key)
+	if !asPicture && m.deps.Syncer == nil {
+		return m.notify("reacting needs the sync lock; the daemon holds it", true), nil
+	}
 	// A chip carries whatever key Feishu sent, which may be one this build has
 	// no entry for; remembering that would head an empty query with a name the
 	// picker cannot draw.
-	if e, known := emoji.ByKey(key); known {
+	if known {
 		m.emoji.Use(key)
-		if err := m.emoji.SaveRecent(m.deps.DataDir); err != nil {
+		if err := m.emoji.SaveUsed(m.deps.DataDir); err != nil {
 			// The list is derived data; losing it costs the ordering of an
 			// empty query, which is not worth interrupting the reaction for.
 			m = m.notify("could not remember "+e.ZH+": "+err.Error(), false)
 		}
+	}
+	if asPicture {
+		return m.sendEmojiPicture(x, e)
 	}
 	p := m.pressReaction(x, key)
 	// layout rather than a bare rebuild: a press can open or close a strip,
@@ -186,6 +199,35 @@ func (m Model) toggleReaction(x store.Message, key string) (tea.Model, tea.Cmd) 
 	// the strip takes or gives back.
 	m.layout()
 	return m, react(m.deps, p)
+}
+
+// sendEmojiPicture answers a choice of an emoji Feishu will not take as a
+// reaction: it replies to the message with the picture the client draws that
+// emoji as, which is what the client itself leaves a reader — the emoji is
+// gone from the reaction panel but still goes inside a message.
+//
+// It goes through the outbox like any other send, so the bubble stands under
+// the message it answers while it is on its way and says so if it fails.
+func (m Model) sendEmojiPicture(x store.Message, e emoji.Emoji) (tea.Model, tea.Cmd) {
+	path := emoji.Path(m.deps.DataDir, e.Key)
+	if _, err := os.Stat(path); err != nil {
+		m.deps.Log.Error("emoji picture", "key", e.Key, "path", path, "err", err)
+		return m.notify(e.ZH+" has no picture cut out to send", true), nil
+	}
+	img := draftImage{ref: path, local: path, key: "img_local_1"}
+	it := outboxItem{localID: uuid.NewString(), chatID: x.ChatID, replyTo: x.MessageID,
+		msgType: "image", send: larkcli.Image(img.key), body: "[Image: " + img.key + "]",
+		images: []draftImage{img}, createMs: time.Now().UnixMilli()}
+	// A reply to a message inside a thread stays inside it, the way the
+	// composer's own reply does. A thread reply carries no position of its
+	// own, which is what tells it from a message in the chat.
+	if x.ThreadID != "" && x.MessagePosition < 0 {
+		it.inThread, it.threadID = true, x.ThreadID
+	}
+	cmd := m.sendItem(it)
+	m.enqueue(it)
+	m.refreshPanes()
+	return m.notify("sending "+e.ZH+" as a picture", false), cmd
 }
 
 // reactedMsg says how a press ended. The strip is drawn ahead of Feishu's
@@ -215,7 +257,13 @@ func pickerPrompt() string { return stBold.Render("react") + stAccent.Render(" �
 func (m Model) renderPicker() string {
 	w := m.width - 2
 	rows := m.pickerRows()
+	// An unnarrowed query answers with the emoji this reader reaches for, the
+	// way the client's own panel opens on its frequently used band, so the
+	// line says that rather than counting the whole table against itself.
 	count := stDim.Render(strconv.Itoa(len(m.picker.hits)) + "/" + strconv.Itoa(m.emoji.Len()))
+	if strings.TrimSpace(m.picker.input.Value()) == "" && m.emoji.UsedLen() > 0 {
+		count = stDim.Render("frequently used")
+	}
 	lines := []string{padBetween(pickerPrompt()+m.picker.input.View(), count, w)}
 	if len(m.picker.hits) == 0 {
 		lines = append(lines, fit(stDim.Render("  no emoji matches "+m.picker.input.Value()), w))
@@ -254,28 +302,39 @@ func (m Model) pickerIcon(e emoji.Emoji) (string, picture) {
 	return fit(stDim.Render("·"), pickerIconCols), picture{}
 }
 
-// pickerCell draws one emoji in its column of the grid: the emoji itself, the
-// key Feishu speaks, and the name the query matched with the matched runes
-// marked. It comes back in pieces because the emoji may be a picture, which
-// only the renderer can place.
+// pickerCell draws one emoji in its column of the grid: the emoji itself, then
+// the words emojiWords leaves of the key Feishu speaks, the name, and the term
+// the query landed on. It comes back in pieces because the emoji may be a
+// picture, which only the renderer can place.
 func (m Model) pickerCell(h emoji.Hit, selected bool, cell int) []rowSeg {
 	mark := " "
 	if selected {
 		mark = stAccent.Render("▸")
 	}
 	name := h.Emoji.ZH
-	if m.picker.mine[emoji.Fold(h.Emoji.Key)] {
+	drawn := name
+	if selected {
+		// The mark alone is one glyph at the far left of a three-column grid,
+		// which is not where the reader is reading. The name takes the colour
+		// because it is the only run in the cell drawn plain: the key and the
+		// term that answered are dim, and the tick and 图 say something else.
+		drawn = stPickerOn.Render(name)
+	}
+	switch {
+	case m.picker.mine[emoji.Fold(h.Emoji.Key)]:
 		// Already the reader's: choosing it takes it back, and the cell has to
 		// say so before they press enter.
-		name += stAccent.Render(" ✓")
-	}
-	if h.Term != "" && h.Term != h.Emoji.ZH {
-		name += stDim.Render(" " + markMatch(h.Term, h.Positions))
+		drawn += stAccent.Render(" ✓")
+	case !h.Emoji.Reactable():
+		// Feishu will not take this one as a reaction, so choosing it sends a
+		// picture instead. That is a message in the chat rather than a mark on
+		// one, which the reader has to know before they press enter.
+		drawn += stDim.Render(" 图")
 	}
 	// The words are fitted to what is left of the cell, so the column the next
 	// emoji opens in stands still whatever shape this one has.
 	room := max(0, cell-pickerIconCols-2)
-	tail := " " + fit(truncate(stDim.Render(h.Emoji.Key)+" "+name, room), room)
+	tail := " " + fit(truncate(emojiWords(h.Emoji.Key, name, drawn, h.Term, h.Positions), room), room)
 	icon, pic := m.pickerIcon(h.Emoji)
 	if pic.cols > 0 {
 		return []rowSeg{{text: mark}, {pic: pic}, {text: icon + tail}}

@@ -115,3 +115,24 @@ func TestView_NoFrameLineOutgrowsTheTerminal(t *testing.T) {
 		})
 	}
 }
+
+func TestTruncate_ClosesTheColourItCutsThrough(t *testing.T) {
+	s := stDim.Render("THUMBSUP") + " 赞"
+	for n := 1; n <= lipgloss.Width(s); n++ {
+		got := truncate(s, n)
+		require.LessOrEqual(t, lipgloss.Width(got), n, "n=%d got=%q", n, got)
+		// A run left open runs on into whatever is drawn beside it — the next
+		// cell of the picker's grid. The last thing the cut leaves has to be
+		// the reset that closes it.
+		if i := strings.LastIndex(got, "\x1b["); i >= 0 {
+			require.True(t, sgrReset.MatchString(got[i:]), "n=%d leaves a colour open: %q", n, got)
+		}
+	}
+}
+
+func TestTruncate_KeepsAGraphemeClusterWhole(t *testing.T) {
+	// A keycap is an ASCII digit, a variation selector and U+20E3: two columns
+	// the terminal draws as one shape, and half of it is not a shape at all.
+	require.Equal(t, "…", truncate("1️⃣x", 2), "no room for the keycap and the mark both")
+	require.Equal(t, "1️⃣…", truncate("1️⃣xy", 3))
+}
