@@ -126,6 +126,7 @@ var helpEntries = []helpEntry{
 	{"MOUSE", "click", "focuses and selects"},
 	{"MOUSE", "double-click", "opens"},
 	{"MOUSE", "", "click a link, a picture, a file card, a card button or Join to open it"},
+	{"MOUSE", "", "click a quote to land on the message it names"},
 	{"MOUSE", "", "click a reaction to add yours or take it back"},
 	{"MOUSE", "wheel", "scrolls"},
 	{"MOUSE", "", "over the preview it scrolls the band; over the writing area the caret follows"},
