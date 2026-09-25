@@ -46,8 +46,10 @@ type Client interface {
 	DeleteReaction(ctx context.Context, messageID, reactionID string) error
 	// ReadStatus reports whether the current user has read each message.
 	ReadStatus(ctx context.Context, ids []string) (items []ReadStatus, invalid []string, err error)
-	// ChatMembers lists the users and the bots in a chat.
-	ChatMembers(ctx context.Context, chatID string) ([]ChatMember, error)
+	// ChatMembers lists the users and the bots in a chat. truncated reports
+	// that the server capped the list, so what came back is a part of the
+	// roster and must not be presented as the whole of it.
+	ChatMembers(ctx context.Context, chatID string) (members []ChatMember, truncated bool, err error)
 	// MuteStatus reports the user's do-not-disturb setting per chat. unknown
 	// carries the chats the API declined to answer for, which a caller must
 	// not read as "not muted".

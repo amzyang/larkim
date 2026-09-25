@@ -72,7 +72,7 @@ func TestChatRoster_AnswersTheMemberListForAGroup(t *testing.T) {
 	require.NoError(t, s.UpsertChats(ctx, []Chat{{ChatID: "oc_team", Name: "平台组", ChatMode: "group"}}, 1))
 	members := []Contact{{OpenID: "ou_a", Name: "张三"}, {OpenID: "ou_bot", Name: "构建机器人", IsBot: true}}
 	require.NoError(t, s.UpsertContacts(ctx, members, 1))
-	require.NoError(t, s.SetChatMembers(ctx, "oc_team", members, 1))
+	require.NoError(t, s.SetChatMembers(ctx, "oc_team", members, false, 1))
 
 	roster, err := s.ChatRoster(ctx, "oc_team", "ou_me")
 

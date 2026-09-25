@@ -211,7 +211,7 @@ func copyFixture(t *testing.T) Deps {
 		{OpenID: "ou_me", Name: "林岚", Email: "linlan@example.com"},
 		{OpenID: "ou_a", Name: "张三", Email: "zhangsan@example.com"},
 	}, 1))
-	require.NoError(t, st.SetChatMembers(ctx, "oc_a", []store.Contact{{OpenID: "ou_me"}, {OpenID: "ou_a"}, {OpenID: "ou_b"}}, 1))
+	require.NoError(t, st.SetChatMembers(ctx, "oc_a", []store.Contact{{OpenID: "ou_me"}, {OpenID: "ou_a"}, {OpenID: "ou_b"}}, false, 1))
 	msgs := []store.Message{
 		{MessageID: "om_old", ChatID: "oc_a", CreateMs: ms(72 * time.Hour), MessagePosition: 1, SenderID: "ou_a", SenderName: "张三", RawJSON: "{}"},
 		{MessageID: "om_root", ChatID: "oc_a", CreateMs: ms(3 * time.Hour), MessagePosition: 2, SenderID: "ou_a", SenderName: "张三", ThreadID: "omt_1", RawJSON: "{}"},

@@ -132,7 +132,7 @@ func TestLoadInfo_ReadsTheRosterTheSyncStored(t *testing.T) {
 	require.NoError(t, st.EnsureChat(ctx, "oc_group", 1))
 	members := []store.Contact{{OpenID: "ou_a", Name: "张三"}, {OpenID: "ou_b", Name: "李四"}}
 	require.NoError(t, st.UpsertContacts(ctx, members, 1))
-	require.NoError(t, st.SetChatMembers(ctx, "oc_group", members, 1))
+	require.NoError(t, st.SetChatMembers(ctx, "oc_group", members, false, 1))
 
 	msg := loadInfo(m.deps, "oc_group")().(infoLoadedMsg)
 
@@ -147,11 +147,24 @@ func TestChatMembers_KeepsAMemberWithNoContactRow(t *testing.T) {
 	ctx := context.Background()
 	require.NoError(t, st.EnsureChat(ctx, "oc_group", 1))
 	require.NoError(t, st.SetChatMembers(ctx, "oc_group",
-		[]store.Contact{{OpenID: "ou_unknown"}}, 1))
+		[]store.Contact{{OpenID: "ou_unknown"}}, false, 1))
 
 	got, err := st.ChatMembers(ctx, "oc_group")
 	require.NoError(t, err)
 	require.Len(t, got, 1)
 	assert.Equal(t, "ou_unknown", got[0].OpenID)
 	assert.Empty(t, got[0].Name)
+}
+
+// A capped roster is a part of the membership, and a bare count of it reads as
+// the size of the chat.
+func TestInfoLines_SaysWhenTheServerCappedTheRoster(t *testing.T) {
+	m, _ := infoModel(t)
+	m.chats[0].MembersTruncated = true
+
+	got := infoText(m)
+
+	assert.Contains(t, got, "Members partial")
+	assert.Contains(t, got, "the server caps this list")
+	assert.NotContains(t, got, "Members 3", "3 is what came back, not who is in the chat")
 }

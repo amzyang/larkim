@@ -110,7 +110,15 @@ func (m Model) infoLines(w int) []string {
 	}
 
 	out = append(out, fit("", w))
-	out = append(out, fit(stBold.Render("Members ")+stDim.Render(strconv.Itoa(len(m.info))), w))
+	// A capped roster is a part of the membership, and a bare count of it
+	// reads as the size of the chat.
+	n := strconv.Itoa(len(m.info))
+	if c.MembersTruncated {
+		out = append(out, fit(stBold.Render("Members ")+stErr.Render("partial"), w),
+			fit(stDim.Render("the server caps this list; @ reaches only these "+n), w))
+	} else {
+		out = append(out, fit(stBold.Render("Members ")+stDim.Render(n), w))
+	}
 	for _, p := range m.info {
 		who := flatten(p.Name)
 		if who == "" {

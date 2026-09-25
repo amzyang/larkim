@@ -23,12 +23,15 @@ type Chat struct {
 	CursorMs        int64  `json:"cursor_ms"`
 	BackfillDoneAt  int64  `json:"backfill_done_at"`
 	MembersSyncedAt int64  `json:"members_synced_at"`
-	FirstSeenAt     int64  `json:"first_seen_at"`
-	LastSeenAt      int64  `json:"last_seen_at"`
-	LeftAt          int64  `json:"left_at,omitempty"`
-	SyncError       string `json:"sync_error,omitempty"`
-	RepairedAt      int64  `json:"repaired_at,omitempty"`
-	RawJSON         string `json:"-"`
+	// MembersTruncated marks a roster the server capped: chat_members holds a
+	// part of the membership, not the whole of it.
+	MembersTruncated bool   `json:"members_truncated,omitempty"`
+	FirstSeenAt      int64  `json:"first_seen_at"`
+	LastSeenAt       int64  `json:"last_seen_at"`
+	LeftAt           int64  `json:"left_at,omitempty"`
+	SyncError        string `json:"sync_error,omitempty"`
+	RepairedAt       int64  `json:"repaired_at,omitempty"`
+	RawJSON          string `json:"-"`
 
 	// Newest main-flow message, kept in step by UpsertMessages and
 	// UpdateRendered so a listing needs no per-chat subquery.
@@ -107,7 +110,7 @@ func (c Chat) AvatarSeed() string {
 // chatColumns selects from `chats c`; the derived columns are named so
 // callers can order by them.
 const chatColumns = `c.chat_id, c.name, c.description, c.chat_mode, c.chat_status, c.owner_id, c.external, c.p2p_target_id, c.p2p_target_type,
- c.avatar_url, c.avatar_path, c.cursor_ms, c.backfill_done_at, c.members_synced_at, c.first_seen_at, c.last_seen_at, c.left_at, c.sync_error, c.repaired_at, c.raw_json,
+ c.avatar_url, c.avatar_path, c.cursor_ms, c.backfill_done_at, c.members_synced_at, c.members_truncated, c.first_seen_at, c.last_seen_at, c.left_at, c.sync_error, c.repaired_at, c.raw_json,
  c.last_message_id, c.last_message_ms, c.last_sender_id, c.last_sender_name, c.last_sender_type, c.last_msg_type, c.last_content, c.last_content_raw, c.last_mentions_json, c.last_reactions_json, c.last_rendered_at, c.last_deleted, c.last_unsilenced_ms,
  c.muted, c.mute_checked_at,
  (SELECT count(*) FROM messages m WHERE m.chat_id = c.chat_id) AS message_count,
@@ -117,7 +120,7 @@ const chatColumns = `c.chat_id, c.name, c.description, c.chat_mode, c.chat_statu
 // chatDest are the scan targets for chatColumns, in order.
 func chatDest(c *Chat) []any {
 	return []any{&c.ChatID, &c.Name, &c.Description, &c.ChatMode, &c.ChatStatus, &c.OwnerID, &c.External, &c.P2PTargetID, &c.P2PTargetType,
-		&c.AvatarURL, &c.AvatarPath, &c.CursorMs, &c.BackfillDoneAt, &c.MembersSyncedAt, &c.FirstSeenAt, &c.LastSeenAt, &c.LeftAt, &c.SyncError, &c.RepairedAt, &c.RawJSON,
+		&c.AvatarURL, &c.AvatarPath, &c.CursorMs, &c.BackfillDoneAt, &c.MembersSyncedAt, &c.MembersTruncated, &c.FirstSeenAt, &c.LastSeenAt, &c.LeftAt, &c.SyncError, &c.RepairedAt, &c.RawJSON,
 		&c.LastMessageID, &c.LastMessageMs, &c.LastSenderID, &c.LastSenderName, &c.LastSenderType, &c.LastMsgType, &c.LastContent, &c.LastContentRaw, &c.LastMentionsJSON, &c.LastReactionsJSON, &c.LastRenderedAt, &c.LastDeleted, &c.LastUnsilencedMs,
 		&c.Muted, &c.MuteCheckedAt,
 		&c.MessageCount, &c.PeerAccount, &c.PeerAvatarPath}

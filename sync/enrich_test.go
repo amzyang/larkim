@@ -301,3 +301,20 @@ func TestTick_MembersFileABotAsABot(t *testing.T) {
 	require.True(t, roster[1].IsBot)
 	require.False(t, roster[0].IsBot)
 }
+
+// The cap rides with the roster into the database, so the reader is told the
+// list is partial rather than shown a short one as the whole chat.
+func TestTick_RecordsAServerCappedRoster(t *testing.T) {
+	s, f, _ := newSyncer(t)
+	ctx := context.Background()
+	f.Chats = []larkcli.RawChat{{ChatID: "oc_g", Name: "G", ChatMode: "group"}}
+	f.Members["oc_g"] = []larkcli.ChatMember{{MemberID: "ou_a", Name: "张三"}}
+	f.MembersTruncated["oc_g"] = true
+
+	_, err := s.Tick(ctx)
+	require.NoError(t, err)
+
+	chat, err := s.Store.GetChat(ctx, "oc_g")
+	require.NoError(t, err)
+	require.True(t, chat.MembersTruncated)
+}

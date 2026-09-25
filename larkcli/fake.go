@@ -35,9 +35,12 @@ type Fake struct {
 	// nowhere comes back unknown, as a chat the user is not a member of does.
 	Muted   map[string]bool
 	Members map[string][]ChatMember
-	Users   []User
-	Details map[string]UserDetail
-	Self    Identity
+	// MembersTruncated marks a chat whose roster the server caps, which is
+	// what a tenant's security config does to a large group.
+	MembersTruncated map[string]bool
+	Users            []User
+	Details          map[string]UserDetail
+	Self             Identity
 	// Truncate makes SearchMessageIDs report truncation when a window holds
 	// more than this many hits (0 disables).
 	Truncate int
@@ -74,18 +77,19 @@ type Fake struct {
 // NewFake returns an empty Fake with a default identity.
 func NewFake() *Fake {
 	return &Fake{
-		Messages:  map[string]RawMessage{},
-		Rendered:  map[string]RenderedMessage{},
-		Resources: map[string][]Resource{},
-		Singles:   map[string]Resource{},
-		Read:      map[string]bool{},
-		Reactions: map[string]json.RawMessage{},
-		Reacted:   map[string][]Reaction{},
-		Muted:     map[string]bool{},
-		Members:   map[string][]ChatMember{},
-		Details:   map[string]UserDetail{},
-		Apps:      map[string]AppDetail{},
-		Self:      Identity{AppID: "cli_test", UserOpenID: "ou_self"},
+		Messages:         map[string]RawMessage{},
+		Rendered:         map[string]RenderedMessage{},
+		Resources:        map[string][]Resource{},
+		Singles:          map[string]Resource{},
+		Read:             map[string]bool{},
+		Reactions:        map[string]json.RawMessage{},
+		Reacted:          map[string][]Reaction{},
+		Muted:            map[string]bool{},
+		Members:          map[string][]ChatMember{},
+		MembersTruncated: map[string]bool{},
+		Details:          map[string]UserDetail{},
+		Apps:             map[string]AppDetail{},
+		Self:             Identity{AppID: "cli_test", UserOpenID: "ou_self"},
 	}
 }
 
@@ -351,13 +355,13 @@ func (f *Fake) MuteStatus(_ context.Context, chatIDs []string) (map[string]bool,
 	return muted, unknown, nil
 }
 
-func (f *Fake) ChatMembers(_ context.Context, chatID string) ([]ChatMember, error) {
+func (f *Fake) ChatMembers(_ context.Context, chatID string) ([]ChatMember, bool, error) {
 	if err := f.record("members:" + chatID); err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return append([]ChatMember(nil), f.Members[chatID]...), nil
+	return append([]ChatMember(nil), f.Members[chatID]...), f.MembersTruncated[chatID], nil
 }
 
 func (f *Fake) SearchUsers(_ context.Context, query string, ids []string) ([]User, error) {

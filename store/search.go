@@ -66,7 +66,9 @@ func (s *Store) ChatsNeedingMembers(ctx context.Context, beforeMs int64, limit i
 }
 
 // SetChatMembers replaces a chat's member list and stamps members_synced_at.
-func (s *Store) SetChatMembers(ctx context.Context, chatID string, members []Contact, now int64) error {
+// truncated records that the server capped the list it came from, so a reader
+// is never shown a part of a roster as the whole of it.
+func (s *Store) SetChatMembers(ctx context.Context, chatID string, members []Contact, truncated bool, now int64) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -84,7 +86,7 @@ func (s *Store) SetChatMembers(ctx context.Context, chatID string, members []Con
 			return err
 		}
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE chats SET members_synced_at = ? WHERE chat_id = ?`, now, chatID); err != nil {
+	if _, err := tx.ExecContext(ctx, `UPDATE chats SET members_synced_at = ?, members_truncated = ? WHERE chat_id = ?`, now, truncated, chatID); err != nil {
 		return err
 	}
 	return tx.Commit()

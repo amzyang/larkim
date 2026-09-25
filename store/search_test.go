@@ -50,7 +50,7 @@ func TestMembersRepairAndAvatars(t *testing.T) {
 
 	need, _ := s.ChatsNeedingMembers(ctx, 100, 10)
 	require.Len(t, need, 1, "p2p chats have no member list")
-	require.NoError(t, s.SetChatMembers(ctx, "oc_g", []Contact{{OpenID: "ou_a", Name: "A"}, {OpenID: "ou_bot", IsBot: true}}, 200))
+	require.NoError(t, s.SetChatMembers(ctx, "oc_g", []Contact{{OpenID: "ou_a", Name: "A"}, {OpenID: "ou_bot", IsBot: true}}, false, 200))
 	n, _ := s.ChatMemberCount(ctx, "oc_g")
 	require.Equal(t, int64(2), n)
 	need, _ = s.ChatsNeedingMembers(ctx, 100, 10)

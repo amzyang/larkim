@@ -447,9 +447,10 @@ cat <<'JSON'
  "truncations":[],"has_more":false}}
 JSON`)
 
-	members, err := c.ChatMembers(context.Background(), "oc_team")
+	members, truncated, err := c.ChatMembers(context.Background(), "oc_team")
 
 	require.NoError(t, err)
+	require.False(t, truncated)
 	require.Len(t, members, 2)
 	require.Equal(t, ChatMember{MemberID: "ou_a", MemberType: "open_id", Name: "张三"}, members[0])
 	require.Equal(t, ChatMember{MemberID: "ou_bot", Name: "构建机器人", IsBot: true}, members[1])
@@ -457,4 +458,22 @@ JSON`)
 	argv, err := os.ReadFile(filepath.Join(c.Dir, "argv"))
 	require.NoError(t, err)
 	require.Contains(t, string(argv), "im +chat-members-list --chat-id oc_team --member-types user,bot")
+}
+
+// The shortcut exists to report the cap, so dropping truncations[] would let a
+// capped roster pass for a complete one.
+func TestChatMembers_ReportsAServerCappedRoster(t *testing.T) {
+	c := fakeBinary(t, `
+cat <<'JSON'
+{"ok":true,"identity":"user","data":{"chat_id":"oc_team",
+ "users":[{"member_id":"ou_a","member_id_type":"open_id","name":"张三"}],
+ "bots":[],
+ "truncations":[{"member_type":"user","limit":100}],"has_more":false}}
+JSON`)
+
+	members, truncated, err := c.ChatMembers(context.Background(), "oc_team")
+
+	require.NoError(t, err)
+	require.True(t, truncated)
+	require.Len(t, members, 1)
 }

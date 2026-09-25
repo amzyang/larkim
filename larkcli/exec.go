@@ -539,24 +539,28 @@ func (c *ExecClient) ReadStatus(ctx context.Context, ids []string) ([]ReadStatus
 // members endpoint, which answers with users alone: a bot only ever sees the
 // message that names it, so a roster without the bots cannot be completed
 // against. No --page-size, because --page-all already asks for the largest.
-func (c *ExecClient) ChatMembers(ctx context.Context, chatID string) ([]ChatMember, error) {
+func (c *ExecClient) ChatMembers(ctx context.Context, chatID string) ([]ChatMember, bool, error) {
 	data, err := c.run(ctx, "im", "+chat-members-list", "--chat-id", chatID,
 		"--member-types", "user,bot", "--member-id-type", "open_id",
 		"--page-all", "--page-limit", "0")
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	var resp struct {
 		Users []ChatMember `json:"users"`
 		Bots  []ChatMember `json:"bots"`
+		// Truncations names each bucket the tenant's security config capped.
+		// It is why this shortcut exists: the roster it answers with looks
+		// complete, and a caller that drops this cannot tell that it is not.
+		Truncations []struct{} `json:"truncations"`
 	}
 	if err := json.Unmarshal(data, &resp); err != nil {
-		return nil, fmt.Errorf("decode members: %w", err)
+		return nil, false, fmt.Errorf("decode members: %w", err)
 	}
 	for i := range resp.Bots {
 		resp.Bots[i].IsBot = true
 	}
-	return append(resp.Users, resp.Bots...), nil
+	return append(resp.Users, resp.Bots...), len(resp.Truncations) > 0, nil
 }
 
 // MaxChatIDsPerMuteCall is the upstream cap on one mute lookup.

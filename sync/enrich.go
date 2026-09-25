@@ -89,12 +89,15 @@ func (s *Syncer) membersSlice(ctx context.Context, now time.Time) (int, error) {
 	}
 	total := 0
 	for _, c := range chats {
-		members, err := s.Client.ChatMembers(ctx, c.ChatID)
+		members, truncated, err := s.Client.ChatMembers(ctx, c.ChatID)
 		if err != nil {
 			if s.recordChatError(ctx, c.ChatID, err, now) {
 				continue
 			}
 			return total, err
+		}
+		if truncated {
+			s.log().WarnContext(ctx, "chat roster capped by the server", "chat_id", c.ChatID, "members", len(members))
 		}
 		contacts := make([]store.Contact, 0, len(members))
 		for _, m := range members {
@@ -103,7 +106,7 @@ func (s *Syncer) membersSlice(ctx context.Context, now time.Time) (int, error) {
 		if err := s.Store.UpsertContacts(ctx, contacts, now.UnixMilli()); err != nil {
 			return total, err
 		}
-		if err := s.Store.SetChatMembers(ctx, c.ChatID, contacts, now.UnixMilli()); err != nil {
+		if err := s.Store.SetChatMembers(ctx, c.ChatID, contacts, truncated, now.UnixMilli()); err != nil {
 			return total, err
 		}
 		total += len(contacts)

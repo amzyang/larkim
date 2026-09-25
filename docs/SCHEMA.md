@@ -145,7 +145,7 @@ FTS5 external-content index over `messages(content, sender_name)` with the trigr
 
 ## contacts, chat_members
 
-`contacts` caches users and bots seen as chat members or senders (`open_id`, `name`, `email`, `p2p_chat_id`, `avatar_url`, `avatar_path`). `avatar_url = 'none'` means the user has no fetchable avatar; `avatar_path = '-'` means the download failed and is not retried. `chat_members` maps `chat_id` → `member_id` with `member_type` (`user` or `bot`) and the time the membership was last confirmed; group member lists refresh daily. A p2p chat keeps no rows — its pair is `chats.p2p_target_id` and the reader.
+`contacts` caches users and bots seen as chat members or senders (`open_id`, `name`, `email`, `p2p_chat_id`, `avatar_url`, `avatar_path`). `avatar_url = 'none'` means the user has no fetchable avatar; `avatar_path = '-'` means the download failed and is not retried. `chat_members` maps `chat_id` → `member_id` with `member_type` (`user` or `bot`) and the time the membership was last confirmed; group member lists refresh daily. A p2p chat keeps no rows — its pair is `chats.p2p_target_id` and the reader. `chats.members_truncated` marks a chat whose roster the tenant's security config caps: the rows held for it are a part of the membership, so a consumer must not read their count as the size of the chat.
 
 `enterprise_email`, `department` and `is_cross_tenant` come from a separate identity lookup, marked by `detail_checked_at`; a non-zero `detail_checked_at` with empty fields means the lookup ran and the tenant did not return that user. The number ending the `enterprise_email` local part (`liming01`) is the tenant's own disambiguator for same-named colleagues.
 
