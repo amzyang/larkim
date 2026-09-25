@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -38,16 +39,16 @@ func TestDataRev_AdvancesOnReadState(t *testing.T) {
 	ctx := context.Background()
 	base, err := s.DataRev(ctx)
 	require.NoError(t, err)
-	require.NoError(t, s.MarkConsumed(ctx, []string{"om_1"}, 1000))
-	consumed, err := s.DataRev(ctx)
+	require.NoError(t, s.SetReadStatus(ctx, "om_1", nil, 1000, 2000))
+	inserted, err := s.DataRev(ctx)
 	require.NoError(t, err)
-	require.Greater(t, consumed, base)
+	require.Greater(t, inserted, base)
 
 	isRead := true
 	require.NoError(t, s.SetReadStatus(ctx, "om_1", &isRead, 1001, 0))
-	read, err := s.DataRev(ctx)
+	updated, err := s.DataRev(ctx)
 	require.NoError(t, err)
-	require.Greater(t, read, consumed)
+	require.Greater(t, updated, inserted)
 }
 
 func TestWatchRev_DeliversUpdateWithoutInsert(t *testing.T) {
@@ -85,7 +86,7 @@ func TestWatchRev_NudgeBringsTheComparisonForward(t *testing.T) {
 
 	deadline := time.After(2 * time.Second)
 	for i := 0; ; i++ {
-		require.NoError(t, s.MarkConsumed(ctx, []string{"om_1"}, int64(1000+i)))
+		require.NoError(t, s.SetReadStatus(ctx, fmt.Sprintf("om_%d", i), nil, 1000, 0))
 		select {
 		case nudge <- struct{}{}:
 		default:
@@ -116,5 +117,66 @@ func TestWatchRev_NudgeWithoutAChangeDeliversNothing(t *testing.T) {
 	case rev := <-ch:
 		t.Fatalf("delivered revision %d although nothing was written", rev)
 	default:
+	}
+}
+
+func TestDataRev_IgnoresTheSyncersOwnBookkeeping(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+	chats := []Chat{{ChatID: "oc_a", Name: "平台组"}, {ChatID: "oc_b", Name: "项目协作群"}}
+	require.NoError(t, s.UpsertChats(ctx, chats, 1))
+	batch := []Message{msgAt("om_a", "oc_a", 100, 1, "morning"), msgAt("om_b", "oc_b", 200, 1, "elsewhere")}
+	_, err := s.UpsertMessages(ctx, batch, 1)
+	require.NoError(t, err)
+
+	before, err := s.DataRev(ctx)
+	require.NoError(t, err)
+
+	// A full refresh round over unchanged data: the listing restamps every
+	// chat, the ingest restamps every message, the mute rotation and the
+	// backfill advance their own cursors.
+	require.NoError(t, s.UpsertChats(ctx, chats, 2))
+	_, err = s.UpsertMessages(ctx, batch, 2)
+	require.NoError(t, err)
+	require.NoError(t, s.SetMuteStatus(ctx, nil, []string{"oc_a", "oc_b"}, 2))
+	require.NoError(t, s.SetChatCursor(ctx, "oc_a", 500))
+
+	after, err := s.DataRev(ctx)
+	require.NoError(t, err)
+	require.Equal(t, before, after, "a round that changed nothing a reader looks at asks no one to re-read")
+}
+
+func TestDataRev_AdvancesWhenSomethingVisibleChanges(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+	require.NoError(t, s.UpsertChats(ctx, []Chat{{ChatID: "oc_a", Name: "平台组"}}, 1))
+	_, err := s.UpsertMessages(ctx, []Message{msgAt("om_a", "oc_a", 100, 1, "morning")}, 1)
+	require.NoError(t, err)
+	markUnread(t, s, "om_a")
+
+	for _, tc := range []struct {
+		name  string
+		write func() error
+	}{
+		{"a rename", func() error {
+			return s.UpsertChats(ctx, []Chat{{ChatID: "oc_a", Name: "平台组 (archived)"}}, 2)
+		}},
+		{"an edit", func() error {
+			_, err := s.UpsertMessages(ctx, []Message{msgAt("om_a", "oc_a", 100, 1, "morning all")}, 2)
+			return err
+		}},
+		{"a mute", func() error {
+			return s.SetMuteStatus(ctx, map[string]bool{"oc_a": true}, nil, 2)
+		}},
+		{"a local read", func() error { return s.MarkChatRead(ctx, "oc_a", 2) }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			before, err := s.DataRev(ctx)
+			require.NoError(t, err)
+			require.NoError(t, tc.write())
+			after, err := s.DataRev(ctx)
+			require.NoError(t, err)
+			require.Greater(t, after, before)
+		})
 	}
 }

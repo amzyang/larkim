@@ -117,7 +117,9 @@ Avatar coverage depends on the app's directory scope: users outside it keep `ava
 
 ## data_rev
 
-A single row (`id = 1`) whose `rev` counts every insert and update to `messages`, `chats`, `read_state`, `resources` and `contacts`, advanced by triggers. Poll it to know that rows already read have gone stale: `max(messages.id)` moves only on insert, so it misses renderings, read-status flips, cards a bot rewrote in place and attachments that finished downloading.
+A single row (`id = 1`) whose `rev` counts the changes a reader cares about in `messages`, `chats`, `read_state`, `resources` and `contacts`, advanced by triggers. Poll it to know that rows already read have gone stale: `max(messages.id)` moves only on insert, so it misses renderings, read-status flips, cards a bot rewrote in place and attachments that finished downloading.
+
+Inserts always count. An update counts when it moves a column something renders; the columns that pace the syncer do not (`*_seen_at`, `cursor_ms`, `backfill_done_at`, `members_synced_at`, `mute_checked_at`, `repaired_at`, `raw_json`, `remote_checked_at`, `check_count`, `next_check_at`, `attempts`, `next_attempt_at`, `detail_checked_at`, `updated_at`). A full chat listing restamps `last_seen_at` on every row, so without that rule one refresh over unchanged data would tell every reader to re-read the whole list.
 
 ```sql
 SELECT rev FROM data_rev;  -- changed since last poll? re-read what you display

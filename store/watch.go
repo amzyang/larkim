@@ -61,10 +61,12 @@ func (s *Store) Watch(ctx context.Context, every time.Duration, chatID string) <
 	return ch
 }
 
-// DataRev returns the database's change counter. Every insert and update to
-// the synced tables advances it, so a consumer that sees a new value must
-// re-read whatever it displays. Unlike the ingest id it moves on updates too:
-// renderings, read status, card refreshes, attachment downloads.
+// DataRev returns the database's change counter. It advances when a synced
+// table gains a row or when an update moves a column something renders, so a
+// consumer that sees a new value must re-read whatever it displays. Unlike
+// the ingest id it moves on updates too: renderings, read status, card
+// refreshes, attachment downloads. The stamps that pace the syncer are left
+// out, or every refresh round would report a change it did not make.
 func (s *Store) DataRev(ctx context.Context) (int64, error) {
 	var rev int64
 	err := s.db.QueryRowContext(ctx, `SELECT rev FROM data_rev WHERE id = 1`).Scan(&rev)
