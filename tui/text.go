@@ -8,12 +8,23 @@ import (
 )
 
 // inlineMD matches the markup lark-cli renders a message body into: links,
-// bold runs and the underline Feishu's rich text carries over.
-var inlineMD = regexp.MustCompile(`\[([^\]\n]*)\]\(([^)\s]*)\)|\*\*([^*\n]+)\*\*|<u>([^<]*)</u>`)
+// bold and italic runs, strikethrough, inline code, and the underline
+// Feishu's rich text carries over. Italics require a non-space immediately
+// inside the asterisks so ordinary prose ("3 * 4 * 5") is left alone, and the
+// bold branch comes first so it claims a doubled asterisk.
+var inlineMD = regexp.MustCompile(`\[([^\]\n]*)\]\(([^)\s]*)\)` +
+	`|\*\*([^*\n]+)\*\*` +
+	`|<u>([^<]*)</u>` +
+	`|~~([^~\n]+)~~` +
+	"|`([^`\n]+)`" +
+	`|\*(\S[^*\n]*)\*`)
 
 var (
-	stLink  = lipgloss.NewStyle().Foreground(colAccent).Underline(true)
-	stUnder = lipgloss.NewStyle().Underline(true)
+	stLink   = lipgloss.NewStyle().Foreground(colAccent).Underline(true)
+	stUnder  = lipgloss.NewStyle().Underline(true)
+	stItalic = lipgloss.NewStyle().Italic(true)
+	stStrike = lipgloss.NewStyle().Strikethrough(true)
+	stCode   = lipgloss.NewStyle().Foreground(colAccent)
 )
 
 // personName is how a colleague is named on screen: the account suffix runs
@@ -40,6 +51,12 @@ func renderInline(s string, ms mentions) string {
 			b.WriteString(stBold.Render(expandEmoji(s[m[6]:m[7]])))
 		case m[8] >= 0:
 			b.WriteString(stUnder.Render(expandEmoji(s[m[8]:m[9]])))
+		case m[10] >= 0:
+			b.WriteString(stStrike.Render(expandEmoji(s[m[10]:m[11]])))
+		case m[12] >= 0:
+			b.WriteString(stCode.Render(s[m[12]:m[13]]))
+		case m[14] >= 0:
+			b.WriteString(stItalic.Render(expandEmoji(s[m[14]:m[15]])))
 		}
 		last = m[1]
 	}

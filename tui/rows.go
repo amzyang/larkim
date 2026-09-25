@@ -23,6 +23,11 @@ const (
 	runSpan = 5 * time.Minute
 )
 
+// headingLine matches an ATX heading and captures its text, whose hashes are
+// markup rather than something the reader typed. The composer's classifier
+// reads the same pattern.
+var headingLine = regexp.MustCompile(`^ {0,3}#{1,6} +(\S.*)$`)
+
 // imgRef matches the two ways lark-cli names an image in rendered text: the
 // markdown form inside a rich-text post, and the whole body of an image
 // message.
@@ -507,6 +512,12 @@ func bodyRows(x store.Message, idx int, st msgStyle, g *leads) []msgRow {
 	if key := stickerKey(x); key != "" {
 		return pictureRows(key, x, idx, st, g)
 	}
+	// A post is markdown by construction, so it is drawn as the document it
+	// is. A text message is not: someone typing "3 * 4 * 5" means the
+	// asterisks, so that one keeps the literal path below.
+	if x.MsgType == "post" {
+		return mdRows(x.Content, x, idx, st, g, ms)
+	}
 
 	var rows []msgRow
 	content := strings.ReplaceAll(strings.ReplaceAll(x.Content, "\r", ""), "\t", "    ")
@@ -517,6 +528,12 @@ func bodyRows(x store.Message, idx int, st msgStyle, g *leads) []msgRow {
 			code, next := takeCode(lines, i)
 			rows = append(rows, text(codeRows(code, fence[1], inner, st.dark))...)
 			i = next
+			continue
+		}
+		// A heading reads as its text, not its hashes: a body that arrives
+		// spelling one is showing markup, not something a reader typed.
+		if h := headingLine.FindStringSubmatch(line); h != nil {
+			rows = append(rows, text(wrap(stBold.Render(renderInline(h[1], ms)), inner))...)
 			continue
 		}
 		keys, rest := splitImages(line)

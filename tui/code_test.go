@@ -65,11 +65,14 @@ func TestBodyRows_TruncatesALongCodeLineRatherThanWrappingIt(t *testing.T) {
 	require.Contains(t, rowText(rows), "…", "the tail is cut, not wrapped")
 }
 
-func TestBodyRows_LeavesACardCodeFenceAlone(t *testing.T) {
-	// lark-cli glues a card's code block into the middle of a line, with no
-	// newline either side; a fence that is not a line of its own is not one.
+func TestBodyRows_MidLineBackticksAreAnInlineSpanNotABlock(t *testing.T) {
+	// Backticks that do not open a line are an inline code span, which is
+	// what CommonMark and Feishu both make of them. The text has to survive
+	// either way: a body is never quietly shortened.
 	out := rowText(renderRows(postWith("slow sql 647 millis SELECT```plain_text\n  m.id```"), baseStyle()))
-	require.Contains(t, out, "```plain_text")
+	require.Contains(t, out, "slow sql 647 millis SELECT")
+	require.Contains(t, out, "m.id")
+	require.NotContains(t, out, codeRule, "an inline span is not framed as a block")
 }
 
 func TestBodyRows_ClosesAnUnterminatedFenceAtTheEnd(t *testing.T) {
