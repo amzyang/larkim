@@ -148,6 +148,12 @@ func TestBodyRows_AFeishuDocumentIsDrawnAsTheDocument(t *testing.T) {
 	require.NotContains(t, line, "AbC123", "a token says nothing about what it opens")
 }
 
+func TestDocGlyph_EveryFamilyStartsItsTitleInTheSameColumn(t *testing.T) {
+	for _, docType := range []string{"docx", "doc", "sheet", "bitable", "mindnote", "slides", "folder", "file", "wiki"} {
+		require.Equal(t, 2, ansi.StringWidth(docGlyph(docType)), docType)
+	}
+}
+
 func TestBodyRows_ADocumentOutOfReachKeepsItsAddress(t *testing.T) {
 	st := docStyle(map[string]store.DocLabel{"docx/Nope456": {Type: "docx", Denied: true}})
 	url := "https://example.feishu.cn/docx/Nope456"

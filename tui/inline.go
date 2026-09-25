@@ -124,18 +124,19 @@ func autoLinkCuts(line string, links []inlineCut, doc func(url string) (store.Do
 const lockGlyph = "🔒"
 
 // docGlyph marks a document by the family its type puts it in, the way
-// fileGlyph does for an attachment. Every glyph is a wide character, so a
-// title starts in the same column whichever family it is.
+// fileGlyph does for an attachment. Every glyph is two columns wide, so a
+// title starts in the same column whichever family it is; the two that are
+// only one column on their own carry a variation selector to say so.
 func docGlyph(docType string) string {
 	switch docType {
 	case "sheet":
 		return "📊"
 	case "bitable":
-		return "🗂"
+		return "🗂️"
 	case "mindnote":
 		return "🧠"
 	case "slides":
-		return "📽"
+		return "📽️"
 	case "folder":
 		return "📁"
 	case "file":
