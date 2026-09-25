@@ -35,6 +35,7 @@ var helpEntries = []helpEntry{
 	{"NORMAL", "r", "reply"},
 	{"NORMAL", "R", "reply in thread"},
 	{"NORMAL", "t", "thread"},
+	{"NORMAL", "I", "the chat's own card in the right pane: what it is, who is in it, the person across a pair"},
 	{"NORMAL", "v", "select a range"},
 	{"NORMAL", "o", "open what the selected message carries"},
 	{"NORMAL", "", "a link, a file, its pictures, the call it invites to, or the message itself in Feishu"},
@@ -52,6 +53,7 @@ var helpEntries = []helpEntry{
 	{"NORMAL", "Ctrl+f", "search messages, chats and people"},
 	{"NORMAL", ": or ;", "command"},
 	{"NORMAL", "?", "this panel"},
+	{"NORMAL", "Esc", "back out of the assistant, the search, the thread, the filter, then the quote"},
 	{"NORMAL", "q", "quit"},
 
 	{"VISUAL", "v", "starts in the messages or thread pane"},
