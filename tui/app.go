@@ -1134,6 +1134,63 @@ func (m Model) searchMessages() []store.Message {
 	return out
 }
 
+// metaFor is the detail behind a message pane, chosen the way messageAt
+// chooses which slice the pane lists.
+func (m Model) metaFor(p pane) msgMeta {
+	switch {
+	case p == paneThread:
+		return m.threadMeta
+	case m.searching:
+		return m.searchMeta
+	}
+	return m.meta
+}
+
+// jumpToQuoted follows a quote back to the message it names, which is what
+// pressing the quote block does in the client. That message is usually on the
+// page already; one older than the page's anchor needs the page cut again
+// around it, which is how a search hit lands too.
+func (m Model) jumpToQuoted(p pane, id string) (tea.Model, tea.Cmd) {
+	if p == paneThread {
+		if i := indexOfID(m.thread, id); i >= 0 {
+			m.threadIdx = i
+			m.clearDotsAtCursor()
+			m.rebuildThread()
+			m.scrollThreadToSelection()
+			return m, nil
+		}
+	}
+	// The search panel lists hits rather than a chat, so a quote drawn there
+	// never points at anything already on screen.
+	if !m.searching {
+		// A thread reply can answer something said in the chat itself, which
+		// is in the other pane.
+		if i := indexOfID(m.msgs, id); i >= 0 {
+			m.focus = paneMessages
+			m.msgIdx = i
+			m.clearDotsAtCursor()
+			m.rebuildMessages()
+			m.scrollMessagesToSelection()
+			return m, nil
+		}
+	}
+	parent, ok := m.metaFor(p).parents[id]
+	if !ok {
+		// The message was never stored here. Only the process holding the
+		// sync lock may write, so without it there is nothing to do but say
+		// it is not here yet.
+		if m.deps.Syncer == nil {
+			return m.notify("that message has yet to be synced", false), nil
+		}
+		return m.notify("fetching…", false), ingestThenOpen(m.deps, id)
+	}
+	// SinceMs is inclusive, so the page opens on the quoted message itself and
+	// pendingSelect always finds it.
+	m.pendingSelect = id
+	m.notice = ""
+	return m, m.openChatFrom(parent.ChatID, parent.CreateMs)
+}
+
 // selectedZones are the targets the selected message draws, in the order it
 // draws them, so the keyboard reaches everything the mouse can press. The
 // mouse resolves by where it was pressed and never needs this.
@@ -2193,13 +2250,17 @@ func (m Model) onClick(ms tea.Mouse) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// pressZone answers a click on a target a row drew: a reaction chip toggles
-// the reader's own reaction, anything else is handed over to be opened.
+// pressZone answers a click on a target a row drew: a quote line moves the
+// cursor to the message it names, a reaction chip toggles the reader's own
+// reaction, anything else is handed over to be opened.
 //
 // Pressing twice in a row is deliberately not deduplicated. The direction is
 // read off the strip on screen, which the first press has already changed, so
 // a double click adds and then takes back — which is what the client does.
 func (m Model) pressZone(p pane, rows []msgRow, line int, z clickZone) (tea.Model, tea.Cmd) {
+	if z.jump != "" {
+		return m.jumpToQuoted(p, z.jump)
+	}
 	if z.react == "" {
 		return m, openZone(m.deps, z)
 	}

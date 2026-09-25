@@ -72,6 +72,11 @@ type clickZone struct {
 	// not a place to open: pressing one puts the reader's own reaction on the
 	// message or takes it back, which is what the client does.
 	react string
+	// jump is the message a quote line leads back to. It is not a place to
+	// open but a place to stand: pressing it puts the cursor on the message
+	// the reply answers, fetching the page that holds it when it is off this
+	// one.
+	jump string
 	// label names the target the way the chooser lists it, and note is what
 	// the status bar says once it has been handed over. They differ because a
 	// list wants the thing and a status line wants the act.
@@ -80,7 +85,7 @@ type clickZone struct {
 }
 
 // live reports whether the zone leads anywhere at all.
-func (z clickZone) live() bool { return len(z.urls) > 0 || z.react != "" }
+func (z clickZone) live() bool { return len(z.urls) > 0 || z.react != "" || z.jump != "" }
 
 func (z clickZone) hit(x int) bool { return z.live() && x >= z.x0 && x < z.x1 }
 
@@ -481,7 +486,14 @@ func quoteRow(x store.Message, prev string, idx int, st msgStyle, g *leads) (msg
 	if x.ReplyTo == "" || x.ReplyTo == prev {
 		return msgRow{}, false
 	}
-	row := func(s string) msgRow { return msgRow{lead: g.take(), text: stDim.Render(s), idx: idx} }
+	// The whole line is the target, the way the client makes the quote block
+	// one: it names a single message, and nothing else is drawn beside it.
+	row := func(s string) msgRow {
+		l := g.take()
+		x0 := l.cols()
+		return msgRow{lead: l, text: stDim.Render(s), idx: idx,
+			zones: []clickZone{{x0: x0, x1: x0 + lipgloss.Width(s), jump: x.ReplyTo}}}
+	}
 	parent, ok := st.parents[x.ReplyTo]
 	if !ok {
 		return row("▏↩ (not synced)"), true

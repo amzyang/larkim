@@ -809,16 +809,23 @@ func coldHits(ctx context.Context, d Deps, found []larkcli.SearchHit, rendered [
 	return hits
 }
 
-// ingestThenOpen pulls a message Feishu found but this machine has not stored
-// into the store, so the page that opens has it like any other.
-func ingestThenOpen(d Deps, msg store.Message) tea.Cmd {
+// ingestThenOpen pulls a message this machine has not stored — one Feishu
+// search turned up, or one a quote names — so the page that opens has it like
+// any other. The chat and time that cut the page are read back from the store
+// rather than from whatever named the message, because a quote names nothing
+// but an id.
+func ingestThenOpen(d Deps, messageID string) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := waited(sendTimeout)
 		defer cancel()
-		if err := d.Syncer.IngestIDs(ctx, []string{msg.MessageID}); err != nil {
+		if err := d.Syncer.IngestIDs(ctx, []string{messageID}); err != nil {
 			return errMsg{err}
 		}
-		return openHitMsg{chatID: msg.ChatID, messageID: msg.MessageID, sinceMs: msg.CreateMs}
+		x, err := d.Store.GetMessage(ctx, messageID)
+		if err != nil {
+			return errMsg{err}
+		}
+		return openHitMsg{chatID: x.ChatID, messageID: x.MessageID, sinceMs: x.CreateMs}
 	}
 }
 

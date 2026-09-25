@@ -215,7 +215,7 @@ func (m Model) openColdHit(h searchHit) (tea.Model, tea.Cmd) {
 		return m.notify("opening the chat; the daemon has yet to sync that message", false), cmd
 	}
 	m.cancelRemote()
-	return m.notify("fetching…", false), ingestThenOpen(m.deps, h.msg)
+	return m.notify("fetching…", false), ingestThenOpen(m.deps, h.msg.MessageID)
 }
 
 // openPerson opens the chat with someone. A person this machine has never
