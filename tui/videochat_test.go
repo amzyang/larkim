@@ -33,9 +33,10 @@ func TestBodyRows_ALiveCallCardsTheMeetingWithAJoinButton(t *testing.T) {
 
 	join, ok := zoneRow(rows)
 	require.True(t, ok, "a live call carries a join target: %q", out)
-	require.Equal(t, "lark://vc.feishu.cn/j/100000000", join.zone.url)
-	require.Equal(t, leadWidth, join.zone.x0, "the target starts where the button is drawn")
-	require.Equal(t, join.zone.x0+lipgloss.Width(" Join "), join.zone.x1)
+	z := firstZone(join)
+	require.Equal(t, []string{"lark://vc.feishu.cn/j/100000000"}, z.urls)
+	require.Equal(t, leadWidth, z.x0, "the target starts where the button is drawn")
+	require.Equal(t, z.x0+lipgloss.Width(" Join "), z.x1)
 }
 
 func TestBodyRows_AnEndedCallShowsItsLengthAndNoWayIn(t *testing.T) {
@@ -100,8 +101,8 @@ func TestFeishuMeetingLink_ReachesTheClientWithoutABrowser(t *testing.T) {
 func callPage(t *testing.T, contentRaw string) (Model, *[]openCall) {
 	t.Helper()
 	var calls []openCall
-	m := New(Deps{Self: "ou_me", OpenURL: func(url string, background bool) error {
-		calls = append(calls, openCall{url, background})
+	m := New(Deps{Self: "ou_me", OpenURL: func(targets []string, background bool) error {
+		calls = append(calls, openCall{targets, background})
 		return nil
 	}})
 	m.width, m.height = 120, 36
@@ -126,7 +127,7 @@ func clickAt(m Model, row, x int) tea.Cmd {
 func joinRowIndex(t *testing.T, m Model) int {
 	t.Helper()
 	for i, r := range m.msgRows {
-		if r.zone.url != "" {
+		if len(r.zones) > 0 {
 			return i
 		}
 	}
@@ -137,15 +138,15 @@ func joinRowIndex(t *testing.T, m Model) int {
 func TestOnClick_TheJoinButtonEntersTheMeeting(t *testing.T) {
 	m, calls := callPage(t, liveCall)
 	i := joinRowIndex(t, m)
-	collect(clickAt(m, i, m.msgRows[i].zone.x0))
-	require.Equal(t, []openCall{{"lark://vc.feishu.cn/j/100000000", false}}, *calls,
+	collect(clickAt(m, i, firstZone(m.msgRows[i]).x0))
+	require.Equal(t, []openCall{opened("lark://vc.feishu.cn/j/100000000", false)}, *calls,
 		"joining takes the screen, unlike the applink that clears a badge")
 }
 
 func TestOnClick_OnlyTheButtonItselfJoins(t *testing.T) {
 	m, calls := callPage(t, liveCall)
 	i := joinRowIndex(t, m)
-	z := m.msgRows[i].zone
+	z := firstZone(m.msgRows[i])
 	collect(clickAt(m, i, z.x0-1))
 	collect(clickAt(m, i, z.x1))
 	collect(clickAt(m, i-1, z.x0))
@@ -155,13 +156,13 @@ func TestOnClick_OnlyTheButtonItselfJoins(t *testing.T) {
 func TestOnNormalKey_OOpensALiveCallByJoiningIt(t *testing.T) {
 	m, calls := callPage(t, liveCall)
 	collect(mustCmd(m.onNormalKey("o")))
-	require.Equal(t, []openCall{{"lark://vc.feishu.cn/j/100000000", false}}, *calls)
+	require.Equal(t, []openCall{opened("lark://vc.feishu.cn/j/100000000", false)}, *calls)
 }
 
 func TestOnNormalKey_OOnAnEndedCallOpensTheMessage(t *testing.T) {
 	m, calls := callPage(t, endedCall)
 	collect(mustCmd(m.onNormalKey("o")))
-	require.Equal(t, []openCall{{"lark://applink.feishu.cn/client/chat/open?openChatId=oc_a&position=227", false}}, *calls,
+	require.Equal(t, []openCall{opened("lark://applink.feishu.cn/client/chat/open?openChatId=oc_a&position=227", false)}, *calls,
 		"once the call is over there is nothing to join")
 }
 

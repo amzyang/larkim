@@ -33,7 +33,8 @@ func videoChatRows(v sync.VideoChat, idx int, st msgStyle, g *leads) []msgRow {
 		row := msgRow{lead: g.take(), text: s, idx: idx}
 		if url != "" {
 			x0 := row.lead.cols()
-			row.zone = clickZone{x0: x0, x1: x0 + lipgloss.Width(s), url: url, note: "joining the meeting"}
+			row.zones = []clickZone{{x0: x0, x1: x0 + lipgloss.Width(s),
+				urls: []string{url}, label: "the meeting", note: "joining the meeting"}}
 		}
 		rows = append(rows, row)
 	}

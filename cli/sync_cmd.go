@@ -103,6 +103,7 @@ type statusOut struct {
 	Resources       map[string]int64 `json:"resources"`
 	PendingBackfill int              `json:"pending_backfill"`
 	Runs            []store.Run      `json:"recent_runs"`
+	Events          []store.Event    `json:"recent_events"`
 }
 
 func (a *App) statusCmd() *cobra.Command {
@@ -140,6 +141,7 @@ func (a *App) statusCmd() *cobra.Command {
 			pending, _ := st.ChatsNeedingBackfill(ctx, 100000)
 			out.PendingBackfill = len(pending)
 			out.Runs, _ = st.LastRuns(ctx, 5)
+			out.Events, _ = st.LastEvents(ctx, 5)
 			if a.json() {
 				return a.printJSON(out)
 			}
@@ -160,6 +162,14 @@ func (a *App) statusCmd() *cobra.Command {
 				}
 				fmt.Fprintln(a.Out, "recent runs:")
 				table(a.Out, []string{"started", "took", "ok", "hits", "upserted", "error"}, rows)
+			}
+			if len(out.Events) > 0 {
+				rows := make([][]string, 0, len(out.Events))
+				for _, e := range out.Events {
+					rows = append(rows, []string{fmtMs(e.AtMs), e.Kind, oneLine(e.Subject, 50), oneLine(e.Detail, 60)})
+				}
+				fmt.Fprintln(a.Out, "recent events:")
+				table(a.Out, []string{"at", "kind", "subject", "detail"}, rows)
 			}
 			return nil
 		},

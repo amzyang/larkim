@@ -16,6 +16,7 @@ import (
 func (a *App) chatsCmd() *cobra.Command {
 	chats := &cobra.Command{Use: "chats", Short: "Chats (groups and direct messages)"}
 	var q store.ChatQuery
+	var search string
 	list := &cobra.Command{
 		Use:   "list",
 		Short: "List synced chats, most recently active first",
@@ -25,10 +26,18 @@ func (a *App) chatsCmd() *cobra.Command {
 				return err
 			}
 			defer st.Close()
-			rows, err := st.ListChats(context.Background(), q)
+			// A search is matched in Go, so the row limit has to be applied
+			// after it: asking SQLite for a page first would drop hits that
+			// sit past it.
+			listQ := q
+			if search != "" {
+				listQ.Limit = 0
+			}
+			rows, err := st.ListChats(context.Background(), listQ)
 			if err != nil {
 				return err
 			}
+			rows = fuzzyChats(rows, search, q.Limit)
 			if a.json() {
 				return a.printJSON(rows)
 			}
@@ -41,7 +50,7 @@ func (a *App) chatsCmd() *cobra.Command {
 		},
 	}
 	list.Flags().StringVar(&q.Mode, "type", "", "filter by chat mode: group | topic | p2p")
-	list.Flags().StringVar(&q.Search, "search", "", "case-insensitive substring of the chat name")
+	list.Flags().StringVar(&search, "search", "", "fuzzy match on the chat name; Chinese names also answer to their pinyin or its initials")
 	list.Flags().BoolVar(&q.IncludeLeft, "include-left", false, "include chats you are no longer in")
 	list.Flags().IntVar(&q.Limit, "limit", 0, "max rows (default all)")
 	chats.AddCommand(list)

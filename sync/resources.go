@@ -50,8 +50,8 @@ func ResourceRetryDelay(attempts int) time.Duration {
 // Merge-forwards carry their resources on the inner messages. A sticker's key
 // is listed like any other, though nothing downloads it: copyStickers takes
 // that picture out of the Lark client's own storage.
-func ExtractResources(messageID, msgType, contentRaw string) []store.Resource {
-	var out []store.Resource
+func ExtractResources(messageID, msgType, contentRaw string) []store.ResourceRef {
+	var out []store.ResourceRef
 	add := func(key, typ string) {
 		if key == "" {
 			return
@@ -61,7 +61,7 @@ func ExtractResources(messageID, msgType, contentRaw string) []store.Resource {
 				return
 			}
 		}
-		out = append(out, store.Resource{MessageID: messageID, FileKey: key, Type: typ})
+		out = append(out, store.ResourceRef{MessageID: messageID, FileKey: key, Type: typ})
 	}
 	var body map[string]any
 	if err := json.Unmarshal([]byte(contentRaw), &body); err != nil {
@@ -163,7 +163,7 @@ func (s *Syncer) registerExistingResources(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	var rs []store.Resource
+	var rs []store.ResourceRef
 	for _, r := range rows {
 		rs = append(rs, ExtractResources(r.MessageID, r.MsgType, r.ContentRaw)...)
 		after = max(after, r.ID)
@@ -210,19 +210,16 @@ func (s *Syncer) downloadPending(ctx context.Context, now time.Time) (int, error
 			got[r.MessageID] = byKey
 		}
 		for _, id := range batch {
-			pending, err := s.Store.ResourcesFor(ctx, id)
+			pending, err := s.Store.ResourcesDueFor(ctx, id, now.UnixMilli())
 			if err != nil {
 				return done, err
 			}
 			for _, p := range pending {
-				if p.Status == "done" || p.Status == "skipped" {
-					continue
-				}
 				res, ok := got[id][p.FileKey]
 				if !ok {
 					var err error
-					if res, err = s.fetchAside(ctx, p); err != nil {
-						if err := s.failResource(ctx, p, err.Error(), now); err != nil {
+					if res, err = s.fetchAside(ctx, id, p); err != nil {
+						if err := s.failResource(ctx, p, err, now); err != nil {
 							return done, err
 						}
 						continue
@@ -241,16 +238,21 @@ func (s *Syncer) downloadPending(ctx context.Context, now time.Time) (int, error
 	return done, nil
 }
 
+// errNotDownloadable is a type nothing here fetches. It is permanent for this
+// build: widening fetchAside is a code change, and the migration that ships it
+// puts the rows back in the queue (see 0019).
+var errNotDownloadable = errors.New("not returned by lark-cli")
+
 // fetchAside downloads an attachment the batch left out. Two kinds end up
 // here, both because lark-cli's download worklist walks only img and media
 // elements: a video's cover, and an image named from inside a post's md
 // element or a card's attachment table. Anything else is reported as the gap
 // it is rather than costing a call.
-func (s *Syncer) fetchAside(ctx context.Context, p store.Resource) (larkcli.Resource, error) {
+func (s *Syncer) fetchAside(ctx context.Context, messageID string, p store.Resource) (larkcli.Resource, error) {
 	if p.Type != "cover" && p.Type != "image" {
-		return larkcli.Resource{}, errors.New("not returned by lark-cli")
+		return larkcli.Resource{}, errNotDownloadable
 	}
-	return s.Client.DownloadResource(ctx, p.MessageID, p.FileKey, "image")
+	return s.Client.DownloadResource(ctx, messageID, p.FileKey, "image")
 }
 
 // storeResource records a downloaded file; stored is false when the file was
@@ -262,7 +264,7 @@ func (s *Syncer) storeResource(ctx context.Context, p store.Resource, res larkcl
 	}
 	st, err := os.Stat(abs)
 	if err != nil {
-		return false, s.failResource(ctx, p, "downloaded file missing: "+err.Error(), now)
+		return false, s.failResource(ctx, p, fmt.Errorf("downloaded file missing: %w", err), now)
 	}
 	if s.oversize(st.Size()) {
 		_ = os.Remove(abs)
@@ -272,7 +274,7 @@ func (s *Syncer) storeResource(ctx context.Context, p store.Resource, res larkcl
 	if err != nil {
 		rel = abs
 	}
-	return true, s.Store.MarkResourceDone(ctx, p.MessageID, p.FileKey, rel, st.Size())
+	return true, s.Store.MarkResourceDone(ctx, p.FileKey, rel, st.Size())
 }
 
 // oversize reports whether an attachment is past resources.max_bytes.
@@ -282,16 +284,37 @@ func (s *Syncer) oversize(size int64) bool {
 
 // skipResource records an attachment deliberately not kept for its size.
 func (s *Syncer) skipResource(ctx context.Context, p store.Resource, size int64) error {
-	return s.Store.MarkResourceSkipped(ctx, p.MessageID, p.FileKey, size, fmt.Sprintf("larger than %d bytes", s.Opt.MaxBytes))
+	return s.Store.MarkResourceSkipped(ctx, p.FileKey, size, fmt.Sprintf("larger than %d bytes", s.Opt.MaxBytes))
 }
 
-func (s *Syncer) failResource(ctx context.Context, p store.Resource, reason string, now time.Time) error {
-	delay := ResourceRetryDelay(p.Attempts + 1)
+// failResource records a failed attempt and when to retry. A failure the
+// server will answer the same way lands on its first attempt: one alert card's
+// deleted header image is referenced by every card the bot sends, so five
+// attempts each is hundreds of calls that cannot succeed.
+func (s *Syncer) failResource(ctx context.Context, p store.Resource, cause error, now time.Time) error {
+	reason := cause.Error()
 	next := int64(0)
-	if delay > 0 {
+	if permanentFailure(cause) {
+		if err := s.Store.RecordEvent(ctx, store.Event{AtMs: now.UnixMilli(), Kind: store.EventResourceGone,
+			Subject: p.FileKey, Detail: reason}); err != nil {
+			return err
+		}
+		s.log().InfoContext(ctx, "resource gone", "file_key", p.FileKey, "error", reason)
+	} else if delay := ResourceRetryDelay(p.Attempts + 1); delay > 0 {
 		next = now.Add(delay).UnixMilli()
 	}
-	return s.Store.MarkResourceFailed(ctx, p.MessageID, p.FileKey, reason, next)
+	return s.Store.MarkResourceFailed(ctx, p.FileKey, reason, next)
+}
+
+// permanentFailure reports a download failure that repeating cannot fix. A
+// sticker missing from the Lark client's storage is not one: viewing it there
+// puts the picture on disk.
+func permanentFailure(err error) bool {
+	if errors.Is(err, errNotDownloadable) {
+		return true
+	}
+	var le *larkcli.Error
+	return errors.As(err, &le) && le.IsPermanent()
 }
 
 // pollReadStatus asks Feishu whether the user has read recent messages from

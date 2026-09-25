@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"context"
 	"strconv"
 	"strings"
 	"time"
@@ -59,6 +58,7 @@ func (m Model) openPicker() (tea.Model, tea.Cmd) {
 	in := textinput.New()
 	in.Prompt = ""
 	in.SetStyles(textinput.DefaultStyles(m.dark))
+	in.SetVirtualCursor(false)
 	m.mode = modeEmoji
 	m.picker = picker{target: x, mine: mine, input: in, hits: m.emoji.Search("")}
 	m.layout()
@@ -163,7 +163,7 @@ func (m Model) choose() (tea.Model, tea.Cmd) {
 // bumps the data revision, so the panes reload on their own.
 func react(d Deps, messageID, key string, on bool) tea.Cmd {
 	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		ctx, cancel := waited(30 * time.Second)
 		defer cancel()
 		if err := d.Syncer.React(ctx, messageID, key, on); err != nil {
 			return errMsg{err}
@@ -172,6 +172,10 @@ func react(d Deps, messageID, key string, on bool) tea.Cmd {
 	}
 }
 
+// pickerPrompt labels the query box the chooser opens with. The cursor is
+// placed past it, so its width cannot be measured in two places.
+func pickerPrompt() string { return stBold.Render("react") + stAccent.Render(" › ") }
+
 // renderPicker draws the chooser in the composer's place, filling exactly the
 // box the composer would have drawn: the query it is being narrowed by, then
 // the hits laid across the width.
@@ -179,7 +183,7 @@ func (m Model) renderPicker() string {
 	w := m.width - 2
 	rows := m.pickerRows()
 	count := stDim.Render(strconv.Itoa(len(m.picker.hits)) + "/" + strconv.Itoa(m.emoji.Len()))
-	lines := []string{padBetween(stBold.Render("react")+stAccent.Render(" › ")+m.picker.input.View(), count, w)}
+	lines := []string{padBetween(pickerPrompt()+m.picker.input.View(), count, w)}
 	if len(m.picker.hits) == 0 {
 		lines = append(lines, fit(stDim.Render("  no emoji matches "+m.picker.input.Value()), w))
 	}

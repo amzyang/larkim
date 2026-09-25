@@ -33,7 +33,7 @@ func TestTick_MembersContactsAndAvatars(t *testing.T) {
 	require.Equal(t, 2, rep.Members)
 	n, _ := s.Store.ChatMemberCount(ctx, "oc_g")
 	require.Equal(t, int64(2), n)
-	cs, _ := s.Store.ListContacts(ctx, "", 10)
+	cs, _ := s.Store.ListContacts(ctx, 10)
 	require.Len(t, cs, 2, "members and sender collapse into contacts")
 
 	chat, _ := s.Store.GetChat(ctx, "oc_g")

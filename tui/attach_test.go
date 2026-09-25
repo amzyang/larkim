@@ -75,13 +75,14 @@ func TestBodyRows_AVideoOpensTheFileItBroughtDown(t *testing.T) {
 	want := filepath.Join("/data", "resources/file_clip.mp4")
 	targets := 0
 	for _, r := range renderRows(videoMessage(), st) {
-		if r.zone.url == "" {
+		if len(r.zones) == 0 {
 			continue
 		}
 		targets++
-		require.Equal(t, want, r.zone.url)
-		require.Equal(t, leadWidth, r.zone.x0, "a target starts where the card is drawn")
-		require.Contains(t, r.zone.note, "file_clip.mp4")
+		z := firstZone(r)
+		require.Equal(t, []string{want}, z.urls)
+		require.Equal(t, leadWidth, z.x0, "a target starts where the card is drawn")
+		require.Contains(t, z.note, "file_clip.mp4")
 	}
 	require.Equal(t, 3, targets, "the cover and the badge below it all play the clip")
 }
@@ -89,7 +90,7 @@ func TestBodyRows_AVideoOpensTheFileItBroughtDown(t *testing.T) {
 func TestBodyRows_AnUndownloadedClipHasNothingToOpen(t *testing.T) {
 	st := downloaded(store.Resource{FileKey: "file_clip", Type: "file", Status: "pending"})
 	for _, r := range renderRows(videoMessage(), st) {
-		require.Empty(t, r.zone.url, "the file is not on this machine yet")
+		require.Empty(t, r.zones, "the file is not on this machine yet")
 	}
 }
 
@@ -104,7 +105,7 @@ func TestBodyRows_AFileCardsItsNameBesideItsSize(t *testing.T) {
 
 	card, ok := zoneRow(rows)
 	require.True(t, ok, "a downloaded file is opened from its card: %q", out)
-	require.Equal(t, filepath.Join("/data", "resources/file_conf.yaml"), card.zone.url)
+	require.Equal(t, []string{filepath.Join("/data", "resources/file_conf.yaml")}, firstZone(card).urls)
 }
 
 func TestBodyRows_AFileKeepsItsSizeAfterBeingSkipped(t *testing.T) {
@@ -123,6 +124,19 @@ func TestBodyRows_AVoiceMessageReadsAsItsLength(t *testing.T) {
 	out := rowText(renderRows(msgs, baseStyle()))
 	require.Contains(t, out, "🎤 00:21")
 	require.NotContains(t, out, "<audio")
+}
+
+func TestBodyRows_ADownloadedVoiceMessageStillOpensNothing(t *testing.T) {
+	st := downloaded(store.Resource{FileKey: "file_voice", Type: "file",
+		LocalPath: "resources/file_voice", Status: "done", SizeBytes: 47515})
+	msgs := []store.Message{{MessageID: "om_1", SenderName: "张三", MsgType: "audio",
+		ContentRaw: `{"file_key":"file_voice","duration":21000}`,
+		Content:    `<audio key="file_voice" duration="21s"/>`,
+		CreateMs:   msgAt(23, 9, 0), RenderedAt: 1}}
+	rows := renderRows(msgs, st)
+	require.Contains(t, rowText(rows), "🎤 00:21", "the card is drawn either way")
+	require.Empty(t, rowZones(rows),
+		"Feishu sends voice as an extensionless Ogg Opus file, which macOS has nothing to open")
 }
 
 func TestBodyRows_AnAttachmentCardsBeforeItsRenderingLands(t *testing.T) {
@@ -178,9 +192,18 @@ func TestClipLength_SpellsThePlayersBadge(t *testing.T) {
 // zoneRow is the first row carrying a click target, and false when none does.
 func zoneRow(rows []msgRow) (msgRow, bool) {
 	for _, r := range rows {
-		if r.zone.url != "" {
+		if len(r.zones) > 0 {
 			return r, true
 		}
 	}
 	return msgRow{}, false
+}
+
+// firstZone is the target a row draws first, and the zero zone when it draws
+// none.
+func firstZone(r msgRow) clickZone {
+	if len(r.zones) == 0 {
+		return clickZone{}
+	}
+	return r.zones[0]
 }

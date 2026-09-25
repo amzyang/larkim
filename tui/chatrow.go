@@ -304,10 +304,42 @@ func chatSummaryLine(c store.Chat, self string, pics emojiPics, w int) (string, 
 	return "", append(chips, rowSeg{text: " " + body})
 }
 
+// markName styles a name with the runes a filter landed on underlined. The
+// underline is folded into the base style rather than nested inside it: an
+// inner reset would end the bold for the rest of the line. Runs are rendered
+// whole so a name costs a handful of escapes rather than one per rune.
+func markName(s string, pos []int, base lipgloss.Style) string {
+	if len(pos) == 0 {
+		return base.Render(s)
+	}
+	at := make(map[int]bool, len(pos))
+	for _, p := range pos {
+		at[p] = true
+	}
+	under := base.Underline(true)
+	var b strings.Builder
+	r := []rune(s)
+	for i := 0; i < len(r); {
+		j, on := i, at[i]
+		for j < len(r) && at[j] == on {
+			j++
+		}
+		style := base
+		if on {
+			style = under
+		}
+		b.WriteString(style.Render(string(r[i:j])))
+		i = j
+	}
+	return b.String()
+}
+
 // renderChatRow lays one chat out over two lines of w columns, avatar
 // included. Right-aligned fields are placed first and the title absorbs what
-// is left, so the right edge stays aligned however long a name is.
-func renderChatRow(av avatars, c store.Chat, unread int64, self string, now time.Time, w int, pics emojiPics) chatRow {
+// is left, so the right edge stays aligned however long a name is. mark is
+// the runes of the name the filter landed on, empty when there is no filter
+// or the hit came through pinyin.
+func renderChatRow(av avatars, c store.Chat, unread int64, self string, now time.Time, w int, pics emojiPics, mark []int) chatRow {
 	avatarTop, avatarBottom, badged := av.cells(c, unread)
 	textWidth := chatTextWidth(w)
 
@@ -323,7 +355,7 @@ func renderChatRow(av avatars, c store.Chat, unread int64, self string, now time
 	}
 	name, suffix := chatTitle(c)
 	room := textWidth - lipgloss.Width(right) - lipgloss.Width(bot) - lipgloss.Width(suffix) - 1
-	title := stBold.Render(personName(truncate(name, max(minTitleWidth, room)), suffix)) + bot
+	title := markName(personName(truncate(name, max(minTitleWidth, room)), suffix), mark, stBold) + bot
 
 	bottom, segs := chatSummaryLine(c, self, pics, textWidth)
 	return chatRow{

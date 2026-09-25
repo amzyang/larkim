@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/amzyang/larkim/store"
 	"github.com/stretchr/testify/require"
 )
@@ -52,11 +53,14 @@ func TestUpdate_OpeningAChatClearsItsBadge(t *testing.T) {
 	for _, c := range chats {
 		require.Zero(t, c.UnreadCount, "the chat the reader is looking at carries no badge")
 	}
-	require.True(t, m.dots["om_a"], "what was waiting when the visit began still wears a marker")
+	require.False(t, m.dots["om_a"], "the block the visit opens on is read as it is drawn")
 }
 
 func TestUpdate_TheUnreadMarkerOutlivesTheReadItCaused(t *testing.T) {
 	m, st := readModel(t)
+	// The visit opens on the newest block and reads it, so the marker under
+	// test is the one above it.
+	lands(t, st, "om_b", "ou_b", "李四", "在的", 300)
 	m.pendingChat = "oc_a"
 	m = arrive(t, m, st, "oc_a")
 
@@ -87,9 +91,10 @@ func TestUpdate_SearchHitsKeepTheirUnreadMarker(t *testing.T) {
 	m, st := readModel(t)
 	require.NoError(t, st.UpdateRendered(context.Background(), "om_a", "在吗", "", "", 1))
 
-	msg, ok := searchMessages(st, "在吗")().(searchMsg)
+	msg, ok := localSearch(Deps{Store: st}, nil, "在吗", 1)().(searchMsg)
 	require.True(t, ok)
-	require.Len(t, msg.msgs, 1)
+	require.Len(t, msg.hits, 1)
+	m.searching, m.searchGen = true, 1
 	next, _ := m.update(msg)
 	m = next.(Model)
 
@@ -106,6 +111,7 @@ func TestUpdate_AThreadReplysMarkerIsGoneOnTheNextVisit(t *testing.T) {
 	require.NoError(t, err)
 	unread := false
 	require.NoError(t, st.SetReadStatus(ctx, "om_reply", &unread, 200, 0))
+	lands(t, st, "om_c", "ou_c", "王五", "好的", 300)
 	m.pendingChat = "oc_a"
 	m = arrive(t, m, st, "oc_a")
 	require.True(t, m.dots["om_reply"], "a reply that landed while the reader was away wears a marker")
@@ -116,4 +122,119 @@ func TestUpdate_AThreadReplysMarkerIsGoneOnTheNextVisit(t *testing.T) {
 
 	require.Empty(t, m.dots, "the reply the pane put in front of the reader was read with the chat")
 	require.False(t, strings.Contains(rowText(renderRows(m.msgs, m.msgStyleFor(60, m.meta))), "●"))
+}
+
+// lands writes a message into the chat the way sync does, Feishu still
+// reporting it unread.
+func lands(t *testing.T, st *store.Store, id, sender, name, text string, ms int64) {
+	t.Helper()
+	ctx := context.Background()
+	_, err := st.UpsertMessages(ctx, []store.Message{{MessageID: id, ChatID: "oc_a", MsgType: "text",
+		SenderID: sender, SenderName: name, ContentRaw: `{"text":"` + text + `"}`, CreateMs: ms, UpdateMs: ms}}, ms)
+	require.NoError(t, err)
+	unread := false
+	require.NoError(t, st.SetReadStatus(ctx, id, &unread, ms, 0))
+}
+
+// watching opens a chat with the message pane focused, which is where the
+// cursor keys act.
+func watching(t *testing.T, m Model, st *store.Store) Model {
+	t.Helper()
+	m.focus, m.pendingChat = paneMessages, "oc_a"
+	return arrive(t, m, st, "oc_a")
+}
+
+func TestUpdate_AMessageLandingInTheWatchedChatWearsNoMarker(t *testing.T) {
+	m, st := readModel(t)
+	lands(t, st, "om_b", "ou_b", "李四", "在的", 300)
+	m = watching(t, m, st)
+	require.True(t, m.dots["om_a"], "the block above the one the visit opened on still waits")
+
+	lands(t, st, "om_c", "ou_c", "王五", "收到", 500)
+	m = arrive(t, m, st, "oc_a")
+
+	require.False(t, m.dots["om_c"], "what landed under the reader's eyes was read as it landed")
+	require.True(t, m.dots["om_a"], "what was waiting when the visit began keeps its marker")
+	require.Equal(t, 1, strings.Count(rowText(m.msgRows), "●"))
+}
+
+func TestUpdate_AMessageLandingWhileAwayKeepsItsMarkerOnTheReturn(t *testing.T) {
+	m, st := readModel(t)
+	m = watching(t, m, st)
+
+	away, _ := m.update(tea.BlurMsg{})
+	m = away.(Model)
+	lands(t, st, "om_b", "ou_b", "李四", "改到下午", 300)
+	m = arrive(t, m, st, "oc_a")
+	require.True(t, m.dots["om_b"], "what landed while the reader was away says so")
+
+	back, _ := m.update(tea.FocusMsg{})
+	m = back.(Model)
+
+	require.True(t, m.dots["om_b"], "coming back does not erase what was missed")
+	require.Contains(t, rowText(m.msgRows), "●")
+}
+
+func TestUpdate_AJumpClearsTheMarkerOfTheHitItLandsOn(t *testing.T) {
+	m, st := readModel(t)
+	lands(t, st, "om_b", "ou_b", "李四", "在的", 300)
+	m = watching(t, m, st)
+	require.True(t, m.dots["om_a"], "the visit opened on om_b's block, so om_a still waits")
+
+	// A hit inside the chat already open: the page comes back with the cursor
+	// asked for it rather than for the newest message.
+	m.pendingSelect = "om_a"
+	m = arrive(t, m, st, "oc_a")
+
+	require.False(t, m.dots["om_a"], "the hit the jump landed on is read as it is drawn")
+}
+
+func TestMove_TheCursorClearsTheMarkerOfTheBlockItLandsOn(t *testing.T) {
+	m, st := readModel(t)
+	lands(t, st, "om_b", "ou_b", "李四", "在的", 300)
+	lands(t, st, "om_c", "ou_c", "王五", "我来看看", 500)
+	m = watching(t, m, st)
+	require.True(t, m.dots["om_a"] && m.dots["om_b"], "the two blocks above the landing one still wait")
+
+	out, _ := m.move(-1)
+	m = out.(Model)
+
+	require.False(t, m.dots["om_b"], "the block the cursor landed on lost its marker")
+	require.True(t, m.dots["om_a"], "the block it has not reached keeps its own")
+	require.Equal(t, 1, strings.Count(rowText(m.msgRows), "●"))
+}
+
+func TestMove_ClearingAMarkerTakesEveryMessageUnderTheSenderLine(t *testing.T) {
+	m, st := readModel(t)
+	lands(t, st, "om_b", "ou_b", "李四", "在的", 300)
+	lands(t, st, "om_c", "ou_b", "李四", "马上处理", 400)
+	lands(t, st, "om_d", "ou_c", "王五", "辛苦", 600)
+	m = watching(t, m, st)
+
+	// The cursor steps back off the block the visit opened on and onto the
+	// second message of the one above, which hides under om_b's sender line.
+	out, _ := m.move(-1)
+	m = out.(Model)
+
+	require.False(t, m.dots["om_c"], "the message the cursor landed on lost its marker")
+	require.False(t, m.dots["om_b"], "a half-cleared block would open a second sender line")
+	require.True(t, m.dots["om_a"])
+	require.Equal(t, 1, strings.Count(rowText(m.msgRows), "●"))
+}
+
+func TestMove_SearchHitsKeepTheirMarker(t *testing.T) {
+	m, st := readModel(t)
+	require.NoError(t, st.UpdateRendered(context.Background(), "om_a", "在吗", "", "", 1))
+	msg, ok := localSearch(Deps{Store: st}, nil, "在吗", 1)().(searchMsg)
+	require.True(t, ok)
+	m.searching, m.searchGen, m.focus = true, 1, paneMessages
+	next, _ := m.update(msg)
+	m = next.(Model)
+	require.True(t, m.dots["om_a"])
+
+	out, _ := m.move(1)
+	m = out.(Model)
+
+	require.True(t, m.dots["om_a"], "a hit the reader has not opened is still waiting")
+	require.Contains(t, rowText(m.msgRows), "●")
 }

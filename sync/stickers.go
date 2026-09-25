@@ -2,6 +2,7 @@ package sync
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -28,6 +29,10 @@ func DefaultClientDir() string {
 	return filepath.Join(home, "Library", "Application Support")
 }
 
+// errStickerNotCached keeps its retries: the picture appears once the sticker
+// is viewed in the Lark client.
+var errStickerNotCached = errors.New("not in the Lark client's sticker storage")
+
 // copyStickers fills in the sticker pictures of messages that are waiting for
 // one. Feishu's resource API refuses a sticker's file_key (234002
 // Unauthorized) whatever identity asks, so lark-cli never returns one and the
@@ -44,7 +49,7 @@ func (s *Syncer) copyStickers(ctx context.Context, now time.Time) (int, error) {
 	for _, p := range due {
 		src, size := findSticker(s.Opt.ClientDir, p.FileKey)
 		if src == "" {
-			if err := s.failResource(ctx, p, "not in the Lark client's sticker storage", now); err != nil {
+			if err := s.failResource(ctx, p, errStickerNotCached, now); err != nil {
 				return done, err
 			}
 			continue
@@ -57,12 +62,12 @@ func (s *Syncer) copyStickers(ctx context.Context, now time.Time) (int, error) {
 		}
 		rel, size, err := copySticker(src, s.Opt.DataDir, p.FileKey)
 		if err != nil {
-			if err := s.failResource(ctx, p, err.Error(), now); err != nil {
+			if err := s.failResource(ctx, p, err, now); err != nil {
 				return done, err
 			}
 			continue
 		}
-		if err := s.Store.MarkResourceDone(ctx, p.MessageID, p.FileKey, rel, size); err != nil {
+		if err := s.Store.MarkResourceDone(ctx, p.FileKey, rel, size); err != nil {
 			return done, err
 		}
 		done++

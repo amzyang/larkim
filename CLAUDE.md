@@ -17,6 +17,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - 客户端概念的命名与语义直接沿用（会话/群/话题回复/@/未读/免打扰/置顶/加急/撤回/表情回复），不换词、不改含义
 - TUI 无法模拟或成本过高的（富文本编辑、悬停、动画、内联图片、拖拽）降级为最接近的子集：保留同一心智模型，删表现形式，不改语义
 - 键位遵循 TUI 习惯（Bubble Tea/vim 式导航），但键位触发的动作语义与客户端一致；两边习惯冲突时以 TUI 习惯定键、以客户端定行为
+- 跳到客户端一律用原生 scheme `lark://`（`lark://applink.feishu.cn/client/chat/open?openChatId=…`、`lark://vc.feishu.cn/j/…`），不用 `https://` applink：后者先开浏览器标签页再重定向回客户端
 
 ## Architecture
 

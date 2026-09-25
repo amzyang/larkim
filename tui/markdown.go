@@ -79,7 +79,7 @@ func (d mdDoc) block(n ast.Node, depth int) []msgRow {
 		for _, r := range d.blocks(n, depth+1) {
 			// The gutter replaces the indent the nesting already paid for, so
 			// a quote does not drift further right than its contents need.
-			r.text = pad + stDim.Render("│") + " " + strings.TrimPrefix(r.text, pad+"  ")
+			r.reindent(pad+"  ", pad+stDim.Render("│")+" ")
 			rows = append(rows, r)
 		}
 		return rows
@@ -132,8 +132,8 @@ func (d mdDoc) list(l *ast.List, depth int) []msgRow {
 			if i == 0 {
 				// The marker takes the place of the first line's indent, so
 				// the text of every item starts at the same column.
-				inner[i].text = strings.Repeat(" ", depth*mdIndent) + stDim.Render(marker) + " " +
-					strings.TrimPrefix(inner[i].text, strings.Repeat(" ", (depth+1)*mdIndent))
+				inner[i].reindent(strings.Repeat(" ", (depth+1)*mdIndent),
+					strings.Repeat(" ", depth*mdIndent)+stDim.Render(marker)+" ")
 			}
 		}
 		rows = append(rows, inner...)
@@ -149,7 +149,7 @@ func (d mdDoc) paragraph(n ast.Node, pad string, room int) []msgRow {
 		keys, rest := splitImages(line)
 		if len(keys) == 0 || strings.TrimSpace(rest) != "" {
 			if segs := inlineSegs(rest, d.ms, d.st.emojiInline); segs != nil {
-				rows = append(rows, segRows(segs, d.idx, d.st, d.g)...)
+				rows = append(rows, segRows(segs, pad, d.idx, d.st, d.g)...)
 			} else {
 				for _, l := range wrap(renderInline(rest, d.ms), room) {
 					rows = append(rows, msgRow{lead: d.g.take(), text: pad + l, idx: d.idx})

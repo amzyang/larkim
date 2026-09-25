@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"image/color"
+	"log/slog"
 	"os"
 	"slices"
 	"strings"
@@ -44,6 +45,8 @@ const (
 	modeFilter
 	modeVisual
 	modeEmoji
+	modeSearch
+	modeTarget
 )
 
 // Model is the Bubble Tea model.
@@ -66,11 +69,17 @@ type Model struct {
 	// readRefreshed is when each chat last had its read status re-asked, so
 	// revisiting a chat does not spend a call every time.
 	readRefreshed map[string]time.Time
+	// targets is the chooser over what the selected message leads to, open
+	// only in modeTarget.
+	targets targets
 	// picker is the emoji chooser, open only in modeEmoji.
 	picker picker
 	// emoji is the searchable emoji set the picker offers, prepared once
 	// because the terms never change while the program runs.
 	emoji *emoji.Index
+	// chatIx spells the chat list for the filter, so `/` reaches a Chinese
+	// name through its pinyin.
+	chatIx *chatIndex
 	// reactionRefreshed is when each chat last had its reactions re-asked.
 	// Nothing else keeps them current: Feishu does not move a message's
 	// update_time when somebody reacts, so the rendering pass never revisits.
@@ -127,10 +136,24 @@ type Model struct {
 	threadRows []msgRow
 
 	// Search mode: the messages pane lists cross-chat hits.
-	searching     bool
-	searchQuery   string
-	searchResults []store.Message
-	searchMeta    msgMeta
+	searching   bool
+	searchQuery string
+	// searchHits are the rows the panel can open — messages, chats and
+	// people share one cursor, which is msgIdx. It is the two halves below
+	// in the order they are drawn, rebuilt whenever either of them lands.
+	searchHits []searchHit
+	// searchLocal is what the store answered, searchRemote what Feishu added
+	// to it. They arrive separately and neither waits for the other.
+	searchLocal  []searchHit
+	searchRemote []searchHit
+	// searchCancel drops the remote search in flight; searchBusy says one is
+	// still out, which the panel's title line reports.
+	searchCancel context.CancelFunc
+	searchBusy   bool
+	searchMeta   msgMeta
+	// searchGen is which query the results in hand belong to. A result that
+	// names an older one is dropped rather than shown under a newer query.
+	searchGen     int
 	pendingSelect string // message to select once its chat loads
 
 	// Assistant pane (replaces the thread pane while open).
@@ -181,8 +204,12 @@ func New(d Deps) Model {
 	ta.ShowLineNumbers = false
 	ta.KeyMap.InsertNewline = key.NewBinding(key.WithKeys("shift+enter", "alt+enter", "ctrl+j"))
 	ta.SetHeight(3)
+	// The terminal's own cursor carries the mode, so bubbles must stop drawing
+	// its reverse-video stand-in: a virtual cursor has no shape to change.
+	ta.SetVirtualCursor(false)
 	ti := textinput.New()
 	ti.Prompt = ":"
+	ti.SetVirtualCursor(false)
 	if d.OpenURL == nil {
 		d.OpenURL = openURL
 	}
@@ -195,11 +222,15 @@ func New(d Deps) Model {
 	if d.Fetch == nil {
 		d.Fetch = sync.HTTPFetch
 	}
+	if d.Log == nil {
+		d.Log = slog.New(slog.DiscardHandler)
+	}
 	prunePasted(d.DataDir, time.Now())
 	m := Model{deps: d, input: ta, cmdline: ti, focus: paneChats, focused: true, previewOpen: true,
 		readRefreshed:     map[string]time.Time{},
 		reactionRefreshed: map[string]time.Time{},
 		emoji:             emoji.NewReactionIndex(),
+		chatIx:            newChatIndex(),
 		avatars:           newAvatars(d.DataDir, d.Env), pics: newPictures(d.DataDir, d.Env),
 		files: osDraftFiles()}
 	m.emoji.LoadRecent(d.DataDir)
@@ -381,6 +412,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		wasOn, atEnd := idAt(m.msgs, m.msgIdx), m.msgIdx >= len(m.msgs)-1
 		anchor := topAnchor(m.msgRows, m.msgs, m.msgTop)
 		tailed := atTail(m.msgRows, m.msgTop, m.msgListHeight())
+		entering := msg.chatID == m.pendingChat
 		switch msg.chatID {
 		case m.pendingChat:
 			m.enterChat()
@@ -389,7 +421,13 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		default:
 			return m, nil
 		}
-		m.markDots(msg.msgs)
+		// A message landing in the chat the reader is watching is read as it
+		// lands, so it wears no marker. Only the page that opens a chat, and
+		// what arrives while the terminal is not focused, has something to
+		// say about what was missed.
+		if entering || !m.focused {
+			m.markDots(msg.msgs)
+		}
 		m.msgsBase, m.meta = msg.msgs, msg.meta
 		m.applyOutbox()
 		if m.searching {
@@ -410,6 +448,14 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.pendingSelect = ""
 		}
 		m.repinSelection(wasOn)
+		// The block a visit opens on stands in front of the reader before
+		// they touch a key, and so does the hit a jump lands on: both are
+		// read as they are drawn, the way moving the cursor onto a block
+		// reads it. A reload is not: the cursor following a message that
+		// landed while the reader was away must not erase what it says.
+		if entering || jumped {
+			m.clearBlockDots(m.msgs, m.msgIdx, m.msgStyleFor(m.messagesWidth()-2, m.meta))
+		}
 		m.rebuildMessages()
 		if jumped {
 			// Landing on a search hit is a cursor move, so this one scrolls.
@@ -418,16 +464,49 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.msgTop = holdTop(m.msgRows, m.msgs, anchor, tailed, m.msgTop, m.msgListHeight())
 		}
 		return m, m.takeRead(msg.chatID, msg.msgs)
-	case searchMsg:
-		m.markDots(msg.msgs)
-		m.searching, m.searchQuery, m.searchResults, m.searchMeta = true, msg.query, msg.msgs, msg.meta
-		m.msgIdx, m.msgTop = 0, 0
-		m = m.focusMessages()
-		m.rebuildMessages()
-		if len(msg.msgs) == 0 {
-			return m.notify("no messages match "+msg.query, true), nil
+	case searchRestMsg:
+		if !m.claimSearch(msg.gen) {
+			return m, nil
 		}
-		return m.notify(fmt.Sprintf("%d hits · Enter opens · Esc leaves search", len(msg.msgs)), false), nil
+		return m, localSearch(m.deps, m.chats, m.searchQuery, msg.gen)
+	case remoteRestMsg:
+		if !m.claimSearch(msg.gen) {
+			return m, nil
+		}
+		return m, m.startRemote()
+	case searchMsg:
+		if !m.claimSearch(msg.gen) {
+			return m, nil
+		}
+		for _, h := range msg.hits {
+			if h.kind == hitMessage {
+				m.markDots([]store.Message{h.msg})
+			}
+		}
+		m.searchLocal, m.searchMeta = msg.hits, msg.meta
+		m.rebuildHits()
+		m.msgIdx, m.msgTop = 0, 0
+		m.rebuildMessages()
+		return m, nil
+	case remoteSearchMsg:
+		if !m.claimSearch(msg.gen) {
+			return m, nil
+		}
+		m.searchBusy, m.searchCancel = false, nil
+		if msg.err != nil {
+			// A remote search failing costs the cold half of the answer; the
+			// store's half is already on screen, so this is a notice.
+			return m.notify("Feishu search: "+msg.err.Error(), true), nil
+		}
+		m.searchRemote = msg.hits
+		m.rebuildHits()
+		m.rebuildMessages()
+		return m, nil
+	case openHitMsg:
+		m.closeSearch()
+		m.pendingSelect = msg.messageID
+		m.notice = ""
+		return m, m.openChatFrom(msg.chatID, msg.sinceMs)
 	case aiChunkMsg:
 		return m.onAIChunk(msg.chunk)
 	case threadLoadedMsg:
@@ -437,7 +516,12 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		wasOn := idAt(m.thread, m.threadIdx)
 		anchor := topAnchor(m.threadRows, m.thread, m.threadTop)
 		tailed := atTail(m.threadRows, m.threadTop, m.listHeight())
-		m.markDots(msg.msgs)
+		// The chat page carries the replies too, so the markers the reader
+		// arrived to are already lit; this pane only has to speak for what
+		// lands while they are away.
+		if !m.focused {
+			m.markDots(msg.msgs)
+		}
 		m.threadBase, m.threadMeta = msg.msgs, msg.meta
 		m.applyOutbox()
 		if m.threadIdx >= len(m.thread) {
@@ -450,6 +534,11 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case revMsg:
 		return m, tea.Batch(waitForRev(m.revs), m.reloadCurrent())
 	case syncStatusMsg:
+		// The status bar has room for the status word but not the reason, so
+		// a newly reported failure only exists in the log.
+		if msg.lastError != "" && msg.lastError != m.syncErr {
+			m.deps.Log.Warn("sync", "status", msg.status, "err", msg.lastError)
+		}
 		m.syncStatus, m.syncErr = msg.status, msg.lastError
 		return m, pollSyncStatus(m.deps.Store)
 	case sentMsg:
@@ -575,7 +664,7 @@ func (m Model) forward(msg tea.Msg) (tea.Model, tea.Cmd) {
 		before := m.composerRows()
 		m.input, cmd = m.input.Update(msg)
 		m.tookDraft(before)
-	case modeCommand, modeFilter:
+	case modeCommand, modeFilter, modeSearch:
 		m.cmdline, cmd = m.cmdline.Update(msg)
 	case modeEmoji:
 		return m.typeIntoFilter(msg)
@@ -620,7 +709,7 @@ func (m *Model) openChatFrom(chatID string, sinceMs int64) tea.Cmd {
 // the search it was reached from — goes at that same moment, so no pane is
 // ever left showing one chat under another's name.
 func (m *Model) enterChat() {
-	m.searching, m.searchResults, m.searchQuery = false, nil, ""
+	m.searching, m.searchHits, m.searchQuery = false, nil, ""
 	m.dots = nil
 	m.chatID, m.msgSince = m.pendingChat, m.pendingSince
 	m.pendingChat, m.pendingSince = "", 0
@@ -645,6 +734,39 @@ func (m *Model) markDots(msgs []store.Message) {
 	}
 }
 
+// clearDotsAtCursor drops the unread marker of the block the cursor has just
+// been moved onto. The Feishu client has no message cursor, so there is
+// nothing to copy: moving onto a block is the closest a list with a cursor
+// comes to the client's own "the reader has seen this".
+//
+// The search pane is left alone: its hits run across chats, none of which the
+// reader has opened, so the marker is all that says a hit is still waiting.
+func (m *Model) clearDotsAtCursor() {
+	switch {
+	case m.focus == paneMessages && !m.searching:
+		m.clearBlockDots(m.msgs, m.msgIdx, m.msgStyleFor(m.messagesWidth()-2, m.meta))
+	case m.focus == paneThread && !m.aiOpen:
+		m.clearBlockDots(m.thread, m.threadIdx, m.msgStyleFor(m.rightWidth()-2, m.threadMeta))
+	}
+}
+
+// clearBlockDots drops the markers of every message under one sender line.
+// The dot is the block's, and a block splits where its messages disagree
+// about it, so clearing one message alone would open a second sender line
+// under the reader's eyes.
+func (m *Model) clearBlockDots(msgs []store.Message, idx int, st msgStyle) {
+	if len(m.dots) == 0 || idx < 0 || idx >= len(msgs) {
+		return
+	}
+	heads := blockHeads(msgs, st)
+	head := heads[idx]
+	for i, h := range heads {
+		if h == head {
+			delete(m.dots, msgs[i].MessageID)
+		}
+	}
+}
+
 // takeRead records that the reader has had a chat's page in front of them,
 // which is what drops the badge. It runs on every page, reloads included, so
 // the chat being watched does not light up again as messages land in it.
@@ -656,7 +778,7 @@ func (m *Model) markDots(msgs []store.Message) {
 // reader's eyes as well as the one just opened: a message landing in it
 // relights the client's dot, and the page it arrives on drops it again.
 func (m Model) takeRead(chatID string, msgs []store.Message) tea.Cmd {
-	cmds := []tea.Cmd{markChatRead(m.deps.Store, chatID)}
+	cmds := []tea.Cmd{markChatRead(m.deps.Store, m.deps.Log, chatID)}
 	if unreadWaiting(msgs) {
 		cmds = append(cmds, clearFeishuBadge(m.deps, chatID))
 	}
@@ -753,31 +875,60 @@ func (m Model) selected() (store.Message, bool) {
 			return m.thread[m.threadIdx], true
 		}
 	default:
-		list := m.msgs
 		if m.searching {
-			list = m.searchResults
+			// Only a message hit is a message; a chat or a person row has
+			// nothing for the callers that want one.
+			if h, ok := m.selectedHit(); ok && h.kind == hitMessage {
+				return h.msg, true
+			}
+			return store.Message{}, false
 		}
-		if m.msgIdx >= 0 && m.msgIdx < len(list) {
-			return list[m.msgIdx], true
+		if m.msgIdx >= 0 && m.msgIdx < len(m.msgs) {
+			return m.msgs[m.msgIdx], true
 		}
 	}
 	return store.Message{}, false
 }
 
-// selectedZone is the click target the selected message draws, so the
-// keyboard reaches the button the mouse can press. A message that draws more
-// than one is opened by its first: a card's own target sits above the text.
-func (m Model) selectedZone() (clickZone, bool) {
+// searchMessages is the message hits alone, for the callers that can only do
+// something with a message.
+func (m Model) searchMessages() []store.Message {
+	out := make([]store.Message, 0, len(m.searchHits))
+	for _, h := range m.searchHits {
+		if h.kind == hitMessage {
+			out = append(out, h.msg)
+		}
+	}
+	return out
+}
+
+// selectedZones are the targets the selected message draws, in the order it
+// draws them, so the keyboard reaches everything the mouse can press. The
+// mouse resolves by where it was pressed and never needs this.
+//
+// A target wrapped across rows is one target, not one per row, and a card
+// that repeats a link is listed once: what is listed is what can be opened,
+// and the same place twice reads as two different ones.
+func (m Model) selectedZones() []clickZone {
 	rows, idx := m.msgRows, m.msgIdx
 	if m.focus == paneThread {
 		rows, idx = m.threadRows, m.threadIdx
 	}
+	var out []clickZone
+	seen := map[string]bool{}
 	for _, r := range rows {
-		if r.idx == idx && r.zone.url != "" {
-			return r.zone, true
+		if r.idx != idx {
+			continue
+		}
+		for _, z := range r.zones {
+			if len(z.urls) == 0 || seen[z.urls[0]] {
+				continue
+			}
+			seen[z.urls[0]] = true
+			out = append(out, z)
 		}
 	}
-	return clickZone{}, false
+	return out
 }
 
 // rightOpen reports whether the third pane (thread or assistant) is shown.
@@ -792,14 +943,16 @@ func (m Model) currentChat() (store.Chat, bool) {
 	return store.Chat{}, false
 }
 
+// visibleChats narrows the list to what the filter answers. The filter only
+// decides who comes in, never who comes first: the order is the reader's own
+// recency, and a list that reranks under their hand is one they cannot learn.
 func (m Model) visibleChats() []store.Chat {
 	if m.chatFilter == "" {
 		return m.chats
 	}
-	f := strings.ToLower(m.chatFilter)
 	var out []store.Chat
 	for _, c := range m.chats {
-		if strings.Contains(strings.ToLower(c.Name), f) || strings.Contains(c.ChatID, f) {
+		if _, ok := m.chatIx.match(c, m.chatFilter); ok {
 			out = append(out, c)
 		}
 	}
@@ -844,6 +997,10 @@ func (m Model) onKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m.onFilterKey(k)
 	case modeEmoji:
 		return m.onEmojiKey(k)
+	case modeTarget:
+		return m.onTargetKey(k)
+	case modeSearch:
+		return m.onSearchKey(k)
 	case modeVisual:
 		return m.onVisualKey(s)
 	}
@@ -1008,16 +1165,21 @@ func (m Model) onNormalKey(s string) (tea.Model, tea.Cmd) {
 		return m.startVisual()
 	case "o":
 		// What the selected message draws answers first: a running call is
-		// opened by joining it, an attachment by the file it brought down.
-		// A message carrying neither is opened where it was said.
-		if z, ok := m.selectedZone(); ok {
-			return m, openZone(m.deps, z)
-		}
-		if sel, ok := m.selected(); ok {
-			return m, openInFeishu(m.deps, sel.ChatID, sel.MessagePosition)
-		}
-		if m.chatID != "" {
-			return m, openInFeishu(m.deps, m.chatID, 0)
+		// opened by joining it, an attachment by the file it brought down, a
+		// link by where it leads. A message carrying none is opened where it
+		// was said.
+		switch zs := m.selectedZones(); len(zs) {
+		case 0:
+			if sel, ok := m.selected(); ok {
+				return m, openInFeishu(m.deps, sel.ChatID, sel.MessagePosition)
+			}
+			if m.chatID != "" {
+				return m, openInFeishu(m.deps, m.chatID, 0)
+			}
+		case 1:
+			return m, openZone(m.deps, zs[0])
+		default:
+			return m.openTargets(zs)
 		}
 	case "/":
 		vis := m.visibleChats()
@@ -1027,6 +1189,8 @@ func (m Model) onNormalKey(s string) (tea.Model, tea.Cmd) {
 		m.cmdline.Prompt = "/"
 		m.cmdline.SetValue(m.chatFilter)
 		return m, m.cmdline.Focus()
+	case "ctrl+f":
+		return m.openSearch("")
 	case ":", ";":
 		m.mode = modeCommand
 		m.cmdline.Prompt = ":"
@@ -1043,10 +1207,7 @@ func (m Model) onNormalKey(s string) (tea.Model, tea.Cmd) {
 		case m.aiOpen:
 			return m.closeAI(), nil
 		case m.searching:
-			m.searching, m.searchResults = false, nil
-			m.msgIdx = len(m.msgs) - 1
-			m.rebuildMessages()
-			m.scrollMessagesToSelection()
+			m.closeSearch()
 			return m.notify("", false), nil
 		case m.threadOpen && m.focus == paneThread:
 			return m.toggleThread()
@@ -1145,7 +1306,7 @@ func (m Model) yankSources() ([]yankSource, bool) {
 	case m.focus == paneMessages, m.focus == paneThread && !m.aiOpen:
 		list := m.focusedList()
 		if m.searching && m.focus == paneMessages {
-			list = m.searchResults
+			list = m.searchMessages()
 		}
 		if len(list) == 0 {
 			return nil, true
@@ -1332,9 +1493,10 @@ func (m Model) move(n int) (tea.Model, tea.Cmd) {
 	case paneMessages:
 		count := len(m.msgs)
 		if m.searching {
-			count = len(m.searchResults)
+			count = len(m.searchHits)
 		}
 		m.msgIdx = clamp(m.msgIdx+n, 0, count-1)
+		m.clearDotsAtCursor()
 		m.rebuildMessages()
 		m.scrollMessagesToSelection()
 	case paneThread:
@@ -1343,6 +1505,7 @@ func (m Model) move(n int) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.threadIdx = clamp(m.threadIdx+n, 0, len(m.thread)-1)
+		m.clearDotsAtCursor()
 		m.rebuildThread()
 		m.scrollThreadToSelection()
 	}
@@ -1358,12 +1521,7 @@ func (m Model) activate() (tea.Model, tea.Cmd) {
 		return m.focusMessages(), cmd
 	case paneMessages:
 		if m.searching {
-			if sel, ok := m.selected(); ok {
-				m.pendingSelect = sel.MessageID
-				m.notice = ""
-				return m, m.openChatFrom(sel.ChatID, sel.CreateMs)
-			}
-			return m, nil
+			return m.openHit()
 		}
 		sel, ok := m.selected()
 		if !ok {
@@ -1558,10 +1716,9 @@ func (m Model) runCommand(line string) (tea.Model, tea.Cmd) {
 		}
 		return m.notify(note, false), nil
 	case "search", "s":
-		if len(strings.TrimSpace(rest)) == 0 {
-			return m.notify("usage: :search <text>", true), nil
-		}
-		return m.notify("searching…", false), searchMessages(m.deps.Store, rest)
+		// The same panel ctrl+f opens, with the argument already in it: one
+		// implementation, two ways in.
+		return m.openSearch(strings.TrimSpace(rest))
 	case "copy":
 		return m.runCopy(rest)
 	case "react":
@@ -1735,6 +1892,7 @@ func (m Model) onClick(ms tea.Mouse) (tea.Model, tea.Cmd) {
 		}
 		if idx := rowAt(m.msgRows, m.msgTop+row); idx >= 0 {
 			m.msgIdx = idx
+			m.clearDotsAtCursor()
 			m.rebuildMessages()
 			if double {
 				return m.activate()
@@ -1746,6 +1904,7 @@ func (m Model) onClick(ms tea.Mouse) (tea.Model, tea.Cmd) {
 		}
 		if idx := rowAt(m.threadRows, m.threadTop+row); idx >= 0 {
 			m.threadIdx = idx
+			m.clearDotsAtCursor()
 			m.rebuildThread()
 			if double {
 				return m.activate()
@@ -1788,7 +1947,8 @@ func clamp(v, lo, hi int) int {
 const helpText = `NORMAL      j/k move · gg/G ends · Ctrl+d/u page · Tab/Shift+Tab focus · h/l panes
             Enter open chat / thread / reply · i write · r reply · R reply in thread · t thread
             Y copy agent context · yy id · yr raw json · yc content · v select a range
-            o open in Feishu, or join the call the selected message invites to
+            o open what the selected message carries: a link, a file, its pictures,
+              the call it invites to, or the message itself in Feishu
             e react to the selected message
             / filter chats · :/; command · q quit
             . send a failed message again · x drop it
@@ -1799,12 +1959,17 @@ INSERT      Enter send · Shift+Enter newline · ^r drop the quote · Esc back
             ^o previews a post or an image the way the message list will draw it
             ^g opens the draft in $VISUAL or $EDITOR as a markdown file
             ^v pastes an image, a file path or text from the clipboard
+OPEN        o opens it when a message carries more than one target
+            j/k move · Enter open · 1-9 the line it is drawn on · Esc cancel
+            each line names the target and where it leads, a link by its host
+            the last line opens the message in Feishu, whatever the list left out
 EMOJI       e opens it · type to filter (Chinese, pinyin or initials) · ↑↓←→ move · Enter react · Esc cancel
             the filter takes the readline keys: ^w a word, ^u to the start, ^a/^e ends
             an emoji already yours is marked ✓, and choosing it takes the reaction back
 COMMAND     :copy <200|7d|all> · :goto <chat> · :react <emoji> · :send <chat|ou_> <text> · :search <text> · :preview · :sync · :q
 ASSISTANT   a or :ai [summary | draft <how> | todo | <question>] · answer streams in the right pane · Esc closes
-MOUSE       click focuses and selects · double-click opens · click Join to enter a call
+MOUSE       click focuses and selects · double-click opens
+            click a link, a picture, a file card, a card button or Join to open it
             wheel scrolls`
 
 func fmtStatus(m Model) string {
@@ -1846,6 +2011,10 @@ func modeLabel(md mode) string {
 		return "VISUAL"
 	case modeEmoji:
 		return "REACT"
+	case modeSearch:
+		return "SEARCH"
+	case modeTarget:
+		return "OPEN"
 	}
 	return "NORMAL"
 }

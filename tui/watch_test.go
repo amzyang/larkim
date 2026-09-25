@@ -59,10 +59,10 @@ func TestUpdate_RevMsgReloadsEveryPane(t *testing.T) {
 func TestUpdate_MessagesLoadedKeepsSearchCursor(t *testing.T) {
 	m := sized(120, 36)
 	m.searching, m.focus = true, paneMessages
-	m.searchResults = []store.Message{
-		{MessageID: "om_hit_a", ChatID: "oc_1", Content: "hit a", RenderedAt: 1},
-		{MessageID: "om_hit_b", ChatID: "oc_7", Content: "hit b", RenderedAt: 1},
-	}
+	m.searchHits = messageHits(
+		store.Message{MessageID: "om_hit_a", ChatID: "oc_1", Content: "hit a", RenderedAt: 1},
+		store.Message{MessageID: "om_hit_b", ChatID: "oc_7", Content: "hit b", RenderedAt: 1},
+	)
 	m.msgIdx, m.msgTop = 1, 0
 
 	// A background reload of the open chat lands while the pane is showing

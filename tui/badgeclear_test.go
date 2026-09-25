@@ -9,10 +9,17 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// openCall is one applink handed to the desktop client.
+// openCall is one hand-over to the desktop: the targets opened together, and
+// whether the screen was left to the terminal.
 type openCall struct {
-	url        string
+	targets    []string
 	background bool
+}
+
+// opened is a hand-over of one target, which is every call but a message's
+// pictures going over as a set.
+func opened(url string, background bool) openCall {
+	return openCall{[]string{url}, background}
 }
 
 // badgeModel is readModel with the opener replaced, so the applinks a visit
@@ -31,8 +38,8 @@ func badgeModel(t *testing.T) (Model, *store.Store, *[]openCall) {
 	require.NoError(t, st.SetReadStatus(ctx, "om_a", &unread, 100, 0))
 
 	var calls []openCall
-	m := New(Deps{Store: st, Self: "ou_me", OpenURL: func(url string, background bool) error {
-		calls = append(calls, openCall{url, background})
+	m := New(Deps{Store: st, Self: "ou_me", OpenURL: func(targets []string, background bool) error {
+		calls = append(calls, openCall{targets, background})
 		return nil
 	}})
 	m.width, m.height = 120, 36
@@ -52,7 +59,7 @@ func TestUpdate_OpeningAChatWithUnreadClearsTheFeishuBadge(t *testing.T) {
 
 	arrive(t, m, st, "oc_a")
 
-	require.Equal(t, []openCall{{"lark://applink.feishu.cn/client/chat/open?openChatId=oc_a", true}}, *calls,
+	require.Equal(t, []openCall{opened("lark://applink.feishu.cn/client/chat/open?openChatId=oc_a", true)}, *calls,
 		"the client is walked onto the chat without taking the screen")
 }
 
@@ -104,7 +111,7 @@ func TestOpenInFeishu_TakesTheScreen(t *testing.T) {
 	m, _, calls := badgeModel(t)
 	collect(openInFeishu(m.deps, "oc_a", 227))
 
-	require.Equal(t, []openCall{{"lark://applink.feishu.cn/client/chat/open?openChatId=oc_a&position=227", false}}, *calls)
+	require.Equal(t, []openCall{opened("lark://applink.feishu.cn/client/chat/open?openChatId=oc_a&position=227", false)}, *calls)
 }
 
 func TestUpdate_AMessageLandingInTheOpenChatClearsTheBadgeAgain(t *testing.T) {

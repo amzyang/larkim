@@ -19,10 +19,18 @@ func (a *App) contactsCmd() *cobra.Command {
 				return err
 			}
 			defer st.Close()
-			rows, err := st.ListContacts(context.Background(), search, limit)
+			// A search is matched in Go, so the row limit has to be applied
+			// after it: asking SQLite for a page first would drop hits that
+			// sit past it.
+			storeLimit := limit
+			if search != "" {
+				storeLimit = 0
+			}
+			rows, err := st.ListContacts(context.Background(), storeLimit)
 			if err != nil {
 				return err
 			}
+			rows = fuzzyContacts(rows, search, limit)
 			if a.json() {
 				return a.printJSON(rows)
 			}
@@ -38,7 +46,7 @@ func (a *App) contactsCmd() *cobra.Command {
 			return nil
 		},
 	}
-	list.Flags().StringVar(&search, "search", "", "substring of name or email")
+	list.Flags().StringVar(&search, "search", "", "fuzzy match on the name or email; Chinese names also answer to their pinyin or its initials")
 	list.Flags().IntVar(&limit, "limit", 0, "max rows")
 	contacts.AddCommand(list)
 	return contacts

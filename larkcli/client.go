@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"regexp"
 	"time"
 )
@@ -15,6 +16,10 @@ type Client interface {
 	// the user can see. truncated reports that the server had more pages than
 	// the page cap allowed.
 	SearchMessageIDs(ctx context.Context, start, end time.Time) (hits []SearchHit, truncated bool, err error)
+
+	// SearchMessages finds messages by keyword across every chat, for a
+	// reader's own query rather than the syncer's sweep. It takes one page.
+	SearchMessages(ctx context.Context, query string, limit int) ([]SearchHit, error)
 	// MGetRaw fetches up to 50 messages by id in their raw API shape.
 	MGetRaw(ctx context.Context, ids []string) ([]RawMessage, error)
 	// ListMessagesRaw lists a chat ("chat") or thread ("thread") container in
@@ -111,14 +116,27 @@ type Error struct {
 	Message    string
 	Hint       string
 	RetryAfter time.Duration
+	// LogID is Feishu's server-side request id, the only handle that ties a
+	// failure here to what the gateway recorded.
+	LogID string
+	// APICode and APIMessage are Feishu's own verdict, which reaches a
+	// download failure only inside Message: lark-cli puts the HTTP status in
+	// Code and leaves the raw body as text. APICode is the number the open
+	// platform is searched with, so it is worth having on its own. Nothing
+	// decides anything on it; see IsPermanent.
+	APICode    int
+	APIMessage string
 	Stderr     string
 }
 
 func (e *Error) Error() string {
-	if e.Message == "" {
-		return fmt.Sprintf("lark-cli exit %d: %s", e.ExitCode, truncate(e.Stderr, 300))
+	switch {
+	case e.APICode != 0:
+		return fmt.Sprintf("lark-cli %s/%s (exit %d): %d %s", e.Type, e.Subtype, e.ExitCode, e.APICode, e.APIMessage)
+	case e.Message != "":
+		return fmt.Sprintf("lark-cli %s/%s (exit %d): %s", e.Type, e.Subtype, e.ExitCode, e.Message)
 	}
-	return fmt.Sprintf("lark-cli %s/%s (exit %d): %s", e.Type, e.Subtype, e.ExitCode, e.Message)
+	return fmt.Sprintf("lark-cli exit %d: %s", e.ExitCode, truncate(e.Stderr, 300))
 }
 
 // Exit codes documented in lark-cli internal/output/exitcode.go.
@@ -137,9 +155,27 @@ func (e *Error) IsNetwork() bool { return e.ExitCode == ExitNetwork }
 // IsRateLimit reports a gateway rate limit; RetryAfter is populated when known.
 func (e *Error) IsRateLimit() bool { return e.Subtype == "rate_limit" }
 
-// IsPermanent reports an API rejection that retrying the same request will
-// not fix (permission, not found, unsupported chat type, …).
-func (e *Error) IsPermanent() bool { return e.ExitCode == ExitAPI && !e.IsRateLimit() }
+// IsPermanent reports a rejection that retrying the same request will not fix
+// (permission, not found, unsupported chat type, a deleted attachment, …).
+//
+// Exit 1 carries Feishu's own business code. A resource download reports the
+// HTTP status as a transport failure instead, so exit 4 with a client-error
+// status is permanent too: a file key names fixed bytes, and 400, 404 and 410
+// against them are the same answer every time. 401 and 403 are left out
+// because a token midway through a refresh looks like both, and 408 and 429
+// are the two 4xx that ask to be retried.
+func (e *Error) IsPermanent() bool {
+	if e.ExitCode == ExitAPI {
+		return !e.IsRateLimit()
+	}
+	return e.ExitCode == ExitNetwork && permanentStatus[e.Code]
+}
+
+var permanentStatus = map[int]bool{
+	http.StatusBadRequest: true,
+	http.StatusNotFound:   true,
+	http.StatusGone:       true,
+}
 
 func truncate(s string, n int) string {
 	if len(s) <= n {

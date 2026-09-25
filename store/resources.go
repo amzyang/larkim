@@ -6,10 +6,10 @@ import (
 	"slices"
 )
 
-// Resource is one row of resources: an attachment key of a message and its
-// local download state.
+// Resource is one row of resources: a Feishu resource key and where its
+// bytes landed. The key is globally unique, so one row serves every message
+// that references it.
 type Resource struct {
-	MessageID     string `json:"message_id"`
 	FileKey       string `json:"file_key"`
 	Type          string `json:"type"`
 	LocalPath     string `json:"local_path,omitempty"` // relative to the data dir
@@ -20,11 +20,22 @@ type Resource struct {
 	LastError     string `json:"last_error,omitempty"`
 }
 
-const resourceColumns = `r.message_id, r.file_key, r.type, r.local_path, r.size_bytes, r.status, r.attempts, r.next_attempt_at, r.last_error`
+// ResourceRef is a message that can be asked for a key. The key identifies
+// the bytes, but fetching them needs a message to ask under, so the
+// references are what make a resource reachable at all.
+type ResourceRef struct {
+	MessageID string `json:"message_id"`
+	FileKey   string `json:"file_key"`
+	Type      string `json:"type"`
+}
+
+const resourceColumns = `r.file_key, r.type, r.local_path, r.size_bytes, r.status, r.attempts, r.next_attempt_at, r.last_error`
 
 // resourceFrom is the FROM clause the due queries select from: a resource is
-// ordered by the message that carries it.
-const resourceFrom = `FROM resources r JOIN messages m ON m.message_id = r.message_id`
+// ordered by the newest message that can be asked for it.
+const resourceFrom = `FROM resources r
+ JOIN message_resources mr ON mr.file_key = r.file_key
+ JOIN messages m ON m.message_id = mr.message_id`
 
 // resourceDue is a resource worth another attempt: never fetched, or failed
 // with its scheduled retry now owed. It takes the current time as its one
@@ -33,13 +44,15 @@ const resourceDue = `(r.status = 'pending' OR (r.status = 'failed' AND r.next_at
 
 func scanResource(sc scanner) (Resource, error) {
 	var r Resource
-	err := sc.Scan(&r.MessageID, &r.FileKey, &r.Type, &r.LocalPath, &r.SizeBytes, &r.Status, &r.Attempts, &r.NextAttemptAt, &r.LastError)
+	err := sc.Scan(&r.FileKey, &r.Type, &r.LocalPath, &r.SizeBytes, &r.Status, &r.Attempts, &r.NextAttemptAt, &r.LastError)
 	return r, err
 }
 
-// AddPendingResources registers attachment keys; existing rows are untouched.
-func (s *Store) AddPendingResources(ctx context.Context, rs []Resource) error {
-	if len(rs) == 0 {
+// AddPendingResources registers keys and the messages that reference them.
+// A key already known keeps the state it has: the second message to mention a
+// picture inherits the download rather than asking for it again.
+func (s *Store) AddPendingResources(ctx context.Context, refs []ResourceRef) error {
+	if len(refs) == 0 {
 		return nil
 	}
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -47,8 +60,13 @@ func (s *Store) AddPendingResources(ctx context.Context, rs []Resource) error {
 		return err
 	}
 	defer tx.Rollback()
-	for _, r := range rs {
-		if _, err := tx.ExecContext(ctx, `INSERT INTO resources (message_id, file_key, type) VALUES (?, ?, ?) ON CONFLICT(message_id, file_key) DO NOTHING`, r.MessageID, r.FileKey, r.Type); err != nil {
+	for _, r := range refs {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO resources (file_key, type) VALUES (?, ?)
+ ON CONFLICT(file_key) DO NOTHING`, r.FileKey, r.Type); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO message_resources (message_id, file_key) VALUES (?, ?)
+ ON CONFLICT(message_id, file_key) DO NOTHING`, r.MessageID, r.FileKey); err != nil {
 			return err
 		}
 	}
@@ -56,21 +74,21 @@ func (s *Store) AddPendingResources(ctx context.Context, rs []Resource) error {
 }
 
 // MarkResourceDone records a completed download.
-func (s *Store) MarkResourceDone(ctx context.Context, messageID, fileKey, localPath string, size int64) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE resources SET status = 'done', local_path = ?, size_bytes = ?, last_error = '' WHERE message_id = ? AND file_key = ?`, localPath, size, messageID, fileKey)
+func (s *Store) MarkResourceDone(ctx context.Context, fileKey, localPath string, size int64) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE resources SET status = 'done', local_path = ?, size_bytes = ?, last_error = '' WHERE file_key = ?`, localPath, size, fileKey)
 	return err
 }
 
 // MarkResourceSkipped records a resource deliberately not kept (too large).
-func (s *Store) MarkResourceSkipped(ctx context.Context, messageID, fileKey string, size int64, reason string) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE resources SET status = 'skipped', size_bytes = ?, last_error = ? WHERE message_id = ? AND file_key = ?`, size, reason, messageID, fileKey)
+func (s *Store) MarkResourceSkipped(ctx context.Context, fileKey string, size int64, reason string) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE resources SET status = 'skipped', size_bytes = ?, last_error = ? WHERE file_key = ?`, size, reason, fileKey)
 	return err
 }
 
 // MarkResourceFailed records a failed attempt and when to retry; after
 // maxAttempts the row becomes permanently failed (next_attempt_at = 0).
-func (s *Store) MarkResourceFailed(ctx context.Context, messageID, fileKey, reason string, nextAttemptAt int64) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE resources SET status = 'failed', attempts = attempts + 1, next_attempt_at = ?, last_error = ? WHERE message_id = ? AND file_key = ?`, nextAttemptAt, reason, messageID, fileKey)
+func (s *Store) MarkResourceFailed(ctx context.Context, fileKey, reason string, nextAttemptAt int64) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE resources SET status = 'failed', attempts = attempts + 1, next_attempt_at = ?, last_error = ? WHERE file_key = ?`, nextAttemptAt, reason, fileKey)
 	return err
 }
 
@@ -78,9 +96,9 @@ func (s *Store) MarkResourceFailed(ctx context.Context, messageID, fileKey, reas
 // resources, newest messages first. Stickers are left out: nothing downloads
 // them, so asking lark-cli for their messages would buy nothing.
 func (s *Store) ResourceMessagesDue(ctx context.Context, now int64, limit int) ([]string, error) {
-	return queryAll(ctx, s.db, scanOne[string], `SELECT DISTINCT r.message_id `+resourceFrom+`
+	return queryAll(ctx, s.db, scanOne[string], `SELECT mr.message_id `+resourceFrom+`
  WHERE r.type <> 'sticker' AND `+resourceDue+`
- ORDER BY m.create_ms DESC LIMIT ?`, now, limit)
+ GROUP BY mr.message_id ORDER BY max(m.create_ms) DESC LIMIT ?`, now, limit)
 }
 
 // StickerResourcesDue returns sticker rows still waiting for their picture,
@@ -88,12 +106,26 @@ func (s *Store) ResourceMessagesDue(ctx context.Context, now int64, limit int) (
 func (s *Store) StickerResourcesDue(ctx context.Context, now int64, limit int) ([]Resource, error) {
 	return queryAll(ctx, s.db, scanResource, `SELECT `+resourceColumns+` `+resourceFrom+`
  WHERE r.type = 'sticker' AND `+resourceDue+`
- ORDER BY m.create_ms DESC LIMIT ?`, now, limit)
+ GROUP BY r.file_key ORDER BY max(m.create_ms) DESC LIMIT ?`, now, limit)
 }
 
 // ResourcesFor lists the resources of one message.
 func (s *Store) ResourcesFor(ctx context.Context, messageID string) ([]Resource, error) {
-	return queryAll(ctx, s.db, scanResource, `SELECT `+resourceColumns+` FROM resources r WHERE r.message_id = ? ORDER BY r.file_key`, messageID)
+	return queryAll(ctx, s.db, scanResource, `SELECT `+resourceColumns+` FROM resources r
+ JOIN message_resources mr ON mr.file_key = r.file_key
+ WHERE mr.message_id = ? ORDER BY r.file_key`, messageID)
+}
+
+// ResourcesDueFor lists the resources of one message worth an attempt now. A
+// message reached for one key carries its others along, and a key that has
+// landed must not be asked again just because it shares a message with one
+// that has not. Stickers are left out here as they are in
+// ResourceMessagesDue, so both ends of the download loop select the same rows.
+func (s *Store) ResourcesDueFor(ctx context.Context, messageID string, now int64) ([]Resource, error) {
+	return queryAll(ctx, s.db, scanResource, `SELECT `+resourceColumns+` FROM resources r
+ JOIN message_resources mr ON mr.file_key = r.file_key
+ WHERE mr.message_id = ? AND r.type <> 'sticker' AND `+resourceDue+`
+ ORDER BY r.file_key`, messageID, now)
 }
 
 // ResourceCounts summarizes resource states.
@@ -235,12 +267,23 @@ func (s *Store) MessagesAfterIDForScan(ctx context.Context, rowID int64, limit i
 func (s *Store) ResourcesForMessages(ctx context.Context, messageIDs []string) (map[string][]Resource, error) {
 	out := make(map[string][]Resource, len(messageIDs))
 	for chunk := range slices.Chunk(messageIDs, 500) {
-		rows, err := queryAll(ctx, s.db, scanResource, `SELECT `+resourceColumns+` FROM resources r WHERE r.message_id IN `+inClause(len(chunk))+` ORDER BY r.message_id, r.file_key`, anySlice(chunk)...)
+		type owned struct {
+			MessageID string
+			Resource
+		}
+		rows, err := queryAll(ctx, s.db, func(sc scanner) (owned, error) {
+			var o owned
+			err := sc.Scan(&o.MessageID, &o.FileKey, &o.Type, &o.LocalPath, &o.SizeBytes, &o.Status,
+				&o.Attempts, &o.NextAttemptAt, &o.LastError)
+			return o, err
+		}, `SELECT mr.message_id, `+resourceColumns+` FROM resources r
+ JOIN message_resources mr ON mr.file_key = r.file_key
+ WHERE mr.message_id IN `+inClause(len(chunk))+` ORDER BY mr.message_id, r.file_key`, anySlice(chunk)...)
 		if err != nil {
 			return nil, err
 		}
-		for _, r := range rows {
-			out[r.MessageID] = append(out[r.MessageID], r)
+		for _, o := range rows {
+			out[o.MessageID] = append(out[o.MessageID], o.Resource)
 		}
 	}
 	return out, nil

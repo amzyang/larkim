@@ -238,7 +238,7 @@ func luma(c color.Color) float64 {
 func TestActivate_SearchHitAnchorsMessagePage(t *testing.T) {
 	m := sized(120, 36)
 	m.searching, m.focus, m.msgIdx = true, paneMessages, 0
-	m.searchResults = []store.Message{{MessageID: "om_old", ChatID: "oc_2", CreateMs: 123}}
+	m.searchHits = messageHits(store.Message{MessageID: "om_old", ChatID: "oc_2", CreateMs: 123})
 	m = m.notify("1 hit", false)
 	mm, _ := m.activate()
 	m = mm.(Model)
@@ -365,7 +365,7 @@ func TestRenderSearchRows_DoesNotLendOneChatsPeerToAnothers(t *testing.T) {
 	st.p2p, st.peer = true, "ou_peer"
 
 	var out strings.Builder
-	for _, r := range renderSearchRows(msgs, []store.Chat{{ChatID: "oc_g", Name: "平台组"}}, st) {
+	for _, r := range renderSearchRows(messageHits(msgs...), []store.Chat{{ChatID: "oc_g", Name: "平台组"}}, st) {
 		out.WriteString(segText(r))
 	}
 	require.Contains(t, out.String(), stAccent.Render("@李四"),

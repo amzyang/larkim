@@ -69,18 +69,50 @@ func (w *writer) image(id string) {
 // button joins the row being built when nothing came between, so the buttons
 // of an action row — or of a column each — read as the one row the client
 // draws.
-func (w *writer) button(label string) {
-	if label == "" {
+func (w *writer) button(b Button) {
+	if b.Label == "" {
 		return
 	}
 	if w.b.Len() == 0 && len(w.blocks) > 0 {
 		if last := &w.blocks[len(w.blocks)-1]; last.Buttons != nil {
-			last.Buttons = append(last.Buttons, label)
+			last.Buttons = append(last.Buttons, b)
 			return
 		}
 	}
 	w.flush()
-	w.blocks = append(w.blocks, Block{Buttons: []string{label}})
+	w.blocks = append(w.blocks, Block{Buttons: []Button{b}})
+}
+
+// buttonAction is one of the things a button does when pressed. Only a link
+// target is readable here: an action_request carries its payload to the app
+// that sent the card and leaves an empty value behind in the message.
+type buttonAction struct {
+	Type   string `json:"type"`
+	Action struct {
+		URL   string `json:"url"`
+		PCURL string `json:"pcURL"`
+	} `json:"action"`
+}
+
+// buttonURL is where a button leads. pcURL wins over url: it is the target
+// the card names for a desktop, which is the only place larkim runs.
+func buttonURL(raw json.RawMessage) string {
+	var acts []buttonAction
+	if len(raw) == 0 || json.Unmarshal(raw, &acts) != nil {
+		return ""
+	}
+	for _, a := range acts {
+		if a.Type != "open_url" {
+			continue
+		}
+		if a.Action.PCURL != "" {
+			return a.Action.PCURL
+		}
+		if a.Action.URL != "" {
+			return a.Action.URL
+		}
+	}
+	return ""
 }
 
 // at spells a mention the way a body carries one. The id a card @s by belongs
@@ -174,7 +206,7 @@ func (w *writer) element(e elem) {
 	case "img":
 		w.image(p.ImageID)
 	case "button":
-		w.button(plain(p.Text))
+		w.button(Button{Label: plain(p.Text), URL: buttonURL(p.Actions)})
 	case "div":
 		w.blockOf(p.Text)
 		for _, f := range p.Fields {

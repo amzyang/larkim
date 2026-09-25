@@ -7,7 +7,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/junegunn/fzf/src/algo"
+	"github.com/amzyang/larkim/fuzzy"
 	"github.com/junegunn/fzf/src/util"
 )
 
@@ -27,7 +27,7 @@ type Hit struct {
 type Index struct {
 	items []Emoji
 	terms [][]util.Chars
-	slab  *util.Slab
+	mt    *fuzzy.Matcher
 	// recent is the emoji used most lately, newest first, which is what an
 	// empty query answers with: a person reaches for the same handful all day.
 	recent []string
@@ -38,24 +38,16 @@ func NewReactionIndex() *Index { return NewIndex(Emoji.Reactable) }
 
 // NewIndex prepares the emoji that pass keep. A nil keep takes all of them.
 func NewIndex(keep func(Emoji) bool) *Index {
-	ix := &Index{slab: util.MakeSlab(slabSize, slabSize)}
+	ix := &Index{mt: fuzzy.NewMatcher()}
 	for _, e := range All() {
 		if keep != nil && !keep(e) {
 			continue
 		}
-		chars := make([]util.Chars, 0, len(e.Terms))
-		for _, t := range e.Terms {
-			chars = append(chars, util.ToChars([]byte(t)))
-		}
 		ix.items = append(ix.items, e)
-		ix.terms = append(ix.terms, chars)
+		ix.terms = append(ix.terms, fuzzy.Chars(e.Terms))
 	}
 	return ix
 }
-
-// slabSize is fzf's own scratch space for one match. The longest term here is
-// a few dozen bytes, so this is already far more than the matcher can use.
-const slabSize = 4096
 
 // Len is how many emoji the index holds, which is the denominator the picker
 // shows beside the hit count.
@@ -100,23 +92,13 @@ func (ix *Index) Search(query string) []Hit {
 	if query == "" {
 		return ix.unqueried()
 	}
-	// Smart case, the way fzf and ripgrep read a query: a lowercase one asks
-	// about neither case, a query with a capital in it means that capital.
-	sensitive := strings.ToLower(query) != query
-	pattern := []rune(query)
 	var hits []Hit
 	for i, e := range ix.items {
-		best := Hit{}
-		for j, term := range ix.terms[i] {
-			res, pos := algo.FuzzyMatchV2(sensitive, true, true, &term, pattern, true, ix.slab)
-			if res.Score <= 0 || res.Score <= best.score {
-				continue
-			}
-			best = Hit{Emoji: e, Term: e.Terms[j], Positions: sorted(pos), score: res.Score}
+		j, score, pos := ix.mt.Best(ix.terms[i], query)
+		if score <= 0 {
+			continue
 		}
-		if best.score > 0 {
-			hits = append(hits, best)
-		}
+		hits = append(hits, Hit{Emoji: e, Term: e.Terms[j], Positions: pos, score: score})
 	}
 	slices.SortStableFunc(hits, func(a, b Hit) int {
 		if a.score != b.score {
@@ -144,15 +126,6 @@ func (ix *Index) rank(e Emoji) int {
 		return i - len(ix.recent)
 	}
 	return e.Order
-}
-
-func sorted(pos *[]int) []int {
-	if pos == nil {
-		return nil
-	}
-	out := slices.Clone(*pos)
-	slices.Sort(out)
-	return out
 }
 
 // recentFile is where the picker's remembered list lives. It is derived data:

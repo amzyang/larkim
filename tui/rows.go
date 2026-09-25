@@ -12,6 +12,7 @@ import (
 	"github.com/amzyang/larkim/card"
 	"github.com/amzyang/larkim/emoji"
 	"github.com/amzyang/larkim/store"
+	"github.com/charmbracelet/x/ansi"
 )
 
 const (
@@ -52,9 +53,10 @@ type msgRow struct {
 	// the terminal holds the picture.
 	pic    picture
 	picRow int
-	// zone, when set, is the click target this row carries: a call's join
-	// button, or the card an attachment is drawn as.
-	zone clickZone
+	// zones are the click targets this row carries, in the order they are
+	// drawn: a call's join button, the card an attachment is drawn as, or one
+	// per pill of a card's action row.
+	zones []clickZone
 	// segs, when set, is the row's text in pieces so that pictures can sit
 	// inside a line rather than take one of their own: a reaction carries an
 	// emoji this terminal may have no character for, next to a count that is
@@ -68,22 +70,68 @@ type msgRow struct {
 }
 
 // clickZone is a target inside a row: the half-open column range [x0, x1)
-// in the pane's own content coordinates, and where clicking it leads. An
-// empty url is no target at all.
+// in the pane's own content coordinates, and where clicking it leads. No urls
+// is no target at all.
 type clickZone struct {
 	x0, x1 int
-	url    string
-	// note is what the status bar says once the target is handed over. A
-	// target names what it leads to better than the link it carries does.
-	note string
+	// urls are opened together in one invocation. A message's pictures share
+	// a zone each so that pressing any of them opens the lot in one viewer,
+	// the one pressed first; everything else leads to a single place.
+	urls []string
+	// label names the target the way the chooser lists it, and note is what
+	// the status bar says once it has been handed over. They differ because a
+	// list wants the thing and a status line wants the act.
+	label string
+	note  string
 }
 
-func (z clickZone) hit(x int) bool { return z.url != "" && x >= z.x0 && x < z.x1 }
+func (z clickZone) hit(x int) bool { return len(z.urls) > 0 && x >= z.x0 && x < z.x1 }
 
-// rowSeg is one piece of a row: text, or a picture the terminal fills in.
+// placeZones recomputes a row's click targets from the widths of its pieces,
+// so a caller that has just changed a piece — a list marker taking the place
+// of an indent — does not have to know what the targets were.
+func (r *msgRow) placeZones() {
+	r.zones = nil
+	x := r.lead.cols()
+	for _, s := range r.segs {
+		w := s.cols()
+		if len(s.urls) > 0 {
+			r.zones = append(r.zones, clickZone{x0: x, x1: x + w, urls: s.urls, label: s.label, note: s.note})
+		}
+		x += w
+	}
+}
+
+// reindent swaps the indent a row opens with for s, whichever way the row
+// holds its text, and puts the targets back where the new width leaves them.
+func (r *msgRow) reindent(indent, s string) {
+	if len(r.segs) == 0 {
+		r.text = s + strings.TrimPrefix(r.text, indent)
+		return
+	}
+	r.segs[0].text = s + strings.TrimPrefix(r.segs[0].text, indent)
+	r.placeZones()
+}
+
+// rowSeg is one piece of a row: text, or a picture the terminal fills in. A
+// piece that leads somewhere carries the target, which placeZones turns into
+// the row's click ranges once the pieces are laid out.
 type rowSeg struct {
 	text string
 	pic  picture
+	urls []string
+	// label and note travel with the target, meaning what they mean on
+	// clickZone.
+	label string
+	note  string
+}
+
+// cols is how much of a row the piece takes.
+func (s rowSeg) cols() int {
+	if s.pic.cols > 0 {
+		return s.pic.cols
+	}
+	return ansi.StringWidth(s.text)
 }
 
 // msgStyle is what the message rows need besides the messages themselves.
@@ -307,12 +355,35 @@ func senderDisc(x store.Message, st msgStyle) []lead {
 // flags, which opening the chat has already cleared.
 func unread(x store.Message, st msgStyle) bool { return st.dots[x.MessageID] }
 
+// blockHeads names, for each message, the message whose sender line it sits
+// under — itself when it opens a block. It is the one definition of where a
+// block starts: the renderer draws the sender line against it, and so does
+// the unread dot, which is why clearing a dot has to take the whole block.
+func blockHeads(msgs []store.Message, st msgStyle) []int {
+	heads := make([]int, len(msgs))
+	day, run := "", -1
+	for i, x := range msgs {
+		d := msgDay(x.CreateMs, st.now)
+		if d != day || x.MsgType == "system" || run < 0 || !mergeable(msgs[run], x, st) {
+			run = i
+		}
+		day, heads[i] = d, run
+		// A system notice stands alone, so a sender coming back under it
+		// opens a block rather than reaching over it.
+		if x.MsgType == "system" {
+			run = -1
+		}
+	}
+	return heads
+}
+
 // renderRows lays messages out as blocks — a sender line followed by every
 // body that sender wrote next — split into days.
 func renderRows(msgs []store.Message, st msgStyle) []msgRow {
 	var rows []msgRow
 	var b block
-	day, prev, run := "", "", -1
+	heads := blockHeads(msgs, st)
+	day, prev := "", ""
 	// open starts a section — a system notice, a sender's block — holding it
 	// off whatever came before with a blank line. A day rule needs none on
 	// either side: it is a divider in its own right, and it heads the day
@@ -329,7 +400,7 @@ func renderRows(msgs []store.Message, st msgStyle) []msgRow {
 		rule := d != day
 		// A day rule, a system notice and a new sender all end the run above
 		// them, so the disc beside it finishes before anything else is drawn.
-		opensBlock := rule || x.MsgType == "system" || run < 0 || !mergeable(msgs[run], x, st)
+		opensBlock := heads[i] == i
 		if opensBlock {
 			rows = append(rows, discTail(&b)...)
 		}
@@ -340,13 +411,12 @@ func renderRows(msgs []store.Message, st msgStyle) []msgRow {
 		if x.MsgType == "system" {
 			open(i, rule)
 			rows = append(rows, systemRows(x, i, st)...)
-			prev, run = x.MessageID, -1
+			prev = x.MessageID
 			continue
 		}
 		if opensBlock {
 			open(i, rule)
 			b = openBlock(x, st)
-			run = i
 		}
 		b.idx = i
 		g := leadFor(x, st, &b, opensBlock)
@@ -544,7 +614,7 @@ func bodyRows(x store.Message, idx int, st msgStyle, g *leads) []msgRow {
 		keys, rest := splitImages(line)
 		if len(keys) == 0 || strings.TrimSpace(rest) != "" {
 			if segs := inlineSegs(rest, ms, st.emojiInline); segs != nil {
-				rows = append(rows, segRows(segs, idx, st, g)...)
+				rows = append(rows, segRows(segs, "", idx, st, g)...)
 			} else {
 				rows = append(rows, text(wrap(renderInline(rest, ms), inner))...)
 			}
@@ -557,12 +627,20 @@ func bodyRows(x store.Message, idx int, st msgStyle, g *leads) []msgRow {
 }
 
 // segRows draw one body line as the pieces the client's own emoji pictures
-// sit between, where a plain string cannot hold them.
-func segRows(segs []rowSeg, idx int, st msgStyle, g *leads) []msgRow {
-	packed := wrapSegs(segs, st.inner())
+// and its links sit between, where a plain string cannot hold them. pad is
+// the indent nesting has already charged the line, which every wrapped row
+// carries: the string path pads after wrapping too, and a piece that leads
+// somewhere would otherwise be clicked one indent left of where it is drawn.
+func segRows(segs []rowSeg, pad string, idx int, st msgStyle, g *leads) []msgRow {
+	packed := wrapSegs(segs, st.inner()-lipgloss.Width(pad))
 	out := make([]msgRow, 0, len(packed))
 	for _, row := range packed {
-		out = append(out, msgRow{lead: g.take(), idx: idx, tinted: true, segs: row})
+		if pad != "" {
+			row = append([]rowSeg{{text: pad}}, row...)
+		}
+		r := msgRow{lead: g.take(), idx: idx, tinted: true, segs: row}
+		r.placeZones()
+		out = append(out, r)
 	}
 	return out
 }
@@ -752,7 +830,14 @@ func cardRows(c card.Card, x store.Message, idx int, st msgStyle, g *leads, ms m
 		case b.ImageKey != "":
 			rows = append(rows, pictureRows(b.ImageKey, x, idx, st, g)...)
 		case len(b.Buttons) > 0:
-			text(cardButtons(b.Buttons))
+			for _, l := range cardButtons(b.Buttons, st.inner(), feishuChatLink(x.ChatID, x.MessagePosition)) {
+				row := msgRow{lead: g.take(), text: l.text, idx: idx}
+				for _, z := range l.zones {
+					z.x0, z.x1 = z.x0+row.lead.cols(), z.x1+row.lead.cols()
+					row.zones = append(row.zones, z)
+				}
+				rows = append(rows, row)
+			}
 		default:
 			rows = append(rows, mdRows(b.Markdown, x, idx, st, g, ms)...)
 		}
@@ -773,7 +858,56 @@ func pictureRows(key string, x store.Message, idx int, st msgStyle, g *leads) []
 	if pic.cols == 0 {
 		return []msgRow{{lead: g.take(), text: stDim.Render(label), idx: idx}}
 	}
-	return picRows(pic, idx, g)
+	rows := picRows(pic, idx, g)
+	// A sticker is a gesture, not a picture to study, and pressing one in the
+	// client opens nothing either.
+	if x.MsgType == "sticker" {
+		return rows
+	}
+	zone, ok := pictureZone(key, x, st)
+	if !ok {
+		return rows
+	}
+	for i := range rows {
+		z := zone
+		z.x0, z.x1 = rows[i].lead.cols(), rows[i].lead.cols()+pic.cols
+		rows[i].zones = []clickZone{z}
+	}
+	return rows
+}
+
+// pictureZone is what pressing one of a message's pictures opens: that
+// picture, and behind it every other one the message carries.
+//
+// They go over as one target rather than one each because that is what the
+// client does — pressing any picture opens the viewer on it with the rest of
+// the message beside it — and because macOS puts files opened together in one
+// window, the first of them showing.
+func pictureZone(key string, x store.Message, st msgStyle) (clickZone, bool) {
+	var pressed string
+	var rest []string
+	for _, r := range st.res[x.MessageID] {
+		if r.Type != "image" || r.Status != "done" {
+			continue
+		}
+		path := dataPath(st.dataDir, r.LocalPath)
+		if path == "" {
+			continue
+		}
+		if r.FileKey == key {
+			pressed = path
+		} else {
+			rest = append(rest, path)
+		}
+	}
+	if pressed == "" {
+		return clickZone{}, false
+	}
+	label := "图片"
+	if n := len(rest) + 1; n > 1 {
+		label = strconv.Itoa(n) + " 张图片"
+	}
+	return clickZone{urls: append([]string{pressed}, rest...), label: label, note: "opening " + label}, true
 }
 
 // placePicture sizes one of a message's downloaded pictures for the pane. A

@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	gosync "sync"
 	"time"
 
 	"github.com/amzyang/larkim/config"
@@ -23,11 +24,16 @@ type App struct {
 	Err          io.Writer
 	configPath   string
 	jsonOut      bool
+	debug        bool
+	log          *slog.Logger
 	cfg          config.Config
 	sentryFlag   string
 	sentryDSN    string // effective DSN after resolution
 	sentrySource string
 	buildDSN     string
+
+	clientOnce gosync.Once
+	larkClient *larkcli.ExecClient
 }
 
 // New builds the root command. buildDSN is the Sentry DSN baked in at build
@@ -44,8 +50,11 @@ func New(version, buildDSN string) *cobra.Command {
 			// Follow the streams cobra was handed, so a test can read what a
 			// command prints.
 			app.Out, app.Err = cmd.OutOrStdout(), cmd.ErrOrStderr()
-			// Shell completion must stay side-effect free and fast.
-			if cmd.Name() != cobra.ShellCompRequestCmd && cmd.Name() != cobra.ShellCompNoDescRequestCmd {
+			// Shell completion must stay side-effect free and fast: no crash
+			// reporter, and no log file created just by pressing Tab.
+			completion := cmd.Name() == cobra.ShellCompRequestCmd || cmd.Name() == cobra.ShellCompNoDescRequestCmd
+			app.log = slog.New(slog.DiscardHandler)
+			if !completion {
 				envValue, envSet := os.LookupEnv("SENTRY_DSN")
 				app.sentryDSN, app.sentrySource = resolveSentryDSN(app.sentryFlag, cmd.Flags().Changed("sentry-dsn"),
 					os.Getenv("DO_NOT_TRACK"), envValue, envSet, app.buildDSN)
@@ -56,11 +65,16 @@ func New(version, buildDSN string) *cobra.Command {
 				return err
 			}
 			app.cfg = cfg
+			if !completion {
+				app.initLog(cmd)
+			}
 			return nil
 		},
 	}
 	root.PersistentFlags().StringVar(&app.configPath, "config", "", "config file (default ~/.larkim/config.yaml)")
 	root.PersistentFlags().BoolVar(&app.jsonOut, "json", false, "JSON output (default when stdout is not a terminal)")
+	root.PersistentFlags().BoolVar(&app.debug, "debug", false,
+		"log every lark-cli request and response (always-on logging lives in <data_dir>/larkim.log)")
 	root.PersistentFlags().StringVar(&app.sentryFlag, "sentry-dsn", "", "Sentry DSN for crash reporting (overrides SENTRY_DSN and the build-time default; empty disables)")
 	root.SetFlagErrorFunc(func(_ *cobra.Command, err error) error { return &usageError{err} })
 	root.AddCommand(app.syncCmd(), app.statusCmd(), app.daemonCmd(), app.chatsCmd(), app.messagesCmd(), app.contactsCmd(),
@@ -89,6 +103,15 @@ func (a *App) json() bool {
 	return ok && !term.IsTerminal(int(f.Fd()))
 }
 
+// logger tolerates a nil log, which is what a test building an App directly
+// rather than through New has.
+func (a *App) logger() *slog.Logger {
+	if a.log == nil {
+		return slog.New(slog.DiscardHandler)
+	}
+	return a.log
+}
+
 func (a *App) openStore() (*store.Store, error) {
 	if err := os.MkdirAll(a.cfg.DataDir, 0o700); err != nil {
 		return nil, err
@@ -101,21 +124,23 @@ func (a *App) openStore() (*store.Store, error) {
 	return st, nil
 }
 
+// client is the one lark-cli runner this process has. It is shared rather
+// than built per caller because the lanes inside it are a per-process budget:
+// a second client would be a second pair of lanes, and the TUI's sweeps and
+// its keystrokes would stop knowing about each other.
 func (a *App) client() *larkcli.ExecClient {
-	if err := os.MkdirAll(a.cfg.ResourcesDir(), 0o700); err != nil {
-		slog.Warn("resources dir", "err", err)
-	}
-	return &larkcli.ExecClient{Path: a.cfg.LarkCLIPath, Dir: a.cfg.ResourcesDir()}
+	a.clientOnce.Do(func() {
+		if err := os.MkdirAll(a.cfg.ResourcesDir(), 0o700); err != nil {
+			a.logger().Warn("resources dir", "err", err)
+		}
+		a.larkClient = &larkcli.ExecClient{Path: a.cfg.LarkCLIPath, Dir: a.cfg.ResourcesDir(), Log: a.logger()}
+	})
+	return a.larkClient
 }
 
 func (a *App) syncer(st *store.Store) *sync.Syncer {
 	return &sync.Syncer{Client: a.client(), Store: st, Clock: sync.RealClock{}, Opt: sync.OptionsFrom(a.cfg),
-		Log: slog.New(slog.NewTextHandler(a.Err, nil)), OnError: captureError, Fetch: sync.HTTPFetch}
-}
-
-// quietLogger discards logs so an embedded syncer never writes over the TUI.
-func quietLogger() *slog.Logger {
-	return slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelError + 1}))
+		Log: a.logger(), OnError: captureError, Fetch: sync.HTTPFetch}
 }
 
 // parseTime accepts YYYY-MM-DD, RFC 3339, or a duration such as 24h (relative to now).

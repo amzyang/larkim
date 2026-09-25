@@ -41,13 +41,54 @@ func cardGist(c card.Card) string {
 	return ""
 }
 
-// cardButtons draws an action row as the filled pills the client shows. A
-// button's target drops out the same way a link's does: the label is what it
-// shows.
-func cardButtons(labels []string) string {
-	pills := make([]string, 0, len(labels))
-	for _, l := range labels {
-		pills = append(pills, stBtn.Render(expandEmoji(strings.TrimSpace(l))))
+// cardButtonLine is one drawn line of an action row: the pills that fit it,
+// and where each one sits, so a press lands on the button under it.
+type cardButtonLine struct {
+	text  string
+	zones []clickZone
+}
+
+// cardButtons draw an action row as the filled pills the client shows, packed
+// into lines w columns wide. A pill is an atom: it moves to the next line
+// whole rather than being cut.
+//
+// Every pill leads somewhere. A button that opens a link opens it here too. A
+// button that calls back to the app that sent the card cannot be pressed from
+// outside the client at all — the payload reaches that app alone and no open
+// API submits one — so it hands over to the client at this very message,
+// which is the nearest larkim can come to the press the reader meant.
+func cardButtons(bs []card.Button, w int, client string) []cardButtonLine {
+	const gap = " "
+	var lines []cardButtonLine
+	var cur cardButtonLine
+	used := 0
+	flush := func() {
+		if cur.text != "" {
+			lines, cur, used = append(lines, cur), cardButtonLine{}, 0
+		}
 	}
-	return strings.Join(pills, " ")
+	for _, b := range bs {
+		label := strings.TrimSpace(b.Label)
+		pill := stBtn.Render(expandEmoji(label))
+		width := lipgloss.Width(pill)
+		if used > 0 && used+len(gap)+width > w {
+			flush()
+		}
+		if used > 0 {
+			cur.text += gap
+			used += len(gap)
+		}
+		url, note := b.URL, "opening "+label
+		if url == "" {
+			url, note = client, "opening in Feishu"
+		}
+		if url != "" {
+			cur.zones = append(cur.zones, clickZone{x0: used, x1: used + width,
+				urls: []string{url}, label: label, note: note})
+		}
+		cur.text += pill
+		used += width
+	}
+	flush()
+	return lines
 }

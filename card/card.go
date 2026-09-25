@@ -14,7 +14,16 @@ import (
 type Block struct {
 	Markdown string
 	ImageKey string
-	Buttons  []string
+	Buttons  []Button
+}
+
+// Button is one of the buttons a card's action row draws: the label it shows,
+// and where pressing it leads. A button that calls back to the app that sent
+// the card carries no URL — that press has no open API behind it, so the
+// label is all a reader outside the client gets.
+type Button struct {
+	Label string
+	URL   string
 }
 
 // Card is an interactive message taken apart: what the Feishu client draws in
@@ -72,7 +81,11 @@ func (c Card) Markdown() string {
 		case b.Markdown != "":
 			parts = append(parts, b.Markdown)
 		case len(b.Buttons) > 0:
-			parts = append(parts, "["+strings.Join(b.Buttons, "] [")+"]")
+			labels := make([]string, 0, len(b.Buttons))
+			for _, btn := range b.Buttons {
+				labels = append(labels, btn.Label)
+			}
+			parts = append(parts, "["+strings.Join(labels, "] [")+"]")
 		}
 	}
 	return strings.Join(parts, "\n\n")

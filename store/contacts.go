@@ -99,20 +99,16 @@ func (s *Store) FindContacts(ctx context.Context, ref string) ([]Contact, error)
 	return queryAll(ctx, s.db, scanContact, `SELECT `+contactColumns+` FROM contacts WHERE open_id = ? OR lower(email) = lower(?) OR name = ? ORDER BY name`, ref, ref, ref)
 }
 
-// ListContacts returns contacts matching an optional substring of name or email.
-func (s *Store) ListContacts(ctx context.Context, search string, limit int) ([]Contact, error) {
-	q := `SELECT ` + contactColumns + ` FROM contacts`
-	var args []any
-	if search != "" {
-		q += ` WHERE instr(lower(name), lower(?)) > 0 OR instr(lower(email), lower(?)) > 0`
-		args = append(args, search, search)
-	}
+// ListContacts returns contacts by name. Narrowing is the caller's: a search
+// is matched fuzzily in Go, which SQL cannot do.
+func (s *Store) ListContacts(ctx context.Context, limit int) ([]Contact, error) {
+	q := `SELECT ` + contactColumns + ` FROM contacts ORDER BY name`
 	if limit <= 0 {
-		limit = 1000
+		// A search spells every name it is given, so a cap here is a person
+		// the reader cannot find rather than a page they cannot see.
+		return queryAll(ctx, s.db, scanContact, q)
 	}
-	q += ` ORDER BY name LIMIT ?`
-	args = append(args, limit)
-	return queryAll(ctx, s.db, scanContact, q, args...)
+	return queryAll(ctx, s.db, scanContact, q+` LIMIT ?`, limit)
 }
 
 // GetContact loads one contact.

@@ -79,22 +79,26 @@ func attachRows(a attachment, x store.Message, idx int, st msgStyle, g *leads) [
 	if r.Status == "done" {
 		open = dataPath(st.dataDir, r.LocalPath)
 	}
-	zone := func(x0, w int) clickZone {
-		if open == "" {
-			return clickZone{}
+	zone := func(x0, w int) []clickZone {
+		// A voice message lands as an Ogg Opus file with no extension, which
+		// LaunchServices types as public.data and has nothing to open with.
+		// A press that always fails is worse than a card that offers none.
+		if open == "" || a.msgType == "audio" {
+			return nil
 		}
-		return clickZone{x0: x0, x1: x0 + w, url: open, note: "opening " + filepath.Base(open)}
+		return []clickZone{{x0: x0, x1: x0 + w, urls: []string{open},
+			label: filepath.Base(open), note: "opening " + filepath.Base(open)}}
 	}
 	line := func(s string) msgRow {
 		row := msgRow{lead: g.take(), text: s, idx: idx}
-		row.zone = zone(row.lead.cols(), lipgloss.Width(s))
+		row.zones = zone(row.lead.cols(), lipgloss.Width(s))
 		return row
 	}
 
 	var rows []msgRow
 	if pic := placePicture(a.coverKey, x, st, st.inner()); pic.cols > 0 {
 		for _, row := range picRows(pic, idx, g) {
-			row.zone = zone(row.lead.cols(), pic.cols)
+			row.zones = zone(row.lead.cols(), pic.cols)
 			rows = append(rows, row)
 		}
 	}

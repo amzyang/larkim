@@ -21,6 +21,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/amzyang/larkim/fuzzy"
 	"github.com/mozillazg/go-pinyin"
 )
 
@@ -165,30 +166,12 @@ func terms(zh, en, key string, aliases []string) []string {
 			continue
 		}
 		out = append(out, name) // the name itself keeps its Chinese
-		add(sound(name, pinyin.Normal))
-		add(sound(name, pinyin.FirstLetter))
+		add(fuzzy.Sound(name, pinyin.Normal))
+		add(fuzzy.Sound(name, pinyin.FirstLetter))
 	}
 	add(en)
 	add(key)
 	return out
-}
-
-// sound spells a name the way it is typed on a latin keyboard. Runes the
-// dictionary has no reading for — the digits in 18禁, the V in V5 — are kept
-// as they are, so the term stays the whole name rather than the Chinese part
-// of it.
-func sound(name string, style int) string {
-	args := pinyin.NewArgs()
-	args.Style = style
-	var b strings.Builder
-	for _, r := range name {
-		if p := pinyin.SinglePinyin(r, args); len(p) > 0 {
-			b.WriteString(p[0])
-			continue
-		}
-		b.WriteRune(r)
-	}
-	return b.String()
 }
 
 // Fold is emoji.Fold, repeated here because the generator cannot import the

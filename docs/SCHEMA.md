@@ -89,16 +89,27 @@ Per-message read state, joined on `message_id`. Rows exist only for messages who
 
 A chat's badge counts the rows where `is_read_remote` is 0 and `local_read_at` is 0 on a live, unsilenced message with a non-negative `message_position`; thread replies are left out. Both flags can only witness that a message was seen, so taking either one as read adds no false unread. Marking a chat read is deliberately wider than the badge: it takes every live row with both flags still unset in the chat, silenced messages and thread replies included, because the chat's page put them in front of the reader too. Anything that page shows but marking read cannot collect keeps its flags for good, and the unread marker beside it relights on every visit.
 
-## resources
+## resources, message_resources
 
-Attachments of a message, one row per key: an `image` or `file` body's key, the clip and cover frame of a `media` body, the keys embedded in a rich-text post, the images an `interactive` card holds in its attachment table, and the picture a `sticker` names.
+A Feishu resource key is globally unique, so `resources` holds one row per key: what the bytes are and whether they arrived. `message_resources` holds the references — which messages name which key — and many messages routinely share one, because a notification card's header picture is in every card its sender posts.
 
-| column | meaning |
+| `resources` column | meaning |
 |---|---|
+| `file_key` | the key, and the primary key |
 | `type` | `image`, `file`, `cover` (a video's frame) or `sticker` |
 | `local_path` | path relative to the data dir once `status = done`; stickers land in `resources/stickers/<file_key>`, with the extension of the picture's format appended when the bytes name one |
 | `status` | `pending`, `done`, `failed`, `skipped` (over `resources.max_bytes`) |
-| `attempts`, `next_attempt_at`, `last_error` | retry bookkeeping |
+| `attempts`, `next_attempt_at`, `last_error` | retry bookkeeping; `next_attempt_at = 0` on a `failed` row means nothing will try again |
+
+The key identifies the bytes but is not enough to fetch them: an IM resource is served under a message (`/open-apis/im/v1/messages/{message_id}/resources/{file_key}`), so a row in `message_resources` is what makes a key reachable, and any of them will do. One fetch therefore answers every message that names the key, refusals included, which is the difference between one call and hundreds.
+
+A message's attachments are read through the references:
+
+```sql
+SELECT r.file_key, r.type, r.local_path, r.status
+FROM message_resources mr JOIN resources r ON r.file_key = mr.file_key
+WHERE mr.message_id = 'om_xxx' ORDER BY r.file_key;
+```
 
 Feishu's resource API refuses a sticker's `file_key` (`234002 Unauthorized`) under every identity, so a sticker picture is copied out of the Lark client's own storage on this machine instead; a sticker the client has never drawn stays `failed`.
 
@@ -116,7 +127,7 @@ Avatar coverage depends on the app's directory scope: users outside it keep `ava
 
 ## data_rev
 
-A single row (`id = 1`) whose `rev` counts the changes a reader cares about in `messages`, `chats`, `read_state`, `resources` and `contacts`, advanced by triggers. Poll it to know that rows already read have gone stale: `max(messages.id)` moves only on insert, so it misses renderings, read-status flips, cards a bot rewrote in place and attachments that finished downloading.
+A single row (`id = 1`) whose `rev` counts the changes a reader cares about in `messages`, `chats`, `read_state`, `resources`, `message_resources` and `contacts`, advanced by triggers. Poll it to know that rows already read have gone stale: `max(messages.id)` moves only on insert, so it misses renderings, read-status flips, cards a bot rewrote in place and attachments that finished downloading.
 
 Inserts always count. An update counts when it moves a column something renders; the columns that pace the syncer do not (`*_seen_at`, `cursor_ms`, `backfill_done_at`, `members_synced_at`, `mute_checked_at`, `repaired_at`, `raw_json`, `remote_checked_at`, `check_count`, `next_check_at`, `attempts`, `next_attempt_at`, `detail_checked_at`, `updated_at`). A full chat listing restamps `last_seen_at` on every row, so without that rule one refresh over unchanged data would tell every reader to re-read the whole list.
 
@@ -132,9 +143,15 @@ How far a consumer has got through the messages is its own state; nothing here r
 
 `larkim messages list --after <message_id> --order asc --json` pages from an exclusive anchor on the canonical sort key instead, so it walks in conversation order, and `--before` walks back. A message ingested after the cursor had already passed its timestamp never appears in a later page, so a consumer that must drop none takes the ingest id.
 
-## sync_state, sync_runs
+## sync_state, sync_runs, events
 
 `sync_state` is a key/value table: `watermark_ms` (end of the last fully searched window), `self_open_id`, `status` (`running` / `needs_login` / `error`), `last_error`, `last_tick_at`, `chats_refreshed_at`, `slow_path_at`, `silence_rev` (fingerprint of the silence rules the stored flags came from). `sync_runs` keeps the newest 1000 ticks with timing, counts and error text.
+
+`events` keeps the newest 1000 decisions the syncer made that no other table records: `at_ms` (Unix ms UTC), `kind`, `subject` (the ids it is about) and a one-line `detail`. Kinds:
+
+| kind | subject | what it means |
+|---|---|---|
+| `resource_gone` | `<file_key>` | Feishu will not serve these bytes again, under any message, so nothing retries them. The row in `resources` stays `failed` with `next_attempt_at = 0`. |
 
 ## Example queries
 

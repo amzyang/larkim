@@ -4,7 +4,9 @@ import (
 	"context"
 	"path/filepath"
 	"testing"
+	"time"
 
+	"github.com/amzyang/larkim/larkcli"
 	"github.com/amzyang/larkim/store"
 	"github.com/stretchr/testify/require"
 )
@@ -34,4 +36,14 @@ func TestLoadMeta_NamesTheReactorsTheBlockOnlyHoldsIDsFor(t *testing.T) {
 	meta, err := loadMeta(ctx, st, msgs)
 	require.NoError(t, err)
 	require.Equal(t, "李四", meta.people["ou_b"], "the block holds an id alone; the name comes from the contacts")
+}
+
+// A send is a keypress waiting on a subprocess, so it must not queue behind
+// the syncer's sweeps.
+func TestWaited_TakesTheInteractiveLane(t *testing.T) {
+	ctx, cancel := waited(time.Second)
+	defer cancel()
+	require.Equal(t, larkcli.LaneInteractive, larkcli.LaneOf(ctx))
+	_, ok := ctx.Deadline()
+	require.True(t, ok, "an interactive call still needs a deadline of its own")
 }

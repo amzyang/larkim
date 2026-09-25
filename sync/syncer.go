@@ -141,6 +141,14 @@ type Report struct {
 	Contacts   int // contacts whose identity fields were resolved
 }
 
+// changed reports whether the tick moved anything. The daemon ticks every few
+// seconds, so this is what keeps the log readable: an idle tick is debug
+// detail, a tick that landed something is a record.
+func (r Report) changed() bool {
+	return r.New > 0 || r.Rendered > 0 || r.Backfilled > 0 || r.SlowPath > 0 ||
+		r.Downloaded > 0 || r.History > 0 || r.Repaired > 0
+}
+
 func (s *Syncer) log() *slog.Logger {
 	if s.Log == nil {
 		return slog.Default()
@@ -315,6 +323,7 @@ func (s *Syncer) searchWindow(ctx context.Context, w Window) ([]larkcli.SearchHi
 	if err != nil {
 		return nil, time.Time{}, err
 	}
+	s.log().DebugContext(ctx, "search window", "start", w.Start, "end", w.End, "hits", len(hits), "truncated", truncated)
 	if !truncated {
 		return hits, w.End, nil
 	}
@@ -415,7 +424,7 @@ func (s *Syncer) fetchUnknown(ctx context.Context, hits []larkcli.SearchHit, now
 func (s *Syncer) upsertRaw(ctx context.Context, msgs []larkcli.RawMessage, now time.Time) (int, error) {
 	rows := make([]store.Message, 0, len(msgs))
 	chats := map[string]struct{}{}
-	var resources []store.Resource
+	var resources []store.ResourceRef
 	for _, m := range msgs {
 		rows = append(rows, ToRow(m))
 		chats[m.ChatID] = struct{}{}
@@ -432,6 +441,9 @@ func (s *Syncer) upsertRaw(ctx context.Context, msgs []larkcli.RawMessage, now t
 	if err != nil {
 		return n, err
 	}
+	// Every path that stores a message funnels through here, so this is where
+	// "the sweep ran but nothing landed" gets its answer.
+	s.log().DebugContext(ctx, "upsert", "rows", len(rows), "changed", n, "chats", len(chats))
 	if err := s.Store.UpsertContacts(ctx, senderContacts(msgs), now.UnixMilli()); err != nil {
 		return n, err
 	}
@@ -519,12 +531,14 @@ func (s *Syncer) slowPath(ctx context.Context, now time.Time) (int, error) {
 	for _, c := range chats {
 		local, err := s.Store.GetChat(ctx, c.ChatID)
 		if errors.Is(err, store.ErrNotFound) || (err == nil && local.BackfillDoneAt == 0) {
+			s.log().DebugContext(ctx, "slow path skip", "chat_id", c.ChatID, "reason", "not backfilled yet")
 			continue // backfill will cover it
 		}
 		if err != nil {
 			return total, err
 		}
 		if local.SyncError != "" {
+			s.log().DebugContext(ctx, "slow path skip", "chat_id", c.ChatID, "reason", "chat rejected earlier", "err", local.SyncError)
 			continue
 		}
 		since := time.UnixMilli(local.CursorMs).Add(-s.Opt.Overlap)
@@ -571,7 +585,7 @@ func (s *Syncer) recordChatError(ctx context.Context, chatID string, err error, 
 	if !errors.As(err, &le) || !le.IsPermanent() {
 		return false
 	}
-	s.log().Warn("chat listing rejected; skipping chat", "chat_id", chatID, "code", le.Code, "msg", le.Message)
+	s.log().Warn("chat listing rejected; skipping chat", "chat_id", chatID, "code", le.Code, "error", le.Message)
 	if serr := s.Store.SetChatSyncError(ctx, chatID, fmt.Sprintf("%d: %s", le.Code, le.Message), now.UnixMilli()); serr != nil {
 		s.log().Warn("record chat error", "err", serr)
 	}
@@ -604,6 +618,8 @@ func (s *Syncer) pullChat(ctx context.Context, chatID string, since, until, now 
 	if err != nil {
 		return n, err
 	}
+	s.log().DebugContext(ctx, "pull chat", "chat_id", chatID, "since", since, "until", until,
+		"messages", len(msgs), "threads", len(UniqueStrings(threads)), "upserted", n)
 	if maxMs > 0 {
 		if err := s.Store.SetChatCursor(ctx, chatID, maxMs); err != nil {
 			return n, err
@@ -708,13 +724,20 @@ func (s *Syncer) Run(ctx context.Context) error {
 		if err != nil {
 			failures++
 			delay = s.delayFor(err, failures)
-			s.log().Warn("tick failed", "err", err, "retry_in", delay)
+			s.log().Warn("tick failed", "err", err, "class", errClass(err), "failures", failures, "retry_in", delay)
 			if s.OnError != nil {
 				s.OnError(err)
 			}
 		} else {
 			failures = 0
-			s.log().Debug("tick", "hits", rep.Hits, "new", rep.New, "rendered", rep.Rendered, "backfilled", rep.Backfilled)
+			level := slog.LevelDebug
+			if rep.changed() {
+				level = slog.LevelInfo
+			}
+			s.log().Log(ctx, level, "tick", "hits", rep.Hits, "new", rep.New, "rendered", rep.Rendered,
+				"backfilled", rep.Backfilled, "slow_path", rep.SlowPath, "history", rep.History,
+				"downloaded", rep.Downloaded, "repaired", rep.Repaired, "chats", rep.Chats,
+				"complete", rep.Complete)
 		}
 		s.SetStatus(ctx, err)
 		select {
@@ -723,6 +746,24 @@ func (s *Syncer) Run(ctx context.Context) error {
 		case <-time.After(delay):
 		}
 	}
+}
+
+// errClass names why the loop is backing off, which the delay alone does not
+// say.
+func errClass(err error) string {
+	var le *larkcli.Error
+	if !errors.As(err, &le) {
+		return "other"
+	}
+	switch {
+	case le.IsAuth():
+		return "auth"
+	case le.IsNetwork():
+		return "network"
+	case le.IsRateLimit():
+		return "rate_limit"
+	}
+	return "api"
 }
 
 func (s *Syncer) delayFor(err error, failures int) time.Duration {

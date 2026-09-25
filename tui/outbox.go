@@ -113,7 +113,7 @@ func resPending(meta *msgMeta, items []outboxItem) {
 				continue
 			}
 			rows = append(rows, store.Resource{
-				MessageID: it.localID, FileKey: img.key, Type: "image",
+				FileKey: img.key, Type: "image",
 				Status: "done", LocalPath: img.local,
 			})
 		}

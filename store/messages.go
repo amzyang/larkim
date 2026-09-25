@@ -201,7 +201,8 @@ func (s *Store) UpdateReactions(ctx context.Context, messageID, reactionsJSON st
 func (s *Store) UnrenderedMessageIDs(ctx context.Context, limit int) ([]string, error) {
 	return queryAll(ctx, s.db, scanOne[string], `SELECT m.message_id FROM messages m
  WHERE m.rendered_at = 0 AND m.deleted = 0 AND m.msg_type NOT IN ('system', 'video_chat')
- AND NOT EXISTS (SELECT 1 FROM resources r WHERE r.message_id = m.message_id AND r.status IN ('pending', 'failed'))
+ AND NOT EXISTS (SELECT 1 FROM message_resources mr JOIN resources r ON r.file_key = mr.file_key
+   WHERE mr.message_id = m.message_id AND r.status IN ('pending', 'failed'))
  ORDER BY m.create_ms DESC LIMIT ?`, limit)
 }
 

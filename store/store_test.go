@@ -53,7 +53,7 @@ func TestMigrate_QueuesCardImagesThatRanOutOfAttempts(t *testing.T) {
 	ctx := context.Background()
 	s, err := Open(filepath.Join(dir, "t.db"))
 	require.NoError(t, err)
-	require.NoError(t, s.AddPendingResources(ctx, []Resource{
+	require.NoError(t, s.AddPendingResources(ctx, []ResourceRef{
 		{MessageID: "om_card", FileKey: "img_card", Type: "image"},
 		{MessageID: "om_clip", FileKey: "file_clip", Type: "file"},
 	}))
@@ -397,4 +397,70 @@ func TestUpsertMessages_EditedAtIgnoresTypesFeishuCannotEdit(t *testing.T) {
 	got, err := s.GetMessage(ctx, "om_c")
 	require.NoError(t, err)
 	require.Zero(t, got.EditedAt)
+}
+
+func TestMigrate_CollapsesResourcesOntoTheirKey(t *testing.T) {
+	dir := t.TempDir()
+	ctx := context.Background()
+	s, err := Open(filepath.Join(dir, "t.db"))
+	require.NoError(t, err)
+	// Rebuild the shape the ledger had while it was keyed by (message, key),
+	// so the migration runs against the rows it was written for.
+	for _, stmt := range []string{
+		`DROP TRIGGER resources_rev_ai`,
+		`DROP TRIGGER resources_rev_au`,
+		`DROP TRIGGER message_resources_rev_ai`,
+		`DROP TABLE message_resources`,
+		`DROP TABLE resources`,
+		`CREATE TABLE resources (
+			message_id TEXT NOT NULL, file_key TEXT NOT NULL, type TEXT NOT NULL DEFAULT '',
+			local_path TEXT NOT NULL DEFAULT '', size_bytes INTEGER NOT NULL DEFAULT 0,
+			status TEXT NOT NULL DEFAULT 'pending', attempts INTEGER NOT NULL DEFAULT 0,
+			next_attempt_at INTEGER NOT NULL DEFAULT 0, last_error TEXT NOT NULL DEFAULT '',
+			PRIMARY KEY (message_id, file_key))`,
+		`CREATE TRIGGER resources_rev_ai AFTER INSERT ON resources BEGIN
+			UPDATE data_rev SET rev = rev + 1;
+		END`,
+		`CREATE TRIGGER resources_rev_au AFTER UPDATE ON resources BEGIN
+			UPDATE data_rev SET rev = rev + 1;
+		END`,
+		`INSERT INTO resources (message_id, file_key, type, local_path, size_bytes, status, attempts, next_attempt_at, last_error) VALUES
+			('om_a','img_shared','image','resources/img_shared.png',42,'done',1,0,''),
+			('om_b','img_shared','image','',0,'pending',0,0,''),
+			('om_c','img_shared','image','',0,'failed',5,0,'gone'),
+			('om_a','img_gone','image','',0,'failed',3,900,'Resource Has Been Deleted'),
+			('om_b','img_gone','image','',0,'pending',0,0,''),
+			('om_d','img_big','file','',999,'skipped',0,0,'too large')`,
+		`DELETE FROM schema_migrations WHERE version = 21`,
+	} {
+		_, err = s.db.ExecContext(ctx, stmt)
+		require.NoError(t, err, stmt)
+	}
+	s.Close()
+
+	s, err = Open(filepath.Join(dir, "t.db"))
+	require.NoError(t, err)
+	defer s.Close()
+
+	counts, err := s.ResourceCounts(ctx)
+	require.NoError(t, err)
+	require.Equal(t, map[string]int64{"done": 1, "failed": 1, "skipped": 1}, counts,
+		"three keys, three rows, whatever the messages said")
+
+	rs, err := s.ResourcesFor(ctx, "om_c")
+	require.NoError(t, err)
+	require.Len(t, rs, 1)
+	require.Equal(t, "done", rs[0].Status, "a fetched row wins over a failed one for the same key")
+	require.Equal(t, "resources/img_shared.png", rs[0].LocalPath)
+	require.Equal(t, int64(42), rs[0].SizeBytes)
+
+	rs, err = s.ResourcesFor(ctx, "om_b")
+	require.NoError(t, err)
+	require.Len(t, rs, 2, "om_b referenced two keys and keeps both references")
+
+	refs, err := s.ResourcesForMessages(ctx, []string{"om_a", "om_b", "om_c", "om_d"})
+	require.NoError(t, err)
+	require.Len(t, refs["om_a"], 2)
+	require.Len(t, refs["om_d"], 1)
+	require.Equal(t, "skipped", refs["om_d"][0].Status)
 }

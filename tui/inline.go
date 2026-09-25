@@ -2,6 +2,7 @@ package tui
 
 import (
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/amzyang/larkim/emoji"
@@ -15,17 +16,98 @@ import (
 // groups are kept apart.
 var emojiSpelling = regexp.MustCompile(`:([A-Za-z0-9_]{1,32}):|\[([^\[\]\n]{1,12})\]`)
 
-// inlineSegs cuts one body line at the emoji no Unicode character carries,
+// inlineSegs cuts one body line at the pieces that are not ordinary text: a
+// link, spelled with a label or written out, which leads somewhere the row
+// has to be able to hand over, and an emoji no Unicode character carries,
 // which the client draws as a picture of its own. It reports nothing for a
-// line that holds none, leaving it on the ordinary text path: the pieces cost
+// line holding neither, leaving it on the ordinary text path: the pieces cost
 // the wrapping that a whole string gets for free.
 func inlineSegs(line string, ms mentions, pic func(key string) picture) []rowSeg {
+	cuts := linkCuts(line)
+	cuts = append(cuts, autoLinkCuts(line, cuts)...)
+	cuts = append(cuts, emojiCuts(line, cuts, pic)...)
+	if len(cuts) == 0 {
+		return nil
+	}
+	slices.SortFunc(cuts, func(a, b inlineCut) int { return a.lo - b.lo })
+
 	var segs []rowSeg
 	last := 0
+	for _, c := range cuts {
+		if c.lo > last {
+			segs = append(segs, rowSeg{text: renderInline(line[last:c.lo], ms)})
+		}
+		if len(c.seg.urls) > 0 && c.seg.text == "" {
+			c.seg.text = renderInline(line[c.lo:c.hi], ms)
+		}
+		segs = append(segs, c.seg)
+		last = c.hi
+	}
+	if last < len(line) {
+		segs = append(segs, rowSeg{text: renderInline(line[last:], ms)})
+	}
+	return segs
+}
+
+// inlineCut is one piece of a line that is not ordinary text, and the span of
+// the line it was spelled by.
+type inlineCut struct {
+	lo, hi int
+	seg    rowSeg
+}
+
+// linkCuts finds the links a line spells. The label keeps the whole inline
+// path, so an emoji or a mention inside it is drawn the way it is anywhere
+// else; what the label gains here is the target behind it.
+func linkCuts(line string) []inlineCut {
+	var cuts []inlineCut
+	for _, m := range inlineMD.FindAllStringSubmatchIndex(line, -1) {
+		if m[2] < 0 {
+			continue // some other run of markup; renderInline still styles it
+		}
+		label, url := line[m[2]:m[3]], line[m[4]:m[5]]
+		if url == "" {
+			continue // nothing to hand over; the label is just text
+		}
+		if strings.TrimSpace(label) == "" {
+			label = url
+		}
+		cuts = append(cuts, inlineCut{lo: m[0], hi: m[1], seg: rowSeg{
+			urls: []string{url}, label: flatten(label), note: "opening " + flatten(label)}})
+	}
+	return cuts
+}
+
+// bareURL matches a URL written out rather than spelled as a link. Feishu
+// makes one pressable wherever it appears, so larkim has to find it in the
+// text the same way. The trailing class leaves out the marks a sentence ends
+// on — a full stop or a closing bracket after a URL belongs to the sentence.
+var bareURL = regexp.MustCompile(`https?://[^\s<>"'\x60\[\]()]*[^\s<>"'\x60\[\]().,;:!?，。；：！？、]`)
+
+// autoLinkCuts finds the URLs a line writes out, skipping any inside a link
+// already spelled with a label: that one has been cut, target and all.
+func autoLinkCuts(line string, links []inlineCut) []inlineCut {
+	var cuts []inlineCut
+	for _, m := range bareURL.FindAllStringIndex(line, -1) {
+		if slices.ContainsFunc(links, func(l inlineCut) bool { return m[0] < l.hi && m[1] > l.lo }) {
+			continue
+		}
+		url := line[m[0]:m[1]]
+		// A written-out URL carries no label to style, so it is styled here;
+		// a spelled link gets that from renderInline along with the rest.
+		cuts = append(cuts, inlineCut{lo: m[0], hi: m[1], seg: rowSeg{
+			text: stLink.Render(url), urls: []string{url}, label: url, note: "opening " + url}})
+	}
+	return cuts
+}
+
+// emojiCuts finds the emoji a line spells that no Unicode character carries,
+// skipping any inside a link: a label is drawn whole so that the whole of it
+// leads to the same place.
+func emojiCuts(line string, links []inlineCut, pic func(key string) picture) []inlineCut {
+	var cuts []inlineCut
 	for _, m := range emojiSpelling.FindAllStringSubmatchIndex(line, -1) {
-		// A markdown link's label is not an emoji, however it is spelled:
-		// cutting [了解](https://…) apart would lose the link with it.
-		if m[4] >= 0 && m[1] < len(line) && line[m[1]] == '(' {
+		if slices.ContainsFunc(links, func(l inlineCut) bool { return m[0] < l.hi && m[1] > l.lo }) {
 			continue
 		}
 		name, lookup := "", emoji.ByName
@@ -42,19 +124,9 @@ func inlineSegs(line string, ms mentions, pic func(key string) picture) []rowSeg
 		if p.cols == 0 {
 			continue
 		}
-		if m[0] > last {
-			segs = append(segs, rowSeg{text: renderInline(line[last:m[0]], ms)})
-		}
-		segs = append(segs, rowSeg{pic: p})
-		last = m[1]
+		cuts = append(cuts, inlineCut{lo: m[0], hi: m[1], seg: rowSeg{pic: p}})
 	}
-	if len(segs) == 0 {
-		return nil
-	}
-	if last < len(line) {
-		segs = append(segs, rowSeg{text: renderInline(line[last:], ms)})
-	}
-	return segs
+	return cuts
 }
 
 // wrapSegs packs a line's pieces into rows w columns wide. A picture is an
@@ -78,6 +150,11 @@ func wrapSegs(segs []rowSeg, w int) [][]rowSeg {
 			line, used = append(line, s), used+s.pic.cols
 			continue
 		}
+		// A run cut across rows leads where the whole of it led: both halves
+		// of a wrapped label open the same link.
+		frag := func(text string) rowSeg {
+			return rowSeg{text: text, urls: s.urls, label: s.label, note: s.note}
+		}
 		for text := s.text; text != ""; {
 			head, rest := takeText(text, w-used)
 			if head == "" && used > 0 {
@@ -92,7 +169,7 @@ func wrapSegs(segs []rowSeg, w int) [][]rowSeg {
 					break
 				}
 			}
-			line, used = append(line, rowSeg{text: head}), used+ansi.StringWidth(head)
+			line, used = append(line, frag(head)), used+ansi.StringWidth(head)
 			if text = rest; text != "" {
 				flush()
 			}

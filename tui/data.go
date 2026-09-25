@@ -1,8 +1,10 @@
 package tui
 
 import (
+	"cmp"
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -14,6 +16,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/amzyang/larkim/ai"
 	"github.com/amzyang/larkim/emoji"
+	"github.com/amzyang/larkim/fuzzy"
 	"github.com/amzyang/larkim/larkcli"
 	"github.com/amzyang/larkim/store"
 	"github.com/amzyang/larkim/sync"
@@ -40,9 +43,10 @@ type Deps struct {
 	// waiting out its interval. Only an embedded syncer can reach this
 	// process; against a daemon it is nil and the interval is all there is.
 	Nudge <-chan struct{}
-	// OpenURL hands an applink to the desktop client. New fills it when nil;
-	// tests replace it to keep the real `open` out of the run.
-	OpenURL func(url string, background bool) error
+	// OpenURL hands applinks, links and local files to the desktop. New fills
+	// it when nil; tests replace it to keep the real `open` out of the run.
+	// Several targets are opened together rather than one by one.
+	OpenURL func(targets []string, background bool) error
 	// Env reads the environment the external editor is named in. New fills it
 	// when nil; tests replace it to keep a real editor out of the run.
 	Env func(string) string
@@ -54,6 +58,10 @@ type Deps struct {
 	// the response content type. New fills it with sync.HTTPFetch; tests
 	// replace it to keep the network out of the run.
 	Fetch func(ctx context.Context, url string) ([]byte, string, error)
+	// Log records what the TUI cannot show. stderr is the alternate screen
+	// here, so anything worth knowing has to reach the log file or be lost.
+	// New fills it with a discard logger when nil.
+	Log *slog.Logger
 }
 
 const (
@@ -115,9 +123,9 @@ type (
 	noticeMsg     struct{ text string }
 	aiChunkMsg    struct{ chunk ai.Chunk }
 	searchMsg     struct {
-		query string
-		msgs  []store.Message
-		meta  msgMeta
+		gen  int
+		hits []searchHit
+		meta msgMeta
 	}
 )
 
@@ -194,18 +202,66 @@ func loadMeta(ctx context.Context, st *store.Store, msgs []store.Message) (msgMe
 	return msgMeta{suffix: suffix, people: people, avatars: avatars, res: res, parents: parents}, nil
 }
 
-func searchMessages(st *store.Store, query string) tea.Cmd {
+// searchLimits bound each group. Messages get the most because they are what
+// a search is usually for; the other two are there to be recognised, not
+// scrolled.
+const (
+	searchMsgLimit    = 200
+	searchChatLimit   = 20
+	searchPeopleLimit = 20
+	searchRemoteLimit = 50
+)
+
+// localSearch answers a query from the store alone: the reader is still
+// typing, so the answer has to come back inside a keystroke.
+func localSearch(d Deps, chats []store.Chat, query string, gen int) tea.Cmd {
 	return func() tea.Msg {
+		if strings.TrimSpace(query) == "" {
+			return searchMsg{gen: gen}
+		}
 		ctx := context.Background()
-		rows, err := st.SearchMessages(ctx, query, "", 200)
+		msgs, err := d.Store.SearchMessages(ctx, query, "", searchMsgLimit)
 		if err != nil {
 			return errMsg{err}
 		}
-		meta, err := loadMeta(ctx, st, rows)
+		meta, err := loadMeta(ctx, d.Store, msgs)
 		if err != nil {
 			return errMsg{err}
 		}
-		return searchMsg{query: query, msgs: rows, meta: meta}
+		hits := make([]searchHit, 0, len(msgs)+searchChatLimit+searchPeopleLimit)
+		for _, msg := range msgs {
+			hits = append(hits, searchHit{kind: hitMessage, msg: msg})
+		}
+		// The index is built here rather than carried on the model: this runs
+		// off the update loop, and the matcher's scratch space is not shared.
+		ix := fuzzy.NewIndex()
+		for _, c := range chats {
+			if len(hits)-len(msgs) == searchChatLimit {
+				break
+			}
+			if mark, ok := ix.Match(c.ChatID, flatten(c.Name), query); ok {
+				hits = append(hits, searchHit{kind: hitChat, chat: c, mark: mark})
+			}
+		}
+		people, err := d.Store.ListContacts(ctx, 0)
+		if err != nil {
+			return errMsg{err}
+		}
+		n := 0
+		for _, c := range people {
+			if n == searchPeopleLimit {
+				break
+			}
+			mark, ok := ix.Match(c.OpenID, c.Name, query)
+			if !ok && !strings.Contains(strings.ToLower(c.Email), strings.ToLower(query)) {
+				continue
+			}
+			hits = append(hits, searchHit{kind: hitPerson, mark: mark, user: larkcli.User{
+				OpenID: c.OpenID, Name: c.Name, Email: c.Email,
+				Department: c.Department, P2PChatID: c.P2PChatID}})
+			n++
+		}
+		return searchMsg{gen: gen, hits: hits, meta: meta}
 	}
 }
 
@@ -283,9 +339,13 @@ func loadThread(st *store.Store, threadID string) tea.Cmd {
 
 // markChatRead takes the chat's unread messages as read locally, which is
 // what makes its badge fall: Feishu offers no way to say a message was read.
-func markChatRead(st *store.Store, chatID string) tea.Cmd {
+func markChatRead(st *store.Store, log *slog.Logger, chatID string) tea.Cmd {
 	return func() tea.Msg {
-		_ = st.MarkChatRead(context.Background(), chatID, time.Now().UnixMilli())
+		if err := st.MarkChatRead(context.Background(), chatID, time.Now().UnixMilli()); err != nil {
+			// The badge staying up is the only symptom on screen, which says
+			// nothing about why.
+			log.Warn("mark chat read", "chat_id", chatID, "err", err)
+		}
 		return nil
 	}
 }
@@ -317,13 +377,22 @@ func readSyncStatus(st *store.Store) tea.Cmd {
 // sendMsg hands a chat one message. localID doubles as the idempotency key,
 // so a retry under the same id is the send Feishu already knows about rather
 // than a second delivery.
+// waited builds the context for a lark-cli call a keypress is waiting on. It
+// takes the interactive lane, so a send or a reaction does not queue behind
+// the syncer's sweeps — those run every few seconds, so the shared line is
+// occupied more often than not. Timer-driven refreshes stay on the default
+// lane: nobody is held up by them, and the interactive line is narrow.
+func waited(d time.Duration) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(larkcli.WithLane(context.Background(), larkcli.LaneInteractive), d)
+}
+
 func sendMsg(d Deps, localID string, target larkcli.Target, msg larkcli.Outgoing, imgs []draftImage, done []string) tea.Cmd {
 	return func() tea.Msg {
 		msg, keys, err := uploadImages(d, msg, imgs, done)
 		if err != nil {
 			return sentMsg{localID: localID, keys: keys, err: err}
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), sendTimeout)
+		ctx, cancel := waited(sendTimeout)
 		defer cancel()
 		sent, err := d.Client.Send(ctx, target, msg, localID)
 		return sentMsg{localID: localID, messageID: sent.MessageID, keys: keys, err: err}
@@ -336,7 +405,7 @@ func replyMsg(d Deps, localID, messageID string, msg larkcli.Outgoing, inThread 
 		if err != nil {
 			return sentMsg{localID: localID, keys: keys, err: err}
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), sendTimeout)
+		ctx, cancel := waited(sendTimeout)
 		defer cancel()
 		sent, err := d.Client.Reply(ctx, messageID, msg, inThread, localID)
 		return sentMsg{localID: localID, messageID: sent.MessageID, keys: keys, err: err}
@@ -389,7 +458,7 @@ func uploadImages(d Deps, msg larkcli.Outgoing, imgs []draftImage, done []string
 // uploadOne puts one file on Feishu under a deadline of its own, rather than
 // sharing one budget with the send and every other image behind it.
 func uploadOne(d Deps, path string) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), sendTimeout)
+	ctx, cancel := waited(sendTimeout)
 	defer cancel()
 	key, err := d.Client.UploadImage(ctx, path)
 	if err != nil {
@@ -460,11 +529,11 @@ func pasteClipboard(d Deps) tea.Cmd {
 // the panes draw comes from the store like every other.
 func ingestCmd(d Deps, localID, messageID string) tea.Cmd {
 	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), sendTimeout)
+		ctx, cancel := waited(sendTimeout)
 		defer cancel()
 		s := d.Syncer
 		if s == nil {
-			s = &sync.Syncer{Client: d.Client, Store: d.Store, Clock: sync.RealClock{}}
+			s = &sync.Syncer{Client: d.Client, Store: d.Store, Clock: sync.RealClock{}, Log: d.Log}
 		}
 		return ingestedMsg{localID: localID, err: s.IngestIDs(ctx, []string{messageID})}
 	}
@@ -493,13 +562,18 @@ func feishuChatLink(chatID string, position int64) string {
 	return url
 }
 
-// openURL hands a URL to macOS. A keypress asking for the Feishu client
+// openURL hands targets to macOS. A keypress asking for the Feishu client
 // wants the screen; an applink fired to clear a badge must leave the reader
 // in the terminal, which is what background buys.
-func openURL(url string, background bool) error {
-	args := []string{url}
+//
+// Several targets go in one invocation rather than one each, because that is
+// what puts a message's pictures in a single viewer window with the rest in
+// its sidebar — the way the client opens them — instead of scattering them
+// over as many windows as the message had pictures.
+func openURL(targets []string, background bool) error {
+	args := targets
 	if background {
-		args = []string{"-g", url}
+		args = append([]string{"-g"}, targets...)
 	}
 	return exec.Command("open", args...).Run()
 }
@@ -507,7 +581,7 @@ func openURL(url string, background bool) error {
 // openInFeishu opens a chat (optionally at a message position) in the desktop client.
 func openInFeishu(d Deps, chatID string, position int64) tea.Cmd {
 	return func() tea.Msg {
-		if err := d.OpenURL(feishuChatLink(chatID, position), false); err != nil {
+		if err := d.OpenURL([]string{feishuChatLink(chatID, position)}, false); err != nil {
 			return errMsg{err}
 		}
 		return noticeMsg{"opened in Feishu"}
@@ -520,7 +594,7 @@ func openInFeishu(d Deps, chatID string, position int64) tea.Cmd {
 // best effort: local_read_at has already dropped the badge drawn here.
 func clearFeishuBadge(d Deps, chatID string) tea.Cmd {
 	return func() tea.Msg {
-		if err := d.OpenURL(feishuChatLink(chatID, 0), true); err != nil {
+		if err := d.OpenURL([]string{feishuChatLink(chatID, 0)}, true); err != nil {
 			return errMsg{err}
 		}
 		return nil
@@ -534,14 +608,109 @@ func feishuMeetingLink(meetNumber string) string {
 	return "lark://vc.feishu.cn/j/" + meetNumber
 }
 
-// openZone hands over what a row's target points at: a meeting to join, or an
-// attachment's own file on this machine. It takes the screen, which is what
-// the keypress or the click asked for.
+// openZone hands over what a row's target points at: a meeting to join, a
+// link, or an attachment's own file on this machine. It takes the screen,
+// which is what the keypress or the click asked for.
 func openZone(d Deps, z clickZone) tea.Cmd {
 	return func() tea.Msg {
-		if err := d.OpenURL(z.url, false); err != nil {
+		if len(z.urls) == 0 {
+			return nil
+		}
+		if err := d.OpenURL(z.urls, false); err != nil {
 			return errMsg{err}
 		}
 		return noticeMsg{z.note}
 	}
+}
+
+// remoteRestDelay is the pause before Feishu is asked. It is longer than the
+// store's: a remote search costs a subprocess and a round trip, so it waits
+// until the reader has stopped typing rather than merely paused.
+const remoteRestDelay = 300 * time.Millisecond
+
+// remoteMinQuery is the shortest query worth a round trip. One character
+// matches most of the archive and tells the reader nothing.
+const remoteMinQuery = 2
+
+// remoteSearchMsg carries what Feishu answered. gen names the query it was
+// asked for, so an answer that arrives under a newer one is dropped.
+type remoteSearchMsg struct {
+	gen  int
+	hits []searchHit
+	err  error
+}
+
+// remoteSearch asks Feishu for messages this machine has never synced. Hits
+// already in the store are dropped: they are in the local group already, and
+// showing them twice would say the archive is larger than it is.
+func remoteSearch(ctx context.Context, d Deps, query string, gen int) tea.Cmd {
+	return func() tea.Msg {
+		found, err := d.Client.SearchMessages(ctx, query, searchRemoteLimit)
+		if err != nil {
+			return remoteSearchMsg{gen: gen, err: err}
+		}
+		ids := make([]string, 0, len(found))
+		for _, h := range found {
+			ids = append(ids, h.MessageID)
+		}
+		cold, err := d.Store.UnknownMessageIDs(ctx, ids)
+		if err != nil {
+			return remoteSearchMsg{gen: gen, err: err}
+		}
+		if len(cold) == 0 {
+			return remoteSearchMsg{gen: gen}
+		}
+		rendered, err := d.Client.MGetRendered(ctx, cold, false)
+		if err != nil {
+			return remoteSearchMsg{gen: gen, err: err}
+		}
+		return remoteSearchMsg{gen: gen, hits: coldHits(ctx, d, found, rendered)}
+	}
+}
+
+// coldHits pairs the search metadata, which dates a message, with the
+// rendered text, which says what it holds. Sender names come from the local
+// contacts: a search hit names its sender by id only.
+func coldHits(ctx context.Context, d Deps, found []larkcli.SearchHit, rendered []larkcli.RenderedMessage) []searchHit {
+	meta := make(map[string]larkcli.SearchHit, len(found))
+	senders := make([]string, 0, len(found))
+	for _, h := range found {
+		meta[h.MessageID] = h
+		senders = append(senders, h.FromID)
+	}
+	people, _ := d.Store.ContactsByIDs(ctx, senders)
+	hits := make([]searchHit, 0, len(rendered))
+	for _, r := range rendered {
+		h, ok := meta[r.MessageID]
+		if !ok {
+			continue
+		}
+		hits = append(hits, searchHit{kind: hitMessage, remote: true, msg: store.Message{
+			MessageID: r.MessageID, ChatID: r.ChatID, MsgType: r.MsgType, Content: r.Content,
+			SenderID: h.FromID, SenderName: people[h.FromID].Name, ThreadID: h.ThreadID,
+			MessagePosition: h.Position, CreateMs: h.CreateTime.UnixMilli(),
+			UpdateMs: h.CreateTime.UnixMilli(), RenderedAt: 1,
+		}})
+	}
+	slices.SortFunc(hits, func(a, b searchHit) int { return cmp.Compare(b.msg.CreateMs, a.msg.CreateMs) })
+	return hits
+}
+
+// ingestThenOpen pulls a message Feishu found but this machine has not stored
+// into the store, so the page that opens has it like any other.
+func ingestThenOpen(d Deps, msg store.Message) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := waited(sendTimeout)
+		defer cancel()
+		if err := d.Syncer.IngestIDs(ctx, []string{msg.MessageID}); err != nil {
+			return errMsg{err}
+		}
+		return openHitMsg{chatID: msg.ChatID, messageID: msg.MessageID, sinceMs: msg.CreateMs}
+	}
+}
+
+// openHitMsg lands a cold hit once it is in the store.
+type openHitMsg struct {
+	chatID, messageID string
+	sinceMs           int64
 }

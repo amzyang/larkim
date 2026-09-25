@@ -224,8 +224,8 @@ func copyFixture(t *testing.T) Deps {
 	require.NoError(t, st.UpdateRendered(ctx, "om_root", "发布单合了吗", "", "", 2))
 	require.NoError(t, st.UpdateRendered(ctx, "om_reply", "合了", "", "", 2))
 	require.NoError(t, st.UpdateRendered(ctx, "om_img", "看图", "", "", 2))
-	require.NoError(t, st.AddPendingResources(ctx, []store.Resource{{MessageID: "om_img", FileKey: "img_1", Type: "image"}}))
-	require.NoError(t, st.MarkResourceDone(ctx, "om_img", "img_1", "resources/img_1.png", 1024))
+	require.NoError(t, st.AddPendingResources(ctx, []store.ResourceRef{{MessageID: "om_img", FileKey: "img_1", Type: "image"}}))
+	require.NoError(t, st.MarkResourceDone(ctx, "img_1", "resources/img_1.png", 1024))
 
 	return Deps{Store: st, Self: "ou_me", DataDir: dir, ConfigPath: filepath.Join(dir, "config.yaml")}
 }

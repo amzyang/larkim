@@ -6,12 +6,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 )
@@ -41,18 +43,58 @@ const (
 	mgetBatch       = 50
 )
 
-// ExecClient runs the lark-cli binary as a subprocess. Calls are serialized:
-// lark-cli refreshes the user token under a cross-process file lock, and the
-// gateway rate limit is per user, so concurrency buys nothing.
+// ExecClient runs the lark-cli binary as a subprocess. Calls run in two
+// lanes: the syncer's sweeps in one, what a reader is waiting on in the other,
+// so a keystroke never waits out a sweep. Widths are small on purpose —
+// lark-cli refreshes the user token under a cross-process file lock and the
+// gateway rate limit is per user, so the point of a second lane is latency,
+// not throughput.
 type ExecClient struct {
 	// Path to the lark-cli binary; empty means DefaultPath then $PATH lookup.
 	Path string
 	// Dir is the working directory; --download-resources writes below it.
 	Dir string
 	// Timeout bounds a single invocation including all auto-paginated pages.
+	// It starts once the call holds a lane, so time spent queued behind
+	// another call is not charged to it.
 	Timeout time.Duration
+	// Log records every call: failures always, the full request and response
+	// pair at debug level. Nil discards.
+	Log *slog.Logger
 
-	mu sync.Mutex
+	once   sync.Once
+	bg, fg lane
+	// calls numbers the invocations so a request line and its response line
+	// can be paired, which the lanes make necessary: several calls are in
+	// flight at once and their lines interleave.
+	calls atomic.Uint64
+}
+
+func (c *ExecClient) logger() *slog.Logger {
+	if c.Log == nil {
+		return slog.New(slog.DiscardHandler)
+	}
+	return c.Log
+}
+
+// background is the lane a call takes when nothing says otherwise. Tests reach
+// for it to hold it occupied.
+func (c *ExecClient) background() lane { c.lanes(); return c.bg }
+
+func (c *ExecClient) lanes() {
+	c.once.Do(func() {
+		c.bg = make(lane, backgroundLane)
+		c.fg = make(lane, interactiveLane)
+	})
+}
+
+// lane picks the line this call waits in.
+func (c *ExecClient) lane(ctx context.Context) lane {
+	c.lanes()
+	if LaneOf(ctx) == LaneInteractive {
+		return c.fg
+	}
+	return c.bg
 }
 
 // ResolvePath returns the binary that will be executed. The npm package
@@ -104,6 +146,7 @@ type envelopeError struct {
 	Code              int    `json:"code"`
 	Message           string `json:"message"`
 	Hint              string `json:"hint"`
+	LogID             string `json:"log_id"`
 	RetryAfterSeconds int    `json:"retry_after_seconds"`
 }
 
@@ -129,25 +172,37 @@ func (c *ExecClient) runAs(ctx context.Context, identity string, args ...string)
 		return nil, fmt.Errorf("lark-cli: decode stdout: %w (%s)", err, truncate(string(stdout), 200))
 	}
 	if !env.OK {
-		return nil, decodeError(exitCode, stdout)
+		// A refusal that lark-cli reported on stdout with a zero exit is the
+		// one failure exec cannot see, so it is logged here instead.
+		e := decodeError(exitCode, stdout)
+		c.logger().WarnContext(ctx, "lark-cli refused", "argv", argvLine(args), "code", e.Code, "error", e.Message, "log_id", e.LogID)
+		return nil, e
 	}
 	return env.Data, nil
 }
 
 func (c *ExecClient) exec(ctx context.Context, args ...string) (stdout, stderr []byte, exitCode int, err error) {
+	call := c.calls.Add(1)
 	path, err := c.ResolvePath()
 	if err != nil {
-		return nil, nil, 0, fmt.Errorf("lark-cli not found: %w", err)
+		return nil, nil, 0, c.logFailure(ctx, call, args, fmt.Errorf("lark-cli not found: %w", err))
 	}
+	queued := time.Now()
+	l := c.lane(ctx)
+	if aerr := l.acquire(ctx); aerr != nil {
+		return nil, nil, 0, c.logFailure(ctx, call, args, fmt.Errorf("lark-cli %s: %w", args[0], aerr))
+	}
+	defer l.release()
+	c.logRequest(ctx, call, args, LaneOf(ctx), time.Since(queued))
+
 	timeout := c.Timeout
 	if timeout == 0 {
 		timeout = 5 * time.Minute
 	}
+	// The timeout bounds the run, not the wait: a call that sat behind a
+	// sweep still gets its whole budget once it reaches the front.
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-
-	c.mu.Lock()
-	defer c.mu.Unlock()
 
 	cmd := exec.CommandContext(ctx, path, args...)
 	cmd.Dir = c.Dir
@@ -160,18 +215,24 @@ func (c *ExecClient) exec(ctx context.Context, args ...string) (stdout, stderr [
 	var out, errBuf bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &errBuf
+	started := time.Now()
 	runErr := cmd.Run()
-	if runErr != nil {
-		var exitErr *exec.ExitError
-		if errors.As(runErr, &exitErr) {
-			return out.Bytes(), errBuf.Bytes(), exitErr.ExitCode(), nil
-		}
+	dur := time.Since(started)
+	// One exit, so the response line is emitted exactly once.
+	var exitErr *exec.ExitError
+	switch {
+	case runErr == nil:
+		stdout, stderr = out.Bytes(), errBuf.Bytes()
+	case errors.As(runErr, &exitErr):
+		stdout, stderr, exitCode = out.Bytes(), errBuf.Bytes(), exitErr.ExitCode()
+	default:
 		if ctx.Err() != nil {
 			runErr = ctx.Err()
 		}
-		return nil, nil, 0, fmt.Errorf("lark-cli %s: %w", args[0], runErr)
+		err = fmt.Errorf("lark-cli %s: %w", args[0], runErr)
 	}
-	return out.Bytes(), errBuf.Bytes(), 0, nil
+	c.logResponse(ctx, call, args, dur, stdout, stderr, exitCode, err)
+	return stdout, stderr, exitCode, err
 }
 
 // childEnv prepends extraPath to PATH (or sets one) for the subprocess.
@@ -212,12 +273,40 @@ func decodeError(exitCode int, stderr []byte) *Error {
 				e.Code = env.Error.Code
 				e.Message = env.Error.Message
 				e.Hint = env.Error.Hint
+				e.LogID = env.Error.LogID
 				e.RetryAfter = time.Duration(env.Error.RetryAfterSeconds) * time.Second
 			}
 		}
 		off = lineEnd + 1
 	}
+	e.adoptAPIBody()
 	return e
+}
+
+// adoptAPIBody lifts Feishu's own code out of Message. A download is served
+// outside the API envelope, so lark-cli reports its failure as a transport
+// error whose message is the raw HTTP body ("HTTP 400: {...}") — which is
+// where the code that names the cause stays. A body truncated by lark-cli
+// does not parse, and then there is nothing to lift.
+func (e *Error) adoptAPIBody() {
+	i := strings.IndexByte(e.Message, '{')
+	if i < 0 {
+		return
+	}
+	var body struct {
+		Code  int    `json:"code"`
+		Msg   string `json:"msg"`
+		Error struct {
+			LogID string `json:"log_id"`
+		} `json:"error"`
+	}
+	if json.NewDecoder(strings.NewReader(e.Message[i:])).Decode(&body) != nil || body.Code == 0 {
+		return
+	}
+	e.APICode, e.APIMessage = body.Code, body.Msg
+	if e.LogID == "" {
+		e.LogID = body.Error.LogID
+	}
 }
 
 func jsonArg(v any) string {
@@ -242,6 +331,33 @@ func (c *ExecClient) SearchMessageIDs(ctx context.Context, start, end time.Time)
 	if err != nil {
 		return nil, false, err
 	}
+	return decodeSearchHits(data)
+}
+
+// SearchMessages finds messages by keyword across every chat. SearchMessageIDs
+// sweeps a time window on the syncer's behalf; this is the reader's own query,
+// so it asks for one page and waits for nobody. The same endpoint answers
+// both, and it is the one that dates a hit to the second — `im
+// +messages-search` renders create_time for a person to read, which is too
+// coarse to put a cursor on.
+func (c *ExecClient) SearchMessages(ctx context.Context, query string, limit int) ([]SearchHit, error) {
+	if strings.TrimSpace(query) == "" {
+		return nil, nil
+	}
+	if limit <= 0 || limit > searchPageSize {
+		limit = searchPageSize
+	}
+	data, err := c.run(ctx, "api", "POST", "/open-apis/im/v1/messages/search",
+		"--data", jsonArg(map[string]any{"query": query}),
+		"--page-size", strconv.Itoa(limit))
+	if err != nil {
+		return nil, err
+	}
+	hits, _, err := decodeSearchHits(data)
+	return hits, err
+}
+
+func decodeSearchHits(data json.RawMessage) ([]SearchHit, bool, error) {
 	var resp struct {
 		Items []struct {
 			Meta struct {

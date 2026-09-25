@@ -123,14 +123,46 @@ func TestParse_MentionCarriesTheNameAndTheKeyItIsPairedWith(t *testing.T) {
 	require.Equal(t, `<at user_id="ou_app">王五</at>`, c.Blocks[0].Markdown)
 }
 
+// button is how the runtime DSL spells one: the label it shows, over the list
+// of what pressing it does.
+func button(label, actions string) string {
+	return `{"tag":"button","property":{"type":"default","text":{"tag":"plain_text","property":{"content":"` + label +
+		`"}},"actions":[` + actions + `]}}`
+}
+
+// callback is what a button that calls back to the app that sent the card
+// carries: a handle, and an empty value — the payload only ever reaches that
+// app.
+const callback = `{"type":"action_request","action":{"actionID":"act_v1_1","value":"","isValueObjectType":true}}`
+
 func TestParse_ButtonsOfOneRowStayTogether(t *testing.T) {
-	button := func(label string) string {
-		return `{"tag":"button","property":{"type":"default","text":{"tag":"plain_text","property":{"content":"` + label +
-			`"}},"actions":[{"type":"action_request","action":{"actionID":"act_1"}}]}}`
-	}
-	c, ok := Parse(cardJSON(`{"tag":"action","property":{"actions":[`+button("认领")+`,`+button("忽略")+`]}}`, nil))
+	c, ok := Parse(cardJSON(`{"tag":"action","property":{"actions":[`+
+		button("认领", callback)+`,`+button("忽略", callback)+`]}}`, nil))
 	require.True(t, ok)
-	require.Equal(t, []Block{{Buttons: []string{"认领", "忽略"}}}, c.Blocks)
+	require.Equal(t, []Block{{Buttons: []Button{{Label: "认领"}, {Label: "忽略"}}}}, c.Blocks)
+}
+
+func TestParse_ButtonKeepsTheLinkItOpens(t *testing.T) {
+	c, ok := Parse(cardJSON(button("详情", `{"type":"open_url","action":{"url":"https://example.com/run/1"}}`), nil))
+	require.True(t, ok)
+	require.Equal(t, []Block{{Buttons: []Button{{Label: "详情", URL: "https://example.com/run/1"}}}}, c.Blocks)
+}
+
+func TestParse_ButtonTakesTheTargetMeantForThisMachine(t *testing.T) {
+	c, ok := Parse(cardJSON(button("详情",
+		`{"type":"open_url","action":{"url":"https://example.com/m","pcURL":"https://example.com/desktop"}}`), nil))
+	require.True(t, ok)
+	require.Equal(t, "https://example.com/desktop", c.Blocks[0].Buttons[0].URL,
+		"a card names a desktop target of its own, and larkim runs on one")
+}
+
+// A button whose press calls the app that sent the card leads nowhere a
+// reader can follow: the payload is delivered to that app alone, and no open
+// API submits one.
+func TestParse_ACallbackButtonLeadsNowhere(t *testing.T) {
+	c, ok := Parse(cardJSON(button("同意", callback), nil))
+	require.True(t, ok)
+	require.Equal(t, []Button{{Label: "同意"}}, c.Blocks[0].Buttons)
 }
 
 func TestParse_ColumnsStack(t *testing.T) {

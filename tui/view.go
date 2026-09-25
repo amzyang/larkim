@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"charm.land/bubbles/v2/textarea"
+	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/amzyang/larkim/store"
@@ -244,15 +245,16 @@ func (m *Model) rebuildPreview() {
 func (m *Model) rebuildMessages() {
 	w := m.messagesWidth() - 2
 	if m.searching {
-		m.msgRows = renderSearchRows(m.searchResults, m.chats, m.msgStyleFor(w, m.searchMeta))
+		m.msgRows = renderSearchRows(m.searchHits, m.chats, m.msgStyleFor(w, m.searchMeta))
 		return
 	}
 	m.msgRows = renderRows(m.msgs, m.msgStyleFor(w, m.meta))
 }
 
-// renderSearchRows is renderRows with each block's chat named on its sender
-// line, because search hits run across chats.
-func renderSearchRows(msgs []store.Message, chats []store.Chat, st msgStyle) []msgRow {
+// renderSearchRows lays the panel out: the message hits as message blocks,
+// then the chats and the people, each group under a rule of its own. Row
+// indices point at hits rather than messages, so one cursor walks all three.
+func renderSearchRows(hits []searchHit, chats []store.Chat, st msgStyle) []msgRow {
 	// Hits run across chats, so every block names its sender, and no @ in one
 	// is measured against the chat the cursor happens to sit on.
 	st.p2p, st.peer = false, ""
@@ -260,7 +262,74 @@ func renderSearchRows(msgs []store.Message, chats []store.Chat, st msgStyle) []m
 	for _, c := range chats {
 		st.names[c.ChatID] = c.Name
 	}
-	return renderRows(msgs, st)
+	// Message hits lead, the store's before Feishu's, so a block's index into
+	// either run is its index into the hits once the run's own start is added.
+	var local, remote []store.Message
+	for _, h := range hits {
+		if h.kind != hitMessage {
+			break
+		}
+		if h.remote {
+			remote = append(remote, h.msg)
+			continue
+		}
+		local = append(local, h.msg)
+	}
+	var rows []msgRow
+	if len(local) > 0 {
+		rows = append(rows, searchRule("Messages", st.width))
+	}
+	rows = append(rows, renderRows(local, st)...)
+	if len(remote) > 0 {
+		rows = append(rows, searchRule("Feishu", st.width))
+		for _, r := range renderRows(remote, st) {
+			r.idx += len(local)
+			rows = append(rows, r)
+		}
+	}
+	msgs := len(local) + len(remote)
+	// Nothing past the message hits is a message, so the first row here
+	// always opens a group of its own.
+	kind := hitMessage
+	for i := msgs; i < len(hits); i++ {
+		h := hits[i]
+		if h.kind != kind {
+			kind = h.kind
+			rows = append(rows, searchRule(groupLabel(kind), st.width))
+		}
+		rows = append(rows, msgRow{text: fit(searchRowText(h), st.width), idx: i})
+	}
+	return rows
+}
+
+func groupLabel(k searchKind) string {
+	if k == hitPerson {
+		return "People"
+	}
+	return "Chats"
+}
+
+// searchRule parts one group from the next. It belongs to no hit, so the
+// selection never paints it.
+func searchRule(label string, w int) msgRow {
+	return msgRow{text: fit(stDim.Render("── "+label+" "+strings.Repeat("─", max(0, w-len(label)-4))), w), plain: true}
+}
+
+// searchRowText is the one line a chat or a person takes: the name with the
+// runes the query landed on underlined, and what tells two of them apart.
+func searchRowText(h searchHit) string {
+	if h.kind == hitChat {
+		return markName(flatten(h.chat.Name), h.mark, stBold)
+	}
+	tail := h.user.Department
+	if tail == "" {
+		tail = h.user.Email
+	}
+	line := markName(h.user.Name, h.mark, stBold)
+	if tail != "" {
+		line += stDim.Render(" · " + tail)
+	}
+	return line
 }
 
 // aiLines wraps the assistant's answer to the right pane.
@@ -377,8 +446,12 @@ func zoneAt(rows []msgRow, line, x int) (clickZone, bool) {
 	if line < 0 || line >= len(rows) {
 		return clickZone{}, false
 	}
-	z := rows[line].zone
-	return z, z.hit(x)
+	for _, z := range rows[line].zones {
+		if z.hit(x) {
+			return z, true
+		}
+	}
+	return clickZone{}, false
 }
 
 // holdTop is where a rebuilt pane's viewport lands: at the new bottom when it
@@ -505,9 +578,12 @@ func (m Model) View() tea.View {
 	var out strings.Builder
 	out.WriteString(top)
 	out.WriteString("\n")
-	if m.mode == modeEmoji {
+	switch m.mode {
+	case modeEmoji:
 		out.WriteString(m.renderPicker())
-	} else {
+	case modeTarget:
+		out.WriteString(m.renderTargets())
+	default:
 		out.WriteString(m.renderInput())
 	}
 	out.WriteString("\n")
@@ -518,7 +594,70 @@ func (m Model) View() tea.View {
 		return v
 	}
 	v.Content = out.String()
+	v.Cursor = m.cursorAt()
 	return v
+}
+
+// cursorShape is what the terminal cursor says about the mode: vim's bar
+// wherever keys are text, vim's block wherever they are commands. The block is
+// steady because it is parked rather than written at.
+func cursorShape(md mode) (tea.CursorShape, bool) {
+	if md == modeNormal || md == modeVisual || md == modeTarget {
+		return tea.CursorBlock, false
+	}
+	return tea.CursorBar, true
+}
+
+// cursorAt places the real terminal cursor, whose shape is what names the mode
+// without the reader going back to the status bar. The composer holds the
+// cursor even in the modes that do not write into it, so the block sits on the
+// spot i would resume at, the way vim's does.
+func (m Model) cursorAt() *tea.Cursor {
+	w := m.width - 2
+	// The panes with their border, then the composer box's own top border.
+	top := m.bodyHeight() + 3
+	shape, blink := cursorShape(m.mode)
+	place := func(c *tea.Cursor, x, y int) *tea.Cursor {
+		if c == nil {
+			return nil
+		}
+		// A line wider than its box scrolls under it and bubbles keeps the
+		// offset to itself, so the caret is pinned to the last column it can
+		// be in — which is where it is whenever it is the thing pushing the
+		// text along.
+		c.X, c.Y = min(c.X+x, m.width-2), c.Y+y
+		c.Shape, c.Blink = shape, blink
+		c.Color = nil // the terminal's own cursor colour wins
+		return c
+	}
+	switch m.mode {
+	case modeCommand, modeFilter, modeSearch:
+		return place(textinputCursor(m.cmdline), 1, top)
+	case modeEmoji:
+		return place(textinputCursor(m.picker.input), 1+lipgloss.Width(pickerPrompt()), top)
+	}
+	// bubbles reports no cursor for a blurred widget, and every mode but
+	// insert blurs the composer, so the caret is asked of a focused copy.
+	ta := m.input
+	ta.Focus()
+	above := m.composerAbove(w)
+	r := m.composerRows()
+	// fitBlock drops rows off the top of an over-filled box, lifting the
+	// writing area above the rows that claim to sit over it.
+	clip := max(0, len(above)+r.input+r.badge-r.total())
+	return place(ta.Cursor(), 1, top+len(above)-clip)
+}
+
+// textinputCursor is where a text input's caret sits, in cells. bubbles counts
+// it in runes — textinput.Model.Cursor adds Position straight to the prompt
+// width — which leaves the cursor a cell short of itself for every wide
+// character before it, and a chat filter is typed in Chinese.
+func textinputCursor(in textinput.Model) *tea.Cursor {
+	if !in.Focused() {
+		return nil
+	}
+	typed := string([]rune(in.Value())[:in.Position()])
+	return tea.NewCursor(lipgloss.Width(in.Prompt)+lipgloss.Width(typed), 0)
 }
 
 // paneStyle draws the border only; every content line is already fitted to
@@ -568,7 +707,8 @@ func (m Model) renderChats(h int) string {
 	// A trailing row that cannot show both its lines is left out entirely.
 	last := m.chatTop + min(len(vis)-m.chatTop, chatsThatFit(h-headerHeight)) - 1
 	for i := m.chatTop; i <= last; i++ {
-		r := renderChatRow(m.avatars, vis[i], m.unread[vis[i].ChatID], m.deps.Self, now, w, m.chatPics())
+		mark, _ := m.chatIx.match(vis[i], m.chatFilter)
+		r := renderChatRow(m.avatars, vis[i], m.unread[vis[i].ChatID], m.deps.Self, now, w, m.chatPics(), mark)
 		sel := i == m.chatIdx
 		bottom := line(r.avatarBottom, r.bottom, sel)
 		if len(r.segs) > 0 {
@@ -628,7 +768,14 @@ func (m Model) renderAI(h int) string {
 
 func (m Model) renderHeader(w int) string {
 	if m.searching {
-		return fit(stBold.Render("Search ")+stAccent.Render(m.searchQuery)+stDim.Render(fmt.Sprintf(" · %d hits · Esc to leave", len(m.searchResults))), w)
+		// The store answers inside a keystroke and Feishu takes a round trip,
+		// so the line says which half is still out rather than leaving the
+		// reader to wonder whether the count is the whole answer.
+		tail := fmt.Sprintf(" · %d hits · Esc to leave", len(m.searchHits))
+		if m.searchBusy {
+			tail = fmt.Sprintf(" · %d hits · asking Feishu…", len(m.searchHits))
+		}
+		return fit(stBold.Render("Search ")+stAccent.Render(m.searchQuery)+stDim.Render(tail), w)
 	}
 	c, ok := m.currentChat()
 	if !ok {
@@ -689,23 +836,11 @@ func (m Model) renderThread(h int) string {
 
 func (m Model) renderInput() string {
 	w, h := m.width-2, m.composerHeight()
-	if m.mode == modeCommand || m.mode == modeFilter {
+	if m.mode == modeCommand || m.mode == modeFilter || m.mode == modeSearch {
 		return paneStyle(true, w).Height(h).Render(fitBlock(m.cmdline.View(), w, h))
 	}
-	content := m.input.View()
-	if m.replyTo != nil {
-		content = m.renderReplyBar(w) + "\n" + content
-	}
-	r := m.composerRows()
-	if r.preview > 0 {
-		lines := make([]string, 0, r.preview)
-		for _, row := range m.previewRows[:min(len(m.previewRows), r.preview)] {
-			line, _ := m.rowLine(row, w)
-			lines = append(lines, line)
-		}
-		content = strings.Join(lines, "\n") + "\n" + paneRule(w) + "\n" + content
-	}
-	if r.badge > 0 {
+	content := strings.Join(append(m.composerAbove(w), m.input.View()), "\n")
+	if m.composerRows().badge > 0 {
 		content += "\n" + m.renderBadge(w)
 	}
 	return paneStyle(m.focus == paneInput, w).Height(h).Render(fitBlock(content, w, h))

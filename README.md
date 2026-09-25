@@ -98,6 +98,19 @@ When the user token expires the daemon stops calling the API, reports `needs_log
 
 `a` (or `:ai …`) sends the open chat's recent messages (`ai.context`, default 80) to Claude and streams the answer into the right pane; `:ai draft <how>` puts the drafted reply in the composer for you to edit and send. It needs an Anthropic API key in the environment variable named by `ai.api_key_env` (default `ANTHROPIC_API_KEY`); without one the command says so and nothing is sent. Model: `ai.model`, default `claude-opus-5`. Only the transcript of the chat you are looking at leaves the machine.
 
+## Diagnostics
+
+Every process writes to `~/.larkim/larkim.log` — the daemon, the TUI and one-off commands alike, so each line carries the pid and the command that wrote it. It keeps the ticks that landed something, the lark-cli calls that failed with Feishu's own error code and `log_id`, and the failures the TUI has no room to show. The file is rolled aside once at 8 MB.
+
+`--debug` adds the call detail: one line for every lark-cli request and one for its response, paired by a call number, carrying the full argument vector, the lane the call waited in and how long it waited, then its duration, the bytes it returned and the pages it fetched. On an ordinary command the log also goes to stderr; `larkim tui` owns the screen, so there it goes to the file alone.
+
+```sh
+larkim --debug sync
+tail -f ~/.larkim/larkim.log
+```
+
+The log holds message bodies verbatim, because that is what was sent. Scrub it before pasting it anywhere.
+
 ## Telemetry
 
 Release builds carry a Sentry DSN and report crashes and unexpected errors (never message content, host name or identity). Expected failures such as missing login, network errors or rate limits are not sent. Opt out with `DO_NOT_TRACK=1`, `SENTRY_DSN=` (empty) or `--sentry-dsn ""`; local builds have telemetry off.

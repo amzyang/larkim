@@ -2,6 +2,7 @@ package tui
 
 import (
 	"encoding/json"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -112,14 +113,68 @@ func TestCardRows_TextStyleIsStylingNotText(t *testing.T) {
 	require.NotContains(t, out, "~~")
 }
 
-func TestCardRows_ButtonsShareTheRowTheClientDraws(t *testing.T) {
-	button := func(label string) string {
-		return `{"tag":"button","property":{"type":"default","text":{"tag":"plain_text","property":{"content":"` + label +
-			`"}},"actions":[{"type":"action_request","action":{"actionID":"act_1"}}]}}`
+// cardButton spells one button of an action row: the label it shows, over the
+// list of what pressing it does.
+func cardButton(label, actions string) string {
+	return `{"tag":"button","property":{"type":"default","text":{"tag":"plain_text","property":{"content":"` + label +
+		`"}},"actions":[` + actions + `]}}`
+}
+
+// cardCallback is a press that reaches only the app that sent the card.
+const cardCallback = `{"type":"action_request","action":{"actionID":"act_v1_1","value":""}}`
+
+// cardActionRow wraps buttons the way a card carries them.
+func cardActionRow(buttons ...string) string {
+	return `{"tag":"action","property":{"actions":[` + strings.Join(buttons, ",") + `]}}`
+}
+
+func rowZones(rows []msgRow) []clickZone {
+	var out []clickZone
+	for _, r := range rows {
+		out = append(out, r.zones...)
 	}
-	out := cardText(t, `{"tag":"action","property":{"actions":[`+button("认领")+`,`+button("忽略")+`]}}`)
+	return out
+}
+
+func TestCardRows_ButtonsShareTheRowTheClientDraws(t *testing.T) {
+	out := cardText(t, cardActionRow(cardButton("认领", cardCallback), cardButton("忽略", cardCallback)))
 	require.Regexp(t, `认领 +忽略`, out, "an action row is one row of pills")
-	require.NotContains(t, out, "act_1", "a button shows its label, not what it fires")
+	require.NotContains(t, out, "act_v1_1", "a button shows its label, not what it fires")
+}
+
+func TestCardRows_EachButtonOpensWhatItsPressWouldReach(t *testing.T) {
+	msg := cardOf(cardActionRow(
+		cardButton("详情", `{"type":"open_url","action":{"url":"https://example.com/run/1"}}`),
+		cardButton("同意", cardCallback)), nil)
+	msg.ChatID, msg.MessagePosition = "oc_ops", 42
+	zones := rowZones(renderRows([]store.Message{msg}, baseStyle()))
+	require.Len(t, zones, 2)
+	require.Equal(t, []string{"https://example.com/run/1"}, zones[0].urls)
+	require.Equal(t, []string{feishuChatLink("oc_ops", 42)}, zones[1].urls,
+		"no open API submits a card callback, so the client is where that press still lands")
+	require.LessOrEqual(t, zones[0].x1, zones[1].x0, "each target sits under the pill it belongs to")
+}
+
+func TestCardRows_APillMovesToTheNextLineWhole(t *testing.T) {
+	buttons := make([]string, 0, 8)
+	for i := range 8 {
+		buttons = append(buttons, cardButton("选项"+strconv.Itoa(i),
+			`{"type":"open_url","action":{"url":"https://example.com/o"}}`))
+	}
+	st := baseStyle()
+	rows := renderRows([]store.Message{cardOf(cardActionRow(buttons...), nil)}, st)
+	lines := 0
+	for _, r := range rows {
+		if len(r.zones) == 0 {
+			continue
+		}
+		lines++
+		for _, z := range r.zones {
+			require.LessOrEqual(t, z.x1, leadWidth+st.inner(), "a pill never runs past the pane")
+		}
+	}
+	require.Greater(t, lines, 1, "eight pills do not fit one line")
+	require.Len(t, rowZones(rows), 8, "every pill keeps a target of its own")
 }
 
 func TestCardRows_PictureHoldsItsPlaceUntilItLands(t *testing.T) {
@@ -177,4 +232,18 @@ func TestCardGist_SaysWhatTheCardSays(t *testing.T) {
 	c, ok = card.Parse(cardOf(elHeading+","+elList, nil).ContentRaw)
 	require.True(t, ok)
 	require.Equal(t, "报表", cardGist(c))
+}
+
+func TestZoneAt_AClickPicksTheButtonItLandsOn(t *testing.T) {
+	row := msgRow{zones: []clickZone{
+		{x0: 2, x1: 8, urls: []string{"https://example.com/run/1"}},
+		{x0: 9, x1: 15, urls: []string{"lark://applink.feishu.cn/client/chat/open?openChatId=oc_ops"}},
+	}}
+	rows := []msgRow{row}
+	z, ok := zoneAt(rows, 0, 11)
+	require.True(t, ok)
+	require.Equal(t, row.zones[1].urls, z.urls, "a row of pills hands over the one under the pointer")
+
+	_, ok = zoneAt(rows, 0, 8)
+	require.False(t, ok, "the gap between two pills is no target")
 }

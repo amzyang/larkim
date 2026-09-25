@@ -46,18 +46,29 @@ func (m Model) composerRows() composerRows {
 	}
 	r.badge = 1
 	r.input = inputHeight
-	if m.mode != modeInsert {
-		return r
-	}
 	// Growing the composer and previewing the draft are both extras, so they
 	// spend only the rows left once the panes above have the floor the emoji
 	// picker also leaves them. The composer at rest is not held to it: that
 	// is the box this client has always drawn.
 	extra := max(0, m.height-statusHeight-4-minListRows-r.total()) // composer border + pane border
-	grow := clamp(draftRows(m.input.Value(), m.input.Width())-inputHeight, 0, min(extra, composerMaxRows-inputHeight))
-	r.input += grow
-	if m.previewOpen && m.draft.kind != kindText {
-		r.preview = clamp(extra-grow, 0, previewMaxRows)
+	room := func(want int) int {
+		return clamp(want-inputHeight, 0, min(extra, composerMaxRows-inputHeight))
+	}
+	switch m.mode {
+	case modeInsert:
+		grow := room(draftRows(m.input.Value(), m.input.Width()))
+		r.input += grow
+		if m.previewOpen && m.draft.kind != kindText {
+			r.preview = clamp(extra-grow, 0, previewMaxRows)
+		}
+	case modeTarget:
+		// The chooser grows to its list the way the writing area grows to a
+		// draft. Three rows at rest would put a card's links behind a scroll
+		// for the sake of a box that does not move, and the reader pressed o
+		// to read the list.
+		// One row per target. The line the chooser is titled by rides the
+		// badge row, which every mode claims anyway.
+		r.input += room(len(m.targets.zones))
 	}
 	return r
 }
@@ -79,6 +90,24 @@ func draftRows(value string, width int) int {
 // composerHeight is the inner height of the composer, and of the emoji picker
 // that stands in its place.
 func (m Model) composerHeight() int { return m.composerRows().total() }
+
+// composerAbove is what the box draws over the writing area, top row first.
+// renderInput lays these rows out and cursorAt counts them, and the two must
+// not disagree about which row the writing area starts on.
+func (m Model) composerAbove(w int) []string {
+	var lines []string
+	if r := m.composerRows(); r.preview > 0 {
+		for _, row := range m.previewRows[:min(len(m.previewRows), r.preview)] {
+			line, _ := m.rowLine(row, w)
+			lines = append(lines, line)
+		}
+		lines = append(lines, paneRule(w))
+	}
+	if m.replyTo != nil {
+		lines = append(lines, m.renderReplyBar(w))
+	}
+	return lines
+}
 
 // renderReplyBar quotes the reply's target above the composer the way the
 // Feishu client does — who wrote it and how it reads — because a message id

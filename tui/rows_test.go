@@ -499,7 +499,7 @@ func TestRenderSearchRows_KeepsABlockInsideOneChat(t *testing.T) {
 	b := said("om_2", "孙琪", "命中二", 23, 9, 1)
 	b.ChatID = "oc_2"
 	chats := []store.Chat{{ChatID: "oc_1", Name: "甲群"}, {ChatID: "oc_2", Name: "乙群"}}
-	rows := renderSearchRows([]store.Message{a, b}, chats, baseStyle())
+	rows := renderSearchRows(messageHits(a, b), chats, baseStyle())
 	require.Equal(t, 2, blocks(rows, "孙琪"), "a hit in another chat needs its own head to carry that chat's name")
 	out := rowText(rows)
 	require.Contains(t, out, "甲群")
@@ -512,7 +512,7 @@ func TestRenderSearchRows_SplitsABlockWhenHitsAreHoursApart(t *testing.T) {
 	newer := said("om_2", "孙琪", "命中二", 23, 15, 0)
 	older := said("om_1", "孙琪", "命中一", 23, 9, 0)
 	chats := []store.Chat{{ChatID: "oc_1", Name: "甲群"}}
-	rows := renderSearchRows([]store.Message{newer, older}, chats, baseStyle())
+	rows := renderSearchRows(messageHits(newer, older), chats, baseStyle())
 	require.Equal(t, 2, blocks(rows, "孙琪"), "six hours apart is not one burst, whichever way the list runs")
 }
 
@@ -655,7 +655,7 @@ func TestRenderSearchRows_NamesTheSenderInsideAChatOfTwo(t *testing.T) {
 	msgs := []store.Message{said("om_1", "孙琪", "今天的构建挂了", 23, 9, 0)}
 	st := baseStyle()
 	st.p2p = true // the cursor happens to sit on a p2p chat
-	out := rowText(renderSearchRows(msgs, []store.Chat{{ChatID: "oc_1", Name: "平台组"}}, st))
+	out := rowText(renderSearchRows(messageHits(msgs...), []store.Chat{{ChatID: "oc_1", Name: "平台组"}}, st))
 
 	require.Contains(t, out, "孙琪", "hits run across chats, so every block names its sender")
 	require.Contains(t, out, "平台组")
@@ -712,4 +712,30 @@ func TestRenderRows_SenderWithNoPictureFallsBackToTheColourBlock(t *testing.T) {
 	require.Equal(t, " 孙 ", ansi.Strip(rows[0].lead.box), "the block carries the first character of the name")
 	require.Equal(t, avatarWidth, lipgloss.Width(rows[0].lead.box))
 	require.Equal(t, avatarWidth, lipgloss.Width(rows[1].lead.box), "and the rest of it is blank")
+}
+
+func TestBlockHeads_SplitsOnDaySenderAndMarker(t *testing.T) {
+	msgs := []store.Message{
+		{MessageID: "om_1", SenderID: "ou_a", SenderName: "张三", CreateMs: msgAt(22, 9, 0)},
+		{MessageID: "om_2", SenderID: "ou_a", SenderName: "张三", CreateMs: msgAt(22, 9, 1)},
+		{MessageID: "om_3", SenderID: "ou_b", SenderName: "李四", CreateMs: msgAt(22, 9, 2)},
+		{MessageID: "om_4", SenderID: "ou_b", SenderName: "李四", CreateMs: msgAt(22, 9, 3)},
+		{MessageID: "om_5", SenderID: "ou_b", SenderName: "李四", CreateMs: msgAt(23, 9, 0)},
+	}
+	st := baseStyle()
+	st.dots = map[string]bool{"om_4": true}
+
+	require.Equal(t, []int{0, 0, 2, 3, 4}, blockHeads(msgs, st),
+		"a new sender, an unread marker and a new day each open a block")
+}
+
+func TestBlockHeads_ASystemNoticeEndsTheBlockAboveIt(t *testing.T) {
+	msgs := []store.Message{
+		{MessageID: "om_1", SenderID: "ou_a", SenderName: "张三", CreateMs: msgAt(22, 9, 0)},
+		{MessageID: "om_2", MsgType: "system", CreateMs: msgAt(22, 9, 1)},
+		{MessageID: "om_3", SenderID: "ou_a", SenderName: "张三", CreateMs: msgAt(22, 9, 2)},
+	}
+
+	require.Equal(t, []int{0, 1, 2}, blockHeads(msgs, baseStyle()),
+		"the sender coming back writes a sender line of their own")
 }

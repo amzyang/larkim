@@ -121,6 +121,9 @@ func (c Config) DBPath() string { return filepath.Join(c.DataDir, "larkim.db") }
 // ResourcesDir is where lark-cli downloads attachments (it appends lark-im-resources/).
 func (c Config) ResourcesDir() string { return filepath.Join(c.DataDir, "resources") }
 
+// LogPath is the diagnostic log inside DataDir.
+func (c Config) LogPath() string { return filepath.Join(c.DataDir, "larkim.log") }
+
 func homeDir() string {
 	h, err := os.UserHomeDir()
 	if err != nil {

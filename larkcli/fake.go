@@ -41,6 +41,8 @@ type Fake struct {
 	// Truncate makes SearchMessageIDs report truncation when a window holds
 	// more than this many hits (0 disables).
 	Truncate int
+	// SearchQueries records the keywords SearchMessages was asked for.
+	SearchQueries []string
 	// Err, when set, is returned by every call until cleared.
 	Err error
 	// ListErr injects a per-container error into ListMessagesRaw.
@@ -122,6 +124,32 @@ func (f *Fake) SearchMessageIDs(_ context.Context, start, end time.Time) ([]Sear
 		return hits[:f.Truncate], true, nil
 	}
 	return hits, false, nil
+}
+
+// SearchMessages answers a keyword search from the messages the fake holds,
+// newest first. A test plays a hit this machine has never synced by putting
+// the message here and leaving it out of the store.
+func (f *Fake) SearchMessages(_ context.Context, query string, limit int) ([]SearchHit, error) {
+	if err := f.record("search-query"); err != nil {
+		return nil, err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.SearchQueries = append(f.SearchQueries, query)
+	var hits []SearchHit
+	for _, m := range f.Messages {
+		if query != "" && !strings.Contains(m.Body.Content, query) {
+			continue
+		}
+		hits = append(hits, SearchHit{MessageID: m.MessageID, ChatID: m.ChatID, FromID: m.Sender.ID,
+			ThreadID: m.ThreadID, Type: m.MsgType, CreateTime: m.CreateTime.Time(),
+			Position: int64(m.MessagePosition)})
+	}
+	sort.Slice(hits, func(i, j int) bool { return hits[i].CreateTime.After(hits[j].CreateTime) })
+	if limit > 0 && len(hits) > limit {
+		hits = hits[:limit]
+	}
+	return hits, nil
 }
 
 func (f *Fake) MGetRaw(_ context.Context, ids []string) ([]RawMessage, error) {

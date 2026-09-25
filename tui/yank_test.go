@@ -158,8 +158,8 @@ func TestYank_SystemMessageBodyCarriesNoSender(t *testing.T) {
 func TestYank_SearchHitsCopyButAnAgentContextStillNeedsTheChat(t *testing.T) {
 	m := yankMsgs(sized(120, 36))
 	m.focus, m.searching = paneMessages, true
-	m.searchResults = []store.Message{{MessageID: "om_hit", ChatID: "oc_9", SenderName: "王五",
-		Content: "搜到的这条", RenderedAt: 1, RawJSON: `{"message_id":"om_hit"}`}}
+	m.searchHits = messageHits(store.Message{MessageID: "om_hit", ChatID: "oc_9", SenderName: "王五",
+		Content: "搜到的这条", RenderedAt: 1, RawJSON: `{"message_id":"om_hit"}`})
 	m.msgIdx = 0
 
 	_, cmd := pressYank(m, "y")
