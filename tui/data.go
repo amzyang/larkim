@@ -195,15 +195,20 @@ func waitForAI(ch <-chan ai.Chunk) tea.Cmd {
 	}
 }
 
+// loadChats reads the sidebar in one query. The badge counts ride on the rows
+// they belong to, so a chat's number and its place can never come from two
+// different revisions of the database.
 func loadChats(st *store.Store) tea.Cmd {
 	return func() tea.Msg {
 		chats, err := st.ListChats(context.Background(), store.ChatQuery{})
 		if err != nil {
 			return errMsg{err}
 		}
-		unread, err := st.UnreadCountsByChat(context.Background())
-		if err != nil {
-			return errMsg{err}
+		unread := make(map[string]int64, len(chats))
+		for _, c := range chats {
+			if c.UnreadCount > 0 {
+				unread[c.ChatID] = c.UnreadCount
+			}
 		}
 		return chatsLoadedMsg{chats: chats, unread: unread}
 	}

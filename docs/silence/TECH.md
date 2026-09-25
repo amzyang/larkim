@@ -69,10 +69,11 @@ thread 口径与既有摘要一致（负 position 不参与）；撤回的消息
 | `ListChats` ORDER BY（store/chats.go:257） | `(u.chat_id IS NOT NULL) DESC, c.last_unsilenced_ms DESC, c.last_message_ms DESC, c.name` |
 | `unreadJoin`（store/chats.go:230） | 谓词换成 `unreadCounted` |
 | `UnreadCountsByChat`（store/resources.go:210） | 谓词换成 `unreadCounted` |
-| `MarkChatRead`（store/resources.go:191） | 保持 `unreadBadge` |
+| `MarkChatRead`（store/resources.go:191） | 保持 `unreadInPane`，不加 `silenced = 0` |
 
 ```go
-const unreadBadge = `r.is_read_remote = 0 AND r.local_read_at = 0 AND m.deleted = 0 AND m.message_position >= 0`
+const unreadInPane = `r.is_read_remote = 0 AND r.local_read_at = 0 AND m.deleted = 0`
+const unreadBadge = unreadInPane + ` AND m.message_position >= 0`
 const unreadCounted = unreadBadge + ` AND m.silenced = 0`
 ```
 

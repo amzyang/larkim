@@ -9,7 +9,6 @@
 ```
 页面到达 → markDots        保留未读标记（本次访问的写入不能把它抹掉）
          → takeRead
-             markConsumed   CLI 游标
              markChatRead   local_read_at，larkim 自己的徽标
              clearFeishuBadge   applink，飞书客户端的红点
 ```
@@ -20,7 +19,7 @@
 
 唯一的条件是 `unreadWaiting(msgs)`（`tui/badgeclear.go`）：这一页里有会话徽标算数的消息。
 
-谓词逐项复刻 `store.unreadBadge`——`is_read_remote = 0`、`local_read_at = 0`、`message_position >= 0`、未撤回。**逐项对齐是投出次数的上界所在**：`markChatRead` 在同一个 batch 里把这批消息记为本地已读，下一页因此判为假；谓词放宽一项，就会出现 `markChatRead` 永远收不掉的消息，chat 消息流里混着的 thread 回复（`ListMessages` 不过滤负 position）会让每次 reload 都投一条 applink，直到会话被切走。
+谓词逐项复刻 `store.unreadBadge`——`is_read_remote = 0`、`local_read_at = 0`、`message_position >= 0`、未撤回。**它是 `markChatRead` 集合（`store.unreadInPane`）的子集，这是投出次数的上界所在**：这一页判为真的每一条，`markChatRead` 都在同一个 batch 里记为本地已读，下一页因此判为假。谓词放宽到那个集合之外，就会出现 `markChatRead` 永远收不掉的消息，每次 reload 都投一条 applink，直到会话被切走。
 
 判据必须读页面查询时的状态：`markChatRead` 紧接着就把 `local_read_at` 写上，改用当前徽标数会被本次访问自己的写入打败。
 

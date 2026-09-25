@@ -166,32 +166,38 @@ func (s *Store) ReadCheckCount(ctx context.Context, messageID string) (int, erro
 	return n, err
 }
 
-// unreadBadge is what the chat list treats as unread: a live main-flow
-// message Feishu still reports as unseen and no larkim reader has had in
-// front of them. Both flags can only witness that a message was seen, so
-// reading either one as "seen" adds no false unread. Thread replies are out —
+// unreadInPane is every live message with something still waiting on it that
+// a chat's page puts in front of a reader, thread replies included: the pane
+// does not fold them away, so opening the chat shows them like anything else.
+// Both flags can only witness that a message was seen, so reading either one
+// as "seen" adds no false unread.
+const unreadInPane = `r.is_read_remote = 0 AND r.local_read_at = 0 AND m.deleted = 0`
+
+// unreadBadge is what the chat list treats as unread. Thread replies are out —
 // a thread exists so that answering an old topic does not pull the whole chat
 // back into everyone's view — so neither the counter nor the chat's place in
 // the list moves for one.
-const unreadBadge = `r.is_read_remote = 0 AND r.local_read_at = 0 AND m.deleted = 0 AND m.message_position >= 0`
+const unreadBadge = unreadInPane + ` AND m.message_position >= 0`
 
-// unreadCounted is what the badge shows: the same messages, minus the ones a
-// silence rule matched. MarkChatRead deliberately keeps the wider predicate —
-// the set it marks must stay a superset of the one tui.unreadWaiting sees, or
-// a silenced message it cannot collect makes every reload fire another
-// applink (docs/read-sync/TECH.md).
+// unreadCounted is what the badge shows: the badge's messages, minus the ones
+// a silence rule matched.
 const unreadCounted = unreadBadge + ` AND m.silenced = 0`
 
-// MarkChatRead takes every message the chat's badge counts as seen locally.
-// Feishu has no mark-read call, so this is the only way a badge falls without
-// leaving larkim. consumed_at is left alone: that cursor belongs to the CLI
-// consumers, not to a reader looking at the pane. Matching no row — the
-// ordinary case on a chat already read — writes nothing, so the data_rev
-// trigger stays quiet and the TUI does not reload itself in a circle.
+// MarkChatRead takes as seen locally every message the chat's page showed the
+// reader. Feishu has no mark-read call, so this is the only way a badge falls
+// without leaving larkim. Matching no row — the ordinary case on a chat
+// already read — writes nothing, so the data_rev trigger stays quiet and the
+// TUI does not reload itself in a circle.
+//
+// The set has to stay a superset of the badge's, silenced messages and thread
+// replies included. Anything the reader sees but this cannot collect keeps
+// its unread flags for good: the TUI redraws its marker on every visit, and
+// tui.unreadWaiting fires another applink on every reload
+// (docs/read-sync/TECH.md).
 func (s *Store) MarkChatRead(ctx context.Context, chatID string, now int64) error {
 	_, err := s.db.ExecContext(ctx, `UPDATE read_state SET local_read_at = ?
  WHERE message_id IN (SELECT m.message_id FROM messages m JOIN read_state r ON r.message_id = m.message_id
-   WHERE m.chat_id = ? AND `+unreadBadge+`)`, now, chatID)
+   WHERE m.chat_id = ? AND `+unreadInPane+`)`, now, chatID)
 	return err
 }
 
@@ -202,14 +208,6 @@ func (s *Store) UnreadCount(ctx context.Context) (int64, error) {
 	var n int64
 	err := s.db.QueryRowContext(ctx, `SELECT count(*) FROM messages m JOIN read_state r ON r.message_id = m.message_id WHERE r.is_read_remote = 0 AND m.deleted = 0`).Scan(&n)
 	return n, err
-}
-
-// UnreadCountsByChat returns the per-chat badge counts. Muted chats are in
-// it: do-not-disturb decides how the counter is drawn, not whether it exists.
-// Silenced messages are not: the rule asked for no counter at all.
-func (s *Store) UnreadCountsByChat(ctx context.Context) (map[string]int64, error) {
-	return queryCounts(ctx, s.db, `SELECT m.chat_id, count(*) FROM messages m JOIN read_state r ON r.message_id = m.message_id
- WHERE `+unreadCounted+` GROUP BY m.chat_id`)
 }
 
 // ScanRow is a message summary for the resource back-scan.

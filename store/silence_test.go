@@ -172,44 +172,6 @@ func TestRefreshChatSummary_KeepsTheNewestMessageAndSinksTheSortKey(t *testing.T
 	require.Equal(t, int64(100), c.LastUnsilencedMs)
 }
 
-func TestUnreadCountsByChat_LeavesOutSilencedMessages(t *testing.T) {
-	s := openTest(t)
-	s.Silence = SilenceRules{{Sender: "cli_c"}}
-	ctx := context.Background()
-	require.NoError(t, s.EnsureChat(ctx, "oc_quiet", 1))
-	_, err := s.UpsertMessages(ctx, []Message{
-		msgAt("om_human", "oc_quiet", 100, 1, "morning"),
-		fromBot("om_noise", "oc_quiet", 200, "nightly build #418 passed"),
-	}, 1)
-	require.NoError(t, err)
-	markUnread(t, s, "om_human")
-	markUnread(t, s, "om_noise")
-
-	counts, err := s.UnreadCountsByChat(ctx)
-	require.NoError(t, err)
-	require.Equal(t, int64(1), counts["oc_quiet"])
-}
-
-func TestListChats_DoesNotLiftAChatWhoseUnreadIsAllSilenced(t *testing.T) {
-	s := openTest(t)
-	s.Silence = SilenceRules{{Sender: "cli_c"}}
-	ctx := context.Background()
-	require.NoError(t, s.EnsureChat(ctx, "oc_quiet", 1))
-	require.NoError(t, s.EnsureChat(ctx, "oc_loud", 1))
-	_, err := s.UpsertMessages(ctx, []Message{
-		fromBot("om_noise", "oc_quiet", 300, "nightly build #418 passed"),
-		msgAt("om_human", "oc_loud", 100, 1, "did anyone look at it"),
-	}, 1)
-	require.NoError(t, err)
-	markUnread(t, s, "om_noise")
-	markUnread(t, s, "om_human")
-
-	chats, err := s.ListChats(ctx, ChatQuery{})
-	require.NoError(t, err)
-	require.Equal(t, []string{"oc_loud", "oc_quiet"}, chatIDs(chats),
-		"silenced unread neither counts nor lifts, so the older real message wins")
-}
-
 func TestListChats_SinksAFullySilencedChat(t *testing.T) {
 	s := openTest(t)
 	s.Silence = SilenceRules{{Chat: "oc_quiet"}}

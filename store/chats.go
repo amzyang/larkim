@@ -61,6 +61,11 @@ type Chat struct {
 
 	// Derived for listings.
 	MessageCount int64 `json:"message_count"`
+	// UnreadCount is the badge: main-flow messages Feishu still reports as
+	// unseen that no larkim reader has had in front of them, silenced ones
+	// left out. Only ListChats fills it; it rides along with the row so a
+	// chat's number and its place always come from the same read.
+	UnreadCount int64 `json:"unread_count"`
 	// PeerAccount is the p2p peer's tenant account address; empty for groups
 	// and for peers whose identity lookup has not run.
 	PeerAccount string `json:"peer_account,omitempty"`
@@ -92,14 +97,24 @@ const chatColumns = `c.chat_id, c.name, c.description, c.chat_mode, c.chat_statu
  COALESCE(NULLIF(ct.enterprise_email, ''), ct.email, '') AS peer_account,
  COALESCE(ct.avatar_path, '') AS peer_avatar_path`
 
-func scanChat(sc scanner) (Chat, error) {
-	var c Chat
-	err := sc.Scan(&c.ChatID, &c.Name, &c.Description, &c.ChatMode, &c.ChatStatus, &c.OwnerID, &c.External, &c.P2PTargetID, &c.P2PTargetType,
+// chatDest are the scan targets for chatColumns, in order.
+func chatDest(c *Chat) []any {
+	return []any{&c.ChatID, &c.Name, &c.Description, &c.ChatMode, &c.ChatStatus, &c.OwnerID, &c.External, &c.P2PTargetID, &c.P2PTargetType,
 		&c.AvatarURL, &c.AvatarPath, &c.CursorMs, &c.BackfillDoneAt, &c.MembersSyncedAt, &c.FirstSeenAt, &c.LastSeenAt, &c.LeftAt, &c.SyncError, &c.RepairedAt, &c.RawJSON,
 		&c.LastMessageID, &c.LastMessageMs, &c.LastSenderID, &c.LastSenderName, &c.LastSenderType, &c.LastMsgType, &c.LastContent, &c.LastContentRaw, &c.LastMentionsJSON, &c.LastReactionsJSON, &c.LastRenderedAt, &c.LastDeleted, &c.LastUnsilencedMs,
 		&c.Muted, &c.MuteCheckedAt,
-		&c.MessageCount, &c.PeerAccount, &c.PeerAvatarPath)
-	return c, err
+		&c.MessageCount, &c.PeerAccount, &c.PeerAvatarPath}
+}
+
+func scanChat(sc scanner) (Chat, error) {
+	var c Chat
+	return c, sc.Scan(chatDest(&c)...)
+}
+
+// scanListChat reads chatColumns plus the unread count ListChats appends.
+func scanListChat(sc scanner) (Chat, error) {
+	var c Chat
+	return c, sc.Scan(append(chatDest(&c), &c.UnreadCount)...)
 }
 
 // UpsertChats inserts or refreshes chats from a listing; sync-owned columns
@@ -221,13 +236,17 @@ type ChatQuery struct {
 	Limit       int
 }
 
-// unreadJoin flags the chats carrying a badge, on the same rule the counter
-// uses, so a chat is lifted exactly when it shows a number.
-const unreadJoin = `LEFT JOIN (SELECT m.chat_id FROM messages m JOIN read_state r ON r.message_id = m.message_id
+// unreadJoin counts each chat's badge, on the same rule the badge is drawn
+// by. One grouped pass rather than a correlated subquery per row, and it
+// rides in the listing itself so a chat's number and its place cannot come
+// from two different revisions of the database.
+const unreadJoin = `LEFT JOIN (SELECT m.chat_id, count(*) AS n FROM messages m JOIN read_state r ON r.message_id = m.message_id
  WHERE ` + unreadCounted + ` GROUP BY m.chat_id) u ON u.chat_id = c.chat_id `
 
-// ListChats returns the chats waiting on the user first, then the rest, each
-// group newest message first.
+// ListChats returns the chats newest message first. Unread does not lift a
+// chat: reading one is news about the reader, not about the chat, and a sort
+// key the cursor flips by landing on a row rearranges the list under the
+// hand that is browsing it.
 func (s *Store) ListChats(ctx context.Context, q ChatQuery) ([]Chat, error) {
 	var where []string
 	var args []any
@@ -250,9 +269,14 @@ func (s *Store) ListChats(ctx context.Context, q ChatQuery) ([]Chat, error) {
 	if limit <= 0 {
 		limit = 1000
 	}
-	tail += "ORDER BY (u.chat_id IS NOT NULL) DESC, c.last_unsilenced_ms DESC, c.last_message_ms DESC, c.name LIMIT ?"
+	// chat_id closes the order: the ms keys are 0 for every chat with no
+	// message yet, which is most of them, and a name is neither unique nor
+	// stable, so without it equal rows come back in whatever order the
+	// sorter happens to produce.
+	tail += "ORDER BY c.last_unsilenced_ms DESC, c.last_message_ms DESC, c.name, c.chat_id LIMIT ?"
 	args = append(args, limit)
-	return s.queryChats(ctx, tail, args...)
+	return queryAll(ctx, s.db, scanListChat,
+		`SELECT `+chatColumns+`, COALESCE(u.n, 0) AS unread_count FROM chats c LEFT JOIN contacts ct ON ct.open_id = c.p2p_target_id `+tail, args...)
 }
 
 func (s *Store) queryChats(ctx context.Context, tail string, args ...any) ([]Chat, error) {

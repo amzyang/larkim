@@ -75,11 +75,13 @@ TUI 左侧会话列表按飞书桌面端的信息密度重做：头像 + 两行�
 
 ## 排序与可见性
 
-两层键：有未读的会话成组排在前面，组内与组外都按会话最新消息时间倒序。时间口径是本地已同步的消息，backfill 未完成或受限的会话因此位置偏后——这类会话的第二行会显示 `history unavailable`，位置偏差可解释。
+按会话最新消息时间倒序，时间相同再按会话名、`chat_id`，末键唯一：没有消息的会话两个时间键都是 0，占列表的绝大多数，仅靠会话名分不开的那些必须有个定序，否则每次查询回来的次序都可能不同。时间口径是本地已同步的消息，backfill 未完成或受限的会话因此位置偏后——这类会话的第二行会显示 `history unavailable`，位置偏差可解释。
 
-**thread 回复不参与**：`message_position` 为负的消息既不计未读、不作为「最新消息」渲染，也不影响排序；thread 根消息的 position 非负，照常参与。thread 存在的意义就是回复一个久远话题不必惊动整个会话，把会话顶到所有已读会话之上正是它要避免的。列表显示的永远是点进去在主消息流里能看到的那一条。
+**未读不改变位置**，只画徽章。读掉一个会话是关于读的人的消息，不是关于这个会话的消息；把未读做成排序键，光标落到哪一行就会重排哪一行，列表在浏览它的那只手底下移动。
 
-**免打扰改变画法与概览口径**：muted 会话在列表里照常计未读、照常按同一规则提到前面，只是计数画成淡色（头像上的徽章走飞书自己的灰）。头部的概览不同——它把 muted 会话排除在计数之外，只用一个淡色点说明「静音的那些也有东西」。
+**thread 回复不参与**：`message_position` 为负的消息既不计未读、不作为「最新消息」渲染，也不影响排序；thread 根消息的 position 非负，照常参与。thread 存在的意义就是回复一个久远话题不必惊动整个会话，把它顶回列表顶端正是它要避免的。列表显示的永远是点进去在主消息流里能看到的那一条。
+
+**免打扰只改变画法与概览口径**：muted 会话在列表里照常计未读，只是计数画成淡色（头像上的徽章走飞书自己的灰）。头部的概览不同——它把 muted 会话排除在计数之外，只用一个淡色点说明「静音的那些也有东西」。
 
 ## 数据来源
 
@@ -90,7 +92,7 @@ TUI 左侧会话列表按飞书桌面端的信息密度重做：头像 + 两行�
 | p2p 头像 | `contacts.avatar_path`，经 `chats` 的联系人 join 取出 | 联系人详情回填 |
 | p2p 对方账号尾号 | `contacts.enterprise_email` 的前缀，同一个 join | 联系人详情回填 |
 | 最新消息 | `chats.last_*` 冷存列 | 见「冷存摘要」 |
-| 未读数 | `read_state.is_read_remote = 0` 且 `local_read_at = 0` 且 `messages.message_position >= 0` | 随同步轮询；打开会话时对该会话立即重查一次，并把该会话主流未读整批记为本地已读，同时后台把飞书客户端导航到该会话，让它自己的红点也落下来（见 [read-sync](../read-sync/PRD.md)） |
+| 未读数 | `read_state.is_read_remote = 0` 且 `local_read_at = 0` 且 `messages.message_position >= 0` | 随同步轮询；打开会话时对该会话立即重查一次，并把该会话页面上的未读整批记为本地已读（thread 回复也在页面上，一并记），同时后台把飞书客户端导航到该会话，让它自己的红点也落下来（见 [read-sync](../read-sync/PRD.md)） |
 | mute | `lark-cli api POST /open-apis/im/v1/chat_user_setting/batch_get_mute_status --as user` | 随 chats 全量刷新 |
 | 个人状态 | `lark-cli contact user_profiles batch_query`，`query_option.include_personal_status = true` | 随联系人刷新 |
 | 草稿 / 发送失败 | `drafts` 表 | TUI 写入 |
@@ -121,7 +123,7 @@ TUI 左侧会话列表按飞书桌面端的信息密度重做：头像 + 两行�
 
 ### drafts 表
 
-消费者写的表，与 `read_state.consumed_at` 同类，daemon 不碰。
+消费者写的表，与 `read_state.local_read_at` 同类，daemon 不碰。
 
 | 列 | 含义 |
 |---|---|

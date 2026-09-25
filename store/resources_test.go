@@ -159,7 +159,7 @@ func TestExpireReadStatus_RelaxesUnreadPastTheHorizon(t *testing.T) {
 	require.Equal(t, int64(1), count)
 }
 
-func TestUnreadCountsByChat_CountsMutedChats(t *testing.T) {
+func TestListChats_CountTheBadgeOfMutedChats(t *testing.T) {
 	s := openTest(t)
 	ctx := context.Background()
 	require.NoError(t, s.UpsertChats(ctx, []Chat{{ChatID: "oc_loud", Name: "loud"}, {ChatID: "oc_muted", Name: "muted"}}, 1))
@@ -173,9 +173,7 @@ func TestUnreadCountsByChat_CountsMutedChats(t *testing.T) {
 	require.NoError(t, s.SetReadStatus(ctx, "om_loud", &unread, 100, 0))
 	require.NoError(t, s.SetReadStatus(ctx, "om_muted", &unread, 100, 0))
 
-	counts, err := s.UnreadCountsByChat(ctx)
-	require.NoError(t, err)
-	require.Equal(t, map[string]int64{"oc_loud": 1, "oc_muted": 1}, counts,
+	require.Equal(t, map[string]int64{"oc_loud": 1, "oc_muted": 1}, unreadCounts(t, s),
 		"the badge is drawn grey for a muted chat, not withheld")
 
 	total, _ := s.UnreadCount(ctx)
@@ -204,7 +202,7 @@ func TestResourcesForMessages_GroupsByMessage(t *testing.T) {
 	require.Equal(t, "file_c", got["om_2"][0].FileKey)
 }
 
-func TestUnreadCountsByChat_SkipsThreadReplies(t *testing.T) {
+func TestListChats_LeaveThreadRepliesOutOfTheBadge(t *testing.T) {
 	s := openTest(t)
 	ctx := context.Background()
 	require.NoError(t, s.EnsureChat(ctx, "oc_a", 1))
@@ -217,9 +215,7 @@ func TestUnreadCountsByChat_SkipsThreadReplies(t *testing.T) {
 	markUnread(t, s, "om_root")
 	markUnread(t, s, "om_reply")
 
-	counts, err := s.UnreadCountsByChat(ctx)
-	require.NoError(t, err)
-	require.Equal(t, map[string]int64{"oc_a": 1}, counts, "only the main-flow root is badged")
+	require.Equal(t, map[string]int64{"oc_a": 1}, unreadCounts(t, s), "only the main-flow root is badged")
 
 	total, _ := s.UnreadCount(ctx)
 	require.Equal(t, int64(2), total, "the backlog measure counts the reply all the same")
@@ -228,6 +224,8 @@ func TestUnreadCountsByChat_SkipsThreadReplies(t *testing.T) {
 func TestMarkChatRead_ClearsTheBadgeOfOneChat(t *testing.T) {
 	s := openTest(t)
 	ctx := context.Background()
+	require.NoError(t, s.EnsureChat(ctx, "oc_a", 1))
+	require.NoError(t, s.EnsureChat(ctx, "oc_b", 1))
 	_, err := s.UpsertMessages(ctx, []Message{
 		msgAt("om_a1", "oc_a", 10, 1, "one"),
 		msgAt("om_a2", "oc_a", 20, 1, "two"),
@@ -240,9 +238,7 @@ func TestMarkChatRead_ClearsTheBadgeOfOneChat(t *testing.T) {
 
 	require.NoError(t, s.MarkChatRead(ctx, "oc_a", 5000))
 
-	counts, err := s.UnreadCountsByChat(ctx)
-	require.NoError(t, err)
-	require.Equal(t, map[string]int64{"oc_b": 1}, counts, "the chat that was read carries no badge")
+	require.Equal(t, map[string]int64{"oc_b": 1}, unreadCounts(t, s), "the chat that was read carries no badge")
 
 	total, _ := s.UnreadCount(ctx)
 	require.Equal(t, int64(3), total, "the poller's backlog is about Feishu, which still has all three unread")
@@ -250,6 +246,24 @@ func TestMarkChatRead_ClearsTheBadgeOfOneChat(t *testing.T) {
 	m, _ := s.GetMessage(ctx, "om_a1")
 	require.Equal(t, int64(5000), m.LocalReadAt)
 	require.False(t, *m.IsReadRemote, "the remote receipt is untouched: larkim cannot write it")
+}
+
+func TestMarkChatRead_TakesTheThreadRepliesThePaneShowed(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+	reply := msgAt("om_reply", "oc_a", 20, -3, "answered an old topic")
+	reply.ThreadID = "omt_1"
+	_, err := s.UpsertMessages(ctx, []Message{msgAt("om_root", "oc_a", 10, 1, "an old topic"), reply}, 1)
+	require.NoError(t, err)
+	markUnread(t, s, "om_root")
+	markUnread(t, s, "om_reply")
+
+	require.NoError(t, s.MarkChatRead(ctx, "oc_a", 5000))
+
+	m, _ := s.GetMessage(ctx, "om_reply")
+	require.Equal(t, int64(5000), m.LocalReadAt,
+		"the reply renders in the chat's flow, so the visit that read the chat read it too")
+	require.Empty(t, unreadCounts(t, s), "the badge never counted the reply and still does not")
 }
 
 func TestMarkChatRead_LeavesReadAndDeletedMessagesAlone(t *testing.T) {

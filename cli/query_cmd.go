@@ -18,7 +18,7 @@ func (a *App) chatsCmd() *cobra.Command {
 	var q store.ChatQuery
 	list := &cobra.Command{
 		Use:   "list",
-		Short: "List synced chats, unread first then most recently active",
+		Short: "List synced chats, most recently active first",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			st, err := a.openStore()
 			if err != nil {

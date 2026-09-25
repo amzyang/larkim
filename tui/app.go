@@ -566,11 +566,11 @@ func (m *Model) selectCurrentChat() {
 
 // repinChat puts the cursor back on was — the chat it was pointing at before
 // the reload — and keeps that chat on the screen row it was already on. Chats
-// sort unread first and then by newest message, so one read status flipping
-// carries a chat tens of rows; an index kept across the swap would follow the
-// row rather than the chat, and following the chat without moving the viewport
-// with it throws the cursor to the edge of the pane and reads as the list
-// jumping. A filter being typed owns the cursor instead.
+// sort by newest message, so a message landing in a quiet chat carries it tens
+// of rows; an index kept across the swap would follow the row rather than the
+// chat, and following the chat without moving the viewport with it throws the
+// cursor to the edge of the pane. A filter being typed owns the cursor
+// instead.
 func (m *Model) repinChat(was string) {
 	vis := m.visibleChats()
 	if idx := indexOfChat(vis, was); idx >= 0 && m.mode != modeFilter {

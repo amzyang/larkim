@@ -47,9 +47,11 @@ func TestUpdate_OpeningAChatClearsItsBadge(t *testing.T) {
 
 	m = arrive(t, m, st, "oc_a")
 
-	counts, err := st.UnreadCountsByChat(context.Background())
+	chats, err := st.ListChats(context.Background(), store.ChatQuery{})
 	require.NoError(t, err)
-	require.Empty(t, counts, "the chat the reader is looking at carries no badge")
+	for _, c := range chats {
+		require.Zero(t, c.UnreadCount, "the chat the reader is looking at carries no badge")
+	}
 	require.True(t, m.dots["om_a"], "what was waiting when the visit began still wears a marker")
 }
 
@@ -93,4 +95,25 @@ func TestUpdate_SearchHitsKeepTheirUnreadMarker(t *testing.T) {
 
 	require.True(t, m.dots["om_a"], "a hit Feishu still reports unread carries a marker")
 	require.Contains(t, rowText(m.msgRows), "●")
+}
+
+func TestUpdate_AThreadReplysMarkerIsGoneOnTheNextVisit(t *testing.T) {
+	m, st := readModel(t)
+	ctx := context.Background()
+	_, err := st.UpsertMessages(ctx, []store.Message{{MessageID: "om_reply", ChatID: "oc_a", MsgType: "text",
+		SenderID: "ou_x", SenderName: "张三", ContentRaw: `{"text":"接着上面那个话题"}`,
+		CreateMs: 200, UpdateMs: 200, MessagePosition: -3, ThreadID: "omt_1"}}, 1)
+	require.NoError(t, err)
+	unread := false
+	require.NoError(t, st.SetReadStatus(ctx, "om_reply", &unread, 200, 0))
+	m.pendingChat = "oc_a"
+	m = arrive(t, m, st, "oc_a")
+	require.True(t, m.dots["om_reply"], "a reply that landed while the reader was away wears a marker")
+
+	m.pendingChat = "oc_a"
+	m.enterChat()
+	m = arrive(t, m, st, "oc_a")
+
+	require.Empty(t, m.dots, "the reply the pane put in front of the reader was read with the chat")
+	require.False(t, strings.Contains(rowText(renderRows(m.msgs, m.msgStyleFor(60, m.meta))), "●"))
 }
