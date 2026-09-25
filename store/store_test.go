@@ -48,6 +48,46 @@ func TestMigrate_RewindsResourceScanForCardImages(t *testing.T) {
 	require.Equal(t, "0", v)
 }
 
+func TestMigrate_QueuesCardImagesThatRanOutOfAttempts(t *testing.T) {
+	dir := t.TempDir()
+	ctx := context.Background()
+	s, err := Open(filepath.Join(dir, "t.db"))
+	require.NoError(t, err)
+	require.NoError(t, s.AddPendingResources(ctx, []Resource{
+		{MessageID: "om_card", FileKey: "img_card", Type: "image"},
+		{MessageID: "om_clip", FileKey: "file_clip", Type: "file"},
+	}))
+	// The state the old fetchAside gate left behind: five attempts spent
+	// against a refusal, and one ordinary failure that is none of its business.
+	_, err = s.db.ExecContext(ctx, `UPDATE resources SET status='failed', attempts=5, next_attempt_at=0,
+		last_error='not returned by lark-cli' WHERE file_key='img_card'`)
+	require.NoError(t, err)
+	_, err = s.db.ExecContext(ctx, `UPDATE resources SET status='failed', attempts=5, next_attempt_at=0,
+		last_error='downloaded file missing: no such file' WHERE file_key='file_clip'`)
+	require.NoError(t, err)
+	// Pretend the database predates the migration.
+	_, err = s.db.ExecContext(ctx, `DELETE FROM schema_migrations WHERE version = 19`)
+	require.NoError(t, err)
+	s.Close()
+
+	s, err = Open(filepath.Join(dir, "t.db"))
+	require.NoError(t, err)
+	defer s.Close()
+
+	card, err := s.ResourcesFor(ctx, "om_card")
+	require.NoError(t, err)
+	require.Len(t, card, 1)
+	require.Equal(t, "pending", card[0].Status, "a card image gets another go now that fetchAside fetches it")
+	require.Zero(t, card[0].Attempts)
+	require.Empty(t, card[0].LastError)
+
+	clip, err := s.ResourcesFor(ctx, "om_clip")
+	require.NoError(t, err)
+	require.Len(t, clip, 1)
+	require.Equal(t, "failed", clip[0].Status, "a failure of any other kind is left alone")
+	require.Equal(t, 5, clip[0].Attempts)
+}
+
 func TestUpsertMessages_PreservesRenderingAndRecalledContent(t *testing.T) {
 	s := openTest(t)
 	ctx := context.Background()

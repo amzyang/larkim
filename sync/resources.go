@@ -8,6 +8,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strconv"
 	"time"
@@ -108,6 +109,12 @@ func walkCardAttachment(v any, add func(key, typ string)) {
 	}
 }
 
+// mdPostImage is an image reference inside a post's md element. lark-cli's
+// --markdown builds a post out of a single such element, so a picture sent
+// that way is named nowhere else in the body. The same pattern lives in
+// tui.imgRef, which reads the rendered text rather than this raw body.
+var mdPostImage = regexp.MustCompile(`!\[[^\]\n]*\]\((img_[A-Za-z0-9_-]+)\)`)
+
 // walkPost visits every element of a rich-text body (either the plain
 // {title, content} form or the locale-wrapped {zh_cn: {...}} form).
 func walkPost(v any, add func(key, typ string)) {
@@ -119,6 +126,10 @@ func walkPost(v any, add func(key, typ string)) {
 				add(str(x["image_key"]), "image")
 			case "media":
 				add(str(x["file_key"]), "file")
+			case "md":
+				for _, g := range mdPostImage.FindAllStringSubmatch(str(x["text"]), -1) {
+					add(g[1], "image")
+				}
 			}
 		}
 		for _, child := range x {
@@ -230,11 +241,13 @@ func (s *Syncer) downloadPending(ctx context.Context, now time.Time) (int, error
 	return done, nil
 }
 
-// fetchAside downloads an attachment the batch left out. Only a video's cover
-// is expected here — lark-cli's worklist holds every other key — so anything
-// else is reported as the gap it is rather than costing a call.
+// fetchAside downloads an attachment the batch left out. Two kinds end up
+// here, both because lark-cli's download worklist walks only img and media
+// elements: a video's cover, and an image named from inside a post's md
+// element or a card's attachment table. Anything else is reported as the gap
+// it is rather than costing a call.
 func (s *Syncer) fetchAside(ctx context.Context, p store.Resource) (larkcli.Resource, error) {
-	if p.Type != "cover" {
+	if p.Type != "cover" && p.Type != "image" {
 		return larkcli.Resource{}, errors.New("not returned by lark-cli")
 	}
 	return s.Client.DownloadResource(ctx, p.MessageID, p.FileKey, "image")

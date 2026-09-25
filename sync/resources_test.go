@@ -209,3 +209,63 @@ func TestExtractResources_CardAttachmentAlsoArrivesAsAString(t *testing.T) {
 	require.Empty(t, ExtractResources("om", "interactive", `{"json_card":"{}"}`), "a card with no images")
 	require.Empty(t, ExtractResources("om", "interactive", `{"json_attachment":"not json"}`))
 }
+
+func TestExtractResources_FindsImagesInsideAnMdPostTag(t *testing.T) {
+	// The shape lark-cli's --markdown builds: one md element holding the
+	// whole body, so the image key is named nowhere else.
+	post := `{"zh_cn":{"content":[[{"tag":"md","text":"## 周报\n\n![截图](img_p)\n\n见图"}]]}}`
+	require.Equal(t, []store.Resource{{MessageID: "om", FileKey: "img_p", Type: "image"}},
+		ExtractResources("om", "post", post))
+
+	both := `{"zh_cn":{"content":[[{"tag":"md","text":"![a](img_p) ![b](img_q)"}],[{"tag":"img","image_key":"img_p"}]]}}`
+	rs := ExtractResources("om", "post", both)
+	require.Len(t, rs, 2, "a key named twice registers once")
+	require.Equal(t, "img_p", rs[0].FileKey)
+	require.Equal(t, "img_q", rs[1].FileKey)
+}
+
+func TestExtractResources_IgnoresANonImgRefInsideMd(t *testing.T) {
+	// Only an uploaded key is downloadable; a path or a URL never became one.
+	post := `{"zh_cn":{"content":[[{"tag":"md","text":"![x](./a.png) ![y](https://example.com/b.png)"}]]}}`
+	require.Empty(t, ExtractResources("om", "post", post))
+}
+
+func TestTick_DownloadsAPostImageTheBatchLeftOut(t *testing.T) {
+	s, f, clk := newSyncer(t)
+	ctx := context.Background()
+	dir := t.TempDir()
+	s.Opt.DataDir, s.Opt.DownloadPerTick = dir, 1
+	resDir := filepath.Join(dir, "resources", "lark-im-resources")
+	require.NoError(t, os.MkdirAll(resDir, 0o755))
+	shot := filepath.Join(resDir, "img_p.png")
+	require.NoError(t, os.WriteFile(shot, []byte("shot"), 0o644))
+
+	f.Chats = []larkcli.RawChat{{ChatID: "oc_a", Name: "A", ChatMode: "group"}}
+	post := msg("om_post", "oc_a", clk.t.Add(-time.Minute), "")
+	post.MsgType = "post"
+	post.Body.Content = `{"zh_cn":{"content":[[{"tag":"md","text":"## 周报\n\n![截图](img_p)"}]]}}`
+	f.AddMessage(post)
+	// lark-cli's worklist walks img and media elements only, so a key named
+	// from inside an md element never reaches the batch.
+	f.Singles["om_post/img_p"] = larkcli.Resource{LocalPath: shot, SizeBytes: 4}
+
+	rep, err := s.Tick(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1, rep.Downloaded)
+
+	rs, _ := s.Store.ResourcesFor(ctx, "om_post")
+	require.Len(t, rs, 1)
+	require.Equal(t, "done", rs[0].Status)
+	require.Equal(t, filepath.Join("resources", "lark-im-resources", "img_p.png"), rs[0].LocalPath)
+	require.Equal(t, 1, countCalls(f.Calls, "download:om_post:img_p"))
+}
+
+func TestFetchAside_StillRefusesAFileKey(t *testing.T) {
+	s, _, _ := newSyncer(t)
+	// Loosening the gate for images does not open it: a file lark-cli's batch
+	// left out is a gap to report, not a call to spend.
+	_, err := s.fetchAside(context.Background(), store.Resource{MessageID: "om", FileKey: "file_x", Type: "file"})
+	require.ErrorContains(t, err, "not returned by lark-cli")
+	_, err = s.fetchAside(context.Background(), store.Resource{MessageID: "om", FileKey: "v3_s", Type: "sticker"})
+	require.ErrorContains(t, err, "not returned by lark-cli")
+}
