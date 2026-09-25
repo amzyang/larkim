@@ -665,16 +665,20 @@ func TestTick_SearchIsASafetyNetOnItsOwnInterval(t *testing.T) {
 
 	clk.t = clk.t.Add(searchEvery - time.Second)
 	f.Calls = nil
-	_, err = s.Tick(ctx)
+	rep, err := s.Tick(ctx)
 	require.NoError(t, err)
 	require.Zero(t, callsTo(f, "search"), "inside the interval the probe carries discovery alone")
 	require.Contains(t, f.Calls, "chats:true", "the probe still runs every tick")
+	require.False(t, rep.Searched)
+	require.False(t, rep.Complete, "a tick that searched nothing covered nothing")
 
 	clk.t = clk.t.Add(time.Second)
 	f.Calls = nil
-	_, err = s.Tick(ctx)
+	rep, err = s.Tick(ctx)
 	require.NoError(t, err)
 	require.Equal(t, 1, callsTo(f, "search"), "past the interval the safety net runs once")
+	require.True(t, rep.Searched)
+	require.True(t, rep.Complete)
 }
 
 func TestActiveProbe_AFailedPullLeavesTheMovedChatsNamedNextTick(t *testing.T) {

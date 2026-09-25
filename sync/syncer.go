@@ -249,9 +249,6 @@ func (s *Syncer) tick(ctx context.Context, now time.Time) (Report, error) {
 	// seconds before that search can find the message. Listing the chats it
 	// names has no such lag either, which is why this runs first: what it
 	// reaches is already stored by the time the search asks.
-	//
-	// The search below still runs on every tick and still covers these chats.
-	// It stays until the two have been measured against each other.
 	active, moved, err := s.activeProbe(ctx)
 	if err != nil {
 		return rep, fmt.Errorf("active probe: %w", err)
@@ -278,8 +275,8 @@ func (s *Syncer) tick(ctx context.Context, now time.Time) (Report, error) {
 	// It does not have to run often, which is the point: the search index is
 	// what was slow, not the search.
 	rep.Window = FastWindow(s.stateTime(ctx, KeyWatermark), now, s.Opt.Overlap)
-	rep.Complete = true // no search, no window left uncovered by this tick
 	if Due(s.stateTime(ctx, KeySearchAt), searchEvery, now) {
+		rep.Searched = true
 		hits, coveredEnd, err := s.searchWindow(ctx, rep.Window)
 		if err != nil {
 			return rep, fmt.Errorf("search: %w", err)
@@ -961,7 +958,7 @@ func (s *Syncer) Run(ctx context.Context) error {
 			s.log().Log(ctx, level, "tick", "hits", rep.Hits, "new", rep.New, "rendered", rep.Rendered,
 				"backfilled", rep.Backfilled, "slow_path", rep.SlowPath, "history", rep.History,
 				"downloaded", rep.Downloaded, "repaired", rep.Repaired, "chats", rep.Chats,
-				"moved", rep.Moved, "probed", rep.Probed, "complete", rep.Complete)
+				"moved", rep.Moved, "probed", rep.Probed, "searched", rep.Searched, "complete", rep.Complete)
 		}
 		s.SetStatus(ctx, err)
 		select {

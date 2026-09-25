@@ -48,9 +48,15 @@ func (a *App) syncCmd() *cobra.Command {
 			if a.json() {
 				return a.printJSON(rep)
 			}
-			fmt.Fprintf(a.Out, "window %s → %s complete=%v\nhits=%d new=%d chats=%d slow_path=%d backfilled=%d rendered=%d\n",
-				rep.Window.Start.Local().Format(time.RFC3339), rep.Window.End.Local().Format(time.RFC3339), rep.Complete,
-				rep.Hits, rep.New, rep.Chats, rep.SlowPath, rep.Backfilled, rep.Rendered)
+			// The search runs on its own interval, so a tick that skipped it
+			// has no coverage to claim either way.
+			coverage := "searched=no"
+			if rep.Searched {
+				coverage = fmt.Sprintf("complete=%v", rep.Complete)
+			}
+			fmt.Fprintf(a.Out, "window %s → %s %s\nhits=%d new=%d probed=%d chats=%d slow_path=%d backfilled=%d rendered=%d\n",
+				rep.Window.Start.Local().Format(time.RFC3339), rep.Window.End.Local().Format(time.RFC3339), coverage,
+				rep.Hits, rep.New, rep.Probed, rep.Chats, rep.SlowPath, rep.Backfilled, rep.Rendered)
 			return nil
 		},
 	}
