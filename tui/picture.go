@@ -138,11 +138,20 @@ func (p *pictures) place(path string, maxCols, maxRows int) picture {
 	if h > boxH {
 		w, h = max(1, px.X*boxH/px.Y), boxH
 	}
-	// The box is rounded up to whole cells so the picture never loses a pixel
-	// to it, and fitImage leaves the remainder transparent rather than letting
-	// the terminal stretch the picture into it.
-	cols := clamp((w+cw-1)/cw, 1, maxCols)
-	rows := clamp((h+ch-1)/ch, 1, maxRows)
+	// The cells are rounded to the nearest whole one and the picture is then
+	// fitted inside them, giving up at most half a cell of its own size.
+	// Rounding up instead would keep every pixel, but a square emoji is taller
+	// than a cell is wide, so the near-empty cell it left beside one line of
+	// text read as a space nobody put there.
+	cols := clamp((w+cw/2)/cw, 1, maxCols)
+	rows := clamp((h+ch/2)/ch, 1, maxRows)
+	if bw, bh := cols*cw, rows*ch; w > bw || h > bh {
+		if w*bh > h*bw {
+			w, h = bw, max(1, h*bw/w)
+		} else {
+			w, h = max(1, w*bh/h), bh
+		}
+	}
 	return picture{path: abs, cols: cols, rows: rows, w: w, h: h}
 }
 

@@ -68,6 +68,17 @@ func TestPictures_PlaceDrawsInsideTheBoxItReserves(t *testing.T) {
 	}
 }
 
+func TestPictures_PlaceRoundsToTheNearestCellRatherThanUp(t *testing.T) {
+	p := testPictures(t)
+	// A 64px square over a 10x20 cell: rounding up would reserve 7x4 cells and
+	// leave most of the fourth row empty beside the one line of text it sits by.
+	pic := p.place(writePNG(t, p.dataDir, "sq64.png", 64, 64), 30, 20)
+	require.Equal(t, 6, pic.cols)
+	require.Equal(t, 3, pic.rows)
+	require.Equal(t, 60, pic.w, "the picture gives up the half cell rather than overflowing it")
+	require.Equal(t, 60, pic.h)
+}
+
 func TestPictures_PlaceGivesNothingWhenThePaneHasNoRoom(t *testing.T) {
 	p := testPictures(t)
 	tall := writePNG(t, p.dataDir, "tall.png", 200, 4000)
