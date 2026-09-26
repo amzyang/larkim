@@ -129,6 +129,12 @@ type Model struct {
 	msgTop   int // first visible line of the message pane
 	msgRows  []msgRow
 	msgSince int64 // when set, the page starts here instead of at the newest messages
+	// msgLimit is how many of the chat's messages the page asks the store
+	// for. Scrolling to the top of it raises it by another page.
+	msgLimit int
+	// msgPullInFlight marks a fetch of history from behind the store's floor,
+	// which answers with a database write rather than with a page.
+	msgPullInFlight bool
 	// dots holds the messages the unread marker is drawn against, gathered as
 	// pages arrive and dropped on the way into another chat. Opening a chat
 	// takes its messages as read at once, so a marker read straight off the
@@ -145,6 +151,7 @@ type Model struct {
 	// running down the list never leaves a blank behind it.
 	pendingChat  string
 	pendingSince int64
+	pendingLimit int
 	// cursorMovedAt is when the chat cursor last moved, which is what tells a
 	// sweep down the list from a single keypress.
 	cursorMovedAt time.Time
@@ -304,7 +311,8 @@ func New(d Deps) Model {
 	}
 	prunePasted(d.DataDir, time.Now())
 	m := Model{deps: d, input: ta, cmdline: ti, focus: paneChats, focused: true, previewOpen: true,
-		emoji:      emoji.NewReactionIndex(),
+		msgLimit:   messagePageSize,
+		emoji:      emoji.NewReactionIndex().WithCustom(d.DataDir),
 		emojiWrite: emoji.NewComposerIndex(),
 		chatIx:     newChatIndex(),
 		avatars:    newAvatars(d.DataDir, d.Env), pics: newPictures(d.DataDir, d.Env),
@@ -846,6 +854,8 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case chatPolledMsg:
 		m.notePollResult(msg.err, time.Now())
 		return m, nil
+	case olderPulledMsg:
+		return m, m.noteOlderPull(msg)
 	case chatRefreshDueMsg:
 		if !m.claimChatRefresh(msg.chatID) {
 			return m, nil
@@ -917,9 +927,15 @@ func (m *Model) openChatFrom(chatID string, sinceMs int64) tea.Cmd {
 	// The composer belongs to the chat that is still open, so its contents go
 	// back to that chat before the page for the next one is asked for.
 	keep := m.saveComposer()
-	m.pendingChat, m.pendingSince = chatID, sinceMs
+	// A page anchored at a hit has to reach from it to the newest message, so
+	// it is bounded far more loosely than one that opens at the tail.
+	limit := messagePageSize
+	if sinceMs > 0 {
+		limit = anchoredPageSize
+	}
+	m.pendingChat, m.pendingSince, m.pendingLimit = chatID, sinceMs, limit
 	m.selectCurrentChat()
-	return tea.Batch(keep, loadMessages(m.deps, chatID, sinceMs), scheduleChatRefresh(chatID))
+	return tea.Batch(keep, loadMessages(m.deps, chatID, sinceMs, limit), scheduleChatRefresh(chatID))
 }
 
 // draftForRow is the draft the chat list draws its marker from. The open chat
@@ -958,9 +974,12 @@ func (m Model) quit() tea.Cmd { return tea.Sequence(m.saveComposer(), tea.Quit) 
 func (m *Model) enterChat() {
 	m.searching, m.searchHits, m.searchQuery = false, nil, ""
 	m.dots = nil
-	m.chatID, m.msgSince = m.pendingChat, m.pendingSince
-	m.pendingChat, m.pendingSince = "", 0
+	m.chatID, m.msgSince, m.msgLimit = m.pendingChat, m.pendingSince, m.pendingLimit
+	m.pendingChat, m.pendingSince, m.pendingLimit = "", 0, 0
 	m.msgs, m.msgsBase, m.msgRows, m.msgIdx, m.msgTop = nil, nil, nil, 0, 0
+	// A pull still out belongs to the chat being left; its answer is dropped
+	// on arrival, so the next chat starts free to ask for its own history.
+	m.msgPullInFlight = false
 	m.closeRight()
 	m.replyTo, m.inThrd = nil, false
 	m.selectCurrentChat()
@@ -1111,7 +1130,7 @@ func (m *Model) openHighlighted() tea.Cmd {
 func (m Model) reloadCurrent() tea.Cmd {
 	cmds := []tea.Cmd{loadChats(m.deps)}
 	if m.chatID != "" {
-		cmds = append(cmds, loadMessages(m.deps, m.chatID, m.msgSince))
+		cmds = append(cmds, loadMessages(m.deps, m.chatID, m.msgSince, m.msgLimit))
 	}
 	// Only the visible frame: a covered one is reloaded when it is uncovered.
 	if cmd := m.loadRight(); cmd != nil {
@@ -1894,6 +1913,7 @@ func (m Model) move(n int) (tea.Model, tea.Cmd) {
 		m.clearDotsAtCursor()
 		m.rebuildMessages()
 		m.scrollMessagesToSelection()
+		return m, m.growMessages()
 	case paneThread:
 		if m.scrollRight(n) {
 			return m, nil
@@ -2360,6 +2380,7 @@ func (m Model) onWheel(ms tea.Mouse) (tea.Model, tea.Cmd) {
 		m.chatTop = clamp(m.chatTop+step, 0, max(0, len(vis)-m.chatListHeight()))
 	case paneMessages:
 		m.msgTop = clamp(m.msgTop+step, 0, max(0, len(m.msgRows)-m.msgListHeight()))
+		return m, m.growMessages()
 	case paneThread:
 		// The column is shared, and the wheel scrolls whichever of the three
 		// is drawn in it. The thread alone is scrolled by its own top, since

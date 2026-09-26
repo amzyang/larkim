@@ -361,8 +361,8 @@ func TestRenderRows_AThreadSummaryCarriesAnOpenZone(t *testing.T) {
 
 func TestMessageQuery_FoldsThreadRepliesOutOfTheChatFlow(t *testing.T) {
 	// Both shapes: the newest page, and one cut around an anchor.
-	require.True(t, messageQuery("oc_a", 0).ExcludeThreadReplies)
-	require.True(t, messageQuery("oc_a", 1000).ExcludeThreadReplies,
+	require.True(t, messageQuery("oc_a", 0, messagePageSize).ExcludeThreadReplies)
+	require.True(t, messageQuery("oc_a", 1000, anchoredPageSize).ExcludeThreadReplies,
 		"a limit spent on rows the page will not draw is a page short of messages")
 }
 

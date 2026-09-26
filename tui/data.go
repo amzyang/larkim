@@ -358,21 +358,22 @@ func loadChats(d Deps) tea.Cmd {
 	}
 }
 
-// messageQuery is the newest page of a chat or, anchored at sinceMs, every
-// message from that time on, so a search hit older than the page is included.
-func messageQuery(chatID string, sinceMs int64) store.MessageQuery {
+// messageQuery is the newest limit messages of a chat or, anchored at sinceMs,
+// every message from that time on, so a search hit older than the page is
+// included. Scrolling to the top raises limit — see growMessages.
+func messageQuery(chatID string, sinceMs int64, limit int) store.MessageQuery {
 	// Replies are folded into their root's own line, so the page neither
 	// draws them nor spends its limit on them.
 	if sinceMs > 0 {
-		return store.MessageQuery{ChatID: chatID, SinceMs: sinceMs, Limit: anchoredPageSize,
+		return store.MessageQuery{ChatID: chatID, SinceMs: sinceMs, Limit: limit,
 			ExcludeThreadReplies: true}
 	}
-	return store.MessageQuery{ChatID: chatID, Desc: true, Limit: messagePageSize,
+	return store.MessageQuery{ChatID: chatID, Desc: true, Limit: limit,
 		ExcludeThreadReplies: true}
 }
 
-func loadMessages(d Deps, chatID string, sinceMs int64) tea.Cmd {
-	q := messageQuery(chatID, sinceMs)
+func loadMessages(d Deps, chatID string, sinceMs int64, limit int) tea.Cmd {
+	q := messageQuery(chatID, sinceMs, limit)
 	return func() tea.Msg {
 		ctx := context.Background()
 		rows, err := d.Store.ListMessages(ctx, q)

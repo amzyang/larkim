@@ -266,6 +266,11 @@ func (m *Model) rebuildMessages() {
 		return
 	}
 	m.msgRows = renderRows(m.msgs, m.msgStyleFor(w, m.meta))
+	// The head of the page says why scrolling stops here, which no amount of
+	// blank space above the first message would.
+	if len(m.msgRows) > 0 && m.atLocalFloor() {
+		m.msgRows = append([]msgRow{m.floorRow(w)}, m.msgRows...)
+	}
 }
 
 // renderSearchRows lays the panel out: the message hits as message blocks,

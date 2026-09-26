@@ -215,3 +215,23 @@ func (ix *Index) SaveUsed(dataDir string) error {
 	}
 	return os.WriteFile(filepath.Join(dataDir, ix.file), b, 0o600)
 }
+
+// WithCustom adds the emoji kept in dataDir, so a picker offers what this
+// person added beside what Feishu ships. It is a step of its own rather than
+// part of building the index because only the index's owner knows where the
+// data dir is, and because a picker without one is still a picker.
+//
+// A data dir that holds none, or cannot be read, leaves the index as it was:
+// losing a person's own emoji from the list is worth less than the picker.
+func (ix *Index) WithCustom(dataDir string) *Index {
+	all, err := LoadCustom(dataDir)
+	if err != nil {
+		return ix
+	}
+	for _, c := range all {
+		e := c.Emoji()
+		ix.items = append(ix.items, e)
+		ix.terms = append(ix.terms, fuzzy.Chars(e.Terms))
+	}
+	return ix
+}

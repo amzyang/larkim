@@ -18,6 +18,7 @@ One row per chat the user is (or was) in, from `GET /im/v1/chats` with `types=p2
 | `avatar_url`, `avatar_path` | group avatar URL and local copy (relative to the data dir); empty for p2p |
 | `cursor_ms` | newest `create_ms` pulled by a per-chat listing; the slow path resumes from here minus overlap |
 | `backfill_done_at` | set once the historical pull (`backfill_days`) finished |
+| `history_floor_ms` | oldest `create_ms` the chat has been pulled back to, and 0 once the whole of it is stored. Meaningless while `backfill_done_at` is 0, which is what tells that zero from this one |
 | `left_at` | non-zero when a full listing no longer contains the chat; reset when it reappears |
 | `sync_error` | last permanent API rejection (e.g. restricted-mode chats cannot be listed); such chats still receive messages via search |
 | `repaired_at` | when the last repair pass re-listed the chat's recent week |
@@ -217,7 +218,7 @@ Avatar coverage depends on the app's directory scope: users outside it keep `ava
 
 A single row (`id = 1`) whose `rev` counts the changes a reader cares about in `messages`, `chats`, `read_state`, `resources`, `message_resources` and `contacts`, advanced by triggers. Poll it to know that rows already read have gone stale: `max(messages.id)` moves only on insert, so it misses renderings, read-status flips, cards a bot rewrote in place and attachments that finished downloading.
 
-Inserts always count. An update counts when it moves a column something renders; the columns that pace the syncer do not (`*_seen_at`, `cursor_ms`, `backfill_done_at`, `members_synced_at`, `mute_checked_at`, `repaired_at`, `raw_json`, `remote_checked_at`, `check_count`, `next_check_at`, `attempts`, `next_attempt_at`, `detail_checked_at`, `updated_at`). A full chat listing restamps `last_seen_at` on every row, so without that rule one refresh over unchanged data would tell every reader to re-read the whole list.
+Inserts always count. An update counts when it moves a column something renders; the columns that pace the syncer do not (`*_seen_at`, `cursor_ms`, `backfill_done_at`, `history_floor_ms`, `members_synced_at`, `mute_checked_at`, `repaired_at`, `raw_json`, `remote_checked_at`, `check_count`, `next_check_at`, `attempts`, `next_attempt_at`, `detail_checked_at`, `updated_at`). A full chat listing restamps `last_seen_at` on every row, so without that rule one refresh over unchanged data would tell every reader to re-read the whole list.
 
 ```sql
 SELECT rev FROM data_rev;  -- changed since last poll? re-read what you display

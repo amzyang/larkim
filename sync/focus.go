@@ -17,6 +17,69 @@ const hotLookback = time.Minute
 // before its rendering lands, so falling behind here costs polish, not words.
 const hotRenderBatch = 50
 
+// PullOlder fetches one page of history from behind a chat's floor and moves
+// the floor to where that page ends, so repeated calls walk the chat back to
+// its start. It returns how many messages landed.
+//
+// Backfill only ever covered the last backfill_days and marked itself done, so
+// without this a chat's stored history has a hard bottom that raising the
+// setting afterwards cannot lift. A reader who scrolls past that bottom is the
+// only signal worth spending a call on, which is why this is pulled rather
+// than swept.
+func (s *Syncer) PullOlder(ctx context.Context, chatID string) (int, error) {
+	chat, err := s.Store.GetChat(ctx, chatID)
+	if err != nil {
+		return 0, err
+	}
+	if chat.HistoryFloorMs == 0 {
+		return 0, nil // the whole chat is already stored
+	}
+	// The endpoint bounds by whole seconds and includes the bound, so a page
+	// always re-reads the message the last one ended on. Paying for that one
+	// row is the safe side of a rounding this code does not control: asking
+	// for strictly less would drop whatever shares that second with it.
+	floor := time.UnixMilli(chat.HistoryFloorMs)
+	msgs, more, err := s.Client.OlderMessagesRaw(ctx, chatID, floor)
+	if err != nil {
+		return 0, fmt.Errorf("pull older %s: %w", chatID, err)
+	}
+	now := s.now()
+	// The page names the threads whose replies belong with it. Those replies
+	// live in a container of their own, unbounded here because a thread is
+	// small and its replies may run past the floor the roots sit behind.
+	var threads []string
+	next := chat.HistoryFloorMs
+	for _, m := range msgs {
+		if m.ThreadID != "" {
+			threads = append(threads, m.ThreadID)
+		}
+		next = min(next, int64(m.CreateTime))
+	}
+	replies, err := s.listThreads(ctx, UniqueStrings(threads), time.Time{}, floor)
+	if err != nil {
+		return 0, fmt.Errorf("pull older threads %s: %w", chatID, err)
+	}
+	// Not pullChat: that moves the chat cursor, which names the newest
+	// message pulled. Walking backwards has nothing to say about the newest.
+	n, _, err := s.upsertRaw(ctx, append(msgs, replies...), now)
+	if err != nil {
+		return n, err
+	}
+	// Whether anything is left is the server's own answer rather than a guess
+	// from the page's length, so a page the API cut short for its own reasons
+	// does not read as the start of the chat.
+	if !more {
+		next = 0
+	}
+	if err := s.Store.SetChatHistoryFloor(ctx, chatID, next); err != nil {
+		return n, err
+	}
+	s.changed(n)
+	r, err := s.renderPending(ctx, chatID, hotRenderBatch, now)
+	s.changed(r)
+	return n, err
+}
+
 // RefreshChat re-lists the newest slice of the chat somebody is reading,
 // straight from the message store. Every other discovery path goes through
 // messages/search, whose index runs about seven seconds behind; the listing

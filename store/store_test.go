@@ -188,7 +188,7 @@ func TestChats_UpsertLeaveReviveAndBackfill(t *testing.T) {
 	need, err := s.ChatsNeedingBackfill(ctx, 10)
 	require.NoError(t, err)
 	require.Len(t, need, 2)
-	require.NoError(t, s.SetChatBackfillDone(ctx, "oc_a", 150))
+	require.NoError(t, s.SetChatBackfillDone(ctx, "oc_a", 100, 150))
 	need, _ = s.ChatsNeedingBackfill(ctx, 10)
 	require.Len(t, need, 1)
 

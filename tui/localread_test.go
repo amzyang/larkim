@@ -37,7 +37,7 @@ func readModel(t *testing.T) (Model, *store.Store) {
 // landing in front of the reader is taken as read.
 func arrive(t *testing.T, m Model, st *store.Store, chatID string) Model {
 	t.Helper()
-	msg, ok := loadMessages(Deps{Store: st}, chatID, 0)().(messagesLoadedMsg)
+	msg, ok := loadMessages(Deps{Store: st}, chatID, 0, messagePageSize)().(messagesLoadedMsg)
 	require.True(t, ok)
 	next, cmd := m.Update(msg)
 	collect(cmd)

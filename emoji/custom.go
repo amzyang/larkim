@@ -192,3 +192,25 @@ func fit(src image.Image, side int) image.Image {
 	draw.CatmullRom.Scale(dst, dst.Bounds(), src, b, draw.Over, nil)
 	return dst
 }
+
+// CustomPrefix marks a key as one of a person's own. No emoji_type carries a
+// colon, so nothing Feishu sends can be mistaken for one of these.
+const CustomPrefix = "custom:"
+
+// Emoji is how a custom emoji sits in a picker beside Feishu's own. It is
+// NoReaction and Delisted together, which is the plain truth about it: Feishu
+// has no key for a picture it has never seen, so it can be neither put on a
+// message as a reaction nor named inside one. It travels as the picture.
+func (c Custom) Emoji() Emoji {
+	return Emoji{Key: c.Key(), ZH: c.Name, EN: c.Name, Terms: c.Terms,
+		Order: len(table) + 1, NoReaction: true, Delisted: true}
+}
+
+// Picture is the file an emoji is drawn from: one of Feishu's is cut out of
+// the sheet under its folded key, one of a person's own is the file they kept.
+func Picture(dataDir, key string) string {
+	if name, ok := strings.CutPrefix(key, CustomPrefix); ok {
+		return filepath.Join(CustomDir(dataDir), name+".png")
+	}
+	return Path(dataDir, key)
+}

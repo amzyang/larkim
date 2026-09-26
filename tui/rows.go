@@ -228,7 +228,7 @@ func (p emojiPics) pic(key string, cols int) picture {
 	if p.place == nil || p.dir == "" {
 		return picture{}
 	}
-	return p.place(emoji.Path(p.dir, key), cols, 1)
+	return p.place(emoji.Picture(p.dir, key), cols, 1)
 }
 
 // chip is the same picture with the reaction's tint behind its cells, which is

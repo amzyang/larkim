@@ -1,6 +1,7 @@
 package larkcli
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -45,6 +46,11 @@ type Fake struct {
 	// Truncate makes SearchMessageIDs report truncation when a window holds
 	// more than this many hits (0 disables).
 	Truncate int
+	// OlderPage is how many messages one OlderMessagesRaw page holds; 0 takes
+	// the cap the real client asks under. A short page is what tells a caller
+	// it has reached the start of the chat, so a test sizing this is sizing
+	// the end of history.
+	OlderPage int
 	// SearchHidden names messages SearchMessageIDs withholds, standing in for
 	// the search index running behind the message store.
 	SearchHidden []string
@@ -254,6 +260,31 @@ func (f *Fake) ListMessagesRaw(_ context.Context, containerType, containerID str
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].CreateTime < out[j].CreateTime })
 	return out, nil
+}
+
+func (f *Fake) OlderMessagesRaw(_ context.Context, chatID string, before time.Time) ([]RawMessage, bool, error) {
+	if err := f.record("older:" + chatID); err != nil {
+		return nil, false, err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if err := f.ListErr[chatID]; err != nil {
+		return nil, false, err
+	}
+	var out []RawMessage
+	for _, m := range f.Messages {
+		// Thread replies live in the thread container, as the real API does.
+		if m.ChatID != chatID || (m.ThreadID != "" && int64(m.MessagePosition) < 0) {
+			continue
+		}
+		if m.CreateTime.Time().After(before) {
+			continue
+		}
+		out = append(out, m)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].CreateTime > out[j].CreateTime })
+	size := cmp.Or(f.OlderPage, listPageSize)
+	return out[:min(len(out), size)], len(out) > size, nil
 }
 
 func (f *Fake) ListChats(_ context.Context, activeFirstPage bool) ([]RawChat, error) {

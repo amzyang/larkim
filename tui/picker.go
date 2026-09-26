@@ -215,7 +215,7 @@ func (m Model) toggleReaction(x store.Message, key string) (tea.Model, tea.Cmd) 
 // It goes through the outbox like any other send, so the bubble stands under
 // the message it answers while it is on its way and says so if it fails.
 func (m Model) sendEmojiPicture(x store.Message, e emoji.Emoji) (tea.Model, tea.Cmd) {
-	path := emoji.Path(m.deps.DataDir, e.Key)
+	path := emoji.Picture(m.deps.DataDir, e.Key)
 	if _, err := os.Stat(path); err != nil {
 		m.deps.Log.Error("emoji picture", "key", e.Key, "path", path, "err", err)
 		return m.notify(e.Name()+" has no picture cut out to send", true), nil

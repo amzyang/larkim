@@ -268,3 +268,29 @@ func TestListChats_ThreadAggregateDrivesFromReadState(t *testing.T) {
 	require.Contains(t, plan, "read_state_unread", "the unread set is what the aggregate walks")
 	require.Contains(t, plan, "messages_thread", "and the stake is probed through the thread index")
 }
+
+func TestChats_HistoryFloorRecordsHowFarBackAChatReaches(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+	require.NoError(t, s.UpsertChats(ctx, []Chat{{ChatID: "oc_a", Name: "Alpha", ChatMode: "p2p"}}, 100))
+
+	// Until backfill has run the floor says nothing, which is what the zero
+	// backfill_done_at rather than the zero floor is there to tell.
+	c, err := s.GetChat(ctx, "oc_a")
+	require.NoError(t, err)
+	require.Zero(t, c.BackfillDoneAt)
+	require.Zero(t, c.HistoryFloorMs)
+
+	require.NoError(t, s.SetChatBackfillDone(ctx, "oc_a", 5000, 9000))
+	c, _ = s.GetChat(ctx, "oc_a")
+	require.EqualValues(t, 9000, c.BackfillDoneAt)
+	require.EqualValues(t, 5000, c.HistoryFloorMs, "the floor is where the initial pull reached, not when it ran")
+
+	require.NoError(t, s.SetChatHistoryFloor(ctx, "oc_a", 1000))
+	c, _ = s.GetChat(ctx, "oc_a")
+	require.EqualValues(t, 1000, c.HistoryFloorMs)
+
+	require.NoError(t, s.SetChatHistoryFloor(ctx, "oc_a", 0))
+	c, _ = s.GetChat(ctx, "oc_a")
+	require.Zero(t, c.HistoryFloorMs, "0 under a set backfill_done_at means the whole chat is stored")
+}

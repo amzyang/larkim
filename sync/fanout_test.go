@@ -43,7 +43,7 @@ func backfilled(t *testing.T, s *Syncer, now time.Time, ids ...string) {
 	ctx := context.Background()
 	for _, id := range ids {
 		require.NoError(t, s.Store.EnsureChat(ctx, id, now.UnixMilli()))
-		require.NoError(t, s.Store.SetChatBackfillDone(ctx, id, now.UnixMilli()))
+		require.NoError(t, s.Store.SetChatBackfillDone(ctx, id, now.Add(-24*time.Hour).UnixMilli(), now.UnixMilli()))
 	}
 }
 

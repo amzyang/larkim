@@ -25,6 +25,11 @@ type Client interface {
 	// ListMessagesRaw lists a chat ("chat") or thread ("thread") container in
 	// ascending create time. A zero start or end means unbounded.
 	ListMessagesRaw(ctx context.Context, containerType, containerID string, start, end time.Time) ([]RawMessage, error)
+	// OlderMessagesRaw takes one page of a chat's messages ending at before,
+	// newest first. Bounding by count rather than by a time window is what
+	// makes a quiet chat cheap to walk back: one call reaches whatever it last
+	// said, however long ago that was.
+	OlderMessagesRaw(ctx context.Context, chatID string, before time.Time) (msgs []RawMessage, more bool, err error)
 	// ForwardedMessages lists every message inside a merged-forward bundle.
 	// One call answers the whole tree: the items are flat, linked by
 	// UpperMessageID, and one of them is the bundle itself.

@@ -433,6 +433,37 @@ func (c *ExecClient) ListMessagesRaw(ctx context.Context, containerType, contain
 	return decodeItems[RawMessage](data, "items")
 }
 
+// OlderMessagesRaw walks a chat backwards a page at a time. It asks in
+// descending order so that the page the API cuts is the one just before
+// `before` rather than the oldest in some window, and it takes a single page:
+// what is wanted is the next screenful of history, not the archive.
+func (c *ExecClient) OlderMessagesRaw(ctx context.Context, chatID string, before time.Time) ([]RawMessage, bool, error) {
+	params := map[string]any{
+		"container_id_type":     "chat",
+		"container_id":          chatID,
+		"sort_type":             "ByCreateTimeDesc",
+		"page_size":             listPageSize,
+		"end_time":              strconv.FormatInt(before.Unix(), 10),
+		"with_sender_name":      true,
+		"card_msg_content_type": "raw_card_content",
+	}
+	data, err := c.run(ctx, "api", "GET", "/open-apis/im/v1/messages", "--params", jsonArg(params))
+	if err != nil {
+		return nil, false, err
+	}
+	msgs, err := decodeItems[RawMessage](data, "items")
+	if err != nil {
+		return nil, false, err
+	}
+	var page struct {
+		HasMore bool `json:"has_more"`
+	}
+	if err := json.Unmarshal(data, &page); err != nil {
+		return nil, false, fmt.Errorf("decode has_more: %w", err)
+	}
+	return msgs, page.HasMore, nil
+}
+
 func (c *ExecClient) ForwardedMessages(ctx context.Context, rootMessageID string) ([]RawForwarded, error) {
 	// The bundle's children are cards and posts like any other message, so
 	// they are asked for in the same shape MGetRaw asks in.

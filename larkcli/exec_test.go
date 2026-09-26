@@ -555,3 +555,28 @@ func TestOutgoing_FlagsSendAPostBodyThroughUntouched(t *testing.T) {
 	body := `{"zh_cn":{"content":[[{"tag":"emotion","emoji_type":"Get"}]]}}`
 	require.Equal(t, []string{"--msg-type", "post", "--content", body}, Outgoing{Post: body}.flags())
 }
+
+func TestOlderMessagesRaw_AsksOneDescendingPageEndingAtTheFloor(t *testing.T) {
+	c := fakeBinary(t, `
+echo "$*" > "$(dirname "$0")/args.txt"
+echo '{"ok":true,"identity":"user","data":{"items":[{"message_id":"om_1","chat_id":"oc_a","create_time":"1700000000000"}],"has_more":true}}'`)
+	msgs, more, err := c.OlderMessagesRaw(context.Background(), "oc_a", time.Unix(1700000000, 0))
+	require.NoError(t, err)
+	require.True(t, more, "whether history is exhausted is the server's answer, not a guess from the page length")
+	require.Len(t, msgs, 1)
+
+	args, err := os.ReadFile(filepath.Join(c.Dir, "args.txt"))
+	require.NoError(t, err)
+	require.Contains(t, string(args), `"sort_type":"ByCreateTimeDesc"`)
+	require.Contains(t, string(args), `"end_time":"1700000000"`)
+	require.NotContains(t, string(args), `"start_time"`)
+	require.NotContains(t, string(args), "--page-all", "a reader waits for one page, not the archive")
+}
+
+func TestOlderMessagesRaw_ExhaustedHistoryReportsNoMore(t *testing.T) {
+	c := fakeBinary(t, `echo '{"ok":true,"identity":"user","data":{"items":[],"has_more":false}}'`)
+	msgs, more, err := c.OlderMessagesRaw(context.Background(), "oc_a", time.Unix(1700000000, 0))
+	require.NoError(t, err)
+	require.False(t, more)
+	require.Empty(t, msgs)
+}

@@ -143,3 +143,46 @@ func TestCustomDir_IsNotTheDirectorySyncWritesWhole(t *testing.T) {
 	// be lost the next time this binary carries a new sheet.
 	require.NotEqual(t, Dir("/data"), CustomDir("/data"))
 }
+
+func TestPicture_TellsAnEmojiOfOnesOwnFromOneOfFeishus(t *testing.T) {
+	require.Equal(t, Path("/data", "THUMBSUP"), Picture("/data", "THUMBSUP"))
+	require.Equal(t, filepath.Join(CustomDir("/data"), "摸鱼.png"), Picture("/data", "custom:摸鱼"))
+}
+
+func TestCustomEmoji_TravelsAsItsPictureAndNothingElse(t *testing.T) {
+	// Feishu has no key for a picture it has never seen, so it can be neither
+	// put on a message as a reaction nor named inside one.
+	e := Custom{Name: "摸鱼", Terms: []string{"摸鱼", "moyu"}}.Emoji()
+	require.False(t, e.Reactable())
+	require.True(t, e.Delisted)
+	require.True(t, e.Offerable(), "a picker still offers it")
+	require.Equal(t, "摸鱼", e.Name())
+}
+
+func TestWithCustom_PutsAPersonsOwnEmojiInThePicker(t *testing.T) {
+	dir := t.TempDir()
+	_, err := AddCustom(dir, "摸鱼", []string{"划水"}, picture(t, filepath.Join(dir, "a.png"), 50, 50))
+	require.NoError(t, err)
+
+	ix := NewReactionIndex().WithCustom(dir)
+	require.Equal(t, NewReactionIndex().Len()+1, ix.Len())
+	// A name of its own and the pinyin of one reach it and nothing else.
+	for _, q := range []string{"摸鱼", "moyu", "划水", "huashui"} {
+		hits := ix.Search(q)
+		require.NotEmpty(t, hits, "%q reaches nothing", q)
+		require.Equal(t, "custom:摸鱼", hits[0].Emoji.Key, "%q", q)
+	}
+	// Initials are shared with whatever of Feishu's own sounds the same, so
+	// they reach it without being promised the first row.
+	for _, q := range []string{"my", "hs"} {
+		keys := make([]string, 0, len(ix.Search(q)))
+		for _, h := range ix.Search(q) {
+			keys = append(keys, h.Emoji.Key)
+		}
+		require.Contains(t, keys, "custom:摸鱼", "%q", q)
+	}
+}
+
+func TestWithCustom_LeavesThePickerAloneWhenThereAreNone(t *testing.T) {
+	require.Equal(t, NewReactionIndex().Len(), NewReactionIndex().WithCustom(t.TempDir()).Len())
+}

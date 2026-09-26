@@ -27,6 +27,7 @@ type helpEntry struct {
 var helpEntries = []helpEntry{
 	{"NORMAL", "j/k", "move"},
 	{"NORMAL", "gg/G", "the ends of the list"},
+	{"NORMAL", "", "the top of a chat loads older messages, and reaches past what is synced"},
 	{"NORMAL", "Ctrl+d/Ctrl+u", "page"},
 	{"NORMAL", "Tab/Shift+Tab", "focus the next/previous pane"},
 	{"NORMAL", "h/l", "move between panes"},

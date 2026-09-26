@@ -9,20 +9,24 @@ import (
 
 // Chat is one row of chats.
 type Chat struct {
-	ChatID          string `json:"chat_id"`
-	Name            string `json:"name"`
-	Description     string `json:"description,omitempty"`
-	ChatMode        string `json:"chat_mode"`
-	ChatStatus      string `json:"chat_status"`
-	OwnerID         string `json:"owner_id,omitempty"`
-	External        bool   `json:"external"`
-	P2PTargetID     string `json:"p2p_target_id,omitempty"`
-	P2PTargetType   string `json:"p2p_target_type,omitempty"`
-	AvatarURL       string `json:"avatar_url,omitempty"`
-	AvatarPath      string `json:"avatar_path,omitempty"`
-	CursorMs        int64  `json:"cursor_ms"`
-	BackfillDoneAt  int64  `json:"backfill_done_at"`
-	MembersSyncedAt int64  `json:"members_synced_at"`
+	ChatID         string `json:"chat_id"`
+	Name           string `json:"name"`
+	Description    string `json:"description,omitempty"`
+	ChatMode       string `json:"chat_mode"`
+	ChatStatus     string `json:"chat_status"`
+	OwnerID        string `json:"owner_id,omitempty"`
+	External       bool   `json:"external"`
+	P2PTargetID    string `json:"p2p_target_id,omitempty"`
+	P2PTargetType  string `json:"p2p_target_type,omitempty"`
+	AvatarURL      string `json:"avatar_url,omitempty"`
+	AvatarPath     string `json:"avatar_path,omitempty"`
+	CursorMs       int64  `json:"cursor_ms"`
+	BackfillDoneAt int64  `json:"backfill_done_at"`
+	// HistoryFloorMs is the oldest create_ms this chat has been pulled back
+	// to, and 0 once the whole of it is stored. It means nothing until
+	// BackfillDoneAt is set, which is what tells the two zeroes apart.
+	HistoryFloorMs  int64 `json:"history_floor_ms"`
+	MembersSyncedAt int64 `json:"members_synced_at"`
 	// MembersTruncated marks a roster the server capped: chat_members holds a
 	// part of the membership, not the whole of it.
 	MembersTruncated bool   `json:"members_truncated,omitempty"`
@@ -117,7 +121,7 @@ func (c Chat) AvatarSeed() string {
 // chatColumns selects from `chats c`; the derived columns are named so
 // callers can order by them.
 const chatColumns = `c.chat_id, c.name, c.description, c.chat_mode, c.chat_status, c.owner_id, c.external, c.p2p_target_id, c.p2p_target_type,
- c.avatar_url, c.avatar_path, c.cursor_ms, c.backfill_done_at, c.members_synced_at, c.members_truncated, c.first_seen_at, c.last_seen_at, c.left_at, c.sync_error, c.repaired_at, c.raw_json,
+ c.avatar_url, c.avatar_path, c.cursor_ms, c.backfill_done_at, c.history_floor_ms, c.members_synced_at, c.members_truncated, c.first_seen_at, c.last_seen_at, c.left_at, c.sync_error, c.repaired_at, c.raw_json,
  c.last_message_id, c.last_message_ms, c.last_sender_id, c.last_sender_name, c.last_sender_type, c.last_msg_type, c.last_content, c.last_content_raw, c.last_mentions_json, c.last_reactions_json, c.last_rendered_at, c.last_deleted, c.last_unsilenced_ms,
  c.muted, c.mute_checked_at,
  COALESCE(NULLIF(ct.enterprise_email, ''), ct.email, '') AS peer_account,
@@ -126,7 +130,7 @@ const chatColumns = `c.chat_id, c.name, c.description, c.chat_mode, c.chat_statu
 // chatDest are the scan targets for chatColumns, in order.
 func chatDest(c *Chat) []any {
 	return []any{&c.ChatID, &c.Name, &c.Description, &c.ChatMode, &c.ChatStatus, &c.OwnerID, &c.External, &c.P2PTargetID, &c.P2PTargetType,
-		&c.AvatarURL, &c.AvatarPath, &c.CursorMs, &c.BackfillDoneAt, &c.MembersSyncedAt, &c.MembersTruncated, &c.FirstSeenAt, &c.LastSeenAt, &c.LeftAt, &c.SyncError, &c.RepairedAt, &c.RawJSON,
+		&c.AvatarURL, &c.AvatarPath, &c.CursorMs, &c.BackfillDoneAt, &c.HistoryFloorMs, &c.MembersSyncedAt, &c.MembersTruncated, &c.FirstSeenAt, &c.LastSeenAt, &c.LeftAt, &c.SyncError, &c.RepairedAt, &c.RawJSON,
 		&c.LastMessageID, &c.LastMessageMs, &c.LastSenderID, &c.LastSenderName, &c.LastSenderType, &c.LastMsgType, &c.LastContent, &c.LastContentRaw, &c.LastMentionsJSON, &c.LastReactionsJSON, &c.LastRenderedAt, &c.LastDeleted, &c.LastUnsilencedMs,
 		&c.Muted, &c.MuteCheckedAt,
 		&c.PeerAccount, &c.PeerAvatarPath}
@@ -192,9 +196,19 @@ func (s *Store) SetChatCursor(ctx context.Context, chatID string, cursorMs int64
 	return err
 }
 
-// SetChatBackfillDone marks a chat's historical pull complete.
-func (s *Store) SetChatBackfillDone(ctx context.Context, chatID string, now int64) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE chats SET backfill_done_at = ?, sync_error = '' WHERE chat_id = ?`, now, chatID)
+// SetChatBackfillDone marks a chat's historical pull complete. floorMs is how
+// far back that pull reached, which is where walking further back resumes.
+func (s *Store) SetChatBackfillDone(ctx context.Context, chatID string, floorMs, now int64) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE chats SET backfill_done_at = ?, history_floor_ms = ?, sync_error = '' WHERE chat_id = ?`,
+		now, floorMs, chatID)
+	return err
+}
+
+// SetChatHistoryFloor records how far back a chat has been pulled; 0 says the
+// whole of it is stored. Unlike the cursor this is set outright rather than
+// taken as an extreme: only PullOlder writes it, and only ever backwards.
+func (s *Store) SetChatHistoryFloor(ctx context.Context, chatID string, floorMs int64) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE chats SET history_floor_ms = ? WHERE chat_id = ?`, floorMs, chatID)
 	return err
 }
 

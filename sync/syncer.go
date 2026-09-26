@@ -751,7 +751,7 @@ func (s *Syncer) backfillSlice(ctx context.Context, now time.Time) (int, error) 
 		if err != nil {
 			return 0, 0, err
 		}
-		return n, 0, s.Store.SetChatBackfillDone(ctx, id, now.UnixMilli())
+		return n, 0, s.Store.SetChatBackfillDone(ctx, id, since.UnixMilli(), now.UnixMilli())
 	})
 	return total, err
 }
