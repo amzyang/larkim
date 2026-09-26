@@ -48,3 +48,36 @@ func forwardSummary(x store.Message, root string, idx int, st msgStyle, g *leads
 		open: x.MessageID, openRoot: root, openKind: rightForward,
 	}}}, true
 }
+
+// threadSummary is the one line a thread root takes in the chat: how many
+// replies are under it and the last of them, with the whole line leading into
+// the pane that lists them.
+//
+// It is drawn whether or not anybody has answered. A root with no reply looks
+// like any other message otherwise, and the reader would have no way to tell
+// that Enter opens a thread there rather than answering the message.
+//
+// The representative reply is the newest, which is the opposite of a forward:
+// a thread is alive, and the last word is where it stands.
+func threadSummary(x store.Message, idx int, st msgStyle, g *leads) (msgRow, bool) {
+	// Only in the chat's own flow. Inside the thread's pane the replies are
+	// right below the root, so counting them again there says nothing.
+	if st.inFrame || x.ThreadID == "" || x.MessagePosition < 0 || x.Deleted {
+		return msgRow{}, false
+	}
+	gist := st.threads[x.ThreadID]
+	head := "⤷ 还没有回复"
+	tail := ""
+	if gist.Replies > 0 {
+		head = "⤷ " + strconv.Itoa(gist.Replies) + " 条回复"
+		last := gist.Last()
+		tail = " · " + displaySender(last, st.self, st.suffix[gist.SenderID]) + ": " + replyGist(last)
+	}
+	lead := g.take()
+	x0 := lead.cols()
+	text := stAccent.Render(head) + stDim.Render(truncate(tail, st.inner()-lipgloss.Width(head)))
+	return msgRow{lead: lead, text: text, idx: idx, zones: []clickZone{{
+		x0: x0, x1: x0 + lipgloss.Width(text),
+		open: x.ThreadID, openKind: rightThread,
+	}}}, true
+}

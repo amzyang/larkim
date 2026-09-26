@@ -16,10 +16,13 @@ import "slices"
 // settle, and the page that lights the badge carries no new id. The same holds
 // for a flag landing on a message older than the newest.
 //
-// The predicate mirrors store.unreadInPane — thread replies included — the set
-// markChatRead settles. Narrowing it to the chat badge's own set would leave a
-// chat whose only unread is a reply permanently unsettled, redrawing its
-// marker on every visit. The applink is gated separately, by unreadWaiting.
+// The predicate mirrors the set markChatRead settles, which is the chat
+// badge's own. It used to have to be wider: the page listed thread replies
+// then, and a chat whose only unread was a reply would have gone permanently
+// unsettled, redrawing its marker on every visit. The page folds replies into
+// their root's line now, so it carries none to settle and none to redraw —
+// markThreadRead answers for those when the thread is opened. The applink is
+// gated separately, by unreadWaiting.
 func (m Model) readKey(tailed bool) string {
 	if !m.pageShown(tailed) {
 		return ""

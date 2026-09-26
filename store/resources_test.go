@@ -248,7 +248,7 @@ func TestMarkChatRead_ClearsTheBadgeOfOneChat(t *testing.T) {
 	require.False(t, *m.IsReadRemote, "the remote receipt is untouched: larkim cannot write it")
 }
 
-func TestMarkChatRead_TakesTheThreadRepliesThePaneShowed(t *testing.T) {
+func TestMarkChatRead_LeavesThreadRepliesUnread(t *testing.T) {
 	s := openTest(t)
 	ctx := context.Background()
 	reply := msgAt("om_reply", "oc_a", 20, -3, "answered an old topic")
@@ -260,10 +260,43 @@ func TestMarkChatRead_TakesTheThreadRepliesThePaneShowed(t *testing.T) {
 
 	require.NoError(t, s.MarkChatRead(ctx, "oc_a", 5000))
 
+	root, _ := s.GetMessage(ctx, "om_root")
+	require.Equal(t, int64(5000), root.LocalReadAt)
 	m, _ := s.GetMessage(ctx, "om_reply")
-	require.Equal(t, int64(5000), m.LocalReadAt,
-		"the reply renders in the chat's flow, so the visit that read the chat read it too")
+	require.Zero(t, m.LocalReadAt,
+		"the page folds the reply into its root's line, so the visit never put it in front of anyone")
 	require.Empty(t, unreadCounts(t, s), "the badge never counted the reply and still does not")
+}
+
+func TestMarkThreadRead_SettlesOnlyItsOwnReplies(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+	mine := msgAt("om_mine", "oc_a", 20, -3, "in this thread")
+	mine.ThreadID = "omt_1"
+	// Silence decides whether to interrupt, not whether something was read:
+	// a reply left out here would keep the thread's line lit for good.
+	quiet := msgAt("om_quiet", "oc_a", 21, -4, "also in it")
+	quiet.ThreadID, quiet.Silenced = "omt_1", true
+	other := msgAt("om_other", "oc_a", 22, -5, "a different topic")
+	other.ThreadID = "omt_2"
+	root := msgAt("om_root", "oc_a", 10, 1, "an old topic")
+	root.ThreadID = "omt_1"
+	_, err := s.UpsertMessages(ctx, []Message{root, mine, quiet, other}, 1)
+	require.NoError(t, err)
+	for _, id := range []string{"om_root", "om_mine", "om_quiet", "om_other"} {
+		markUnread(t, s, id)
+	}
+
+	require.NoError(t, s.MarkThreadRead(ctx, "omt_1", 5000))
+
+	for _, id := range []string{"om_mine", "om_quiet"} {
+		m, _ := s.GetMessage(ctx, id)
+		require.Equal(t, int64(5000), m.LocalReadAt, id)
+	}
+	for _, id := range []string{"om_root", "om_other"} {
+		m, _ := s.GetMessage(ctx, id)
+		require.Zero(t, m.LocalReadAt, id+" is not a reply of this thread")
+	}
 }
 
 func TestMarkChatRead_LeavesReadAndDeletedMessagesAlone(t *testing.T) {

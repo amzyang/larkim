@@ -199,3 +199,92 @@ func TestOnClick_ASummaryPressFiresOnTheFirstClick(t *testing.T) {
 	require.Equal(t, rightForward, m.rightKind, "one press, like a link or a quote")
 	require.Equal(t, 0, m.msgIdx, "and the cursor stays where it was: the press asked for the pane")
 }
+
+// theRoot is a thread root as the chat holds it.
+func theRoot() store.Message {
+	return store.Message{MessageID: "om_root", SenderName: "张三", Content: "hello", RenderedAt: 1,
+		CreateMs: msgAt(22, 9, 0), ThreadID: "omt_1", MessagePosition: 3}
+}
+
+// threadStyle renders a page holding one thread root.
+func threadStyle(g store.ThreadGist) msgStyle {
+	st := baseStyle()
+	if g.Replies > 0 || g.SenderName != "" {
+		st.threads = map[string]store.ThreadGist{"omt_1": g}
+	}
+	return st
+}
+
+func TestRenderRows_AThreadRootShowsItsLastReply(t *testing.T) {
+	// A thread is alive, so the newest word is where it stands — the
+	// opposite of a forward, which is frozen and opens with its first.
+	out := rowText(renderRows([]store.Message{theRoot()}, threadStyle(store.ThreadGist{
+		Replies: 23, SenderName: "李四", MsgType: "text", ContentRaw: `{"text":"1234"}`})))
+
+	require.Contains(t, out, "⤷ 23 条回复")
+	require.Contains(t, out, "李四: 1234")
+}
+
+func TestRenderRows_AThreadRootWithNoReplyStillGetsItsLine(t *testing.T) {
+	// Without it the root reads as an ordinary message, and nothing says
+	// that Enter opens a thread there rather than answering.
+	out := rowText(renderRows([]store.Message{theRoot()}, threadStyle(store.ThreadGist{})))
+
+	require.Contains(t, out, "⤷ 还没有回复")
+}
+
+func TestRenderRows_AThreadSummaryIsNotDrawnInsideItsOwnPane(t *testing.T) {
+	st := threadStyle(store.ThreadGist{Replies: 23, SenderName: "李四", MsgType: "text",
+		ContentRaw: `{"text":"1234"}`})
+	st.inFrame = true
+
+	out := rowText(renderRows([]store.Message{theRoot()}, st))
+
+	require.NotContains(t, out, "条回复", "the replies stand right below the root there")
+	require.Contains(t, out, "hello")
+}
+
+func TestRenderRows_AForwardedThreadRootShowsTheThreadInTheChatAndTheForwardInTheFrame(t *testing.T) {
+	// One message, two containers. The live one wins in the chat; inside the
+	// thread the same message is the forward's own line, so it opens in turn.
+	x := theBundle()
+	x.ThreadID, x.MessagePosition = "omt_1", 3
+	st := bundleStyle(store.ForwardGist{ChildCount: 5, Expanded: true, SenderName: "张三",
+		MsgType: "text", ContentRaw: `{"text":"预算定了"}`})
+	st.threads = map[string]store.ThreadGist{"omt_1": {Replies: 18, SenderName: "李四",
+		MsgType: "text", ContentRaw: `{"text":"收到"}`}}
+
+	inChat := rowText(renderRows([]store.Message{x}, st))
+	require.Contains(t, inChat, "⤷ 18 条回复")
+	require.NotContains(t, inChat, "[合并转发]")
+
+	st.inFrame = true
+	inFrame := rowText(renderRows([]store.Message{x}, st))
+	require.Contains(t, inFrame, "[合并转发] 5 条")
+	require.NotContains(t, inFrame, "条回复")
+}
+
+func TestRenderRows_AThreadSummaryCarriesAnOpenZone(t *testing.T) {
+	rows := renderRows([]store.Message{theRoot()}, threadStyle(store.ThreadGist{Replies: 2,
+		SenderName: "李四", MsgType: "text", ContentRaw: `{"text":"1234"}`}))
+
+	zoned := 0
+	for _, r := range rows {
+		for _, z := range r.zones {
+			if z.open == "" {
+				continue
+			}
+			zoned++
+			require.Equal(t, rightThread, z.openKind)
+			require.Equal(t, "omt_1", z.open)
+		}
+	}
+	require.Equal(t, 1, zoned)
+}
+
+func TestMessageQuery_FoldsThreadRepliesOutOfTheChatFlow(t *testing.T) {
+	// Both shapes: the newest page, and one cut around an anchor.
+	require.True(t, messageQuery("oc_a", 0).ExcludeThreadReplies)
+	require.True(t, messageQuery("oc_a", 1000).ExcludeThreadReplies,
+		"a limit spent on rows the page will not draw is a page short of messages")
+}

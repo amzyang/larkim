@@ -158,7 +158,7 @@ func TestJumpToQuoted_ParentOffThePageReopensTheChatAtIt(t *testing.T) {
 	next, cmd := m.jumpToQuoted(paneMessages, "om_old")
 	m = next.(Model)
 	require.NotNil(t, cmd)
-	require.Equal(t, "om_old", m.pendingSelect)
+	require.Equal(t, "om_old", m.pendingSelect.id)
 	require.Equal(t, "oc_a", m.pendingChat)
 	require.Equal(t, parent.CreateMs, m.pendingSince, "the page is cut so the quoted message opens it")
 }
@@ -169,7 +169,7 @@ func TestJumpToQuoted_UnsyncedParentWithoutTheLockSaysSo(t *testing.T) {
 	m = next.(Model)
 	require.Nil(t, cmd, "only the process holding the lock may write")
 	require.Contains(t, m.notice, "synced")
-	require.Empty(t, m.pendingSelect)
+	require.Empty(t, m.pendingSelect.id)
 }
 
 func TestJumpToQuoted_UnsyncedParentIsPulledThenOpened(t *testing.T) {
@@ -198,7 +198,7 @@ func TestJumpToQuoted_UnsyncedParentIsPulledThenOpened(t *testing.T) {
 
 	next, _ = m.update(cmd())
 	m = next.(Model)
-	require.Equal(t, "om_old", m.pendingSelect)
+	require.Equal(t, "om_old", m.pendingSelect.id)
 	require.Equal(t, "oc_a", m.pendingChat)
 	require.Equal(t, int64(50), m.pendingSince)
 

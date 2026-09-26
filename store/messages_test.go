@@ -128,3 +128,28 @@ func TestUpdateReactions_DoesNotAdvanceTheRevisionForAnUnchangedSummary(t *testi
 	require.NoError(t, err)
 	require.Greater(t, cleared, again, "a reaction taken back is a change the panes must see")
 }
+
+func TestThreadGists_CountsTheRepliesAndTakesTheNewest(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	_, err := s.UpsertMessages(ctx, []Message{
+		{MessageID: "om_root", ChatID: "oc_a", MsgType: "text", CreateMs: 100, MessagePosition: 5,
+			ThreadID: "omt_1", ContentRaw: `{"text":"hello"}`, RawJSON: "{}"},
+		{MessageID: "om_r1", ChatID: "oc_a", MsgType: "text", CreateMs: 110, MessagePosition: -1,
+			ThreadID: "omt_1", ContentRaw: `{"text":"先"}`, SenderName: "李四", RawJSON: "{}"},
+		{MessageID: "om_r2", ChatID: "oc_a", MsgType: "text", CreateMs: 120, MessagePosition: -3,
+			ThreadID: "omt_1", ContentRaw: `{"text":"1234"}`, SenderName: "王五", RawJSON: "{}"},
+		{MessageID: "om_gone", ChatID: "oc_a", MsgType: "text", CreateMs: 130, MessagePosition: -4,
+			ThreadID: "omt_1", ContentRaw: `{"text":"撤了"}`, Deleted: true, RawJSON: "{}"},
+		{MessageID: "om_quiet", ChatID: "oc_a", MsgType: "text", CreateMs: 140, MessagePosition: 6,
+			ThreadID: "omt_2", ContentRaw: `{"text":"没人回"}`, RawJSON: "{}"},
+	}, 1)
+	require.NoError(t, err)
+
+	got, err := s.ThreadGists(ctx, []string{"omt_1", "omt_2"})
+	require.NoError(t, err)
+	require.Equal(t, 2, got["omt_1"].Replies, "the root is not a reply, and a recalled one is gone")
+	require.Equal(t, "王五", got["omt_1"].SenderName, "a thread is alive, so the newest word is its state")
+	require.Equal(t, `{"text":"1234"}`, got["omt_1"].ContentRaw)
+	require.NotContains(t, got, "omt_2", "a thread with nothing in it has no line to draw from here")
+}

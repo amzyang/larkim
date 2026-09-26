@@ -213,7 +213,8 @@ func (m Model) messagesWidth() int {
 func (m Model) msgStyleFor(width int, meta msgMeta) msgStyle {
 	st := msgStyle{width: width, height: m.picHeight(), self: m.deps.Self, now: time.Now(),
 		suffix: meta.suffix, people: meta.people, avatars: meta.avatars,
-		res: meta.res, docs: meta.docs, parents: meta.parents, forwards: meta.forwards, dataDir: m.deps.DataDir,
+		res: meta.res, docs: meta.docs, parents: meta.parents, forwards: meta.forwards,
+		threads: meta.threads, dataDir: m.deps.DataDir,
 		outbox: m.outboxStates(), reacts: m.reactStates(), dots: m.dots, dark: m.dark}
 	if c, ok := m.currentChat(); ok {
 		st.p2p = c.ChatMode == "p2p"
@@ -365,7 +366,7 @@ func (m *Model) rebuildThread() {
 	st := m.msgStyleFor(m.rightWidth()-2, m.threadMeta)
 	// Inside a frame every nested bundle belongs to the tree the frame came
 	// from, not to itself, which is where its rows and its pictures are kept.
-	st.forwardRoot = m.rightRoot
+	st.forwardRoot, st.inFrame = m.rightRoot, true
 	m.threadRows = renderRows(m.thread, st)
 }
 

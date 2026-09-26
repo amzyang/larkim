@@ -418,14 +418,14 @@ func TestRenderRows_SplitsABlockForAMessageCarryingItsOwnBadge(t *testing.T) {
 		badge func(*store.Message)
 		want  string
 	}{
-		{"thread", func(x *store.Message) { x.ThreadID, x.MessagePosition = "omt_1", 3 }, "⤷thread"},
+		{"thread", func(x *store.Message) { x.ThreadID, x.MessagePosition = "omt_1", 3 }, "⤷ 还没有回复"},
 		{"edited", func(x *store.Message) { x.EditedAt = 7 }, "(Edited)"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			msgs := []store.Message{said("om_1", "孙琪", "早", 23, 9, 0), said("om_2", "孙琪", "在吗", 23, 9, 1)}
 			tc.badge(&msgs[1])
 			rows := renderRows(msgs, baseStyle())
-			require.Equal(t, 2, blocks(rows, "孙琪"), "a badge needs a sender line to sit on")
+			require.Equal(t, 2, blocks(rows, "孙琪"), "a badge or a summary line needs a sender line to sit on")
 			require.Contains(t, rowText(rows), tc.want)
 		})
 	}

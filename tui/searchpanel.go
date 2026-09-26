@@ -195,7 +195,7 @@ func (m Model) openHit() (tea.Model, tea.Cmd) {
 	if h.remote {
 		return m.openColdHit(h)
 	}
-	m.pendingSelect = h.msg.MessageID
+	m.pendingSelect = jumpTo(h.msg)
 	m.notice = ""
 	cmd := m.openChatFrom(h.msg.ChatID, h.msg.CreateMs)
 	return m, cmd

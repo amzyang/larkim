@@ -69,15 +69,15 @@ thread 口径与既有摘要一致（负 position 不参与）；撤回的消息
 | `ListChats` ORDER BY（store/chats.go:257） | `(u.chat_id IS NOT NULL) DESC, c.last_unsilenced_ms DESC, c.last_message_ms DESC, c.name` |
 | `unreadJoin`（store/chats.go:230） | 谓词换成 `unreadCounted` |
 | `UnreadCountsByChat`（store/resources.go:210） | 谓词换成 `unreadCounted` |
-| `MarkChatRead`（store/resources.go:191） | 保持 `unreadInPane`，不加 `silenced = 0` |
+| `MarkChatRead`（store/resources.go:191） | 不加 `silenced = 0` |
 
 ```go
-const unreadInPane = `r.is_read_remote = 0 AND r.local_read_at = 0 AND m.deleted = 0`
-const unreadBadge = unreadInPane + ` AND m.message_position >= 0`
+const stillUnread = `r.is_read_remote = 0 AND r.local_read_at = 0 AND m.deleted = 0`
+const unreadBadge = stillUnread + ` AND m.message_position >= 0`
 const unreadCounted = unreadBadge + ` AND m.silenced = 0`
 ```
 
-`MarkChatRead` 不加 `silenced = 0` 是硬约束：`tui/badgeclear.go` 的 `unreadWaiting` 逐项复刻 `unreadBadge` 决定投不投 applink，而 `MarkChatRead` 必须能收掉它看见的每一条，否则每次 reload 都重投（见 [read-sync/TECH.md](../read-sync/TECH.md) 的「门控」）。本地已读的集合保持为徽标集合的超集，这条不变式就成立，顺带静音消息也不会永远挂在 read-status 轮询里。
+`MarkChatRead` 不加 `silenced = 0` 是硬约束：`tui/badgeclear.go` 的 `unreadWaiting` 逐项复刻 `unreadBadge` 决定投不投 applink，而 `MarkChatRead` 必须能收掉它看见的每一条，否则每次 reload 都重投（见 [read-sync/TECH.md](../read-sync/TECH.md) 的「门控」）。两者取同一个集合，这条不变式就成立，顺带静音消息也不会永远挂在 read-status 轮询里。`MarkThreadRead` 同理不加 `silenced = 0`：一条被静音的回复留在那儿，话题的摘要行就永远亮着。
 
 `last_unsilenced_ms` 为 0 的会话——全部消息被静音的，和一条消息都没有的——沉到底部，组内按 `last_message_ms` 排。
 

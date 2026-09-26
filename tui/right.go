@@ -117,7 +117,6 @@ func (m Model) popRight() (Model, tea.Cmd) {
 	}
 	back := m.rightStack[len(m.rightStack)-1]
 	m.rightStack = slices.Clone(m.rightStack[:len(m.rightStack)-1])
-	m.rightPin = back
 	return m, m.showRight(back)
 }
 
@@ -139,6 +138,13 @@ func (m *Model) showRight(f rightFrame) tea.Cmd {
 	m.rightKind, m.threadID, m.rightRoot = f.kind, f.id, f.root
 	m.thread, m.threadBase, m.threadRows, m.threadMeta = nil, nil, nil, msgMeta{}
 	m.threadIdx, m.threadTop, m.rightNote = 0, 0, ""
+	// A frame that names where it wants to land — one being uncovered, or one
+	// a search hit opened — says so through sel; the pin is spent on the
+	// first list to arrive under it.
+	m.rightPin = rightFrame{}
+	if f.sel != "" {
+		m.rightPin = f
+	}
 	m.layout()
 	return m.loadRight()
 }

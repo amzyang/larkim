@@ -169,8 +169,10 @@ type msgMeta struct {
 	docs    map[string]store.DocLabel
 	parents map[string]store.Message
 	// forwards is the collapsed line of each merged forward on the page, by
-	// the bundle's message id.
+	// the bundle's message id, and threads the same for each thread rooted
+	// on it, by thread id.
 	forwards map[string]store.ForwardGist
+	threads  map[string]store.ThreadGist
 }
 
 func loadMeta(ctx context.Context, st *store.Store, msgs []store.Message) (msgMeta, error) {
@@ -184,12 +186,15 @@ func loadMeta(ctx context.Context, st *store.Store, msgs []store.Message) (msgMe
 			ids = append(ids, id)
 		}
 	}
-	var bundles []string
+	var bundles, threads []string
 	for _, x := range msgs {
 		msgIDs = append(msgIDs, x.MessageID)
 		addPerson(x.SenderID)
 		if x.MsgType == "merge_forward" {
 			bundles = append(bundles, x.MessageID)
+		}
+		if x.ThreadID != "" && x.MessagePosition >= 0 {
+			threads = append(threads, x.ThreadID)
 		}
 		// A reaction names its operator by open id alone, so the reactors a
 		// chip lists travel with the senders to the contacts lookup.
@@ -241,8 +246,17 @@ func loadMeta(ctx context.Context, st *store.Store, msgs []store.Message) (msgMe
 	if err != nil {
 		return msgMeta{}, err
 	}
+	gists, err := st.ThreadGists(ctx, threads)
+	if err != nil {
+		return msgMeta{}, err
+	}
+	// A reply's own author is named on the root's summary line, and they may
+	// never have spoken on the page itself.
+	for _, g := range gists {
+		addPerson(g.SenderID)
+	}
 	return msgMeta{suffix: suffix, people: people, avatars: avatars, res: res, docs: docs,
-		parents: parents, forwards: forwards}, nil
+		parents: parents, forwards: forwards, threads: gists}, nil
 }
 
 // searchLimits bound each group. Messages get the most because they are what
@@ -347,10 +361,14 @@ func loadChats(d Deps) tea.Cmd {
 // messageQuery is the newest page of a chat or, anchored at sinceMs, every
 // message from that time on, so a search hit older than the page is included.
 func messageQuery(chatID string, sinceMs int64) store.MessageQuery {
+	// Replies are folded into their root's own line, so the page neither
+	// draws them nor spends its limit on them.
 	if sinceMs > 0 {
-		return store.MessageQuery{ChatID: chatID, SinceMs: sinceMs, Limit: anchoredPageSize}
+		return store.MessageQuery{ChatID: chatID, SinceMs: sinceMs, Limit: anchoredPageSize,
+			ExcludeThreadReplies: true}
 	}
-	return store.MessageQuery{ChatID: chatID, Desc: true, Limit: messagePageSize}
+	return store.MessageQuery{ChatID: chatID, Desc: true, Limit: messagePageSize,
+		ExcludeThreadReplies: true}
 }
 
 func loadMessages(d Deps, chatID string, sinceMs int64) tea.Cmd {
@@ -409,6 +427,19 @@ func markChatRead(st *store.Store, log *slog.Logger, chatID string) tea.Cmd {
 			// The badge staying up is the only symptom on screen, which says
 			// nothing about why.
 			log.Warn("mark chat read", "chat_id", chatID, "err", err)
+		}
+		return nil
+	}
+}
+
+// markThreadRead takes a thread's replies as read locally, which is what
+// opening its pane means. It runs on every landing of the list rather than
+// behind a gate of its own: the update matches nothing on a thread already
+// read, so a quiet beat writes nothing and the data_rev trigger stays silent.
+func markThreadRead(st *store.Store, log *slog.Logger, threadID string) tea.Cmd {
+	return func() tea.Msg {
+		if err := st.MarkThreadRead(context.Background(), threadID, time.Now().UnixMilli()); err != nil {
+			log.Warn("mark thread read", "thread_id", threadID, "err", err)
 		}
 		return nil
 	}
@@ -837,14 +868,24 @@ func ingestThenOpen(d Deps, messageID string) tea.Cmd {
 		if err != nil {
 			return errMsg{err}
 		}
-		return openHitMsg{chatID: x.ChatID, messageID: x.MessageID, sinceMs: x.CreateMs}
+		return openHitMsg{chatID: x.ChatID, messageID: x.MessageID, threadID: threadOf(x), sinceMs: x.CreateMs}
 	}
 }
 
-// openHitMsg lands a cold hit once it is in the store.
+// openHitMsg lands a cold hit once it is in the store. threadID is set when
+// the hit is a reply folded out of its chat's flow, which is reached through
+// the thread rather than on the page.
 type openHitMsg struct {
-	chatID, messageID string
-	sinceMs           int64
+	chatID, messageID, threadID string
+	sinceMs                     int64
+}
+
+// threadOf names the thread a message is only reachable through.
+func threadOf(x store.Message) string {
+	if x.MessagePosition < 0 {
+		return x.ThreadID
+	}
+	return ""
 }
 
 // saveDraft writes the composer's state under the chat it was typed in. It is

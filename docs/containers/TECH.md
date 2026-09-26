@@ -250,7 +250,7 @@ func forwardSummary(x store.Message, idx int, st msgStyle, g *leads) (msgRow, bo
 
 未展开的 bundle 只画 `[合并转发]`。不从 `content` 数 `[时间] 姓名:` 的行数补一个数字：那棵字面树含全部嵌套层，与 `child_count` 的顶层口径不同，补出来的数会在展开后当着读者的面跳。
 
-数据挂 `msgMeta`（tui/data.go:158），与 `parents` / `res` / `docs` 同路，由 `loadMeta` 一次装好：话题侧用既有的 `ThreadReplyCounts`（store/messages.go:418）加最后一条回复，转发侧用新的 `ForwardGists` 取第一条子消息加 `child_count`。只取一条，所以两侧的查询都是每个容器一行，不必分页。
+数据挂 `msgMeta`（tui/data.go:158），与 `parents` / `res` / `docs` 同路，由 `loadMeta` 一次装好：话题侧用新的 `ThreadGists` 取回复数加最后一条回复，转发侧用 `ForwardGists` 取 `child_count` 加第一条子消息。只取一条，所以两侧的查询都是每个容器一行，不必分页。`ThreadGists` 的「最后一条」按 `(create_ms, message_position, id)` 倒序开窗，不用 `max(id)`——那是行被摄入的顺序，不是话题读起来的顺序。
 
 帧里的嵌套 bundle 走 `ForwardLevels`：它没有 `forwarded_roots` 行可数，计数与首条都从已落地的子消息里来，而它按构造就是展开的——它的行就在库里。
 
@@ -282,20 +282,19 @@ func forwardSummary(x store.Message, idx int, st msgStyle, g *leads) (msgRow, bo
 
 ### 清除
 
-受影响的是 `MarkChatRead`（store/resources.go:261）。它故意用更宽的 `unreadInPane`，注释写着理由：页面把这些回复摆在读者面前了。折叠后该理由失效，后果是**把读者看不见的回复标成已读**——是过度标记，不是标不掉。
+受影响的是 `MarkChatRead`（store/resources.go）。它故意用更宽的 `stillUnread`，注释写着理由：页面把这些回复摆在读者面前了。折叠后该理由失效，后果是**把读者看不见的回复标成已读**——是过度标记，不是标不掉。
 
-改法：`MarkChatRead` 收窄到 `unreadBadge`，新增 `MarkThreadRead(ctx, chatID, threadID, now)` 承接话题那半。store/resources.go:253 那段注释要**反过来写**——集合不再需要是徽标集的超集，而是要与它相等。
+`MarkChatRead` 因此收窄到 `unreadBadge`，`MarkThreadRead(ctx, threadID, now)` 承接话题那半。集合不再是徽标集的超集，而是与它相等。thread id 全局唯一且有自己的部分索引，所以不必再传会话。
 
-`MarkThreadRead` 自己仍要是超集：它清该话题下**全部**未读回复，静音的也清。静音只决定要不要提醒，不决定读没读；漏掉它们会让一条静音回复把摘要行的圆点永久点着。
+`MarkThreadRead` 自己仍要是超集：它清该话题下**全部**未读回复，静音的也清。静音只决定要不要提醒，不决定读没读；漏掉它们会让一条静音回复把摘要行永久点着。
 
-触发点两个：`pushRight` 压开一个话题帧时；以及此后该帧留在栈顶期间，每次 `threadLoadedMsg` 带来新回复时。不看滚动位置，也不要求终端持有焦点——话题是一屏的东西，读者把它调到最上面就是在读它。被别的帧压住时不结算：它不在屏幕上。
+触发在话题帧每一次落地——`threadLoadedMsg` 的那一臂，它本就只在可见帧是该话题时才跑，所以被压住的帧自动不结算。不另设门：已读的话题上这条 UPDATE 一行都不匹配，安静的心跳什么都不写，`data_rev` 触发器也不响。不看滚动位置，也不要求终端持有焦点——话题是一屏的东西，读者把它调到最上面就是在读它。
 
-连带两处代码改动，不只是测试：
+`applyOutbox`（tui/outbox.go）靠 `it.chatID == m.chatID` 把待发的话题内消息放进主流，折叠后它会闪一下再消失，所以加 `&& !it.inThread`。
 
-- `tui/outbox.go:99`：`applyOutbox` 靠 `it.chatID == m.chatID` 把待发的话题内消息放进主流，折叠后它会闪一下再消失。加 `&& !it.inThread`。
-- `tui/app.go:668`：点亮未读标记的 `if !m.focused` 守卫要去掉。它的理由是「会话页面也带着这些回复」，折叠后不成立；不去掉的话话题面板一个未读点都不会亮。
+`tui/readgate.go` 的 `readKey` 谓词跟着取 `unreadBadge`。它注释里关于「窄化会让只有回复未读的会话永远结算不掉」的警告因折叠而自动解除——回复不在页面上，也就没有要重画的标记。
 
-`tui/readgate.go:19` 镜像 `unreadInPane`，其注释里关于「窄化会让只有回复未读的会话永远结算不掉」的警告，正因折叠而自动解除——回复不在页面上，也就没有要重画的标记。注释改写，不要删。
+`docs/silence/TECH.md` 与 `docs/read-sync/TECH.md` 都按名引用过这两个集合，跟着改。
 
 ### 参与
 
@@ -340,12 +339,13 @@ func (s *Store) ChatsWithUnreadThreads(ctx context.Context, self string) (map[st
 `pendingSelect` 从一个 id 变成 id 加它所在的层：
 
 ```go
-// pendingSelect is the message a jump is bound for. thread names the frame it
-// lives in, empty for the chat's own flow: a folded reply is not in m.msgs,
-// and landing on the chat with nothing selected is the silent failure this
-// field exists to make impossible.
-pendingSelect struct{ id, thread string }
+// pendingJump is the message a landing is bound for, and the frame it lives
+// in. A folded thread reply is in no chat page, so the thread opens over the
+// chat and the cursor lands inside it.
+type pendingJump struct{ id, thread string }
 ```
+
+`jumpTo(x)` 是三个入口共用的判据：`MessagePosition < 0` 且有 `thread_id` 就走话题，其余落在页面上。
 
 `openChatFrom` 之后：`thread` 为空照旧在 `m.msgs` 里找；不为空则 `pushRight(rightThread, thread)`，落位交给帧加载完成时的 `repinSelection`。整条话题随之结算——与 `jumped` 分支清掉 `clearBlockDots` 是同一条规矩：跳转落地按看见算。
 
@@ -436,6 +436,12 @@ pendingSelect struct{ id, thread string }
 | 用例 | 断言 |
 | --- | --- |
 | `TestMessageQuery_FoldsThreadRepliesOutOfTheChatFlow` | 回复离开主流 |
+| `TestThreadGists_CountsTheRepliesAndTakesTheNewest` | 话题取尾，撤回的不算 |
+| `TestJumpTo_AFoldedReplyIsReachedThroughItsThread` | 落地判据 |
+| `TestMessagesLoaded_AHitOnThePageItselfLeavesTheColumnAlone` | 页面上的命中不开栏 |
+| `TestRenderRows_AThreadSummaryIsNotDrawnInsideItsOwnPane` | 帧里不重复计数 |
+| `TestRenderRows_AThreadSummaryCarriesAnOpenZone` | 话题摘要可点 |
+| `TestMarkThreadRead_SettlesOnlyItsOwnReplies` | 只收自己那条话题，静音的也收 |
 | `TestMarkChatRead_LeavesThreadRepliesUnread` | 打开会话不再清回复 |
 | `TestMarkThreadRead_SettlesOnlyItsOwnReplies` | 打开话题才清 |
 | `TestMarkThreadRead_SettlesASilencedReplyToo` | 静音回复也结算，否则圆点灭不掉 |
@@ -461,9 +467,11 @@ pendingSelect struct{ id, thread string }
 | --- | --- | --- |
 | 1 | `forwarded_messages` + 同步展开 + 回填 + 附件注册 | 库里有数据，还没人读；SQL 可验 |
 | 2 | 右栏改栈 + 合并转发折叠 + 转发帧 + 点击 | 主要收益落地 |
-| 3 | 话题折叠 + 摘要 + 落地压帧 | 与客户端对齐 |
-| 4 | 读态与未读：`MarkChatRead` 收窄、`MarkThreadRead`、参与判据、摘要圆点、列表记号 | 未读语义收口 |
+| 3 | 话题折叠 + 摘要 + 落地压帧 + `MarkChatRead` 收窄 + `MarkThreadRead` | 与客户端对齐 |
+| 4 | 未读的可见性：参与判据、摘要圆点、列表记号、`markDots` 的焦点守卫 | 读者看得见哪条话题有新东西 |
 
 二需要一；三需要二；四需要三。
 
-栈与转发帧同期落地，因为分开落地的那一版里栈是不可达的：从消息面板打开总是重置成一层，而唯一能埋下第二层的动作——在话题里打开一条转发——正是转发帧带来的。读态单独一期，因为它是全仓最容易改错的一块，也是唯一一个改错了会静默丢掉「我还没读」的地方，该有一个能单独回滚的提交。
+栈与转发帧同期落地，因为分开落地的那一版里栈是不可达的：从消息面板打开总是重置成一层，而唯一能埋下第二层的动作——在话题里打开一条转发——正是转发帧带来的。
+
+读态的「清除」那半必须与折叠同期：折叠一落地，`MarkChatRead` 就在结算读者再也看不到的回复，而那正是验收 6 要挡的。留给下一期的是可见性——哪条话题里有新东西——它改错了只是看不见，不会丢掉「我还没读」。

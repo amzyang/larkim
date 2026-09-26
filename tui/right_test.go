@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"path/filepath"
 	"testing"
 
 	"github.com/amzyang/larkim/store"
@@ -169,4 +170,47 @@ func TestContainerOf_AThreadWinsOverAForward(t *testing.T) {
 
 	_, _, root = containerOf(store.Message{MessageID: "om_inner", MsgType: "merge_forward"}, "om_outer")
 	require.Equal(t, "om_outer", root, "a nested one keeps the tree its rows are stored under")
+}
+
+func TestJumpTo_AFoldedReplyIsReachedThroughItsThread(t *testing.T) {
+	reply := store.Message{MessageID: "om_r", ThreadID: "omt_1", MessagePosition: -3}
+	require.Equal(t, pendingJump{id: "om_r", thread: "omt_1"}, jumpTo(reply))
+
+	// A root, and a bundle: both stand on the page itself.
+	require.Equal(t, pendingJump{id: "om_root"},
+		jumpTo(store.Message{MessageID: "om_root", ThreadID: "omt_1", MessagePosition: 3}))
+	require.Equal(t, pendingJump{id: "om_fwd"},
+		jumpTo(store.Message{MessageID: "om_fwd", MsgType: "merge_forward"}))
+}
+
+func TestMessagesLoaded_AThreadReplyLandsInsideItsThreadFrame(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "t.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { st.Close() })
+	m := sized(140, 36)
+	m.deps = Deps{Store: st, Self: "ou_me"}
+	m.chatID, m.pendingChat = "oc_1", "oc_1"
+	// The hit is the reply, so what the reader is handed is the reply — and
+	// the page it landed on does not carry one.
+	m.pendingSelect = pendingJump{id: "om_r", thread: "omt_1"}
+
+	next, cmd := m.Update(messagesLoadedMsg{chatID: "oc_1", msgs: m.msgsBase})
+	m = next.(Model)
+
+	require.Equal(t, rightThread, m.rightKind)
+	require.Equal(t, "omt_1", m.threadID)
+	require.Equal(t, "om_r", m.rightPin.sel, "the cursor is bound for the reply, inside the frame")
+	require.Contains(t, collect(cmd), "tui.threadLoadedMsg")
+}
+
+func TestMessagesLoaded_AHitOnThePageItselfLeavesTheColumnAlone(t *testing.T) {
+	m := sized(140, 36)
+	m.chatID, m.pendingChat = "oc_1", "oc_1"
+	m.pendingSelect = pendingJump{id: "om_5"}
+
+	next, _ := m.Update(messagesLoadedMsg{chatID: "oc_1", msgs: m.msgsBase})
+	m = next.(Model)
+
+	require.False(t, m.threadOpen(), "a hit in the chat's own flow is found on the page")
+	require.Equal(t, "om_5", idAt(m.msgs, m.msgIdx))
 }

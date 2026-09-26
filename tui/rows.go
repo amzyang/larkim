@@ -168,6 +168,11 @@ type msgStyle struct {
 	// belong to — empty in a chat, where every bundle is its own root.
 	forwards    map[string]store.ForwardGist
 	forwardRoot string
+	// threads is the collapsed line of each thread rooted on the page, by
+	// thread id. inFrame says these rows are a container's own, where a
+	// thread summary would count the replies standing right below it.
+	threads map[string]store.ThreadGist
+	inFrame bool
 	// names labels each message's chat on its sender line. It is set for
 	// search results, which run across chats; inside one chat, naming it on
 	// every block says nothing.
@@ -465,7 +470,12 @@ func renderRows(msgs []store.Message, st msgStyle) []msgRow {
 		if q, ok := quoteRow(x, prev, i, st, &g); ok {
 			rows = append(rows, q)
 		}
-		if r, ok := forwardSummary(x, st.forwardRoot, i, st, &g); ok {
+		// A message can be both, and the thread wins: a forward somebody
+		// started a topic on is read in the topic, where the forward is one
+		// row that opens in turn.
+		if r, ok := threadSummary(x, i, st, &g); ok {
+			rows = append(rows, r)
+		} else if r, ok := forwardSummary(x, st.forwardRoot, i, st, &g); ok {
 			rows = append(rows, r)
 		}
 		rows = append(rows, bodyRows(x, i, st, &g)...)
@@ -565,9 +575,6 @@ func headLine(x store.Message, st msgStyle) string {
 			name = stAccent.Render(truncate(flatten(chat), 18)) + " " + name
 		}
 		parts = append(parts, name)
-	}
-	if x.ThreadID != "" && x.MessagePosition >= 0 {
-		parts = append(parts, stAccent.Render("⤷thread"))
 	}
 	if x.EditedAt > 0 {
 		parts = append(parts, stDim.Render("(Edited)"))

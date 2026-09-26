@@ -168,7 +168,7 @@ func TestOpenHit_MessageRowAnchorsThePage(t *testing.T) {
 	mm, _ := m.openHit()
 	m = mm.(Model)
 	require.Equal(t, "oc_budget", m.pendingChat)
-	require.Equal(t, "om_1", m.pendingSelect)
+	require.Equal(t, "om_1", m.pendingSelect.id)
 	require.Equal(t, int64(100), m.pendingSince)
 }
 
@@ -419,7 +419,7 @@ func TestOpenColdHit_WithTheSyncLockPullsItInFirst(t *testing.T) {
 	next, _ := m.update(cmd())
 	m = next.(Model)
 	require.Equal(t, "oc_budget", m.pendingChat)
-	require.Equal(t, "om_cold", m.pendingSelect)
+	require.Equal(t, "om_cold", m.pendingSelect.id)
 
 	// The message is in the store now, so the page that opens holds it.
 	got, err := st.GetMessage(context.Background(), "om_cold")

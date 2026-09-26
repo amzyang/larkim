@@ -44,7 +44,9 @@ larkim tui
 
 ## TUI
 
-`larkim tui` shows chats, the selected chat's messages and, when opened, a thread pane, plus a composer. The chat header names the chat, marked with a glyph for its kind, and a rule under it parts the header from the list. If no daemon holds the data-dir lock the TUI syncs in-process. Colours follow the terminal palette and its light or dark background. Below 114 columns the thread or assistant pane takes the place of the messages pane; the TUI needs at least 78×12. A reply carries the message it answers quoted above its body — sender and gist on one line — unless that message is the one right above it.
+`larkim tui` shows chats, the selected chat's messages and, when opened, a right-hand pane, plus a composer. The chat header names the chat, marked with a glyph for its kind, and a rule under it parts the header from the list. If no daemon holds the data-dir lock the TUI syncs in-process. Colours follow the terminal palette and its light or dark background. Below 114 columns the thread or assistant pane takes the place of the messages pane; the TUI needs at least 78×12. A reply carries the message it answers quoted above its body — sender and gist on one line — unless that message is the one right above it.
+
+A message that holds other messages takes one line in the list and opens in the right pane. A thread root carries how many replies are under it and the last of them, the replies themselves having left the chat's flow; a merged forward carries how many messages it holds and the first of them, in place of the tagged, timestamped tree it would otherwise print. Clicking the line, or `Enter` or `t` on it, opens the pane. Opening a forward from inside the pane stacks it over what is there — a forwarded bundle inside a thread, a bundle inside a bundle — and `Esc` peels one layer off, closing the column on the last. Messages inside a forward belong to their own chat: they can be read and copied but not answered, reacted to or recalled. A thread's replies are taken as read when its pane is opened, not when the chat is.
 
 The message list is split where the calendar day changes, and each message is headed by its sender — the selected one also spells out its time. Official emoji are drawn as emoji, interactive cards as a titled block with their buttons, and system messages centred and muted. On kitty, images are drawn in place once they have been downloaded; elsewhere they read as `[图片]`. An attachment is carded the way the client draws one: a video as its cover frame under how long it runs, a voice message as that length, and any other file as its name beside its size. `o` or a click opens the downloaded file.
 
@@ -52,7 +54,7 @@ The message list is split where the calendar day changes, and each message is he
 |---|---|
 | `j` `k` `gg` `G` `Ctrl+d` `Ctrl+u` | move in the focused list |
 | `Tab` `Shift+Tab` `h` `l` | change focused pane |
-| `Enter` | open chat · open thread · reply |
+| `Enter` | open chat · open the container under the cursor · reply |
 | `i` `r` `R` | write · reply · reply in thread (Enter sends, Shift+Enter newline, Esc back) |
 | composer | the draft is markdown: one that uses any of it goes out as a Feishu rich-text post, anything else as plain text, one that is a single `![](…)` goes out as an image and one that is a single `[](…)` naming a local file goes out as that file. The badge under the draft names which, along with the files it will upload or the path it cannot find. |
 | rich text | a post is sent exactly as typed and drawn as a document: heading levels, `•`/`◦` bullets with indent, a quote gutter, rules and real tables. Plain text messages stay literal. |
@@ -69,7 +71,7 @@ The message list is split where the calendar day changes, and each message is he
 | `I` | the open chat's own card in the right pane, in place of the thread: what kind of chat it is, its description, `external` and `dissolved` badges, and the members the daily refresh last saw, with the owner marked — a roster the server caps is drawn as `partial` rather than as a count. A chat of two draws the person instead — enterprise email, department, and whether they are outside this tenant |
 | `f` | forward the selected message. The chooser lists chats first, then the people no chat reaches yet, filtered the same way `/` filters; the message being sent on is named under the list. Unlike `D` it asks nothing further — picking a destination is already the deliberate step. Merge-forward is not offered: that API takes bot identity only |
 | `D` | recall your own message. It asks `y/n` first, because a recall is visible to everyone who was in the chat and cannot be undone; whether the window has closed is Feishu's answer, not a guess made here. Editing a sent message is not offered: that API takes bot identity only, so recall-and-resend is the correction path |
-| `t` | toggle the thread pane for the selected message |
+| `t` | open the thread or forwarded bundle under the cursor in the right pane, or close it |
 | `.` `x` | a message appears as `(sending)` the moment Enter is pressed; one Feishu refused is marked `(failed)` — `.` sends it again under the same idempotency key, `x` drops it |
 | `Y` `yy` `yr` `yc` `v` | copy the agent context · the message id · its raw json · its text · start a range selection (`j`/`k` extend, `Y` copies, `Esc` cancels) |
 | `o` | open what the message draws: a call to join, an attachment's own file, else the message in the Feishu client |

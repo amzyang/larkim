@@ -230,18 +230,16 @@ func (s *Store) ReadCheckCount(ctx context.Context, messageID string) (int, erro
 	return n, err
 }
 
-// unreadInPane is every live message with something still waiting on it that
-// a chat's page puts in front of a reader, thread replies included: the pane
-// does not fold them away, so opening the chat shows them like anything else.
+// stillUnread is every live message with something still waiting on it.
 // Both flags can only witness that a message was seen, so reading either one
 // as "seen" adds no false unread.
-const unreadInPane = `r.is_read_remote = 0 AND r.local_read_at = 0 AND m.deleted = 0`
+const stillUnread = `r.is_read_remote = 0 AND r.local_read_at = 0 AND m.deleted = 0`
 
 // unreadBadge is what the chat list treats as unread. Thread replies are out —
 // a thread exists so that answering an old topic does not pull the whole chat
 // back into everyone's view — so neither the counter nor the chat's place in
 // the list moves for one.
-const unreadBadge = unreadInPane + ` AND m.message_position >= 0`
+const unreadBadge = stillUnread + ` AND m.message_position >= 0`
 
 // unreadCounted is what the badge shows: the badge's messages, minus the ones
 // a silence rule matched.
@@ -253,15 +251,31 @@ const unreadCounted = unreadBadge + ` AND m.silenced = 0`
 // already read — writes nothing, so the data_rev trigger stays quiet and the
 // TUI does not reload itself in a circle.
 //
-// The set has to stay a superset of the badge's, silenced messages and thread
-// replies included. Anything the reader sees but this cannot collect keeps
-// its unread flags for good: the TUI redraws its marker on every visit, and
-// tui.unreadWaiting fires another applink on every reload
-// (docs/read-sync/TECH.md).
+// The set is exactly the badge's. It used to be wider, because the page then
+// listed thread replies too and anything a reader sees but this cannot
+// collect keeps its unread flags for good — the TUI redraws its marker on
+// every visit, and tui.unreadWaiting fires another applink on every reload
+// (docs/read-sync/TECH.md). The page folds replies into their root's line
+// now, so collecting one here would settle something nobody was shown;
+// MarkThreadRead settles those when the thread itself is opened.
 func (s *Store) MarkChatRead(ctx context.Context, chatID string, now int64) error {
 	_, err := s.db.ExecContext(ctx, `UPDATE read_state SET local_read_at = ?
  WHERE message_id IN (SELECT m.message_id FROM messages m JOIN read_state r ON r.message_id = m.message_id
-   WHERE m.chat_id = ? AND `+unreadInPane+`)`, now, chatID)
+   WHERE m.chat_id = ? AND `+unreadBadge+`)`, now, chatID)
+	return err
+}
+
+// MarkThreadRead takes as seen locally every reply of one thread, which is
+// what opening its pane means: a thread is one screenful, so the whole of it
+// is in front of the reader at once.
+//
+// Silenced replies are collected too. Silence decides whether to interrupt,
+// not whether something was read, and a reply left out here would keep the
+// thread's line lit for good.
+func (s *Store) MarkThreadRead(ctx context.Context, threadID string, now int64) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE read_state SET local_read_at = ?
+ WHERE message_id IN (SELECT m.message_id FROM messages m JOIN read_state r ON r.message_id = m.message_id
+   WHERE m.thread_id = ? AND m.message_position < 0 AND `+stillUnread+`)`, now, threadID)
 	return err
 }
 

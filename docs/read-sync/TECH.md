@@ -23,7 +23,7 @@
 
 **`pageShown(tailed)`（`tui/readgate.go`）决定读不读。** 每一项都是「消息面板其实没在读者眼前」的一种：搜索/@我 面板借同一套 `msgRows`/`msgTop` 画自己的命中（`m.searching` 两者都置位），帮助层整屏盖住，终端窄到 `foldRight` 让右栏顶掉消息面板，尺寸低于 `minWidth`/`minHeight` 时 `View` 两栏都不画。视口本身的问题交给 `atTail` —— 滚轮把光标留在最新消息上也答不了它。
 
-**`unreadWaiting(msgs)`（`tui/badgeclear.go`）决定投不投 applink。** 逐项复刻 `store.unreadBadge`——`is_read_remote = 0`、`local_read_at = 0`、`message_position >= 0`、未撤回。**它是 `markChatRead` 集合（`store.unreadInPane`）的子集，这是投出次数的上界所在**：这一页判为真的每一条，`markChatRead` 都在同一个 batch 里记为本地已读，下一页因此判为假。谓词放宽到那个集合之外，就会出现 `markChatRead` 永远收不掉的消息，每次 reload 都投一条 applink，直到会话被切走。
+**`unreadWaiting(msgs)`（`tui/badgeclear.go`）决定投不投 applink。** 逐项复刻 `store.unreadBadge`——`is_read_remote = 0`、`local_read_at = 0`、`message_position >= 0`、未撤回。**它取的正是 `markChatRead` 的集合（`store.unreadBadge`），这是投出次数的上界所在**：这一页判为真的每一条，`markChatRead` 都在同一个 batch 里记为本地已读，下一页因此判为假。谓词放宽到那个集合之外，就会出现 `markChatRead` 永远收不掉的消息，每次 reload 都投一条 applink，直到会话被切走。
 
 判据必须读页面查询时的状态：`markChatRead` 紧接着就把 `local_read_at` 写上，改用当前徽标数会被本次访问自己的写入打败。
 
@@ -36,7 +36,7 @@
 - 新消息带着自己的 id 进来；
 - 读标记落在一条已经在页面上的消息身上。`read_state` 行由单独一趟写（`sync.checkReadStatus`，隔一个 chat beat 搭一次便车），所以把消息驮进来的那一页无事可做，而点亮徽标的那一页不带新 id。标记落在比最新消息更旧的那条上时同理。
 
-谓词按 `store.unreadInPane` 取（含 thread 回复），也就是 `markChatRead` 会收掉的那一批。收窄到会话徽标自己那一套的话，一个只有 thread 回复未读的会话永远等不到一次 `markChatRead`，它的标记会在每次访问时重画。
+谓词按 `store.unreadBadge` 取，也就是 `markChatRead` 会收掉的那一批。会话页把 thread 回复折进根消息那一行，页面上一条都没有，所以这里也数不到它们；它们由 `markThreadRead` 在话题面板打开时收掉。
 
 **比对的是 `Model.readAt`（上次 takeRead 应答的那个 key），不是本轮更新之前的 key。** 后者会被 `key → "" → key` 的来回打败：读者在 `markChatRead` 的写入落地之前把视野挪开再挪回来，就会为同一条消息投第二次 applink。存下来还顺带改善了失败路径——`markChatRead` 出错时 key 不变，不会每次 reload 重投。
 

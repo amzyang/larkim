@@ -430,3 +430,60 @@ func (s *Store) ThreadReplyCounts(ctx context.Context, chatID string, threadIDs 
 	}
 	return out, nil
 }
+
+// ThreadGist is what a collapsed thread's one line needs: how many replies it
+// holds and the last of them. A thread is alive, so the newest reply is the
+// state of it — unlike a forward, which is frozen and opens with its own
+// first line.
+type ThreadGist struct {
+	Replies    int
+	SenderID   string
+	SenderName string
+	MsgType    string
+	Content    string
+	ContentRaw string
+	RenderedAt int64
+}
+
+// Last is the newest reply shaped as a message, for the one-line gist the
+// summary and the quote bar share.
+func (g ThreadGist) Last() Message {
+	return Message{SenderID: g.SenderID, SenderName: g.SenderName, MsgType: g.MsgType,
+		Content: g.Content, ContentRaw: g.ContentRaw, RenderedAt: g.RenderedAt}
+}
+
+// ThreadGists answers the collapsed line of each thread named; a thread with
+// no live reply is absent. A reply is any message whose position is negative:
+// the API hands out several such sentinels, so the sign is the only thing to
+// test. The stored rows are read rather than a loaded page, which would
+// undercount a thread whose root is older than the page.
+func (s *Store) ThreadGists(ctx context.Context, threadIDs []string) (map[string]ThreadGist, error) {
+	out := make(map[string]ThreadGist, len(threadIDs))
+	type row struct {
+		id string
+		g  ThreadGist
+	}
+	for chunk := range slices.Chunk(threadIDs, 500) {
+		// The newest reply is the last one in the list's own order, so the
+		// window walks the canonical sort key backwards rather than taking
+		// max(id), which is the order rows were ingested in.
+		rows, err := queryAll(ctx, s.db, func(sc scanner) (row, error) {
+			var r row
+			err := sc.Scan(&r.id, &r.g.Replies, &r.g.SenderID, &r.g.SenderName, &r.g.MsgType,
+				&r.g.Content, &r.g.ContentRaw, &r.g.RenderedAt)
+			return r, err
+		}, `SELECT thread_id, n, sender_id, sender_name, msg_type, content, content_raw, rendered_at FROM (
+ SELECT thread_id, sender_id, sender_name, msg_type, content, content_raw, rendered_at,
+   count(*) OVER (PARTITION BY thread_id) AS n,
+   row_number() OVER (PARTITION BY thread_id ORDER BY create_ms DESC, message_position DESC, id DESC) AS rn
+ FROM messages WHERE message_position < 0 AND deleted = 0 AND thread_id IN `+inClause(len(chunk))+`
+) WHERE rn = 1`, anySlice(chunk)...)
+		if err != nil {
+			return nil, err
+		}
+		for _, r := range rows {
+			out[r.id] = r.g
+		}
+	}
+	return out, nil
+}

@@ -96,7 +96,10 @@ func (m Model) outboxStates() map[string]outboxState {
 // runs exactly when a reload has brought Feishu's own answer in.
 func (m *Model) applyOutbox() {
 	m.msgs = append(slices.Clone(m.msgsBase), m.pendingRows(m.msgsBase, func(it outboxItem) bool {
-		return m.chatID != "" && it.chatID == m.chatID
+		// A reply on its way belongs to the thread's pane alone. The chat's
+		// own flow no longer carries replies, so a bubble put there would
+		// show for a moment and vanish when the reload folds it away.
+		return m.chatID != "" && it.chatID == m.chatID && !it.inThread
 	})...)
 	m.thread = append(slices.Clone(m.threadBase), m.pendingRows(m.threadBase, func(it outboxItem) bool {
 		return m.threadID != "" && it.threadID == m.threadID

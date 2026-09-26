@@ -244,7 +244,7 @@ func TestActivate_SearchHitAnchorsMessagePage(t *testing.T) {
 	m = mm.(Model)
 	require.Equal(t, "oc_2", m.pendingChat)
 	require.Empty(t, m.notice, "the search notice does not outlive the search")
-	require.Equal(t, "om_old", m.pendingSelect)
+	require.Equal(t, "om_old", m.pendingSelect.id)
 	require.EqualValues(t, 123, m.pendingSince)
 	q := messageQuery("oc_2", 123)
 	require.EqualValues(t, 123, q.SinceMs)

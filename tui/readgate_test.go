@@ -241,7 +241,7 @@ func TestUpdate_AJumpIntoHistoryLeavesWhatIsBelowItUnread(t *testing.T) {
 
 	// A search hit inside the open chat: the page comes back with the cursor
 	// asked for an old message rather than for the newest.
-	m.pendingSelect = "om_0"
+	m.pendingSelect = pendingJump{id: "om_0"}
 	m = arrive(t, m, st, "oc_a")
 
 	require.EqualValues(t, 1, unreadOf(t, st, "oc_a"), "landing on an old hit is not reading what is under it")

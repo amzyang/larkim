@@ -156,15 +156,17 @@ func TestApplyOutbox_QuotesAParentAlreadyOnThePage(t *testing.T) {
 	require.Contains(t, m.meta.parents, "om_1", "the reply quotes a message loadMeta never saw it answer")
 }
 
-func TestApplyOutbox_PutsAThreadReplyInBothPanes(t *testing.T) {
+func TestApplyOutbox_PutsAThreadReplyInTheThreadPaneOnly(t *testing.T) {
 	m, _ := newOutboxModel(t)
-	m.threadID = "omt_1"
+	m.rightKind, m.threadID = rightThread, "omt_1"
 	m.enqueue(outboxItem{localID: "local-1", chatID: "oc_1", threadID: "omt_1", replyTo: "om_1",
 		inThread: true, msgType: "text", body: "in thread", createMs: 20})
 
 	m.applyOutbox()
 
-	require.Equal(t, []string{"in thread"}, contents(m.msgs))
+	// The chat's flow no longer carries replies, so a bubble put there would
+	// show for a moment and vanish when the reload folds it away.
+	require.Empty(t, contents(m.msgs))
 	require.Equal(t, []string{"in thread"}, contents(m.thread))
 	require.EqualValues(t, -1, m.thread[0].MessagePosition)
 }

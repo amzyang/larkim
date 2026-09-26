@@ -104,26 +104,47 @@ func TestUpdate_SearchHitsKeepTheirUnreadMarker(t *testing.T) {
 	require.Contains(t, rowText(m.msgRows), "●")
 }
 
-func TestUpdate_AThreadReplysMarkerIsGoneOnTheNextVisit(t *testing.T) {
+func TestUpdate_OpeningTheChatLeavesAThreadReplyUnreadUntilTheThreadIsOpened(t *testing.T) {
 	m, st := readModel(t)
 	ctx := context.Background()
-	_, err := st.UpsertMessages(ctx, []store.Message{{MessageID: "om_reply", ChatID: "oc_a", MsgType: "text",
-		SenderID: "ou_x", SenderName: "张三", ContentRaw: `{"text":"接着上面那个话题"}`,
-		CreateMs: 200, UpdateMs: 200, MessagePosition: -3, ThreadID: "omt_1"}}, 1)
+	_, err := st.UpsertMessages(ctx, []store.Message{
+		{MessageID: "om_root", ChatID: "oc_a", MsgType: "text", SenderID: "ou_x", SenderName: "张三",
+			ContentRaw: `{"text":"一个老话题"}`, CreateMs: 150, UpdateMs: 150, MessagePosition: 2, ThreadID: "omt_1"},
+		{MessageID: "om_reply", ChatID: "oc_a", MsgType: "text", SenderID: "ou_x", SenderName: "张三",
+			ContentRaw: `{"text":"接着上面那个话题"}`, CreateMs: 200, UpdateMs: 200, MessagePosition: -3, ThreadID: "omt_1"},
+	}, 1)
 	require.NoError(t, err)
 	unread := false
 	require.NoError(t, st.SetReadStatus(ctx, "om_reply", &unread, 200, 0))
-	lands(t, st, "om_c", "ou_c", "王五", "好的", 300)
-	m.pendingChat = "oc_a"
-	m = arrive(t, m, st, "oc_a")
-	require.True(t, m.dots["om_reply"], "a reply that landed while the reader was away wears a marker")
 
 	m.pendingChat = "oc_a"
 	m.enterChat()
 	m = arrive(t, m, st, "oc_a")
 
-	require.Empty(t, m.dots, "the reply the pane put in front of the reader was read with the chat")
-	require.False(t, strings.Contains(rowText(renderRows(m.msgs, m.msgStyleFor(60, m.meta))), "●"))
+	require.NotContains(t, idsOf(m.msgs), "om_reply", "the page folds a reply into its root's line")
+	reply, err := st.GetMessage(ctx, "om_reply")
+	require.NoError(t, err)
+	require.Zero(t, reply.LocalReadAt, "a visit cannot read what it never showed")
+
+	// Opening the thread is what puts them in front of the reader, and a
+	// thread is one screenful: having it on top is having read it.
+	m, cmd := m.openRight(rightFrame{kind: rightThread, id: "omt_1"})
+	collect(cmd)
+	next, cmd := m.Update(loadThread(Deps{Store: st}, "omt_1")().(threadLoadedMsg))
+	collect(cmd)
+
+	reply, err = st.GetMessage(ctx, "om_reply")
+	require.NoError(t, err)
+	require.NotZero(t, reply.LocalReadAt)
+	require.Contains(t, idsOf(next.(Model).thread), "om_reply")
+}
+
+func idsOf(msgs []store.Message) []string {
+	out := make([]string, 0, len(msgs))
+	for _, x := range msgs {
+		out = append(out, x.MessageID)
+	}
+	return out
 }
 
 // lands writes a message into the chat the way sync does, Feishu still
@@ -185,7 +206,7 @@ func TestUpdate_AJumpClearsTheMarkerOfTheHitItLandsOn(t *testing.T) {
 
 	// A hit inside the chat already open: the page comes back with the cursor
 	// asked for it rather than for the newest message.
-	m.pendingSelect = "om_a"
+	m.pendingSelect = pendingJump{id: "om_a"}
 	m = arrive(t, m, st, "oc_a")
 
 	require.False(t, m.dots["om_a"], "the hit the jump landed on is read as it is drawn")

@@ -201,8 +201,12 @@ type Model struct {
 	searchMeta   msgMeta
 	// searchGen is which query the results in hand belong to. A result that
 	// names an older one is dropped rather than shown under a newer query.
-	searchGen     int
-	pendingSelect string // message to select once its chat loads
+	searchGen int
+	// pendingSelect is the message a jump is bound for. thread names the
+	// frame it lives in, empty for the chat's own flow: a folded reply is not
+	// in m.msgs at all, and landing on the chat with nothing selected is the
+	// silent failure this field exists to make impossible.
+	pendingSelect pendingJump
 
 	// Assistant pane (replaces the thread pane while open).
 	aiOpen  bool
@@ -552,14 +556,23 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if i := indexOfID(m.msgs, wasOn); !atEnd && i >= 0 {
 			m.msgIdx = i
 		}
-		jumped := m.pendingSelect != ""
+		want := m.pendingSelect
+		jumped := want.id != "" && want.thread == ""
 		if jumped {
 			for i, x := range m.msgs {
-				if x.MessageID == m.pendingSelect {
+				if x.MessageID == want.id {
 					m.msgIdx = i
 				}
 			}
-			m.pendingSelect = ""
+		}
+		m.pendingSelect = pendingJump{}
+		// A folded reply is not on this page at all. The hit is that reply,
+		// so what the reader is handed is that reply: the thread opens over
+		// the chat and the cursor lands inside it.
+		var open tea.Cmd
+		if want.thread != "" {
+			m, open = m.openRight(rightFrame{kind: rightThread, id: want.thread, sel: want.id})
+			infoCmd = tea.Batch(infoCmd, open)
 		}
 		m.repinSelection(wasOn)
 		// The block a visit opens on stands in front of the reader before
@@ -669,7 +682,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case openHitMsg:
 		m.closeSearch()
-		m.pendingSelect = msg.messageID
+		m.pendingSelect = pendingJump{id: msg.messageID, thread: msg.threadID}
 		m.notice = ""
 		return m, m.openChatFrom(msg.chatID, msg.sinceMs)
 	case aiChunkMsg:
@@ -693,7 +706,10 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.repinSelection(wasOn)
 		m.rebuildThread()
 		m.threadTop = holdTop(m.threadRows, m.thread, anchor, tailed, m.threadTop, m.listHeight())
-		return m, nil
+		// The chat's own page no longer shows these, so opening the thread is
+		// the only thing that can settle them. A thread is one screenful, so
+		// having it on top is having read it — there is no tail to reach.
+		return m, markThreadRead(m.deps.Store, m.deps.log(), msg.threadID)
 	case forwardLoadedMsg:
 		return m.onForwardLoaded(msg)
 	case forwardExpandedMsg:
@@ -1157,6 +1173,20 @@ func (m Model) metaFor(p pane) msgMeta {
 	return m.meta
 }
 
+// pendingJump is the message a landing is bound for, and the frame it lives
+// in. A folded thread reply is in no chat page, so the thread opens over the
+// chat and the cursor lands inside it.
+type pendingJump struct{ id, thread string }
+
+// jumpTo names the frame a message is reached in: a reply folded out of the
+// chat's flow is reached through its thread, anything else on the page itself.
+func jumpTo(x store.Message) pendingJump {
+	if x.MessagePosition < 0 && x.ThreadID != "" {
+		return pendingJump{id: x.MessageID, thread: x.ThreadID}
+	}
+	return pendingJump{id: x.MessageID}
+}
+
 // jumpToQuoted follows a quote back to the message it names, which is what
 // pressing the quote block does in the client. That message is usually on the
 // page already; one older than the page's anchor needs the page cut again
@@ -1197,7 +1227,7 @@ func (m Model) jumpToQuoted(p pane, id string) (tea.Model, tea.Cmd) {
 	}
 	// SinceMs is inclusive, so the page opens on the quoted message itself and
 	// pendingSelect always finds it.
-	m.pendingSelect = id
+	m.pendingSelect = jumpTo(parent)
 	m.notice = ""
 	return m, m.openChatFrom(parent.ChatID, parent.CreateMs)
 }
