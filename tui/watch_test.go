@@ -40,7 +40,7 @@ func TestUpdate_RevMsgReloadsEveryPane(t *testing.T) {
 
 	m := New(Deps{Store: st})
 	m.width, m.height = 120, 40
-	m.chatID, m.threadOpen, m.threadID = "oc_1", true, "omt_1"
+	m.chatID, m.rightKind, m.threadID = "oc_1", rightThread, "omt_1"
 	// A closed channel keeps the re-subscribe from blocking the collector.
 	revs := make(chan int64)
 	close(revs)
@@ -223,7 +223,7 @@ func TestLayout_AResizeHoldsTheMessageOnTheTopRow(t *testing.T) {
 
 // threaded opens a thread long enough to overflow the right pane.
 func threaded(m Model) Model {
-	m.threadOpen, m.threadID, m.threadBase = true, "omt_1", m.msgs
+	m.rightKind, m.threadID, m.threadBase = rightThread, "omt_1", m.msgs
 	m.applyOutbox()
 	m.layout()
 	return m

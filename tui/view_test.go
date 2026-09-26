@@ -36,7 +36,7 @@ func sized(w, h int) Model {
 }
 
 func withThread(m Model) Model {
-	m.threadOpen, m.threadID, m.thread = true, "omt_1", m.msgs[:3]
+	m.rightKind, m.threadID, m.thread = rightThread, "omt_1", m.msgs[:3]
 	m.layout()
 	return m
 }
@@ -202,7 +202,7 @@ func TestOnInsertKey_EscOnFoldedLayoutShowsMessages(t *testing.T) {
 	mm, _ := m.onInsertKey(tea.KeyPressMsg{Code: tea.KeyEscape})
 	m = mm.(Model)
 	require.Equal(t, paneMessages, m.focus)
-	require.False(t, m.threadOpen, "the right pane that covered the messages closes")
+	require.False(t, m.threadOpen(), "the right pane that covered the messages closes")
 }
 
 func TestView_TooSmallTerminal(t *testing.T) {

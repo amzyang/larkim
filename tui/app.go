@@ -154,7 +154,13 @@ type Model struct {
 	// while the selection is open.
 	visualAnchor string
 
-	threadOpen bool
+	// The right column shows one message-list frame at a time, unpacked into
+	// these fields; rightKind says which kind it is and rightNone that the
+	// column is closed. threadID is the frame's own id — a thread's, or for a
+	// forward the message whose children are listed — and rightRoot the
+	// bundle those children are stored under.
+	rightKind  rightKind
+	rightRoot  string
 	threadID   string
 	thread     []store.Message
 	threadBase []store.Message
@@ -162,6 +168,16 @@ type Model struct {
 	threadIdx  int
 	threadTop  int
 	threadRows []msgRow
+	// rightStack holds the frames underneath the one on screen. Only the
+	// covered ones are packed, so every pane, rebuild and scroll goes on
+	// reading the fields it always read.
+	rightStack []rightFrame
+	// rightPin puts a popped frame back where the reader left it, spent on
+	// the first list to land under it.
+	rightPin rightFrame
+	// rightNote is what a frame says in place of messages: a bundle being
+	// expanded, or one Feishu will not expand at all.
+	rightNote string
 
 	// Search mode: the messages pane lists cross-chat hits.
 	searching   bool
@@ -659,12 +675,10 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case aiChunkMsg:
 		return m.onAIChunk(msg.chunk)
 	case threadLoadedMsg:
-		if msg.threadID != m.threadID {
+		if m.rightKind != rightThread || msg.threadID != m.threadID {
 			return m, nil
 		}
-		wasOn := idAt(m.thread, m.threadIdx)
-		anchor := topAnchor(m.threadRows, m.thread, m.threadTop)
-		tailed := atTail(m.threadRows, m.threadTop, m.listHeight())
+		wasOn, anchor, tailed := m.rightLanded(msg.msgs)
 		// The chat page carries the replies too, so the markers the reader
 		// arrived to are already lit; this pane only has to speak for what
 		// lands while they are away.
@@ -680,6 +694,10 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.rebuildThread()
 		m.threadTop = holdTop(m.threadRows, m.thread, anchor, tailed, m.threadTop, m.listHeight())
 		return m, nil
+	case forwardLoadedMsg:
+		return m.onForwardLoaded(msg)
+	case forwardExpandedMsg:
+		return m.onForwardExpanded(msg)
 	case revMsg:
 		return m, tea.Batch(waitForRev(m.revs), m.reloadCurrent())
 	case syncStatusMsg:
@@ -908,7 +926,7 @@ func (m *Model) enterChat() {
 	m.chatID, m.msgSince = m.pendingChat, m.pendingSince
 	m.pendingChat, m.pendingSince = "", 0
 	m.msgs, m.msgsBase, m.msgRows, m.msgIdx, m.msgTop = nil, nil, nil, 0, 0
-	m.threadOpen, m.threadID, m.thread, m.threadBase, m.threadRows = false, "", nil, nil, nil
+	m.closeRight()
 	m.replyTo, m.inThrd = nil, false
 	m.selectCurrentChat()
 }
@@ -1055,21 +1073,14 @@ func (m *Model) openHighlighted() tea.Cmd {
 	return m.openChat(chatID)
 }
 
-func (m *Model) openThread(threadID string) tea.Cmd {
-	m.threadOpen = true
-	m.threadID = threadID
-	m.threadIdx, m.threadTop = 0, 0
-	m.layout()
-	return loadThread(m.deps, threadID)
-}
-
 func (m Model) reloadCurrent() tea.Cmd {
 	cmds := []tea.Cmd{loadChats(m.deps)}
 	if m.chatID != "" {
 		cmds = append(cmds, loadMessages(m.deps, m.chatID, m.msgSince))
 	}
-	if m.threadOpen {
-		cmds = append(cmds, loadThread(m.deps, m.threadID))
+	// Only the visible frame: a covered one is reloaded when it is uncovered.
+	if cmd := m.loadRight(); cmd != nil {
+		cmds = append(cmds, cmd)
 	}
 	return tea.Batch(cmds...)
 }
@@ -1223,7 +1234,7 @@ func (m Model) selectedZones() []clickZone {
 }
 
 // rightOpen reports whether the third pane (thread or assistant) is shown.
-func (m Model) rightOpen() bool { return m.threadOpen || m.aiOpen || m.infoOpen }
+func (m Model) rightOpen() bool { return m.threadOpen() || m.aiOpen || m.infoOpen }
 
 func (m Model) currentChat() (store.Chat, bool) {
 	for _, c := range m.chats {
@@ -1475,7 +1486,7 @@ func (m Model) onNormalKey(s string) (tea.Model, tea.Cmd) {
 	case "I":
 		return m.toggleInfo()
 	case "t":
-		return m.toggleThread()
+		return m.toggleRight()
 	case "Y":
 		return m.copySelection()
 	case "y":
@@ -1528,8 +1539,8 @@ func (m Model) onNormalKey(s string) (tea.Model, tea.Cmd) {
 		case m.searching:
 			m.closeSearch()
 			return m.notify("", false), nil
-		case m.threadOpen && m.focus == paneThread:
-			return m.toggleThread()
+		case m.threadOpen() && m.focus == paneThread:
+			return m.popRight()
 		case m.chatFilter != "":
 			m.chatFilter = ""
 			m.selectCurrentChat()
@@ -1861,35 +1872,29 @@ func (m Model) activate() (tea.Model, tea.Cmd) {
 		if !ok {
 			return m, nil
 		}
-		if sel.ThreadID != "" {
-			return m.toggleThread()
+		// A container opens; anything else is answered.
+		if f, ok := m.containerAtCursor(); ok {
+			return m.openContainer(paneMessages, f)
 		}
 		return m.startInsert(&sel, false)
 	case paneThread:
-		if sel, ok := m.selected(); ok {
-			return m.startInsert(&sel, true)
+		sel, ok := m.selected()
+		if !ok {
+			return m, nil
 		}
+		// What Enter means follows the frame: a thread is a place to answer,
+		// a forward is a place to read, so there the key opens the nested
+		// bundle under the cursor and nothing else.
+		if m.rightKind == rightForward {
+			f, ok := m.containerAtCursor()
+			if !ok {
+				return m.notify("only a forwarded bundle opens from here", true), nil
+			}
+			return m.openContainer(paneThread, f)
+		}
+		return m.startInsert(&sel, true)
 	}
 	return m, nil
-}
-
-func (m Model) toggleThread() (tea.Model, tea.Cmd) {
-	if m.threadOpen {
-		m.threadOpen = false
-		m.threadID = ""
-		if m.focus == paneThread {
-			m.focus = paneMessages
-		}
-		m.layout()
-		return m, nil
-	}
-	sel, ok := m.selected()
-	if !ok || sel.ThreadID == "" {
-		return m.notify("selected message has no thread", true), nil
-	}
-	m = m.closeAI()
-	m.focus = paneThread
-	return m, m.openThread(sel.ThreadID)
 }
 
 // setReply points the composer at the message a draft answers, nil for none.
@@ -1902,6 +1907,9 @@ func (m *Model) setReply(replyTo *store.Message, inThread bool) {
 func (m Model) startInsert(replyTo *store.Message, inThread bool) (tea.Model, tea.Cmd) {
 	if m.chatID == "" {
 		return m.notify("open a chat first", true), nil
+	}
+	if replyTo != nil && m.onForwardedChild() {
+		return m.notify("a forwarded message belongs to its own chat", true), nil
 	}
 	m.mode = modeInsert
 	m.focus = paneInput
@@ -2129,7 +2137,7 @@ func (m Model) startAI(input string) (tea.Model, tea.Cmd) {
 		n = len(m.msgs)
 	}
 	transcript := ai.Transcript(name, m.msgs[len(m.msgs)-n:], m.deps.Self)
-	m.threadOpen = false
+	m.closeRight()
 	m.aiOpen, m.aiBusy, m.aiDraft = true, true, draft
 	m.aiTitle = strings.TrimSpace(input)
 	if m.aiTitle == "" {
@@ -2170,7 +2178,9 @@ func (m Model) onAIChunk(c ai.Chunk) (tea.Model, tea.Cmd) {
 // right pane stood in for it, so that pane closes first.
 func (m Model) focusMessages() Model {
 	if m.foldRight() {
-		m.threadOpen, m.threadID, m.thread, m.threadBase, m.threadRows = false, "", nil, nil, nil
+		// The reader is leaving the column, not stepping back through it, so
+		// the whole stack goes rather than one frame.
+		m.closeRight()
 		m.aiOpen, m.aiChan = false, nil
 		m.layout()
 	}
@@ -2260,6 +2270,12 @@ func (m Model) onClick(ms tea.Mouse) (tea.Model, tea.Cmd) {
 func (m Model) pressZone(p pane, rows []msgRow, line int, z clickZone) (tea.Model, tea.Cmd) {
 	if z.jump != "" {
 		return m.jumpToQuoted(p, z.jump)
+	}
+	if z.open != "" {
+		// Which pane the press landed in is what says whether the column
+		// deepens or starts over, and it is the only thing this arm reads:
+		// the x offset was already paid by the caller.
+		return m.openContainer(p, rightFrame{kind: z.openKind, id: z.open, root: z.openRoot})
 	}
 	if z.react == "" {
 		return m, openZone(m.deps, z)

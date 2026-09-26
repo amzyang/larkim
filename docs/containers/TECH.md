@@ -45,17 +45,17 @@ id=om_r1  pos=-3  thread=omt_1  parent=om_root  root=om_root  chat=oc_a(本会�
 右栏今天是三个互斥布尔（`threadOpen` / `infoOpen` / `aiOpen`，tui/app.go:1226 的 `rightOpen`）。改成栈时，**可见的那一帧保持摊开在原有字段里，只把被盖住的帧入栈**：
 
 ```go
-// rightStack holds the frames underneath the one on screen. The visible frame
-// stays unpacked in the thread* fields, so pushing is "save these, load those"
-// and popping is the reverse — every pane, rebuild and scroll goes on reading
-// the fields it always read.
-rightStack []rightFrame
 rightKind  rightKind // what the unpacked fields mean; rightNone when closed
+rightStack []rightFrame
 ```
 
-代价是 `push`/`pop` 各多一次字段搬运，换来的是 `renderThread`、`rebuildThread`、`layout`、`scrollRight`、`visiblePanes`、`selectedZones`、`metaFor`、`holdTop`/`topAnchor`/`atTail`、`onClick` 的右栏分支全部不动，`rightOpen()` 与 `View()` 的分派也不动——`threadOpen` 改读作「右栏正显示一个消息列表帧」。
+代价是 `push`/`pop` 各多一次字段搬运，换来的是 `renderThread`、`rebuildThread`、`layout`、`scrollRight`、`visiblePanes`、`selectedZones`、`metaFor`、`holdTop`/`topAnchor`/`atTail`、`onClick` 的右栏分支全部不动，`rightOpen()` 与 `View()` 的分派也不动。
+
+`threadOpen` 从字段变成 `rightKind != rightNone` 的方法，读作「右栏正显示一个消息列表帧」。留成字段就有两个真相要同步：只置 `threadOpen` 的调用点会造出一个 `loadRight` 认作关闭、`rightOpen()` 认作打开的 model。
 
 `info` 与 `ai` 是根视图，永远不会被盖住，所以 `infoTop` / `aiTop` / `aiText` 保持裸字段不进帧。
+
+**栈是包含路径，不是访问历史。** 从消息面板打开一个容器时，屏幕上那个容器是它的兄弟而不是它的父级，所以那一下**重置**成一层；只有从右栏里打开才加一层。两个入口因此是两个函数：`openRight` 与 `pushRight`。否则连看五个话题要按五次 `Esc` 才关得掉右栏，而那五个彼此无关——那正是 PRD 排掉的「通用的跳回来返回栈」。
 
 一个被压住的帧只留 id，不留任何排过版的东西：
 
@@ -65,16 +65,24 @@ rightKind  rightKind // what the unpacked fields mean; rightNone when closed
 // the frame was buried, and the lists come back from SQLite in a millisecond.
 type rightFrame struct {
 	kind rightKind
-	// id is what the frame was opened on: omt_… for a thread, the bundle's
-	// om_… for a forward. Held by id rather than index, like filterPin: a
-	// sync tick replaces the lists under a suspended frame.
+	// id is what the frame was opened on: omt_… for a thread, and for a
+	// forward the message whose children it lists — the bundle itself at the
+	// top level, a nested bundle below. Held by id rather than index, like
+	// filterPin: a sync tick replaces the list under a suspended frame.
 	id string
-	// sel and top are the message under the cursor and the one at the top of
-	// the viewport, so a pop lands where the reader left rather than at the
-	// tail. Ids for the same reason topAnchor keeps one.
-	sel, top string
+	// root is the bundle every level of a forward belongs to, which is where
+	// its children are stored and its pictures are registered. Empty for a
+	// thread.
+	root string
+	// sel is the message the cursor was on and top the line the viewport
+	// started at, so a pop lands where the reader left rather than at the
+	// tail.
+	sel string
+	top lineAnchor
 }
 ```
+
+一层一个 `root` 是必需的：`forwarded_messages` 按 `(root, upper, message_id)` 存，光有嵌套 bundle 自己的 id 查不出它的孩子，而同一个嵌套 bundle 可以坐在两棵树里。
 
 弹出即重载：`pop` 读出 `id` 重发该帧的加载命令，`sel` 与 `top` 交给既有的 `repinSelection` 与 `holdTop` 落位。两种帧的加载都只读本地库，所以「弹出时空一帧再填」这一瞬不存在。
 
@@ -91,7 +99,7 @@ type rightFrame struct {
 | `focusMessages` tui/app.go:2171 | 窄屏时清空整栈，不是弹一层——读者是要离开右栏 |
 | Esc 阶梯 tui/app.go:1524 | `m.threadOpen && focus == paneThread` 那一臂改为弹一帧；阶梯仍然手写。焦点不在右栏时 Esc 不碰栈，照旧落到 `chatFilter` 与 `setReply(nil)` |
 | `toggleInfo` tui/info.go:32、`closeAI` tui/app.go:2181 | 清空整栈后再开自己 |
-| `toggleThread` tui/app.go:1876 | 改为 `toggleRight`：栈顶已是该容器则弹，否则压 |
+| `toggleThread` tui/app.go:1876 | 改为 `toggleRight`：可见帧已是该容器则关，否则从消息面板 `openRight`、从右栏 `pushRight` |
 | `openThreadID` tui/chatpoll.go:63 | 可见帧是话题帧则取它，否则自栈顶向下找最近的话题帧——转发压在话题上时，下面那个话题仍有回复要拉 |
 | `activate` 的 `paneThread` 臂 tui/app.go:1868 | 按可见帧类型分叉：话题帧回复，转发帧打开选中的嵌套转发 |
 | `reloadCurrent` tui/app.go:1067 | 只重载可见帧；被压住的帧在弹出时重载 |
@@ -244,11 +252,17 @@ func forwardSummary(x store.Message, idx int, st msgStyle, g *leads) (msgRow, bo
 
 数据挂 `msgMeta`（tui/data.go:158），与 `parents` / `res` / `docs` 同路，由 `loadMeta` 一次装好：话题侧用既有的 `ThreadReplyCounts`（store/messages.go:418）加最后一条回复，转发侧用新的 `ForwardGists` 取第一条子消息加 `child_count`。只取一条，所以两侧的查询都是每个容器一行，不必分页。
 
+帧里的嵌套 bundle 走 `ForwardLevels`：它没有 `forwarded_roots` 行可数，计数与首条都从已落地的子消息里来，而它按构造就是展开的——它的行就在库里。
+
 话题摘要**无条件**画在主流里：`ThreadReplyCounts` 不返回 0 回复的话题，计数缺失时写「还没有回复」而不是不画。这一行是进话题回复的入口，也是读者能看出 `Enter` 不会回复这条消息的唯一提示。
 
 一条消息既是转发又是话题根时只画话题摘要：活的那个赢。转发摘要的可点性不丢——话题帧里装着根消息本身，在那里它是一行转发摘要，再点压下一层。层级与客户端一致（话题里包着转发），也保住了 `activate` 原有的 `ThreadID` 先判顺序。
 
 上一段的推论：**转发摘要的画法与上下文无关，话题摘要只在主流里画**。话题帧里再写一遍「23 条回复」是废话——回复就在它下面。
+
+子消息没有 lark-cli 渲染过的 `content`——展开端点只回原始 body——所以映射时就地补一份：text 补它的话，image 补 `![Image](key)` 让图片走既有的 `splitImages` → `pictureRows`。**post 故意不补**：它的渲染是 markdown，只有 lark-cli 造得出，把压平的一行喂给 markdown 路径会把发送者的标点变成格式；它保留 `pendingText` 的暗色替身，那正是实情——字在，格式不在。卡片、通话、附件、表情包在读渲染之前就从 body 认出自己，不需要这一步。
+
+子消息不可回复、不可加表情、不可撤回：`startInsert`、`openPicker`/`toggleReaction`、`askRecall` 在焦点落在转发帧时提前给提示。少了这道闸，`e` 会把一个表情贴到另一个会话的消息上——一个读者看不见的地方。
 
 三处配套改动：
 
@@ -379,6 +393,7 @@ pendingSelect struct{ id, thread string }
 | 用例 | 断言 |
 | --- | --- |
 | `TestPushRight_AForwardOpenedInsideAThreadKeepsTheThreadUnderIt` | 叠而不换 |
+| `TestOpenRight_AThreadOpenedFromTheChatPaneReplacesTheColumn` | 兄弟不入栈 |
 | `TestPushRight_PressingTheSameSummaryTwiceStacksOneFrame` | 栈顶去重 |
 | `TestPopRight_EscUncoversTheFrameBeneath` | 逐层退 |
 | `TestPopRight_ASuspendedFrameComesBackOnItsOwnCursor` | `sel` / `top` 复位 |
@@ -400,6 +415,15 @@ pendingSelect struct{ id, thread string }
 | `TestRenderRows_AThreadRootShowsItsLastReply` | 话题取尾 |
 | `TestRenderRows_AThreadRootWithNoReplyStillGetsItsLine` | 0 回复也有入口 |
 | `TestRenderRows_AnUnexpandedBundleNamesNoCount` | 未展开不写数字 |
+| `TestRenderRows_ARefusedBundleSaysSo` | 被拒的说得出口 |
+| `TestSelectedZones_LeavesTheSummaryLineToTheKeyboardsOwnKeys` | `o` 看不见摘要行 |
+| `TestLoadForward_ANestedLevelListsItsOwnChildren` | 一帧一层 |
+| `TestLoadForward_APictureChildGetsOnlyItsOwnOfTheBundlesResources` | 资源按 key 分派回子消息 |
+| `TestForwardedRow_AnImageChildPlacesItsPicture` | 图片走图片路径 |
+| `TestForwardedRow_APostKeepsTheDimStandIn` | post 不喂给 markdown |
+| `TestOnForwardLoaded_AnUnexpandedBundleIsAskedForNow` | 即时展开 |
+| `TestOnForwardLoaded_WithoutTheSyncLockItSaysToWait` | 没锁就说等 |
+| `TestForwardFrame_AChildCannotBeAnswered` | 子消息只读 |
 | `TestRenderRows_AForwardedThreadRootShowsTheThreadInTheChatAndTheForwardInTheFrame` | 双重容器的分工 |
 | `TestSummaryRow_KeepsTheCountWhenTheGistMustBeCut` | 窄面板下数量优先于内容 |
 | `TestRenderRows_ASummaryLineCarriesAnOpenZone` | 整行一个 zone，其余行无 zone |
@@ -431,14 +455,15 @@ pendingSelect struct{ id, thread string }
 
 ## 分期
 
-五期，每期独立可合入。
+四期，每期独立可合入。
 
 | 期 | 内容 | 合入后的状态 |
 | --- | --- | --- |
 | 1 | `forwarded_messages` + 同步展开 + 回填 + 附件注册 | 库里有数据，还没人读；SQL 可验 |
-| 2 | 右栏改栈 | 纯重构，行为不变 |
-| 3 | 合并转发折叠 + 转发帧 + 点击 | 主要收益落地 |
-| 4 | 话题折叠 + 摘要 + 落地压帧 | 与客户端对齐 |
-| 5 | 读态与未读：`MarkChatRead` 收窄、`MarkThreadRead`、参与判据、摘要圆点、列表记号 | 未读语义收口 |
+| 2 | 右栏改栈 + 合并转发折叠 + 转发帧 + 点击 | 主要收益落地 |
+| 3 | 话题折叠 + 摘要 + 落地压帧 | 与客户端对齐 |
+| 4 | 读态与未读：`MarkChatRead` 收窄、`MarkThreadRead`、参与判据、摘要圆点、列表记号 | 未读语义收口 |
 
-一与二彼此独立，先后随意；三需要一和二；四需要二；五需要四。读态单独一期，因为它是全仓最容易改错的一块，也是唯一一个改错了会静默丢掉「我还没读」的地方——它该有一个能单独回滚的提交。
+二需要一；三需要二；四需要三。
+
+栈与转发帧同期落地，因为分开落地的那一版里栈是不可达的：从消息面板打开总是重置成一层，而唯一能埋下第二层的动作——在话题里打开一条转发——正是转发帧带来的。读态单独一期，因为它是全仓最容易改错的一块，也是唯一一个改错了会静默丢掉「我还没读」的地方，该有一个能单独回滚的提交。

@@ -168,6 +168,9 @@ type msgMeta struct {
 	// rows happen to spell costs more than reading them all.
 	docs    map[string]store.DocLabel
 	parents map[string]store.Message
+	// forwards is the collapsed line of each merged forward on the page, by
+	// the bundle's message id.
+	forwards map[string]store.ForwardGist
 }
 
 func loadMeta(ctx context.Context, st *store.Store, msgs []store.Message) (msgMeta, error) {
@@ -181,9 +184,13 @@ func loadMeta(ctx context.Context, st *store.Store, msgs []store.Message) (msgMe
 			ids = append(ids, id)
 		}
 	}
+	var bundles []string
 	for _, x := range msgs {
 		msgIDs = append(msgIDs, x.MessageID)
 		addPerson(x.SenderID)
+		if x.MsgType == "merge_forward" {
+			bundles = append(bundles, x.MessageID)
+		}
 		// A reaction names its operator by open id alone, so the reactors a
 		// chip lists travel with the senders to the contacts lookup.
 		for _, c := range emoji.Summary(x.ReactionsJSON, "") {
@@ -230,7 +237,12 @@ func loadMeta(ctx context.Context, st *store.Store, msgs []store.Message) (msgMe
 	if err != nil {
 		return msgMeta{}, err
 	}
-	return msgMeta{suffix: suffix, people: people, avatars: avatars, res: res, docs: docs, parents: parents}, nil
+	forwards, err := st.ForwardGists(ctx, bundles)
+	if err != nil {
+		return msgMeta{}, err
+	}
+	return msgMeta{suffix: suffix, people: people, avatars: avatars, res: res, docs: docs,
+		parents: parents, forwards: forwards}, nil
 }
 
 // searchLimits bound each group. Messages get the most because they are what

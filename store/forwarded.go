@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"slices"
 )
 
 // Forwarded is one message inside a merged-forward bundle. It is not a copy:
@@ -163,4 +164,96 @@ func (s *Store) MarkForwardFailed(ctx context.Context, rootMessageID, reason str
 func (s *Store) ForwardChildren(ctx context.Context, rootMessageID, upperMessageID string) ([]Forwarded, error) {
 	return queryAll(ctx, s.db, scanForwarded, `SELECT `+forwardedColumns+` FROM forwarded_messages
  WHERE root_message_id = ? AND upper_message_id = ? ORDER BY seq`, rootMessageID, upperMessageID)
+}
+
+// ForwardGist is what a collapsed bundle's one line needs: how many messages
+// the frame behind it lists, the first of them, and whether it can be opened
+// at all.
+type ForwardGist struct {
+	ChildCount int
+	// Expanded says the children are here. Refused says Feishu settled the
+	// bundle with an error instead. A bundle that is neither has simply not
+	// come round yet — a failed attempt is still owed another.
+	Expanded   bool
+	Refused    bool
+	SenderID   string
+	SenderName string
+	MsgType    string
+	ContentRaw string
+}
+
+// ForwardGists answers the collapsed line of each bundle named. The
+// representative child is the first of the top level: a forward is frozen, so
+// what it opens with is the context it was forwarded for.
+func (s *Store) ForwardGists(ctx context.Context, rootMessageIDs []string) (map[string]ForwardGist, error) {
+	out := make(map[string]ForwardGist, len(rootMessageIDs))
+	type row struct {
+		id        string
+		fetchedAt int64
+		lastError string
+		g         ForwardGist
+	}
+	for chunk := range slices.Chunk(rootMessageIDs, 500) {
+		rows, err := queryAll(ctx, s.db, func(sc scanner) (row, error) {
+			var r row
+			err := sc.Scan(&r.id, &r.g.ChildCount, &r.fetchedAt, &r.lastError,
+				&r.g.SenderID, &r.g.SenderName, &r.g.MsgType, &r.g.ContentRaw)
+			return r, err
+		}, `SELECT r.root_message_id, r.child_count, r.fetched_at, r.last_error,
+ COALESCE(c.sender_id, ''), COALESCE(c.sender_name, ''), COALESCE(c.msg_type, ''), COALESCE(c.content_raw, '')
+ FROM forwarded_roots r
+ LEFT JOIN forwarded_messages c ON c.root_message_id = r.root_message_id
+   AND c.upper_message_id = r.root_message_id AND c.seq = 0
+ WHERE r.root_message_id IN `+inClause(len(chunk)), anySlice(chunk)...)
+		if err != nil {
+			return nil, err
+		}
+		for _, r := range rows {
+			g := r.g
+			// A row that merely failed once carries an error and is still
+			// owed, so settled-with-an-error is what refusal means.
+			g.Refused = r.fetchedAt != 0 && r.lastError != ""
+			g.Expanded = r.fetchedAt != 0 && r.lastError == ""
+			out[r.id] = g
+		}
+	}
+	return out, nil
+}
+
+// ForwardLevels answers the collapsed line of each nested bundle in one tree.
+// A nested bundle has no queue row of its own — one call expands the whole
+// tree — so both the count and the first child come from the children
+// themselves, and it is expanded by construction: its rows are here.
+func (s *Store) ForwardLevels(ctx context.Context, rootMessageID string, upperIDs []string) (map[string]ForwardGist, error) {
+	out := make(map[string]ForwardGist, len(upperIDs))
+	for chunk := range slices.Chunk(upperIDs, 500) {
+		args := append([]any{rootMessageID}, anySlice(chunk)...)
+		counts, err := queryCounts(ctx, s.db, `SELECT upper_message_id, count(*) FROM forwarded_messages
+ WHERE root_message_id = ? AND upper_message_id IN `+inClause(len(chunk))+` GROUP BY upper_message_id`, args...)
+		if err != nil {
+			return nil, err
+		}
+		for id, n := range counts {
+			out[id] = ForwardGist{ChildCount: int(n), Expanded: true}
+		}
+		type first struct {
+			upper string
+			g     ForwardGist
+		}
+		firsts, err := queryAll(ctx, s.db, func(sc scanner) (first, error) {
+			var f first
+			err := sc.Scan(&f.upper, &f.g.SenderID, &f.g.SenderName, &f.g.MsgType, &f.g.ContentRaw)
+			return f, err
+		}, `SELECT upper_message_id, sender_id, sender_name, msg_type, content_raw FROM forwarded_messages
+ WHERE root_message_id = ? AND upper_message_id IN `+inClause(len(chunk))+` AND seq = 0`, args...)
+		if err != nil {
+			return nil, err
+		}
+		for _, f := range firsts {
+			g := out[f.upper]
+			g.SenderID, g.SenderName, g.MsgType, g.ContentRaw = f.g.SenderID, f.g.SenderName, f.g.MsgType, f.g.ContentRaw
+			out[f.upper] = g
+		}
+	}
+	return out, nil
 }

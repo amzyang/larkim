@@ -217,7 +217,7 @@ func TestUpdate_AFoldedAwayMessagePaneLeavesTheChatUnread(t *testing.T) {
 
 	// Under three columns the thread pane takes the messages pane's place, so
 	// the chat's own page is not drawn at all.
-	m.width, m.threadOpen, m.threadID = chatsWidth+minMessagesWidth+threadWidth-1, true, "omt_1"
+	m.width, m.rightKind, m.threadID = chatsWidth+minMessagesWidth+threadWidth-1, rightThread, "omt_1"
 	m.layout()
 	require.True(t, m.foldRight(), "the fixture has to be narrow enough to fold")
 

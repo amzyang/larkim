@@ -57,16 +57,6 @@ func (m *Model) claimChatPoll(now time.Time) string {
 	return m.openingChat()
 }
 
-// openThreadID names the thread being read, "" when no thread pane is open.
-// pullChat only follows threads whose root it saw inside its window, so a
-// reply under an older root arrives only when the thread names itself.
-func (m Model) openThreadID() string {
-	if !m.threadOpen {
-		return ""
-	}
-	return m.threadID
-}
-
 // pollChat re-lists the open chat straight from the message store. It takes
 // the beat lane: the words on screen are what it fetches, so queueing it
 // behind an attachment download on the background lane would reintroduce the

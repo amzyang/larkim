@@ -96,13 +96,13 @@ func TestInfoLines_P2PDrawsThePeersCard(t *testing.T) {
 
 func TestToggleInfo_TakesTheRightPaneFromTheThread(t *testing.T) {
 	m, _ := infoModel(t)
-	m.threadOpen = true
+	m.rightKind = rightThread
 
 	next, cmd := m.toggleInfo()
 	m = next.(Model)
 
 	assert.True(t, m.infoOpen)
-	assert.False(t, m.threadOpen, "one thing about the chat at a time")
+	assert.False(t, m.threadOpen(), "one thing about the chat at a time")
 	assert.NotNil(t, cmd)
 }
 

@@ -48,6 +48,17 @@ func (s *Syncer) expandForwards(ctx context.Context, now time.Time) (int, error)
 	return done, nil
 }
 
+// ExpandForward expands one bundle now, for a reader who opened it before
+// the queue came round. It answers whether the children landed, so the caller
+// can say why the frame is still empty.
+func (s *Syncer) ExpandForward(ctx context.Context, rootMessageID string) (bool, error) {
+	root, err := s.Store.GetForwardRoot(ctx, rootMessageID)
+	if err != nil {
+		return false, err
+	}
+	return s.expandForward(ctx, root, s.now())
+}
+
 // expandForward asks for one bundle's children and stores them. A refusal
 // from Feishu is recorded on the queue row rather than returned, so one
 // unreadable forward does not stop the sweep; the summary line reads

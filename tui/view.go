@@ -213,7 +213,7 @@ func (m Model) messagesWidth() int {
 func (m Model) msgStyleFor(width int, meta msgMeta) msgStyle {
 	st := msgStyle{width: width, height: m.picHeight(), self: m.deps.Self, now: time.Now(),
 		suffix: meta.suffix, people: meta.people, avatars: meta.avatars,
-		res: meta.res, docs: meta.docs, parents: meta.parents, dataDir: m.deps.DataDir,
+		res: meta.res, docs: meta.docs, parents: meta.parents, forwards: meta.forwards, dataDir: m.deps.DataDir,
 		outbox: m.outboxStates(), reacts: m.reactStates(), dots: m.dots, dark: m.dark}
 	if c, ok := m.currentChat(); ok {
 		st.p2p = c.ChatMode == "p2p"
@@ -358,11 +358,15 @@ func (m Model) aiLines() []string {
 }
 
 func (m *Model) rebuildThread() {
-	if !m.threadOpen {
+	if !m.threadOpen() {
 		m.threadRows = nil
 		return
 	}
-	m.threadRows = renderRows(m.thread, m.msgStyleFor(m.rightWidth()-2, m.threadMeta))
+	st := m.msgStyleFor(m.rightWidth()-2, m.threadMeta)
+	// Inside a frame every nested bundle belongs to the tree the frame came
+	// from, not to itself, which is where its rows and its pictures are kept.
+	st.forwardRoot = m.rightRoot
+	m.threadRows = renderRows(m.thread, st)
 }
 
 // rowLine is the drawn form of one row, and whether a selection may tint it.
@@ -603,7 +607,7 @@ func (m Model) View() tea.View {
 		panes = append(panes, m.renderAI(body))
 	case m.infoOpen:
 		panes = append(panes, m.renderInfo(body))
-	case m.threadOpen:
+	case m.threadOpen():
 		panes = append(panes, m.renderThread(body))
 	}
 	top := lipgloss.JoinHorizontal(lipgloss.Top, panes...)
@@ -845,7 +849,10 @@ func paneRule(w int) string { return stDim.Render(strings.Repeat("─", max(0, w
 func (m Model) renderThread(h int) string {
 	w := m.rightWidth() - 2
 	lines := make([]string, 0, h)
-	lines = append(lines, fit(stBold.Render("Thread ")+stDim.Render(truncate(m.threadID, w-7)), w))
+	lines = append(lines, fit(m.rightTitle(w), w))
+	if m.rightNote != "" {
+		lines = append(lines, fit(stDim.Render(m.rightNote), w))
+	}
 	for i := m.threadTop; i < len(m.threadRows) && len(lines) < h; i++ {
 		r := m.threadRows[i]
 		line, tint := m.rowLine(r, w)
@@ -858,6 +865,21 @@ func (m Model) renderThread(h int) string {
 		lines = append(lines, fit("", w))
 	}
 	return paneStyle(m.focus == paneThread, w).Height(h).Render(strings.Join(lines, "\n"))
+}
+
+// rightTitle names the frame and how deep it sits. The depth is what says
+// Esc steps back rather than closes, which is the one thing about the column
+// a reader cannot see from its contents.
+func (m Model) rightTitle(w int) string {
+	name := "Thread"
+	if m.rightKind == rightForward {
+		name = "Forwarded"
+	}
+	if d := len(m.rightStack) + 1; d > 1 {
+		name += " " + strconv.Itoa(d)
+	}
+	name += " "
+	return stBold.Render(name) + stDim.Render(truncate(m.threadID, w-lipgloss.Width(name)))
 }
 
 func (m Model) renderInput() string {

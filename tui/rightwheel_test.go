@@ -33,7 +33,7 @@ func TestWheel_RightPaneScrollsTheAssistantWhileItIsOpen(t *testing.T) {
 
 func TestWheel_RightPaneScrollsTheRosterWhileItIsOpen(t *testing.T) {
 	m := withThread(sized(120, 36))
-	m.threadOpen, m.infoOpen = false, true
+	m.rightKind, m.infoOpen = rightNone, true
 	for i := range 60 {
 		m.info = append(m.info, store.Contact{OpenID: "ou_a", Name: "同事 " + string(rune('A'+i%26))})
 	}

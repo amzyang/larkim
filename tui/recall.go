@@ -28,6 +28,9 @@ func recallCmd(d Deps, messageID string) tea.Cmd {
 // the chat and cannot be undone, so it is the one action here that asks first —
 // the client asks too.
 func (m Model) askRecall() (tea.Model, tea.Cmd) {
+	if m.onForwardedChild() {
+		return m.notify("a forwarded message belongs to its own chat", true), nil
+	}
 	x, ok := m.selected()
 	if !ok {
 		return m.notify("select a message to recall", true), nil

@@ -369,7 +369,7 @@ func TestUpdate_ReloadShorterThanTheAnchorLeavesVisual(t *testing.T) {
 
 func TestUpdate_ThreadReloadKeepsTheSelectionPinned(t *testing.T) {
 	m := sized(120, 36)
-	m.threadOpen, m.threadID = true, "omt_1"
+	m.rightKind, m.threadID = rightThread, "omt_1"
 	m.thread = []store.Message{
 		{MessageID: "om_a", Content: "a", RenderedAt: 1},
 		{MessageID: "om_b", Content: "b", RenderedAt: 1},

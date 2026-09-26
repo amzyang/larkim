@@ -198,7 +198,7 @@ func TestSubmit_HandsTheBubbleOverToTheStoredMessage(t *testing.T) {
 func TestEnterChat_DropsTheRowsTheOldChatOwned(t *testing.T) {
 	m, _ := newOutboxModel(t)
 	m.msgsBase = []store.Message{{MessageID: "om_1", ChatID: "oc_1", Content: "old chat"}}
-	m.threadOpen, m.threadID = true, "om_1"
+	m.rightKind, m.threadID = rightThread, "om_1"
 	m.threadBase = []store.Message{{MessageID: "om_2", ChatID: "oc_1", ThreadID: "om_1", Content: "old thread"}}
 	m.refreshPanes()
 	require.Len(t, m.msgs, 1)

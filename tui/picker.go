@@ -39,6 +39,9 @@ type picker struct {
 
 // openPicker arms the chooser against the selected message.
 func (m Model) openPicker() (tea.Model, tea.Cmd) {
+	if m.onForwardedChild() {
+		return m.notify("a forwarded message belongs to its own chat", true), nil
+	}
 	if m.deps.Syncer == nil {
 		return m.notify("reacting needs the sync lock; the daemon holds it", true), nil
 	}
@@ -164,6 +167,9 @@ func (m Model) choose() (tea.Model, tea.Cmd) {
 // Feishu refuses it. A chip that moved only once the round trip came back
 // reads as a press that did not land, and the reader presses again.
 func (m Model) toggleReaction(x store.Message, key string) (tea.Model, tea.Cmd) {
+	if m.onForwardedChild() {
+		return m.notify("a forwarded message belongs to its own chat", true), nil
+	}
 	if x.Deleted {
 		return m.notify("select a message to react to", true), nil
 	}

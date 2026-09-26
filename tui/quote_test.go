@@ -138,7 +138,7 @@ func TestJumpToQuoted_FromTheThreadLandsInTheChatPane(t *testing.T) {
 	m := quoteModel(t)
 	// A thread reply can answer something said in the chat itself, which the
 	// thread pane does not list.
-	m.threadOpen, m.threadID, m.thread = true, "omt_1", m.msgs[2:]
+	m.rightKind, m.threadID, m.thread = rightThread, "omt_1", m.msgs[2:]
 	m.focus, m.threadIdx = paneThread, 0
 	m.threadMeta = m.meta
 	m.layout()

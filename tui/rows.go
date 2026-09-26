@@ -77,6 +77,15 @@ type clickZone struct {
 	// the reply answers, fetching the page that holds it when it is off this
 	// one.
 	jump string
+	// open is the container a summary line leads into, and openKind which
+	// sort. It is not a place to open but a pane to show. The kind is carried
+	// rather than read off the id's prefix: nothing in this repository
+	// decides behaviour that way, and Feishu promises nothing about it.
+	// openRoot is the bundle a forward's rows are stored under, which is the
+	// outermost one when the line sits inside a frame.
+	open     string
+	openRoot string
+	openKind rightKind
 	// label names the target the way the chooser lists it, and note is what
 	// the status bar says once it has been handed over. They differ because a
 	// list wants the thing and a status line wants the act.
@@ -85,7 +94,9 @@ type clickZone struct {
 }
 
 // live reports whether the zone leads anywhere at all.
-func (z clickZone) live() bool { return len(z.urls) > 0 || z.react != "" || z.jump != "" }
+func (z clickZone) live() bool {
+	return len(z.urls) > 0 || z.react != "" || z.jump != "" || z.open != ""
+}
 
 func (z clickZone) hit(x int) bool { return z.live() && x >= z.x0 && x < z.x1 }
 
@@ -152,6 +163,11 @@ type msgStyle struct {
 	// id then folded emoji key, laid over the stored summary so a press draws
 	// before it is sent.
 	reacts map[string]map[string]bool
+	// forwards is the collapsed line of each merged forward on the page, by
+	// the bundle's message id, and forwardRoot the bundle a frame's own rows
+	// belong to — empty in a chat, where every bundle is its own root.
+	forwards    map[string]store.ForwardGist
+	forwardRoot string
 	// names labels each message's chat on its sender line. It is set for
 	// search results, which run across chats; inside one chat, naming it on
 	// every block says nothing.
@@ -449,6 +465,9 @@ func renderRows(msgs []store.Message, st msgStyle) []msgRow {
 		if q, ok := quoteRow(x, prev, i, st, &g); ok {
 			rows = append(rows, q)
 		}
+		if r, ok := forwardSummary(x, st.forwardRoot, i, st, &g); ok {
+			rows = append(rows, r)
+		}
 		rows = append(rows, bodyRows(x, i, st, &g)...)
 		rows = append(rows, reactionRows(x, i, st, &g)...)
 		prev = x.MessageID
@@ -472,7 +491,9 @@ func mergeable(head, x store.Message, st msgStyle) bool {
 // own can show. A send still on its way is one: how far it has got is spelled
 // out on that line and nowhere else.
 func solo(x store.Message, st msgStyle) bool {
-	if (x.ThreadID != "" && x.MessagePosition >= 0) || x.EditedAt > 0 {
+	// A container brings a summary line of its own, which belongs under a
+	// sender line rather than inside somebody else's block.
+	if (x.ThreadID != "" && x.MessagePosition >= 0) || x.EditedAt > 0 || x.MsgType == "merge_forward" {
 		return true
 	}
 	_, ok := st.outbox[x.MessageID]
@@ -586,6 +607,12 @@ func bodyRows(x store.Message, idx int, st msgStyle, g *leads) []msgRow {
 	}
 	if x.Deleted {
 		return text(wrap(stDim.Render("(Recalled) "+flatten(x.Content)), inner))
+	}
+	// A merged forward's summary line is its body. What lark-cli renders it
+	// into is the whole tree, tags and ISO timestamps included, which is
+	// exactly what the list must not print.
+	if x.MsgType == "merge_forward" {
+		return nil
 	}
 	// A call's body is the whole invite, so its card is drawn without
 	// waiting for a rendering: the button matters most in the first seconds.
