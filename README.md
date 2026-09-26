@@ -134,7 +134,7 @@ Release builds carry a Sentry DSN and report crashes and unexpected errors (neve
 
 ## Library
 
-`store`, `sync`, `larkcli` and `config` are importable Go packages. A consumer that acquires `sync.TryLock` may run `sync.Syncer.Run` in-process; otherwise it reads the store while the daemon writes.
+`store`, `sync`, `larkcli` and `config` are importable Go packages. A consumer that acquires `sync.TryLock` may run `sync.Syncer.Run` in-process; without it the sweep belongs to the lock holder, while pulls that name ids Feishu just answered for upsert the same rows from any process.
 
 ## Development
 

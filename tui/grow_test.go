@@ -7,7 +7,6 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/amzyang/larkim/store"
-	"github.com/amzyang/larkim/sync"
 	"github.com/stretchr/testify/require"
 )
 
@@ -115,24 +114,19 @@ func TestGrownPage_KeepsTheTopRow(t *testing.T) {
 
 // atFloor is a chat scrolled to the top of everything the store holds, with
 // floorMs of history still waiting at Feishu (0 meaning none).
-func atFloor(floorMs int64, syncing bool) Model {
+func atFloor(floorMs int64) Model {
 	m := paged(messagePageSize-1, messagePageSize)
 	m.chats[indexOfChat(m.chats, m.chatID)].HistoryFloorMs = floorMs
-	if syncing {
-		m.deps.Syncer = new(sync.Syncer)
-	}
 	m.rebuildMessages()
 	return m
 }
 
 func TestRebuildMessages_MarksTheLocalFloor(t *testing.T) {
-	require.True(t, atFloor(1000, true).msgRows[0].plain)
-	require.Contains(t, atFloor(1000, true).msgRows[0].text, floorLabel)
-	require.Contains(t, atFloor(0, true).msgRows[0].text, startLabel, "nothing older is left to fetch")
-	require.Contains(t, atFloor(1000, false).msgRows[0].text, readOnlyLabel,
-		"only the process holding the lock may pull history")
+	require.True(t, atFloor(1000).msgRows[0].plain)
+	require.Contains(t, atFloor(1000).msgRows[0].text, floorLabel)
+	require.Contains(t, atFloor(0).msgRows[0].text, startLabel, "nothing older is left to fetch")
 
-	m := atFloor(1000, true)
+	m := atFloor(1000)
 	m.msgPullInFlight = true
 	m.rebuildMessages()
 	require.Contains(t, m.msgRows[0].text, fetchingLabel)
@@ -144,32 +138,26 @@ func TestRebuildMessages_FullPageCarriesNoFloor(t *testing.T) {
 }
 
 func TestPullOlder_AtTheFloorReachesPastIt(t *testing.T) {
-	m := atFloor(1000, true)
+	m := atFloor(1000)
 	require.NotNil(t, m.growMessages())
 	require.True(t, m.msgPullInFlight)
 	require.Equal(t, messagePageSize, m.msgLimit, "the store had nothing more to widen into")
 }
 
 func TestPullOlder_AsksOnceWhileTheCallIsOut(t *testing.T) {
-	m := atFloor(1000, true)
+	m := atFloor(1000)
 	require.NotNil(t, m.growMessages())
 	require.Nil(t, m.growMessages())
 }
 
 func TestPullOlder_CompleteHistoryAsksNothing(t *testing.T) {
-	m := atFloor(0, true)
-	require.Nil(t, m.growMessages())
-	require.False(t, m.msgPullInFlight)
-}
-
-func TestPullOlder_BesideADaemonAsksNothing(t *testing.T) {
-	m := atFloor(1000, false)
+	m := atFloor(0)
 	require.Nil(t, m.growMessages())
 	require.False(t, m.msgPullInFlight)
 }
 
 func TestNoteOlderPull_AFailureSaysSoAndFreesTheNextTry(t *testing.T) {
-	m := atFloor(1000, true)
+	m := atFloor(1000)
 	m.msgPullInFlight = true
 	require.Nil(t, m.noteOlderPull(olderPulledMsg{chatID: m.chatID, err: errors.New("rate limited")}))
 	require.False(t, m.msgPullInFlight)
@@ -178,7 +166,7 @@ func TestNoteOlderPull_AFailureSaysSoAndFreesTheNextTry(t *testing.T) {
 }
 
 func TestNoteOlderPull_AnAnswerForAChatSinceLeftIsDropped(t *testing.T) {
-	m := atFloor(1000, true)
+	m := atFloor(1000)
 	m.msgPullInFlight = true
 	require.Nil(t, m.noteOlderPull(olderPulledMsg{chatID: "oc_elsewhere", err: errors.New("boom")}))
 	require.True(t, m.msgPullInFlight, "the flag belongs to the chat on screen")
@@ -190,7 +178,7 @@ func TestRebuildMessages_EmptyChatCarriesNoFloor(t *testing.T) {
 }
 
 func TestNoteOlderPull_ASuccessRereadsTheFloorItMoved(t *testing.T) {
-	m := atFloor(1000, true)
+	m := atFloor(1000)
 	m.msgPullInFlight = true
 	// history_floor_ms is outside the revision trigger, so the pane would go
 	// on offering history the pull just exhausted unless the chats are re-read.

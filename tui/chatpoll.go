@@ -37,21 +37,10 @@ func scheduleChatPoll() tea.Cmd {
 	return tea.Tick(chatPollEvery, func(time.Time) tea.Msg { return chatPollDueMsg{} })
 }
 
-// chatPollCmd arms the beat, or nothing when this process does not sync:
-// only the one holding the data-dir lock may pull a chat, and against a
-// daemon the revision watch is all this process has.
-func (m Model) chatPollCmd() tea.Cmd {
-	if m.deps.Syncer == nil {
-		return nil
-	}
-	return scheduleChatPoll()
-}
-
-// claimChatPoll names the chat worth a call this beat, "" when none is. A TUI
-// reading alongside a daemon has no syncer and never asks; a blurred terminal
-// catches up when the reader comes back to it.
+// claimChatPoll names the chat worth a call this beat, "" when none is. A
+// blurred terminal catches up when the reader comes back to it.
 func (m *Model) claimChatPoll(now time.Time) string {
-	if m.deps.Syncer == nil || m.chatPollInFlight || !m.focused || now.Before(m.chatPollPausedUntil) {
+	if m.chatPollInFlight || !m.focused || now.Before(m.chatPollPausedUntil) {
 		return ""
 	}
 	return m.openingChat()

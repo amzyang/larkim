@@ -301,6 +301,12 @@ func New(d Deps) Model {
 	if d.Log == nil {
 		d.Log = discardLog
 	}
+	// A puller is what every reach for something Feishu holds goes through,
+	// so it is never absent: the injected one carries the sweep's options
+	// when the sweep runs here, and this one stands in when it does not.
+	if d.Syncer == nil {
+		d.Syncer = &sync.Syncer{Client: d.Client, Store: d.Store, Clock: sync.RealClock{}, Log: d.Log}
+	}
 	// After the logger: the opener is the one hand-over to a subprocess the
 	// TUI makes, and it logs the argv it builds.
 	if d.OpenURL == nil {
@@ -348,7 +354,7 @@ func (m Model) Init() tea.Cmd {
 	cmds := tea.Batch(tea.RequestBackgroundColor, tea.Raw(ansi.WindowOp(ansi.RequestCellSizeWinOp)),
 		loadChats(m.deps), readSyncStatus(m.deps.Store), pollSyncStatus(m.deps.Store), waitForRev(m.revs),
 		loadSelfName(m.deps.Store, m.deps.Self))
-	return tea.Batch(cmds, m.chatPollCmd())
+	return tea.Batch(cmds, scheduleChatPoll())
 }
 
 // Update runs the handler, takes as read whatever the handler left in front of
@@ -842,8 +848,8 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, m.openChat(msg.chatID)
 	case chatPollDueMsg:
-		// The chain re-arms whether or not it polls: a blurred or daemon-backed
-		// beat still has to hand the next one on.
+		// The chain re-arms whether or not it polls: a blurred beat, or one
+		// standing down after a refusal, still has to hand the next one on.
 		cmds := []tea.Cmd{scheduleChatPoll()}
 		if id := m.claimChatPoll(time.Now()); id != "" {
 			m.chatPollInFlight = true
@@ -1255,12 +1261,8 @@ func (m Model) jumpToQuoted(p pane, id string) (tea.Model, tea.Cmd) {
 	}
 	parent, ok := m.metaFor(p).parents[id]
 	if !ok {
-		// The message was never stored here. Only the process holding the
-		// sync lock may write, so without it there is nothing to do but say
-		// it is not here yet.
-		if m.deps.Syncer == nil {
-			return m.notify("that message has yet to be synced", false), nil
-		}
+		// The message was never stored here, so it is fetched by the id the
+		// quote names before the page that holds it opens.
 		return m.notify("fetching…", false), ingestThenOpen(m.deps, id)
 	}
 	// SinceMs is inclusive, so the page opens on the quoted message itself and
@@ -2152,7 +2154,8 @@ func (m Model) runCommand(line string) (tea.Model, tea.Cmd) {
 	case "ai":
 		return m.startAI(rest)
 	case "sync":
-		if m.deps.Syncer == nil {
+		// A tick moves the global cursors, which belong to the sweep alone.
+		if !m.deps.Embedded {
 			return m.notify("sync is handled by the daemon", false), nil
 		}
 		s := m.deps.Syncer

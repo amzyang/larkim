@@ -282,16 +282,6 @@ func TestRunReact_SaysWhatIsWrongRatherThanReactingWithTheFirstThingItFinds(t *t
 	}
 }
 
-func TestPicker_StaysShutBesideADaemon(t *testing.T) {
-	// The messages table belongs to whoever holds the data-dir lock, and the
-	// refresh after a reaction writes it.
-	m := pickerModel(t)
-	m.deps.Syncer = nil
-	m = press(t, m, "e")
-	require.Equal(t, modeNormal, m.mode)
-	require.Contains(t, m.notice, "sync lock")
-}
-
 func TestOpenPicker_TakesAMessageWhoseBodyIsNotRenderedYet(t *testing.T) {
 	// A reaction reaches a message by id alone, so waiting on the rendering
 	// would refuse a message Feishu already holds.
@@ -395,15 +385,6 @@ func TestPressChip_LeavesTheCursorWhereItWas(t *testing.T) {
 	m.msgIdx = 0
 	m, _ = chipAt(t, m, "THUMBSUP")
 	require.Equal(t, 0, m.msgIdx, "a press asked for the chip, not for the message under it")
-}
-
-func TestPressChip_StaysShutBesideADaemon(t *testing.T) {
-	m := pickerModel(t)
-	m.deps.Syncer = nil
-	m, cmd := chipAt(t, m, "THUMBSUP")
-	require.Nil(t, cmd)
-	require.Empty(t, m.reacts, "nothing is drawn for a press that was never sent")
-	require.Contains(t, m.notice, "sync lock")
 }
 
 func TestReactedMsg_TakesAFailedPressBackOffTheStrip(t *testing.T) {
@@ -538,16 +519,6 @@ func TestToggleReaction_DrawsTheOutgoingPictureUnderTheMessage(t *testing.T) {
 	m = next.(Model)
 	require.Len(t, m.msgs, 2, "the bubble stands in the chat while the picture is on its way")
 	require.Equal(t, m.outbox[0].localID, m.msgs[1].MessageID)
-}
-
-func TestToggleReaction_SendsAPictureWithoutTheSyncLock(t *testing.T) {
-	// The daemon holds the lock that reacting needs; sending a message does
-	// not go anywhere near it.
-	m, _ := pictureModel(t)
-	m.deps.Syncer = nil
-	next, cmd := m.toggleReaction(m.msgs[0], withdrawnKey)
-	require.NotNil(t, cmd)
-	require.Len(t, next.(Model).outbox, 1)
 }
 
 func TestToggleReaction_StillTakesBackAWithdrawnEmojiAlreadyOnTheMessage(t *testing.T) {

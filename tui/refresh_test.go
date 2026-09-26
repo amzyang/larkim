@@ -26,12 +26,6 @@ func TestClaimChatRefresh_OnlyForTheChatStillOpen(t *testing.T) {
 	require.True(t, m.claimChatRefresh("oc_open"), "repeats are the beat's to pace, not this one's")
 }
 
-func TestClaimChatRefresh_NotWhenADaemonOwnsTheWrites(t *testing.T) {
-	m := newRefreshModel(t)
-	m.deps.Syncer = nil
-	require.False(t, m.claimChatRefresh("oc_open"))
-}
-
 func TestOpenChat_ArmsTheChatRefresh(t *testing.T) {
 	m := newRefreshModel(t)
 	got := collect(m.openChat("oc_other"))

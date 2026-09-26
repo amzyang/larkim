@@ -388,21 +388,7 @@ func TestCloseSearch_DropsTheRemoteSearchInFlight(t *testing.T) {
 	require.Nil(t, m.searchCancel)
 }
 
-func TestOpenColdHit_WithoutTheSyncLockOpensTheChatAndSaysSo(t *testing.T) {
-	m, _ := panelModel(t)
-	m.deps.Client = coldFake("预算")
-	m = search(t, m, "预算")
-	m = remoteSearched(t, m, "预算")
-
-	m.msgIdx = 1 // the cold hit
-	mm, _ := m.openHit()
-	m = mm.(Model)
-	require.Equal(t, "oc_budget", m.pendingChat)
-	require.Contains(t, m.notice, "daemon")
-	require.False(t, m.searching)
-}
-
-func TestOpenColdHit_WithTheSyncLockPullsItInFirst(t *testing.T) {
+func TestOpenColdHit_PullsItInBeforeOpeningThePage(t *testing.T) {
 	m, st := panelModel(t)
 	f := coldFake("预算")
 	m.deps.Client = f

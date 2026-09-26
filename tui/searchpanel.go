@@ -202,18 +202,8 @@ func (m Model) openHit() (tea.Model, tea.Cmd) {
 }
 
 // openColdHit follows a message Feishu found that this machine has not
-// stored. With the sync lock in hand it is pulled in first, so the page opens
-// on it like any other; without it, only the daemon may write, so the chat
-// opens where it stands and the hit arrives on the daemon's own schedule.
+// stored. It is pulled in first, so the page opens on it like any other.
 func (m Model) openColdHit(h searchHit) (tea.Model, tea.Cmd) {
-	if m.deps.Syncer == nil {
-		m.closeSearch()
-		// openChatFrom writes to m, so it runs before the model is copied
-		// into the return: notify is a call too, and the two would otherwise
-		// be sequenced the wrong way round.
-		cmd := m.openChatFrom(h.msg.ChatID, h.msg.CreateMs)
-		return m.notify("opening the chat; the daemon has yet to sync that message", false), cmd
-	}
 	m.cancelRemote()
 	return m.notify("fetching…", false), ingestThenOpen(m.deps, h.msg.MessageID)
 }

@@ -7,11 +7,13 @@ import (
 	"github.com/gofrs/flock"
 )
 
-// ErrLocked means another process (usually the daemon) owns the sync lock.
-var ErrLocked = errors.New("sync lock held by another process")
+// ErrLocked means another process (usually the daemon) owns the sweep.
+var ErrLocked = errors.New("the sweep is owned by another process")
 
-// Lock guards single-writer access to the data directory. Callers that fail to
-// acquire it should read the store only and leave syncing to the lock holder.
+// Lock names the one process that runs the sweep over a data directory, which
+// is what owns the global cursors. It is not a write lock: a caller that fails
+// to acquire it still pulls whatever its user reaches for, because those calls
+// upsert ids Feishu just answered for and land the same rows either way.
 type Lock struct {
 	fl *flock.Flock
 }

@@ -40,29 +40,31 @@ func (a *App) tuiCmd() *cobra.Command {
 			if v, _, _ := st.GetState(ctx, sync.KeySelfOpenID); v != "" {
 				deps.Self = v
 			}
-			// Sync in-process when no daemon holds the lock; otherwise read only.
+			// Every process pulls what the reader asks for: each of those
+			// calls names ids Feishu just answered for and upserts them, so
+			// they are safe beside a daemon. The lock decides one thing only,
+			// which is who runs the sweep and its global cursors.
+			s := a.syncer(st)
+			// Depth one, dropping when full: the watch only ever compares
+			// revisions, so a queued signal is as good as several.
+			nudge := make(chan struct{}, 1)
+			s.OnChange = func() {
+				select {
+				case nudge <- struct{}{}:
+				default:
+				}
+			}
+			deps.Syncer, deps.Nudge = s, nudge
 			if lock, err := sync.TryLock(a.cfg.DataDir); err == nil {
 				defer lock.Unlock()
 				a.logger().Info("tui", "sync", "embedded")
-				s := a.syncer(st)
-				// Depth one, dropping when full: the watch only ever compares
-				// revisions, so a queued signal is as good as several.
-				nudge := make(chan struct{}, 1)
-				s.OnChange = func() {
-					select {
-					case nudge <- struct{}{}:
-					default:
-					}
-				}
-				deps.Syncer = s
-				deps.Nudge = nudge
 				deps.Embedded = true
 				go func() {
 					defer sentryRecoverRepanic()
 					s.Run(ctx)
 				}()
 			} else if errors.Is(err, sync.ErrLocked) {
-				a.logger().Info("tui", "sync", "read-only", "reason", "a daemon holds the lock")
+				a.logger().Info("tui", "sync", "daemon", "reason", "a daemon owns the sweep")
 			} else {
 				return err
 			}

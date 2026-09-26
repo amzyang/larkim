@@ -185,7 +185,7 @@ INSERT OR IGNORE INTO forwarded_roots (root_message_id)
 
 回填是**播种队列**而非游标。`resources` 用 `resource_scan_id` 倒带是因为它没有天然的队列；转发有——它就是 `messages` 里 `msg_type = 'merge_forward'` 的那些行。`attempts` / `next_attempt_at` / `last_error` 照抄 `resources` 的退避列，不另发明。
 
-`docs/SCHEMA.md` 增一节，并在所有权那段写明两张表都由守着 `daemon.lock` 的进程写。
+`docs/SCHEMA.md` 增一节。
 
 ## 同步
 
@@ -213,7 +213,7 @@ ForwardedMessages(ctx context.Context, rootMessageID string) ([]RawForwarded, er
 
 Lane 取零值 `LaneBackground`。`LaneBeat`（宽 3）装的是开着的会话的拉取、它的话题和搭车的刷新，在那儿扇出会饿死它存在的理由。
 
-读者打开一个尚未展开的转发时，按 `LaneInteractive` 即时取一次——那条 lane 就是为人留的。帧先压上、画一行「正在展开…」，数据到了就地填充。但只有持 `daemon.lock` 的进程能写，所以 `Syncer` 为 nil 时给提示而非静默失败，照 `jumpToQuoted`（tui/app.go:1182）「that message has yet to be synced」的先例。
+读者打开一个尚未展开的转发时，按 `LaneInteractive` 即时取一次——那条 lane 就是为人留的。帧先压上、画一行「正在展开…」，数据到了就地填充。
 
 API 拒绝（读者已退出源会话，或转发过旧）时按 `*larkcli.Error` 的 `IsPermanent()` 分流：永久失败记 `last_error` 并盖 `fetched_at`，不再重试——转发是冻结的，再问一次答案不会变；临时失败累加 `attempts` 并退避。卡片标题随之写成无法展开，点击给提示而不是开空帧。
 

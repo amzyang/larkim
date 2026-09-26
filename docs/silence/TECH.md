@@ -83,7 +83,7 @@ const unreadCounted = unreadBadge + ` AND m.silenced = 0`
 
 ## 注入与生效范围
 
-`Store` 加导出字段 `Silence SilenceRules`，由 `cli.App.openStore`（cli/root.go:92）从 `cfg.Silence` 填；`store.Open` 的签名不变，测试照常裸开库。只有持 `daemon.lock` 的进程写 `messages`，规则因此只在写者侧起作用；连着 daemon 的只读 TUI 与 CLI 读的是 `silenced` 列，不需要规则。
+`Store` 加导出字段 `Silence SilenceRules`，由 `cli.App.openStore`（cli/root.go:92）从 `cfg.Silence` 填；`store.Open` 的签名不变，测试照常裸开库。每个写 `messages` 的进程都按自己加载的那份配置给 `silenced` 置位；daemon 与 TUI 读同一个配置文件，取值因此一致。纯读的 CLI 读 `silenced` 列，不需要规则。
 
 `Syncer.tick` 头部调 `Store.ReapplySilence`：读 `sync_state.silence_rev` 与 `Fingerprint()` 比对，不一致则在一个事务里清零、逐规则置位、重算所有会话摘要、写回指纹。代价是每 tick 一次 keyed SELECT，换来规则变更自愈，不依赖任何一次性的启动钩子。
 

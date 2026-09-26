@@ -22,8 +22,10 @@ import (
 	"github.com/amzyang/larkim/sync"
 )
 
-// Deps are the collaborators the TUI needs. Syncer is non-nil when this
-// process holds the data-dir lock and syncs in-process.
+// Deps are the collaborators the TUI needs. Syncer pulls whatever the reader
+// reaches for and is always set; Embedded says this process also holds the
+// data-dir lock and runs the sweep, which is the one thing a second process
+// may not do.
 type Deps struct {
 	Store    *store.Store
 	Client   larkcli.Client
@@ -40,8 +42,8 @@ type Deps struct {
 	AI        *ai.Client
 	AIContext int // recent messages handed to the assistant
 	// Nudge signals that the store changed, so the watch checks without
-	// waiting out its interval. Only an embedded syncer can reach this
-	// process; against a daemon it is nil and the interval is all there is.
+	// waiting out its interval. It carries this process's own writes, the
+	// sweep's too when the sweep runs here; a daemon's land on the interval.
 	Nudge <-chan struct{}
 	// OpenURL hands applinks, links and local files to the desktop. New fills
 	// it when nil; tests replace it to keep the real `open` out of the run.
@@ -652,23 +654,12 @@ func ingestCmd(d Deps, localID, messageID string) tea.Cmd {
 	}
 }
 
-// syncerFor is the syncer a write uses to pull what it changed back into the
-// store. The injected one when this process holds the lock, a throwaway
-// otherwise: ingest is an idempotent upsert of ids Feishu just answered for,
-// so it is safe beside a daemon and is what lets a write land without one.
-func syncerFor(d Deps) *sync.Syncer {
-	if d.Syncer != nil {
-		return d.Syncer
-	}
-	return &sync.Syncer{Client: d.Client, Store: d.Store, Clock: sync.RealClock{}, Log: d.Log}
-}
-
 // ingestMessage pulls one message back from Feishu into the store, so what a
 // send, a recall or a forward just did shows up without waiting for a tick.
 func ingestMessage(d Deps, messageID string) error {
 	ctx, cancel := waited(sendTimeout)
 	defer cancel()
-	return syncerFor(d).IngestIDs(ctx, []string{messageID})
+	return d.Syncer.IngestIDs(ctx, []string{messageID})
 }
 
 // loadSelfName names the account this process signed in as, which is all a

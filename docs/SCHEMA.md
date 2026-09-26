@@ -2,7 +2,7 @@
 
 Database: `larkim db path` (default `~/.larkim/larkim.db`). WAL mode; readers never block the daemon. The authoritative DDL is `larkim schema` (embedded migrations in `store/migrations/`). All timestamps are Unix **milliseconds** in UTC unless the column name says otherwise.
 
-Ownership: the daemon (or an embedded syncer holding `daemon.lock`) writes every table except `read_state.local_read_at` and `drafts`, which belong to the TUI. How far a reader outside larkim has got is its own state, not a column here; see [Consumer cursors](#consumer-cursors).
+Ownership: `daemon.lock` names the one process that runs the sweep — discovery, backfill, and the global cursors in `sync_state`. Everything a reader reaches for is a write any larkim process may make: a send, a reaction, an expanded forward, a page of older history and a cold search hit all name ids Feishu just answered for and upsert the same rows whoever asks. `read_state.local_read_at` and `drafts` belong to the TUI. How far a reader outside larkim has got is its own state, not a column here; see [Consumer cursors](#consumer-cursors).
 
 ## chats
 
@@ -70,7 +70,7 @@ One row per message id, from the raw message API (`create_ms` is millisecond pre
 | `first_seen_at` | when the message was first stored; never rewritten. `first_seen_at - create_ms` is how long it took larkim to find the message, which is the only end-to-end latency the database records |
 | `last_seen_at` | when a sync last saw the message in an API response. Every listing re-reads an overlap and the repair pass re-lists a week, so this moves on messages nothing about which changed |
 
-`silenced` is derived from the `silence` rules of the writer's config: a rule's `chat`, `sender` and `contains` fields are an AND, the rules are an OR, and `contains` reads `content` once the rendering lands and `content_raw` until then. The process holding `daemon.lock` stamps the flag as messages arrive and again when a rendering lands, and rebuilds the whole column when the rule set changes, so the column states what that process's config says — a reader that edits the config sees nothing until the writer restarts.
+`silenced` is derived from the `silence` rules of the config the writing process loaded: a rule's `chat`, `sender` and `contains` fields are an AND, the rules are an OR, and `contains` reads `content` once the rendering lands and `content_raw` until then. Whichever process stores a message stamps the flag, and again when a rendering lands; the one holding `daemon.lock` rebuilds the whole column when the rule set changes, so an edited config reaches the rows already stored once that process restarts.
 
 A `system` message is its `template` with the values the same body carries filled in (`from_user`, `to_chatters`, `divider_text`). Feishu ships no value for the remaining slots, so `{old_group_name}`, `{count}` and the like read as `…` rather than as the placeholder.
 

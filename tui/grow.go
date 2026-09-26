@@ -10,15 +10,11 @@ import (
 // The head of a page the store cannot reach behind says what is above it.
 // Feishu's client has no counterpart for any of these: its history lives on
 // the server and never runs out, while this one is bounded by what has been
-// pulled, and by whether this process is the one allowed to pull.
+// pulled.
 const (
 	floorLabel    = "Oldest synced"
 	startLabel    = "Beginning of chat"
 	fetchingLabel = "Loading older messages"
-	// readOnlyLabel names the one thing the reader can do about it. Only the
-	// process holding the data-dir lock may write synced data, so a TUI
-	// beside a daemon can show the floor but never move it.
-	readOnlyLabel = floorLabel + " · run without a daemon to reach further back"
 )
 
 // atLocalFloor reports that the store holds nothing behind the page on screen.
@@ -42,8 +38,6 @@ func (m Model) floorRow(w int) msgRow {
 	switch {
 	case m.historyFloorMs() == 0:
 		label = startLabel
-	case m.deps.Syncer == nil:
-		label = readOnlyLabel
 	case m.msgPullInFlight:
 		label = fetchingLabel
 	}
@@ -83,7 +77,7 @@ func (m *Model) growMessages() tea.Cmd {
 // rather than as a page — so an explicit flag is what stops a stream of wheel
 // events becoming a stream of calls.
 func (m *Model) pullOlder() tea.Cmd {
-	if m.deps.Syncer == nil || m.msgPullInFlight || m.historyFloorMs() == 0 {
+	if m.msgPullInFlight || m.historyFloorMs() == 0 {
 		return nil
 	}
 	m.msgPullInFlight = true

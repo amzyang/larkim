@@ -115,17 +115,6 @@ func TestOnForwardLoaded_AnUnexpandedBundleIsAskedForNow(t *testing.T) {
 	require.NotNil(t, cmd, "the reader who opened it is why the interactive lane exists")
 }
 
-func TestOnForwardLoaded_WithoutTheSyncLockItSaysToWait(t *testing.T) {
-	m := sized(140, 36)
-	m.rightKind, m.threadID, m.rightRoot = rightForward, "om_new", "om_new"
-
-	next, cmd := m.onForwardLoaded(forwardLoadedMsg{bundleID: "om_new", level: "om_new"})
-
-	require.Equal(t, "not expanded yet; waiting for the sync", next.(Model).rightNote,
-		"only the process holding the sync lock may write")
-	require.Nil(t, cmd)
-}
-
 func TestOnForwardLoaded_ARefusedBundleSaysSoRatherThanShowingAnEmptyFrame(t *testing.T) {
 	m := sized(140, 36)
 	m.rightKind, m.threadID, m.rightRoot = rightForward, "om_gone", "om_gone"

@@ -20,12 +20,9 @@ func scheduleChatRefresh(chatID string) tea.Cmd {
 }
 
 // claimChatRefresh reports whether chatID is still the chat this debounce was
-// armed for. Only the process holding the data-dir lock syncs, and read_state
-// and the messages table belong to it alone, so a TUI reading alongside a
-// daemon never asks. Nothing paces the repeats: the open chat's beat owns
-// those.
+// armed for. Nothing paces the repeats: the open chat's beat owns those.
 func (m *Model) claimChatRefresh(chatID string) bool {
-	return m.deps.Syncer != nil && chatID != "" && chatID == m.openingChat()
+	return chatID != "" && chatID == m.openingChat()
 }
 
 // refreshReadStatus re-asks Feishu about the chat's unread messages. It writes

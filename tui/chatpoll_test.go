@@ -42,12 +42,6 @@ func TestClaimChatPoll_RefusesWhileACallIsOut(t *testing.T) {
 	require.Empty(t, m.claimChatPoll(time.Unix(1000, 0)), "a slow call costs a beat, not a queue")
 }
 
-func TestClaimChatPoll_NotWhenADaemonOwnsTheWrites(t *testing.T) {
-	m := newChatPollModel(t)
-	m.deps.Syncer = nil
-	require.Empty(t, m.claimChatPoll(time.Unix(1000, 0)))
-}
-
 func TestNotePollResult_StandsDownWhenTheGatewayRefuses(t *testing.T) {
 	m := newChatPollModel(t)
 	now := time.Unix(1000, 0)
@@ -67,14 +61,6 @@ func TestNotePollResult_AnOrdinaryFailureOnlyFreesTheNextBeat(t *testing.T) {
 
 	m.notePollResult(errors.New("lark-cli exploded"), now)
 	require.Equal(t, "oc_open", m.claimChatPoll(now), "one bad call does not stop the chain")
-}
-
-func TestChatPollCmd_ArmsOnlyWhenThisProcessSyncs(t *testing.T) {
-	m := newChatPollModel(t)
-	require.NotNil(t, m.chatPollCmd())
-
-	m.deps.Syncer = nil
-	require.Nil(t, m.chatPollCmd(), "against a daemon the watch is all this process has")
 }
 
 func TestChatPollDue_ReArmsEvenWhenItPollsNothing(t *testing.T) {

@@ -42,9 +42,6 @@ func (m Model) openPicker() (tea.Model, tea.Cmd) {
 	if m.onForwardedChild() {
 		return m.notify("a forwarded message belongs to its own chat", true), nil
 	}
-	if m.deps.Syncer == nil {
-		return m.notify("reacting needs the sync lock; the daemon holds it", true), nil
-	}
 	x, ok := m.selected()
 	if !ok || x.Deleted {
 		return m.notify("select a message to react to", true), nil
@@ -182,9 +179,6 @@ func (m Model) toggleReaction(x store.Message, key string) (tea.Model, tea.Cmd) 
 	// message, put there before the client withdrew it.
 	e, known := emoji.ByKey(key)
 	asPicture := known && !e.Reactable() && !mineOn(m.drawnChips(x), key)
-	if !asPicture && m.deps.Syncer == nil {
-		return m.notify("reacting needs the sync lock; the daemon holds it", true), nil
-	}
 	// A chip carries whatever key Feishu sent, which may be one this build has
 	// no entry for; remembering that would head an empty query with a name the
 	// picker cannot draw.

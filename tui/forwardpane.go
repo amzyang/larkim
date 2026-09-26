@@ -176,10 +176,6 @@ func (m Model) onForwardLoaded(msg forwardLoadedMsg) (tea.Model, tea.Cmd) {
 		m.rightNote = noteRefused
 	case msg.gist.Expanded:
 		m.rightNote = "this forward is empty"
-	case m.deps.Syncer == nil:
-		// Only the process holding the sync lock may write, so a TUI reading
-		// beside a daemon can do nothing but wait for it.
-		m.rightNote = "not expanded yet; waiting for the sync"
 	default:
 		m.rightNote = noteExpanding
 	}

@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/amzyang/larkim/larkcli"
 	"github.com/amzyang/larkim/store"
 	"github.com/stretchr/testify/require"
 )
@@ -38,7 +39,7 @@ func badgeModel(t *testing.T) (Model, *store.Store, *[]openCall) {
 	require.NoError(t, st.SetReadStatus(ctx, "om_a", &unread, 100, 0))
 
 	var calls []openCall
-	m := New(Deps{Store: st, Self: "ou_me", OpenURL: func(targets []string, background bool) error {
+	m := New(Deps{Store: st, Self: "ou_me", Client: larkcli.NewFake(), OpenURL: func(targets []string, background bool) error {
 		calls = append(calls, openCall{targets, background})
 		return nil
 	}})
@@ -97,14 +98,6 @@ func TestTakeRead_IgnoresUnreadTheChatBadgeLeavesOut(t *testing.T) {
 	}))
 
 	require.Empty(t, *calls, "markChatRead never settles these, so firing for them would never stop")
-}
-
-func TestTakeRead_ClearsBadgesWithoutASyncer(t *testing.T) {
-	m, _, calls := badgeModel(t)
-	m.deps.Syncer = nil
-	collect(m.takeRead("oc_a", unreadPage()))
-
-	require.Len(t, *calls, 1, "the lever is the desktop client, not the data-dir lock")
 }
 
 func TestOpenInFeishu_TakesTheScreen(t *testing.T) {
