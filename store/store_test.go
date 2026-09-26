@@ -464,3 +464,42 @@ func TestMigrate_CollapsesResourcesOntoTheirKey(t *testing.T) {
 	require.Len(t, refs["om_d"], 1)
 	require.Equal(t, "skipped", refs["om_d"][0].Status)
 }
+
+func TestMigrate_RerendersBodiesThatKeptTheirParagraphMarkup(t *testing.T) {
+	dir := t.TempDir()
+	ctx := t.Context()
+	s, err := Open(filepath.Join(dir, "t.db"))
+	require.NoError(t, err)
+	bundle := msgAt("om_bundle", "oc_quiet", 300, 3, "hi")
+	bundle.MsgType = "merge_forward"
+	post := msgAt("om_post", "oc_quiet", 400, 4, "hi")
+	post.MsgType = "post"
+	_, err = s.UpsertMessages(ctx, []Message{
+		msgAt("om_edited", "oc_quiet", 100, 1, "hi"),
+		msgAt("om_plain", "oc_quiet", 200, 2, "hi"),
+		bundle, post,
+	}, 1)
+	require.NoError(t, err)
+	// What a rendering from before the unwrap left behind.
+	for _, r := range []struct{ id, content string }{
+		{"om_edited", "<p>abc</p><p>def</p>"},
+		{"om_plain", "abc"},
+		{"om_bundle", "<forwarded_messages>\n    <p>abc</p>"},
+		{"om_post", "<p>abc</p>"},
+	} {
+		require.NoError(t, s.UpdateRendered(ctx, r.id, r.content, "", "", 1))
+	}
+	// Pretend the database predates the migration.
+	_, err = s.db.ExecContext(ctx, `DELETE FROM schema_migrations WHERE version = 34`)
+	require.NoError(t, err)
+	s.Close()
+
+	s, err = Open(filepath.Join(dir, "t.db"))
+	require.NoError(t, err)
+	defer s.Close()
+
+	ids, err := s.UnrenderedMessageIDs(ctx, "", 10)
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{"om_edited", "om_bundle"}, ids,
+		"a post is never unwrapped, and a body that never held markup has nothing to redo")
+}
