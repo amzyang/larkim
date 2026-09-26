@@ -211,7 +211,7 @@ func (m Model) messagesWidth() int {
 // msgStyleFor is the render context of one message pane: its width and the
 // details the store holds.
 func (m Model) msgStyleFor(width int, meta msgMeta) msgStyle {
-	st := msgStyle{width: width, height: m.picHeight(), self: m.deps.Self, now: time.Now(),
+	st := msgStyle{width: width, height: m.picHeight(), self: m.deps.Self, selfName: m.selfName, now: time.Now(),
 		suffix: meta.suffix, people: meta.people, avatars: meta.avatars,
 		res: meta.res, docs: meta.docs, parents: meta.parents, forwards: meta.forwards,
 		threads: meta.threads, dataDir: m.deps.DataDir,
@@ -872,15 +872,17 @@ func (m Model) renderThread(h int) string {
 // Esc steps back rather than closes, which is the one thing about the column
 // a reader cannot see from its contents.
 func (m Model) rightTitle(w int) string {
-	name := "Thread"
+	name, tail := "Thread", m.threadID
 	if m.rightKind == rightForward {
-		name = "Forwarded"
+		// The card's own title, so a frame is named the way the summary that
+		// led into it was. A bundle's id says nothing a reader recognises.
+		name, tail = "Forwarded", m.rightName
 	}
 	if d := len(m.rightStack) + 1; d > 1 {
 		name += " " + strconv.Itoa(d)
 	}
 	name += " "
-	return stBold.Render(name) + stDim.Render(truncate(m.threadID, w-lipgloss.Width(name)))
+	return stBold.Render(name) + stDim.Render(truncate(tail, w-lipgloss.Width(name)))
 }
 
 func (m Model) renderInput() string {

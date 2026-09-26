@@ -21,7 +21,7 @@ func TestExpandEmoji_ReadsTheBracketedNameATextMessageCarries(t *testing.T) {
 	require.Equal(t, "谢谢🙏", ansi.Strip(expandEmoji("谢谢[THANKS]")), "an English client writes the key")
 	require.Equal(t, "谢谢🙏👍", ansi.Strip(expandEmoji("谢谢[双手合十][赞]")), "a Chinese client writes the name")
 	require.Equal(t, "点 [查看详情] 按钮", ansi.Strip(expandEmoji("点 [查看详情] 按钮")), "a bracketed noun is not an emoji")
-	require.Equal(t, "[图片]", ansi.Strip(expandEmoji("[图片]")), "the stand-ins this list draws itself stay")
+	require.Equal(t, "[Image]", ansi.Strip(expandEmoji("[Image]")), "the stand-ins this list draws itself stay")
 }
 
 func TestEmojiWords_DropsAPieceThatRepeatsOneAlreadyDrawn(t *testing.T) {

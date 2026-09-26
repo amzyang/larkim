@@ -64,7 +64,7 @@ func TestHit_ComposerGrowsWithTheReplyBar(t *testing.T) {
 func TestReplyGist_NamesWhatHasNoText(t *testing.T) {
 	require.Equal(t, "(Recalled)", replyGist(store.Message{Deleted: true, Content: "gone", RenderedAt: 1}))
 	require.Equal(t, "hi", replyGist(store.Message{MsgType: "text", ContentRaw: `{"text":"hi"}`}), "an unrendered text still reads")
-	require.Equal(t, "[图片]", replyGist(store.Message{MsgType: "image", Content: "[Image: img_abc]", RenderedAt: 1}))
+	require.Equal(t, "[Image]", replyGist(store.Message{MsgType: "image", Content: "[Image: img_abc]", RenderedAt: 1}))
 	require.Equal(t, "one two", replyGist(store.Message{MsgType: "text", Content: "one\ntwo", RenderedAt: 1}), "the quote stays on one line")
 	require.Equal(t, "docs", replyGist(store.Message{MsgType: "text", Content: "[docs](https://x.example)", RenderedAt: 1}),
 		"a link quotes its label, not its target")

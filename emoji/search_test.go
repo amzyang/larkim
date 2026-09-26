@@ -23,6 +23,20 @@ func TestSearch_ReachesAnEmojiByPinyinAndByItsInitials(t *testing.T) {
 	require.Equal(t, "LGTM", first(t, ix.Search("lgtm")).Key, "so does the English one")
 }
 
+func TestSearch_ReachesAnEnglishNamedEmojiByItsChineseName(t *testing.T) {
+	hits := NewReactionIndex().Search("赞")
+	require.Equal(t, "THUMBSUP", first(t, hits).Key)
+	require.Equal(t, "Like", hits[0].Emoji.Name(), "found by the Chinese name, shown by the English one")
+	require.Equal(t, "赞", hits[0].Term, "and the cell says which spelling answered")
+}
+
+func TestSearch_NamesNoTermWhenNothingWasTyped(t *testing.T) {
+	hits := NewReactionIndex().Search("")
+	require.NotEmpty(t, hits)
+	require.Empty(t, hits[0].Term, "nothing answered a query nobody made")
+	require.Empty(t, hits[0].Positions)
+}
+
 func TestSearch_MarksWhereTheQueryLanded(t *testing.T) {
 	hits := NewReactionIndex().Search("zan")
 	require.Equal(t, "zan", hits[0].Term)

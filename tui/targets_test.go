@@ -33,7 +33,7 @@ func TestBodyRows_APictureOpensTheFileItWasDrawnFrom(t *testing.T) {
 	zones := rowZones(renderRows(msgs, st))
 	require.NotEmpty(t, zones)
 	require.Equal(t, []string{filepath.Join("/data", "resources/a.png")}, zones[0].urls)
-	require.Equal(t, "图片", zones[0].label)
+	require.Equal(t, "image", zones[0].label)
 }
 
 func TestBodyRows_EveryPictureOfAMessageOpensTheWholeSet(t *testing.T) {
@@ -41,7 +41,7 @@ func TestBodyRows_EveryPictureOfAMessageOpensTheWholeSet(t *testing.T) {
 	byFirst := map[string][]string{}
 	for _, z := range rowZones(renderRows(msgs, st)) {
 		require.Len(t, z.urls, 3, "pressing one picture opens the message's pictures together")
-		require.Equal(t, "3 张图片", z.label)
+		require.Equal(t, "3 images", z.label)
 		byFirst[z.urls[0]] = z.urls
 	}
 	require.Len(t, byFirst, 3, "each picture leads the set it is pressed from")

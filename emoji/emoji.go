@@ -38,10 +38,16 @@ type Emoji struct {
 	// a picker falls back to when nothing has been typed.
 	Order int
 	// NoReaction marks an emoji Feishu refuses as a reaction however it reaches
-	// this client: another tenant's culture emoji, and the Unicode ones in
-	// common.go, which are characters a message carries rather than keys the
-	// reaction API knows.
+	// this client: another tenant's culture emoji, the ones the client has
+	// withdrawn, and the Unicode ones in common.go, which are characters a
+	// message carries rather than keys the reaction API knows.
 	NoReaction bool
+	// Delisted marks an emoji the client has withdrawn. It is the one kind of
+	// NoReaction a message cannot carry either: named inside one it reaches
+	// the other side as "[Sensitive emoji]", so of the two ways an emoji
+	// travels — as itself and as the picture it is drawn with — only the
+	// picture is left.
+	Delisted bool
 }
 
 // index is the table joined to its Unicode column, with the spellings that
@@ -93,14 +99,20 @@ func All() []Emoji { return index() }
 // has withdrawn, both of which Feishu rejects outright, and the bare spellings
 // that live in glyphs.go alone, which the client never offers and which would
 // land on a message as a reaction nobody can draw.
-func (e Emoji) Reactable() bool { return e.ZH != "" && !e.NoReaction }
+func (e Emoji) Reactable() bool { return e.EN != "" && !e.NoReaction }
 
 // Offerable reports whether the picker lists this emoji at all. Everything the
 // client names is offered, reaction or not: one Feishu refuses as a reaction
 // still reaches the other side as the picture the client draws it with, which
 // is the only way it reaches them. The bare spellings are left out — they have
 // no name to search by and no rectangle to cut a picture from.
-func (e Emoji) Offerable() bool { return e.ZH != "" }
+func (e Emoji) Offerable() bool { return e.EN != "" }
+
+// Name is what this emoji is called on screen and between the brackets a
+// message carries it in: the English name, because the client here runs in
+// English and every client's table holds both languages' names. A bare
+// spelling from glyphs.go has no name of its own and stands for itself.
+func (e Emoji) Name() string { return cmp.Or(e.EN, e.Key) }
 
 // Fold puts the spellings of one emoji on a single lookup key: the client
 // sends both the bare `Rose` and the `Lark_Emoji_Rose_0` form.

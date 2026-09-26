@@ -77,7 +77,7 @@ func TestHit_TheHeaderAndItsRuleAreNotRows(t *testing.T) {
 
 func TestDaySeparator_ReachesBothPaneEdges(t *testing.T) {
 	for w := 40; w < 48; w++ {
-		line := daySeparator("今天", w)
+		line := daySeparator("Today", w)
 		require.Equal(t, w, lipgloss.Width(line), "width %d", w)
 		plain := ansi.Strip(line)
 		require.True(t, strings.HasPrefix(plain, "─"), "width %d: %q", w, plain)

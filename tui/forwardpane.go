@@ -15,9 +15,9 @@ import (
 // held.
 const expandTimeout = 20 * time.Second
 
-// forwardLoadedMsg carries one level of a bundle. gist rides along because an
-// empty level has more than one meaning — not expanded yet, or refused for
-// good — and only the queue row tells them apart.
+// forwardLoadedMsg carries one level of a bundle. gist is that level's own
+// card: an empty level has more than one meaning — not expanded yet, or
+// refused for good — and it also names the frame.
 type forwardLoadedMsg struct {
 	bundleID string
 	level    string
@@ -73,7 +73,18 @@ func loadForward(d Deps, bundleID, level string) tea.Cmd {
 		if meta.forwards, err = d.Store.ForwardLevels(ctx, bundleID, nested); err != nil {
 			return errMsg{err}
 		}
-		return forwardLoadedMsg{bundleID: bundleID, level: level, msgs: rows, meta: meta, gist: gists[bundleID]}
+		// A level below the top has no queue row: its card is counted from
+		// the children that came down with the tree. Reading the bundle's
+		// row there would title the frame after the wrong conversation.
+		gist := gists[bundleID]
+		if level != bundleID {
+			levels, err := d.Store.ForwardLevels(ctx, bundleID, []string{level})
+			if err != nil {
+				return errMsg{err}
+			}
+			gist = levels[level]
+		}
+		return forwardLoadedMsg{bundleID: bundleID, level: level, msgs: rows, meta: meta, gist: gist}
 	}
 }
 
@@ -98,13 +109,15 @@ func dispatchResources(kids []store.Forwarded, res []store.Resource) map[string]
 
 // forwardedRow maps a child onto the row the list draws. Position and thread
 // are dropped: in this shape they would speak of the source chat, and a child
-// opens nothing but the nested bundle it may already be.
+// opens nothing but the nested bundle it may already be. Reactions are not:
+// they belong to the original message, and the frame is where the reader
+// meets it.
 func forwardedRow(f store.Forwarded) store.Message {
 	x := store.Message{
 		MessageID: f.MessageID, ChatID: f.ChatID, MsgType: f.MsgType,
 		SenderID: f.SenderID, SenderName: f.SenderName, SenderType: "user",
 		ContentRaw: f.ContentRaw, CreateMs: f.CreateMs, UpdateMs: f.CreateMs,
-		MentionsJSON: f.MentionsJSON, RawJSON: f.RawJSON,
+		MentionsJSON: f.MentionsJSON, ReactionsJSON: f.ReactionsJSON, RawJSON: f.RawJSON,
 	}
 	if content, ok := forwardedContent(f); ok {
 		x.Content, x.RenderedAt = content, f.CreateMs
@@ -156,17 +169,17 @@ func (m Model) onForwardLoaded(msg forwardLoadedMsg) (tea.Model, tea.Cmd) {
 	wasOn, anchor, tailed := m.rightLanded(msg.msgs)
 	m.threadBase, m.threadMeta = msg.msgs, msg.meta
 	m.thread = msg.msgs
-	m.rightNote = ""
+	m.rightName, m.rightNote = forwardTitle(msg.gist, m.deps.Self, m.selfName), ""
 	switch {
 	case len(msg.msgs) > 0:
 	case msg.gist.Refused:
 		m.rightNote = noteRefused
 	case msg.gist.Expanded:
-		m.rightNote = "这条转发是空的"
+		m.rightNote = "this forward is empty"
 	case m.deps.Syncer == nil:
 		// Only the process holding the sync lock may write, so a TUI reading
 		// beside a daemon can do nothing but wait for it.
-		m.rightNote = "还没展开，等同步"
+		m.rightNote = "not expanded yet; waiting for the sync"
 	default:
 		m.rightNote = noteExpanding
 	}
@@ -183,8 +196,8 @@ func (m Model) onForwardLoaded(msg forwardLoadedMsg) (tea.Model, tea.Cmd) {
 }
 
 const (
-	noteExpanding = "正在展开…"
-	noteRefused   = "这条转发无法展开"
+	noteExpanding = "expanding…"
+	noteRefused   = "this forward cannot be expanded"
 )
 
 // onForwardExpanded reloads the frame the expansion was for.

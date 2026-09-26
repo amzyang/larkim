@@ -194,7 +194,7 @@ func TestCardRows_APillMovesToTheNextLineWhole(t *testing.T) {
 func TestCardRows_PictureHoldsItsPlaceUntilItLands(t *testing.T) {
 	msg := cardOf(`{"tag":"img","property":{"imageID":"19","alt":{"tag":"plain_text","property":{"content":"image"}}}}`,
 		cardPictures(map[string]string{"19": "img_card"}))
-	require.Contains(t, rowText(renderRows([]store.Message{msg}, baseStyle())), "[图片]")
+	require.Contains(t, rowText(renderRows([]store.Message{msg}, baseStyle())), "[Image]")
 }
 
 func TestCardRows_MentionNamesThePersonTheCardCarries(t *testing.T) {

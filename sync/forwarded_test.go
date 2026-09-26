@@ -2,6 +2,7 @@ package sync
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -297,4 +298,55 @@ func TestUpsertRaw_QueuesEveryBundleItStores(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, due, 1)
 	require.Equal(t, "om_fwd", due[0].RootMessageID)
+}
+
+func TestExpandForwards_AsksWhoReactedToTheChildren(t *testing.T) {
+	s, f, clk := newSyncer(t)
+	ctx := t.Context()
+	storeBundle(t, s, "om_fwd", "oc_a", clk.t.Add(-time.Minute))
+	f.Bundles["om_fwd"] = []larkcli.RawForwarded{
+		child("om_fwd", "", "oc_a", "merge_forward", `{"text":"Merged and Forwarded Message"}`, clk.t),
+		child("om_a", "om_fwd", "oc_src", "text", `{"text":"第一条"}`, clk.t.Add(-2*time.Hour)),
+		child("om_b", "om_fwd", "oc_src", "text", `{"text":"第二条"}`, clk.t.Add(-time.Hour)),
+	}
+	// The expansion itself carries no reactions, so nothing but this call can
+	// bring them. Indented the way lark-cli prints it: the store compacts it.
+	f.Reactions["om_a"] = json.RawMessage(`{
+  "counts": [{"reaction_type": "THUMBSUP", "count": "1"}]
+}`)
+
+	_, err := s.expandForwards(ctx, clk.t)
+	require.NoError(t, err)
+
+	kids, err := s.Store.ForwardChildren(ctx, "om_fwd", "om_fwd")
+	require.NoError(t, err)
+	require.Equal(t, `{"counts":[{"reaction_type":"THUMBSUP","count":"1"}]}`, kids[0].ReactionsJSON,
+		"a child is a real message of its own chat, so Feishu answers for it by id")
+	require.Empty(t, kids[1].ReactionsJSON, "a child nobody reacted to carries no summary")
+	require.Equal(t, 1, countCalls(f.Calls, "reaction-counts:om_a,om_b"),
+		"one call for the whole tree, not one per child")
+}
+
+func TestExpandForwards_AChildFeishuWontShowReactionsForStillLands(t *testing.T) {
+	s, f, clk := newSyncer(t)
+	ctx := t.Context()
+	storeBundle(t, s, "om_fwd", "oc_a", clk.t.Add(-time.Minute))
+	f.Bundles["om_fwd"] = []larkcli.RawForwarded{
+		child("om_fwd", "", "oc_a", "merge_forward", `{"text":"Merged and Forwarded Message"}`, clk.t),
+		child("om_a", "om_fwd", "oc_src", "text", `{"text":"第一条"}`, clk.t.Add(-2*time.Hour)),
+	}
+	f.ReactionErr = &larkcli.Error{Code: 99991663, Message: "no permission"}
+
+	n, err := s.expandForwards(ctx, clk.t)
+	require.NoError(t, err)
+	require.Equal(t, 1, n, "losing a whole forward over its decorations is the worse answer")
+
+	kids, err := s.Store.ForwardChildren(ctx, "om_fwd", "om_fwd")
+	require.NoError(t, err)
+	require.Len(t, kids, 1)
+	require.Empty(t, kids[0].ReactionsJSON)
+	require.Equal(t, 1, countCalls(f.Calls, "reaction-counts:om_a"), "the refusal is the answer, not a skipped call")
+	root, err := s.Store.GetForwardRoot(ctx, "om_fwd")
+	require.NoError(t, err)
+	require.NotZero(t, root.FetchedAt, "the bundle is settled, not left owed")
 }

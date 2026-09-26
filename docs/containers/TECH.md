@@ -34,7 +34,7 @@ id=om_r1  pos=-3  thread=omt_1  parent=om_root  root=om_root  chat=oc_a(本会�
 
 ## 一帧只画一层
 
-嵌套转发不在面板内缩进渲染，而是每层一帧。一个转发帧只装 `upper_message_id` 指向本帧的那些子消息；其中 `msg_type = merge_forward` 的画成摘要行，点它压下一帧。
+嵌套转发不在面板内缩进渲染，而是每层一帧。一个转发帧只装 `upper_message_id` 指向本帧的那些子消息；其中 `msg_type = merge_forward` 的画成卡片，点它压下一帧。
 
 这让帧内内容永远是平的，于是子消息映射成 `store.Message` 后可以原样交给 `renderRows`——图片、富文本、卡片、附件全部继承既有渲染。44 列也不必为缩进让路。映射时 `MessagePosition = 0`、`ThreadID = ""`，子消息不得再开话题帧。
 
@@ -215,7 +215,7 @@ Lane 取零值 `LaneBackground`。`LaneBeat`（宽 3）装的是开着的会话�
 
 读者打开一个尚未展开的转发时，按 `LaneInteractive` 即时取一次——那条 lane 就是为人留的。帧先压上、画一行「正在展开…」，数据到了就地填充。但只有持 `daemon.lock` 的进程能写，所以 `Syncer` 为 nil 时给提示而非静默失败，照 `jumpToQuoted`（tui/app.go:1182）「that message has yet to be synced」的先例。
 
-API 拒绝（读者已退出源会话，或转发过旧）时按 `*larkcli.Error` 的 `IsPermanent()` 分流：永久失败记 `last_error` 并盖 `fetched_at`，不再重试——转发是冻结的，再问一次答案不会变；临时失败累加 `attempts` 并退避。摘要行随之画成无法展开，点击给提示而不是开空帧。
+API 拒绝（读者已退出源会话，或转发过旧）时按 `*larkcli.Error` 的 `IsPermanent()` 分流：永久失败记 `last_error` 并盖 `fetched_at`，不再重试——转发是冻结的，再问一次答案不会变；临时失败累加 `attempts` 并退避。卡片标题随之写成无法展开，点击给提示而不是开空帧。
 
 ### 子消息的附件
 
@@ -227,38 +227,52 @@ API 拒绝（读者已退出源会话，或转发过旧）时按 `*larkcli.Error
 
 ## 渲染
 
-容器的正文是**恰好一行**，由 `tui/summary.go` 的两个构造器产出，各返回单个 `msgRow`：
+话题的正文是**恰好一行**，转发的正文是一张**定长卡片**，两者都由 `tui/summary.go` 的构造器产出：
 
 ```go
 func threadSummary(x store.Message, idx int, st msgStyle, g *leads) (msgRow, bool)
-func forwardSummary(x store.Message, idx int, st msgStyle, g *leads) (msgRow, bool)
+func forwardSummary(x store.Message, root string, idx int, st msgStyle, g *leads) ([]msgRow, bool)
 ```
 
-返回单行而非 `[]msgRow`，签名与 `quoteRow`（tui/rows.go:485）一致——它也是「一条消息附带的一行，整行一个 zone」，连 `bool` 的含义（这行该不该画）都相同。
+话题返回单行，签名与 `quoteRow`（tui/rows.go:485）一致——它也是「一条消息附带的一行，整行一个 zone」，连 `bool` 的含义（这行该不该画）都相同。
 
-行的构成是「数量 · 代表内容」，宽度分配照 `reactionChip`（tui/rows.go:725）的既有取舍：**数量必须活下来，内容按剩余宽度截断**。
+话题行的构成是「数量 · 代表内容」，宽度分配照 `reactionChip`（tui/rows.go:725）的既有取舍：**数量必须活下来，内容按剩余宽度截断**。
 
 ```
-⤷ 23 条回复 · 李四: 1234
-⤷ 还没有回复
-[合并转发] 5 条 · 张三: hey
-[合并转发]
-[合并转发] · 无法展开
+⤷ 23 replies · 李四: 1234
+⤷ No replies yet
 ```
 
-代表的那一条，话题取尾、转发取头。`gist` 复用 `replyGist`（tui/replybar.go:183）的降级链，发送者名走 `displaySender`（tui/rows.go:513），截断走 `truncate`。
+转发卡片每行都以 `forwardBar`（`▏`，`quoteRow` 已在用的那根竖线）开头，首行是标题（`stBold`），其后是至多 `store.ForwardPreview` 行预览（`stDim`），子消息多于预览时再加一行 `…`。卡片的每一行都挂同一个 zone，所以点中哪一行都是「打开这张卡片」。
 
-未展开的 bundle 只画 `[合并转发]`。不从 `content` 数 `[时间] 姓名:` 的行数补一个数字：那棵字面树含全部嵌套层，与 `child_count` 的顶层口径不同，补出来的数会在展开后当着读者的面跳。
+```
+▏Group Chat History
+▏张三: 预算定了
+▏李四: 收到
+▏…
+▏聊天记录
+▏Chat History · cannot be expanded
+```
 
-数据挂 `msgMeta`（tui/data.go:158），与 `parents` / `res` / `docs` 同路，由 `loadMeta` 一次装好：话题侧用新的 `ThreadGists` 取回复数加最后一条回复，转发侧用 `ForwardGists` 取 `child_count` 加第一条子消息。只取一条，所以两侧的查询都是每个容器一行，不必分页。`ThreadGists` 的「最后一条」按 `(create_ms, message_position, id)` 倒序开窗，不用 `max(id)`——那是行被摄入的顺序，不是话题读起来的顺序。
+标题由 `forwardTitle(g, self, selfName)` 从 `ForwardGist` 的源会话字段算出，四种结果：`Sources == 1` 且源会话在 `chats` 里时按 `chat_mode` 分「Group Chat History」与「{self} and {peer}'s Chat History」，`p2p_target_id` 等于 self 时收成「{self}'s Chat History」；其余写「Chat History」。
 
-帧里的嵌套 bundle 走 `ForwardLevels`：它没有 `forwarded_roots` 行可数，计数与首条都从已落地的子消息里来，而它按构造就是展开的——它的行就在库里。
+兜底不是偷懒：`im chats get` 对一个读者不在其中的会话只回 `bot_count`/`chat_status`/`i18n_names`/`user_count`，既没有 `name` 也没有 `chat_mode`，所以本地查不到的源会话没有第二条路可问。「聊天记录」正是客户端对混合来源的写法，是它的子集而不是反面。
 
-话题摘要**无条件**画在主流里：`ThreadReplyCounts` 不返回 0 回复的话题，计数缺失时写「还没有回复」而不是不画。这一行是进话题回复的入口，也是读者能看出 `Enter` 不会回复这条消息的唯一提示。
+卡片不写条数。客户端的卡片也不写，省略号已经说明帧里装得下更多；未展开的 bundle 因此只画标题一行，不从 `content` 数 `[时间] 姓名:` 的行数补数字——那棵字面树含全部嵌套层，与 `child_count` 的顶层口径不同。
+
+`msgTypeLabel`（tui/chatrow.go）里 `merge_forward` 写 `[Chat History]`，会话列表的 `lastMessageSummary` 与引用行的 `replyGist`（tui/replybar.go:183）都在读 `content` 之前短路到它——`messages.content` 里那棵树留着（`yc` 要全文），压平成一行就是标签加 ISO 时间戳。
+
+代表的那几条，话题取尾、转发取头。预览内容复用 `replyGist` 的降级链，发送者名走 `displaySender`（tui/rows.go:513），截断走 `truncate`。
+
+数据挂 `msgMeta`（tui/data.go:158），与 `parents` / `res` / `docs` 同路，由 `loadMeta` 一次装好：话题侧用新的 `ThreadGists` 取回复数加最后一条回复，转发侧用 `ForwardGists` 取 `child_count`、前 `ForwardPreview` 条子消息，以及顶层子消息的源会话（`count(DISTINCT chat_id)` 加一次 `chats` 左连接）。预览封顶四条，所以查询规模仍与容器数同阶，不必分页。`ThreadGists` 的「最后一条」按 `(create_ms, message_position, id)` 倒序开窗，不用 `max(id)`——那是行被摄入的顺序，不是话题读起来的顺序。
+
+帧里的嵌套 bundle 走 `ForwardLevels`：它没有 `forwarded_roots` 行可数，计数、预览与源会话都从已落地的子消息里来，而它按构造就是展开的——它的行就在库里。`loadForward` 打开一个非顶层的帧时也走这条路取**本层**的 gist，而不是沿用 bundle 的：后者会把外层的会话名挂到里层的帧上。
+
+话题摘要**无条件**画在主流里：`ThreadReplyCounts` 不返回 0 回复的话题，计数缺失时写「No replies yet」而不是不画。这一行是进话题回复的入口，也是读者能看出 `Enter` 不会回复这条消息的唯一提示。
 
 一条消息既是转发又是话题根时只画话题摘要：活的那个赢。转发摘要的可点性不丢——话题帧里装着根消息本身，在那里它是一行转发摘要，再点压下一层。层级与客户端一致（话题里包着转发），也保住了 `activate` 原有的 `ThreadID` 先判顺序。
 
-上一段的推论：**转发摘要的画法与上下文无关，话题摘要只在主流里画**。话题帧里再写一遍「23 条回复」是废话——回复就在它下面。
+上一段的推论：**转发摘要的画法与上下文无关，话题摘要只在主流里画**。话题帧里再写一遍「23 replies」是废话——回复就在它下面。
 
 子消息没有 lark-cli 渲染过的 `content`——展开端点只回原始 body——所以映射时就地补一份：text 补它的话，image 补 `![Image](key)` 让图片走既有的 `splitImages` → `pictureRows`。**post 故意不补**：它的渲染是 markdown，只有 lark-cli 造得出，把压平的一行喂给 markdown 路径会把发送者的标点变成格式；它保留 `pendingText` 的暗色替身，那正是实情——字在，格式不在。卡片、通话、附件、表情包在读渲染之前就从 body 认出自己，不需要这一步。
 
@@ -266,11 +280,11 @@ func forwardSummary(x store.Message, idx int, st msgStyle, g *leads) (msgRow, bo
 
 三处配套改动：
 
-- `bodyRows`（tui/rows.go:588）对 `merge_forward` 直接返回 `nil`——摘要就是正文。这一行终结 2644 字符的字面倾泻。
-- `solo`（tui/rows.go:473）加 `msg_type == "merge_forward"`：容器自带摘要行，不能并进上一条的发送者块。
+- `bodyRows`（tui/rows.go:588）对 `merge_forward` 直接返回 `nil`——卡片就是正文。这一行终结 2644 字符的字面倾泻。
+- `solo`（tui/rows.go:473）加 `msg_type == "merge_forward"`：容器自带摘要，不能并进上一条的发送者块。
 - `headLine`（tui/rows.go:548）去掉不带计数的 `⤷thread`——计数现在在摘要行上，头部再标一次是重复。
 
-计数措辞直接写 `N 条回复`，不走 `plural`（tui/copy.go:214）——那个渲染英文复数，是给 agent 导出用的，中文没有复数。
+计数走 `plural`（tui/copy.go:214），所以一条回复写 `1 reply`、多条写 `N replies`。
 
 摘要行的未读圆点自己设 `lead.mark`，不走 `leadFor`：`leads.first`（tui/rows.go:319）只落在消息的第一行上，而摘要行排在 `headLine` 与 `quoteRow` 之后，`used` 早已为真。字形与颜色沿用 `stAccent.Render("●")`，读者不必学第二个记号。
 
@@ -404,13 +418,15 @@ type pendingJump struct{ id, thread string }
 | 用例 | 断言 |
 | --- | --- |
 | `TestRenderRows_AForwardedBundleNeverPrintsItsTags` | 渲染结果不含 `<forwarded_messages>` 与 ISO 时间戳 |
-| `TestRenderRows_AContainerTakesExactlyOneBodyRow` | 无论几条子消息、几条回复，正文都只有一行 |
+| `TestRenderRows_AForwardCardIsBoundedHoweverBigTheBundleIs` | 无论几条子消息，卡片都是标题加至多四行预览加省略号 |
 | `TestRenderRows_AForwardedBundleShowsItsFirstChild` | 转发取头 |
 | `TestRenderRows_AThreadRootShowsItsLastReply` | 话题取尾 |
 | `TestRenderRows_AThreadRootWithNoReplyStillGetsItsLine` | 0 回复也有入口 |
 | `TestRenderRows_AnUnexpandedBundleNamesNoCount` | 未展开不写数字 |
 | `TestRenderRows_ARefusedBundleSaysSo` | 被拒的说得出口 |
 | `TestSelectedZones_LeavesTheSummaryLineToTheKeyboardsOwnKeys` | `o` 看不见摘要行 |
+| `TestForwardTitle_NamesTheConversationTheWayTheClientDoes` | 群 / 单聊 / 自己的会话 / 无从命名，四种标题 |
+| `TestRightTitle_NamesAForwardFrameAfterTheCardThatOpenedIt` | 帧的标题就是卡片的标题 |
 | `TestLoadForward_ANestedLevelListsItsOwnChildren` | 一帧一层 |
 | `TestLoadForward_APictureChildGetsOnlyItsOwnOfTheBundlesResources` | 资源按 key 分派回子消息 |
 | `TestForwardedRow_AnImageChildPlacesItsPicture` | 图片走图片路径 |

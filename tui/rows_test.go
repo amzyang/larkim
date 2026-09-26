@@ -60,15 +60,15 @@ func TestRenderRows_SplitsDaysAndDropsMessageIDs(t *testing.T) {
 	}
 	out := rowText(renderRows(msgs, baseStyle()))
 	require.Equal(t, 2, strings.Count(out, "─ "), "one separator per day, not per message: %q", out)
-	require.Contains(t, out, "周一")
-	require.Contains(t, out, "昨天")
+	require.Contains(t, out, "Mon")
+	require.Contains(t, out, "Yesterday")
 	require.NotContains(t, out, "om_", "message ids are not part of the list any more")
 }
 
 func TestRenderRows_ADayRuleNeedsNoAirAroundIt(t *testing.T) {
 	msgs := []store.Message{
 		{MessageID: "om_1", SenderName: "张三", Content: "前天", CreateMs: msgAt(21, 9, 0), RenderedAt: 1},
-		{MessageID: "om_2", SenderName: "张三", Content: "昨天", CreateMs: msgAt(22, 9, 0), RenderedAt: 1},
+		{MessageID: "om_2", SenderName: "张三", Content: "Yesterday", CreateMs: msgAt(22, 9, 0), RenderedAt: 1},
 	}
 	rows := renderRows(msgs, baseStyle())
 	seen := 0
@@ -125,7 +125,7 @@ func TestRenderRows_UnrenderedAndRecalledStaySpelledOut(t *testing.T) {
 	}
 	out := rowText(renderRows(msgs, baseStyle()))
 	require.Contains(t, out, "x", "text carries its own body while the rendering is pending")
-	require.Contains(t, out, "[卡片]", "a body only lark-cli can read is named by its type")
+	require.Contains(t, out, "[Card]", "a body only lark-cli can read is named by its type")
 	require.NotContains(t, out, "json_card", "raw OpenAPI JSON never reaches the screen")
 	require.Contains(t, out, "(Recalled) gone")
 }
@@ -144,7 +144,7 @@ func TestRenderRows_BadgesOnlyAnObservedEdit(t *testing.T) {
 func TestBodyRows_ImageWithoutGraphicsFallsBackToAStandIn(t *testing.T) {
 	msgs := []store.Message{{MessageID: "om_1", MsgType: "image", SenderName: "孙琪",
 		Content: "[Image: img_v3_abc]", CreateMs: msgAt(23, 9, 0), RenderedAt: 1}}
-	require.Contains(t, rowText(renderRows(msgs, baseStyle())), "[图片]")
+	require.Contains(t, rowText(renderRows(msgs, baseStyle())), "[Image]")
 }
 
 func TestBodyRows_ImageReservesTheCellsItWillFill(t *testing.T) {
@@ -183,9 +183,9 @@ func TestSplitImages_KeepsTheTextAroundTheReference(t *testing.T) {
 }
 
 func TestMsgDay_BucketsLikeTheChatList(t *testing.T) {
-	require.Equal(t, "今天", msgDay(msgAt(23, 0, 1), testNow))
-	require.Equal(t, "昨天", msgDay(msgAt(22, 23, 59), testNow))
-	require.Equal(t, "周五", msgDay(msgAt(18, 9, 0), testNow))
+	require.Equal(t, "Today", msgDay(msgAt(23, 0, 1), testNow))
+	require.Equal(t, "Yesterday", msgDay(msgAt(22, 23, 59), testNow))
+	require.Equal(t, "Fri", msgDay(msgAt(18, 9, 0), testNow))
 	require.Equal(t, "09-10", msgDay(msgAt(10, 9, 0), testNow))
 	require.Equal(t, "2025-09-10", msgDay(time.Date(2025, 9, 10, 9, 0, 0, 0, time.Local).UnixMilli(), testNow))
 	require.Equal(t, "15:04", chatTime(time.Date(2026, 9, 23, 15, 4, 0, 0, time.Local).UnixMilli(), testNow),
@@ -205,9 +205,9 @@ func TestRenderRows_QuotesTheMessageAReplyAnswers(t *testing.T) {
 	st.parents = map[string]store.Message{"om_1": parent}
 	st.suffix = map[string]string{"ou_her": "01"}
 	out := rowText(renderRows(msgs, st))
-	require.Contains(t, out, "▏孙琪01: 失败任务链接发一下，我看看", "the reply quotes who it answers and what they said")
+	require.Contains(t, out, "▏Reply to 孙琪01: 失败任务链接发一下，我看看", "the reply quotes who it answers and what they said")
 	require.NotContains(t, out, "om_1", "the quote names a message the way a person does")
-	require.Less(t, strings.Index(out, "▏孙琪01"), strings.Index(out, "任务id HTK_36"), "the quote sits above the body")
+	require.Less(t, strings.Index(out, "▏Reply to 孙琪01"), strings.Index(out, "任务id HTK_36"), "the quote sits above the body")
 }
 
 func TestRenderRows_SkipsTheQuoteForTheMessageJustAbove(t *testing.T) {
@@ -226,7 +226,7 @@ func TestRenderRows_QuoteSaysWhenTheParentIsMissing(t *testing.T) {
 		{MessageID: "om_a", SenderName: "孙琪", Content: "无关", CreateMs: msgAt(23, 9, 0), RenderedAt: 1},
 		{MessageID: "om_b", SenderName: "沈知远", Content: "答案", ReplyTo: "om_old", CreateMs: msgAt(23, 9, 1), RenderedAt: 1},
 	}
-	require.Contains(t, rowText(renderRows(msgs, baseStyle())), "▏↩ (not synced)",
+	require.Contains(t, rowText(renderRows(msgs, baseStyle())), "▏Reply to (not synced)",
 		"a reply whose target never synced still reads as a reply")
 }
 
@@ -279,7 +279,7 @@ func TestBodyRows_CardPictureDrawsInsideTheFrame(t *testing.T) {
 
 func TestBodyRows_CardPictureStandsInWhenItCannotBeDrawn(t *testing.T) {
 	out := rowText(renderRows(cardMessage(), baseStyle()))
-	require.Contains(t, out, "[图片]")
+	require.Contains(t, out, "[Image]")
 	require.NotContains(t, out, "img_key:")
 }
 
@@ -418,7 +418,7 @@ func TestRenderRows_SplitsABlockForAMessageCarryingItsOwnBadge(t *testing.T) {
 		badge func(*store.Message)
 		want  string
 	}{
-		{"thread", func(x *store.Message) { x.ThreadID, x.MessagePosition = "omt_1", 3 }, "⤷ 还没有回复"},
+		{"thread", func(x *store.Message) { x.ThreadID, x.MessagePosition = "omt_1", 3 }, "⤷ No replies yet"},
 		{"edited", func(x *store.Message) { x.EditedAt = 7 }, "(Edited)"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -463,7 +463,7 @@ func TestRenderRows_SplitsABlockForAFailedSend(t *testing.T) {
 	}
 	st := baseStyle()
 	st.outbox = map[string]outboxState{"local-2": outFailed}
-	require.Equal(t, 2, blocks(renderRows(msgs, st), "你"))
+	require.Equal(t, 2, blocks(renderRows(msgs, st), "You"))
 }
 
 func TestRenderRows_MarksTheReplyTargetInTheLead(t *testing.T) {
@@ -480,7 +480,7 @@ func TestRenderRows_NamesTheReaderAsYou(t *testing.T) {
 	mine := said("om_1", "me", "好的", 23, 9, 0)
 	mine.SenderID, mine.SenderName = "ou_me", "林岚"
 	out := rowText(renderRows([]store.Message{mine}, baseStyle()))
-	require.Contains(t, out, "你", "the reader reads as 你, the way the chat list names them")
+	require.Contains(t, out, "You", "the reader reads as You, the way the chat list names them")
 	require.NotContains(t, out, "林岚")
 }
 
@@ -491,7 +491,7 @@ func TestRenderRows_QuoteNamesTheReaderAsYou(t *testing.T) {
 		func() store.Message { x := said("om_3", "孙琪", "答", 23, 9, 2); x.ReplyTo = "om_1"; return x }()}
 	st := baseStyle()
 	st.parents = map[string]store.Message{"om_1": parent}
-	require.Contains(t, rowText(renderRows(msgs, st)), "▏你: 原文")
+	require.Contains(t, rowText(renderRows(msgs, st)), "▏Reply to You: 原文")
 }
 
 func TestRenderSearchRows_KeepsABlockInsideOneChat(t *testing.T) {
@@ -610,13 +610,13 @@ func TestBodyRows_StickerDrawsThePictureInsteadOfItsPlaceholder(t *testing.T) {
 
 func TestBodyRows_StickerWithoutItsPictureStandsIn(t *testing.T) {
 	msgs := []store.Message{{MessageID: "om_1", MsgType: "sticker", SenderName: "张三",
-		Content: "[Sticker]", ContentRaw: `{"file_key":"v3_shrug"}`, CreateMs: msgAt(23, 9, 0), RenderedAt: 1}}
+		Content: "[ShrugSticker]", ContentRaw: `{"file_key":"v3_shrug"}`, CreateMs: msgAt(23, 9, 0), RenderedAt: 1}}
 	out := rowText(renderRows(msgs, baseStyle()))
-	require.Contains(t, out, "[表情]")
-	require.NotContains(t, out, "[Sticker]")
+	require.Contains(t, out, "[Sticker]")
+	require.NotContains(t, out, "[ShrugSticker]")
 
 	msgs[0].ContentRaw = `{}`
-	require.Contains(t, rowText(renderRows(msgs, baseStyle())), "[Sticker]",
+	require.Contains(t, rowText(renderRows(msgs, baseStyle())), "[ShrugSticker]",
 		"a sticker body naming no picture keeps whatever text it has")
 }
 

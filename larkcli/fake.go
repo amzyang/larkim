@@ -69,6 +69,9 @@ type Fake struct {
 	// SendErr injects an error into Send alone, which is how a test gets an
 	// upload that landed behind a send that did not.
 	SendErr error
+	// ReactionErr injects an error into ReactionCounts alone, which is how a
+	// test gets a message that landed without the reactions on it.
+	ReactionErr error
 	// Docs are the documents DocTitles can name, by "<doc_type>/<token>" as
 	// the request spells it. A document listed nowhere comes back denied, as
 	// one the identity cannot read does.
@@ -347,6 +350,9 @@ func (f *Fake) DeleteReaction(_ context.Context, messageID, reactionID string) e
 func (f *Fake) ReactionCounts(_ context.Context, messageIDs []string) (map[string]json.RawMessage, error) {
 	if err := f.record("reaction-counts:" + strings.Join(messageIDs, ",")); err != nil {
 		return nil, err
+	}
+	if f.ReactionErr != nil {
+		return nil, f.ReactionErr
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()

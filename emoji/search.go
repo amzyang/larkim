@@ -15,8 +15,9 @@ import (
 // picker can show the reader why this one came back.
 type Hit struct {
 	Emoji Emoji
-	// Term is the search term that matched — the Chinese name, its pinyin, an
-	// alias — and Positions are the runes of it the query landed on.
+	// Term is the search term that matched — a Chinese name, its pinyin, an
+	// alias — and Positions are the runes of it the query landed on. Both are
+	// empty when nothing was typed and the whole panel came back.
 	Term      string
 	Positions []int
 	score     int
@@ -168,7 +169,7 @@ func (ix *Index) Search(query string) []Hit {
 func (ix *Index) unqueried() []Hit {
 	hits := make([]Hit, 0, len(ix.items))
 	for _, e := range ix.items {
-		hits = append(hits, Hit{Emoji: e, Term: e.ZH})
+		hits = append(hits, Hit{Emoji: e})
 	}
 	slices.SortStableFunc(hits, func(a, b Hit) int { return ix.rank(a.Emoji) - ix.rank(b.Emoji) })
 	return hits

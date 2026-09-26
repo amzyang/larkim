@@ -34,6 +34,10 @@ type rightFrame struct {
 	// its children are stored and where its pictures are registered. Empty
 	// for a thread.
 	root string
+	// name titles the frame. It is carried rather than recomputed because
+	// whoever opened the frame had already drawn it on the summary, so the
+	// header is right from the first paint instead of after the list lands.
+	name string
 	// sel is the message the cursor was on and top the line the viewport
 	// started at, so a pop lands where the reader left rather than at the
 	// tail.
@@ -69,7 +73,7 @@ func containerOf(x store.Message, root string) (kind rightKind, id, bundle strin
 
 // frame is the visible frame, packed for the stack.
 func (m Model) frame() rightFrame {
-	return rightFrame{kind: m.rightKind, id: m.threadID, root: m.rightRoot,
+	return rightFrame{kind: m.rightKind, id: m.threadID, root: m.rightRoot, name: m.rightName,
 		sel: idAt(m.thread, m.threadIdx), top: topAnchor(m.threadRows, m.thread, m.threadTop)}
 }
 
@@ -127,7 +131,7 @@ func (m *Model) closeRight() {
 	m.rightKind, m.threadID, m.rightRoot = rightNone, "", ""
 	m.thread, m.threadBase, m.threadRows, m.threadMeta = nil, nil, nil, msgMeta{}
 	m.threadIdx, m.threadTop = 0, 0
-	m.rightStack, m.rightPin, m.rightNote = nil, rightFrame{}, ""
+	m.rightStack, m.rightPin, m.rightNote, m.rightName = nil, rightFrame{}, "", ""
 	m.layout()
 }
 
@@ -137,7 +141,7 @@ func (m *Model) closeRight() {
 func (m *Model) showRight(f rightFrame) tea.Cmd {
 	m.rightKind, m.threadID, m.rightRoot = f.kind, f.id, f.root
 	m.thread, m.threadBase, m.threadRows, m.threadMeta = nil, nil, nil, msgMeta{}
-	m.threadIdx, m.threadTop, m.rightNote = 0, 0, ""
+	m.threadIdx, m.threadTop, m.rightNote, m.rightName = 0, 0, "", f.name
 	// A frame that names where it wants to land — one being uncovered, or one
 	// a search hit opened — says so through sel; the pin is spent on the
 	// first list to arrive under it.
@@ -205,7 +209,20 @@ func (m Model) containerAtCursor() (rightFrame, bool) {
 		root = m.rightRoot
 	}
 	kind, id, bundle := containerOf(sel, root)
-	return rightFrame{kind: kind, id: id, root: bundle}, kind != rightNone
+	f := rightFrame{kind: kind, id: id, root: bundle}
+	if kind == rightForward {
+		f.name = forwardTitle(m.gistOf(id), m.deps.Self, m.selfName)
+	}
+	return f, kind != rightNone
+}
+
+// gistOf reads a bundle's collapsed card from whichever pane loaded it, so
+// the keyboard opens a frame under the same title the mouse would.
+func (m Model) gistOf(bundleID string) store.ForwardGist {
+	if g, ok := m.meta.forwards[bundleID]; ok {
+		return g
+	}
+	return m.threadMeta.forwards[bundleID]
 }
 
 // onForwardedChild reports that the cursor is on a message of another chat:

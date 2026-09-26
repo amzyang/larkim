@@ -184,6 +184,8 @@ func replyGist(x store.Message) string {
 	switch {
 	case x.Deleted:
 		return "(Recalled)"
+	case x.MsgType == "merge_forward":
+		return msgTypeLabel(x.MsgType)
 	case x.RenderedAt == 0:
 		return flatten(expandEmoji(pendingText(x.MsgType, x.ContentRaw)))
 	}
@@ -198,7 +200,7 @@ func replyGist(x store.Message) string {
 		return text
 	}
 	if len(keys) > 0 {
-		return "[图片]"
+		return "[Image]"
 	}
 	return msgTypeLabel(x.MsgType)
 }

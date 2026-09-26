@@ -44,7 +44,7 @@ func TestLoadMeta_LoadsTheQuotedParents(t *testing.T) {
 	require.Equal(t, "01", meta.suffix["ou_a"], "the quoted sender is named as the lists name them")
 
 	st2 := msgStyle{width: 60, self: "ou_me", now: testNow, suffix: meta.suffix, parents: meta.parents}
-	require.Contains(t, rowText(renderRows(page, st2)), "▏李明01: 瞅一眼")
+	require.Contains(t, rowText(renderRows(page, st2)), "▏Reply to 李明01: 瞅一眼")
 }
 
 func TestRenderRows_QuoteReadsRecalledAndUnrenderedParents(t *testing.T) {
@@ -58,8 +58,8 @@ func TestRenderRows_QuoteReadsRecalledAndUnrenderedParents(t *testing.T) {
 	st := baseStyle()
 	st.parents = map[string]store.Message{"om_gone": gone, "om_raw": raw}
 	out := ansi.Strip(rowText(renderRows(msgs, st)))
-	require.Contains(t, out, "▏孙琪: (Recalled)")
-	require.Contains(t, out, "▏孙琪: [图片]", "a parent still waiting for its rendering is named by its type")
+	require.Contains(t, out, "▏Reply to 孙琪: (Recalled)")
+	require.Contains(t, out, "▏Reply to 孙琪: [Image]", "a parent still waiting for its rendering is named by its type")
 }
 
 // quoteModel is a chat whose last message answers its first, with one message
@@ -112,7 +112,7 @@ func TestRenderRows_QuoteLineCarriesAJumpZone(t *testing.T) {
 
 	var quote msgRow
 	for _, r := range renderRows(msgs, st) {
-		if strings.Contains(ansi.Strip(r.text), "▏李四: 原文") {
+		if strings.Contains(ansi.Strip(r.text), "▏Reply to 李四: 原文") {
 			quote = r
 			continue
 		}

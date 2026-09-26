@@ -913,6 +913,8 @@ func (c *ExecClient) SearchChats(ctx context.Context, query string) ([]RawChat, 
 // two cannot drift apart on which field wins.
 func (o Outgoing) flags() []string {
 	switch {
+	case o.Post != "":
+		return []string{"--msg-type", "post", "--content", o.Post}
 	case o.Markdown != "":
 		// Not --markdown: that flag rewrites H1-H3 into H4/H5 before sending,
 		// and the rewrite lands in what this client stores and draws.

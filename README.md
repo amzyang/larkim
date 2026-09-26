@@ -38,6 +38,7 @@ larkim reply om_xxx --text "ok" --in-thread
 larkim send --chat "平台组" --markdown $'## 发布说明\n\n- 修复了 A'   # rich-text post
 larkim send --chat "平台组" --image ~/Desktop/shot.png              # uploaded, then sent
 larkim send --chat "平台组" --file ~/Desktop/发布说明.pdf            # any other file, same way
+larkim react om_xxx --emoji DONE                     # an emoji Feishu refuses is replied with instead
 larkim watch --chat "项目协作群"                     # stream new messages
 larkim tui
 ```
@@ -48,7 +49,7 @@ larkim tui
 
 A message that holds other messages takes one line in the list and opens in the right pane. A thread root carries how many replies are under it and the last of them, the replies themselves having left the chat's flow; a merged forward carries how many messages it holds and the first of them, in place of the tagged, timestamped tree it would otherwise print. Clicking the line, or `Enter` or `t` on it, opens the pane. Opening a forward from inside the pane stacks it over what is there — a forwarded bundle inside a thread, a bundle inside a bundle — and `Esc` peels one layer off, closing the column on the last. Messages inside a forward belong to their own chat: they can be read and copied but not answered, reacted to or recalled. A thread's replies are taken as read when its pane is opened, not when the chat is, and until then the root's line carries the unread dot and the chat wears a `⤷` where its count would go — but only for a thread you have a stake in, having spoken in it or been named. A thread nobody asked you about is somebody else's conversation, which is why the badge leaves replies out in the first place. `n` and `N` do not follow the marker: the queue they clear is the badge's.
 
-The message list is split where the calendar day changes, and each message is headed by its sender — the selected one also spells out its time. Official emoji are drawn as emoji, interactive cards as a titled block with their buttons, and system messages centred and muted. On kitty, images are drawn in place once they have been downloaded; elsewhere they read as `[图片]`. An attachment is carded the way the client draws one: a video as its cover frame under how long it runs, a voice message as that length, and any other file as its name beside its size. `o` or a click opens the downloaded file.
+The message list is split where the calendar day changes, and each message is headed by its sender — the selected one also spells out its time. Official emoji are drawn as emoji, interactive cards as a titled block with their buttons, and system messages centred and muted. On kitty, images are drawn in place once they have been downloaded; elsewhere they read as `[Image]`. An attachment is carded the way the client draws one: a video as its cover frame under how long it runs, a voice message as that length, and any other file as its name beside its size. `o` or a click opens the downloaded file.
 
 | keys | action |
 |---|---|

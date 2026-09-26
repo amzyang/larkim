@@ -193,7 +193,7 @@ func (m Model) toggleReaction(x store.Message, key string) (tea.Model, tea.Cmd) 
 		if err := m.emoji.SaveUsed(m.deps.DataDir); err != nil {
 			// The list is derived data; losing it costs the ordering of an
 			// empty query, which is not worth interrupting the reaction for.
-			m = m.notify("could not remember "+e.ZH+": "+err.Error(), false)
+			m = m.notify("could not remember "+e.Name()+": "+err.Error(), false)
 		}
 	}
 	if asPicture {
@@ -218,7 +218,7 @@ func (m Model) sendEmojiPicture(x store.Message, e emoji.Emoji) (tea.Model, tea.
 	path := emoji.Path(m.deps.DataDir, e.Key)
 	if _, err := os.Stat(path); err != nil {
 		m.deps.Log.Error("emoji picture", "key", e.Key, "path", path, "err", err)
-		return m.notify(e.ZH+" has no picture cut out to send", true), nil
+		return m.notify(e.Name()+" has no picture cut out to send", true), nil
 	}
 	img := draftImage{ref: path, local: path, key: "img_local_1"}
 	it := outboxItem{localID: uuid.NewString(), chatID: x.ChatID, replyTo: x.MessageID,
@@ -233,7 +233,7 @@ func (m Model) sendEmojiPicture(x store.Message, e emoji.Emoji) (tea.Model, tea.
 	cmd := m.sendItem(it)
 	m.enqueue(it)
 	m.refreshPanes()
-	return m.notify("sending "+e.ZH+" as a picture", false), cmd
+	return m.notify("sending "+e.Name()+" as a picture", false), cmd
 }
 
 // reactedMsg says how a press ended. The strip is drawn ahead of Feishu's
@@ -317,13 +317,13 @@ func (m Model) pickerCell(h emoji.Hit, selected bool, cell int) []rowSeg {
 	if selected {
 		mark = stAccent.Render("▸")
 	}
-	name := h.Emoji.ZH
+	name := h.Emoji.Name()
 	drawn := name
 	if selected {
 		// The mark alone is one glyph at the far left of a three-column grid,
 		// which is not where the reader is reading. The name takes the colour
 		// because it is the only run in the cell drawn plain: the key and the
-		// term that answered are dim, and the tick and 图 say something else.
+		// term that answered are dim, and the tick and pic say something else.
 		drawn = stPickerOn.Render(name)
 	}
 	switch {
@@ -335,7 +335,7 @@ func (m Model) pickerCell(h emoji.Hit, selected bool, cell int) []rowSeg {
 		// Feishu will not take this one as a reaction, so choosing it sends a
 		// picture instead. That is a message in the chat rather than a mark on
 		// one, which the reader has to know before they press enter.
-		drawn += stDim.Render(" 图")
+		drawn += stDim.Render(" pic")
 	}
 	// The words are fitted to what is left of the cell, so the column the next
 	// emoji opens in stands still whatever shape this one has.

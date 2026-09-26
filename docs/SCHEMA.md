@@ -93,10 +93,13 @@ A `merge_forward` message is a container: its body is the literal string `Merged
 | `seq` | order among siblings, by create time |
 | `chat_id` | the ORIGINAL chat. **It does not mean larkim holds that chat**; do not union this table with `messages` |
 | `msg_type`, `sender_id`, `sender_name`, `create_ms`, `content_raw`, `mentions_json`, `raw_json` | the message as the bundle reports it |
+| `reactions_json` | who reacted to the ORIGINAL message, in the same `{counts, details}` shape as `messages.reactions_json`. Asked for by `reactions/batch_query` alongside the expansion, because the expansion itself carries none. Empty for a child of a chat the reader is not in: Feishu answers `no_permission` for those |
 
 The primary key is `(root_message_id, upper_message_id, message_id)`. One message can sit at two depths of the same bundle — forwarded alone, and again inside a stretch of history that was forwarded whole — and both belong.
 
 There is no `content` column: a child is never rendered by lark-cli, so its text comes from `content_raw`. Its attachments are registered against the **bundle's** id in `message_resources`, because the resource endpoint refuses a child message's id.
+
+`reactions_json` is a snapshot taken when the bundle expanded. The messages inside a forward are frozen, but reactions on the originals are not, and nothing comes back for them: re-expanding the bundle is what refreshes them.
 
 `forwarded_roots` is the expansion queue, one row per bundle.
 

@@ -8,7 +8,7 @@ import (
 
 // mentionsLabel names the panel and the rule over its rows. It is the client's
 // own word for this list, so the two are read as the same thing.
-const mentionsLabel = "@我"
+const mentionsLabel = "Mentions"
 
 // mentionsLimit is how far back the list reaches. Being named is rare next to
 // being sent to, so a hundred covers a long stretch of history without the

@@ -27,6 +27,16 @@ func TestByKey_ResolvesEverySpelling(t *testing.T) {
 	require.False(t, ok, "a card icon name is not an emoji")
 }
 
+func TestName_IsTheOneTheClientShows(t *testing.T) {
+	e, ok := ByKey("THUMBSUP")
+	require.True(t, ok)
+	require.Equal(t, "Like", e.Name(), "the client here runs in English")
+
+	bare, ok := ByKey("OKHAND")
+	require.True(t, ok)
+	require.Equal(t, "OKHAND", bare.Name(), "a spelling the client never names stands for itself")
+}
+
 func TestByName_ReadsTheNameAMessageCarries(t *testing.T) {
 	zh, ok := ByName("赞")
 	require.True(t, ok)
@@ -228,4 +238,31 @@ func TestSummary_NamesTheReactorsEarliestFirst(t *testing.T) {
 	             {"emoji_type":"OK","action_time":"1790155041","operator":{"operator_id":"ou_me"}}]}`
 	require.Equal(t, []Chip{{Key: "OK", Count: 3, Mine: true, Operators: []string{"ou_me", "ou_b"}}},
 		Summary(block, "ou_me"))
+}
+
+func TestDelisted_TellsAWithdrawnEmojiFromAnotherTenantsCultureOne(t *testing.T) {
+	withdrawn, ok := ByKey("AWESOME")
+	require.True(t, ok)
+	require.True(t, withdrawn.Delisted, "666 is gone from the client, so only its picture still travels")
+	require.False(t, withdrawn.Reactable())
+
+	foreign, ok := ByKey("PursueUltimate")
+	require.True(t, ok)
+	require.False(t, foreign.Delisted, "another tenant's emoji is refused as a reaction but goes inside a message")
+	require.False(t, foreign.Reactable())
+
+	ordinary, ok := ByKey("THUMBSUP")
+	require.True(t, ok)
+	require.False(t, ordinary.Delisted)
+	require.True(t, ordinary.Reactable())
+}
+
+func TestDelisted_CoversEveryEmojiTheClientHasWithdrawn(t *testing.T) {
+	var got []string
+	for _, e := range All() {
+		if e.Delisted {
+			got = append(got, e.Key)
+		}
+	}
+	require.ElementsMatch(t, []string{"ATTENTION", "WELLDONE", "FOLLOWME", "DETERGENT", "AWESOME", "GOODJOB"}, got)
 }

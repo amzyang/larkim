@@ -13,8 +13,8 @@ func TestPendingText_PrefersTheBodyItCanRead(t *testing.T) {
 	}{
 		{"text", "text", `{"text":"hi\nthere"}`, "hi\nthere"},
 		{"text keeps mention placeholders", "text", `{"text":"@_user_1 hi"}`, "@_user_1 hi"},
-		{"card", "interactive", `{"json_card":"{}"}`, "[卡片]"},
-		{"image", "image", `{"image_key":"img_v3_1"}`, "[图片]"},
+		{"card", "interactive", `{"json_card":"{}"}`, "[Card]"},
+		{"image", "image", `{"image_key":"img_v3_1"}`, "[Image]"},
 		{"malformed text falls back to the type", "text", "not json", "[text]"},
 		{"empty text falls back to the type", "text", `{"text":""}`, "[text]"},
 	} {
@@ -55,13 +55,13 @@ func TestPendingText_PostReadsItsBody(t *testing.T) {
 			"图："},
 		{"a picture-only post is named by its picture",
 			`{"title":"","content":[[{"tag":"img","image_key":"img_a"}]]}`,
-			"[图片]"},
+			"[Image]"},
 		{"a locale-wrapped body reads the same",
 			`{"zh_cn":{"title":"","content":[[{"tag":"md","text":"## 标题"}]]}}`,
 			"## 标题"},
 		{"a body that is not a post falls back to the type",
 			`This message was sent from an unsupported client`,
-			"[富文本]"},
+			"[Rich Text]"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			require.Equal(t, tc.want, pendingText("post", tc.raw))

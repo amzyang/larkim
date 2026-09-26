@@ -197,3 +197,130 @@ func TestMigrate_SeedsEveryStoredBundleIntoTheQueue(t *testing.T) {
 	require.Len(t, due, 1)
 	require.Equal(t, "om_fwd", due[0].RootMessageID)
 }
+
+// chats10 is ten children of one chat, so a preview has more to choose from
+// than it shows.
+func chats10(chatID string) []Forwarded {
+	out := make([]Forwarded, 0, 10)
+	for i := range 10 {
+		out = append(out, Forwarded{UpperMessageID: "om_fwd", MessageID: "om_c" + string(rune('a'+i)),
+			ChatID: chatID, MsgType: "text", Seq: i, SenderID: "ou_a", SenderName: "张三",
+			CreateMs: int64(100 + i), ContentRaw: `{"text":"第` + string(rune('0'+i)) + `句"}`})
+	}
+	return out
+}
+
+func TestForwardGists_PreviewsTheFirstChildrenInOrder(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	bundle(t, s, "om_fwd", "oc_a", 200)
+	require.NoError(t, s.SaveForwarded(ctx, "om_fwd", chats10("oc_src"), 300))
+
+	gists, err := s.ForwardGists(ctx, []string{"om_fwd"})
+	require.NoError(t, err)
+	g := gists["om_fwd"]
+
+	require.Equal(t, 10, g.ChildCount, "the count is the frame's, not the card's")
+	require.Len(t, g.Preview, ForwardPreview)
+	require.Equal(t, `{"text":"第0句"}`, g.Preview[0].ContentRaw, "a forward opens with what it was forwarded for")
+	require.Equal(t, `{"text":"第3句"}`, g.Preview[3].ContentRaw)
+	require.Equal(t, "张三", g.Preview[0].SenderName)
+}
+
+func TestForwardGists_NamesTheChatTheBundleCameFrom(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	require.NoError(t, s.UpsertChats(ctx, []Chat{
+		{ChatID: "oc_src", Name: "平台组", ChatMode: "group"},
+	}, 100))
+	bundle(t, s, "om_fwd", "oc_a", 200)
+	require.NoError(t, s.SaveForwarded(ctx, "om_fwd", chats10("oc_src"), 300))
+
+	gists, err := s.ForwardGists(ctx, []string{"om_fwd"})
+	require.NoError(t, err)
+	g := gists["om_fwd"]
+
+	require.Equal(t, 1, g.Sources)
+	require.Equal(t, "oc_src", g.SourceChatID)
+	require.Equal(t, "group", g.SourceChatMode)
+	require.Equal(t, "平台组", g.SourceChatName)
+}
+
+func TestForwardGists_LeavesAMixedBundleUnnamed(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	bundle(t, s, "om_fwd", "oc_a", 200)
+	kids := chats10("oc_src")
+	kids[4].ChatID = "oc_other"
+	require.NoError(t, s.SaveForwarded(ctx, "om_fwd", kids, 300))
+
+	gists, err := s.ForwardGists(ctx, []string{"om_fwd"})
+	require.NoError(t, err)
+
+	require.Equal(t, 2, gists["om_fwd"].Sources)
+	require.Empty(t, gists["om_fwd"].SourceChatID, "two conversations have no one name between them")
+}
+
+func TestForwardGists_LeavesAChatLarkimNeverSyncedUnnamed(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	bundle(t, s, "om_fwd", "oc_a", 200)
+	require.NoError(t, s.SaveForwarded(ctx, "om_fwd", chats10("oc_elsewhere"), 300))
+
+	gists, err := s.ForwardGists(ctx, []string{"om_fwd"})
+	require.NoError(t, err)
+	g := gists["om_fwd"]
+
+	require.Equal(t, 1, g.Sources)
+	require.Equal(t, "oc_elsewhere", g.SourceChatID)
+	require.Empty(t, g.SourceChatMode, "nothing here or at Feishu can say what sort of chat that was")
+}
+
+func TestForwardLevels_PreviewsAndNamesANestedBundle(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	require.NoError(t, s.UpsertChats(ctx, []Chat{
+		{ChatID: "oc_dm", Name: "张三", ChatMode: "p2p", P2PTargetID: "ou_a"},
+	}, 100))
+	bundle(t, s, "om_fwd", "oc_a", 200)
+	require.NoError(t, s.SaveForwarded(ctx, "om_fwd", []Forwarded{
+		{UpperMessageID: "om_fwd", MessageID: "om_inner", ChatID: "oc_src",
+			MsgType: "merge_forward", Seq: 0, CreateMs: 100},
+		{UpperMessageID: "om_inner", MessageID: "om_x", ChatID: "oc_dm", MsgType: "text", Seq: 0,
+			SenderName: "张三", CreateMs: 90, ContentRaw: `{"text":"预算定了"}`},
+		{UpperMessageID: "om_inner", MessageID: "om_y", ChatID: "oc_dm", MsgType: "text", Seq: 1,
+			SenderName: "林岚", CreateMs: 91, ContentRaw: `{"text":"收到"}`},
+	}, 300))
+
+	levels, err := s.ForwardLevels(ctx, "om_fwd", []string{"om_inner"})
+	require.NoError(t, err)
+	g := levels["om_inner"]
+
+	require.True(t, g.Expanded, "its rows are here, so it is expanded by construction")
+	require.Equal(t, 2, g.ChildCount)
+	require.Len(t, g.Preview, 2)
+	require.Equal(t, "张三", g.Preview[0].SenderName)
+	require.Equal(t, "p2p", g.SourceChatMode, "a nested card is named after its own children's chat")
+	require.Equal(t, "ou_a", g.SourcePeerID)
+}
+
+func TestSaveForwarded_StoresAChildsReactionsMinimised(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	bundle(t, s, "om_fwd", "oc_a", 200)
+
+	// lark-cli prints its JSON indented. The @-me marker and the :mentions
+	// panel match these columns by text, so the indentation cannot survive.
+	require.NoError(t, s.SaveForwarded(ctx, "om_fwd", []Forwarded{
+		{UpperMessageID: "om_fwd", MessageID: "om_a", ChatID: "oc_src", MsgType: "text",
+			SenderID: "ou_a", SenderName: "张三", CreateMs: 100, ContentRaw: `{"text":"预算定了"}`,
+			MentionsJSON:  "[\n  {\n    \"key\": \"@_user_1\",\n    \"id\": \"ou_me\"\n  }\n]",
+			ReactionsJSON: "{\n  \"counts\": [\n    {\n      \"reaction_type\": \"THUMBSUP\"\n    }\n  ]\n}"},
+	}, 300))
+
+	kids, err := s.ForwardChildren(ctx, "om_fwd", "om_fwd")
+	require.NoError(t, err)
+	require.Len(t, kids, 1)
+	require.Equal(t, `{"counts":[{"reaction_type":"THUMBSUP"}]}`, kids[0].ReactionsJSON)
+	require.Equal(t, `[{"key":"@_user_1","id":"ou_me"}]`, kids[0].MentionsJSON)
+}

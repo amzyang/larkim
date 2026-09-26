@@ -121,7 +121,7 @@ func TestOnForwardLoaded_WithoutTheSyncLockItSaysToWait(t *testing.T) {
 
 	next, cmd := m.onForwardLoaded(forwardLoadedMsg{bundleID: "om_new", level: "om_new"})
 
-	require.Equal(t, "还没展开，等同步", next.(Model).rightNote,
+	require.Equal(t, "not expanded yet; waiting for the sync", next.(Model).rightNote,
 		"only the process holding the sync lock may write")
 	require.Nil(t, cmd)
 }
@@ -168,4 +168,65 @@ func TestForwardFrame_AChildCannotBeAnswered(t *testing.T) {
 		require.Contains(t, got.notice, "belongs to its own chat", name)
 		require.Equal(t, modeNormal, got.mode, name)
 	}
+}
+
+func TestLoadForward_GistsTheLevelRatherThanTheBundle(t *testing.T) {
+	st := bundleStore(t)
+
+	msg := loadForward(Deps{Store: st}, "om_fwd", "om_inner")().(forwardLoadedMsg)
+
+	require.Equal(t, 1, msg.gist.ChildCount,
+		"the nested level holds one message; the bundle around it holds three")
+	require.Equal(t, "oc_other", msg.gist.SourceChatID,
+		"a frame is named after the conversation its own rows came from")
+}
+
+// postWithPicture is the shape the Feishu editor writes when a screenshot is
+// dropped between two remarks: words, the picture on a paragraph of its own,
+// then more words.
+const postWithPicture = `{"title":"","content":[
+ [{"tag":"text","text":"对照同表正常样本"}],
+ [{"tag":"img","image_key":"img_shot","width":1656,"height":518}],
+ [{"tag":"text","text":"看下这个问题"}]]}`
+
+func TestForwardFrame_APostChildDrawsThePictureItCarries(t *testing.T) {
+	x := forwardedRow(store.Forwarded{MessageID: "om_post", MsgType: "post",
+		SenderID: "ou_a", SenderName: "张三", ContentRaw: postWithPicture, CreateMs: msgAt(23, 9, 0)})
+	st := baseStyle()
+	st.dataDir = "/data"
+	st.res = map[string][]store.Resource{"om_post": {
+		{FileKey: "img_shot", Type: "image", LocalPath: "resources/img_shot.jpg", Status: "done"}}}
+	st.place = func(path string, maxCols, maxRows int) picture {
+		return picture{path: path, cols: 30, rows: 4}
+	}
+
+	rows := renderRows([]store.Message{x}, st)
+
+	cells := 0
+	for _, r := range rows {
+		if r.pic.cols > 0 {
+			cells++
+		}
+	}
+	require.Equal(t, 4, cells, "the picture inside a forwarded post is drawn, not dropped")
+	out := rowText(rows)
+	require.Contains(t, out, "对照同表正常样本", "the words around it still read")
+	require.Contains(t, out, "看下这个问题")
+}
+
+func TestForwardFrame_AChildShowsTheReactionsItCollected(t *testing.T) {
+	st := bundleStore(t)
+	ctx := t.Context()
+	require.NoError(t, st.SaveForwarded(ctx, "om_fwd", []store.Forwarded{
+		{UpperMessageID: "om_fwd", MessageID: "om_a", ChatID: "oc_src", MsgType: "text",
+			SenderID: "ou_a", SenderName: "张三", CreateMs: 10, ContentRaw: `{"text":"预算定了"}`,
+			ReactionsJSON: twoReactions},
+	}, 200))
+
+	msg := loadForward(Deps{Store: st, Self: "ou_me"}, "om_fwd", "om_fwd")().(forwardLoadedMsg)
+
+	require.Len(t, msg.msgs, 1)
+	out := rowText(renderRows(msg.msgs, baseStyle()))
+	require.Contains(t, out, "👍 You +2", "a child keeps the reactions its own chat collected")
+	require.Contains(t, out, "[+1] +1")
 }

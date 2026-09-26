@@ -33,7 +33,10 @@ type App struct {
 	buildDSN     string
 
 	clientOnce gosync.Once
-	larkClient *larkcli.ExecClient
+	// larkClient is the Feishu boundary every command shares. A test sets it
+	// before the command runs so a fake stands where the subprocess would;
+	// left nil, the first caller builds the real one.
+	larkClient larkcli.Client
 }
 
 // New builds the root command. buildDSN is the Sentry DSN baked in at build
@@ -78,8 +81,8 @@ func New(version, buildDSN string) *cobra.Command {
 	root.PersistentFlags().StringVar(&app.sentryFlag, "sentry-dsn", "", "Sentry DSN for crash reporting (overrides SENTRY_DSN and the build-time default; empty disables)")
 	root.SetFlagErrorFunc(func(_ *cobra.Command, err error) error { return &usageError{err} })
 	root.AddCommand(app.syncCmd(), app.statusCmd(), app.daemonCmd(), app.chatsCmd(), app.messagesCmd(), app.contactsCmd(),
-		app.sendCmd(), app.replyCmd(), app.watchCmd(), app.silenceCmd(), app.tuiCmd(), app.dbCmd(), app.schemaCmd(),
-		app.emojiCmd(), app.sentryCmd())
+		app.sendCmd(), app.replyCmd(), app.reactCmd(), app.watchCmd(), app.silenceCmd(), app.tuiCmd(), app.dbCmd(),
+		app.schemaCmd(), app.emojiCmd(), app.sentryCmd())
 	return root
 }
 
@@ -128,8 +131,11 @@ func (a *App) openStore() (*store.Store, error) {
 // than built per caller because the lanes inside it are a per-process budget:
 // a second client would be a second pair of lanes, and the TUI's sweeps and
 // its keystrokes would stop knowing about each other.
-func (a *App) client() *larkcli.ExecClient {
+func (a *App) client() larkcli.Client {
 	a.clientOnce.Do(func() {
+		if a.larkClient != nil {
+			return
+		}
 		if err := os.MkdirAll(a.cfg.ResourcesDir(), 0o700); err != nil {
 			a.logger().Warn("resources dir", "err", err)
 		}

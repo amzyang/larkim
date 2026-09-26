@@ -154,33 +154,33 @@ func chatTime(ms int64, now time.Time) string {
 func msgTypeLabel(msgType string) string {
 	switch msgType {
 	case "image":
-		return "[图片]"
+		return "[Image]"
 	case "file":
-		return "[文件]"
+		return "[File]"
 	case "audio":
-		return "[语音]"
+		return "[Audio]"
 	case "media":
-		return "[视频]"
+		return "[Video]"
 	case "sticker":
-		return "[表情]"
+		return "[Sticker]"
 	case "interactive":
-		return "[卡片]"
+		return "[Card]"
 	case "video_chat":
-		return "[视频会议]"
+		return "[Video Call]"
 	case "share_chat":
-		return "[群名片]"
+		return "[Group Card]"
 	case "share_user":
-		return "[个人名片]"
+		return "[Contact Card]"
 	case "merge_forward":
-		return "[合并转发]"
+		return "[Chat History]"
 	case "post":
-		return "[富文本]"
+		return "[Rich Text]"
 	case "calendar":
-		return "[日程]"
+		return "[Event]"
 	case "share_calendar_event":
-		return "[日程分享]"
+		return "[Shared Event]"
 	case "system":
-		return "[系统消息]"
+		return "[System Message]"
 	case "":
 		return ""
 	default:
@@ -217,7 +217,7 @@ func chatSummary(c store.Chat, self string) string {
 		sender = c.LastSenderID
 	}
 	if c.LastDeleted {
-		return stDim.Render(sender + "撤回了一条消息")
+		return stDim.Render(sender + " recalled a message")
 	}
 
 	body := lastMessageSummary(c)
@@ -235,7 +235,7 @@ func chatSummary(c store.Chat, self string) string {
 	switch {
 	case sender == "":
 	case c.LastSenderID == self:
-		prefix = "你: "
+		prefix = "You: "
 	case c.ChatMode != "p2p":
 		prefix = sender + botMark(c.LastSenderType) + ": "
 	}
@@ -257,6 +257,11 @@ func lastMessageSummary(c store.Chat) string {
 	if a, ok := attachmentOf(c.LastMsgType, c.LastContentRaw); ok {
 		return attachGist(a)
 	}
+	// A forward's body is the whole of another chat pressed into one string;
+	// the client names it rather than quoting it, and so does this line.
+	if c.LastMsgType == "merge_forward" {
+		return msgTypeLabel(c.LastMsgType)
+	}
 	// A picture renders into a reference naming its key, which is fifty
 	// characters of markup that would crowd the words beside it off the line.
 	// The pane draws the picture itself; here it is only worth naming when
@@ -266,7 +271,7 @@ func lastMessageSummary(c store.Chat) string {
 		return text
 	}
 	if len(keys) > 0 {
-		return "[图片]"
+		return "[Image]"
 	}
 	return ""
 }

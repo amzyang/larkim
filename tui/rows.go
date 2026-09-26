@@ -83,8 +83,11 @@ type clickZone struct {
 	// decides behaviour that way, and Feishu promises nothing about it.
 	// openRoot is the bundle a forward's rows are stored under, which is the
 	// outermost one when the line sits inside a frame.
+	// openName is the title the summary drew, carried so the frame opens
+	// under the same name the card that led to it showed.
 	open     string
 	openRoot string
+	openName string
 	openKind rightKind
 	// label names the target the way the chooser lists it, and note is what
 	// the status bar says once it has been handed over. They differ because a
@@ -149,16 +152,17 @@ func (s rowSeg) cols() int {
 
 // msgStyle is what the message rows need besides the messages themselves.
 type msgStyle struct {
-	width   int
-	self    string
-	now     time.Time
-	quoted  string                      // the message an open draft replies to
-	parents map[string]store.Message    // the messages these replies answer, by parent id
-	suffix  map[string]string           // sender open id → account suffix
-	res     map[string][]store.Resource // attachments, by message id
-	docs    map[string]store.DocLabel   // Feishu documents linked to, by store.DocRef.Key
-	outbox  map[string]outboxState      // the sends still on their way, by the id their rows carry
-	dots    map[string]bool             // the messages this visit draws the unread marker on
+	width    int
+	self     string
+	selfName string
+	now      time.Time
+	quoted   string                      // the message an open draft replies to
+	parents  map[string]store.Message    // the messages these replies answer, by parent id
+	suffix   map[string]string           // sender open id → account suffix
+	res      map[string][]store.Resource // attachments, by message id
+	docs     map[string]store.DocLabel   // Feishu documents linked to, by store.DocRef.Key
+	outbox   map[string]outboxState      // the sends still on their way, by the id their rows carry
+	dots     map[string]bool             // the messages this visit draws the unread marker on
 	// reacts are the reaction presses Feishu has not answered yet, by message
 	// id then folded emoji key, laid over the stored summary so a press draws
 	// before it is sent.
@@ -475,8 +479,8 @@ func renderRows(msgs []store.Message, st msgStyle) []msgRow {
 		// row that opens in turn.
 		if r, ok := threadSummary(x, i, st, &g); ok {
 			rows = append(rows, r)
-		} else if r, ok := forwardSummary(x, st.forwardRoot, i, st, &g); ok {
-			rows = append(rows, r)
+		} else if rs, ok := forwardSummary(x, st.forwardRoot, i, st, &g); ok {
+			rows = append(rows, rs...)
 		}
 		rows = append(rows, bodyRows(x, i, st, &g)...)
 		rows = append(rows, reactionRows(x, i, st, &g)...)
@@ -513,6 +517,10 @@ func solo(x store.Message, st msgStyle) bool {
 // quoteRow names the message a reply answers, above its body, the way the
 // Feishu client quotes it. A reply to the message right above says nothing
 // the list does not already show, so that one is left out.
+//
+// The line says "Reply to" outright because the bar it opens with is the same
+// one a merged forward's card draws, and a card's preview lines read
+// "Name: text" too — without the words the two containers look alike.
 func quoteRow(x store.Message, prev string, idx int, st msgStyle, g *leads) (msgRow, bool) {
 	if x.ReplyTo == "" || x.ReplyTo == prev {
 		return msgRow{}, false
@@ -527,9 +535,9 @@ func quoteRow(x store.Message, prev string, idx int, st msgStyle, g *leads) (msg
 	}
 	parent, ok := st.parents[x.ReplyTo]
 	if !ok {
-		return row("▏↩ (not synced)"), true
+		return row("▏Reply to (not synced)"), true
 	}
-	head := "▏" + displaySender(parent, st.self, st.suffix[parent.SenderID]) + ": "
+	head := "▏Reply to " + displaySender(parent, st.self, st.suffix[parent.SenderID]) + ": "
 	return row(head + truncate(replyGist(parent), st.inner()-lipgloss.Width(head))), true
 }
 
@@ -549,7 +557,7 @@ func senderLabel(x store.Message, suffix string) string {
 // turn is a machine's.
 func displaySender(x store.Message, self, suffix string) string {
 	if x.SenderID == self {
-		return "你"
+		return "You"
 	}
 	return senderLabel(x, suffix) + botMark(x.SenderType)
 }
@@ -640,6 +648,9 @@ func bodyRows(x store.Message, idx int, st msgStyle, g *leads) []msgRow {
 		}
 	}
 	if x.RenderedAt == 0 {
+		if rows, ok := postPictureRows(x, idx, st, g); ok {
+			return rows
+		}
 		return text(wrap(stDim.Render(expandEmoji(pendingText(x.MsgType, x.ContentRaw))), inner))
 	}
 	// A sticker renders as the text "[Sticker]", which names the picture
@@ -670,6 +681,40 @@ func bodyRows(x store.Message, idx int, st msgStyle, g *leads) []msgRow {
 		}
 	}
 	return rows
+}
+
+// postPictureRows draw a rich-text body that carries pictures but has no
+// rendering: its words dim, the way pendingText gives them, and each picture
+// where its paragraph placed it. pendingText alone drops the pictures, which
+// for a merged forward's child is final — lark-cli's expansion answers with
+// raw bodies and never renders one.
+//
+// A body with no picture is left to that stand-in, which wraps as one block
+// rather than a row per paragraph.
+func postPictureRows(x store.Message, idx int, st msgStyle, g *leads) ([]msgRow, bool) {
+	if x.MsgType != "post" {
+		return nil, false
+	}
+	parts, ok := postParts(x.ContentRaw)
+	if !ok || !slices.ContainsFunc(parts, func(p postPart) bool { return p.image != "" }) {
+		return nil, false
+	}
+	var rows []msgRow
+	for _, p := range parts {
+		if p.image != "" {
+			rows = append(rows, pictureRows(p.image, x, idx, st, g)...)
+			continue
+		}
+		// A paragraph the picture took over has no words of its own, and a
+		// blank row between two pictures is not the parting the list uses.
+		if strings.TrimSpace(p.text) == "" {
+			continue
+		}
+		for _, line := range wrap(stDim.Render(expandEmoji(p.text)), st.inner()) {
+			rows = append(rows, msgRow{lead: g.take(), text: line, idx: idx})
+		}
+	}
+	return rows, true
 }
 
 // segRows draw one body line as the pieces the client's own emoji pictures
@@ -735,13 +780,13 @@ func reactors(c emoji.Chip, st msgStyle) string {
 		}
 		switch {
 		case id == st.self:
-			names = append(names, "你")
+			names = append(names, "You")
 		case st.people[id] != "":
 			names = append(names, st.people[id])
 		}
 	}
 	rest := max(0, c.Count-len(names))
-	who := strings.Join(names, "、")
+	who := strings.Join(names, ", ")
 	if rest > 0 {
 		who = strings.TrimPrefix(who+" +"+strconv.Itoa(rest), " ")
 	}
@@ -768,7 +813,7 @@ func reactionChip(c emoji.Chip, st msgStyle) []rowSeg {
 		if pic = st.emojiChip(e.Key); pic.cols > 0 {
 			label = ""
 		} else {
-			label = "[" + e.ZH + "]"
+			label = "[" + e.Name() + "]"
 		}
 	}
 	// Nothing is spaced off the caps: a cap's flat side is the cell edge it
@@ -906,9 +951,9 @@ func cardRows(c card.Card, x store.Message, idx int, st msgStyle, g *leads, ms m
 // downloaded yet, a format the decoder will not read — falls back to a
 // one-line stand-in.
 func pictureRows(key string, x store.Message, idx int, st msgStyle, g *leads) []msgRow {
-	cols, label := st.inner(), "[图片]"
+	cols, label := st.inner(), "[Image]"
 	if x.MsgType == "sticker" {
-		cols, label = min(cols, stickerCols), "[表情]"
+		cols, label = min(cols, stickerCols), "[Sticker]"
 	}
 	pic := placePicture(key, x, st, cols)
 	if pic.cols == 0 {
@@ -959,9 +1004,9 @@ func pictureZone(key string, x store.Message, st msgStyle) (clickZone, bool) {
 	if pressed == "" {
 		return clickZone{}, false
 	}
-	label := "图片"
+	label := "image"
 	if n := len(rest) + 1; n > 1 {
-		label = strconv.Itoa(n) + " 张图片"
+		label = strconv.Itoa(n) + " images"
 	}
 	return clickZone{urls: append([]string{pressed}, rest...), label: label, note: "opening " + label}, true
 }
@@ -1021,7 +1066,7 @@ func centre(s string, w int) string {
 	return s
 }
 
-var weekdayNames = [...]string{"周日", "周一", "周二", "周三", "周四", "周五", "周六"}
+var weekdayNames = [...]string{"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"}
 
 // daysApart counts calendar days between a message and now, so a timestamp
 // four minutes before midnight still reads as yesterday.
@@ -1037,9 +1082,9 @@ func msgDay(ms int64, now time.Time) string {
 	t := time.UnixMilli(ms).Local()
 	switch days := daysApart(t, now); {
 	case days <= 0:
-		return "今天"
+		return "Today"
 	case days == 1:
-		return "昨天"
+		return "Yesterday"
 	case days < 7:
 		return weekdayNames[t.Weekday()]
 	case t.Year() == now.Year():

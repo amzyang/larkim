@@ -43,6 +43,7 @@ func pendingText(msgType, contentRaw string) string {
 type postElem struct {
 	Tag       string `json:"tag"`
 	Text      string `json:"text"`
+	ImageKey  string `json:"image_key"`
 	UserName  string `json:"user_name"`
 	EmojiType string `json:"emoji_type"`
 }
@@ -52,30 +53,38 @@ type postBody struct {
 	Content [][]postElem `json:"content"`
 }
 
-// postText reads the words a rich-text body carries, paragraph per line, and
-// whether it carries pictures besides. The rendering that replaces it brings
-// the markdown, the pictures and the formatting dropped here; this is what the
-// post can say before it lands. A post of pictures alone has no words to
-// return, and the picture names it better than the type does.
-func postText(contentRaw string) (text string, pics bool) {
+// postPart is one piece of a rich-text body in the order the reader meets it:
+// a paragraph's words, then the pictures that paragraph placed. A picture
+// sits on its own part because a terminal has no way to draw one inside a
+// line, so the words of its paragraph come first whichever side of it they
+// were typed on.
+type postPart struct {
+	text  string
+	image string
+}
+
+// postParts reads a rich-text body as the pieces it was written in. The
+// rendering that replaces it brings the markdown and the formatting dropped
+// here, but not the pictures: it names them, and a forwarded child never gets
+// a rendering at all, so the keys have to survive this walk.
+func postParts(contentRaw string) ([]postPart, bool) {
 	body, ok := postBodyOf(contentRaw)
 	if !ok {
-		return "", false
+		return nil, false
 	}
-	lines := make([]string, 0, len(body.Content)+1)
+	parts := make([]postPart, 0, len(body.Content)+1)
 	if body.Title != "" {
-		lines = append(lines, body.Title)
+		parts = append(parts, postPart{text: body.Title})
 	}
 	for _, para := range body.Content {
 		var line strings.Builder
+		var pics []postPart
 		for _, el := range para {
 			switch el.Tag {
 			case "img":
-				// A picture is placed by the rendering, which is also what
-				// sizes it; all this path can say is that one is coming.
-				pics = true
+				pics = append(pics, postPart{image: el.ImageKey})
 			case "media", "hr":
-				// A clip is placed by the rendering too, and a rule is not words.
+				// A clip is placed by the rendering, and a rule is not words.
 			case "at":
 				line.WriteString("@" + el.UserName)
 			case "emotion":
@@ -85,7 +94,28 @@ func postText(contentRaw string) (text string, pics bool) {
 				line.WriteString(el.Text)
 			}
 		}
-		lines = append(lines, line.String())
+		parts = append(parts, postPart{text: line.String()})
+		parts = append(parts, pics...)
+	}
+	return parts, true
+}
+
+// postText reads the words a rich-text body carries, paragraph per line, and
+// whether it carries pictures besides. This is what the post can say before
+// its rendering lands. A post of pictures alone has no words to return, and
+// the picture names it better than the type does.
+func postText(contentRaw string) (text string, pics bool) {
+	parts, ok := postParts(contentRaw)
+	if !ok {
+		return "", false
+	}
+	lines := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if p.image != "" {
+			pics = true
+			continue
+		}
+		lines = append(lines, p.text)
 	}
 	return strings.TrimSpace(strings.Join(lines, "\n")), pics
 }

@@ -542,3 +542,16 @@ func TestUploadImage_SaysSoWhenThePictureIsGone(t *testing.T) {
 	_, err := c.UploadImage(t.Context(), filepath.Join(t.TempDir(), "missing.png"))
 	require.ErrorIs(t, err, os.ErrNotExist)
 }
+
+func TestEmotion_CarriesOneEmojiAsThePostElementFeishuSpellsItWith(t *testing.T) {
+	require.Equal(t,
+		[]string{"--msg-type", "post", "--content", `{"zh_cn":{"content":[[{"tag":"emotion","emoji_type":"PursueUltimate"}]]}}`},
+		Emotion("PursueUltimate").flags())
+}
+
+func TestOutgoing_FlagsSendAPostBodyThroughUntouched(t *testing.T) {
+	// The markdown path wraps every paragraph in an md element; a body already
+	// in Feishu's own shape must reach lark-cli as it was written.
+	body := `{"zh_cn":{"content":[[{"tag":"emotion","emoji_type":"Get"}]]}}`
+	require.Equal(t, []string{"--msg-type", "post", "--content", body}, Outgoing{Post: body}.flags())
+}

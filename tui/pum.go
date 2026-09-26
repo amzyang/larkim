@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"cmp"
 	"strings"
 	"unicode"
 
@@ -227,7 +226,7 @@ func (m Model) mentionHits(query string) []pumHit {
 func (m Model) emojiHits(query string) []pumHit {
 	var out []pumHit
 	for _, h := range m.emojiWrite.Search(query) {
-		name := cmp.Or(h.Emoji.ZH, h.Emoji.EN, h.Emoji.Key)
+		name := h.Emoji.Name()
 		label := emojiWords(h.Emoji.Key, name, stBold.Render(name), h.Term, h.Positions)
 		out = append(out, pumHit{insert: emojiInsert(h.Emoji), emoji: h.Emoji, label: label})
 	}
@@ -237,16 +236,15 @@ func (m Model) emojiHits(query string) []pumHit {
 // emojiInsert is what accepting an emoji writes: the character where one
 // carries the same feeling, and the bracketed name where none does.
 //
-// The Chinese name, not the English one, because that is what the client itself
-// puts on the wire — of the bracketed emoji in this machine's own history, all
-// but a handful from a foreign-locale sender are spelled in Chinese. A name is
-// resolved against the reading client's own table, so matching what the client
-// emits is what makes the emoji draw rather than showing as its own name.
+// The name is the English one this client displays, which is the spelling it
+// puts on the wire. A bracketed name is resolved against the reading client's
+// own table, which holds both languages' names for every emoji, so it draws
+// there whichever language that client is set to.
 func emojiInsert(e emoji.Emoji) string {
 	if e.Glyph != "" {
 		return e.Glyph
 	}
-	return "[" + cmp.Or(e.ZH, e.EN, e.Key) + "]"
+	return "[" + e.Name() + "]"
 }
 
 // onPumKey drives the popup. It is reached only while one is open, ahead of the

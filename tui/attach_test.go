@@ -169,15 +169,15 @@ func TestChatSummary_NamesAnAttachmentRatherThanItsMarkup(t *testing.T) {
 	c := store.Chat{ChatID: "oc_1", Name: "平台组", LastMessageID: "om_1", LastSenderName: "张三",
 		LastMsgType: "file", LastContentRaw: `{"file_key":"file_conf","file_name":"dev.yaml"}`,
 		LastContent: `<file key="file_conf" name="dev.yaml"/>`, LastRenderedAt: 1}
-	require.Equal(t, "张三: [文件] dev.yaml", ansi.Strip(chatSummary(c, "ou_me")))
+	require.Equal(t, "张三: [File] dev.yaml", ansi.Strip(chatSummary(c, "ou_me")))
 
 	c.LastMsgType, c.LastContentRaw = "media", `{"file_key":"file_clip","image_key":"img_cover","duration":25046}`
 	c.LastContent = `<video key="file_clip" name="18446744072109523023.mp4" duration="25s" cover_image_key="img_cover"/>`
-	require.Equal(t, "张三: [视频]", ansi.Strip(chatSummary(c, "ou_me")), "a clip's file name is a serial number")
+	require.Equal(t, "张三: [Video]", ansi.Strip(chatSummary(c, "ou_me")), "a clip's file name is a serial number")
 }
 
 func TestReplyGist_NamesAnAttachmentRatherThanItsMarkup(t *testing.T) {
-	require.Equal(t, "[文件] dev.yaml", replyGist(store.Message{MsgType: "file", RenderedAt: 1,
+	require.Equal(t, "[File] dev.yaml", replyGist(store.Message{MsgType: "file", RenderedAt: 1,
 		ContentRaw: `{"file_key":"file_conf","file_name":"dev.yaml"}`,
 		Content:    `<file key="file_conf" name="dev.yaml"/>`}))
 }

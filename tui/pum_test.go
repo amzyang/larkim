@@ -187,7 +187,7 @@ func TestPum_AcceptingAnEmojiWithNoCharacterWritesTheBracketedName(t *testing.T)
 
 	mm, _ := m.onInsertKey(tea.KeyPressMsg{Code: tea.KeyTab})
 	m = mm.(Model)
-	require.Equal(t, "[完成] ", m.input.Value(), "the spelling the client itself sends")
+	require.Equal(t, "[Done] ", m.input.Value(), "the spelling the client itself sends")
 	// The message list reads the bracketed form back as the emoji it names.
 	_, ok := emojiByBracket(m.input.Value())
 	require.True(t, ok)
@@ -208,7 +208,7 @@ func TestPum_OpensOnTheBracketedFormTheClientSends(t *testing.T) {
 
 	mm, _ := m.onInsertKey(tea.KeyPressMsg{Code: tea.KeyTab})
 	m = mm.(Model)
-	require.Equal(t, "[完成] ", m.input.Value(), "the bracket is erased with the rest of the run")
+	require.Equal(t, "[Done] ", m.input.Value(), "the bracket is erased with the rest of the run")
 
 	// The bracket is a second way in, not a second insert rule: an emoji a
 	// character carries still goes in as that character.

@@ -7,15 +7,33 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/amzyang/larkim/store"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/stretchr/testify/require"
 )
 
 // bundleStyle renders a page holding one merged forward, with the collapsed
-// line the store would have answered.
+// card the store would have answered.
 func bundleStyle(g store.ForwardGist) msgStyle {
 	st := baseStyle()
+	st.selfName = "林岚"
 	st.forwards = map[string]store.ForwardGist{"om_fwd": g}
 	return st
+}
+
+// kids is the preview the store hands a card, one text message per name.
+func kids(pairs ...string) []store.ForwardChild {
+	var out []store.ForwardChild
+	for i := 0; i+1 < len(pairs); i += 2 {
+		out = append(out, store.ForwardChild{SenderName: pairs[i], MsgType: "text",
+			ContentRaw: `{"text":"` + pairs[i+1] + `"}`})
+	}
+	return out
+}
+
+// fromGroup is a bundle drawn from one group chat larkim knows.
+func fromGroup(children ...store.ForwardChild) store.ForwardGist {
+	return store.ForwardGist{ChildCount: len(children), Expanded: true, Preview: children,
+		Sources: 1, SourceChatID: "oc_team", SourceChatMode: "group", SourceChatName: "平台组"}
 }
 
 // theBundle is a merge_forward as the chat holds it: lark-cli's rendering is
@@ -32,69 +50,126 @@ func theBundle() store.Message {
 
 func TestRenderRows_AForwardedBundleNeverPrintsItsTags(t *testing.T) {
 	out := rowText(renderRows([]store.Message{theBundle()},
-		bundleStyle(store.ForwardGist{ChildCount: 2, Expanded: true, SenderName: "张三", MsgType: "text",
-			ContentRaw: `{"text":"预算定了"}`})))
+		bundleStyle(fromGroup(kids("张三", "预算定了", "李四", "收到")...))))
 
 	require.NotContains(t, out, "forwarded_messages")
 	require.NotContains(t, out, "2026-09-22T09:00:00", "an ISO timestamp is not something a reader scans for")
-	require.Contains(t, out, "[合并转发] 2 条")
+	require.Contains(t, out, "Group Chat History")
 	require.Contains(t, out, "张三: 预算定了")
 }
 
-func TestRenderRows_AContainerTakesExactlyOneBodyRow(t *testing.T) {
-	x := theBundle()
-	small := renderRows([]store.Message{x}, bundleStyle(store.ForwardGist{ChildCount: 2, Expanded: true,
-		SenderName: "张三", MsgType: "text", ContentRaw: `{"text":"预算定了"}`}))
-	big := renderRows([]store.Message{x}, bundleStyle(store.ForwardGist{ChildCount: 40, Expanded: true,
-		SenderName: "张三", MsgType: "text", ContentRaw: `{"text":"预算定了"}`}))
+func TestForwardTitle_NamesTheConversationTheWayTheClientDoes(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		gist store.ForwardGist
+		want string
+	}{
+		{"a group", fromGroup(), "Group Chat History"},
+		{"a direct chat", store.ForwardGist{Sources: 1, SourceChatID: "oc_zhang", SourceChatMode: "p2p",
+			SourceChatName: "张三", SourcePeerID: "ou_a"}, "林岚 and 张三's Chat History"},
+		{"the reader's own chat", store.ForwardGist{Sources: 1, SourceChatID: "oc_self", SourceChatMode: "p2p",
+			SourceChatName: "林岚", SourcePeerID: "ou_me"}, "林岚's Chat History"},
+		{"a chat larkim was never in", store.ForwardGist{Sources: 1, SourceChatID: "oc_elsewhere"}, "Chat History"},
+		{"several chats at once", store.ForwardGist{Sources: 3}, "Chat History"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.want, forwardTitle(tc.gist, "ou_me", "林岚"))
+		})
+	}
+}
 
-	require.Equal(t, len(small), len(big),
-		"however many messages are inside, the list spends the same one line on them")
+func TestRenderRows_AForwardCardShowsAtMostFourChildren(t *testing.T) {
+	g := fromGroup(kids("张三", "一", "李四", "二", "王五", "三", "张三", "四")...)
+	g.ChildCount = 9
+
+	out := rowText(renderRows([]store.Message{theBundle()}, bundleStyle(g)))
+
+	for _, want := range []string{"张三: 一", "李四: 二", "王五: 三", "张三: 四"} {
+		require.Contains(t, out, want)
+	}
+	require.Contains(t, out, "…", "the frame holds more than the card shows")
+}
+
+func TestRenderRows_AForwardCardCountsNothing(t *testing.T) {
+	g := fromGroup(kids("张三", "预算定了")...)
+	g.ChildCount = 9
+
+	out := rowText(renderRows([]store.Message{theBundle()}, bundleStyle(g)))
+
+	require.NotContains(t, out, "9 条", "the client's card carries no number either")
+	require.NotContains(t, out, "条")
+}
+
+func TestRenderRows_AForwardCardEndsWithoutAnEllipsisWhenItShowsEverything(t *testing.T) {
+	out := rowText(renderRows([]store.Message{theBundle()},
+		bundleStyle(fromGroup(kids("张三", "预算定了", "李四", "收到")...))))
+
+	require.NotContains(t, out, "…")
+}
+
+func TestRenderRows_AForwardCardIsBoundedHoweverBigTheBundleIs(t *testing.T) {
+	x := theBundle()
+	small := renderRows([]store.Message{x}, bundleStyle(fromGroup(kids("张三", "预算定了")...)))
+	big := fromGroup(kids("张三", "一", "李四", "二", "王五", "三", "张三", "四")...)
+	big.ChildCount = 400
+
+	require.Equal(t, store.ForwardPreview+2, forwardCardRows(renderRows([]store.Message{x}, bundleStyle(big))),
+		"a title, four children and the ellipsis, whatever is behind them")
 	require.Less(t, len(small), strings.Count(x.Content, "\n"),
 		"and fewer lines than the rendering it replaces, which is the whole point")
 }
 
-func TestRenderRows_AForwardedBundleShowsItsFirstChild(t *testing.T) {
+func TestRenderRows_AForwardedBundleOpensWithItsFirstChild(t *testing.T) {
 	// A forward is frozen, so what it opens with is the context it was
 	// forwarded for — unlike a thread, where the last word is the state.
-	out := rowText(renderRows([]store.Message{theBundle()},
-		bundleStyle(store.ForwardGist{ChildCount: 2, Expanded: true, SenderName: "张三", MsgType: "text",
-			ContentRaw: `{"text":"预算定了"}`})))
+	rows := renderRows([]store.Message{theBundle()},
+		bundleStyle(fromGroup(kids("张三", "预算定了", "李四", "收到")...)))
 
-	require.Contains(t, out, "张三: 预算定了")
-	require.NotContains(t, out, "收到")
+	require.Contains(t, rowText(rows[len(rows)-2:]), "张三: 预算定了")
 }
 
-func TestRenderRows_AnUnexpandedBundleNamesNoCount(t *testing.T) {
+func TestRenderRows_AnUnexpandedBundleDrawsTheTitleAlone(t *testing.T) {
 	out := rowText(renderRows([]store.Message{theBundle()}, bundleStyle(store.ForwardGist{})))
 
-	require.Contains(t, out, "[合并转发]")
+	require.Contains(t, out, "Chat History")
 	require.NotContains(t, out, "条", "a number that changes once the children land is worse than none")
+	require.NotContains(t, out, "…")
 }
 
 func TestRenderRows_ARefusedBundleSaysSo(t *testing.T) {
 	out := rowText(renderRows([]store.Message{theBundle()}, bundleStyle(store.ForwardGist{Refused: true})))
 
-	require.Contains(t, out, "无法展开")
+	require.Contains(t, out, "cannot be expanded")
 }
 
-func TestSummaryRow_KeepsTheCountWhenTheGistMustBeCut(t *testing.T) {
-	st := bundleStyle(store.ForwardGist{ChildCount: 23, Expanded: true, SenderName: "张三",
-		MsgType: "text", ContentRaw: `{"text":"` + strings.Repeat("很长的一句话", 20) + `"}`})
+func TestSummaryRow_CutsEveryCardLineToTheWidth(t *testing.T) {
+	st := bundleStyle(fromGroup(kids("张三", strings.Repeat("很长的一句话", 20))...))
 	st.width = 30
 
 	out := rowText(renderRows([]store.Message{theBundle()}, st))
 
-	require.Contains(t, out, "23 条", "how much is in there is what the reader is deciding on")
+	require.Contains(t, out, "Chat History")
 	for _, line := range strings.Split(strings.TrimRight(out, "\n"), "\n") {
 		require.LessOrEqual(t, lipgloss.Width(line), st.width)
 	}
 }
 
-func TestRenderRows_ASummaryLineCarriesAnOpenZone(t *testing.T) {
+// forwardCardRows counts the rows a forward's card took: the ones leading into it.
+func forwardCardRows(rows []msgRow) int {
+	n := 0
+	for _, r := range rows {
+		for _, z := range r.zones {
+			if z.openKind == rightForward {
+				n++
+			}
+		}
+	}
+	return n
+}
+
+func TestRenderRows_EveryCardLineOpensTheSameFrame(t *testing.T) {
 	rows := renderRows([]store.Message{theBundle()},
-		bundleStyle(store.ForwardGist{ChildCount: 2, Expanded: true, SenderName: "张三", MsgType: "text",
-			ContentRaw: `{"text":"预算定了"}`}))
+		bundleStyle(fromGroup(kids("张三", "预算定了", "李四", "收到")...)))
 
 	zoned := 0
 	for _, r := range rows {
@@ -105,10 +180,11 @@ func TestRenderRows_ASummaryLineCarriesAnOpenZone(t *testing.T) {
 			zoned++
 			require.Equal(t, rightForward, z.openKind, "the kind is carried, not read off the id's prefix")
 			require.Equal(t, "om_fwd", z.openRoot)
+			require.Equal(t, "Group Chat History", z.openName, "the frame opens under the name the card drew")
 			require.Equal(t, r.lead.cols(), z.x0, "the whole line is the target")
 		}
 	}
-	require.Equal(t, 1, zoned)
+	require.Equal(t, store.ForwardPreview-1, zoned, "the title and both children, one target")
 }
 
 func TestSelectedZones_LeavesTheSummaryLineToTheKeyboardsOwnKeys(t *testing.T) {
@@ -221,7 +297,7 @@ func TestRenderRows_AThreadRootShowsItsLastReply(t *testing.T) {
 	out := rowText(renderRows([]store.Message{theRoot()}, threadStyle(store.ThreadGist{
 		Replies: 23, SenderName: "李四", MsgType: "text", ContentRaw: `{"text":"1234"}`})))
 
-	require.Contains(t, out, "⤷ 23 条回复")
+	require.Contains(t, out, "⤷ 23 replies")
 	require.Contains(t, out, "李四: 1234")
 }
 
@@ -230,7 +306,7 @@ func TestRenderRows_AThreadRootWithNoReplyStillGetsItsLine(t *testing.T) {
 	// that Enter opens a thread there rather than answering.
 	out := rowText(renderRows([]store.Message{theRoot()}, threadStyle(store.ThreadGist{})))
 
-	require.Contains(t, out, "⤷ 还没有回复")
+	require.Contains(t, out, "⤷ No replies yet")
 }
 
 func TestRenderRows_AThreadSummaryIsNotDrawnInsideItsOwnPane(t *testing.T) {
@@ -240,7 +316,7 @@ func TestRenderRows_AThreadSummaryIsNotDrawnInsideItsOwnPane(t *testing.T) {
 
 	out := rowText(renderRows([]store.Message{theRoot()}, st))
 
-	require.NotContains(t, out, "条回复", "the replies stand right below the root there")
+	require.NotContains(t, out, "replies", "the replies stand right below the root there")
 	require.Contains(t, out, "hello")
 }
 
@@ -249,19 +325,18 @@ func TestRenderRows_AForwardedThreadRootShowsTheThreadInTheChatAndTheForwardInTh
 	// thread the same message is the forward's own line, so it opens in turn.
 	x := theBundle()
 	x.ThreadID, x.MessagePosition = "omt_1", 3
-	st := bundleStyle(store.ForwardGist{ChildCount: 5, Expanded: true, SenderName: "张三",
-		MsgType: "text", ContentRaw: `{"text":"预算定了"}`})
+	st := bundleStyle(fromGroup(kids("张三", "预算定了")...))
 	st.threads = map[string]store.ThreadGist{"omt_1": {Replies: 18, SenderName: "李四",
 		MsgType: "text", ContentRaw: `{"text":"收到"}`}}
 
 	inChat := rowText(renderRows([]store.Message{x}, st))
-	require.Contains(t, inChat, "⤷ 18 条回复")
-	require.NotContains(t, inChat, "[合并转发]")
+	require.Contains(t, inChat, "⤷ 18 replies")
+	require.NotContains(t, inChat, "Chat History")
 
 	st.inFrame = true
 	inFrame := rowText(renderRows([]store.Message{x}, st))
-	require.Contains(t, inFrame, "[合并转发] 5 条")
-	require.NotContains(t, inFrame, "条回复")
+	require.Contains(t, inFrame, "Group Chat History")
+	require.NotContains(t, inFrame, "replies")
 }
 
 func TestRenderRows_AThreadSummaryCarriesAnOpenZone(t *testing.T) {
@@ -324,4 +399,43 @@ func marks(rows []msgRow) string {
 		b.WriteString(markOf(r))
 	}
 	return b.String()
+}
+
+func TestReplyGist_NamesAForwardRatherThanQuotingItsTree(t *testing.T) {
+	// The rendering lark-cli leaves on a bundle is the whole of another chat.
+	// A quote line that flattened it would read as tags and ISO timestamps.
+	require.Equal(t, "[Chat History]", replyGist(theBundle()))
+}
+
+func TestRightTitle_NamesAForwardFrameAfterTheCardThatOpenedIt(t *testing.T) {
+	m := sized(140, 36)
+	m.rightKind, m.threadID, m.rightRoot = rightForward, "om_fwd", "om_fwd"
+	m.rightName = "Group Chat History"
+
+	require.Contains(t, ansi.Strip(m.rightTitle(40)), "Forwarded Group Chat History")
+	require.NotContains(t, ansi.Strip(m.rightTitle(40)), "om_fwd",
+		"a bundle's id is not something a reader recognises it by")
+}
+
+func TestContainerAtCursor_CarriesTheCardsNameIntoTheFrame(t *testing.T) {
+	m := sized(140, 36)
+	m.selfName = "林岚"
+	m.msgsBase = []store.Message{theBundle()}
+	m.meta.forwards = map[string]store.ForwardGist{"om_fwd": fromGroup(kids("张三", "预算定了")...)}
+	m.applyOutbox()
+	m.layout()
+
+	f, ok := m.containerAtCursor()
+
+	require.True(t, ok)
+	require.Equal(t, "Group Chat History", f.name, "the keyboard opens under the same name the mouse does")
+}
+
+func TestShowRight_TitlesTheFrameBeforeItsListLands(t *testing.T) {
+	m := sized(140, 36)
+
+	m, _ = m.openRight(rightFrame{kind: rightForward, id: "om_fwd", root: "om_fwd", name: "Group Chat History"})
+
+	require.Equal(t, "Group Chat History", m.rightName,
+		"the summary had already drawn the name, so the header never flickers through the fallback")
 }

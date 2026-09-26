@@ -107,7 +107,8 @@ type Target struct {
 // a body that set two would be refused by the subprocess rather than here.
 type Outgoing struct {
 	Text     string // msg_type text
-	Markdown string // msg_type post
+	Markdown string // msg_type post, still to be converted from markdown
+	Post     string // msg_type post, already the body Feishu stores
 	ImageKey string // msg_type image; a key, never a path
 	FileKey  string // msg_type file; a key, never a path
 }
@@ -117,6 +118,16 @@ func Text(s string) Outgoing { return Outgoing{Text: s} }
 
 // Markdown is an Outgoing lark-cli converts into a rich-text post.
 func Markdown(s string) Outgoing { return Outgoing{Markdown: s} }
+
+// Emotion is an Outgoing carrying one emoji and nothing else, as the post
+// element Feishu spells an emoji with inside a message. It is how an emoji
+// Feishu refuses as a reaction still reaches the other side as itself:
+// another tenant's culture emoji goes inside a message fine, and a picture of
+// it would only look like one.
+func Emotion(emojiType string) Outgoing {
+	key, _ := json.Marshal(emojiType)
+	return Outgoing{Post: `{"zh_cn":{"content":[[{"tag":"emotion","emoji_type":` + string(key) + `}]]}}`}
+}
 
 // File is an Outgoing naming an already-uploaded file. Feishu carries a file
 // as a message of its own rather than as something inside one, so a draft that

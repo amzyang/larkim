@@ -25,7 +25,7 @@ func TestClassify_PlainChatStaysText(t *testing.T) {
 		"3*4=12",
 		"#1 优先", // no space after the hash, so not a heading
 		"https://example.com/a_b_c",
-		"[表情]",
+		"[Sticker]",
 		":OK:",
 		`<at user_id="ou_a">张三</at>`,
 		"a | b",     // a pipe without a separator row is not a table

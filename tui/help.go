@@ -104,7 +104,7 @@ var helpEntries = []helpEntry{
 	{"EMOJI", "Esc", "cancel"},
 	{"EMOJI", "", "the filter takes the readline keys: Ctrl+w a word, Ctrl+u to the start, Ctrl+a/Ctrl+e ends"},
 	{"EMOJI", "", "an emoji already yours is marked ✓, and choosing it takes the reaction back"},
-	{"EMOJI", "", "one marked 图 is no longer a reaction: choosing it replies with the picture instead"},
+	{"EMOJI", "", "one marked pic is no longer a reaction: choosing it replies with the picture instead"},
 
 	{"COMMAND", ":copy <200|7d|all>", "put that much of the chat on the clipboard as agent context"},
 	{"COMMAND", ":goto <chat>", "open a chat by name or id"},

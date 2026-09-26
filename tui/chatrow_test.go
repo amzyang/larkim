@@ -29,8 +29,8 @@ func TestChatTime_BucketsByCalendarDay(t *testing.T) {
 	}{
 		{"today keeps the clock", testNow.Add(-2 * time.Hour), "08:00"},
 		{"earlier today", time.Date(2026, 9, 23, 0, 5, 0, 0, time.Local), "00:05"},
-		{"yesterday", time.Date(2026, 9, 22, 23, 59, 0, 0, time.Local), "昨天"},
-		{"within the week", time.Date(2026, 9, 20, 12, 0, 0, 0, time.Local), "周日"},
+		{"yesterday", time.Date(2026, 9, 22, 23, 59, 0, 0, time.Local), "Yesterday"},
+		{"within the week", time.Date(2026, 9, 20, 12, 0, 0, 0, time.Local), "Sun"},
 		{"older this year", time.Date(2026, 3, 1, 12, 0, 0, 0, time.Local), "03-01"},
 		{"another year", time.Date(2025, 12, 31, 12, 0, 0, 0, time.Local), "2025-12-31"},
 	} {
@@ -61,11 +61,11 @@ func TestRenderChatRow_PrefixesTheUsersOwnTurn(t *testing.T) {
 	c := store.Chat{ChatID: "oc_1", Name: "李明", ChatMode: "p2p", LastMessageID: "om_1",
 		LastSenderID: "ou_me", LastSenderName: "林岚", LastContent: "好的", LastRenderedAt: 1}
 	_, bottom := plainRow(c, 0, 31)
-	require.Contains(t, bottom, "你: 好的", "p2p still marks the user's own turn")
+	require.Contains(t, bottom, "You: 好的", "p2p still marks the user's own turn")
 
 	c.ChatMode, c.Name = "group", "示例告警群"
 	_, bottom = plainRow(c, 0, 31)
-	require.Contains(t, bottom, "你: 好的")
+	require.Contains(t, bottom, "You: 好的")
 }
 
 func TestRenderChatRow_SystemMessageNamesNoSender(t *testing.T) {
@@ -87,9 +87,13 @@ func TestRenderChatRow_EmptyStatesReadDifferently(t *testing.T) {
 		{"rendering pending", store.Chat{ChatID: "oc_1", Name: "群", LastMessageID: "om_1", LastMsgType: "text",
 			LastContentRaw: `{"text":"稍后渲染"}`, LastRenderedAt: 0}, "稍后渲染"},
 		{"rendering pending, unreadable body", store.Chat{ChatID: "oc_1", Name: "群", LastMessageID: "om_1",
-			LastMsgType: "interactive", LastContentRaw: `{"json_card":"{}"}`, LastRenderedAt: 0}, "[卡片]"},
-		{"renders to nothing", store.Chat{ChatID: "oc_1", Name: "群", LastMessageID: "om_1", LastMsgType: "system", LastRenderedAt: 5}, "[系统消息]"},
-		{"recalled", store.Chat{ChatID: "oc_1", Name: "群", LastMessageID: "om_1", LastSenderName: "孙琪", LastDeleted: true, LastRenderedAt: 5}, "孙琪撤回了一条消息"},
+			LastMsgType: "interactive", LastContentRaw: `{"json_card":"{}"}`, LastRenderedAt: 0}, "[Card]"},
+		{"renders to nothing", store.Chat{ChatID: "oc_1", Name: "群", LastMessageID: "om_1", LastMsgType: "system", LastRenderedAt: 5}, "[System Message]"},
+		{"recalled", store.Chat{ChatID: "oc_1", Name: "群", LastMessageID: "om_1", LastSenderName: "孙琪", LastDeleted: true, LastRenderedAt: 5}, "孙琪 recalled a message"},
+		{"merged forward", store.Chat{ChatID: "oc_1", Name: "群", LastMessageID: "om_1", LastSenderName: "张三",
+			LastMsgType: "merge_forward", LastRenderedAt: 5,
+			LastContent: "<forwarded_messages>\n[2026-09-26 08:55] 张三:\n    hey\n</forwarded_messages>"},
+			"张三: [Chat History]"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, bottom := plainRow(tc.chat, 0, 31)
@@ -151,7 +155,7 @@ func TestRenderChatRow_KeepsTheRightEdgeAlignedAndBothLinesInWidth(t *testing.T)
 	require.Equal(t, avatarWidth, lipgloss.Width(r.avatarBottom))
 
 	top := ansi.Strip(r.top)
-	require.True(t, strings.HasSuffix(strings.TrimRight(top, " "), "昨天"), "the timestamp keeps the right edge, got %q", top)
+	require.True(t, strings.HasSuffix(strings.TrimRight(top, " "), "Yesterday"), "the timestamp keeps the right edge, got %q", top)
 	require.Contains(t, top, "12", "the unread count survives truncation")
 	require.Contains(t, top, "…01", "so does the account suffix")
 	require.Contains(t, top, "…", "the name is what gives way")
@@ -261,7 +265,7 @@ func TestChatSummary_NamesAPostThatIsOnlyAPicture(t *testing.T) {
 	c := store.Chat{ChatID: "oc_1", ChatMode: "group", LastMessageID: "om_1", LastRenderedAt: 1,
 		LastSenderName: "张三", LastMsgType: "post", LastContent: "![Image](img_a)"}
 	_, bottom := plainRow(c, 0, 40)
-	require.Contains(t, bottom, "[图片]")
+	require.Contains(t, bottom, "[Image]")
 	require.NotContains(t, bottom, "img_a")
 }
 
@@ -319,7 +323,7 @@ func reactedP2P(keys ...string) store.Chat {
 
 func TestChatSummary_LeadsAP2PLineWithTheReactionIcons(t *testing.T) {
 	_, bottom := plainRow(reactedP2P("THUMBSUP", "HEART"), 0, 40)
-	require.True(t, strings.HasPrefix(bottom, chipLeft+"👍 ❤️"+chipRight+" 你: 明天上午的排期"), "got %q", bottom)
+	require.True(t, strings.HasPrefix(bottom, chipLeft+"👍 ❤️"+chipRight+" You: 明天上午的排期"), "got %q", bottom)
 	require.NotContains(t, bottom, "2", "in a chat of two, how many reacted says nothing")
 }
 
@@ -335,12 +339,12 @@ func TestChatSummary_DropsTheReactionsOfARecalledMessage(t *testing.T) {
 	c.LastDeleted = true
 	_, bottom := plainRow(c, 0, 40)
 	require.NotContains(t, bottom, "👍", "the client drops a recalled message's reactions with its body")
-	require.Contains(t, bottom, "撤回了一条消息")
+	require.Contains(t, bottom, " recalled a message")
 }
 
 func TestChatSummary_ShowsNoMoreThanThreeReactions(t *testing.T) {
 	_, bottom := plainRow(reactedP2P("THUMBSUP", "HEART", "ROSE", "MUSCLE"), 0, 44)
-	require.True(t, strings.HasPrefix(bottom, chipLeft+"👍 ❤️ 🌹"+chipRight+" 你:"), "got %q", bottom)
+	require.True(t, strings.HasPrefix(bottom, chipLeft+"👍 ❤️ 🌹"+chipRight+" You:"), "got %q", bottom)
 	require.NotContains(t, bottom, "💪", "past three the icons crowd out the message behind them")
 }
 
@@ -349,7 +353,7 @@ func TestChatSummary_LeavesOutAnEmojiItCanDrawNoWayAtAll(t *testing.T) {
 	// nor a picture. Its name at the head of the line would cost more room
 	// than the message it sits in front of.
 	_, bottom := plainRow(reactedP2P("OK", "THUMBSUP"), 0, 40)
-	require.True(t, strings.HasPrefix(bottom, chipLeft+"👍"+chipRight+" 你:"), "got %q", bottom)
+	require.True(t, strings.HasPrefix(bottom, chipLeft+"👍"+chipRight+" You:"), "got %q", bottom)
 	require.NotContains(t, bottom, "[OK]")
 }
 
@@ -377,7 +381,7 @@ func TestChatSummary_DrawsAReactionNoCharacterCarriesAsAPicture(t *testing.T) {
 	require.Equal(t, 1, row.segs[1].pic.rows, "an icon on a line of text is one row tall")
 	require.LessOrEqual(t, row.segs[1].pic.cols, chatChipCols, "narrower here than beside a message")
 	require.Equal(t, chatTextWidth(w), segsWidth(row.segs), "the line still fills its column exactly")
-	require.Contains(t, ansi.Strip(row.segs[len(row.segs)-1].text), "你: 明天上午的排期")
+	require.Contains(t, ansi.Strip(row.segs[len(row.segs)-1].text), "You: 明天上午的排期")
 }
 
 func TestChatSummary_NamesACardBySummaryRatherThanItsBand(t *testing.T) {

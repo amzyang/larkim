@@ -22,7 +22,11 @@ type Forwarded struct {
 	CreateMs       int64  `json:"create_ms"`
 	ContentRaw     string `json:"content_raw"`
 	MentionsJSON   string `json:"mentions_json,omitempty"`
-	RawJSON        string `json:"-"`
+	// ReactionsJSON is who reacted to the ORIGINAL message, asked for
+	// alongside the expansion. It is empty for a child of a chat the reader
+	// is not in: Feishu refuses those with no_permission.
+	ReactionsJSON string `json:"reactions_json,omitempty"`
+	RawJSON       string `json:"-"`
 }
 
 // ForwardRoot is one bundle's queue row: whether it has been expanded, how
@@ -40,12 +44,12 @@ type ForwardRoot struct {
 }
 
 const forwardedColumns = `root_message_id, upper_message_id, message_id, seq, chat_id, msg_type,
- sender_id, sender_name, create_ms, content_raw, mentions_json, raw_json`
+ sender_id, sender_name, create_ms, content_raw, mentions_json, reactions_json, raw_json`
 
 func scanForwarded(sc scanner) (Forwarded, error) {
 	var f Forwarded
 	err := sc.Scan(&f.RootMessageID, &f.UpperMessageID, &f.MessageID, &f.Seq, &f.ChatID, &f.MsgType,
-		&f.SenderID, &f.SenderName, &f.CreateMs, &f.ContentRaw, &f.MentionsJSON, &f.RawJSON)
+		&f.SenderID, &f.SenderName, &f.CreateMs, &f.ContentRaw, &f.MentionsJSON, &f.ReactionsJSON, &f.RawJSON)
 	return f, err
 }
 
@@ -120,9 +124,10 @@ func (s *Store) SaveForwarded(ctx context.Context, rootMessageID string, kids []
 	top := 0
 	for _, k := range kids {
 		if _, err := tx.ExecContext(ctx, `INSERT INTO forwarded_messages (`+forwardedColumns+`)
- VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+ VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 			rootMessageID, k.UpperMessageID, k.MessageID, k.Seq, k.ChatID, k.MsgType,
-			k.SenderID, k.SenderName, k.CreateMs, k.ContentRaw, compactJSON(k.MentionsJSON), k.RawJSON); err != nil {
+			k.SenderID, k.SenderName, k.CreateMs, k.ContentRaw, compactJSON(k.MentionsJSON),
+			compactJSON(k.ReactionsJSON), k.RawJSON); err != nil {
 			return err
 		}
 		if k.UpperMessageID == rootMessageID {
@@ -166,25 +171,104 @@ func (s *Store) ForwardChildren(ctx context.Context, rootMessageID, upperMessage
  WHERE root_message_id = ? AND upper_message_id = ? ORDER BY seq`, rootMessageID, upperMessageID)
 }
 
-// ForwardGist is what a collapsed bundle's one line needs: how many messages
-// the frame behind it lists, the first of them, and whether it can be opened
-// at all.
-type ForwardGist struct {
-	ChildCount int
-	// Expanded says the children are here. Refused says Feishu settled the
-	// bundle with an error instead. A bundle that is neither has simply not
-	// come round yet — a failed attempt is still owed another.
-	Expanded   bool
-	Refused    bool
+// ForwardPreview is how many children a collapsed bundle shows. It is the
+// client's figure: the card lists four of them and says no more.
+const ForwardPreview = 4
+
+// ForwardChild is one of the messages a collapsed bundle previews, reduced to
+// what the card gives it: who spoke and what they said.
+type ForwardChild struct {
 	SenderID   string
 	SenderName string
 	MsgType    string
 	ContentRaw string
 }
 
-// ForwardGists answers the collapsed line of each bundle named. The
-// representative child is the first of the top level: a forward is frozen, so
-// what it opens with is the context it was forwarded for.
+// ForwardGist is what a collapsed bundle's card needs: how many messages the
+// frame behind it lists, the first few of them, the conversation they came
+// from, and whether it can be opened at all.
+type ForwardGist struct {
+	ChildCount int
+	// Expanded says the children are here. Refused says Feishu settled the
+	// bundle with an error instead. A bundle that is neither has simply not
+	// come round yet — a failed attempt is still owed another.
+	Expanded bool
+	Refused  bool
+	// Preview is the top level's first children, in the order the frame lists
+	// them. A forward is frozen, so what it opens with is the context it was
+	// forwarded for.
+	Preview []ForwardChild
+	// Sources counts the distinct chats the top level came from, and the
+	// SourceChat fields describe that chat when there is exactly one and
+	// larkim has a row for it. The card is titled after the conversation
+	// rather than after the forwarding, which is what the client does, so a
+	// bundle drawn from several chats — or from one nobody here can name —
+	// has no name to take.
+	SourceChatID   string
+	SourceChatMode string
+	SourceChatName string
+	SourcePeerID   string
+	Sources        int
+}
+
+// forwardPreviews reads the first children of each level named by key, which
+// is root_message_id for a bundle's own card and upper_message_id for a
+// nested one.
+func (s *Store) forwardPreviews(ctx context.Context, key, where string, args []any) (map[string][]ForwardChild, error) {
+	type row struct {
+		key string
+		c   ForwardChild
+	}
+	rows, err := queryAll(ctx, s.db, func(sc scanner) (row, error) {
+		var r row
+		err := sc.Scan(&r.key, &r.c.SenderID, &r.c.SenderName, &r.c.MsgType, &r.c.ContentRaw)
+		return r, err
+	}, `SELECT `+key+`, sender_id, sender_name, msg_type, content_raw FROM forwarded_messages
+ WHERE `+where+` AND seq < ? ORDER BY `+key+`, seq`, append(args, ForwardPreview)...)
+	if err != nil {
+		return nil, err
+	}
+	out := map[string][]ForwardChild{}
+	for _, r := range rows {
+		out[r.key] = append(out[r.key], r.c)
+	}
+	return out, nil
+}
+
+// forwardSources names the chat each level came from, and says how many chats
+// that is. A chat larkim never synced comes back with an id and nothing else:
+// the API answers for one the reader is not in without a name or a mode, so
+// there is nothing further to ask for.
+func (s *Store) forwardSources(ctx context.Context, key, where string, args []any) (map[string]ForwardGist, error) {
+	type row struct {
+		key string
+		g   ForwardGist
+	}
+	rows, err := queryAll(ctx, s.db, func(sc scanner) (row, error) {
+		var r row
+		err := sc.Scan(&r.key, &r.g.Sources, &r.g.SourceChatID,
+			&r.g.SourceChatMode, &r.g.SourceChatName, &r.g.SourcePeerID)
+		return r, err
+	}, `SELECT f.key, f.n, f.cid, COALESCE(c.chat_mode, ''), COALESCE(c.name, ''), COALESCE(c.p2p_target_id, '')
+ FROM (SELECT `+key+` AS key, count(DISTINCT chat_id) AS n, min(chat_id) AS cid
+   FROM forwarded_messages WHERE `+where+` GROUP BY `+key+`) f
+ LEFT JOIN chats c ON c.chat_id = f.cid AND f.n = 1`, args...)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]ForwardGist, len(rows))
+	for _, r := range rows {
+		// Several sources leave the card unnamed, so the id of one of them
+		// would only be a fact nothing reads.
+		if r.g.Sources != 1 {
+			r.g.SourceChatID = ""
+		}
+		out[r.key] = r.g
+	}
+	return out, nil
+}
+
+// ForwardGists answers the collapsed card of each bundle named.
 func (s *Store) ForwardGists(ctx context.Context, rootMessageIDs []string) (map[string]ForwardGist, error) {
 	out := make(map[string]ForwardGist, len(rootMessageIDs))
 	type row struct {
@@ -196,20 +280,25 @@ func (s *Store) ForwardGists(ctx context.Context, rootMessageIDs []string) (map[
 	for chunk := range slices.Chunk(rootMessageIDs, 500) {
 		rows, err := queryAll(ctx, s.db, func(sc scanner) (row, error) {
 			var r row
-			err := sc.Scan(&r.id, &r.g.ChildCount, &r.fetchedAt, &r.lastError,
-				&r.g.SenderID, &r.g.SenderName, &r.g.MsgType, &r.g.ContentRaw)
+			err := sc.Scan(&r.id, &r.g.ChildCount, &r.fetchedAt, &r.lastError)
 			return r, err
-		}, `SELECT r.root_message_id, r.child_count, r.fetched_at, r.last_error,
- COALESCE(c.sender_id, ''), COALESCE(c.sender_name, ''), COALESCE(c.msg_type, ''), COALESCE(c.content_raw, '')
- FROM forwarded_roots r
- LEFT JOIN forwarded_messages c ON c.root_message_id = r.root_message_id
-   AND c.upper_message_id = r.root_message_id AND c.seq = 0
- WHERE r.root_message_id IN `+inClause(len(chunk)), anySlice(chunk)...)
+		}, `SELECT root_message_id, child_count, fetched_at, last_error
+ FROM forwarded_roots WHERE root_message_id IN `+inClause(len(chunk)), anySlice(chunk)...)
+		if err != nil {
+			return nil, err
+		}
+		where := `root_message_id IN ` + inClause(len(chunk)) + ` AND upper_message_id = root_message_id`
+		previews, err := s.forwardPreviews(ctx, "root_message_id", where, anySlice(chunk))
+		if err != nil {
+			return nil, err
+		}
+		sources, err := s.forwardSources(ctx, "root_message_id", where, anySlice(chunk))
 		if err != nil {
 			return nil, err
 		}
 		for _, r := range rows {
-			g := r.g
+			g := sources[r.id]
+			g.ChildCount, g.Preview = r.g.ChildCount, previews[r.id]
 			// A row that merely failed once carries an error and is still
 			// owed, so settled-with-an-error is what refusal means.
 			g.Refused = r.fetchedAt != 0 && r.lastError != ""
@@ -220,39 +309,32 @@ func (s *Store) ForwardGists(ctx context.Context, rootMessageIDs []string) (map[
 	return out, nil
 }
 
-// ForwardLevels answers the collapsed line of each nested bundle in one tree.
+// ForwardLevels answers the collapsed card of each nested bundle in one tree.
 // A nested bundle has no queue row of its own — one call expands the whole
-// tree — so both the count and the first child come from the children
+// tree — so the count, the preview and the source all come from the children
 // themselves, and it is expanded by construction: its rows are here.
 func (s *Store) ForwardLevels(ctx context.Context, rootMessageID string, upperIDs []string) (map[string]ForwardGist, error) {
 	out := make(map[string]ForwardGist, len(upperIDs))
 	for chunk := range slices.Chunk(upperIDs, 500) {
 		args := append([]any{rootMessageID}, anySlice(chunk)...)
+		where := `root_message_id = ? AND upper_message_id IN ` + inClause(len(chunk))
 		counts, err := queryCounts(ctx, s.db, `SELECT upper_message_id, count(*) FROM forwarded_messages
- WHERE root_message_id = ? AND upper_message_id IN `+inClause(len(chunk))+` GROUP BY upper_message_id`, args...)
+ WHERE `+where+` GROUP BY upper_message_id`, args...)
+		if err != nil {
+			return nil, err
+		}
+		previews, err := s.forwardPreviews(ctx, "upper_message_id", where, args)
+		if err != nil {
+			return nil, err
+		}
+		sources, err := s.forwardSources(ctx, "upper_message_id", where, args)
 		if err != nil {
 			return nil, err
 		}
 		for id, n := range counts {
-			out[id] = ForwardGist{ChildCount: int(n), Expanded: true}
-		}
-		type first struct {
-			upper string
-			g     ForwardGist
-		}
-		firsts, err := queryAll(ctx, s.db, func(sc scanner) (first, error) {
-			var f first
-			err := sc.Scan(&f.upper, &f.g.SenderID, &f.g.SenderName, &f.g.MsgType, &f.g.ContentRaw)
-			return f, err
-		}, `SELECT upper_message_id, sender_id, sender_name, msg_type, content_raw FROM forwarded_messages
- WHERE root_message_id = ? AND upper_message_id IN `+inClause(len(chunk))+` AND seq = 0`, args...)
-		if err != nil {
-			return nil, err
-		}
-		for _, f := range firsts {
-			g := out[f.upper]
-			g.SenderID, g.SenderName, g.MsgType, g.ContentRaw = f.g.SenderID, f.g.SenderName, f.g.MsgType, f.g.ContentRaw
-			out[f.upper] = g
+			g := sources[id]
+			g.ChildCount, g.Preview, g.Expanded = int(n), previews[id], true
+			out[id] = g
 		}
 	}
 	return out, nil

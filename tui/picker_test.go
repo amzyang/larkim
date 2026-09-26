@@ -368,7 +368,7 @@ func chipAt(t *testing.T, m Model, key string) (Model, tea.Cmd) {
 func TestPressChip_DrawsThePressBeforeItIsSent(t *testing.T) {
 	m := pickerModel(t)
 	before := rowText(m.msgRows)
-	require.Contains(t, before, "👍 你", "the reader already reacted, which is what a press takes back")
+	require.Contains(t, before, "👍 You", "the reader already reacted, which is what a press takes back")
 	m, cmd := chipAt(t, m, "THUMBSUP")
 	require.NotNil(t, cmd)
 	require.Len(t, m.reacts, 1)
@@ -387,7 +387,7 @@ func TestPressChip_SecondPressGoesTheOtherWay(t *testing.T) {
 	require.NotNil(t, cmd)
 	require.Len(t, m.reacts, 1, "the last press is what the reader means")
 	require.True(t, m.reacts[0].on, "the direction answers the strip the first press left")
-	require.Contains(t, rowText(m.msgRows), "👍 你")
+	require.Contains(t, rowText(m.msgRows), "👍 You")
 }
 
 func TestPressChip_LeavesTheCursorWhereItWas(t *testing.T) {
@@ -413,7 +413,7 @@ func TestReactedMsg_TakesAFailedPressBackOffTheStrip(t *testing.T) {
 	next, _ := m.update(reactedMsg{p: m.reacts[0], err: errors.New("no network")})
 	m = next.(Model)
 	require.Empty(t, m.reacts)
-	require.Contains(t, rowText(m.msgRows), "👍 你", "the strip goes back to what Feishu holds")
+	require.Contains(t, rowText(m.msgRows), "👍 You", "the strip goes back to what Feishu holds")
 	require.Contains(t, m.notice, "no network")
 }
 
@@ -440,7 +440,7 @@ func TestReactedMsg_StopsDrawingARemovalFeishuTookWithoutChangingAnything(t *tes
 	m.applyOutbox()
 	m.layout()
 	require.Empty(t, m.reacts)
-	require.Contains(t, rowText(m.msgRows), "👍 你", "the strip goes back to what Feishu holds")
+	require.Contains(t, rowText(m.msgRows), "👍 You", "the strip goes back to what Feishu holds")
 }
 
 func TestReactedMsg_RollsBackOnlyThePressThatFailed(t *testing.T) {
@@ -480,7 +480,7 @@ func TestPickerCell_StillNamesTheKeyAndThePinyinThatReachedIt(t *testing.T) {
 	require.Equal(t, "THUMBSUP", h.Emoji.Key)
 	line := ansi.Strip(m.joinSegs(m.pickerCell(h, false, 60), 60))
 	require.Contains(t, line, "THUMBSUP", "the key is what :react takes")
-	require.Contains(t, line, "赞")
+	require.Contains(t, line, "Like", "the client's own English name")
 	require.Contains(t, line, "dz", "and the initials say why this hit came back")
 }
 
@@ -526,7 +526,7 @@ func TestToggleReaction_SendsAWithdrawnEmojiAsAPictureInstead(t *testing.T) {
 	require.Equal(t, "image", m.outbox[0].msgType)
 	require.Equal(t, "om_a", m.outbox[0].replyTo, "the picture answers the message the press was aimed at")
 	require.Equal(t, emoji.Path(m.deps.DataDir, withdrawnKey), m.outbox[0].images[0].local)
-	require.Contains(t, m.notice, "给力")
+	require.Contains(t, m.notice, "GoodJob")
 
 	cmd() // the send itself
 	require.Equal(t, []string{emoji.Path(m.deps.DataDir, withdrawnKey)}, f.Uploads)
@@ -573,7 +573,7 @@ func TestPickerCell_SaysWhichEmojiGoInAsAPicture(t *testing.T) {
 	require.NotEmpty(t, hits)
 	require.Equal(t, withdrawnKey, hits[0].Emoji.Key, "the picker still finds it")
 	line := ansi.Strip(m.joinSegs(m.pickerCell(hits[0], true, 60), 60))
-	require.Contains(t, line, "图", "pressing enter sends a message, not a reaction, and the cell says so")
+	require.Contains(t, line, "pic", "pressing enter sends a message, not a reaction, and the cell says so")
 }
 
 func TestPickerCell_MarksTheCellTheCursorStandsOn(t *testing.T) {
@@ -582,8 +582,8 @@ func TestPickerCell_MarksTheCellTheCursorStandsOn(t *testing.T) {
 	require.True(t, ok)
 	on := m.joinSegs(m.pickerCell(emoji.Hit{Emoji: e}, true, 60), 60)
 	off := m.joinSegs(m.pickerCell(emoji.Hit{Emoji: e}, false, 60), 60)
-	require.Contains(t, on, stPickerOn.Render(e.ZH), "the cursor colours the name, not the mark alone")
-	require.NotContains(t, off, stPickerOn.Render(e.ZH))
+	require.Contains(t, on, stPickerOn.Render(e.Name()), "the cursor colours the name, not the mark alone")
+	require.NotContains(t, off, stPickerOn.Render(e.Name()))
 	// Past the mark the two cells are the same text: the colour is what the
 	// cursor adds, and it must not move the column the next emoji opens in.
 	require.Equal(t, strings.TrimPrefix(ansi.Strip(off), " "), strings.TrimPrefix(ansi.Strip(on), "\u25b8"))
@@ -598,6 +598,6 @@ func TestPickerCell_MarksTheCursorOnAnEmojiDrawnAsAPicture(t *testing.T) {
 	require.True(t, ok)
 	segs := m.pickerCell(emoji.Hit{Emoji: e}, true, 60)
 	require.Len(t, segs, 3, "the mark, the picture and the rest of the line")
-	require.Contains(t, segs[2].text, stPickerOn.Render(e.ZH),
+	require.Contains(t, segs[2].text, stPickerOn.Render(e.Name()),
 		"the words carry the cursor where the icon is a placement the renderer fills")
 }

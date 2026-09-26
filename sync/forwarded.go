@@ -69,6 +69,7 @@ func (s *Syncer) expandForward(ctx context.Context, root store.ForwardRoot, now 
 		return false, s.recordForwardFailure(ctx, root, err, now)
 	}
 	kids := toForwarded(root.RootMessageID, items)
+	s.fillForwardReactions(ctx, kids)
 	if err := s.Store.SaveForwarded(ctx, root.RootMessageID, kids, now.UnixMilli()); err != nil {
 		return false, err
 	}
@@ -83,6 +84,34 @@ func (s *Syncer) expandForward(ctx context.Context, root store.ForwardRoot, now 
 		refs = append(refs, ExtractResources(root.RootMessageID, k.MsgType, k.ContentRaw)...)
 	}
 	return true, s.Store.AddPendingResources(ctx, refs)
+}
+
+// fillForwardReactions asks who reacted to each child. A child is a real
+// message of its own chat, so Feishu answers reactions/batch_query for it by
+// id — the expansion itself carries no reactions — but only while the reader
+// is still in that chat: one drawn from a conversation they never joined
+// comes back no_permission and keeps an empty summary.
+//
+// A call that fails outright is logged and the bundle is stored without
+// reactions rather than left owed. Settling it on a refusal after five tries
+// is what the retry path does, and losing a whole forward over its
+// decorations is the worse answer.
+func (s *Syncer) fillForwardReactions(ctx context.Context, kids []store.Forwarded) {
+	if len(kids) == 0 {
+		return
+	}
+	ids := make([]string, 0, len(kids))
+	for _, k := range kids {
+		ids = append(ids, k.MessageID)
+	}
+	blocks, err := s.Client.ReactionCounts(ctx, ids)
+	if err != nil {
+		s.log().WarnContext(ctx, "forward reactions", "root_message_id", kids[0].RootMessageID, "error", err)
+		return
+	}
+	for i := range kids {
+		kids[i].ReactionsJSON = rawString(blocks[kids[i].MessageID])
+	}
 }
 
 // recordForwardFailure settles or reschedules a bundle. A forward is frozen,

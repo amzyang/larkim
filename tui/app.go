@@ -175,6 +175,9 @@ type Model struct {
 	// rightPin puts a popped frame back where the reader left it, spent on
 	// the first list to land under it.
 	rightPin rightFrame
+	// rightName titles the visible frame, taken from the summary that opened
+	// it and refreshed by the level that lands.
+	rightName string
 	// rightNote is what a frame says in place of messages: a bundle being
 	// expanded, or one Feishu will not expand at all.
 	rightNote string
@@ -2303,7 +2306,7 @@ func (m Model) pressZone(p pane, rows []msgRow, line int, z clickZone) (tea.Mode
 		// Which pane the press landed in is what says whether the column
 		// deepens or starts over, and it is the only thing this arm reads:
 		// the x offset was already paid by the caller.
-		return m.openContainer(p, rightFrame{kind: z.openKind, id: z.open, root: z.openRoot})
+		return m.openContainer(p, rightFrame{kind: z.openKind, id: z.open, root: z.openRoot, name: z.openName})
 	}
 	if z.react == "" {
 		return m, openZone(m.deps, z)

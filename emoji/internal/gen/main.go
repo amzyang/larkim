@@ -84,6 +84,7 @@ type entry struct {
 	Terms       []string
 	Order       int
 	NoReaction  bool
+	Delisted    bool
 }
 
 func main() {
@@ -133,7 +134,7 @@ func main() {
 			Key: key, ZH: names["zh-CN"], EN: names["en-US"],
 			Rect:  [4]int{box.X, box.Y, box.Width, box.Height},
 			Terms: terms(names["zh-CN"], names["en-US"], key, aliases[key]),
-			Order: pos, NoReaction: foreign[key] || delisted[key],
+			Order: pos, NoReaction: foreign[key] || delisted[key], Delisted: delisted[key],
 		})
 	}
 	slices.SortFunc(entries, func(a, b entry) int { return strings.Compare(a.Key, b.Key) })
@@ -244,6 +245,9 @@ func write(path string, entries []entry, tones map[string]string) {
 			e.Key, e.ZH, e.EN, e.Rect[0], e.Rect[1], e.Rect[2], e.Rect[3], e.Order)
 		if e.NoReaction {
 			b.WriteString(" NoReaction: true,")
+		}
+		if e.Delisted {
+			b.WriteString(" Delisted: true,")
 		}
 		b.WriteString("\n\t\tTerms: []string{")
 		for i, t := range e.Terms {

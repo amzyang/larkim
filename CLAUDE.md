@@ -10,11 +10,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Interaction
 
-交互行为与 UI/UX 以飞书桌面客户端为基准：它是成熟且经过大量验证的 IM，默认照抄它的语义，不自创。
+交互行为与 UI/UX 以 Lark 桌面客户端（英文界面）为基准：它是成熟且经过大量验证的 IM，默认照抄它的语义，不自创。
 
 - 允许做它的子集（少功能、少形态），不允许做它的反面：同一动作的结果、方向、默认值、术语不能与客户端相反
 - 新交互先确认客户端怎么做，再决定我们做不做、做到哪一层；找不到对应行为时才自行设计，并在注释里写清为什么无对应
-- 客户端概念的命名与语义直接沿用（会话/群/话题回复/@/未读/免打扰/置顶/加急/撤回/表情回复），不换词、不改含义
+- 客户端概念的命名与语义直接沿用其英文 UI 字符串（Chat、Group、Thread / Reply in thread、Mention、Unread、Mute、Pin、Buzz、Recall、Reaction），不换词、不改含义、不回译成中文；代码标识符、TUI 可见文案、注释与 docs 统一用这套英文词，拿不准的词以客户端里的实际字符串为准
+- 客户端数据带中英双份名称时（emoji 名、显示名）取英文那份；中文名只在匹配用户输入（搜索、补全）时作为额外的候选
 - TUI 无法模拟或成本过高的（富文本编辑、悬停、动画、内联图片、拖拽）降级为最接近的子集：保留同一心智模型，删表现形式，不改语义
 - 键位遵循 TUI 习惯（Bubble Tea/vim 式导航），但键位触发的动作语义与客户端一致；两边习惯冲突时以 TUI 习惯定键、以客户端定行为
 - 跳到客户端一律用原生 scheme `lark://`（`lark://applink.feishu.cn/client/chat/open?openChatId=…`、`lark://vc.feishu.cn/j/…`），不用 `https://` applink：后者先开浏览器标签页再重定向回客户端
