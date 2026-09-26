@@ -7,6 +7,7 @@ import (
 	_ "image/png"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/amzyang/larkim/store"
@@ -53,6 +54,10 @@ const (
 	// are named colours a palette downgrade could fold together.
 	kittyIDBase = 16
 	kittyIDs    = 64
+	// avatarPixCache bounds the composited pictures kept between passes. One is
+	// the few kilobytes a row's cells hold, and the list this opens is a few
+	// hundred chats, so the whole of it fits.
+	avatarPixCache = 512
 )
 
 // kittyAvatars draws real pictures through the kitty graphics protocol.
@@ -79,7 +84,13 @@ type kittyAvatars struct {
 	badge map[string]int64
 	// failed remembers chats whose file could not be turned into a picture,
 	// so a broken avatar is decoded once, not every frame.
-	failed   map[string]bool
+	failed map[string]bool
+	// pix holds the composited picture of a row before its counter is stamped
+	// on, so a count that moved or an id a scroll reclaimed costs an encode
+	// rather than decoding the avatar file all over again. pixUsed drives its
+	// eviction.
+	pix      map[string]*image.RGBA
+	pixUsed  map[string]int64
 	fallback textAvatars
 	// cellW, cellH are the terminal's cell size in pixels, zero until it
 	// reports one.
@@ -98,6 +109,8 @@ func (k *kittyAvatars) setCellSize(w, h int) bool {
 	k.used = map[string]int64{}
 	k.badge = map[string]int64{}
 	k.failed = map[string]bool{}
+	clear(k.pix)
+	clear(k.pixUsed)
 	return true
 }
 
@@ -117,6 +130,8 @@ func newKittyAvatars(dataDir string) *kittyAvatars {
 		used:    map[string]int64{},
 		badge:   map[string]int64{},
 		failed:  map[string]bool{},
+		pix:     map[string]*image.RGBA{},
+		pixUsed: map[string]int64{},
 	}
 }
 
@@ -169,12 +184,15 @@ func (k *kittyAvatars) prepare(rows []listRow, unread map[string]int64) string {
 		} else if k.failed[key] {
 			continue
 		}
-		img := k.picture(r)
-		if img == nil {
+		clean := k.cachedPicture(r)
+		if clean == nil {
 			// No file and no font: the colour block takes over.
 			k.failed[key] = true
 			continue
 		}
+		// The counter is stamped on a copy, so the composite behind it stays
+		// the one the next count can be stamped on too.
+		img := cloneRGBA(clean)
 		drawBadge(img, n, r.chat.Muted)
 		if !live {
 			id = k.take(key)
@@ -191,6 +209,49 @@ func (k *kittyAvatars) prepare(rows []listRow, unread map[string]int64) string {
 		k.badge[key] = n
 	}
 	return out.String()
+}
+
+// cachedPicture is picture with the composite kept between passes: the decode,
+// the scale and the mask behind it all land on the same pixels however the
+// counter moves.
+func (k *kittyAvatars) cachedPicture(r listRow) *image.RGBA {
+	key := pixKey(r)
+	if img, ok := k.pix[key]; ok {
+		k.pixUsed[key] = k.clock
+		return img
+	}
+	img := k.picture(r)
+	if img == nil {
+		return nil
+	}
+	k.pix[key], k.pixUsed[key] = img, k.clock
+	if len(k.pix) > avatarPixCache {
+		old := oldestKey(k.pixUsed)
+		delete(k.pix, old)
+		delete(k.pixUsed, old)
+	}
+	return img
+}
+
+// pixKey is everything picture draws from, so a chat whose avatar finally
+// downloaded, or whose name the stand-in spells, misses rather than keeping
+// the picture drawn before it. The row's own key would not: a chat keeps it
+// across both.
+func pixKey(r listRow) string {
+	kind := "c"
+	if r.isThread() {
+		kind = "t"
+	}
+	c := r.chat
+	return strings.Join([]string{kind, c.AvatarFile(), c.AvatarSeed(), c.Name, c.ChatMode}, "\x00")
+}
+
+// cloneRGBA copies a picture so the counter can be stamped on it without
+// spoiling the composite behind it.
+func cloneRGBA(m *image.RGBA) *image.RGBA {
+	c := *m
+	c.Pix = slices.Clone(m.Pix)
+	return &c
 }
 
 // picture is what the row's column shows: the chat's own avatar, or the
@@ -234,17 +295,25 @@ func (k *kittyAvatars) take(key string) int {
 		k.id[key], k.used[key] = id, k.clock
 		return id
 	}
-	oldest, oldestAt := "", int64(0)
-	for c, at := range k.used {
-		if oldest == "" || at < oldestAt {
-			oldest, oldestAt = c, at
-		}
-	}
+	oldest := oldestKey(k.used)
 	id := k.id[oldest]
 	delete(k.id, oldest)
 	delete(k.used, oldest)
 	k.id[key], k.used[key] = id, k.clock
 	return id
+}
+
+// oldestKey is the least recently stamped entry of used, or "" when there is
+// none. Both id spaces reclaim through it, so they age their entries by the
+// same rule.
+func oldestKey(used map[string]int64) string {
+	oldest, oldestAt := "", int64(0)
+	for key, at := range used {
+		if oldest == "" || at < oldestAt {
+			oldest, oldestAt = key, at
+		}
+	}
+	return oldest
 }
 
 // loadImage decodes a file at the size it will be shown, taking the first

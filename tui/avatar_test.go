@@ -8,6 +8,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -32,12 +33,16 @@ func writePNG(t *testing.T, dir, name string, w, h int) string {
 	return name
 }
 
+// filledAvatar is the colour writeFilledPNG paints, distinct from anything a
+// stand-in draws so a test can tell the file's picture from a drawn one.
+var filledAvatar = color.RGBA{R: 0x20, G: 0x80, B: 0xF0, A: 0xFF}
+
 // writeFilledPNG writes a picture that is opaque everywhere, so a mask is the
 // only thing that can make one of its pixels transparent.
 func writeFilledPNG(t *testing.T, dir, name string, w, h int) string {
 	t.Helper()
 	m := image.NewRGBA(image.Rect(0, 0, w, h))
-	draw.Draw(m, m.Bounds(), image.NewUniform(color.RGBA{R: 0x20, G: 0x80, B: 0xF0, A: 0xFF}), image.Point{}, draw.Src)
+	draw.Draw(m, m.Bounds(), image.NewUniform(filledAvatar), image.Point{}, draw.Src)
 	f, err := os.Create(filepath.Join(dir, name))
 	require.NoError(t, err)
 	defer f.Close()
@@ -601,4 +606,119 @@ func TestKittyAvatars_AThreadKeepsItsOwnPicture(t *testing.T) {
 	require.EqualValues(t, 2, k.badge["omt_x"], "the thread's own replies are what its counter says")
 
 	require.Empty(t, k.prepare(rows, map[string]int64{"oc_1": 5}), "neither is drawn again")
+}
+
+func TestKittyAvatars_ReusesTheCompositeWhenTheCountMoves(t *testing.T) {
+	dir := t.TempDir()
+	k := newKittyAvatars(dir)
+	c := store.Chat{ChatID: "oc_1", Name: "平台组", ChatMode: "group",
+		AvatarPath: writeFilledPNG(t, dir, "a.png", 640, 640)}
+	rows := rowsOf([]store.Chat{c})
+	unread := map[string]int64{"oc_1": 1}
+
+	require.NotEmpty(t, k.prepare(rows, unread))
+	// With the file gone, a pass that decoded again would fall through to the
+	// drawn stand-in; the cached composite is the only way back to this picture.
+	require.NoError(t, os.Remove(filepath.Join(dir, "a.png")))
+
+	unread["oc_1"] = 2
+	require.NotEmpty(t, k.prepare(rows, unread), "the new counter is stamped on the kept picture")
+	require.EqualValues(t, 2, k.badge["oc_1"])
+
+	w, h := k.box()
+	require.Equal(t, filledAvatar, pixAt(k.pix[pixKey(rows[0])], w/2, h/2),
+		"and that picture is still the file's, not a stand-in")
+}
+
+func TestKittyAvatars_TheCounterDoesNotSpoilTheCompositeUnderIt(t *testing.T) {
+	dir := t.TempDir()
+	k := newKittyAvatars(dir)
+	c := store.Chat{ChatID: "oc_1", Name: "平台组", ChatMode: "group",
+		AvatarPath: writeFilledPNG(t, dir, "a.png", 64, 64)}
+	rows := rowsOf([]store.Chat{c})
+
+	k.prepare(rows, map[string]int64{"oc_1": 1})
+	clean := slices.Clone(k.pix[pixKey(rows[0])].Pix)
+
+	k.prepare(rows, map[string]int64{"oc_1": 99})
+	require.Equal(t, clean, k.pix[pixKey(rows[0])].Pix, "the counter is stamped on a copy")
+}
+
+func TestPixKey_MissesWhenWhatIsDrawnChanges(t *testing.T) {
+	c := store.Chat{ChatID: "oc_1", Name: "平台组", ChatMode: "group", AvatarPath: "a.png"}
+	base := pixKey(listRow{chat: c})
+
+	arrived := c
+	arrived.AvatarPath = "b.png"
+	require.NotEqual(t, base, pixKey(listRow{chat: arrived}), "an avatar that downloaded later is a new picture")
+
+	renamed := c
+	renamed.Name = "项目协作群"
+	require.NotEqual(t, base, pixKey(listRow{chat: renamed}), "a stand-in spells the name it was drawn from")
+
+	require.NotEqual(t, base, pixKey(threadRowOf(c, "omt_x", 0)),
+		"a thread wears the mark, so it is not the chat's own picture")
+
+	require.Equal(t, base, pixKey(listRow{chat: c}), "and nothing else moves it")
+}
+
+func TestKittyAvatars_EvictsTheLeastRecentlyDrawnComposite(t *testing.T) {
+	dir := t.TempDir()
+	name := writePNG(t, dir, "a.png", 8, 8)
+	k := newKittyAvatars(dir)
+	chat := func(i int) store.Chat {
+		return store.Chat{ChatID: fmt.Sprintf("oc_%d", i), Name: "平台组", ChatMode: "group", AvatarPath: name}
+	}
+
+	first := pixKey(listRow{chat: chat(0)})
+	for i := range avatarPixCache {
+		k.prepare(rowsOf([]store.Chat{chat(i)}), nil)
+	}
+	require.Len(t, k.pix, avatarPixCache, "the cache fills")
+	require.Contains(t, k.pix, first)
+
+	k.prepare(rowsOf([]store.Chat{chat(avatarPixCache)}), nil)
+	require.Len(t, k.pix, avatarPixCache, "and never grows past its bound")
+	require.NotContains(t, k.pix, first, "the oldest composite is the one that goes")
+}
+
+func TestKittyAvatars_ANewCellSizeDropsTheComposites(t *testing.T) {
+	dir := t.TempDir()
+	k := newKittyAvatars(dir)
+	c := store.Chat{ChatID: "oc_1", Name: "平台组", ChatMode: "group", AvatarPath: writePNG(t, dir, "a.png", 8, 8)}
+	k.prepare(rowsOf([]store.Chat{c}), nil)
+	require.NotEmpty(t, k.pix)
+
+	require.True(t, k.setCellSize(9, 19))
+	require.Empty(t, k.pix, "a composite drawn for the old cell size would be resampled")
+	require.Empty(t, k.pixUsed)
+}
+
+// BenchmarkKittyAvatarsPrepare_CountChurn is the pass a chat list does when a
+// message lands: one row's counter moved and the rest are unchanged.
+func BenchmarkKittyAvatarsPrepare_CountChurn(b *testing.B) {
+	dir := b.TempDir()
+	name := "a.png"
+	m := image.NewRGBA(image.Rect(0, 0, 640, 640))
+	draw.Draw(m, m.Bounds(), image.NewUniform(filledAvatar), image.Point{}, draw.Src)
+	f, err := os.Create(filepath.Join(dir, name))
+	require.NoError(b, err)
+	require.NoError(b, png.Encode(f, m))
+	require.NoError(b, f.Close())
+
+	k := newKittyAvatars(dir)
+	k.setCellSize(9, 19)
+	chats := make([]store.Chat, 30)
+	for i := range chats {
+		chats[i] = store.Chat{ChatID: fmt.Sprintf("oc_%d", i), Name: "平台组", ChatMode: "group", AvatarPath: name}
+	}
+	rows := rowsOf(chats)
+	unread := map[string]int64{}
+	k.prepare(rows, unread)
+
+	b.ReportAllocs()
+	for i := 0; b.Loop(); i++ {
+		unread["oc_0"] = int64(i%98) + 1
+		k.prepare(rows, unread)
+	}
 }
