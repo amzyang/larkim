@@ -16,7 +16,7 @@ import (
 )
 
 func (a *App) sendCmd() *cobra.Command {
-	var to, chat string
+	var to, chat, idemKey string
 	var body outgoingFlags
 	cmd := &cobra.Command{
 		Use:   "send --to <ou_|email> | --chat <oc_|name> --text|--markdown|--image|--file <body>",
@@ -58,7 +58,7 @@ func (a *App) sendCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			sent, err := client.Send(ctx, target, msg, uuid.NewString())
+			sent, err := client.Send(ctx, target, msg, idempotencyKey(idemKey))
 			if err != nil {
 				return err
 			}
@@ -69,7 +69,25 @@ func (a *App) sendCmd() *cobra.Command {
 	cmd.Flags().StringVar(&to, "to", "", "recipient: open_id (ou_…), email or exact name")
 	cmd.Flags().StringVar(&chat, "chat", "", "chat: id (oc_…) or exact name")
 	body.register(cmd)
+	registerIdempotencyKey(cmd, &idemKey)
 	return cmd
+}
+
+func registerIdempotencyKey(cmd *cobra.Command, v *string) {
+	cmd.Flags().StringVar(v, "idempotency-key", "",
+		"key Feishu deduplicates this send by for an hour (default: a fresh uuid)")
+}
+
+// idempotencyKey is what Feishu deduplicates a send by for an hour. A caller
+// that can issue the same action twice — a notification banner clicked again,
+// a retried script — derives a key from the action so the repeat lands as one
+// message, and picks different keys for actions it wants delivered separately
+// even when their text is identical. Without one, every send is its own.
+func idempotencyKey(supplied string) string {
+	if s := strings.TrimSpace(supplied); s != "" {
+		return s
+	}
+	return uuid.NewString()
 }
 
 // outgoingFlags are the bodies a send can carry. They are exclusive the way
@@ -155,6 +173,7 @@ func expandPath(p string) (string, error) {
 func (a *App) replyCmd() *cobra.Command {
 	var body outgoingFlags
 	var inThread bool
+	var idemKey string
 	cmd := &cobra.Command{
 		Use:   "reply <message_id> --text|--markdown|--image <body>",
 		Short: "Reply to a message, optionally inside its thread",
@@ -174,7 +193,7 @@ func (a *App) replyCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			sent, err := client.Reply(ctx, args[0], msg, inThread, uuid.NewString())
+			sent, err := client.Reply(ctx, args[0], msg, inThread, idempotencyKey(idemKey))
 			if err != nil {
 				return err
 			}
@@ -184,6 +203,7 @@ func (a *App) replyCmd() *cobra.Command {
 	}
 	body.register(cmd)
 	cmd.Flags().BoolVar(&inThread, "in-thread", false, "reply in the message's thread instead of the main chat")
+	registerIdempotencyKey(cmd, &idemKey)
 	return cmd
 }
 

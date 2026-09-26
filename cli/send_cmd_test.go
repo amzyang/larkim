@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/amzyang/larkim/larkcli"
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
 )
 
@@ -99,4 +100,23 @@ func TestSendCmd_FlagValidationRunsBeforeAnythingElse(t *testing.T) {
 
 	_, err = run(t, dir, "reply", "om_elsewhere", "--text", "hi", "--markdown", "## hi")
 	require.ErrorContains(t, err, "exactly one of --text, --markdown, --image or --file")
+}
+
+func TestIdempotencyKey_KeepsTheOneTheCallerChose(t *testing.T) {
+	require.Equal(t, "om_1-d-3f2a", idempotencyKey("om_1-d-3f2a"))
+	require.Equal(t, "om_1-d-3f2a", idempotencyKey("  om_1-d-3f2a  "))
+}
+
+func TestIdempotencyKey_MintsADistinctOneWhenNobodyChose(t *testing.T) {
+	// Two deliberate sends of the same text must both arrive, so the default
+	// cannot be a constant.
+	require.NotEqual(t, idempotencyKey(""), idempotencyKey(" "))
+	require.NotEmpty(t, idempotencyKey(""))
+}
+
+func TestSendAndReply_BothTakeAnIdempotencyKey(t *testing.T) {
+	a := &App{}
+	for _, cmd := range []*cobra.Command{a.sendCmd(), a.replyCmd()} {
+		require.NotNil(t, cmd.Flags().Lookup("idempotency-key"), cmd.Name())
+	}
 }
