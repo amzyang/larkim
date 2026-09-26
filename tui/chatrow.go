@@ -347,9 +347,9 @@ func chatChips(c store.Chat, pics emojiPics) []rowSeg {
 // the reactions the chat collected, then who said what, then the mute mark at
 // the far edge. It comes back in pieces only when a reaction is a picture — a
 // line of characters stays one string, which is what lets a selection tint it.
-func chatSummaryLine(c store.Chat, d store.Draft, self string, pics emojiPics, w int) (string, []rowSeg) {
+func chatSummaryLine(c store.Chat, d store.Draft, g rowGist, w int) (string, []rowSeg) {
 	mine := selfMark(d)
-	chips := chatChips(c, pics)
+	chips := g.chips
 	// The rule is what ends the strip: with a space alone the gap before the
 	// summary reads like the gap between two badges, and the message behind
 	// them like one more reaction. The mention badge that outranks the
@@ -362,10 +362,9 @@ func chatSummaryLine(c store.Chat, d store.Draft, self string, pics emojiPics, w
 	if len(chips) > 0 {
 		room -= lipgloss.Width(sep)
 	}
-	text, summary := chatSummary(c, self, pics)
-	body := []rowSeg{{text: padBetween(text, muteMark(c), max(0, room))}}
-	if summary != nil {
-		body = padSegs(summary, muteMark(c), max(0, room))
+	body := []rowSeg{{text: padBetween(g.text, muteMark(c), max(0, room))}}
+	if g.summary != nil {
+		body = padSegs(g.summary, muteMark(c), max(0, room))
 	}
 
 	var segs []rowSeg
@@ -428,7 +427,7 @@ func markName(s string, pos []int, base lipgloss.Style) string {
 // is left, so the right edge stays aligned however long a name is. mark is
 // the runes of the name the filter landed on, empty when there is no filter
 // or the hit came through pinyin.
-func renderChatRow(av avatars, r listRow, d store.Draft, unread int64, self string, now time.Time, w int, pics emojiPics, mark []int) chatRow {
+func renderChatRow(av avatars, r listRow, d store.Draft, unread int64, g rowGist, now time.Time, w int, mark []int) chatRow {
 	c := r.chat
 	avatarTop, avatarBottom, badged := av.cells(r, unread)
 	textWidth := chatTextWidth(w)
@@ -447,7 +446,7 @@ func renderChatRow(av avatars, r listRow, d store.Draft, unread int64, self stri
 	room := textWidth - lipgloss.Width(right) - lipgloss.Width(bot) - lipgloss.Width(suffix) - 1
 	title := markName(personName(truncate(name, max(minTitleWidth, room)), suffix), mark, stBold) + bot
 
-	bottom, segs := chatSummaryLine(c, d, self, pics, textWidth)
+	bottom, segs := chatSummaryLine(c, d, g, textWidth)
 	return chatRow{
 		avatarTop:    avatarTop,
 		avatarBottom: avatarBottom,

@@ -69,8 +69,9 @@ type Model struct {
 	// does not move the chat it lands in, which is what a thread is for.
 	threads []store.ThreadFeed
 	// rows is the two of them interleaved, which is what the pane draws and
-	// what the cursor walks.
-	rows   []listRow
+	// what the cursor walks, held across the several calls one pass makes for
+	// it.
+	rows   *rowsCache
 	unread map[string]int64
 	// drafts is every chat's unsent composer state, for the chat list's own
 	// marker. The open chat's draft lives in the composer, not here, so this
@@ -113,8 +114,11 @@ type Model struct {
 	emojiWrite *emoji.Index
 	// chatIx spells the chat list for the filter, so `/` reaches a Chinese
 	// name through its pinyin.
-	chatIx     *chatIndex
-	avatars    avatars
+	chatIx  *chatIndex
+	avatars avatars
+	// gists memoises one frame of chat-list lines, so picturePrepare and the
+	// pane that draws them do not each summarise every visible row.
+	gists      *gistCache
 	pics       *pictures // message images; nil on a terminal without graphics
 	chatFilter string
 	// filterPin is what a cancelled filter puts back. Opening the filter takes
@@ -328,6 +332,8 @@ func New(d Deps) Model {
 		emoji:      emoji.NewReactionIndex().WithCustom(d.DataDir),
 		emojiWrite: emoji.NewComposerIndex(),
 		chatIx:     newChatIndex(),
+		gists:      newGistCache(),
+		rows:       newRowsCache(),
 		avatars:    newAvatars(d.DataDir, d.Env), pics: newPictures(d.DataDir, d.Env),
 		files: osDraftFiles()}
 	m.emoji.LoadUsed(d.DataDir)
@@ -371,6 +377,10 @@ func (m Model) Init() tea.Cmd {
 // and after the alternate screen is up — which is the only screen a virtual
 // placement made earlier would not reach.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// The lines the last frame summarised are derived from state this pass is
+	// about to change. The cache is held through a pointer, so dropping them
+	// here reaches the copy picturePrepare fills and View then draws.
+	m.gists.begin()
 	next, cmd := m.update(msg)
 	nm, ok := next.(Model)
 	if !ok {
@@ -460,18 +470,11 @@ func (m Model) picturePrepare() string {
 	vis := m.visibleRows()
 	pcs := m.chatPics()
 	for i := m.chatTop; i < len(vis) && i < m.chatTop+m.chatListHeight(); i++ {
-		if vis[i].isThread() {
-			_, gist := threadRowGist(vis[i], m.deps.Self, pcs)
-			for _, s := range gist {
-				take(s.pic)
-			}
-			continue
-		}
-		for _, s := range chatChips(vis[i].chat, pcs) {
+		g := m.gists.at(vis[i], m.deps.Self, pcs)
+		for _, s := range g.chips {
 			take(s.pic)
 		}
-		_, summary := chatSummary(vis[i].chat, m.deps.Self, pcs)
-		for _, s := range summary {
+		for _, s := range g.summary {
 			take(s.pic)
 		}
 	}
@@ -1353,21 +1356,23 @@ func (m Model) currentChat() (store.Chat, bool) {
 // root opened with: the row is titled by those words, so they are what the
 // reader has to type at.
 func (m Model) visibleRows() []listRow {
-	rows := listRows(m.chats, m.threads)
+	rows := m.rows.all(m.chats, m.threads)
 	if m.chatFilter == "" {
 		return rows
 	}
-	var out []listRow
-	for _, r := range rows {
-		if _, ok := m.chatIx.match(r.chat, m.chatFilter); ok {
-			out = append(out, r)
-			continue
+	return m.rows.narrowed(m.chatFilter, func(rows []listRow) []listRow {
+		var out []listRow
+		for _, r := range rows {
+			if _, ok := m.chatIx.match(r.chat, m.chatFilter); ok {
+				out = append(out, r)
+				continue
+			}
+			if r.isThread() && containsFold(replyGist(r.thread.Root), m.chatFilter) {
+				out = append(out, r)
+			}
 		}
-		if r.isThread() && containsFold(replyGist(r.thread.Root), m.chatFilter) {
-			out = append(out, r)
-		}
-	}
-	return out
+		return out
+	})
 }
 
 // clampChat keeps the cursor and the viewport inside the list. Neither is

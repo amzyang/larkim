@@ -190,3 +190,56 @@ func TestListRows_AThreadPastTheListingKeepsWhatItCarries(t *testing.T) {
 	assert.Equal(t, "oc_far", rows[1].chatID())
 	assert.Equal(t, "财务组", rows[1].chat.Name)
 }
+
+func TestRowsCache_HoldsTheInterleaveUntilTheListIsReplaced(t *testing.T) {
+	c := newRowsCache()
+	chats := []store.Chat{chat("oc_1", "平台组"), chat("oc_2", "财务组")}
+
+	first := c.all(chats, nil)
+	require.Len(t, first, 2)
+	require.Equal(t, &first[0], &c.all(chats, nil)[0], "the same lists give back the same interleave")
+
+	replaced := append([]store.Chat{chat("oc_3", "项目协作群")}, chats...)
+	again := c.all(replaced, nil)
+	require.Len(t, again, 3, "a reload that brings a new list is interleaved again")
+	require.Equal(t, "oc_3", again[0].chat.ChatID)
+}
+
+func TestRowsCache_AThreadArrivingRebuildsIt(t *testing.T) {
+	c := newRowsCache()
+	chats := []store.Chat{chat("oc_1", "平台组")}
+	require.Len(t, c.all(chats, nil), 1)
+
+	feed := store.ThreadFeed{ThreadID: "omt_x", ChatID: "oc_1", ChatName: "平台组",
+		Root: store.Message{MessageID: "om_root", CreateMs: 10},
+		Last: store.Message{MessageID: "om_last", CreateMs: 20}}
+	require.Len(t, c.all(chats, []store.ThreadFeed{feed}), 2, "the thread takes a row of its own")
+}
+
+func TestRowsCache_EachFilterIsNarrowedOnce(t *testing.T) {
+	c := newRowsCache()
+	rows := c.all([]store.Chat{chat("oc_1", "平台组"), chat("oc_2", "财务组")}, nil)
+	require.Len(t, rows, 2)
+
+	calls := 0
+	narrow := func(in []listRow) []listRow { calls++; return in[:1] }
+
+	require.Len(t, c.narrowed("平台", narrow), 1)
+	require.Len(t, c.narrowed("平台", narrow), 1)
+	require.Equal(t, 1, calls, "the same filter is answered from the pass before")
+
+	c.narrowed("财务", narrow)
+	require.Equal(t, 2, calls, "a filter that moved is narrowed again")
+}
+
+func TestRowsCache_AFilterThatAnswersNothingIsStillAnAnswer(t *testing.T) {
+	c := newRowsCache()
+	c.all([]store.Chat{chat("oc_1", "平台组")}, nil)
+
+	calls := 0
+	narrow := func([]listRow) []listRow { calls++; return nil }
+
+	require.Empty(t, c.narrowed("没有这个群", narrow))
+	require.Empty(t, c.narrowed("没有这个群", narrow))
+	require.Equal(t, 1, calls, "an empty answer is not a cache that never filled")
+}

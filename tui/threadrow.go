@@ -23,7 +23,7 @@ const threadGlyph = "⤷"
 // colour block. Either way it is the avatars renderer's to draw, keyed by the
 // thread rather than by the chat, so the two rows of one chat can carry two
 // different counters.
-func renderThreadRow(av avatars, r listRow, self string, now time.Time, w int, pics emojiPics) chatRow {
+func renderThreadRow(av avatars, r listRow, self string, g rowGist, now time.Time, w int) chatRow {
 	t := r.thread
 	textWidth := chatTextWidth(w)
 	avatarTop, avatarBottom, badged := av.cells(r, t.Unread)
@@ -38,7 +38,7 @@ func renderThreadRow(av avatars, r listRow, self string, now time.Time, w int, p
 	room := textWidth - lipgloss.Width(right) - 1
 	top := padBetween(stBold.Render(truncate(title, max(minTitleWidth, room))), right, textWidth)
 
-	text, segs := threadRowLine(r, self, pics, textWidth)
+	text, segs := threadRowLine(r, g, textWidth)
 	return chatRow{
 		avatarTop:    avatarTop,
 		avatarBottom: avatarBottom,
@@ -52,16 +52,15 @@ func renderThreadRow(av avatars, r listRow, self string, now time.Time, w int, p
 // unread replies earned, then the last of them, then the mute mark at the far
 // edge. The reader's own slot stays empty — a draft belongs to the chat, and
 // the chat's own row is where it shows.
-func threadRowLine(r listRow, self string, pics emojiPics, w int) (string, []rowSeg) {
+func threadRowLine(r listRow, g rowGist, w int) (string, []rowSeg) {
 	at := ""
 	if r.thread.NamesSelf {
 		at = stMentionMe.Render("@") + " "
 	}
 	room := max(0, w-lipgloss.Width(at))
-	text, summary := threadRowGist(r, self, pics)
-	body := []rowSeg{{text: padBetween(text, muteMark(r.chat), room)}}
-	if summary != nil {
-		body = padSegs(summary, muteMark(r.chat), room)
+	body := []rowSeg{{text: padBetween(g.text, muteMark(r.chat), room)}}
+	if g.summary != nil {
+		body = padSegs(g.summary, muteMark(r.chat), room)
 	}
 	var segs []rowSeg
 	if at != "" {

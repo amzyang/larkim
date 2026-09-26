@@ -608,7 +608,7 @@ func (m Model) View() tea.View {
 	v.MouseMode = tea.MouseModeCellMotion
 	v.ReportFocus = true
 	v.KeyboardEnhancements = tea.KeyboardEnhancements{ReportAlternateKeys: true}
-	v.WindowTitle = windowTitle(listRows(m.chats, m.threads), m.unread)
+	v.WindowTitle = windowTitle(m.rows.all(m.chats, m.threads), m.unread)
 	if m.width == 0 {
 		v.Content = "loading…"
 		return v
@@ -754,13 +754,16 @@ func (m Model) renderChats(h int) string {
 	// A trailing row that cannot show both its lines is left out entirely.
 	last := m.chatTop + min(len(vis)-m.chatTop, chatsThatFit(h-headerHeight)) - 1
 	for i := m.chatTop; i <= last; i++ {
-		// A thread's title is the words its root opened with, not a name, so
-		// the filter has no rune positions there to underline.
-		mark, _ := m.chatIx.match(vis[i].chat, m.chatFilter)
-		r := renderThreadRow(m.avatars, vis[i], m.deps.Self, now, w, m.chatPics())
-		if !vis[i].isThread() {
-			row := vis[i]
-			r = renderChatRow(m.avatars, row, m.draftForRow(row.chatID()), m.unread[row.chatID()], m.deps.Self, now, w, m.chatPics(), mark)
+		row := vis[i]
+		g := m.gists.at(row, m.deps.Self, m.chatPics())
+		var r chatRow
+		if row.isThread() {
+			// A thread's title is the words its root opened with, not a name,
+			// so the filter has no rune positions there to underline.
+			r = renderThreadRow(m.avatars, row, m.deps.Self, g, now, w)
+		} else {
+			mark, _ := m.chatIx.match(row.chat, m.chatFilter)
+			r = renderChatRow(m.avatars, row, m.draftForRow(row.chatID()), m.unread[row.chatID()], g, now, w, mark)
 		}
 		sel := i == m.chatIdx
 		bottom := line(r.avatarBottom, r.bottom, sel)
@@ -775,7 +778,7 @@ func (m Model) renderChats(h int) string {
 	for len(lines) < h-headerHeight {
 		lines = append(lines, fit("", w))
 	}
-	content := chatsHeader(listRows(m.chats, m.threads), m.unread, m.chatFilter, w) + "\n" + strings.Join(lines, "\n")
+	content := chatsHeader(m.rows.all(m.chats, m.threads), m.unread, m.chatFilter, w) + "\n" + strings.Join(lines, "\n")
 	return paneStyle(m.focus == paneChats, w).Height(h).Render(content)
 }
 

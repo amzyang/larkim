@@ -179,7 +179,7 @@ func TestChatSummaryLine_AtMeIsDrawnWhateverTheSummarySays(t *testing.T) {
 	c := store.Chat{ChatID: "oc_group", Name: "平台组", ChatMode: "group",
 		LastSenderName: "张三", LastContent: "别的事", LastRenderedAt: 1, UnreadMention: true}
 
-	line, _ := chatSummaryLine(c, store.Draft{}, "ou_me", emojiPics{}, 36)
+	line, _ := chatSummaryLine(c, store.Draft{}, gistOf(listRow{chat: c}, "ou_me", emojiPics{}), 36)
 
 	assert.Contains(t, line, "@", "the chat wears the badge even though its newest message names nobody")
 }
@@ -188,7 +188,7 @@ func TestChatSummaryLine_NoBadgeWithoutAnUnreadMention(t *testing.T) {
 	c := store.Chat{ChatID: "oc_group", Name: "平台组", ChatMode: "group",
 		LastSenderName: "张三", LastContent: "别的事", LastRenderedAt: 1}
 
-	line, _ := chatSummaryLine(c, store.Draft{}, "ou_me", emojiPics{}, 36)
+	line, _ := chatSummaryLine(c, store.Draft{}, gistOf(listRow{chat: c}, "ou_me", emojiPics{}), 36)
 
 	assert.NotContains(t, ansi.Strip(line), "@")
 }
@@ -199,7 +199,7 @@ func TestChatSummaryLine_AtMeOutranksTheReactionChips(t *testing.T) {
 	c := reactedP2P("OK")
 	c.UnreadMention = true
 
-	line, segs := chatSummaryLine(c, store.Draft{}, "ou_me", emojiPics{}, 36)
+	line, segs := chatSummaryLine(c, store.Draft{}, gistOf(listRow{chat: c}, "ou_me", emojiPics{}), 36)
 
 	assert.Empty(t, segs, "the badge is text, so the line stays one string")
 	assert.Contains(t, line, "@")

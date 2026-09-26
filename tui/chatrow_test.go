@@ -24,7 +24,7 @@ func summaryText(c store.Chat) string {
 }
 
 func plainRow(c store.Chat, unread int64, w int) (string, string) {
-	r := renderChatRow(textAvatars{}, listRow{chat: c}, store.Draft{}, unread, "ou_me", testNow, w, emojiPics{}, nil)
+	r := renderChatRow(textAvatars{}, listRow{chat: c}, store.Draft{}, unread, gistOf(listRow{chat: c}, "ou_me", emojiPics{}), testNow, w, nil)
 	return ansi.Strip(r.top), ansi.Strip(r.bottom)
 }
 
@@ -155,7 +155,7 @@ func TestRenderChatRow_KeepsTheRightEdgeAlignedAndBothLinesInWidth(t *testing.T)
 		LastMessageID: "om_1", LastMessageMs: at(-30 * time.Hour),
 		LastSenderName: "林岚", LastContent: strings.Repeat("很长的内容", 20), LastRenderedAt: 1,
 	}
-	r := renderChatRow(textAvatars{}, listRow{chat: long}, store.Draft{}, 12, "ou_me", testNow, w, emojiPics{}, nil)
+	r := renderChatRow(textAvatars{}, listRow{chat: long}, store.Draft{}, 12, gistOf(listRow{chat: long}, "ou_me", emojiPics{}), testNow, w, nil)
 	require.Equal(t, chatTextWidth(w), lipgloss.Width(r.top), "the text half fills its column exactly")
 	require.Equal(t, chatTextWidth(w), lipgloss.Width(r.bottom))
 	require.Equal(t, avatarWidth, lipgloss.Width(r.avatarTop), "and the avatar keeps its own")
@@ -229,7 +229,7 @@ func TestRenderChatRow_LeavesTheCountToAPictureThatCarriesIt(t *testing.T) {
 	c := store.Chat{ChatID: "oc_1", Name: "Alpha", ChatMode: "group",
 		LastMessageID: "om_1", LastMessageMs: at(-time.Hour), LastSenderName: "Bob", LastContent: "hi"}
 
-	on := ansi.Strip(renderChatRow(badgedAvatars{}, listRow{chat: c}, store.Draft{}, 12, "ou_me", testNow, 40, emojiPics{}, nil).top)
+	on := ansi.Strip(renderChatRow(badgedAvatars{}, listRow{chat: c}, store.Draft{}, 12, gistOf(listRow{chat: c}, "ou_me", emojiPics{}), testNow, 40, nil).top)
 	require.NotContains(t, on, "12", "the avatar shows it, so the title line keeps the room")
 
 	off, _ := plainRow(c, 12, 40)
@@ -244,7 +244,7 @@ func TestRenderChatRow_MarksAMutedChat(t *testing.T) {
 	require.NotContains(t, bottom, muteGlyph)
 
 	c.Muted = true
-	row := renderChatRow(textAvatars{}, listRow{chat: c}, store.Draft{}, 0, "ou_me", testNow, 40, emojiPics{}, nil)
+	row := renderChatRow(textAvatars{}, listRow{chat: c}, store.Draft{}, 0, gistOf(listRow{chat: c}, "ou_me", emojiPics{}), testNow, 40, nil)
 	require.Contains(t, ansi.Strip(row.bottom), muteGlyph, "a muted chat with nothing unread still says so")
 	require.Equal(t, chatTextWidth(40), lipgloss.Width(row.bottom), "and the mark stays inside the row")
 }
@@ -280,9 +280,9 @@ func TestRenderChatRow_GreysTheCounterOfAMutedChat(t *testing.T) {
 	c := store.Chat{ChatID: "oc_1", Name: "Alpha", ChatMode: "group",
 		LastMessageID: "om_1", LastMessageMs: at(-time.Hour), LastSenderName: "Bob", LastContent: "hi"}
 
-	loud := renderChatRow(textAvatars{}, listRow{chat: c}, store.Draft{}, 3, "ou_me", testNow, 40, emojiPics{}, nil).top
+	loud := renderChatRow(textAvatars{}, listRow{chat: c}, store.Draft{}, 3, gistOf(listRow{chat: c}, "ou_me", emojiPics{}), testNow, 40, nil).top
 	c.Muted = true
-	quiet := renderChatRow(textAvatars{}, listRow{chat: c}, store.Draft{}, 3, "ou_me", testNow, 40, emojiPics{}, nil).top
+	quiet := renderChatRow(textAvatars{}, listRow{chat: c}, store.Draft{}, 3, gistOf(listRow{chat: c}, "ou_me", emojiPics{}), testNow, 40, nil).top
 
 	require.Contains(t, ansi.Strip(loud), "3")
 	require.Contains(t, ansi.Strip(quiet), "3", "the count is still there")
@@ -294,13 +294,13 @@ func TestChatSummary_KeepsAMentionOfTheReaderVisibleThroughTheDim(t *testing.T) 
 	c := store.Chat{ChatID: "oc_1", Name: "项目协作群", ChatMode: "group", LastMessageID: "om_1", LastRenderedAt: 1,
 		LastSenderName: "孙琪", LastSenderID: "ou_x", LastContent: "@林岚 看下",
 		LastMentionsJSON: `[{"id":"ou_me","key":"@_user_1","name":"林岚"}]`}
-	row := renderChatRow(textAvatars{}, listRow{chat: c}, store.Draft{}, 0, "ou_me", testNow, 36, emojiPics{}, nil)
+	row := renderChatRow(textAvatars{}, listRow{chat: c}, store.Draft{}, 0, gistOf(listRow{chat: c}, "ou_me", emojiPics{}), testNow, 36, nil)
 	require.Contains(t, row.bottom, stMentionMe.Render("@林岚"))
 	require.Contains(t, ansi.Strip(row.bottom), "孙琪: "+chipLeft+"@林岚"+chipRight+" 看下",
 		"the badge keeps its caps at summary width")
 
 	c.LastContent, c.LastMentionsJSON = "@_all all", ""
-	row = renderChatRow(textAvatars{}, listRow{chat: c}, store.Draft{}, 0, "ou_me", testNow, 36, emojiPics{}, nil)
+	row = renderChatRow(textAvatars{}, listRow{chat: c}, store.Draft{}, 0, gistOf(listRow{chat: c}, "ou_me", emojiPics{}), testNow, 36, nil)
 	require.Contains(t, ansi.Strip(row.bottom), "孙琪: @All all")
 }
 
@@ -308,7 +308,7 @@ func TestChatSummary_LeavesAMentionOfSomebodyElseInTheRowsOwnDim(t *testing.T) {
 	c := store.Chat{ChatID: "oc_1", Name: "项目协作群", ChatMode: "group", LastMessageID: "om_1", LastRenderedAt: 1,
 		LastSenderName: "孙琪", LastSenderID: "ou_x", LastContent: "@李四 看下",
 		LastMentionsJSON: `[{"id":"ou_a","key":"@_user_1","name":"李四"}]`}
-	row := renderChatRow(textAvatars{}, listRow{chat: c}, store.Draft{}, 0, "ou_me", testNow, 36, emojiPics{}, nil)
+	row := renderChatRow(textAvatars{}, listRow{chat: c}, store.Draft{}, 0, gistOf(listRow{chat: c}, "ou_me", emojiPics{}), testNow, 36, nil)
 	require.Contains(t, row.bottom, stDim.Render("@李四"))
 	require.NotContains(t, row.bottom, stAccent.Render("@李四"),
 		"the summary is one line: colouring an @ that is not the reader's says nothing")
@@ -379,7 +379,7 @@ func TestChatSummary_KeepsTheBodyClearOfTheReactions(t *testing.T) {
 	const w = 31
 	c := reactedP2P("THUMBSUP", "HEART", "ROSE")
 	c.LastContent = strings.Repeat("很长的内容", 20)
-	row := renderChatRow(textAvatars{}, listRow{chat: c}, store.Draft{}, 0, "ou_me", testNow, w, emojiPics{}, nil)
+	row := renderChatRow(textAvatars{}, listRow{chat: c}, store.Draft{}, 0, gistOf(listRow{chat: c}, "ou_me", emojiPics{}), testNow, w, nil)
 	require.Equal(t, chatTextWidth(w), lipgloss.Width(row.bottom), "the line fills its column exactly")
 	require.True(t, strings.HasPrefix(ansi.Strip(row.bottom), chatBadges("👍", "❤️", "🌹")),
 		"the icons are what survives, the body gives way")
@@ -391,7 +391,7 @@ func TestChatSummary_DrawsAReactionNoCharacterCarriesAsAPicture(t *testing.T) {
 	pics := emojiPics{dir: dir, place: picturesIn(dir).place}
 
 	const w = 40
-	row := renderChatRow(textAvatars{}, listRow{chat: reactedP2P("OK")}, store.Draft{}, 0, "ou_me", testNow, w, pics, nil)
+	row := renderChatRow(textAvatars{}, listRow{chat: reactedP2P("OK")}, store.Draft{}, 0, gistOf(listRow{chat: reactedP2P("OK")}, "ou_me", pics), testNow, w, nil)
 	require.Empty(t, row.bottom, "a picture in the line is what puts it in pieces")
 	require.Equal(t, chipLeft, ansi.Strip(row.segs[0].text), "the badge opens the line")
 	require.Positive(t, row.segs[1].pic.cols, "the icon is the client's own picture")
@@ -410,7 +410,7 @@ func TestChatSummary_WearsABadgePerPictureReaction(t *testing.T) {
 	writeTestEmoji(t, dir, "AWESOME")
 	pics := emojiPics{dir: dir, place: picturesIn(dir).place}
 
-	row := renderChatRow(textAvatars{}, listRow{chat: reactedP2P("OK", "AWESOME")}, store.Draft{}, 0, "ou_me", testNow, 40, pics, nil)
+	row := renderChatRow(textAvatars{}, listRow{chat: reactedP2P("OK", "AWESOME")}, store.Draft{}, 0, gistOf(listRow{chat: reactedP2P("OK", "AWESOME")}, "ou_me", pics), testNow, 40, nil)
 
 	require.Positive(t, row.segs[1].pic.cols)
 	require.Positive(t, row.segs[5].pic.cols)
@@ -433,7 +433,7 @@ func TestRenderChatRow_AMutedChatStillSaysSo(t *testing.T) {
 	// grey on a muted chat for the same reason rather than left out.
 	c := store.Chat{ChatID: "oc_a", Name: "平台组", ChatMode: "group", Muted: true}
 
-	row := renderChatRow(textAvatars{}, listRow{chat: c}, store.Draft{}, 4, "ou_me", testNow, 38, emojiPics{}, nil)
+	row := renderChatRow(textAvatars{}, listRow{chat: c}, store.Draft{}, 4, gistOf(listRow{chat: c}, "ou_me", emojiPics{}), testNow, 38, nil)
 
 	require.Contains(t, ansi.Strip(row.top), "4")
 	require.Contains(t, ansi.Strip(row.bottom), muteGlyph)

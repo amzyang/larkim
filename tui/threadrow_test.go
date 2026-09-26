@@ -26,7 +26,7 @@ func spoke(id, sender, name, text string, at int64) store.Message {
 // threadLines renders a thread row the way the pane does and strips the
 // styling, which is what the assertions read.
 func threadLines(t store.ThreadFeed, w int) (string, string, string) {
-	r := renderThreadRow(textAvatars{}, listRow{chat: t.Chat(), thread: t}, "ou_me", testNow, w, emojiPics{})
+	r := renderThreadRow(textAvatars{}, listRow{chat: t.Chat(), thread: t}, "ou_me", gistOf(listRow{chat: t.Chat(), thread: t}, "ou_me", emojiPics{}), testNow, w)
 	return ansi.Strip(r.avatarTop), ansi.Strip(r.top), ansi.Strip(r.bottom)
 }
 

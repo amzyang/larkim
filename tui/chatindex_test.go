@@ -88,7 +88,7 @@ func TestRenderChatRow_UnderlinesTheRunesTheFilterLandedOn(t *testing.T) {
 	pos, ok := ix.match(c, "协作")
 	require.True(t, ok)
 
-	row := renderChatRow(textAvatars{}, listRow{chat: c}, store.Draft{}, 0, "ou_me", testNow, 40, emojiPics{}, pos)
+	row := renderChatRow(textAvatars{}, listRow{chat: c}, store.Draft{}, 0, gistOf(listRow{chat: c}, "ou_me", emojiPics{}), testNow, 40, pos)
 	require.Equal(t, "项目协作群", ansi.Strip(row.top)[:len("项目协作群")])
 	// Each rune opens with the attributes it is drawn under, so the matched
 	// ones carry the underline parameter and their neighbours do not.
@@ -104,7 +104,7 @@ func TestRenderChatRow_LeavesTheNameAloneOnAPinyinHit(t *testing.T) {
 	pos, ok := ix.match(c, "ptz")
 	require.True(t, ok)
 
-	row := renderChatRow(textAvatars{}, listRow{chat: c}, store.Draft{}, 0, "ou_me", testNow, 40, emojiPics{}, pos)
+	row := renderChatRow(textAvatars{}, listRow{chat: c}, store.Draft{}, 0, gistOf(listRow{chat: c}, "ou_me", emojiPics{}), testNow, 40, pos)
 	require.NotRegexp(t, `4m[平台组]`, row.top)
 }
 

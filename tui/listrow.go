@@ -125,3 +125,51 @@ func indexOfChatRow(rows []listRow, chatID string) int {
 func containsFold(s, query string) bool {
 	return strings.Contains(strings.ToLower(s), strings.ToLower(strings.TrimSpace(query)))
 }
+
+// rowsCache keeps the interleaved list, and the filter's narrowing of it,
+// between the calls that ask. One pass through Update asks several times — the
+// key handler, both prepares, then the pane — and a listRow carries a whole
+// chat, so rebuilding copies the list every time.
+//
+// It stands while the slices behind it are the same ones. Chats and threads
+// arrive whole from a reload and are never edited in place, so their identity
+// is what says the interleave still holds; the filter is compared by its text.
+type rowsCache struct {
+	chats   []store.Chat
+	threads []store.ThreadFeed
+	rows    []listRow
+	filter  string
+	shown   []listRow
+}
+
+func newRowsCache() *rowsCache { return &rowsCache{} }
+
+// all is the interleave of the two lists.
+func (c *rowsCache) all(chats []store.Chat, threads []store.ThreadFeed) []listRow {
+	if !sameSlice(c.chats, chats) || !sameSlice(c.threads, threads) {
+		c.chats, c.threads = chats, threads
+		c.rows = listRows(chats, threads)
+		c.filter, c.shown = "", nil
+	}
+	return c.rows
+}
+
+// narrowed is what a filter leaves of it, computed by narrow the first time
+// that filter is asked for. An empty filter never reaches here.
+func (c *rowsCache) narrowed(filter string, narrow func([]listRow) []listRow) []listRow {
+	if c.filter != filter || c.shown == nil {
+		c.filter, c.shown = filter, narrow(c.rows)
+		if c.shown == nil {
+			// nil is how this asks again, so a filter that answers nothing
+			// needs a slice of its own to stand for the empty answer.
+			c.shown = []listRow{}
+		}
+	}
+	return c.shown
+}
+
+// sameSlice reports whether two slices are the same one: same backing array
+// and same length.
+func sameSlice[T any](a, b []T) bool {
+	return len(a) == len(b) && (len(a) == 0 || &a[0] == &b[0])
+}
