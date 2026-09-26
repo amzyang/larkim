@@ -53,6 +53,6 @@ func (m Model) jumpUnread(step int) (tea.Model, tea.Cmd) {
 	// deliberate jump, not a sweep down the list, so there is nothing to
 	// coalesce and waiting would only make the key feel slow.
 	m.cursorMovedAt = time.Now()
-	cmd := m.openRow(vis[at])
+	cmd := m.openRow(vis[at], false)
 	return m.notify("", false), cmd
 }

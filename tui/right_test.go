@@ -174,7 +174,7 @@ func TestContainerOf_AThreadWinsOverAForward(t *testing.T) {
 
 func TestJumpTo_AFoldedReplyIsReachedThroughItsThread(t *testing.T) {
 	reply := store.Message{MessageID: "om_r", ThreadID: "omt_1", MessagePosition: -3}
-	require.Equal(t, pendingJump{id: "om_r", thread: "omt_1"}, jumpTo(reply))
+	require.Equal(t, pendingJump{id: "om_r", thread: "omt_1", takeFocus: true}, jumpTo(reply))
 
 	// A root, and a bundle: both stand on the page itself.
 	require.Equal(t, pendingJump{id: "om_root"},
@@ -192,7 +192,7 @@ func TestMessagesLoaded_AThreadReplyLandsInsideItsThreadFrame(t *testing.T) {
 	m.chatID, m.pendingChat = "oc_1", "oc_1"
 	// The hit is the reply, so what the reader is handed is the reply — and
 	// the page it landed on does not carry one.
-	m.pendingSelect = pendingJump{id: "om_r", thread: "omt_1"}
+	m.pendingSelect = pendingJump{id: "om_r", thread: "omt_1", takeFocus: true}
 
 	next, cmd := m.Update(messagesLoadedMsg{chatID: "oc_1", msgs: m.msgsBase})
 	m = next.(Model)
@@ -200,7 +200,29 @@ func TestMessagesLoaded_AThreadReplyLandsInsideItsThreadFrame(t *testing.T) {
 	require.Equal(t, rightThread, m.rightKind)
 	require.Equal(t, "omt_1", m.threadID)
 	require.Equal(t, "om_r", m.rightPin.sel, "the cursor is bound for the reply, inside the frame")
+	require.Equal(t, paneThread, m.focus, "the reader asked to be at the reply")
 	require.Contains(t, collect(cmd), "tui.threadLoadedMsg")
+}
+
+// A thread row of the chats list opens the same frame without the focus: the
+// reader is walking the list, and a row that pulled them into the column would
+// cost them the next j.
+func TestMessagesLoaded_AThreadRowOpensTheColumnWithoutTakingTheFocus(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "t.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { st.Close() })
+	m := sized(140, 36)
+	m.deps = Deps{Store: st, Self: "ou_me"}
+	m.chatID, m.pendingChat = "oc_1", "oc_1"
+	m.focus = paneChats
+	m.pendingSelect = pendingJump{id: "om_r", thread: "omt_1"}
+
+	next, _ := m.Update(messagesLoadedMsg{chatID: "oc_1", msgs: m.msgsBase})
+	m = next.(Model)
+
+	require.Equal(t, rightThread, m.rightKind)
+	require.Equal(t, "omt_1", m.threadID)
+	require.Equal(t, paneChats, m.focus)
 }
 
 func TestMessagesLoaded_AHitOnThePageItselfLeavesTheColumnAlone(t *testing.T) {

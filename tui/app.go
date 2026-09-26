@@ -618,12 +618,18 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		m.pendingSelect = pendingJump{}
-		// A folded reply is not on this page at all. The hit is that reply,
-		// so what the reader is handed is that reply: the thread opens over
-		// the chat and the cursor lands inside it.
+		// A folded reply is not on this page at all, so the thread opens over
+		// the chat with its own cursor on the reply. Which pane comes away
+		// focused is the landing's business: a hit the reader asked for hands
+		// them the reply, a thread row the chats cursor walked onto only shows
+		// it.
 		var open tea.Cmd
 		if want.thread != "" {
-			m, open = m.openRight(rightFrame{kind: rightThread, id: want.thread, sel: want.id})
+			at := m.focus
+			if want.takeFocus {
+				at = paneThread
+			}
+			m, open = m.openRightIn(rightFrame{kind: rightThread, id: want.thread, sel: want.id}, at)
 			infoCmd = tea.Batch(infoCmd, open)
 		}
 		m.repinSelection(wasOn)
@@ -868,7 +874,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// The command is taken first: opening a thread pins where it lands on
 		// the model, and a model read beside the call may be read before it.
-		cmd := m.openRow(r)
+		cmd := m.openRow(r, false)
 		return m, cmd
 	case chatPollDueMsg:
 		// The chain re-arms whether or not it polls: a blurred beat, or one
@@ -1158,12 +1164,12 @@ func indexOfChat(chats []store.Chat, chatID string) int {
 }
 
 // openHighlighted loads the row under the cursor unless it is already open.
-func (m *Model) openHighlighted() tea.Cmd {
+func (m *Model) openHighlighted(take bool) tea.Cmd {
 	r, ok := m.highlightedRow()
 	if !ok {
 		return nil
 	}
-	return m.openRow(r)
+	return m.openRow(r, take)
 }
 
 func (m Model) reloadCurrent() tea.Cmd {
@@ -1253,13 +1259,22 @@ func (m Model) metaFor(p pane) msgMeta {
 // pendingJump is the message a landing is bound for, and the frame it lives
 // in. A folded thread reply is in no chat page, so the thread opens over the
 // chat and the cursor lands inside it.
-type pendingJump struct{ id, thread string }
+type pendingJump struct {
+	id, thread string
+	// takeFocus says the reader asked to be at this message, so the frame it
+	// lives in comes away with the focus. A thread row the chats cursor walked
+	// onto does not ask: it is a row being looked at, not a place being gone
+	// to, and the reader is still reading the list.
+	takeFocus bool
+}
 
 // jumpTo names the frame a message is reached in: a reply folded out of the
 // chat's flow is reached through its thread, anything else on the page itself.
+// Every caller is a reader going to a named message, so the frame takes the
+// focus.
 func jumpTo(x store.Message) pendingJump {
 	if x.MessagePosition < 0 && x.ThreadID != "" {
-		return pendingJump{id: x.MessageID, thread: x.ThreadID}
+		return pendingJump{id: x.MessageID, thread: x.ThreadID, takeFocus: true}
 	}
 	return pendingJump{id: x.MessageID}
 }
@@ -1513,7 +1528,9 @@ func (m Model) onFilterKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.cmdline.Blur()
 		m.clampChat()
 		m.scrollChatToCursor()
-		return m, m.openHighlighted()
+		// Settling the filter is not leaving the list, so the row it settles on
+		// opens where the cursor keys would have opened it.
+		return m, m.openHighlighted(false)
 	}
 	var cmd tea.Cmd
 	m.cmdline, cmd = m.cmdline.Update(k)
@@ -1978,9 +1995,20 @@ func (m Model) move(n int) (tea.Model, tea.Cmd) {
 func (m Model) activate() (tea.Model, tea.Cmd) {
 	switch m.focus {
 	case paneChats:
-		// Enter says the user means this chat, so it skips the rest delay the
-		// cursor keys go through.
-		cmd := m.openHighlighted()
+		// Enter says the user means this row, so it skips the rest delay the
+		// cursor keys go through and comes away in the pane the row leads to:
+		// a chat's message page, a thread's own column.
+		r, ok := m.rowAtCursor()
+		cmd := m.openHighlighted(true)
+		if ok && r.isThread() {
+			// A frame still on its way takes the focus when it lands, through
+			// pendingSelect; one already standing has no landing left to wait
+			// for, and openHighlighted gave back nothing.
+			if m.openThreadID() == r.thread.ThreadID {
+				m.focus = paneThread
+			}
+			return m, cmd
+		}
 		return m.focusMessages(), cmd
 	case paneMessages:
 		if m.searching {
@@ -2344,12 +2372,17 @@ func (m Model) onClick(ms tea.Mouse) (tea.Model, tea.Cmd) {
 		idx := m.chatTop + row
 		if idx >= 0 && idx < len(vis) {
 			m.chatIdx = idx
+			r := vis[idx]
+			switch {
 			// A thread is opened by every click: the chat under it may
-			// already be the one on screen while its frame is not.
-			if r := vis[idx]; r.isThread() || r.chat.ChatID != m.chatID || double {
+			// already be the one on screen while its frame is not. The click
+			// landed in the list, so the frame opens beside the reader and
+			// the focus stays where the click put it.
+			case r.isThread():
+				return m, m.openRow(r, false)
+			case r.chat.ChatID != m.chatID, double:
 				m = m.focusMessages()
-				cmd := m.openRow(r)
-				return m, cmd
+				return m, m.openRow(r, false)
 			}
 		}
 	case paneMessages:

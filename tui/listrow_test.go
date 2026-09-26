@@ -98,7 +98,7 @@ func TestOpenRow_AThreadOpensItsChatAndLandsOnTheNewestReply(t *testing.T) {
 	m := cursorModel(t)
 	r := listRows(nil, []store.ThreadFeed{feedAt("omt_a", "oc_a", 200)})[0]
 
-	require.NotNil(t, m.openRow(r))
+	require.NotNil(t, m.openRow(r, false))
 
 	assert.Equal(t, "oc_a", m.pendingChat)
 	assert.Equal(t, pendingJump{id: "om_last_omt_a", thread: "omt_a"}, m.pendingSelect)
@@ -107,7 +107,7 @@ func TestOpenRow_AThreadOpensItsChatAndLandsOnTheNewestReply(t *testing.T) {
 func TestOpenRow_AChatPinsNothingInsideIt(t *testing.T) {
 	m := cursorModel(t)
 
-	require.NotNil(t, m.openRow(listRow{chat: chatAt("oc_a", 200)}))
+	require.NotNil(t, m.openRow(listRow{chat: chatAt("oc_a", 200)}, false))
 
 	assert.Equal(t, "oc_a", m.pendingChat)
 	assert.Zero(t, m.pendingSelect)
@@ -147,7 +147,7 @@ func TestOpenRow_LeavesTheCursorOnTheThreadRow(t *testing.T) {
 	m.threads = []store.ThreadFeed{feedAt("omt_a", "oc_0", 200)}
 	m.chatIdx = 1
 
-	m.openRow(m.visibleRows()[1])
+	m.openRow(m.visibleRows()[1], false)
 
 	assert.Equal(t, 1, m.chatIdx)
 	assert.Equal(t, "omt_a", rowKeyAt(m.visibleRows(), m.chatIdx))

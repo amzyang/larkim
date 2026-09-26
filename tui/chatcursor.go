@@ -30,7 +30,7 @@ func (m *Model) moveToChat(now time.Time) tea.Cmd {
 		return nil
 	}
 	if !moving {
-		return m.openRow(r)
+		return m.openRow(r, false)
 	}
 	key := r.key()
 	return tea.Tick(cursorRestDelay, func(time.Time) tea.Msg { return chatRestMsg{key} })
@@ -44,6 +44,17 @@ func (m Model) claimRowOpen(key string) (listRow, bool) {
 	return r, ok && key != "" && r.key() == key
 }
 
+// rowAtCursor is the row the cursor stands on, open or not. Enter asks this
+// rather than highlightedRow: it has to know what the row leads to even when
+// the row is already open and there is nothing left to load.
+func (m Model) rowAtCursor() (listRow, bool) {
+	vis := m.visibleRows()
+	if m.chatIdx < 0 || m.chatIdx >= len(vis) {
+		return listRow{}, false
+	}
+	return vis[m.chatIdx], true
+}
+
 // highlightedRow is the row under the cursor that is not already open or on
 // its way, which is the only one worth spending a page on. ok is false when
 // the cursor sits on nothing to load.
@@ -52,11 +63,10 @@ func (m Model) claimRowOpen(key string) (listRow, bool) {
 // thread is the frame in the right column. The chat under a thread is often
 // the open one, and the thread over it still has to be opened.
 func (m Model) highlightedRow() (listRow, bool) {
-	vis := m.visibleRows()
-	if len(vis) == 0 || m.chatIdx >= len(vis) {
+	r, ok := m.rowAtCursor()
+	if !ok {
 		return listRow{}, false
 	}
-	r := vis[m.chatIdx]
 	if r.isThread() {
 		return r, m.openThreadID() != r.thread.ThreadID
 	}
@@ -66,9 +76,13 @@ func (m Model) highlightedRow() (listRow, bool) {
 // openRow opens what a row leads to: a chat, or the thread over the chat it
 // happens in, landing on its newest reply the way a search hit lands on the
 // message it named.
-func (m *Model) openRow(r listRow) tea.Cmd {
+//
+// take says the frame comes away with the focus. Walking the cursor onto a
+// thread row does not take it: the reader is reading the list, and a row that
+// pulled them into the right column would cost them the next j.
+func (m *Model) openRow(r listRow, take bool) tea.Cmd {
 	if r.isThread() {
-		m.pendingSelect = pendingJump{id: r.thread.Last.MessageID, thread: r.thread.ThreadID}
+		m.pendingSelect = pendingJump{id: r.thread.Last.MessageID, thread: r.thread.ThreadID, takeFocus: take}
 	}
 	return m.openChat(r.chatID())
 }

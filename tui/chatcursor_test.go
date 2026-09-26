@@ -157,6 +157,70 @@ func TestActivate_OpensTheHighlightedChatWithoutWaiting(t *testing.T) {
 	require.Contains(t, collect(cmd), "tui.messagesLoadedMsg")
 }
 
+// Walking onto a thread row opens its frame beside the reader: the list is
+// what they are reading, and the next j has to still move it.
+func TestMoveToChat_AThreadRowOpensTheColumnWithoutTakingTheFocus(t *testing.T) {
+	m := cursorModel(t)
+	m.chats, m.threads = []store.Chat{chatAt("oc_0", 300)}, []store.ThreadFeed{feedAt("omt_a", "oc_0", 200)}
+	m.focus, m.chatIdx = paneChats, 1
+
+	// The cursor was at rest, so the row opens at once.
+	m.cursorMovedAt = time.Now().Add(-time.Second)
+	require.NotNil(t, m.moveToChat(time.Now()))
+	next, _ := m.Update(messagesLoadedMsg{chatID: "oc_0"})
+	m = next.(Model)
+
+	require.Equal(t, rightThread, m.rightKind, "the thread is up")
+	require.Equal(t, "omt_a", m.threadID)
+	require.Equal(t, paneChats, m.focus)
+}
+
+// Enter says the reader means this row, and a thread row leads into the
+// column rather than into the chat's page.
+func TestActivate_EnterOnAThreadRowLandsInTheColumn(t *testing.T) {
+	m := cursorModel(t)
+	m.chats, m.threads = []store.Chat{chatAt("oc_0", 300)}, []store.ThreadFeed{feedAt("omt_a", "oc_0", 200)}
+	m.focus, m.chatIdx = paneChats, 1
+
+	next, _ := m.activate()
+	next, _ = next.(Model).Update(messagesLoadedMsg{chatID: "oc_0"})
+	m = next.(Model)
+
+	require.Equal(t, "omt_a", m.threadID)
+	require.Equal(t, paneThread, m.focus)
+}
+
+// The row the cursor previewed has nothing left to load, so the focus cannot
+// wait for a frame to land — there is none coming.
+func TestActivate_EnterOnAnAlreadyOpenThreadRowTakesTheFocus(t *testing.T) {
+	m := cursorModel(t)
+	m.chats, m.threads = []store.Chat{chatAt("oc_0", 300)}, []store.ThreadFeed{feedAt("omt_a", "oc_0", 200)}
+	m.focus, m.chatIdx = paneChats, 1
+	m.rightKind, m.threadID = rightThread, "omt_a"
+
+	next, cmd := m.activate()
+	m = next.(Model)
+
+	require.Nil(t, cmd, "nothing to reload")
+	require.Equal(t, paneThread, m.focus)
+}
+
+// A click lands in the list, so it leaves the reader there — the same place
+// the TUI's other clicks leave them, the pane they clicked.
+func TestOnClick_AThreadRowKeepsTheFocusInTheChatsPane(t *testing.T) {
+	m := cursorModel(t)
+	m.chats, m.threads = []store.Chat{chatAt("oc_0", 300)}, []store.ThreadFeed{feedAt("omt_a", "oc_0", 200)}
+	m.focus, m.chatIdx, m.chatTop = paneMessages, 0, 0
+
+	// Row 1 of the chats pane: below its border and its header, second pair.
+	next, _ := m.onClick(tea.Mouse{Button: tea.MouseLeft, X: 4, Y: 1 + headerHeight + chatRowStride})
+	m = next.(Model)
+
+	require.Equal(t, 1, m.chatIdx, "the cursor is on the thread row")
+	require.Equal(t, pendingJump{id: "om_last_omt_a", thread: "omt_a"}, m.pendingSelect)
+	require.Equal(t, paneChats, m.focus)
+}
+
 func TestChatsLoaded_ACursorAheadOfTheOpenChatKeepsItsPlace(t *testing.T) {
 	m := sized(120, 36)
 	// A sweep down the list left the cursor far from the chat whose page is

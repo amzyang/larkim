@@ -135,6 +135,25 @@ func TestNextUnread_WalksOntoAThreadWithRepliesWaiting(t *testing.T) {
 	require.Equal(t, -1, nextUnread(rows[:1], map[string]int64{}, 0, 1))
 }
 
+// The queue is walked from the list, so the row it stops on opens where the
+// reader is rather than carrying them into the right column.
+func TestJumpUnread_AThreadRowKeepsTheCursorInTheChatsPane(t *testing.T) {
+	m, st := draftModel(t)
+	defer st.Close()
+	m.chats = []store.Chat{chatAt("oc_a", 300)}
+	m.threads = []store.ThreadFeed{feedAt("omt_x", "oc_a", 200)}
+	m.threads[0].Unread = 2
+	m.focus = paneMessages
+
+	next, _ := m.jumpUnread(1)
+	next, _ = next.(Model).Update(messagesLoadedMsg{chatID: "oc_a"})
+	m = next.(Model)
+
+	assert.Equal(t, 1, m.chatIdx)
+	assert.Equal(t, "omt_x", m.threadID, "the thread is up")
+	assert.Equal(t, paneChats, m.focus)
+}
+
 // A thread inherits the silence of the chat it happens in.
 func TestNextUnread_SkipsAThreadInAMutedChat(t *testing.T) {
 	rows := []listRow{

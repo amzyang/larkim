@@ -85,9 +85,17 @@ func (m Model) frame() rightFrame {
 // siblings would turn Esc into a visit history — five unrelated threads, five
 // presses — which is the one thing the column is not.
 func (m Model) openRight(f rightFrame) (Model, tea.Cmd) {
+	return m.openRightIn(f, paneThread)
+}
+
+// openRightIn is openRight with the pane the reader comes away in named. A
+// thread the chats cursor walked onto opens beside a reader still reading the
+// list, the way walking onto a chat opens its page without leaving the list;
+// only a container the reader asked for opens around them.
+func (m Model) openRightIn(f rightFrame, p pane) (Model, tea.Cmd) {
 	m.aiOpen, m.aiChan, m.infoOpen = false, nil, false
 	m.rightStack = nil
-	m.focus = paneThread
+	m.focus = p
 	return m, m.showRight(f)
 }
 
