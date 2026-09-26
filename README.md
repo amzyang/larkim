@@ -28,6 +28,8 @@ larkim silence                                 # configured silence rules and wh
 larkim sync --backfill-days 7                  # one tick in the foreground (daemon must be stopped)
 larkim db path && larkim schema                # for direct SQLite consumers, see docs/SCHEMA.md
 larkim emoji list                              # the emoji table: names, search terms, panel order, pictures
+larkim emoji add 摸鱼 划水 --image ~/Desktop/a.png  # keep a picture of your own; the clipboard's without --image
+larkim emoji list --custom && larkim emoji rm 摸鱼
 ```
 
 Output is a table on a terminal and JSON when piped or with `--json`.

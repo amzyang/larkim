@@ -128,6 +128,12 @@ func pbpaste() (string, error) {
 	return string(out), nil
 }
 
+// StageClipboardImage writes the picture the clipboard holds into stageDir and
+// names the file it wrote. It is exported for the emoji commands, which take a
+// picture off the clipboard the way the composer does; the AppleScript stays
+// here, where every other clipboard read already lives.
+func StageClipboardImage(stageDir string) (string, error) { return stageClipboardImage(stageDir) }
+
 // stageClipboardImage writes the clipboard's PNG data to a file of our own.
 // AppleScript can only write to a file handle, so there is no way to take the
 // bytes over a pipe.

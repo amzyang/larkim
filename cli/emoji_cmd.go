@@ -3,11 +3,14 @@ package cli
 import (
 	"cmp"
 	"fmt"
+	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
 
 	"github.com/amzyang/larkim/emoji"
+	"github.com/amzyang/larkim/tui"
 	"github.com/spf13/cobra"
 )
 
@@ -32,8 +35,79 @@ func (a *App) emojiCmd() *cobra.Command {
 			return nil
 		},
 	}
-	root.AddCommand(sync, a.emojiListCmd())
+	root.AddCommand(sync, a.emojiListCmd(), a.emojiAddCmd(), a.emojiRemoveCmd())
 	return root
+}
+
+func (a *App) emojiAddCmd() *cobra.Command {
+	var source string
+	cmd := &cobra.Command{
+		Use:   "add <名称> [别名…]",
+		Short: "Keep the picture on the clipboard as an emoji of your own",
+		Long: "The picture is held to " + strconv.Itoa(emoji.MaxCustomSide) + " pixels on its longest side, because Feishu draws a\n" +
+			"pasted picture at its own size and a screenshot would land in the chat as a screenshot.\n" +
+			"The name and every alias are reachable by their pinyin and its initials. Adding the same\n" +
+			"name again replaces what was there.",
+		Args: cobra.MinimumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			picture := source
+			if picture == "" {
+				staged, err := tui.StageClipboardImage(filepath.Join(a.cfg.DataDir, "resources", "pasted"))
+				if err != nil {
+					return fmt.Errorf("no picture on the clipboard: %w", err)
+				}
+				defer os.Remove(staged)
+				picture = staged
+			}
+			c, err := emoji.AddCustom(a.cfg.DataDir, args[0], args[1:], picture)
+			if err != nil {
+				return err
+			}
+			if a.json() {
+				return a.printJSON(customRow(c, a.cfg.DataDir))
+			}
+			fmt.Fprintf(a.Out, "kept %s as %s\n", c.Name, c.Path(a.cfg.DataDir))
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&source, "image", "", "picture to keep; the clipboard's when left out")
+	return cmd
+}
+
+func (a *App) emojiRemoveCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:     "rm <名称>",
+		Aliases: []string{"remove"},
+		Short:   "Forget one of your own emoji",
+		Args:    cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := emoji.RemoveCustom(a.cfg.DataDir, args[0]); err != nil {
+				return err
+			}
+			if a.json() {
+				return a.printJSON(map[string]any{"removed": args[0]})
+			}
+			fmt.Fprintf(a.Out, "forgot %s\n", args[0])
+			return nil
+		},
+	}
+	cmd.ValidArgsFunction = func(_ *cobra.Command, args []string, prefix string) ([]string, cobra.ShellCompDirective) {
+		if len(args) > 0 {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		}
+		all, err := emoji.LoadCustom(a.cfg.DataDir)
+		if err != nil {
+			return nil, cobra.ShellCompDirectiveError
+		}
+		var out []string
+		for _, c := range all {
+			if strings.HasPrefix(c.Name, prefix) {
+				out = append(out, c.Name)
+			}
+		}
+		return out, cobra.ShellCompDirectiveNoFileComp
+	}
+	return cmd
 }
 
 // emojiRow is one emoji as a consumer outside larkim reads it: the names it
@@ -54,8 +128,17 @@ type emojiRow struct {
 	Picture   string `json:"picture"`
 }
 
+// customRow puts an emoji of one's own in the shape the table's own rows take.
+// It is never reactable: Feishu has no key for a picture it has never seen, so
+// it travels inside a message or not at all. Order 0 leaves the panel order to
+// the emoji that have one.
+func customRow(c emoji.Custom, dataDir string) emojiRow {
+	return emojiRow{Key: c.Key(), ZH: c.Name, Terms: c.Terms, Picture: c.Path(dataDir)}
+}
+
 func (a *App) emojiListCmd() *cobra.Command {
-	return &cobra.Command{
+	var custom bool
+	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "Every emoji larkim knows: names, search terms, panel order and picture",
 		Long: "The table larkim carries, for a picker built on top of it. `reactable` is false for the ones\n" +
@@ -63,6 +146,9 @@ func (a *App) emojiListCmd() *cobra.Command {
 			"of those reaches the other side as its picture or not at all.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if custom {
+				return a.listCustom()
+			}
 			// The pictures are cut from the sheet this binary carries, so the
 			// paths named here are paths that exist.
 			if _, err := emoji.Ensure(a.cfg.DataDir); err != nil {
@@ -80,6 +166,30 @@ func (a *App) emojiListCmd() *cobra.Command {
 			return nil
 		},
 	}
+	cmd.Flags().BoolVar(&custom, "custom", false, "list the emoji you added yourself instead of Feishu's")
+	return cmd
+}
+
+// listCustom answers --custom. An entry whose picture has gone is already left
+// out by the load, which is what deleting one by hand does.
+func (a *App) listCustom() error {
+	all, err := emoji.LoadCustom(a.cfg.DataDir)
+	if err != nil {
+		return err
+	}
+	rows := make([]emojiRow, 0, len(all))
+	for _, c := range all {
+		rows = append(rows, customRow(c, a.cfg.DataDir))
+	}
+	if a.json() {
+		return a.printJSON(rows)
+	}
+	out := make([][]string, 0, len(rows))
+	for _, e := range rows {
+		out = append(out, []string{e.ZH, strings.Join(e.Terms, " "), e.Picture})
+	}
+	table(a.Out, []string{"NAME", "TERMS", "PICTURE"}, out)
+	return nil
 }
 
 // emojiRows is every emoji a picker may offer, in panel order. The bare
