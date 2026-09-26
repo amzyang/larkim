@@ -84,6 +84,13 @@ func forwardSummary(x store.Message, root string, idx int, st msgStyle, g *leads
 	return rows, true
 }
 
+// threadRoot reports whether a message opens a thread the chat's own flow has
+// to summarise. Inside the thread's pane the replies are right below the root,
+// so counting them again there says nothing.
+func threadRoot(x store.Message, st msgStyle) bool {
+	return !st.inFrame && x.ThreadID != "" && x.MessagePosition >= 0 && !x.Deleted
+}
+
 // threadSummary is the one line a thread root takes in the chat: how many
 // replies are under it and the last of them, with the whole line leading into
 // the pane that lists them.
@@ -95,9 +102,7 @@ func forwardSummary(x store.Message, root string, idx int, st msgStyle, g *leads
 // The representative reply is the newest, which is the opposite of a forward:
 // a thread is alive, and the last word is where it stands.
 func threadSummary(x store.Message, idx int, st msgStyle, g *leads) (msgRow, bool) {
-	// Only in the chat's own flow. Inside the thread's pane the replies are
-	// right below the root, so counting them again there says nothing.
-	if st.inFrame || x.ThreadID == "" || x.MessagePosition < 0 || x.Deleted {
+	if !threadRoot(x, st) {
 		return msgRow{}, false
 	}
 	gist := st.threads[x.ThreadID]
@@ -125,5 +130,36 @@ func threadSummary(x store.Message, idx int, st msgStyle, g *leads) (msgRow, boo
 	return msgRow{lead: lead, text: text, segs: segs, idx: idx, zones: []clickZone{{
 		x0: x0, x1: x0 + lipgloss.Width(text) + segsWidth(segs),
 		open: x.ThreadID, openKind: rightThread,
+	}}}, true
+}
+
+// replySummary is the line a message carries when answers hang under it: how
+// many, and the way into the frame that lists them. It is the client's own
+// "5 replies", and like the client it counts the whole tree — an answer to an
+// answer is still part of the conversation the message started.
+//
+// The line carries no representative reply, unlike a thread's: a reply is an
+// ordinary message of the chat and stays in the flow below its target, quote
+// row and all, so the replies themselves are already on screen.
+// replyGlyph is the speech bubble the client marks a reply count with, from
+// the Nerd Font the terminal maps the private use area to: it takes the
+// colour it is given and holds to a single column. The plain bubble beside it
+// in that font is spoken for — the header draws that one for a topic chat —
+// and so is "↩", which marks the message an open draft answers.
+const replyGlyph = ""
+
+func replySummary(x store.Message, idx int, st msgStyle, g *leads) (msgRow, bool) {
+	// Inside a frame the answers stand right below the root, so counting them
+	// again says nothing. A thread reply is read in its thread's own frame.
+	gist := st.replies[x.MessageID]
+	if st.inFrame || gist.Root != x.MessageID || gist.Replies == 0 || x.ThreadID != "" {
+		return msgRow{}, false
+	}
+	lead := g.take()
+	x0 := lead.cols()
+	text := stAccent.Render(replyGlyph + " " + plural(gist.Replies, "reply", "replies"))
+	return msgRow{lead: lead, text: text, idx: idx, zones: []clickZone{{
+		x0: x0, x1: x0 + lipgloss.Width(text),
+		open: gist.Root, openKind: rightReply, openName: replyGist(x),
 	}}}, true
 }

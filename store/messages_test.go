@@ -213,3 +213,125 @@ func markUnreadMsg(t *testing.T, s *Store, id string) {
 	unread := false
 	require.NoError(t, s.SetReadStatus(t.Context(), id, &unread, 1, 0))
 }
+
+// replyTreeRows is the tree the client draws as "5 replies": 1 is answered by
+// 2 and by 21 and 22, and 2 is answered down a chain of its own.
+//
+//	om_1
+//	  om_2
+//	    om_3
+//	      om_4
+//	  om_21
+//	  om_22
+func replyTreeRows() []Message {
+	at := func(id, parent string, ms int64) Message {
+		return Message{MessageID: id, ChatID: "oc_a", MsgType: "text", CreateMs: ms,
+			MessagePosition: ms, SenderID: "ou_a", SenderName: "张三", ReplyTo: parent,
+			ContentRaw: `{"text":"` + id + `"}`, RawJSON: "{}"}
+	}
+	return []Message{
+		at("om_1", "", 100), at("om_2", "om_1", 110), at("om_3", "om_2", 120),
+		at("om_4", "om_3", 130), at("om_21", "om_1", 140), at("om_22", "om_1", 150),
+	}
+}
+
+func TestReplyGists_CountsTheWholeSubtree(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	_, err := s.UpsertMessages(ctx, replyTreeRows(), 1)
+	require.NoError(t, err)
+
+	got, err := s.ReplyGists(ctx, []string{"om_1", "om_2", "om_3", "om_4", "om_21", "om_22"})
+	require.NoError(t, err)
+	require.Equal(t, 5, got["om_1"].Replies, "an answer to an answer still answers the message it started from")
+	require.Equal(t, 5, got["om_2"].Replies, "every member of a tree reports the tree's own count")
+}
+
+func TestReplyGists_NamesTheRootOfEveryMemberOfTheTree(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	_, err := s.UpsertMessages(ctx, replyTreeRows(), 1)
+	require.NoError(t, err)
+
+	got, err := s.ReplyGists(ctx, []string{"om_1", "om_4", "om_22"})
+	require.NoError(t, err)
+	for _, id := range []string{"om_1", "om_4", "om_22"} {
+		require.Equal(t, "om_1", got[id].Root, id+" belongs to the tree om_1 started")
+	}
+}
+
+func TestReplyGists_LeavesOutAMessageInNoTree(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	_, err := s.UpsertMessages(ctx, append(replyTreeRows(),
+		Message{MessageID: "om_alone", ChatID: "oc_a", MsgType: "text", CreateMs: 160,
+			MessagePosition: 160, ContentRaw: `{"text":"没人回"}`, RawJSON: "{}"}), 1)
+	require.NoError(t, err)
+
+	got, err := s.ReplyGists(ctx, []string{"om_1", "om_alone"})
+	require.NoError(t, err)
+	require.NotContains(t, got, "om_alone", "a message nobody answered starts no conversation")
+}
+
+func TestReplyGists_WalksThroughARecalledReplyWithoutCountingIt(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	rows := replyTreeRows()
+	rows[1].Deleted = true // om_2, the one om_3 answers
+	_, err := s.UpsertMessages(ctx, rows, 1)
+	require.NoError(t, err)
+
+	got, err := s.ReplyGists(ctx, []string{"om_1", "om_4"})
+	require.NoError(t, err)
+	require.Equal(t, 4, got["om_1"].Replies, "the recalled reply is gone from the count")
+	require.Equal(t, "om_1", got["om_4"].Root, "but a recall in the middle does not orphan what hangs below it")
+}
+
+func TestReplyGists_TreatsAnUnsyncedParentAsTheRoot(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	rows := replyTreeRows()
+	rows[0].ReplyTo = "om_elsewhere" // om_1 answers something the store never saw
+	_, err := s.UpsertMessages(ctx, rows, 1)
+	require.NoError(t, err)
+
+	got, err := s.ReplyGists(ctx, []string{"om_1", "om_4"})
+	require.NoError(t, err)
+	require.Equal(t, "om_1", got["om_1"].Root, "the topmost stored message is as far as anything here can see")
+	require.Equal(t, 5, got["om_1"].Replies)
+}
+
+func TestReplyTree_ListsTheRootThenItsAnswersInTheChatsOwnOrder(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	_, err := s.UpsertMessages(ctx, append(replyTreeRows(),
+		Message{MessageID: "om_other", ChatID: "oc_a", MsgType: "text", CreateMs: 145,
+			MessagePosition: 145, ContentRaw: `{"text":"别的"}`, RawJSON: "{}"}), 1)
+	require.NoError(t, err)
+
+	got, err := s.ReplyTree(ctx, "om_1")
+	require.NoError(t, err)
+	var ids []string
+	for _, m := range got {
+		ids = append(ids, m.MessageID)
+	}
+	require.Equal(t, []string{"om_1", "om_2", "om_3", "om_4", "om_21", "om_22"}, ids,
+		"the tree is read in time order, and what was said beside it is not in it")
+}
+
+func TestReplyTree_LeavesOutARecalledReplyAndKeepsWhatAnsweredIt(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	rows := replyTreeRows()
+	rows[1].Deleted = true // om_2
+	_, err := s.UpsertMessages(ctx, rows, 1)
+	require.NoError(t, err)
+
+	got, err := s.ReplyTree(ctx, "om_1")
+	require.NoError(t, err)
+	var ids []string
+	for _, m := range got {
+		ids = append(ids, m.MessageID)
+	}
+	require.Equal(t, []string{"om_1", "om_3", "om_4", "om_21", "om_22"}, ids)
+}

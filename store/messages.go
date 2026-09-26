@@ -510,3 +510,97 @@ func (s *Store) ThreadGists(ctx context.Context, threadIDs []string, self string
 	}
 	return out, nil
 }
+
+// ReplyGist is what a message's row needs to know about the reply tree it
+// belongs to: which message is at the top of that tree, and how many live
+// replies hang below that one.
+//
+// A reply is an ordinary message of the chat — it keeps a non-negative
+// position and stays in the main flow — so the count is not a fold the way a
+// thread's is. It is the client's own "5 replies", and like the client it
+// counts the whole subtree rather than the direct answers: a reply to a reply
+// is still a reply to the message the conversation started from.
+type ReplyGist struct {
+	Root    string
+	Replies int
+}
+
+// replyRoots walks up from each id to the topmost message the store holds:
+// the one answering nothing, or the one whose parent was never synced, which
+// is as far as anything here can see.
+const replyRoots = `WITH RECURSIVE up(seed, id, parent) AS (
+ SELECT message_id, message_id, reply_to FROM messages WHERE message_id IN %s
+ UNION ALL
+ SELECT u.seed, m.message_id, m.reply_to FROM messages m JOIN up u ON m.message_id = u.parent
+) SELECT u.seed, u.id FROM up u
+ WHERE u.parent = '' OR NOT EXISTS (SELECT 1 FROM messages p WHERE p.message_id = u.parent)`
+
+// replyTree collects a root and everything answering it, at any depth. A
+// recalled message is walked through rather than stopped at: its children are
+// answers to the conversation, and a recall in the middle must not orphan
+// them.
+//
+// The recursive step repeats what its join already implies — a message id is
+// never empty — because messages_reply_to is a partial index and SQLite will
+// only reach for it where the query proves the row is in it. Without the
+// term it scans the whole table once per level: 1.1s against this machine's
+// archive rather than 7ms.
+const replyTree = `WITH RECURSIVE down(root, id) AS (
+ SELECT message_id, message_id FROM messages WHERE message_id IN %s
+ UNION
+ SELECT d.root, m.message_id FROM messages m JOIN down d ON m.reply_to = d.id AND m.reply_to <> ''
+)`
+
+// ReplyGists answers, for each message named, the tree it sits in: the root
+// and that root's live reply count. A message answering nothing and answered
+// by nobody is absent.
+//
+// The stored rows are walked rather than a loaded page, so a root older than
+// the page still counts its replies and a reply still names its root.
+func (s *Store) ReplyGists(ctx context.Context, ids []string) (map[string]ReplyGist, error) {
+	out := make(map[string]ReplyGist, len(ids))
+	type pair struct{ seed, root string }
+	for chunk := range slices.Chunk(ids, 500) {
+		roots, err := queryAll(ctx, s.db, func(sc scanner) (pair, error) {
+			var p pair
+			err := sc.Scan(&p.seed, &p.root)
+			return p, err
+		}, fmt.Sprintf(replyRoots, inClause(len(chunk))), anySlice(chunk)...)
+		if err != nil {
+			return nil, err
+		}
+		want := make([]string, 0, len(roots))
+		for _, p := range roots {
+			want = append(want, p.root)
+		}
+		slices.Sort(want)
+		want = slices.Compact(want)
+		if len(want) == 0 {
+			continue
+		}
+		counts, err := queryCounts(ctx, s.db, fmt.Sprintf(replyTree, inClause(len(want)))+
+			` SELECT d.root, count(*) FROM down d JOIN messages m ON m.message_id = d.id
+ WHERE d.id <> d.root AND m.deleted = 0 GROUP BY d.root`, anySlice(want)...)
+		if err != nil {
+			return nil, err
+		}
+		// A root nobody answered names no tree, so neither it nor the
+		// messages under it get a row: the map says which messages belong to
+		// a conversation, not which ones could start one.
+		for _, p := range roots {
+			if n := counts[p.root]; n > 0 {
+				out[p.seed] = ReplyGist{Root: p.root, Replies: int(n)}
+			}
+		}
+	}
+	return out, nil
+}
+
+// ReplyTree lists a root and every live answer under it, in the order the
+// chat's own page takes. The root comes first, being the oldest.
+func (s *Store) ReplyTree(ctx context.Context, rootID string) ([]Message, error) {
+	return queryAll(ctx, s.db, scanMessage, fmt.Sprintf(replyTree, inClause(1))+
+		` SELECT `+messageColumns+` `+messageFrom+`
+ WHERE m.message_id IN (SELECT id FROM down) AND m.deleted = 0
+ ORDER BY m.create_ms, m.message_position, m.id`, rootID)
+}

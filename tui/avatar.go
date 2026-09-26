@@ -17,24 +17,31 @@ import (
 
 // avatars fills the chat list's avatar column.
 type avatars interface {
-	// cells are the two lines the column occupies for one chat. badged
+	// cells are the two lines the column occupies for one row. badged
 	// reports that the picture already carries the unread counter, which is
 	// what keeps the row from printing the number a second time.
-	cells(c store.Chat, unread int64) (top, bottom string, badged bool)
-	// prepare returns an escape sequence the terminal needs before these
-	// chats can be drawn, or "" when there is nothing to send. Sending it is
-	// the caller's job, because only it can reach the terminal in frame order.
-	prepare(chats []store.Chat, unread map[string]int64) string
+	cells(r listRow, unread int64) (top, bottom string, badged bool)
+	// prepare returns an escape sequence the terminal needs before these rows
+	// can be drawn, or "" when there is nothing to send. Sending it is the
+	// caller's job, because only it can reach the terminal in frame order.
+	prepare(rows []listRow, unread map[string]int64) string
 }
 
 // textAvatars draws the colour block that stands in for a picture.
 type textAvatars struct{}
 
-func (textAvatars) cells(c store.Chat, _ int64) (string, string, bool) {
+func (textAvatars) cells(r listRow, _ int64) (string, string, bool) {
+	c := r.chat
+	if r.isThread() {
+		// The mark cannot be drawn in characters, so the glyph takes a column
+		// of the block and says which kind of row this is.
+		return stDim.Render(threadGlyph) + avatarBlock(c.AvatarSeed(), c.Name, avatarWidth-1),
+			" " + avatarStyle(c.AvatarSeed()).Render(strings.Repeat(" ", avatarWidth-1)), false
+	}
 	return avatarBlock(c.AvatarSeed(), c.Name, avatarWidth),
 		avatarStyle(c.AvatarSeed()).Render(strings.Repeat(" ", avatarWidth)), false
 }
-func (textAvatars) prepare([]store.Chat, map[string]int64) string { return "" }
+func (textAvatars) prepare([]listRow, map[string]int64) string { return "" }
 
 const (
 	// avatarPixels is the fallback transmitted size, used until the terminal
@@ -60,8 +67,10 @@ const (
 // see Model.avatarPrepare.
 type kittyAvatars struct {
 	dataDir string
-	// id maps a chat to the image id holding its picture; clock and used
-	// drive the eviction of the least recently prepared one.
+	// id maps a row to the image id holding its picture, by the key the list
+	// tells rows apart with: a thread and the chat it happens in are two
+	// pictures carrying two different counters. clock and used drive the
+	// eviction of the least recently prepared one.
 	id    map[string]int
 	used  map[string]int64
 	clock int64
@@ -111,14 +120,14 @@ func newKittyAvatars(dataDir string) *kittyAvatars {
 	}
 }
 
-func (k *kittyAvatars) cells(c store.Chat, unread int64) (string, string, bool) {
-	id, ok := k.id[c.ChatID]
+func (k *kittyAvatars) cells(r listRow, unread int64) (string, string, bool) {
+	id, ok := k.id[r.key()]
 	if !ok {
-		return k.fallback.cells(c, unread)
+		return k.fallback.cells(r, unread)
 	}
 	// Until the next prepare redraws it, the live picture still carries the
 	// previous count, so the row has to print the new one itself.
-	return placeholderRow(id, 0, avatarWidth), placeholderRow(id, 1, avatarWidth), k.badge[c.ChatID] == unread
+	return placeholderRow(id, 0, avatarWidth), placeholderRow(id, 1, avatarWidth), k.badge[r.key()] == unread
 }
 
 // placeholderRow is one row of a picture's cells: the image id travels in the
@@ -139,56 +148,72 @@ func placeholderRow(id, row, cols int) string {
 // unread counter has moved, evicting the least recently prepared when the id
 // space is full. Transmitting over a live id replaces that picture, so no
 // delete is needed and a redraw keeps the id its cells already name.
-func (k *kittyAvatars) prepare(chats []store.Chat, unread map[string]int64) string {
+func (k *kittyAvatars) prepare(rows []listRow, unread map[string]int64) string {
 	k.clock++
 	// Touch every picture this pass will draw before any of them can be
-	// evicted, so the least recently prepared one is always a chat outside the
+	// evicted, so the least recently prepared one is always a row outside the
 	// window rather than a neighbour the loop has not reached yet.
-	for _, c := range chats {
-		if _, live := k.id[c.ChatID]; live {
-			k.used[c.ChatID] = k.clock
+	for _, r := range rows {
+		if _, live := k.id[r.key()]; live {
+			k.used[r.key()] = k.clock
 		}
 	}
 	var out strings.Builder
-	for _, c := range chats {
-		n := unread[c.ChatID]
-		id, live := k.id[c.ChatID]
+	for _, r := range rows {
+		key, n := r.key(), r.unread(unread)
+		id, live := k.id[key]
 		if live {
-			if k.badge[c.ChatID] == n {
+			if k.badge[key] == n {
 				continue
 			}
-		} else if k.failed[c.ChatID] {
+		} else if k.failed[key] {
 			continue
 		}
-		img := k.picture(c)
+		img := k.picture(r)
 		if img == nil {
 			// No file and no font: the colour block takes over.
-			k.failed[c.ChatID] = true
+			k.failed[key] = true
 			continue
 		}
-		drawBadge(img, n, c.Muted)
+		drawBadge(img, n, r.chat.Muted)
 		if !live {
-			id = k.take(c.ChatID)
+			id = k.take(key)
 		}
 		if err := transmitPicture(&out, id, img, avatarWidth, chatRowHeight); err != nil {
-			// The maps key the same chat; leaving one behind would let take
+			// The maps key the same row; leaving one behind would let take
 			// pick it as the oldest and hand out image id 0.
-			delete(k.id, c.ChatID)
-			delete(k.used, c.ChatID)
-			delete(k.badge, c.ChatID)
-			k.failed[c.ChatID] = true
+			delete(k.id, key)
+			delete(k.used, key)
+			delete(k.badge, key)
+			k.failed[key] = true
 			continue
 		}
-		k.badge[c.ChatID] = n
+		k.badge[key] = n
 	}
 	return out.String()
 }
 
-// picture is the chat's own avatar file, or one drawn from its name when
+// picture is what the row's column shows: the chat's own avatar, or the
+// client's thread mark carrying it when the row is a thread.
+func (k *kittyAvatars) picture(r listRow) *image.RGBA {
+	w, h := k.box()
+	if !r.isThread() {
+		return k.chatPicture(r.chat, w, h)
+	}
+	mark := threadMark()
+	if mark == nil {
+		return nil
+	}
+	// The badge is drawn at its own size rather than scaled down from the
+	// column's, so its rim is cut once instead of resampled twice.
+	side := threadBadgeSide(w, h)
+	return threadAvatar(mark, k.chatPicture(r.chat, side, side), w, h)
+}
+
+// chatPicture is the chat's own avatar file, or one drawn from its name when
 // there is no file to read — a chat with no picture still deserves to look
 // like the ones that have one.
-func (k *kittyAvatars) picture(c store.Chat) *image.RGBA {
-	w, h := k.box()
+func (k *kittyAvatars) chatPicture(c store.Chat, w, h int) *image.RGBA {
 	if f := c.AvatarFile(); f != "" {
 		if img, err := loadImage(filepath.Join(k.dataDir, f), w, h); err == nil {
 			// Masked after the scale, never before: a disc cut at the file's
@@ -201,12 +226,12 @@ func (k *kittyAvatars) picture(c store.Chat) *image.RGBA {
 	return generateAvatar(c.Name, idHash(c.AvatarSeed()), w, h, c.ChatMode != "p2p")
 }
 
-// take assigns an image id to chatID, reclaiming the least recently prepared
-// one once every id is spoken for.
-func (k *kittyAvatars) take(chatID string) int {
+// take assigns an image id to a row's key, reclaiming the least recently
+// prepared one once every id is spoken for.
+func (k *kittyAvatars) take(key string) int {
 	if len(k.id) < kittyIDs {
 		id := kittyIDBase + len(k.id)
-		k.id[chatID], k.used[chatID] = id, k.clock
+		k.id[key], k.used[key] = id, k.clock
 		return id
 	}
 	oldest, oldestAt := "", int64(0)
@@ -218,7 +243,7 @@ func (k *kittyAvatars) take(chatID string) int {
 	id := k.id[oldest]
 	delete(k.id, oldest)
 	delete(k.used, oldest)
-	k.id[chatID], k.used[chatID] = id, k.clock
+	k.id[key], k.used[key] = id, k.clock
 	return id
 }
 

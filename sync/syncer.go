@@ -166,6 +166,7 @@ type Report struct {
 	ReadChecks int // read-status answers recorded
 	Reactions  int // p2p chats whose newest message was asked about
 	Repaired   int // messages re-listed by the repair pass
+	Threads    int // replies re-listed from the threads the reader has a stake in
 	Members    int // chat members recorded
 	Muted      int // chats whose do-not-disturb setting was answered
 	Avatars    int // avatar files stored
@@ -179,7 +180,8 @@ type Report struct {
 // detail, a tick that landed something is a record.
 func (r Report) changed() bool {
 	return r.New > 0 || r.Rendered > 0 || r.Backfilled > 0 || r.SlowPath > 0 ||
-		r.Downloaded > 0 || r.History > 0 || r.Repaired > 0 || r.Probed > 0 || r.Forwards > 0
+		r.Downloaded > 0 || r.History > 0 || r.Repaired > 0 || r.Probed > 0 || r.Forwards > 0 ||
+		r.Threads > 0
 }
 
 func (s *Syncer) log() *slog.Logger {
@@ -344,13 +346,17 @@ func (s *Syncer) tick(ctx context.Context, now time.Time) (Report, error) {
 		}
 	}
 
-	// 6. Slow path: reconcile the most active chats.
+	// 6. Slow path: reconcile the most active chats, then the threads the
+	// reader has a stake in, which no chat's listing carries.
 	if Due(s.stateTime(ctx, KeySlowPathAt), s.Opt.SlowPathEvery, now) {
 		n, err := s.slowPath(ctx, active, now)
 		if err != nil {
 			return rep, fmt.Errorf("slow path: %w", err)
 		}
 		rep.SlowPath = n
+		if rep.Threads, err = s.pullStakedThreads(ctx, now); err != nil {
+			return rep, fmt.Errorf("staked threads: %w", err)
+		}
 	}
 
 	// 7. Backfill a few chats per tick so live data keeps flowing.
@@ -828,6 +834,47 @@ func (s *Syncer) listThreads(ctx context.Context, tids []string, since, until ti
 		out = append(out, replies[i]...)
 	}
 	return out, nil
+}
+
+// stakedThreadsTopK bounds one pass's thread listings. A thread container
+// ignores start_time, so each thread costs its whole reply list however
+// little of it is new, and the freshest few are where the next reply lands.
+const stakedThreadsTopK = 20
+
+// pullStakedThreads asks after the threads the reader has a stake in by name.
+// pullChat follows only the threads whose root it saw in the window it just
+// listed, and a chat's listing carries roots without replies, so a reply to a
+// root older than that window — a thread's whole reason to exist — reaches
+// the store no other way.
+func (s *Syncer) pullStakedThreads(ctx context.Context, now time.Time) (int, error) {
+	self, _, err := s.Store.GetState(ctx, KeySelfOpenID)
+	if err != nil || self == "" {
+		return 0, err
+	}
+	threads, err := s.Store.StakedThreads(ctx, self, stakedThreadsTopK)
+	if err != nil || len(threads) == 0 {
+		return 0, err
+	}
+	tids := make([]string, len(threads))
+	for i, t := range threads {
+		tids[i] = t.ThreadID
+	}
+	// No window: the container answers with the whole thread whatever it is
+	// given, so naming one would only claim a filter that does not happen.
+	replies, err := s.listThreads(ctx, tids, time.Time{}, time.Time{})
+	if err != nil {
+		// A thread Feishu refuses outright costs this pass rather than the
+		// tick. The chat it lives in is refused the same way, and recording
+		// that on the chat is what drops the thread from the staked set.
+		if le, ok := errors.AsType[*larkcli.Error](err); ok && le.IsPermanent() {
+			s.log().Warn("thread listing rejected; skipping the pass", "code", le.Code, "error", le.Message)
+			return 0, nil
+		}
+		return 0, err
+	}
+	n, _, err := s.upsertRaw(ctx, replies, now)
+	s.log().DebugContext(ctx, "pull staked threads", "threads", len(tids), "replies", len(replies), "upserted", n)
+	return n, err
 }
 
 // recordChatError persists a permanent API rejection for one chat (for

@@ -14,6 +14,8 @@ id=om_r1  pos=-3  thread=omt_1  parent=om_root  root=om_root  chat=oc_a(本会�
 
 它是本会话的新消息：自己的 id、负位置哨兵、三个归属字段。它本来就在 `messages` 里，`pullChat`（sync/syncer.go:823）和开着话题时的心跳（sync/focus.go:29）都在拉它。
 
+会话容器的 listing 只给根，不给回复，而 `pullChat` 只对**本次窗口里见到根**的话题发这个请求。于是回复一个久远话题——话题存在的理由——后台拉不到：repair 的地平线是 7 天，再往前只有 backfill 走过一次。`pullStakedThreads`（sync/syncer.go）补上这一段：跟着 slow path 的节拍，按 `StakedThreads` 取我有份的话题里最新的 `stakedThreadsTopK` 条，逐个按 id 拉它的容器。按最新活动倒序取前 K 是自限的，安静下来的话题自己掉出窗口，所以不必为轮询顺序另存游标。代价是话题容器不认 `start_time`（给一个晚于全部回复的值，它照样全返回），每轮都是整条话题重列一遍。
+
 合并转发的子消息取自 `GET /im/v1/messages/{root_id}`，一次调用返回全部嵌套层级的扁平 `items`：
 
 ```
@@ -103,6 +105,64 @@ type rightFrame struct {
 | `openThreadID` tui/chatpoll.go:63 | 可见帧是话题帧则取它，否则自栈顶向下找最近的话题帧——转发压在话题上时，下面那个话题仍有回复要拉 |
 | `activate` 的 `paneThread` 臂 tui/app.go:1868 | 按可见帧类型分叉：话题帧回复，转发帧打开选中的嵌套转发 |
 | `reloadCurrent` tui/app.go:1067 | 只重载可见帧；被压住的帧在弹出时重载 |
+
+## 回复树：聚起来看，不搬走
+
+话题与转发都是折叠——内容离开主流，摘要顶替它。回复树不是：`reply_to` 的回复是本会话的普通消息，`message_position` 非负，本来就该在主流它自己的时间点上（本机 1,643 条回复无一例外）。Details 帧把散着的一串聚起来，主流那边一行不动。
+
+于是三处与另外两种容器相反：`messageQuery` 不加过滤条件，摘要行不报最后一条回复（回复就在下面摆着），落地也不结算未读（读会话时已经结算过）。
+
+### 两个递归 CTE
+
+计数看整棵子树，不是直接回复数——客户端的「5 replies」就是这么数的，本机实测树深到 6 层。
+
+`ReplyGists`（store/messages.go）一页一次，两步：
+
+```sql
+-- 从页上每条消息向上走到本地存着的最上面那条
+WITH RECURSIVE up(seed, id, parent) AS (
+ SELECT message_id, message_id, reply_to FROM messages WHERE message_id IN (…)
+ UNION ALL
+ SELECT u.seed, m.message_id, m.reply_to FROM messages m JOIN up u ON m.message_id = u.parent
+) SELECT u.seed, u.id FROM up u
+ WHERE u.parent = '' OR NOT EXISTS (SELECT 1 FROM messages p WHERE p.message_id = u.parent)
+```
+
+父消息没同步过的那种（本机 14 条）也认作根：本地看得见的最上面一条，就是这里能给出的根。
+
+第二步拿这些根向下收全部后代，`JOIN messages` 后按 `deleted = 0` 计数。**穿过撤回的消息，但不计它**——中间一条被撤回不能让挂在它下面的回复失去归属。`UNION` 去重，环不成立。
+
+`ReplyTree` 是同一个向下的 CTE 配 `messageColumns`，按 `create_ms, message_position, id` 排——根最老，自然排在第一行，正是客户端 Details 顶上那条。
+
+`store/migrations/0033_messages_reply_to.sql` 给 `reply_to` 建部分索引，照 `messages_thread` 的样子。这查询挂在每次 `revMsg` 的页面重载上，没有索引时递归的每一层都是一次 `messages` 全表扫描。
+
+向下那步的 `ON` 里多一个 `m.reply_to <> ''`，而它是 join 本身就蕴含的——message id 不可能为空。**部分索引只在查询能证明这一行落在索引里时才会被选中**：少了这个项，SQLite 把 `m` 放外层做 `SCAN m` + `SCAN d`，本机 200 个根 1.1s；加上它走 `SEARCH m USING INDEX messages_reply_to`，7ms。
+
+### 摘要行的位置
+
+`threadSummary` 与 `replySummary`（tui/summary.go）都画在 `reactionRows` **之后**，是一条消息最外面的两行：
+
+```
+张三  1
+       5 replies
+```
+
+李四  hello
+      ⤷ 23 replies · 王五: 1234
+
+表情贴着消息本身，这两行指向别处的回复，所以在更外面。两行都什么也没顶替——根消息的正文照常整条画出来，折走的只有回复——所以它们是脚注而不是容器的头，客户端也把它们放在气泡下面。
+
+`st.inFrame` 与话题摘要共用同一道闸：帧里回复就排在根下面，再数一遍什么也没说。`x.ThreadID != ""` 时不画，话题回复在话题帧里读。
+
+### 从树里任何一条打开
+
+`ReplyGist.Root` 对页上每条消息都有值，所以 `detailsAtCursor`（tui/right.go）不要求光标停在根上。根常常比当前这页更老，而读者指着眼前这条问的是同一场对话。
+
+`containerAtCursor` 不动，`toggleRight` 在它落空后才问 `detailsAtCursor`：`Enter` 只读前者，所以一条有回复的消息按 `Enter` 仍然是回复它。话题根不同——那里的回复要进话题里发，「打开」和「去回复」是同一件事。
+
+帧标题是根消息的一行摘要。从根打开时光标手上就有，从别处打开时空着，等 `onReplyLoaded` 拿到树再填（tui/replypane.go），与转发卡片补标题是同一种做法。
+
+右栏里 `Enter` 的 `inThread` 随帧而定：`m.rightKind == rightThread`。Details 帧里发出去的回复带 `reply_in_thread` 会给一条根本没有话题的消息开话题。
 
 ## 点击
 
@@ -314,7 +374,7 @@ func forwardSummary(x store.Message, root string, idx int, st msgStyle, g *leads
 
 ### 参与
 
-摘要行的圆点与会话列表的记号共用一条判据：这条话题里有我的一句话（根消息算我的），或者它的某条回复 `@` 了我。
+摘要行的圆点与会话列表里的话题行共用一条判据：这条话题里有我的一句话（根消息算我的），或者它的某条回复 `@` 了我。
 
 ```sql
 -- A stake is either turn taken or name called: any row of mine in the thread,
@@ -323,22 +383,26 @@ EXISTS (SELECT 1 FROM messages t WHERE t.thread_id <> '' AND t.thread_id = x.thr
           AND t.deleted = 0 AND (t.sender_id = ? OR <namesPerson("t")>))
 ```
 
-`thread_id <> ''` 要写出来，哪怕 join 已经蕴含它：`messages_thread` 是建在这个谓词上的部分索引，而计划器不会自己把条件跨相关子查询带过去。少了它，每条未读回复都要全表扫一遍 `messages`——`TestListChats_ThreadAggregateDrivesFromReadState` 就是锁这个的。
+`thread_id <> ''` 要写出来，哪怕 join 已经蕴含它：`messages_thread` 是建在这个谓词上的部分索引，而计划器不会自己把条件跨相关子查询带过去。少了它，每条未读回复都要全表扫一遍 `messages`——`TestListThreadFeed_WalksTheThreadIndex` 就是锁这个的。
 
 `namesSelf` 原本钉死在别名 `m` 上，改成 `namesPerson(alias)` 构造器；`threadStakeOn(alias)` 同理，因为它在两个查询里挂在不同的别名下。
 
 判据不新增查询，挂在两条已有的路上：
 
 - **摘要行的圆点**走 `ThreadGists(ctx, threadIDs, self)` 新增的 `Waiting`：未读、未静音、且我有份。静音那条照 `unreadCounted` 的规矩不点亮，但 `MarkThreadRead` 仍然收它——否则一条静音回复会把这行永远点着。
-- **会话列表的记号**走 `ListChats` 新增的第二个聚合 join，落在 `Chat.ThreadWaiting`。与徽章数走同一趟查询，不另开一次：`unreadJoin` 的注释写着理由，一个会话的数字和它的位置不能来自两个不同版本的库。
+- **会话列表里的话题行**走 `store.ListThreadFeed`，与会话列表在同一次刷新里取回：话题在那里是自己的一行，不是会话行上的一个字段，所以它是自己的一趟查询而不是 `ListChats` 的又一个聚合。取值与版式见 [chats-list](../chats-list/PRD.md) 的「thread 行」。
 
 圆点由读态派生，不进 `m.dots`：`clearDotsAtCursor` 收的是光标走过的那一块，而根消息早就读过了；把它并进去，光标扫过根就会抹掉读者没看过的回复。
 
-### 会话列表的记号
+### 会话列表里的话题行
 
-`renderChatRow`（tui/chatrow.go）右侧今天是 `badge + " " + 时间`。记号占 `badge` 位：有计数未读时让位给数字（数字更要紧），没有时画 `⤷`，与摘要行同一个符号，读者一眼认得出是话题。两者都走 `counterStyle`，所以静音会话照画、照样是灰的——静音说的是「别拉我」，不是「别告诉我」。
+话题在列表里是自己的一行，由 `listRows`（tui/listrow.go）把 `ListThreadFeed` 的结果与会话按时间归并出来，`renderThreadRow`（tui/threadrow.go）画它。
 
-`nextUnread` / `waitingFor`（tui/nextunread.go:14）不认这个记号。`n` 的含义是清队列，队列就是徽章那一份；分两级之后它不再是一个能学会的键。
+头像列画的是客户端自己的话题标记，托着该会话的头像：`threadmark.png` 是客户端 `resource.asar` 里的 `assets/img/80f6791e2e.png`，从它原本的白底上抠出来（一种青色压白底，逐像素的覆盖率从红通道反解），因为终端有自己的背景，一张白底圆盘会在头像列上凿个洞。合成在 `threadAvatar`（tui/threadavatar.go）：会话头像按 `threadBadge` 直接以徽标尺寸取一次，而不是从整格缩下来——缩两次的边缘会糊；再用 `fillRounded` 的透明填充在标记上凿一圈空隙，让终端背景充当客户端画的那圈白边。
+
+`avatars` 的两个方法因此改吃 `listRow`，缓存的键从 `chat_id` 换成 `listRow.key()`：一个会话的两行要两个不同的计数，共用一个 image id 只会每一轮互相覆盖。
+
+`nextUnread` / `waitingFor`（tui/nextunread.go:14）认它：它带的是一个计数，与会话行同类，`n` 的队列因此没有分级。静音继承所在会话——静音说的是「别拉我」，不是「别告诉我」，所以计数照画、画成灰的。
 
 ## 落地与跳转
 
@@ -368,12 +432,14 @@ type pendingJump struct{ id, thread string }
 | 键 | 改动 |
 | --- | --- |
 | `Enter` | `activate`（tui/app.go:1856）保持 `ThreadID` 先判——一条被开了话题的转发，光标下更活的那个是话题；`ThreadID` 为空时加一臂 `MsgType == "merge_forward"` |
-| `t` | `toggleThread` 改为 `toggleRight`，两种容器都认 |
+| `t` | `toggleThread` 改为 `toggleRight`，三种容器都认：话题、转发，再落到光标所在的回复树 |
 | `Esc` | 焦点在右栏时弹一帧 |
 
 `r` / `R` / `e` / `f` / `y` 系列不动：容器是本会话的一条真实消息。
 
 转发帧里的子消息继承右栏既有的键。`yy` / `yr` / `yc` 复制的是源消息真实的 id、raw json 与正文——这正是「子消息不是副本」的价值。`o` 的链接与附件照开，最后一行的「在飞书里打开这条消息」也保留：它指向源会话，开得了是好事，开不了是客户端的事，larkim 不替它判断。
+
+`Enter` 不认回复树：一条普通消息的回复落在主流它自己旁边，把最常用的那个键从「回复」改成「打开」换不回任何东西。
 
 `helpEntries` 改 `Enter`、`t`、`Esc` 三行的描述，MOUSE 段加两行说明摘要行可点、面板会叠。
 
@@ -473,6 +539,26 @@ type pendingJump struct{ id, thread string }
 | `TestOpenHit_AHitInsideABundleLandsOnTheBundle` | 转发内部命中不自动展开 |
 | `TestThreadLoaded_LightsAMarkerForAReplyTheChatPaneNeverShowed` | 未读点要亮 |
 | `TestApplyOutbox_PutsAThreadReplyInTheThreadPaneOnly` | 替换既有的 `…InBothPanes` |
+
+### 回复树
+
+| 用例 | 断言 |
+| --- | --- |
+| `TestReplyGists_CountsTheWholeSubtree` | 回复的回复也算，客户端的口径 |
+| `TestReplyGists_NamesTheRootOfEveryMemberOfTheTree` | 树里每条都指向同一个根 |
+| `TestReplyGists_LeavesOutAMessageInNoTree` | 没人回的消息不带这行 |
+| `TestReplyGists_WalksThroughARecalledReplyWithoutCountingIt` | 撤回不计数，也不让下面的回复失去归属 |
+| `TestReplyGists_TreatsAnUnsyncedParentAsTheRoot` | 本地看得见的最上面一条就是根 |
+| `TestReplyTree_ListsTheRootThenItsAnswersInTheChatsOwnOrder` | 根在首行，旁边说的话不在里面 |
+| `TestReplyTree_LeavesOutARecalledReplyAndKeepsWhatAnsweredIt` | 帧里不画撤回的那条 |
+| `TestRenderRows_TheReplyCountSitsUnderTheBody` | 脚注不是头 |
+| `TestRenderRows_AReplyDrawsNoCountOfItsOwn` | 只有根带这行 |
+| `TestRenderRows_TheReplyCountIsNotDrawnInsideItsOwnPane` | 帧里不重复计数 |
+| `TestRenderRows_AThreadRootDrawsItsThreadRatherThanItsReplies` | 话题赢 |
+| `TestToggleRight_OpensTheDetailsFromAReplyToo` | 根翻页翻走了也开得出 |
+| `TestActivate_EnterOnAnAnsweredMessageStillAnswersIt` | `Enter` 不被容器语义吃掉 |
+| `TestActivate_EnterInsideTheDetailsPaneRepliesInTheMainFlow` | 不带 `reply_in_thread` |
+| `TestOnReplyLoaded_FillsTheFrameAndNamesItAfterTheRoot` | 标题等树到了再填 |
 
 ## 分期
 

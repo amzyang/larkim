@@ -132,7 +132,7 @@ func TestOnNormalKey_EscClearsFilterAndKeepsCurrentChat(t *testing.T) {
 	mm, _ := m.onNormalKey("esc")
 	m = mm.(Model)
 	require.Empty(t, m.chatFilter)
-	require.Equal(t, "oc_5", m.visibleChats()[m.chatIdx].ChatID)
+	require.Equal(t, "oc_5", m.visibleRows()[m.chatIdx].chatID())
 }
 
 func TestOpenChat_DropsFilterHidingIt(t *testing.T) {
@@ -140,7 +140,7 @@ func TestOpenChat_DropsFilterHidingIt(t *testing.T) {
 	m.chatFilter = "群 7"
 	m.openChat("oc_1")
 	require.Empty(t, m.chatFilter)
-	require.Equal(t, "oc_1", m.visibleChats()[m.chatIdx].ChatID)
+	require.Equal(t, "oc_1", m.visibleRows()[m.chatIdx].chatID())
 }
 
 func TestOnNormalKey_TabCyclesListPanesOnly(t *testing.T) {
@@ -266,15 +266,15 @@ func TestRenderStatus_StaysOneLine(t *testing.T) {
 func TestChatsLoaded_CursorFollowsItsOwnChat(t *testing.T) {
 	m := sized(120, 36)
 	m.chatID = "oc_3"
-	m.repinChat(m.chatID, chatIDAt(m.visibleChats(), m.chatTop))
-	require.Equal(t, "oc_3", m.visibleChats()[m.chatIdx].ChatID)
+	m.repinChat(m.chatID, rowKeyAt(m.visibleRows(), m.chatTop))
+	require.Equal(t, "oc_3", m.visibleRows()[m.chatIdx].chatID())
 
 	// A message in another chat re-sorts the list; the cursor belongs to the
 	// chat, not to the row it happened to be on.
 	reordered := append([]store.Chat{m.chats[7]}, slices.Delete(slices.Clone(m.chats), 7, 8)...)
 	mm, _ := m.update(chatsLoadedMsg{chats: reordered})
 	m = mm.(Model)
-	require.Equal(t, "oc_3", m.visibleChats()[m.chatIdx].ChatID)
+	require.Equal(t, "oc_3", m.visibleRows()[m.chatIdx].chatID())
 }
 
 func TestChatsLoaded_FilterBeingTypedKeepsItsCursor(t *testing.T) {
@@ -406,6 +406,6 @@ func TestOnFilterKey_CancellingPutsTheReaderBackWhereTheyWere(t *testing.T) {
 
 	require.Empty(t, m.chatFilter, "esc drops the filter")
 	require.Equal(t, paneMessages, m.focus, "and hands the pane back")
-	require.Equal(t, onCursor, chatIDAt(m.visibleChats(), m.chatIdx), "the cursor is on the chat it was on")
-	require.Equal(t, onTop, chatIDAt(m.visibleChats(), m.chatTop), "and the list is where it was")
+	require.Equal(t, onCursor, rowKeyAt(m.visibleRows(), m.chatIdx), "the cursor is on the chat it was on")
+	require.Equal(t, onTop, rowKeyAt(m.visibleRows(), m.chatTop), "and the list is where it was")
 }

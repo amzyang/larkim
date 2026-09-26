@@ -113,14 +113,17 @@ func TestMoveToChat_ASweepLoadsOnePageNotOnePerRow(t *testing.T) {
 	require.Equal(t, []string{"oc_1"}, loaded, "the row the sweep set off from, and nothing it swept past")
 }
 
-func TestClaimChatOpen_OnlyForTheChatTheCursorStoppedOn(t *testing.T) {
+func TestClaimRowOpen_OnlyForTheRowTheCursorStoppedOn(t *testing.T) {
 	m := cursorModel(t)
 	m.chatIdx = 9
 
-	require.False(t, m.claimChatOpen("oc_5"), "a row the cursor has already left")
-	require.True(t, m.claimChatOpen("oc_9"))
+	_, ok := m.claimRowOpen("oc_5")
+	require.False(t, ok, "a row the cursor has already left")
+	_, ok = m.claimRowOpen("oc_9")
+	require.True(t, ok)
 	m.chatID = "oc_9"
-	require.False(t, m.claimChatOpen("oc_9"), "the chat is already the one on screen")
+	_, ok = m.claimRowOpen("oc_9")
+	require.False(t, ok, "the chat is already the one on screen")
 }
 
 func TestOpenChat_KeepsThePageItIsOnUntilTheNewOneArrives(t *testing.T) {

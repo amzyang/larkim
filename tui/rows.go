@@ -173,9 +173,11 @@ type msgStyle struct {
 	forwards    map[string]store.ForwardGist
 	forwardRoot string
 	// threads is the collapsed line of each thread rooted on the page, by
-	// thread id. inFrame says these rows are a container's own, where a
-	// thread summary would count the replies standing right below it.
+	// thread id, and replies the tree each message belongs to, by message id.
+	// inFrame says these rows are a container's own, where a summary would
+	// count the replies standing right below it.
 	threads map[string]store.ThreadGist
+	replies map[string]store.ReplyGist
 	inFrame bool
 	// names labels each message's chat on its sender line. It is set for
 	// search results, which run across chats; inside one chat, naming it on
@@ -476,13 +478,21 @@ func renderRows(msgs []store.Message, st msgStyle) []msgRow {
 		// A message can be both, and the thread wins: a forward somebody
 		// started a topic on is read in the topic, where the forward is one
 		// row that opens in turn.
-		if r, ok := threadSummary(x, i, st, &g); ok {
-			rows = append(rows, r)
-		} else if rs, ok := forwardSummary(x, st.forwardRoot, i, st, &g); ok {
-			rows = append(rows, rs...)
+		if !threadRoot(x, st) {
+			if rs, ok := forwardSummary(x, st.forwardRoot, i, st, &g); ok {
+				rows = append(rows, rs...)
+			}
 		}
 		rows = append(rows, bodyRows(x, i, st, &g)...)
 		rows = append(rows, reactionRows(x, i, st, &g)...)
+		// Outermost, past the reactions: those decorate the message itself,
+		// where these lines point away from it at the answers it drew.
+		if r, ok := threadSummary(x, i, st, &g); ok {
+			rows = append(rows, r)
+		}
+		if r, ok := replySummary(x, i, st, &g); ok {
+			rows = append(rows, r)
+		}
 	}
 	return append(rows, discTail(&b)...)
 }

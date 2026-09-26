@@ -229,7 +229,7 @@ func (m Model) msgStyleFor(width int, meta msgMeta) msgStyle {
 	st := msgStyle{width: width, height: m.picHeight(), self: m.deps.Self, selfName: m.selfName, now: time.Now(),
 		suffix: meta.suffix, people: meta.people, avatars: meta.avatars,
 		res: meta.res, docs: meta.docs, parents: meta.parents, forwards: meta.forwards,
-		threads: meta.threads, dataDir: m.deps.DataDir,
+		threads: meta.threads, replies: meta.replies, dataDir: m.deps.DataDir,
 		outbox: m.outboxStates(), reacts: m.reactStates(), dots: m.dots, dark: m.dark}
 	if c, ok := m.currentChat(); ok {
 		st.p2p = c.ChatMode == "p2p"
@@ -608,7 +608,7 @@ func (m Model) View() tea.View {
 	v.MouseMode = tea.MouseModeCellMotion
 	v.ReportFocus = true
 	v.KeyboardEnhancements = tea.KeyboardEnhancements{ReportAlternateKeys: true}
-	v.WindowTitle = windowTitle(m.chats, m.unread)
+	v.WindowTitle = windowTitle(listRows(m.chats, m.threads), m.unread)
 	if m.width == 0 {
 		v.Content = "loading…"
 		return v
@@ -727,7 +727,7 @@ func paneStyle(focused bool, _ int) lipgloss.Style {
 }
 
 func (m Model) renderChats(h int) string {
-	vis := m.visibleChats()
+	vis := m.visibleRows()
 	w := chatsWidth - 2
 	now := time.Now()
 	gap := strings.Repeat(" ", avatarGap)
@@ -754,8 +754,14 @@ func (m Model) renderChats(h int) string {
 	// A trailing row that cannot show both its lines is left out entirely.
 	last := m.chatTop + min(len(vis)-m.chatTop, chatsThatFit(h-headerHeight)) - 1
 	for i := m.chatTop; i <= last; i++ {
-		mark, _ := m.chatIx.match(vis[i], m.chatFilter)
-		r := renderChatRow(m.avatars, vis[i], m.draftForRow(vis[i].ChatID), m.unread[vis[i].ChatID], m.deps.Self, now, w, m.chatPics(), mark)
+		// A thread's title is the words its root opened with, not a name, so
+		// the filter has no rune positions there to underline.
+		mark, _ := m.chatIx.match(vis[i].chat, m.chatFilter)
+		r := renderThreadRow(m.avatars, vis[i], m.deps.Self, now, w, m.chatPics())
+		if !vis[i].isThread() {
+			row := vis[i]
+			r = renderChatRow(m.avatars, row, m.draftForRow(row.chatID()), m.unread[row.chatID()], m.deps.Self, now, w, m.chatPics(), mark)
+		}
 		sel := i == m.chatIdx
 		bottom := line(r.avatarBottom, r.bottom, sel)
 		if len(r.segs) > 0 {
@@ -769,7 +775,7 @@ func (m Model) renderChats(h int) string {
 	for len(lines) < h-headerHeight {
 		lines = append(lines, fit("", w))
 	}
-	content := chatsHeader(m.chats, m.unread, m.chatFilter, w) + "\n" + strings.Join(lines, "\n")
+	content := chatsHeader(listRows(m.chats, m.threads), m.unread, m.chatFilter, w) + "\n" + strings.Join(lines, "\n")
 	return paneStyle(m.focus == paneChats, w).Height(h).Render(content)
 }
 
@@ -893,10 +899,15 @@ func (m Model) renderThread(h int) string {
 // a reader cannot see from its contents.
 func (m Model) rightTitle(w int) string {
 	name, tail := "Thread", m.threadID
-	if m.rightKind == rightForward {
+	switch m.rightKind {
+	case rightForward:
 		// The card's own title, so a frame is named the way the summary that
 		// led into it was. A bundle's id says nothing a reader recognises.
 		name, tail = "Forwarded", m.rightName
+	case rightReply:
+		// The client's own word for this pane, and beside it the message the
+		// conversation started from, which is what the reader opened.
+		name, tail = "Details", m.rightName
 	}
 	if d := len(m.rightStack) + 1; d > 1 {
 		name += " " + strconv.Itoa(d)

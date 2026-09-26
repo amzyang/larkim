@@ -303,6 +303,17 @@ func TestRenderRows_AThreadRootShowsItsLastReply(t *testing.T) {
 	require.Contains(t, out, "李四: 1234")
 }
 
+func TestRenderRows_TheThreadCountSitsUnderTheBody(t *testing.T) {
+	// The root's own words come first, the way the client stacks a topic:
+	// the line folds the replies away, not the message it hangs under.
+	lines := strings.Split(strings.TrimRight(rowText(renderRows([]store.Message{theRoot()},
+		threadStyle(store.ThreadGist{Replies: 23, SenderName: "李四", MsgType: "text",
+			ContentRaw: `{"text":"1234"}`}))), "\n"), "\n")
+
+	require.Equal(t, "hello", strings.TrimSpace(lines[len(lines)-2]))
+	require.Contains(t, lines[len(lines)-1], "⤷ 23 replies")
+}
+
 func TestRenderRows_AThreadRootWithNoReplyStillGetsItsLine(t *testing.T) {
 	// Without it the root reads as an ordinary message, and nothing says
 	// that Enter opens a thread there rather than answering.

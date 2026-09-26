@@ -206,69 +206,6 @@ func TestListChats_DoesNotCountMessagesPerRow(t *testing.T) {
 		"a listing leaves the count to MessageCountsByChat")
 }
 
-func TestListChats_MarksAChatWhoseOnlyUnreadIsAThreadIAmIn(t *testing.T) {
-	s := openTest(t)
-	ctx := t.Context()
-	require.NoError(t, s.EnsureChat(ctx, "oc_mine", 1))
-	require.NoError(t, s.EnsureChat(ctx, "oc_theirs", 1))
-	rows := []Message{
-		// A thread I took a turn in, with something new under it.
-		{MessageID: "om_mine", ChatID: "oc_mine", MsgType: "text", CreateMs: 110, MessagePosition: -1,
-			ThreadID: "omt_1", SenderID: "ou_me", ContentRaw: `{"text":"我回过"}`, RawJSON: "{}"},
-		{MessageID: "om_new", ChatID: "oc_mine", MsgType: "text", CreateMs: 120, MessagePosition: -2,
-			ThreadID: "omt_1", SenderID: "ou_x", ContentRaw: `{"text":"新的"}`, RawJSON: "{}"},
-		// A thread in somebody else's conversation.
-		{MessageID: "om_other", ChatID: "oc_theirs", MsgType: "text", CreateMs: 130, MessagePosition: -1,
-			ThreadID: "omt_2", SenderID: "ou_x", ContentRaw: `{"text":"与我无关"}`, RawJSON: "{}"},
-	}
-	_, err := s.UpsertMessages(ctx, rows, 1)
-	require.NoError(t, err)
-	for _, r := range rows {
-		unread := false
-		require.NoError(t, s.SetReadStatus(ctx, r.MessageID, &unread, 1, 0))
-	}
-
-	chats, err := s.ListChats(ctx, ChatQuery{Self: "ou_me"})
-	require.NoError(t, err)
-	by := map[string]Chat{}
-	for _, c := range chats {
-		by[c.ChatID] = c
-	}
-	require.True(t, by["oc_mine"].ThreadWaiting)
-	require.False(t, by["oc_theirs"].ThreadWaiting)
-	require.Zero(t, by["oc_mine"].UnreadCount,
-		"the marker neither counts the chat nor moves it: a thread exists so an old topic does not pull everyone back")
-}
-
-func TestListChats_WithoutAReaderNothingIsWaiting(t *testing.T) {
-	s := openTest(t)
-	ctx := t.Context()
-	require.NoError(t, s.EnsureChat(ctx, "oc_a", 1))
-	_, err := s.UpsertMessages(ctx, []Message{{MessageID: "om_r", ChatID: "oc_a", MsgType: "text",
-		CreateMs: 110, MessagePosition: -1, ThreadID: "omt_1", SenderID: "ou_x",
-		ContentRaw: `{"text":"hi"}`, RawJSON: "{}"}}, 1)
-	require.NoError(t, err)
-	unread := false
-	require.NoError(t, s.SetReadStatus(ctx, "om_r", &unread, 1, 0))
-
-	chats, err := s.ListChats(ctx, ChatQuery{})
-	require.NoError(t, err)
-	require.Len(t, chats, 1)
-	require.False(t, chats[0].ThreadWaiting,
-		"an empty needle would otherwise match every mention there is")
-}
-
-// The marker has to cost what it marks, the way the badge does: driving from
-// messages would walk the whole synced history for a glyph.
-func TestListChats_ThreadAggregateDrivesFromReadState(t *testing.T) {
-	s := openTest(t)
-
-	plan := explainPlan(t, s, fmt.Sprintf(threadAggregate, threadWaitingExpr), "ou_me", "ou_me")
-
-	require.Contains(t, plan, "read_state_unread", "the unread set is what the aggregate walks")
-	require.Contains(t, plan, "messages_thread", "and the stake is probed through the thread index")
-}
-
 func TestChats_HistoryFloorRecordsHowFarBackAChatReaches(t *testing.T) {
 	s := openTest(t)
 	ctx := context.Background()

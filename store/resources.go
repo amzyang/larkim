@@ -251,13 +251,13 @@ const unreadCounted = unreadBadge + ` AND m.silenced = 0`
 // already read — writes nothing, so the data_rev trigger stays quiet and the
 // TUI does not reload itself in a circle.
 //
-// The set is exactly the badge's. It used to be wider, because the page then
-// listed thread replies too and anything a reader sees but this cannot
-// collect keeps its unread flags for good — the TUI redraws its marker on
-// every visit, and tui.unreadWaiting fires another applink on every reload
-// (docs/read-sync/TECH.md). The page folds replies into their root's line
-// now, so collecting one here would settle something nobody was shown;
-// MarkThreadRead settles those when the thread itself is opened.
+// The set is exactly the page's, and both edges of that are load-bearing.
+// Wider, and it settles a message nobody was shown. Narrower, and a message
+// the reader did see keeps its unread flags for good: the TUI redraws its
+// marker on every visit, and tui.unreadWaiting fires another applink on every
+// reload (docs/read-sync/TECH.md). A thread's replies are folded into their
+// root's line and are on no page of the chat, so MarkThreadRead settles those
+// when the thread itself is opened.
 func (s *Store) MarkChatRead(ctx context.Context, chatID string, now int64) error {
 	_, err := s.db.ExecContext(ctx, `UPDATE read_state SET local_read_at = ?
  WHERE message_id IN (SELECT m.message_id FROM messages m JOIN read_state r ON r.message_id = m.message_id

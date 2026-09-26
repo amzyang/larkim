@@ -63,7 +63,14 @@ type Model struct {
 	// rather than by shading.
 	dark bool
 
-	chats  []store.Chat
+	chats []store.Chat
+	// threads are the reader's own conversations inside those chats. They
+	// stand in the list beside the chats rather than marking them: a reply
+	// does not move the chat it lands in, which is what a thread is for.
+	threads []store.ThreadFeed
+	// rows is the two of them interleaved, which is what the pane draws and
+	// what the cursor walks.
+	rows   []listRow
 	unread map[string]int64
 	// drafts is every chat's unsent composer state, for the chat list's own
 	// marker. The open chat's draft lives in the composer, not here, so this
@@ -450,13 +457,20 @@ func (m Model) picturePrepare() string {
 	// The chat list is claimed next. Its reactions and the emoji on its
 	// summaries are a handful of icons that many rows draw from the same ids,
 	// and unlike the message bands below it reaches for nothing off screen.
-	vis := m.visibleChats()
+	vis := m.visibleRows()
 	pcs := m.chatPics()
 	for i := m.chatTop; i < len(vis) && i < m.chatTop+m.chatListHeight(); i++ {
-		for _, s := range chatChips(vis[i], pcs) {
+		if vis[i].isThread() {
+			_, gist := threadRowGist(vis[i], m.deps.Self, pcs)
+			for _, s := range gist {
+				take(s.pic)
+			}
+			continue
+		}
+		for _, s := range chatChips(vis[i].chat, pcs) {
 			take(s.pic)
 		}
-		_, summary := chatSummary(vis[i], m.deps.Self, pcs)
+		_, summary := chatSummary(vis[i].chat, m.deps.Self, pcs)
 		for _, s := range summary {
 			take(s.pic)
 		}
@@ -477,7 +491,7 @@ func (m Model) picturePrepare() string {
 // redraws that one evicts another, so the list never stops being redrawn. The
 // renderer caches through a pointer, so the work survives this value copy.
 func (m Model) avatarPrepare() string {
-	vis := m.visibleChats()
+	vis := m.visibleRows()
 	n := min(len(vis), 3*m.chatListHeight(), kittyIDs)
 	// A viewport taller than the id space cannot be covered whole, and the
 	// margin then has to go to the rows above the fold rather than below it.
@@ -529,9 +543,9 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.focused = false
 		return m, m.saveComposer()
 	case chatsLoadedMsg:
-		vis := m.visibleChats()
-		wasCursor, wasTop := chatIDAt(vis, m.chatIdx), chatIDAt(vis, m.chatTop)
-		m.chats, m.unread, m.drafts = msg.chats, msg.unread, msg.drafts
+		vis := m.visibleRows()
+		wasCursor, wasTop := rowKeyAt(vis, m.chatIdx), rowKeyAt(vis, m.chatTop)
+		m.chats, m.threads, m.unread, m.drafts = msg.chats, msg.threads, msg.unread, msg.drafts
 		if m.openingChat() == "" && len(m.chats) > 0 {
 			return m, m.openChat(m.chats[0].ChatID)
 		}
@@ -743,6 +757,8 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// the only thing that can settle them. A thread is one screenful, so
 		// having it on top is having read it — there is no tail to reach.
 		return m, markThreadRead(m.deps.Store, m.deps.log(), msg.threadID)
+	case replyLoadedMsg:
+		return m.onReplyLoaded(msg)
 	case forwardLoadedMsg:
 		return m.onForwardLoaded(msg)
 	case forwardExpandedMsg:
@@ -843,10 +859,14 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case noticeMsg:
 		return m.notify(msg.text, false), nil
 	case chatRestMsg:
-		if !m.claimChatOpen(msg.chatID) {
+		r, ok := m.claimRowOpen(msg.key)
+		if !ok {
 			return m, nil
 		}
-		return m, m.openChat(msg.chatID)
+		// The command is taken first: opening a thread pins where it lands on
+		// the model, and a model read beside the call may be read before it.
+		cmd := m.openRow(r)
+		return m, cmd
 	case chatPollDueMsg:
 		// The chain re-arms whether or not it polls: a blurred beat, or one
 		// standing down after a refusal, still has to hand the next one on.
@@ -1080,11 +1100,21 @@ func (m Model) takeRead(chatID string, msgs []store.Message) tea.Cmd {
 
 // selectCurrentChat puts the cursor on the chat being opened within the
 // visible list, dropping a filter that would hide it.
+//
+// A row already leading into that chat keeps the cursor: the open came from
+// the cursor itself, and a thread's row would otherwise hand it straight back
+// to the chat the thread happens in.
 func (m *Model) selectCurrentChat() {
-	idx := indexOfChat(m.visibleChats(), m.openingChat())
+	vis := m.visibleRows()
+	if m.chatIdx < len(vis) && vis[m.chatIdx].chatID() == m.openingChat() {
+		m.clampChat()
+		m.scrollChatToCursor()
+		return
+	}
+	idx := indexOfChatRow(m.visibleRows(), m.openingChat())
 	if idx < 0 && m.chatFilter != "" {
 		m.chatFilter = ""
-		idx = indexOfChat(m.visibleChats(), m.openingChat())
+		idx = indexOfChatRow(m.visibleRows(), m.openingChat())
 	}
 	if idx >= 0 {
 		m.chatIdx = idx
@@ -1107,11 +1137,11 @@ func (m *Model) repinChat(wasCursor, wasTop string) {
 		m.clampChat()
 		return
 	}
-	vis := m.visibleChats()
-	if idx := indexOfChat(vis, wasCursor); idx >= 0 {
+	vis := m.visibleRows()
+	if idx := indexOfRow(vis, wasCursor); idx >= 0 {
 		m.chatIdx = idx
 	}
-	if top := indexOfChat(vis, wasTop); top >= 0 {
+	if top := indexOfRow(vis, wasTop); top >= 0 {
 		m.chatTop = top
 	}
 	m.clampChat()
@@ -1124,13 +1154,13 @@ func indexOfChat(chats []store.Chat, chatID string) int {
 	return slices.IndexFunc(chats, func(c store.Chat) bool { return c.ChatID == chatID })
 }
 
-// openHighlighted loads the chat under the cursor unless it is already open.
+// openHighlighted loads the row under the cursor unless it is already open.
 func (m *Model) openHighlighted() tea.Cmd {
-	chatID := m.highlightedChat()
-	if chatID == "" {
+	r, ok := m.highlightedRow()
+	if !ok {
 		return nil
 	}
-	return m.openChat(chatID)
+	return m.openRow(r)
 }
 
 func (m Model) reloadCurrent() tea.Cmd {
@@ -1315,17 +1345,26 @@ func (m Model) currentChat() (store.Chat, bool) {
 	return store.Chat{}, false
 }
 
-// visibleChats narrows the list to what the filter answers. The filter only
+// visibleRows narrows the list to what the filter answers. The filter only
 // decides who comes in, never who comes first: the order is the reader's own
 // recency, and a list that reranks under their hand is one they cannot learn.
-func (m Model) visibleChats() []store.Chat {
+//
+// A thread answers through the chat it happens in, and through the words its
+// root opened with: the row is titled by those words, so they are what the
+// reader has to type at.
+func (m Model) visibleRows() []listRow {
+	rows := listRows(m.chats, m.threads)
 	if m.chatFilter == "" {
-		return m.chats
+		return rows
 	}
-	var out []store.Chat
-	for _, c := range m.chats {
-		if _, ok := m.chatIx.match(c, m.chatFilter); ok {
-			out = append(out, c)
+	var out []listRow
+	for _, r := range rows {
+		if _, ok := m.chatIx.match(r.chat, m.chatFilter); ok {
+			out = append(out, r)
+			continue
+		}
+		if r.isThread() && containsFold(replyGist(r.thread.Root), m.chatFilter) {
+			out = append(out, r)
 		}
 	}
 	return out
@@ -1335,7 +1374,7 @@ func (m Model) visibleChats() []store.Chat {
 // pulled to the other: a wheel scroll is allowed to park the cursor off
 // screen, and only a cursor move scrolls the list back to it.
 func (m *Model) clampChat() {
-	n := len(m.visibleChats())
+	n := len(m.visibleRows())
 	m.chatIdx = clamp(m.chatIdx, 0, max(0, n-1))
 	m.chatTop = clamp(m.chatTop, 0, max(0, n-m.chatListHeight()))
 }
@@ -1582,8 +1621,8 @@ func (m Model) onNormalKey(s string) (tea.Model, tea.Cmd) {
 			return m.openTargets(zs)
 		}
 	case "/":
-		vis := m.visibleChats()
-		m.filterPin = filterPin{m.focus, chatIDAt(vis, m.chatIdx), chatIDAt(vis, m.chatTop)}
+		vis := m.visibleRows()
+		m.filterPin = filterPin{m.focus, rowKeyAt(vis, m.chatIdx), rowKeyAt(vis, m.chatTop)}
 		m.mode = modeFilter
 		m.focus = paneChats
 		m.cmdline.Prompt = "/"
@@ -1698,11 +1737,14 @@ func (m Model) onYankKey(s string) (Model, tea.Cmd, bool) {
 func (m Model) yankSources() ([]yankSource, bool) {
 	switch {
 	case m.focus == paneChats:
-		vis := m.visibleChats()
+		vis := m.visibleRows()
 		if len(vis) == 0 {
 			return nil, true
 		}
-		return []yankSource{chatYank(vis[m.chatIdx])}, true
+		// A thread yanks the chat it happens in: what is on offer here is a
+		// link to somewhere, and the client's own link for a row like this
+		// leads into the chat.
+		return []yankSource{chatYank(vis[m.chatIdx].chat)}, true
 	case m.focus == paneMessages, m.focus == paneThread && !m.aiOpen:
 		list := m.focusedList()
 		if m.searching && m.focus == paneMessages {
@@ -1808,11 +1850,11 @@ func (m Model) copySelection() (Model, tea.Cmd) {
 	case m.searching:
 		return m.notify("press Enter to open the hit; Y copies from inside a chat", true), nil
 	case m.focus == paneChats:
-		vis := m.visibleChats()
+		vis := m.visibleRows()
 		if len(vis) == 0 {
 			return m.notify("nothing to copy", true), nil
 		}
-		spec := copySpec{chatID: vis[m.chatIdx].ChatID, rng: agentctx.Range{Since: chatsCopyAge, Limit: chatsCopyLimit}}
+		spec := copySpec{chatID: vis[m.chatIdx].chatID(), rng: agentctx.Range{Since: chatsCopyAge, Limit: chatsCopyLimit}}
 		return m.notify("copying…", false), copyContext(m.deps, spec)
 	case m.focus == paneMessages, m.focus == paneThread && !m.aiOpen:
 		list := m.msgs
@@ -1902,7 +1944,7 @@ func (m *Model) scrollRight(n int) bool {
 func (m Model) move(n int) (tea.Model, tea.Cmd) {
 	switch m.focus {
 	case paneChats:
-		m.chatIdx = clamp(m.chatIdx+n, 0, len(m.visibleChats())-1)
+		m.chatIdx = clamp(m.chatIdx+n, 0, len(m.visibleRows())-1)
 		m.clampChat()
 		m.scrollChatToCursor()
 		return m, m.moveToChat(time.Now())
@@ -1963,7 +2005,10 @@ func (m Model) activate() (tea.Model, tea.Cmd) {
 			}
 			return m.openContainer(paneThread, f)
 		}
-		return m.startInsert(&sel, true)
+		// A reply tree's rows are the chat's own messages, so answering one
+		// lands in the flow beside it; only a thread's replies go inside a
+		// thread.
+		return m.startInsert(&sel, m.rightKind == rightThread)
 	}
 	return m, nil
 }
@@ -2290,13 +2335,16 @@ func (m Model) onClick(ms tea.Mouse) (tea.Model, tea.Cmd) {
 	}
 	switch p {
 	case paneChats:
-		vis := m.visibleChats()
+		vis := m.visibleRows()
 		idx := m.chatTop + row
 		if idx >= 0 && idx < len(vis) {
 			m.chatIdx = idx
-			if vis[idx].ChatID != m.chatID || double {
+			// A thread is opened by every click: the chat under it may
+			// already be the one on screen while its frame is not.
+			if r := vis[idx]; r.isThread() || r.chat.ChatID != m.chatID || double {
 				m = m.focusMessages()
-				return m, m.openChat(vis[idx].ChatID)
+				cmd := m.openRow(r)
+				return m, cmd
 			}
 		}
 	case paneMessages:
@@ -2379,8 +2427,7 @@ func (m Model) onWheel(ms tea.Mouse) (tea.Model, tea.Cmd) {
 	}
 	switch p {
 	case paneChats:
-		vis := m.visibleChats()
-		m.chatTop = clamp(m.chatTop+step, 0, max(0, len(vis)-m.chatListHeight()))
+		m.chatTop = clamp(m.chatTop+step, 0, max(0, len(m.visibleRows())-m.chatListHeight()))
 	case paneMessages:
 		m.msgTop = clamp(m.msgTop+step, 0, max(0, len(m.msgRows)-m.msgListHeight()))
 		return m, m.growMessages()

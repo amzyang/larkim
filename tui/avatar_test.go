@@ -61,10 +61,10 @@ func TestKittyAvatars_PlaceholderCellsSpanTheAvatarColumn(t *testing.T) {
 	k := newKittyAvatars(dir)
 	c := store.Chat{ChatID: "oc_1", Name: "群", ChatMode: "group", AvatarPath: writePNG(t, dir, "a.png", 8, 8)}
 
-	require.NotEmpty(t, k.prepare([]store.Chat{c}, nil), "the picture is transmitted once")
-	require.Empty(t, k.prepare([]store.Chat{c}, nil), "and not again")
+	require.NotEmpty(t, k.prepare(rowsOf([]store.Chat{c}), nil), "the picture is transmitted once")
+	require.Empty(t, k.prepare(rowsOf([]store.Chat{c}), nil), "and not again")
 
-	top, bottom, _ := k.cells(c, 0)
+	top, bottom, _ := k.cells(listRow{chat: c}, 0)
 	for _, line := range []string{top, bottom} {
 		require.Equal(t, avatarWidth, lipgloss.Width(line), "the cells occupy exactly the avatar column")
 		require.Equal(t, avatarWidth, strings.Count(line, string(kitty.Placeholder)))
@@ -85,8 +85,8 @@ func TestKittyAvatars_DrawsAPictureWhenThereIsNoFile(t *testing.T) {
 		{"file is not an image", store.Chat{ChatID: "oc_4", Name: "示例告警群", AvatarPath: "missing.webp"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			require.NotEmpty(t, k.prepare([]store.Chat{tc.chat}, nil), "a chat with no file still gets a drawn one")
-			top, _, _ := k.cells(tc.chat, 0)
+			require.NotEmpty(t, k.prepare(rowsOf([]store.Chat{tc.chat}), nil), "a chat with no file still gets a drawn one")
+			top, _, _ := k.cells(listRow{chat: tc.chat}, 0)
 			require.Equal(t, avatarWidth, strings.Count(top, string(kitty.Placeholder)))
 		})
 	}
@@ -98,9 +98,9 @@ func TestKittyAvatars_TransmitsEachChatOnlyOnce(t *testing.T) {
 	k := newKittyAvatars(dir)
 	c := store.Chat{ChatID: "oc_1", Name: "群", AvatarPath: "bad.png"}
 
-	require.NotEmpty(t, k.prepare([]store.Chat{c}, nil), "an unreadable file falls through to a drawn picture")
+	require.NotEmpty(t, k.prepare(rowsOf([]store.Chat{c}), nil), "an unreadable file falls through to a drawn picture")
 	require.NoError(t, os.Remove(filepath.Join(dir, "bad.png")))
-	require.Empty(t, k.prepare([]store.Chat{c}, nil), "the second pass never opens the file again")
+	require.Empty(t, k.prepare(rowsOf([]store.Chat{c}), nil), "the second pass never opens the file again")
 }
 
 func TestKittyAvatars_ReclaimsTheLeastRecentlyShownID(t *testing.T) {
@@ -112,15 +112,15 @@ func TestKittyAvatars_ReclaimsTheLeastRecentlyShownID(t *testing.T) {
 	for i := range chats {
 		chats[i] = store.Chat{ChatID: "oc_" + string(rune('a'+i%26)) + string(rune('0'+i/26)), Name: "群", AvatarPath: name}
 	}
-	require.NotEmpty(t, k.prepare(chats, nil))
+	require.NotEmpty(t, k.prepare(rowsOf(chats), nil))
 	require.Len(t, k.id, kittyIDs, "the id space is full")
 	evicted := chats[0].ChatID
 	reused := k.id[evicted]
 
 	// Show everything except the first, then something new: the first loses its id.
-	require.Empty(t, k.prepare(chats[1:], nil))
+	require.Empty(t, k.prepare(rowsOf(chats[1:]), nil))
 	fresh := store.Chat{ChatID: "oc_new", Name: "群", AvatarPath: name}
-	require.NotEmpty(t, k.prepare([]store.Chat{fresh}, nil))
+	require.NotEmpty(t, k.prepare(rowsOf([]store.Chat{fresh}), nil))
 
 	require.NotContains(t, k.id, evicted)
 	require.Equal(t, reused, k.id["oc_new"], "the freed id is handed straight on")
@@ -195,11 +195,11 @@ func TestKittyAvatars_ANewCellSizeRedrawsEverything(t *testing.T) {
 	dir := t.TempDir()
 	k := newKittyAvatars(dir)
 	c := store.Chat{ChatID: "oc_1", Name: "程序化养号"}
-	require.NotEmpty(t, k.prepare([]store.Chat{c}, nil))
-	require.Empty(t, k.prepare([]store.Chat{c}, nil))
+	require.NotEmpty(t, k.prepare(rowsOf([]store.Chat{c}), nil))
+	require.Empty(t, k.prepare(rowsOf([]store.Chat{c}), nil))
 
 	require.True(t, k.setCellSize(9, 19))
-	require.NotEmpty(t, k.prepare([]store.Chat{c}, nil),
+	require.NotEmpty(t, k.prepare(rowsOf([]store.Chat{c}), nil),
 		"pictures drawn for the old cell size would be resampled, so they are drawn again")
 }
 
@@ -309,7 +309,7 @@ func TestKittyAvatars_MasksTheFileAvatarToADisc(t *testing.T) {
 	c := store.Chat{ChatID: "oc_1", Name: "群", ChatMode: "group",
 		AvatarPath: writeFilledPNG(t, dir, "a.png", 64, 64)}
 
-	img := k.picture(c)
+	img := k.picture(listRow{chat: c})
 	require.NotNil(t, img)
 	w, h := k.box()
 	require.Equal(t, image.Rect(0, 0, w, h), img.Bounds())
@@ -328,11 +328,11 @@ func TestKittyAvatars_OutlinesAGroupAndFillsAPerson(t *testing.T) {
 	w, h := k.box()
 	x, y := bodyPixel(min(w, h))
 
-	group := k.picture(store.Chat{ChatID: "oc_a", Name: "平台组", ChatMode: "group"})
+	group := k.picture(listRow{chat: store.Chat{ChatID: "oc_a", Name: "平台组", ChatMode: "group"}})
 	require.Equal(t, avatarWhite, pixAt(group, x, y),
 		"a group without a picture takes the outlined style, as the client draws it")
 
-	person := k.picture(store.Chat{ChatID: "oc_a", Name: "林岚", ChatMode: "p2p"})
+	person := k.picture(listRow{chat: store.Chat{ChatID: "oc_a", Name: "林岚", ChatMode: "p2p"}})
 	require.Equal(t, generatedPalette[int(idHash("oc_a"))%len(generatedPalette)], pixAt(person, x, y),
 		"a person takes the filled one, so a stand-in never reads as the wrong kind of chat")
 }
@@ -390,12 +390,12 @@ func TestKittyAvatars_RedrawsWhenTheUnreadCountMoves(t *testing.T) {
 	c := store.Chat{ChatID: "oc_1", Name: "群", AvatarPath: writePNG(t, dir, "a.png", 8, 8)}
 	unread := map[string]int64{"oc_1": 2}
 
-	require.NotEmpty(t, k.prepare([]store.Chat{c}, unread))
-	require.Empty(t, k.prepare([]store.Chat{c}, unread), "the same count needs no new picture")
+	require.NotEmpty(t, k.prepare(rowsOf([]store.Chat{c}), unread))
+	require.Empty(t, k.prepare(rowsOf([]store.Chat{c}), unread), "the same count needs no new picture")
 
 	id := k.id["oc_1"]
 	unread["oc_1"] = 3
-	require.NotEmpty(t, k.prepare([]store.Chat{c}, unread), "the counter is part of the picture")
+	require.NotEmpty(t, k.prepare(rowsOf([]store.Chat{c}), unread), "the counter is part of the picture")
 	require.Equal(t, id, k.id["oc_1"], "and a redraw keeps the id the cells already name")
 }
 
@@ -404,14 +404,14 @@ func TestKittyAvatars_CellsClaimTheCountOnlyOnceTheyCarryIt(t *testing.T) {
 	k := newKittyAvatars(dir)
 	c := store.Chat{ChatID: "oc_1", Name: "群", AvatarPath: writePNG(t, dir, "a.png", 8, 8)}
 
-	_, _, badged := k.cells(c, 2)
+	_, _, badged := k.cells(listRow{chat: c}, 2)
 	require.False(t, badged, "with no picture yet the row prints the number itself")
 
-	require.NotEmpty(t, k.prepare([]store.Chat{c}, map[string]int64{"oc_1": 2}))
-	_, _, badged = k.cells(c, 2)
+	require.NotEmpty(t, k.prepare(rowsOf([]store.Chat{c}), map[string]int64{"oc_1": 2}))
+	_, _, badged = k.cells(listRow{chat: c}, 2)
 	require.True(t, badged)
 
-	_, _, badged = k.cells(c, 3)
+	_, _, badged = k.cells(listRow{chat: c}, 3)
 	require.False(t, badged, "a count the picture has not caught up with is printed too")
 }
 
@@ -445,9 +445,9 @@ func TestModelAvatarPrepare_CoversEveryRowOnScreen(t *testing.T) {
 	m, k := tallModel(t)
 	m.avatarPrepare()
 
-	vis := m.visibleChats()
-	for _, c := range vis[m.chatTop : m.chatTop+m.chatListHeight()] {
-		require.Contains(t, k.id, c.ChatID, "a row on screen always has its picture")
+	vis := m.visibleRows()
+	for _, r := range vis[m.chatTop : m.chatTop+m.chatListHeight()] {
+		require.Contains(t, k.id, r.chatID(), "a row on screen always has its picture")
 	}
 }
 
@@ -463,10 +463,10 @@ func TestKittyAvatars_EvictsOnlyWhatLeftTheWindow(t *testing.T) {
 	// Scroll up one chat at a time: the chat that entered is reached before the
 	// live ones, so a tie on the eviction clock takes a neighbour instead of
 	// the chat that left, and that neighbour has to be sent all over again.
-	require.Equal(t, kittyIDs, transmitted(k.prepare(chats[4:4+kittyIDs], nil)))
+	require.Equal(t, kittyIDs, transmitted(k.prepare(rowsOf(chats[4:4+kittyIDs]), nil)))
 	for top := 3; top >= 0; top-- {
 		window := chats[top : top+kittyIDs]
-		require.Equal(t, 1, transmitted(k.prepare(window, nil)),
+		require.Equal(t, 1, transmitted(k.prepare(rowsOf(window), nil)),
 			"one chat entered the window, so one picture is sent")
 		for _, c := range window {
 			require.Contains(t, k.id, c.ChatID, "everything still in the window keeps its picture")
@@ -529,10 +529,76 @@ func TestKittyAvatars_DrawsAP2PPeerInTheColourTheirMessagesTake(t *testing.T) {
 	x, y := bodyPixel(min(w, h))
 
 	c := store.Chat{ChatID: "oc_quiet", Name: "构建机器人", ChatMode: "p2p", P2PTargetID: "ou_a"}
-	require.Equal(t, generatedPalette[int(idHash("ou_a"))%len(generatedPalette)], pixAt(k.picture(c), x, y),
+	require.Equal(t, generatedPalette[int(idHash("ou_a"))%len(generatedPalette)], pixAt(k.picture(listRow{chat: c}), x, y),
 		"the row and the sender's message blocks stand for one peer, so both take one colour")
 
-	top, _, _ := textAvatars{}.cells(c, 0)
+	top, _, _ := textAvatars{}.cells(listRow{chat: c}, 0)
 	require.Equal(t, avatarBlock("ou_a", c.Name, avatarWidth), top,
 		"the colour block the terminal falls back to seeds from the same peer")
+}
+
+// threadRowOf is a thread of the chat, as the list hands one to the column.
+func threadRowOf(c store.Chat, threadID string, unread int64) listRow {
+	return listRow{chat: c, thread: store.ThreadFeed{ThreadID: threadID, ChatID: c.ChatID, Unread: unread}}
+}
+
+func TestTextAvatars_AThreadRowCarriesTheGlyph(t *testing.T) {
+	c := store.Chat{ChatID: "oc_1", Name: "平台组", ChatMode: "group"}
+
+	top, bottom, _ := textAvatars{}.cells(threadRowOf(c, "omt_x", 0), 0)
+
+	require.Contains(t, ansi.Strip(top), threadGlyph)
+	require.Equal(t, avatarWidth, lipgloss.Width(top), "the glyph takes a column of the block, not one beside it")
+	require.Equal(t, avatarWidth, lipgloss.Width(bottom))
+}
+
+// The mark is the client's own, and the chat rides its corner.
+func TestThreadAvatar_PutsTheChatOnTheMarksCorner(t *testing.T) {
+	mark := threadMark()
+	require.NotNil(t, mark, "the mark ships with the binary")
+	badge := image.NewRGBA(image.Rect(0, 0, 30, 30))
+	draw.Draw(badge, badge.Bounds(), image.NewUniform(color.RGBA{R: 0xFF, A: 0xFF}), image.Point{}, draw.Src)
+	maskDisc(badge)
+
+	m := threadAvatar(mark, badge, 72, 76)
+
+	require.Equal(t, image.Rect(0, 0, 72, 76), m.Bounds())
+	side := badge.Bounds().Dx()
+	gap := max(1, int(float64(side)*threadBadgeGap))
+	cx, cy := 72-gap-side/2, 76-gap-side/2
+	r, _, _, a := m.At(cx, cy).RGBA()
+	require.EqualValues(t, 0xFFFF, a, "the chat's picture is opaque where its middle lands")
+	require.EqualValues(t, 0xFFFF, r, "and it is the chat's own picture there")
+	_, _, _, cut := m.At(cx-side/2-gap/2-1, cy).RGBA()
+	require.Zero(t, cut, "a gap is punched around it so it reads as its own disc")
+}
+
+func TestThreadAvatar_WithoutAPictureTheMarkStandsAlone(t *testing.T) {
+	m := threadAvatar(threadMark(), nil, 72, 76)
+
+	require.Equal(t, image.Rect(0, 0, 72, 76), m.Bounds())
+	ring := 0
+	for x := range 72 {
+		if _, _, _, a := m.At(x, 6).RGBA(); a > 0 {
+			ring++
+		}
+	}
+	require.NotZero(t, ring, "the ring is still drawn")
+}
+
+// A chat and a thread inside it are two rows carrying two different counters,
+// so they cannot share one picture.
+func TestKittyAvatars_AThreadKeepsItsOwnPicture(t *testing.T) {
+	dir := t.TempDir()
+	k := newKittyAvatars(dir)
+	c := store.Chat{ChatID: "oc_1", Name: "平台组", ChatMode: "group", AvatarPath: writeFilledPNG(t, dir, "a.png", 8, 8)}
+	rows := []listRow{{chat: c}, threadRowOf(c, "omt_x", 2)}
+
+	require.NotEmpty(t, k.prepare(rows, map[string]int64{"oc_1": 5}))
+	require.Len(t, k.id, 2, "two rows, two pictures")
+	require.NotEqual(t, k.id["oc_1"], k.id["omt_x"])
+	require.EqualValues(t, 5, k.badge["oc_1"])
+	require.EqualValues(t, 2, k.badge["omt_x"], "the thread's own replies are what its counter says")
+
+	require.Empty(t, k.prepare(rows, map[string]int64{"oc_1": 5}), "neither is drawn again")
 }

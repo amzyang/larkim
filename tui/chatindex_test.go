@@ -71,15 +71,15 @@ func TestVisibleChats_KeepsListOrderUnderFilter(t *testing.T) {
 		chat("oc_3", "平台组"),
 	}
 	m.chatFilter = "dy"
-	vis := m.visibleChats()
-	require.Equal(t, []string{"oc_1", "oc_2"}, []string{vis[0].ChatID, vis[1].ChatID})
+	vis := m.visibleRows()
+	require.Equal(t, []string{"oc_1", "oc_2"}, []string{vis[0].chatID(), vis[1].chatID()})
 	require.Len(t, vis, 2)
 }
 
-func TestVisibleChats_UnfilteredIsTheWholeList(t *testing.T) {
+func TestVisibleRows_UnfilteredIsTheWholeList(t *testing.T) {
 	m := New(Deps{Self: "ou_me"})
 	m.chats = []store.Chat{chat("oc_1", "平台组"), chat("oc_2", "财务组")}
-	require.Len(t, m.visibleChats(), 2)
+	require.Len(t, m.visibleRows(), 2)
 }
 
 func TestRenderChatRow_UnderlinesTheRunesTheFilterLandedOn(t *testing.T) {
@@ -88,7 +88,7 @@ func TestRenderChatRow_UnderlinesTheRunesTheFilterLandedOn(t *testing.T) {
 	pos, ok := ix.match(c, "协作")
 	require.True(t, ok)
 
-	row := renderChatRow(textAvatars{}, c, store.Draft{}, 0, "ou_me", testNow, 40, emojiPics{}, pos)
+	row := renderChatRow(textAvatars{}, listRow{chat: c}, store.Draft{}, 0, "ou_me", testNow, 40, emojiPics{}, pos)
 	require.Equal(t, "项目协作群", ansi.Strip(row.top)[:len("项目协作群")])
 	// Each rune opens with the attributes it is drawn under, so the matched
 	// ones carry the underline parameter and their neighbours do not.
@@ -104,7 +104,7 @@ func TestRenderChatRow_LeavesTheNameAloneOnAPinyinHit(t *testing.T) {
 	pos, ok := ix.match(c, "ptz")
 	require.True(t, ok)
 
-	row := renderChatRow(textAvatars{}, c, store.Draft{}, 0, "ou_me", testNow, 40, emojiPics{}, pos)
+	row := renderChatRow(textAvatars{}, listRow{chat: c}, store.Draft{}, 0, "ou_me", testNow, 40, emojiPics{}, pos)
 	require.NotRegexp(t, `4m[平台组]`, row.top)
 }
 

@@ -49,7 +49,7 @@ func TestChatSummary_DrawsAnEmojiInTheBodyAsAPicture(t *testing.T) {
 		LastMessageMs: at(-1), LastRenderedAt: 1, LastSenderID: "ou_me", LastSenderName: "林岚",
 		LastContent: "[了解]"}
 
-	row := renderChatRow(textAvatars{}, c, store.Draft{}, 0, "ou_me", testNow, 40, gistPics(t), nil)
+	row := renderChatRow(textAvatars{}, listRow{chat: c}, store.Draft{}, 0, "ou_me", testNow, 40, gistPics(t), nil)
 
 	require.Empty(t, row.bottom, "a picture in the line is what puts it in pieces")
 	require.Equal(t, 1, picSegs(row.segs), "the emoji is the client's own picture")

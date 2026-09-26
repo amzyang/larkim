@@ -17,6 +17,7 @@ const (
 	rightNone rightKind = iota
 	rightThread
 	rightForward
+	rightReply
 )
 
 // rightFrame is a frame the stack holds under the one on screen. Nothing
@@ -25,9 +26,10 @@ const (
 // come back from SQLite in a millisecond.
 type rightFrame struct {
 	kind rightKind
-	// id is what the frame was opened on: omt_… for a thread, and for a
-	// forward the message whose children it lists — the bundle itself at the
-	// top level, a nested bundle below. Held by id rather than index, like
+	// id is what the frame was opened on: omt_… for a thread, for a forward
+	// the message whose children it lists — the bundle itself at the top
+	// level, a nested bundle below — and for a reply tree the message the
+	// conversation started from. Held by id rather than index, like
 	// filterPin: a sync tick replaces the list under a suspended frame.
 	id string
 	// root is the bundle every level of a forward belongs to, which is where
@@ -160,6 +162,8 @@ func (m Model) loadRight() tea.Cmd {
 		return loadThread(m.deps, m.threadID)
 	case rightForward:
 		return loadForward(m.deps, m.rightRoot, m.threadID)
+	case rightReply:
+		return loadReplies(m.deps, m.threadID)
 	}
 	return nil
 }
@@ -184,6 +188,9 @@ func (m *Model) rightLanded(msgs []store.Message) (cursor string, anchor lineAnc
 // one it names when that is already what the column shows.
 func (m Model) toggleRight() (tea.Model, tea.Cmd) {
 	f, ok := m.containerAtCursor()
+	if !ok {
+		f, ok = m.detailsAtCursor()
+	}
 	switch {
 	case ok && m.rightKind == f.kind && m.threadID == f.id:
 		return m.leaveRight(), nil
@@ -195,7 +202,31 @@ func (m Model) toggleRight() (tea.Model, tea.Cmd) {
 		// out of the column is to focus it first.
 		return m.leaveRight(), nil
 	}
-	return m.notify("selected message opens no thread or forward", true), nil
+	return m.notify("selected message opens no thread, forward or replies", true), nil
+}
+
+// detailsAtCursor names the reply tree the selected message belongs to, which
+// is the client's Details pane. Any member of the tree opens it, not the root
+// alone: the message the conversation started from is often further up than
+// the page reaches, and the reader asking about the one in front of them
+// means the same conversation either way.
+func (m Model) detailsAtCursor() (rightFrame, bool) {
+	sel, ok := m.selected()
+	if !ok {
+		return rightFrame{}, false
+	}
+	g, ok := m.metaFor(m.focus).replies[sel.MessageID]
+	if !ok {
+		return rightFrame{}, false
+	}
+	f := rightFrame{kind: rightReply, id: g.Root}
+	// The title is the root's own gist, which the cursor only has when it is
+	// standing on the root. From anywhere else the frame opens untitled and
+	// the list fills it in, the way a forward's card does.
+	if g.Root == sel.MessageID {
+		f.name = replyGist(sel)
+	}
+	return f, true
 }
 
 // containerAtCursor names the frame the selected message opens.

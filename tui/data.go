@@ -89,8 +89,11 @@ const (
 // Messages flowing back into Update.
 type (
 	chatsLoadedMsg struct {
-		chats  []store.Chat
-		unread map[string]int64
+		chats []store.Chat
+		// threads are the reader's own conversations inside those chats,
+		// which stand in the list beside them.
+		threads []store.ThreadFeed
+		unread  map[string]int64
 		// drafts is every chat's unsent composer state, fetched with the list
 		// rather than per row so the marker costs one query a refresh.
 		drafts map[string]store.Draft
@@ -115,6 +118,13 @@ type (
 		threadID string
 		msgs     []store.Message
 		meta     msgMeta
+	}
+	// replyLoadedMsg carries a reply tree: the message the conversation
+	// started from and every live answer under it.
+	replyLoadedMsg struct {
+		root string
+		msgs []store.Message
+		meta msgMeta
 	}
 	// revMsg says the store changed, not what changed: the revision is a
 	// counter, so every pane reloads.
@@ -175,6 +185,10 @@ type msgMeta struct {
 	// on it, by thread id.
 	forwards map[string]store.ForwardGist
 	threads  map[string]store.ThreadGist
+	// replies names the reply tree each message on the page belongs to, by
+	// message id. A message nobody answered, in a tree nobody answered, is
+	// absent.
+	replies map[string]store.ReplyGist
 }
 
 func loadMeta(ctx context.Context, st *store.Store, self string, msgs []store.Message) (msgMeta, error) {
@@ -252,13 +266,17 @@ func loadMeta(ctx context.Context, st *store.Store, self string, msgs []store.Me
 	if err != nil {
 		return msgMeta{}, err
 	}
+	replies, err := st.ReplyGists(ctx, msgIDs)
+	if err != nil {
+		return msgMeta{}, err
+	}
 	// A reply's own author is named on the root's summary line, and they may
 	// never have spoken on the page itself.
 	for _, g := range gists {
 		addPerson(g.SenderID)
 	}
 	return msgMeta{suffix: suffix, people: people, avatars: avatars, res: res, docs: docs,
-		parents: parents, forwards: forwards, threads: gists}, nil
+		parents: parents, forwards: forwards, threads: gists, replies: replies}, nil
 }
 
 // searchLimits bound each group. Messages get the most because they are what
@@ -334,9 +352,10 @@ func waitForAI(ch <-chan ai.Chunk) tea.Cmd {
 	}
 }
 
-// loadChats reads the sidebar in one query. The badge counts ride on the rows
-// they belong to, so a chat's number and its place can never come from two
-// different revisions of the database.
+// loadChats reads the sidebar. The badge counts ride on the rows they belong
+// to, so a chat's number and its place can never come from two different
+// revisions of the database; the threads are a second query because they are
+// rows of their own rather than a column of somebody else's.
 func loadChats(d Deps) tea.Cmd {
 	return func() tea.Msg {
 		chats, err := d.Store.ListChats(context.Background(), store.ChatQuery{Self: d.Self})
@@ -349,6 +368,10 @@ func loadChats(d Deps) tea.Cmd {
 				unread[c.ChatID] = c.UnreadCount
 			}
 		}
+		threads, err := d.Store.ListThreadFeed(context.Background(), store.ThreadFeedQuery{Self: d.Self})
+		if err != nil {
+			return errMsg{err}
+		}
 		// A draft the store cannot answer for costs the list its marker, not
 		// its rows: the chats are what the reader asked for.
 		drafts, err := d.Store.Drafts(context.Background())
@@ -356,7 +379,7 @@ func loadChats(d Deps) tea.Cmd {
 			d.log().Error("load drafts", "err", err)
 			drafts = nil
 		}
-		return chatsLoadedMsg{chats: chats, unread: unread, drafts: drafts}
+		return chatsLoadedMsg{chats: chats, threads: threads, unread: unread, drafts: drafts}
 	}
 }
 
@@ -419,6 +442,24 @@ func loadThread(d Deps, threadID string) tea.Cmd {
 			return errMsg{err}
 		}
 		return threadLoadedMsg{threadID: threadID, msgs: rows, meta: meta}
+	}
+}
+
+// loadReplies fetches a reply tree for the right column. The rows are
+// ordinary messages of the open chat, already synced with it, so nothing is
+// asked of Feishu here.
+func loadReplies(d Deps, rootID string) tea.Cmd {
+	return func() tea.Msg {
+		ctx := context.Background()
+		rows, err := d.Store.ReplyTree(ctx, rootID)
+		if err != nil {
+			return errMsg{err}
+		}
+		meta, err := loadMeta(ctx, d.Store, d.Self, rows)
+		if err != nil {
+			return errMsg{err}
+		}
+		return replyLoadedMsg{root: rootID, msgs: rows, meta: meta}
 	}
 }
 

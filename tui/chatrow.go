@@ -290,19 +290,24 @@ const chatChipLimit = 3
 // beside a message.
 const chatChipCols = 2
 
-// chatChips are the reactions on a p2p chat's newest message, as the icons
-// alone: in a chat of two, who reacted and how many did is not in question. A
-// group's stay in the message pane, where there is room to say whose they
-// are. A recall takes them with the body, the way the client does.
+// chatChipGap parts one badge from the next. Two caps meeting read as a
+// single badge pinched at the waist, so a cell goes between them. One cell
+// rather than the message strip's two: a badge here holds an icon alone, with
+// no count for the gap to be read as part of.
+const chatChipGap = " "
+
+// chatChips are the reactions on a chat's newest message, as the icons alone:
+// who reacted and how many did is the message pane's to say, where there is
+// room for names. A recall takes them with the body, the way the client does.
 //
-// The icons share one chip rather than wearing one each: at this width a cap
-// between every pair would cost more room than the icons themselves.
+// A badge stands for one reaction, so each icon wears its own, the way the
+// client draws them and the way the message strip already does.
 //
 // An emoji this terminal can draw neither as a character nor as a picture is
 // left out rather than spelled: its name at the head of the line would cost
 // more room than the message behind it.
 func chatChips(c store.Chat, pics emojiPics) []rowSeg {
-	if c.ChatMode != "p2p" || c.LastDeleted {
+	if c.LastDeleted {
 		return nil
 	}
 	var out []rowSeg
@@ -312,30 +317,30 @@ func chatChips(c store.Chat, pics emojiPics) []rowSeg {
 			break
 		}
 		e, known := emoji.ByKey(chip.Key)
-		var seg rowSeg
+		var badge []rowSeg
 		switch {
 		case !known:
 			continue
 		case e.Glyph != "":
-			seg = rowSeg{text: stChip.Render(e.Glyph)}
+			// A badge of characters stays one piece, so a strip made of them
+			// is ordinary text that a selected row can still tint.
+			badge = []rowSeg{{text: stChipEdge.Render(chipLeft) +
+				stChip.Render(e.Glyph) + stChipEdge.Render(chipRight)}}
 		default:
 			pic := pics.chip(e.Key, chatChipCols)
 			if pic.cols == 0 {
 				continue
 			}
-			seg = rowSeg{pic: pic}
+			badge = []rowSeg{{text: stChipEdge.Render(chipLeft)}, {pic: pic},
+				{text: stChipEdge.Render(chipRight)}}
 		}
 		if shown > 0 {
-			out = append(out, rowSeg{text: stChip.Render(" ")})
+			out = append(out, rowSeg{text: chatChipGap})
 		}
-		out = append(out, seg)
+		out = append(out, badge...)
 		shown++
 	}
-	if len(out) == 0 {
-		return nil
-	}
-	out = append(out, rowSeg{text: stChipEdge.Render(chipRight)})
-	return append([]rowSeg{{text: stChipEdge.Render(chipLeft)}}, out...)
+	return out
 }
 
 // chatSummaryLine is the row's second line: what the reader left unsent, then
@@ -345,12 +350,17 @@ func chatChips(c store.Chat, pics emojiPics) []rowSeg {
 func chatSummaryLine(c store.Chat, d store.Draft, self string, pics emojiPics, w int) (string, []rowSeg) {
 	mine := selfMark(d)
 	chips := chatChips(c, pics)
+	// The rule is what ends the strip: with a space alone the gap before the
+	// summary reads like the gap between two badges, and the message behind
+	// them like one more reaction. The mention badge that outranks the
+	// reactions is a single mark rather than a strip, so it needs no end.
+	sep := stDim.Render(chipRule) + " "
 	if at := atMeMark(c); at != "" {
-		chips = []rowSeg{{text: at}}
+		chips, sep = []rowSeg{{text: at}}, " "
 	}
 	room := w - segsWidth(chips) - lipgloss.Width(mine)
 	if len(chips) > 0 {
-		room-- // the space that keeps the summary clear of the icons
+		room -= lipgloss.Width(sep)
 	}
 	text, summary := chatSummary(c, self, pics)
 	body := []rowSeg{{text: padBetween(text, muteMark(c), max(0, room))}}
@@ -364,11 +374,15 @@ func chatSummaryLine(c store.Chat, d store.Draft, self string, pics emojiPics, w
 	}
 	segs = append(segs, chips...)
 	if len(chips) > 0 {
-		segs = append(segs, rowSeg{text: " "})
+		segs = append(segs, rowSeg{text: sep})
 	}
-	segs = append(segs, body...)
-	// A line made of characters alone stays one string, which is what lets a
-	// selection tint it; only a picture in it forces the pieces on the pane.
+	return oneLineOr(append(segs, body...))
+}
+
+// oneLineOr keeps a line of characters alone as one string, which is what
+// lets a selection tint it; only a picture in it forces the pieces on the
+// pane, which draws each of them itself.
+func oneLineOr(segs []rowSeg) (string, []rowSeg) {
 	if slices.ContainsFunc(segs, func(s rowSeg) bool { return s.pic.cols > 0 }) {
 		return "", segs
 	}
@@ -414,22 +428,14 @@ func markName(s string, pos []int, base lipgloss.Style) string {
 // is left, so the right edge stays aligned however long a name is. mark is
 // the runes of the name the filter landed on, empty when there is no filter
 // or the hit came through pinyin.
-func renderChatRow(av avatars, c store.Chat, d store.Draft, unread int64, self string, now time.Time, w int, pics emojiPics, mark []int) chatRow {
-	avatarTop, avatarBottom, badged := av.cells(c, unread)
+func renderChatRow(av avatars, r listRow, d store.Draft, unread int64, self string, now time.Time, w int, pics emojiPics, mark []int) chatRow {
+	c := r.chat
+	avatarTop, avatarBottom, badged := av.cells(r, unread)
 	textWidth := chatTextWidth(w)
 
 	badge := ""
-	switch {
-	case unread > 0 && !badged:
+	if unread > 0 && !badged {
 		badge = counterStyle(c).Render(strconv.FormatInt(unread, 10))
-	case c.ThreadWaiting:
-		// A thread the reader has a stake in has something new in it. It
-		// takes the count's own place and yields to a number: how many
-		// messages are waiting is the more pressing of the two, and the same
-		// glyph the summary line uses says at a glance which kind this is.
-		// Muted chats still get it, in the count's grey — silence asks not to
-		// be pulled, not not to be told.
-		badge = counterStyle(c).Render("⤷")
 	}
 	right := strings.TrimSpace(badge + " " + stDim.Render(chatTime(c.LastMessageMs, now)))
 
@@ -492,8 +498,8 @@ func padBetween(left, right string, w int) string {
 // messages waiting, and, at the far right, the dot that says the
 // do-not-disturb chats have something too. The dot sits in the column every row's mute mark
 // is right-aligned to, so the setting reads down a single column.
-func chatsHeader(chats []store.Chat, unread map[string]int64, filter string, w int) string {
-	n, muted := unreadMessages(chats, unread)
+func chatsHeader(rows []listRow, unread map[string]int64, filter string, w int) string {
+	n, muted := unreadMessages(rows, unread)
 	count, dot := "", ""
 	if label := badgeLabel(n); label != "" {
 		count = stUnread.Render(superscript(label))
@@ -516,19 +522,20 @@ func chatsHeader(chats []store.Chat, unread map[string]int64, filter string, w i
 }
 
 // unreadMessages sums the messages waiting for an answer and reports whether
-// any chat on do-not-disturb is among them. The sum is what the avatar badges
-// add up to, so the header and the rows below it state the same quantity.
+// any row on do-not-disturb is among them. The sum is what the badges below
+// add up to, so the header and the rows state the same quantity — a thread's
+// replies among them, since the thread carries a badge of its own here.
 // Muted chats stay out of it: the reader asked not to be counted at for them,
 // and the dot is all the header says about them. The filter is not applied —
 // hiding rows is a lens on the list, not a change to what is waiting.
-func unreadMessages(chats []store.Chat, unread map[string]int64) (n int64, muted bool) {
-	for _, c := range chats {
+func unreadMessages(rows []listRow, unread map[string]int64) (n int64, muted bool) {
+	for _, r := range rows {
 		switch {
-		case unread[c.ChatID] <= 0:
-		case c.Muted:
+		case r.unread(unread) <= 0:
+		case r.chat.Muted:
 			muted = true
 		default:
-			n += unread[c.ChatID]
+			n += r.unread(unread)
 		}
 	}
 	return n, muted
