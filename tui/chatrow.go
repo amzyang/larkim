@@ -400,8 +400,17 @@ func renderChatRow(av avatars, c store.Chat, d store.Draft, unread int64, self s
 	textWidth := chatTextWidth(w)
 
 	badge := ""
-	if unread > 0 && !badged {
+	switch {
+	case unread > 0 && !badged:
 		badge = counterStyle(c).Render(strconv.FormatInt(unread, 10))
+	case c.ThreadWaiting:
+		// A thread the reader has a stake in has something new in it. It
+		// takes the count's own place and yields to a number: how many
+		// messages are waiting is the more pressing of the two, and the same
+		// glyph the summary line uses says at a glance which kind this is.
+		// Muted chats still get it, in the count's grey — silence asks not to
+		// be pulled, not not to be told.
+		badge = counterStyle(c).Render("⤷")
 	}
 	right := strings.TrimSpace(badge + " " + stDim.Render(chatTime(c.LastMessageMs, now)))
 

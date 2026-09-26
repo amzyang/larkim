@@ -692,12 +692,10 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		wasOn, anchor, tailed := m.rightLanded(msg.msgs)
-		// The chat page carries the replies too, so the markers the reader
-		// arrived to are already lit; this pane only has to speak for what
-		// lands while they are away.
-		if !m.focused {
-			m.markDots(msg.msgs)
-		}
+		// The chat page carries no replies, so this pane is the only place
+		// their markers can be lit — and it runs before the settle below,
+		// which reads the flags this has just copied.
+		m.markDots(msg.msgs)
 		m.threadBase, m.threadMeta = msg.msgs, msg.meta
 		m.applyOutbox()
 		if m.threadIdx >= len(m.thread) {

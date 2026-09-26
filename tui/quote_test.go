@@ -38,7 +38,7 @@ func TestLoadMeta_LoadsTheQuotedParents(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, page, 1, "the parent is off the page")
 
-	meta, err := loadMeta(ctx, st, page)
+	meta, err := loadMeta(ctx, st, "ou_me", page)
 	require.NoError(t, err)
 	require.Equal(t, "瞅一眼", meta.parents["om_old"].Content)
 	require.Equal(t, "01", meta.suffix["ou_a"], "the quoted sender is named as the lists name them")

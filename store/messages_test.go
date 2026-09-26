@@ -146,10 +146,70 @@ func TestThreadGists_CountsTheRepliesAndTakesTheNewest(t *testing.T) {
 	}, 1)
 	require.NoError(t, err)
 
-	got, err := s.ThreadGists(ctx, []string{"omt_1", "omt_2"})
+	got, err := s.ThreadGists(ctx, []string{"omt_1", "omt_2"}, "ou_me")
 	require.NoError(t, err)
 	require.Equal(t, 2, got["omt_1"].Replies, "the root is not a reply, and a recalled one is gone")
 	require.Equal(t, "王五", got["omt_1"].SenderName, "a thread is alive, so the newest word is its state")
 	require.Equal(t, `{"text":"1234"}`, got["omt_1"].ContentRaw)
 	require.NotContains(t, got, "omt_2", "a thread with nothing in it has no line to draw from here")
+}
+
+func TestThreadGists_WaitingOnlyForAThreadIAmIn(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	// omt_1: I spoke in it. omt_2: somebody @'d me. omt_3: neither.
+	rows := []Message{
+		{MessageID: "om_r1", ChatID: "oc_a", MsgType: "text", CreateMs: 110, MessagePosition: -1,
+			ThreadID: "omt_1", SenderID: "ou_me", ContentRaw: `{"text":"我回过"}`, RawJSON: "{}"},
+		{MessageID: "om_r2", ChatID: "oc_a", MsgType: "text", CreateMs: 120, MessagePosition: -2,
+			ThreadID: "omt_1", SenderID: "ou_x", ContentRaw: `{"text":"新的"}`, RawJSON: "{}"},
+		{MessageID: "om_r3", ChatID: "oc_a", MsgType: "text", CreateMs: 130, MessagePosition: -1,
+			ThreadID: "omt_2", SenderID: "ou_x", ContentRaw: `{"text":"@我"}`, RawJSON: "{}"},
+		{MessageID: "om_r4", ChatID: "oc_a", MsgType: "text", CreateMs: 140, MessagePosition: -1,
+			ThreadID: "omt_3", SenderID: "ou_x", ContentRaw: `{"text":"与我无关"}`, RawJSON: "{}"},
+	}
+	_, err := s.UpsertMessages(ctx, rows, 1)
+	require.NoError(t, err)
+	require.NoError(t, s.UpdateRendered(ctx, "om_r3", "@林岚 看下", `[{"key":"@_user_1","id":"ou_me","name":"林岚"}]`, "", 2))
+	for _, r := range rows {
+		markUnreadMsg(t, s, r.MessageID)
+	}
+
+	got, err := s.ThreadGists(ctx, []string{"omt_1", "omt_2", "omt_3"}, "ou_me")
+	require.NoError(t, err)
+	require.True(t, got["omt_1"].Waiting, "I took a turn in it")
+	require.True(t, got["omt_2"].Waiting, "it called my name")
+	require.False(t, got["omt_3"].Waiting,
+		"a thread nobody asked me about is somebody else's conversation")
+}
+
+func TestThreadGists_ASilencedOrReadReplyIsNotWaiting(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	quiet := Message{MessageID: "om_quiet", ChatID: "oc_a", MsgType: "text", CreateMs: 110,
+		MessagePosition: -1, ThreadID: "omt_1", SenderID: "ou_me", ContentRaw: `{"text":"我回过"}`, RawJSON: "{}"}
+	_, err := s.UpsertMessages(ctx, []Message{quiet}, 1)
+	require.NoError(t, err)
+	markUnreadMsg(t, s, "om_quiet")
+	got, err := s.ThreadGists(ctx, []string{"omt_1"}, "ou_me")
+	require.NoError(t, err)
+	require.True(t, got["omt_1"].Waiting)
+
+	_, err = s.db.ExecContext(ctx, `UPDATE messages SET silenced = 1 WHERE message_id = 'om_quiet'`)
+	require.NoError(t, err)
+	got, _ = s.ThreadGists(ctx, []string{"omt_1"}, "ou_me")
+	require.False(t, got["omt_1"].Waiting, "silence is what unreadCounted already says")
+
+	require.NoError(t, s.MarkThreadRead(ctx, "omt_1", 5000))
+	_, err = s.db.ExecContext(ctx, `UPDATE messages SET silenced = 0 WHERE message_id = 'om_quiet'`)
+	require.NoError(t, err)
+	got, _ = s.ThreadGists(ctx, []string{"omt_1"}, "ou_me")
+	require.False(t, got["omt_1"].Waiting, "and a settled reply is settled whether it was silenced or not")
+}
+
+// markUnreadMsg gives a message a read_state row Feishu still reports unread.
+func markUnreadMsg(t *testing.T, s *Store, id string) {
+	t.Helper()
+	unread := false
+	require.NoError(t, s.SetReadStatus(t.Context(), id, &unread, 1, 0))
 }

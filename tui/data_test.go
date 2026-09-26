@@ -33,7 +33,7 @@ func TestLoadMeta_NamesTheReactorsTheBlockOnlyHoldsIDsFor(t *testing.T) {
 	msgs := []store.Message{{MessageID: "om_a", ChatID: "oc_a", SenderID: "ou_a", SenderName: "张三",
 		ReactionsJSON: `{"counts":[{"reaction_type":"OK","count":"1"}],
 		  "details":[{"emoji_type":"OK","action_time":"1790155041","operator":{"operator_id":"ou_b"}}]}`}}
-	meta, err := loadMeta(ctx, st, msgs)
+	meta, err := loadMeta(ctx, st, "ou_me", msgs)
 	require.NoError(t, err)
 	require.Equal(t, "李四", meta.people["ou_b"], "the block holds an id alone; the name comes from the contacts")
 }

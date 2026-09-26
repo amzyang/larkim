@@ -48,6 +48,11 @@ type Chat struct {
 	// somebody waiting on me here", which the last_* summary cannot, since a
 	// mention stops being the newest message as soon as anyone replies.
 	UnreadMention bool `json:"unread_mention,omitempty"`
+	// ThreadWaiting says a thread in this chat holds an unread reply the
+	// reader has a stake in. Derived per query like UnreadCount, and outside
+	// the badge on purpose: it marks the chat without counting it and without
+	// moving it up the list.
+	ThreadWaiting bool `json:"thread_waiting,omitempty"`
 
 	// LastMentionsJSON is that message's rendered mentions, the same
 	// `[{key,id,name}]` messages.mentions_json holds.
@@ -135,7 +140,7 @@ func scanChat(sc scanner) (Chat, error) {
 // scanListChat reads chatColumns plus the unread count ListChats appends.
 func scanListChat(sc scanner) (Chat, error) {
 	var c Chat
-	return c, sc.Scan(append(chatDest(&c), &c.UnreadCount, &c.UnreadMention)...)
+	return c, sc.Scan(append(chatDest(&c), &c.UnreadCount, &c.UnreadMention, &c.ThreadWaiting)...)
 }
 
 // UpsertChats inserts or refreshes chats from a listing; sync-owned columns
@@ -274,21 +279,55 @@ const unreadAggregate = `SELECT m.chat_id, count(*) AS n, %s AS at_me FROM messa
 // from two different revisions of the database.
 const unreadJoin = `LEFT JOIN (` + unreadAggregate + `) u ON u.chat_id = c.chat_id `
 
-// namesSelf tests whether a message names one person. The needle carries the
-// JSON field around the id so that one open id cannot match another that
-// merely starts with it.
+// namesPerson tests whether the message under one table alias names one
+// person. The needle carries the JSON field around the id so that one open id
+// cannot match another that merely starts with it.
 //
 // Matching text rather than parsing rests on mentions_json being stored
 // minified, which compactJSON guarantees on every write. lark-cli indents what
 // it prints, so a row written around that normalisation matches nothing and
 // takes the @ marker and the mentions panel down with it, silently.
-const namesSelf = `instr(m.mentions_json, '"id":"' || ? || '"') > 0`
+func namesPerson(alias string) string {
+	return `instr(` + alias + `.mentions_json, '"id":"' || ? || '"') > 0`
+}
+
+// namesSelf is namesPerson on the message a query is already walking.
+var namesSelf = namesPerson("m")
 
 // atMeExpr flags a chat holding an unread message that names the reader. It
 // rides the unread aggregate rather than the chat's last_* summary, because a
 // mention five messages back is still waiting: the client keeps the marker on
 // the chat until it is read, not until it is pushed off the summary line.
-const atMeExpr = `MAX(` + namesSelf + `)`
+var atMeExpr = `MAX(` + namesSelf + `)`
+
+// threadStake is the reader's standing in the thread a reply belongs to: a
+// turn taken — the root counts — or a name called. A thread nobody asked them
+// about is somebody else's conversation, which is why the badge leaves
+// replies out in the first place, and why this marker is not simply "some
+// thread here has something unread".
+func threadStakeOn(alias string) string {
+	// thread_id <> '' is spelled out although the join already implies it:
+	// messages_thread is a partial index on that predicate, and the planner
+	// will not carry the condition across the correlation by itself. Without
+	// it the stake scans the whole of messages once per unread reply.
+	return `EXISTS (SELECT 1 FROM messages t WHERE t.thread_id <> '' AND t.thread_id = ` + alias + `.thread_id
+ AND t.deleted = 0 AND (t.sender_id = ? OR ` + namesPerson("t") + `))`
+}
+
+var threadStake = threadStakeOn("m")
+
+// threadWaitingExpr flags a chat holding an unread reply in such a thread.
+var threadWaitingExpr = `MAX(` + threadStake + `)`
+
+// threadAggregate answers that question for every chat in one grouped pass,
+// beside the badge's own. The chat list marks these chats without counting
+// them and without moving them: a thread exists so that answering an old
+// topic does not pull the whole chat back into everyone's view, and a number
+// or a reordering would be that pull.
+const threadAggregate = `SELECT m.chat_id, %s AS waiting FROM messages m JOIN read_state r ON r.message_id = m.message_id
+ WHERE m.message_position < 0 AND m.thread_id <> '' AND m.silenced = 0 AND ` + stillUnread + ` GROUP BY m.chat_id`
+
+const threadJoin = `LEFT JOIN (` + threadAggregate + `) w ON w.chat_id = c.chat_id `
 
 // ListChats returns the chats newest message first. Unread does not lift a
 // chat: reading one is news about the reader, not about the chat, and a sort
@@ -308,14 +347,15 @@ func (s *Store) ListChats(ctx context.Context, q ChatQuery) ([]Chat, error) {
 	if !q.IncludeLeft {
 		where = append(where, "c.left_at = 0")
 	}
-	// The aggregate's placeholder comes before any WHERE of its own, so the
-	// reader's id goes to the front of the argument list.
-	atMe := "0"
+	// Both aggregates carry their placeholders ahead of any WHERE of the
+	// listing's own, so the reader's id goes to the front of the argument
+	// list — three times, once for the mention and twice for the stake.
+	atMe, waiting := "0", "0"
 	if q.Self != "" {
-		atMe = atMeExpr
-		args = append([]any{q.Self}, args...)
+		atMe, waiting = atMeExpr, threadWaitingExpr
+		args = append([]any{q.Self, q.Self, q.Self}, args...)
 	}
-	tail := fmt.Sprintf(unreadJoin, atMe)
+	tail := fmt.Sprintf(unreadJoin, atMe) + fmt.Sprintf(threadJoin, waiting)
 	if len(where) > 0 {
 		tail += "WHERE " + strings.Join(where, " AND ") + " "
 	}
@@ -330,7 +370,8 @@ func (s *Store) ListChats(ctx context.Context, q ChatQuery) ([]Chat, error) {
 	tail += "ORDER BY c.last_unsilenced_ms DESC, c.last_message_ms DESC, c.name, c.chat_id LIMIT ?"
 	args = append(args, limit)
 	return queryAll(ctx, s.db, scanListChat,
-		`SELECT `+chatColumns+`, COALESCE(u.n, 0) AS unread_count, COALESCE(u.at_me, 0) AS at_me FROM chats c LEFT JOIN contacts ct ON ct.open_id = c.p2p_target_id `+tail, args...)
+		`SELECT `+chatColumns+`, COALESCE(u.n, 0) AS unread_count, COALESCE(u.at_me, 0) AS at_me,
+ COALESCE(w.waiting, 0) AS thread_waiting FROM chats c LEFT JOIN contacts ct ON ct.open_id = c.p2p_target_id `+tail, args...)
 }
 
 // MessageCountsByChat counts the stored messages of every chat that has one,

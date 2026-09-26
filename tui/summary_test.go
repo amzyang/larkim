@@ -288,3 +288,40 @@ func TestMessageQuery_FoldsThreadRepliesOutOfTheChatFlow(t *testing.T) {
 	require.True(t, messageQuery("oc_a", 1000).ExcludeThreadReplies,
 		"a limit spent on rows the page will not draw is a page short of messages")
 }
+
+func TestRenderRows_AThreadSummaryCarriesTheUnreadDot(t *testing.T) {
+	waiting := store.ThreadGist{Replies: 3, Waiting: true, SenderName: "李四",
+		MsgType: "text", ContentRaw: `{"text":"1234"}`}
+	rows := renderRows([]store.Message{theRoot()}, threadStyle(waiting))
+	require.Contains(t, marks(rows), "●", "the replies are off the page, so this line speaks for them")
+
+	quiet := waiting
+	quiet.Waiting = false
+	rows = renderRows([]store.Message{theRoot()}, threadStyle(quiet))
+	require.NotContains(t, marks(rows), "●")
+}
+
+func TestClearBlockDots_LeavesAThreadSummaryLit(t *testing.T) {
+	// The dot comes from the read flags, not from the dots this visit
+	// gathered, so walking the cursor onto the root cannot wipe a reply
+	// nobody has seen.
+	m := sized(140, 36)
+	m.msgsBase = []store.Message{theRoot()}
+	m.meta.threads = map[string]store.ThreadGist{"omt_1": {Replies: 3, Waiting: true,
+		SenderName: "李四", MsgType: "text", ContentRaw: `{"text":"1234"}`}}
+	m.applyOutbox()
+	m.msgIdx = 0
+	m.clearDotsAtCursor()
+	m.rebuildMessages()
+
+	require.Contains(t, marks(m.msgRows), "●")
+}
+
+// marks is the marker column of every row, styles stripped.
+func marks(rows []msgRow) string {
+	var b strings.Builder
+	for _, r := range rows {
+		b.WriteString(markOf(r))
+	}
+	return b.String()
+}

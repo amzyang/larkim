@@ -388,3 +388,32 @@ func TestChatSummary_NamesACardBySummaryRatherThanItsBand(t *testing.T) {
 	require.Contains(t, bottom, "应用 order-api 普通预警")
 	require.NotContains(t, bottom, "告警：", "the band is on every card this bot posts")
 }
+
+func TestRenderChatRow_MarksAChatWhoseOnlyUnreadIsAThread(t *testing.T) {
+	c := store.Chat{ChatID: "oc_a", Name: "平台组", ChatMode: "group", ThreadWaiting: true}
+
+	row := renderChatRow(textAvatars{}, c, store.Draft{}, 0, "ou_me", testNow, 38, emojiPics{}, nil)
+
+	require.Contains(t, ansi.Strip(row.top), "⤷",
+		"the chat list is the only place that can say a thread has something new")
+}
+
+func TestRenderChatRow_TheCountKeepsTheBadgeSlot(t *testing.T) {
+	c := store.Chat{ChatID: "oc_a", Name: "平台组", ChatMode: "group", ThreadWaiting: true}
+
+	row := renderChatRow(textAvatars{}, c, store.Draft{}, 3, "ou_me", testNow, 38, emojiPics{}, nil)
+
+	top := ansi.Strip(row.top)
+	require.Contains(t, top, "3", "how many messages are waiting is the more pressing of the two")
+	require.NotContains(t, top, "⤷")
+}
+
+func TestRenderChatRow_AMutedChatStillSaysSo(t *testing.T) {
+	// Silence asks not to be pulled, not not to be told; the count is drawn
+	// grey on a muted chat for the same reason rather than left out.
+	c := store.Chat{ChatID: "oc_a", Name: "平台组", ChatMode: "group", ThreadWaiting: true, Muted: true}
+
+	row := renderChatRow(textAvatars{}, c, store.Draft{}, 0, "ou_me", testNow, 38, emojiPics{}, nil)
+
+	require.Contains(t, ansi.Strip(row.top), "⤷")
+}

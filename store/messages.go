@@ -436,7 +436,13 @@ func (s *Store) ThreadReplyCounts(ctx context.Context, chatID string, threadIDs 
 // state of it — unlike a forward, which is frozen and opens with its own
 // first line.
 type ThreadGist struct {
-	Replies    int
+	Replies int
+	// Waiting says a reply in here is still owed an answer from the reader:
+	// unread, unsilenced, and in a thread they have a stake in — they spoke
+	// in it, the root counting as their turn, or a reply named them. A thread
+	// nobody asked them about is somebody else's conversation, which is why
+	// the badge leaves replies out in the first place.
+	Waiting    bool
 	SenderID   string
 	SenderName string
 	MsgType    string
@@ -457,27 +463,44 @@ func (g ThreadGist) Last() Message {
 // the API hands out several such sentinels, so the sign is the only thing to
 // test. The stored rows are read rather than a loaded page, which would
 // undercount a thread whose root is older than the page.
-func (s *Store) ThreadGists(ctx context.Context, threadIDs []string) (map[string]ThreadGist, error) {
+func (s *Store) ThreadGists(ctx context.Context, threadIDs []string, self string) (map[string]ThreadGist, error) {
 	out := make(map[string]ThreadGist, len(threadIDs))
 	type row struct {
 		id string
 		g  ThreadGist
 	}
+	// An empty reader marks nothing rather than everything: instr with an
+	// empty needle answers 1 on any string, the way ChatQuery.Self guards.
+	stake := "0"
+	if self != "" {
+		stake = threadStakeOn("x")
+	}
 	for chunk := range slices.Chunk(threadIDs, 500) {
+		// The stake stands in the outer select, textually ahead of the
+		// subquery, so its ids bind before the thread list — and it is
+		// evaluated once per thread rather than once per reply.
+		args := anySlice(chunk)
+		if self != "" {
+			args = append([]any{self, self}, args...)
+		}
 		// The newest reply is the last one in the list's own order, so the
 		// window walks the canonical sort key backwards rather than taking
 		// max(id), which is the order rows were ingested in.
 		rows, err := queryAll(ctx, s.db, func(sc scanner) (row, error) {
 			var r row
-			err := sc.Scan(&r.id, &r.g.Replies, &r.g.SenderID, &r.g.SenderName, &r.g.MsgType,
-				&r.g.Content, &r.g.ContentRaw, &r.g.RenderedAt)
+			err := sc.Scan(&r.id, &r.g.Replies, &r.g.Waiting, &r.g.SenderID, &r.g.SenderName,
+				&r.g.MsgType, &r.g.Content, &r.g.ContentRaw, &r.g.RenderedAt)
 			return r, err
-		}, `SELECT thread_id, n, sender_id, sender_name, msg_type, content, content_raw, rendered_at FROM (
- SELECT thread_id, sender_id, sender_name, msg_type, content, content_raw, rendered_at,
-   count(*) OVER (PARTITION BY thread_id) AS n,
-   row_number() OVER (PARTITION BY thread_id ORDER BY create_ms DESC, message_position DESC, id DESC) AS rn
- FROM messages WHERE message_position < 0 AND deleted = 0 AND thread_id IN `+inClause(len(chunk))+`
-) WHERE rn = 1`, anySlice(chunk)...)
+		}, `SELECT x.thread_id, x.n, x.unread AND (`+stake+`), x.sender_id, x.sender_name,
+ x.msg_type, x.content, x.content_raw, x.rendered_at FROM (
+ SELECT m.thread_id, m.sender_id, m.sender_name, m.msg_type, m.content, m.content_raw, m.rendered_at,
+   count(*) OVER (PARTITION BY m.thread_id) AS n,
+   MAX(CASE WHEN m.silenced = 0 AND `+stillUnread+` THEN 1 ELSE 0 END)
+     OVER (PARTITION BY m.thread_id) AS unread,
+   row_number() OVER (PARTITION BY m.thread_id ORDER BY m.create_ms DESC, m.message_position DESC, m.id DESC) AS rn
+ FROM messages m LEFT JOIN read_state r ON r.message_id = m.message_id
+ WHERE m.message_position < 0 AND m.deleted = 0 AND m.thread_id IN `+inClause(len(chunk))+`
+) x WHERE x.rn = 1`, args...)
 		if err != nil {
 			return nil, err
 		}

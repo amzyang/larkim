@@ -74,6 +74,14 @@ func threadSummary(x store.Message, idx int, st msgStyle, g *leads) (msgRow, boo
 		tail = " · " + displaySender(last, st.self, st.suffix[gist.SenderID]) + ": " + replyGist(last)
 	}
 	lead := g.take()
+	if gist.Waiting {
+		// The dot is set here rather than through leadFor, which only reaches
+		// a message's first row: by the time this line is drawn the sender
+		// line and any quote have already spent it. It is derived from the
+		// read flags, not from the dots this visit gathered, so walking the
+		// cursor past the root cannot wipe a reply nobody has seen.
+		lead.mark = stAccent.Render("●")
+	}
 	x0 := lead.cols()
 	text := stAccent.Render(head) + stDim.Render(truncate(tail, st.inner()-lipgloss.Width(head)))
 	return msgRow{lead: lead, text: text, idx: idx, zones: []clickZone{{

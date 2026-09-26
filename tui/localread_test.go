@@ -261,3 +261,28 @@ func TestMove_SearchHitsKeepTheirMarker(t *testing.T) {
 	require.True(t, m.dots["om_a"], "a hit the reader has not opened is still waiting")
 	require.Contains(t, rowText(m.msgRows), "●")
 }
+
+func TestThreadLoaded_LightsAMarkerForAReplyTheChatPaneNeverShowed(t *testing.T) {
+	m, st := readModel(t)
+	ctx := context.Background()
+	_, err := st.UpsertMessages(ctx, []store.Message{
+		{MessageID: "om_root", ChatID: "oc_a", MsgType: "text", SenderID: "ou_x", SenderName: "张三",
+			ContentRaw: `{"text":"一个老话题"}`, CreateMs: 150, UpdateMs: 150, MessagePosition: 2, ThreadID: "omt_1"},
+		{MessageID: "om_reply", ChatID: "oc_a", MsgType: "text", SenderID: "ou_x", SenderName: "张三",
+			ContentRaw: `{"text":"接着上面那个话题"}`, CreateMs: 200, UpdateMs: 200, MessagePosition: -3, ThreadID: "omt_1"},
+	}, 1)
+	require.NoError(t, err)
+	unread := false
+	require.NoError(t, st.SetReadStatus(ctx, "om_reply", &unread, 200, 0))
+	m.chatID = "oc_a"
+
+	// The chat's page carries no replies, so this pane is the only place
+	// their markers can be lit.
+	m.rightKind, m.threadID = rightThread, "omt_1"
+	next, cmd := m.Update(loadThread(Deps{Store: st}, "omt_1")().(threadLoadedMsg))
+	m = next.(Model)
+	collect(cmd)
+
+	require.True(t, m.dots["om_reply"])
+	require.Contains(t, rowText(m.threadRows), "●")
+}

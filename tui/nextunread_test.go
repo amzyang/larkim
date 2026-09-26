@@ -5,6 +5,7 @@ import (
 
 	"github.com/amzyang/larkim/store"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func chatList(ids ...string) []store.Chat {
@@ -110,4 +111,17 @@ func TestJumpUnread_NothingWaitingLeavesTheCursorAlone(t *testing.T) {
 	assert.Equal(t, 1, m.chatIdx)
 	assert.Nil(t, cmd)
 	assert.Contains(t, m.notice, "nothing unread")
+}
+
+func TestNextUnread_SkipsAChatWhoseOnlyUnreadIsAThread(t *testing.T) {
+	// n means "clear the queue", and the queue is the badge's. Two levels of
+	// waiting would stop it being a key anybody can learn.
+	chats := []store.Chat{
+		{ChatID: "oc_thread", ThreadWaiting: true},
+		{ChatID: "oc_badge"},
+	}
+	unread := map[string]int64{"oc_badge": 2}
+
+	require.Equal(t, 1, nextUnread(chats, unread, 0, 1))
+	require.Equal(t, -1, nextUnread(chats[:1], map[string]int64{}, 0, 1))
 }

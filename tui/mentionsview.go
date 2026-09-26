@@ -31,7 +31,7 @@ func loadMentions(d Deps) tea.Cmd {
 		if err != nil {
 			return errMsg{err}
 		}
-		meta, err := loadMeta(ctx, d.Store, msgs)
+		meta, err := loadMeta(ctx, d.Store, d.Self, msgs)
 		if err != nil {
 			return errMsg{err}
 		}

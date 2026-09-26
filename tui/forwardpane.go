@@ -47,7 +47,7 @@ func loadForward(d Deps, bundleID, level string) tea.Cmd {
 		for _, k := range kids {
 			rows = append(rows, forwardedRow(k))
 		}
-		meta, err := loadMeta(ctx, d.Store, rows)
+		meta, err := loadMeta(ctx, d.Store, d.Self, rows)
 		if err != nil {
 			return errMsg{err}
 		}

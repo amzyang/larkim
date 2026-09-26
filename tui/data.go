@@ -175,7 +175,7 @@ type msgMeta struct {
 	threads  map[string]store.ThreadGist
 }
 
-func loadMeta(ctx context.Context, st *store.Store, msgs []store.Message) (msgMeta, error) {
+func loadMeta(ctx context.Context, st *store.Store, self string, msgs []store.Message) (msgMeta, error) {
 	msgIDs := make([]string, 0, len(msgs))
 	ids := make([]string, 0, len(msgs))
 	var parentIDs []string
@@ -246,7 +246,7 @@ func loadMeta(ctx context.Context, st *store.Store, msgs []store.Message) (msgMe
 	if err != nil {
 		return msgMeta{}, err
 	}
-	gists, err := st.ThreadGists(ctx, threads)
+	gists, err := st.ThreadGists(ctx, threads, self)
 	if err != nil {
 		return msgMeta{}, err
 	}
@@ -281,7 +281,7 @@ func localSearch(d Deps, chats []store.Chat, query string, gen int) tea.Cmd {
 		if err != nil {
 			return errMsg{err}
 		}
-		meta, err := loadMeta(ctx, d.Store, msgs)
+		meta, err := loadMeta(ctx, d.Store, d.Self, msgs)
 		if err != nil {
 			return errMsg{err}
 		}
@@ -382,7 +382,7 @@ func loadMessages(d Deps, chatID string, sinceMs int64) tea.Cmd {
 		if q.Desc {
 			slices.Reverse(rows)
 		}
-		meta, err := loadMeta(ctx, d.Store, rows)
+		meta, err := loadMeta(ctx, d.Store, d.Self, rows)
 		if err != nil {
 			return errMsg{err}
 		}
@@ -411,7 +411,7 @@ func loadThread(d Deps, threadID string) tea.Cmd {
 		if err != nil {
 			return errMsg{err}
 		}
-		meta, err := loadMeta(ctx, d.Store, rows)
+		meta, err := loadMeta(ctx, d.Store, d.Self, rows)
 		if err != nil {
 			return errMsg{err}
 		}

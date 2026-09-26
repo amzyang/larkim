@@ -292,6 +292,8 @@ func forwardSummary(x store.Message, idx int, st msgStyle, g *leads) (msgRow, bo
 
 `applyOutbox`（tui/outbox.go）靠 `it.chatID == m.chatID` 把待发的话题内消息放进主流，折叠后它会闪一下再消失，所以加 `&& !it.inThread`。
 
+`threadLoadedMsg` 那一臂原本只在终端失焦时 `markDots`，理由是「会话页面也带着这些回复」。折叠后不成立，守卫去掉：这个面板是它们的标记唯一能亮的地方。它排在结算之前，读的正是结算即将清掉的那批标志。
+
 `tui/readgate.go` 的 `readKey` 谓词跟着取 `unreadBadge`。它注释里关于「窄化会让只有回复未读的会话永远结算不掉」的警告因折叠而自动解除——回复不在页面上，也就没有要重画的标记。
 
 `docs/silence/TECH.md` 与 `docs/read-sync/TECH.md` 都按名引用过这两个集合，跟着改。
@@ -302,33 +304,25 @@ func forwardSummary(x store.Message, idx int, st msgStyle, g *leads) (msgRow, bo
 
 ```sql
 -- A stake is either turn taken or name called: any row of mine in the thread,
--- the root included, or a mention of me on any of its messages. Silenced
--- replies light nothing, on the rule unreadCounted already states — but
--- MarkThreadRead still settles them, or one would keep the dot lit for good.
-EXISTS (SELECT 1 FROM messages t
-          WHERE t.chat_id = m.chat_id AND t.thread_id = m.thread_id
-            AND t.deleted = 0 AND (t.sender_id = ? OR <namesSelf on t>))
+-- the root included, or a mention of me on any of its messages.
+EXISTS (SELECT 1 FROM messages t WHERE t.thread_id <> '' AND t.thread_id = x.thread_id
+          AND t.deleted = 0 AND (t.sender_id = ? OR <namesPerson("t")>))
 ```
 
-`namesSelf`（store/chats.go:285）钉在别名 `m` 上，这里要一个同式的 `t` 版本；把它改成接受别名的构造器比复制一份好。
+`thread_id <> ''` 要写出来，哪怕 join 已经蕴含它：`messages_thread` 是建在这个谓词上的部分索引，而计划器不会自己把条件跨相关子查询带过去。少了它，每条未读回复都要全表扫一遍 `messages`——`TestListChats_ThreadAggregateDrivesFromReadState` 就是锁这个的。
 
-两个查询，两种形状：
+`namesSelf` 原本钉死在别名 `m` 上，改成 `namesPerson(alias)` 构造器；`threadStakeOn(alias)` 同理，因为它在两个查询里挂在不同的别名下。
 
-```go
-// UnreadThreadsIn names the threads of one chat holding an unread reply the
-// reader has a stake in, for the dot on the summary line.
-func (s *Store) UnreadThreadsIn(ctx context.Context, chatID, self string) (map[string]bool, error)
+判据不新增查询，挂在两条已有的路上：
 
-// ChatsWithUnreadThreads is the same rule across every chat, for the list's
-// marker. One query for the whole pane: the alternative is a subquery per row.
-func (s *Store) ChatsWithUnreadThreads(ctx context.Context, self string) (map[string]bool, error)
-```
+- **摘要行的圆点**走 `ThreadGists(ctx, threadIDs, self)` 新增的 `Waiting`：未读、未静音、且我有份。静音那条照 `unreadCounted` 的规矩不点亮，但 `MarkThreadRead` 仍然收它——否则一条静音回复会把这行永远点着。
+- **会话列表的记号**走 `ListChats` 新增的第二个聚合 join，落在 `Chat.ThreadWaiting`。与徽章数走同一趟查询，不另开一次：`unreadJoin` 的注释写着理由，一个会话的数字和它的位置不能来自两个不同版本的库。
 
-前者进 `msgMeta`，与 `ThreadReplyCounts` 同一趟；后者随 `m.unread` 一起加载。
+圆点由读态派生，不进 `m.dots`：`clearDotsAtCursor` 收的是光标走过的那一块，而根消息早就读过了；把它并进去，光标扫过根就会抹掉读者没看过的回复。
 
 ### 会话列表的记号
 
-`renderChatRow`（tui/chatrow.go:398）右侧今天是 `badge + " " + 时间`。记号占 `badge` 位：有计数未读时让位给数字（数字更要紧），没有时画 `stAccent.Render("⤷")`，与摘要行同一个符号，读者一眼认得出是话题。静音会话照画，但走 `counterStyle`（tui/chatrow.go:426）的灰——静音说的是「别拉我」，不是「别告诉我」。
+`renderChatRow`（tui/chatrow.go）右侧今天是 `badge + " " + 时间`。记号占 `badge` 位：有计数未读时让位给数字（数字更要紧），没有时画 `⤷`，与摘要行同一个符号，读者一眼认得出是话题。两者都走 `counterStyle`，所以静音会话照画、照样是灰的——静音说的是「别拉我」，不是「别告诉我」。
 
 `nextUnread` / `waitingFor`（tui/nextunread.go:14）不认这个记号。`n` 的含义是清队列，队列就是徽章那一份；分两级之后它不再是一个能学会的键。
 
@@ -448,11 +442,16 @@ type pendingJump struct{ id, thread string }
 | `TestPushRight_AThreadFrameSettlesOnOpen` | 打开即结算，不看滚动 |
 | `TestThreadLoaded_ANewReplySettlesWhileTheFrameIsOnTop` | 帧在栈顶时新回复随到随清 |
 | `TestThreadLoaded_ABuriedFrameKeepsItsRepliesUnread` | 被压住不结算 |
-| `TestUnreadThreadsIn_NamesOnlyTheThreadsIAmIn` | 参与判据：说过话或被 @ |
-| `TestUnreadThreadsIn_ASilencedReplyLightsNothing` | 静音不点亮 |
-| `TestRenderRows_ASummaryLineCarriesTheUnreadDot` | 圆点落在摘要行的 lead 上 |
-| `TestRenderChatRow_MarksAChatWhoseOnlyUnreadIsMyThread` | 会话列表记号 |
+| `TestThreadGists_WaitingOnlyForAThreadIAmIn` | 参与判据：说过话或被 @ |
+| `TestThreadGists_ASilencedOrReadReplyIsNotWaiting` | 静音不点亮，结算后也不亮 |
+| `TestListChats_MarksAChatWhoseOnlyUnreadIsAThreadIAmIn` | 会话列表记号，不计数不排序 |
+| `TestListChats_WithoutAReaderNothingIsWaiting` | 空 needle 不匹配所有人 |
+| `TestListChats_ThreadAggregateDrivesFromReadState` | 记号的代价与它标的东西同阶 |
+| `TestRenderRows_AThreadSummaryCarriesTheUnreadDot` | 圆点落在摘要行的 lead 上 |
+| `TestClearBlockDots_LeavesAThreadSummaryLit` | 光标扫过根不抹掉回复 |
+| `TestRenderChatRow_MarksAChatWhoseOnlyUnreadIsAThread` | 会话列表记号 |
 | `TestRenderChatRow_TheCountKeepsTheBadgeSlot` | 有计数时数字优先 |
+| `TestRenderChatRow_AMutedChatStillSaysSo` | 静音照画，灰的 |
 | `TestNextUnread_SkipsAChatWhoseOnlyUnreadIsAThread` | `n` 不认记号 |
 | `TestOpenHit_AThreadReplyLandsInsideItsThreadFrame` | 搜索落地压帧并选中 |
 | `TestOpenHit_AHitInsideABundleLandsOnTheBundle` | 转发内部命中不自动展开 |
@@ -469,6 +468,8 @@ type pendingJump struct{ id, thread string }
 | 2 | 右栏改栈 + 合并转发折叠 + 转发帧 + 点击 | 主要收益落地 |
 | 3 | 话题折叠 + 摘要 + 落地压帧 + `MarkChatRead` 收窄 + `MarkThreadRead` | 与客户端对齐 |
 | 4 | 未读的可见性：参与判据、摘要圆点、列表记号、`markDots` 的焦点守卫 | 读者看得见哪条话题有新东西 |
+
+四期走完，`docs/containers/` 就是这套行为的终态描述。
 
 二需要一；三需要二；四需要三。
 
