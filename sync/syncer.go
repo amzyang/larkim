@@ -1,6 +1,7 @@
 package sync
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -35,6 +36,9 @@ type Options struct {
 	BackfillPerTick   int
 	RenderPerTick     int // batches of 50
 	DownloadPerTick   int // batches of 50 messages with due resources
+	// ForwardsPerTick bounds one tick's merged-forward expansions. The
+	// endpoint takes one bundle per call, so this is a count of calls.
+	ForwardsPerTick   int
 	ReadStatusPerTick int // batches of 50; the fallback behind probeReadStatus
 	// DocLinksPerTick bounds one tick's document-title reads, in batches of
 	// larkcli.MaxDocTokensPerBatch.
@@ -68,6 +72,7 @@ func OptionsFrom(cfg config.Config) Options {
 		BackfillPerTick:       10,
 		RenderPerTick:         4,
 		DownloadPerTick:       1,
+		ForwardsPerTick:       3,
 		ReadStatusPerTick:     1,
 		DocLinksPerTick:       1,
 		RepairEvery:           cfg.RepairEvery,
@@ -157,6 +162,7 @@ type Report struct {
 	Probed     int // messages new to the store that the activity probe reached first
 	History    int // messages discovered by the historical search slice
 	Downloaded int // attachments stored
+	Forwards   int // merged-forward bundles expanded
 	ReadChecks int // read-status answers recorded
 	Reactions  int // p2p chats whose newest message was asked about
 	Repaired   int // messages re-listed by the repair pass
@@ -173,7 +179,7 @@ type Report struct {
 // detail, a tick that landed something is a record.
 func (r Report) changed() bool {
 	return r.New > 0 || r.Rendered > 0 || r.Backfilled > 0 || r.SlowPath > 0 ||
-		r.Downloaded > 0 || r.History > 0 || r.Repaired > 0 || r.Probed > 0
+		r.Downloaded > 0 || r.History > 0 || r.Repaired > 0 || r.Probed > 0 || r.Forwards > 0
 }
 
 func (s *Syncer) log() *slog.Logger {
@@ -369,14 +375,22 @@ func (s *Syncer) tick(ctx context.Context, now time.Time) (Report, error) {
 	rep.Downloaded += n
 	s.changed(rep.Rendered + rep.Downloaded)
 
-	// 10. Copy sticker pictures out of the Lark client's own storage.
+	// 10. Expand a few merged-forward bundles into their children.
+	n, err = s.expandForwards(ctx, now)
+	if err != nil {
+		return rep, fmt.Errorf("forwards: %w", err)
+	}
+	rep.Forwards = n
+	s.changed(n)
+
+	// 11. Copy sticker pictures out of the Lark client's own storage.
 	n, err = s.copyStickers(ctx, now)
 	if err != nil {
 		return rep, fmt.Errorf("stickers: %w", err)
 	}
 	rep.Stickers = n
 
-	// 11. Name the documents linked to from messages.
+	// 12. Name the documents linked to from messages.
 	n, err = s.resolveDocLinks(ctx, now)
 	if err != nil {
 		return rep, fmt.Errorf("doc links: %w", err)
@@ -384,14 +398,14 @@ func (s *Syncer) tick(ctx context.Context, now time.Time) (Report, error) {
 	rep.DocLinks = n
 	s.changed(n)
 
-	// 12. Poll whether the user has read recent messages from others.
+	// 13. Poll whether the user has read recent messages from others.
 	n, err = s.pollReadStatus(ctx, now)
 	if err != nil {
 		return rep, fmt.Errorf("read status: %w", err)
 	}
 	rep.ReadChecks = n
 
-	// 13. Keep the chat list's reactions current for the liveliest p2p chats.
+	// 14. Keep the chat list's reactions current for the liveliest p2p chats.
 	if Due(s.stateTime(ctx, KeyReactionsAt), reactionsEvery, now) {
 		n, err = s.reactionsSlice(ctx, now)
 		if err != nil {
@@ -400,7 +414,7 @@ func (s *Syncer) tick(ctx context.Context, now time.Time) (Report, error) {
 		rep.Reactions = n
 	}
 
-	// 14. Repair recent history, refresh members, fetch avatars: a few each.
+	// 15. Repair recent history, refresh members, fetch avatars: a few each.
 	if rep.Repaired, err = s.repairSlice(ctx, now); err != nil {
 		return rep, fmt.Errorf("repair: %w", err)
 	}
@@ -535,12 +549,20 @@ func (s *Syncer) upsertRaw(ctx context.Context, msgs []larkcli.RawMessage, now t
 	ids := make([]string, 0, len(msgs))
 	chats := map[string]struct{}{}
 	var resources []store.ResourceRef
+	var bundles []string
 	for _, m := range msgs {
 		rows = append(rows, ToRow(m))
 		ids = append(ids, m.MessageID)
 		chats[m.ChatID] = struct{}{}
-		if !m.Deleted {
-			resources = append(resources, ExtractResources(m.MessageID, m.MsgType, m.Body.Content)...)
+		if m.Deleted {
+			continue
+		}
+		resources = append(resources, ExtractResources(m.MessageID, m.MsgType, m.Body.Content)...)
+		// Every path that stores a message funnels through here and msg_type
+		// is known before any rendering, so this catches a bundle whose
+		// rendering was judged empty too.
+		if m.MsgType == "merge_forward" {
+			bundles = append(bundles, m.MessageID)
 		}
 	}
 	unknown, err := s.Store.UnknownMessageIDs(ctx, UniqueStrings(ids))
@@ -563,6 +585,10 @@ func (s *Syncer) upsertRaw(ctx context.Context, msgs []larkcli.RawMessage, now t
 	if err := s.Store.UpsertContacts(ctx, senderContacts(msgs), now.UnixMilli()); err != nil {
 		return n, fresh, err
 	}
+	// After the upsert: the queue row points at the message row.
+	if err := s.Store.AddForwardRoots(ctx, bundles); err != nil {
+		return n, fresh, err
+	}
 	if s.Opt.DataDir != "" {
 		if err := s.Store.AddPendingResources(ctx, resources); err != nil {
 			return n, fresh, err
@@ -571,16 +597,15 @@ func (s *Syncer) upsertRaw(ctx context.Context, msgs []larkcli.RawMessage, now t
 	return n, fresh, nil
 }
 
-// ToRow maps a raw API message onto its store row. Bot senders are keyed by
-// their open id so they join with p2p_target_id and contacts.
+// senderIDOf keys a sender: a bot by its open id, so it joins with
+// p2p_target_id and contacts.
+func senderIDOf(m larkcli.RawMessage) string { return cmp.Or(m.Sender.OpenBotID, m.Sender.ID) }
+
+// ToRow maps a raw API message onto its store row.
 func ToRow(m larkcli.RawMessage) store.Message {
-	senderID := m.Sender.ID
-	if m.Sender.OpenBotID != "" {
-		senderID = m.Sender.OpenBotID
-	}
 	return store.Message{
 		MessageID: m.MessageID, ChatID: m.ChatID, MsgType: m.MsgType,
-		SenderID: senderID, SenderType: m.Sender.SenderType, SenderName: m.Sender.SenderName,
+		SenderID: senderIDOf(m), SenderType: m.Sender.SenderType, SenderName: m.Sender.SenderName,
 		ContentRaw: m.Body.Content, CreateMs: int64(m.CreateTime), UpdateMs: int64(m.UpdateTime),
 		MessagePosition: int64(m.MessagePosition), Updated: m.Updated, Deleted: m.Deleted,
 		ThreadID: m.ThreadID, ReplyTo: m.ParentID, RawJSON: string(m.Raw),

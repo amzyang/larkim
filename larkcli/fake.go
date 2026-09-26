@@ -59,6 +59,11 @@ type Fake struct {
 	Err error
 	// ListErr injects a per-container error into ListMessagesRaw.
 	ListErr map[string]error
+	// Bundles answers ForwardedMessages, by the bundle's own message id.
+	// The name keeps clear of Forwarded, which records outgoing forwards.
+	Bundles map[string][]RawForwarded
+	// BundleErr injects a per-bundle error, the way ListErr does.
+	BundleErr map[string]error
 	// DetailsErr injects an error into UserDetails alone.
 	DetailsErr error
 	// SendErr injects an error into Send alone, which is how a test gets an
@@ -96,6 +101,8 @@ type Fake struct {
 func NewFake() *Fake {
 	return &Fake{
 		Messages:         map[string]RawMessage{},
+		Bundles:          map[string][]RawForwarded{},
+		BundleErr:        map[string]error{},
 		Rendered:         map[string]RenderedMessage{},
 		Resources:        map[string][]Resource{},
 		Singles:          map[string]Resource{},
@@ -197,6 +204,18 @@ func (f *Fake) MGetRaw(_ context.Context, ids []string) ([]RawMessage, error) {
 		}
 	}
 	return out, nil
+}
+
+func (f *Fake) ForwardedMessages(_ context.Context, rootMessageID string) ([]RawForwarded, error) {
+	if err := f.record("forwarded:" + rootMessageID); err != nil {
+		return nil, err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if err := f.BundleErr[rootMessageID]; err != nil {
+		return nil, err
+	}
+	return f.Bundles[rootMessageID], nil
 }
 
 func (f *Fake) ListMessagesRaw(_ context.Context, containerType, containerID string, start, end time.Time) ([]RawMessage, error) {

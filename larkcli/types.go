@@ -68,6 +68,19 @@ type RawBody struct {
 	Content string `json:"content"`
 }
 
+// RawForwarded is one item of GET /im/v1/messages/{root_id}: a message inside
+// a merged-forward bundle, or the bundle itself. The field rides here rather
+// than on RawMessage because it is meaningless to every other caller — and
+// because in this shape ChatID and MessagePosition speak of the source chat,
+// not of the chat the bundle landed in.
+type RawForwarded struct {
+	RawMessage
+	// UpperMessageID is the direct parent, empty on the bundle itself. It is
+	// what tells the container from its children: MessagePosition decodes a
+	// missing field as 0, which a real position 0 cannot be told from.
+	UpperMessageID string `json:"upper_message_id"`
+}
+
 // RawChat is one item of GET /im/v1/chats.
 type RawChat struct {
 	ChatID        string `json:"chat_id"`

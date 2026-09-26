@@ -81,6 +81,40 @@ Feishu closes a call with a `system` message whose template is a single space. T
 
 Canonical ordering: `ORDER BY create_ms, message_position, id`.
 
+## forwarded_messages, forwarded_roots
+
+A `merge_forward` message is a container: its body is the literal string `Merged and Forwarded Message`, and what it carries is a bundle of other messages. Those are not copies. `GET /open-apis/im/v1/messages/{root_id}` answers with the *original* messages — the same `message_id`, the `chat_id` of the chat each was actually sent to, which is usually not the chat the bundle landed in and is often one larkim has never synced. They cannot go in `messages`: filed there they would either overwrite a real message's `message_position` with the one the bundle context reports, or conjure a chat's whole flow out of messages nobody ever listed.
+
+| `forwarded_messages` column | meaning |
+|---|---|
+| `root_message_id` | the bundle, a real row in `messages` |
+| `upper_message_id` | the direct parent: the bundle's own id at the top level, a nested bundle's id below it |
+| `message_id` | the ORIGINAL message's id, which also exists in `messages` when its chat is synced |
+| `seq` | order among siblings, by create time |
+| `chat_id` | the ORIGINAL chat. **It does not mean larkim holds that chat**; do not union this table with `messages` |
+| `msg_type`, `sender_id`, `sender_name`, `create_ms`, `content_raw`, `mentions_json`, `raw_json` | the message as the bundle reports it |
+
+The primary key is `(root_message_id, upper_message_id, message_id)`. One message can sit at two depths of the same bundle — forwarded alone, and again inside a stretch of history that was forwarded whole — and both belong.
+
+There is no `content` column: a child is never rendered by lark-cli, so its text comes from `content_raw`. Its attachments are registered against the **bundle's** id in `message_resources`, because the resource endpoint refuses a child message's id.
+
+`forwarded_roots` is the expansion queue, one row per bundle.
+
+| column | meaning |
+|---|---|
+| `root_message_id` | the bundle; primary key, and a foreign key into `messages` |
+| `fetched_at` | when the bundle stopped being owed, whether it expanded or Feishu refused it for good; `0` means still queued |
+| `child_count` | the top level alone — the children of the bundle itself, not of the bundles nested in it — which is what one screen of the TUI lists |
+| `attempts`, `next_attempt_at`, `last_error` | retry bookkeeping. A refusal is settled by `fetched_at`, not by `next_attempt_at`, which goes back to `0` |
+
+A refusal is an answer rather than a failure to retry: a forward is frozen, so the reader having left the source chat will read the same way tomorrow.
+
+```sql
+-- one level of a bundle, which is one screen
+SELECT sender_name, msg_type, content_raw FROM forwarded_messages
+WHERE root_message_id = 'om_xxx' AND upper_message_id = 'om_xxx' ORDER BY seq;
+```
+
 ## read_state
 
 Per-message read state, joined on `message_id`. Rows exist only for messages whose remote flag has been checked; `local_read_at` updates rows that already exist and never creates one.

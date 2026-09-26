@@ -25,6 +25,10 @@ type Client interface {
 	// ListMessagesRaw lists a chat ("chat") or thread ("thread") container in
 	// ascending create time. A zero start or end means unbounded.
 	ListMessagesRaw(ctx context.Context, containerType, containerID string, start, end time.Time) ([]RawMessage, error)
+	// ForwardedMessages lists every message inside a merged-forward bundle.
+	// One call answers the whole tree: the items are flat, linked by
+	// UpperMessageID, and one of them is the bundle itself.
+	ForwardedMessages(ctx context.Context, rootMessageID string) ([]RawForwarded, error)
 	// ListChats lists p2p and group chats the user is in. With activeFirstPage
 	// only the first page sorted by activity (most recent first) is returned.
 	ListChats(ctx context.Context, activeFirstPage bool) ([]RawChat, error)

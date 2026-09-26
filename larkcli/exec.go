@@ -433,6 +433,17 @@ func (c *ExecClient) ListMessagesRaw(ctx context.Context, containerType, contain
 	return decodeItems[RawMessage](data, "items")
 }
 
+func (c *ExecClient) ForwardedMessages(ctx context.Context, rootMessageID string) ([]RawForwarded, error) {
+	// The bundle's children are cards and posts like any other message, so
+	// they are asked for in the same shape MGetRaw asks in.
+	params := map[string]any{"with_sender_name": true, "card_msg_content_type": "raw_card_content"}
+	data, err := c.run(ctx, "api", "GET", "/open-apis/im/v1/messages/"+rootMessageID, "--params", jsonArg(params))
+	if err != nil {
+		return nil, err
+	}
+	return decodeItems[RawForwarded](data, "items")
+}
+
 // rawKeeper is implemented by decoded items that retain their source JSON.
 type rawKeeper interface{ keepRaw(json.RawMessage) }
 
