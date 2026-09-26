@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"charm.land/lipgloss/v2"
+	"github.com/amzyang/larkim/applink"
 	"github.com/amzyang/larkim/store"
 	"github.com/amzyang/larkim/sync"
 )
@@ -62,7 +63,7 @@ func videoChatRows(v sync.VideoChat, idx int, st msgStyle, g *leads) []msgRow {
 		line(stDim.Render("Meeting ID: "+spacedMeetNumber(v.MeetNumber)), "")
 	}
 	if v.Live() && v.MeetNumber != "" {
-		line(stBtn.Render("Join"), feishuMeetingLink(v.MeetNumber))
+		line(stBtn.Render("Join"), applink.MeetingLink(v.MeetNumber))
 	}
 	return rows
 }

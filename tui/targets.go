@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/amzyang/larkim/applink"
 	"github.com/amzyang/larkim/store"
 
 	tea "charm.land/bubbletea/v2"
@@ -36,7 +37,7 @@ type targets struct {
 // completeness of.
 func (m Model) openTargets(zs []clickZone) (tea.Model, tea.Cmd) {
 	if sel, ok := m.selected(); ok {
-		link := feishuChatLink(sel.ChatID, sel.MessagePosition)
+		link := applink.ChatLink(sel.ChatID, sel.MessagePosition)
 		if !slices.ContainsFunc(zs, func(z clickZone) bool { return z.urls[0] == link }) {
 			zs = append(zs, clickZone{urls: []string{link},
 				label: "open in Feishu", note: "opening in Feishu"})

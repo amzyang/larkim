@@ -6,6 +6,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/amzyang/larkim/applink"
 	"github.com/amzyang/larkim/store"
 	"github.com/stretchr/testify/require"
 )
@@ -93,7 +94,7 @@ func TestSpacedMeetNumber_GroupsInThrees(t *testing.T) {
 }
 
 func TestFeishuMeetingLink_ReachesTheClientWithoutABrowser(t *testing.T) {
-	require.Equal(t, "lark://vc.feishu.cn/j/100000000", feishuMeetingLink("100000000"))
+	require.Equal(t, "lark://vc.feishu.cn/j/100000000", applink.MeetingLink("100000000"))
 }
 
 // callPage is a chat holding one call, with the opener replaced so the links

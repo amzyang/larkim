@@ -6,15 +6,14 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/amzyang/larkim/ai"
+	"github.com/amzyang/larkim/applink"
 	"github.com/amzyang/larkim/emoji"
 	"github.com/amzyang/larkim/fuzzy"
 	"github.com/amzyang/larkim/larkcli"
@@ -715,52 +714,10 @@ func loadSelfName(st *store.Store, self string) tea.Cmd {
 	}
 }
 
-// feishuChatLink addresses a chat, optionally at a message position. The
-// lark:// scheme reaches the desktop client directly; the https applink form
-// would first open a browser tab that only redirects here.
-func feishuChatLink(chatID string, position int64) string {
-	url := "lark://applink.feishu.cn/client/chat/open?openChatId=" + chatID
-	if position > 0 {
-		url += "&position=" + strconv.FormatInt(position, 10)
-	}
-	return url
-}
-
-// openURL hands targets to macOS. A keypress asking for the Feishu client
-// wants the screen; an applink fired to clear a badge must leave the reader
-// in the terminal, which is what background buys.
-//
-// Several targets go in one invocation rather than one each, because that is
-// what puts a message's pictures in a single viewer window with the rest in
-// its sidebar — the way the client opens them — instead of scattering them
-// over as many windows as the message had pictures.
-func openURL(log *slog.Logger, targets []string, background bool) error {
-	args := targets
-	if background {
-		args = append([]string{"-g"}, targets...)
-	}
-	// -g is decided here, not by the caller, so this is the only place the
-	// argv exists whole. It is logged the way lark-cli's is: quoted, nothing
-	// elided, paste-able back into a shell to see what macOS was asked.
-	log.Debug("open", "argv", "open "+larkcli.ArgvLine(args))
-	// open reports why it refused on stderr and nothing but a status to the
-	// caller, so dropping stderr would leave every failure as "exit status 1".
-	cmd := exec.Command("open", args...)
-	var stderr strings.Builder
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		if msg := strings.TrimSpace(stderr.String()); msg != "" {
-			return fmt.Errorf("open: %w: %s", err, msg)
-		}
-		return fmt.Errorf("open: %w", err)
-	}
-	return nil
-}
-
 // openInFeishu opens a chat (optionally at a message position) in the desktop client.
 func openInFeishu(d Deps, chatID string, position int64) tea.Cmd {
 	return func() tea.Msg {
-		if err := d.OpenURL([]string{feishuChatLink(chatID, position)}, false); err != nil {
+		if err := d.OpenURL([]string{applink.ChatLink(chatID, position)}, false); err != nil {
 			// The notice bar holds the message and is gone at the next
 			// keypress; which chat was asked for only exists here.
 			d.Log.Error("open in feishu", "chat_id", chatID, "position", position, "err", err)
@@ -768,29 +725,6 @@ func openInFeishu(d Deps, chatID string, position int64) tea.Cmd {
 		}
 		return noticeMsg{"opened in Feishu"}
 	}
-}
-
-// clearFeishuBadge walks the desktop client onto a chat without taking the
-// screen, which is what makes it send the read receipt Feishu offers no API
-// for. It is the only lever larkim has on the client's own red dot, and it is
-// best effort: local_read_at has already dropped the badge drawn here.
-func clearFeishuBadge(d Deps, chatID string) tea.Cmd {
-	return func() tea.Msg {
-		if err := d.OpenURL([]string{feishuChatLink(chatID, 0)}, true); err != nil {
-			// Best effort, and fired by a chat switch rather than by a request
-			// to open anything: an error banner here would blame the reader's
-			// navigation for a dot only the client still draws.
-			d.Log.Warn("clear feishu badge", "chat_id", chatID, "err", err)
-		}
-		return nil
-	}
-}
-
-// feishuMeetingLink joins a meeting by its number. The lark:// scheme works
-// on the vc host too, so the client goes straight into the call rather than
-// through a browser redirect.
-func feishuMeetingLink(meetNumber string) string {
-	return "lark://vc.feishu.cn/j/" + meetNumber
 }
 
 // openZone hands over what a row's target points at: a meeting to join, a

@@ -504,3 +504,113 @@ func TestReadStatusProbes_SkipsMessagesNoAnswerCanReach(t *testing.T) {
 	require.Equal(t, []ReadProbe{{"om_ctl", "oc_ctl"}, {"om_answerable", "oc_refused"}}, probes,
 		"a refused id spends the chat's one slot on a question with no answer; a chat read here has no badge left to clear")
 }
+
+func TestMarkAllRead_SettlesEveryChatIncludingThreadReplies(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	reply := msgAt("om_reply", "oc_b", 20, -3, "answered an old topic")
+	reply.ThreadID = "omt_1"
+	root := msgAt("om_root", "oc_b", 10, 1, "an old topic")
+	root.ThreadID = "omt_1"
+	_, err := s.UpsertMessages(ctx, []Message{msgAt("om_a", "oc_a", 10, 1, "one"), root, reply}, 1)
+	require.NoError(t, err)
+	markUnread(t, s, "om_a")
+	markUnread(t, s, "om_reply")
+
+	n, err := s.MarkAllRead(ctx, 5000)
+	require.NoError(t, err)
+	require.Equal(t, int64(2), n)
+
+	require.Empty(t, unreadCounts(t, s), "every badge is down")
+	m, _ := s.GetMessage(ctx, "om_reply")
+	require.Equal(t, int64(5000), m.LocalReadAt,
+		"a thread reply is settled too: marking everything read is what the reader asked for")
+	m, _ = s.GetMessage(ctx, "om_root")
+	require.Zero(t, m.LocalReadAt, "nothing was waiting on the root")
+}
+
+func TestMarkAllRead_CollectsSilencedMessagesToo(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	quiet := msgAt("om_quiet", "oc_a", 10, 1, "nightly build")
+	quiet.Silenced = true
+	_, err := s.UpsertMessages(ctx, []Message{quiet}, 1)
+	require.NoError(t, err)
+	markUnread(t, s, "om_quiet")
+	require.Empty(t, unreadCounts(t, s), "a silenced message never carried a badge")
+
+	_, err = s.MarkAllRead(ctx, 5000)
+	require.NoError(t, err)
+
+	m, _ := s.GetMessage(ctx, "om_quiet")
+	require.Equal(t, int64(5000), m.LocalReadAt,
+		"silence decides whether to interrupt, not whether the Feishu client still has a dot for it")
+}
+
+func TestMarkAllRead_OnAReadStoreBumpsNoRevision(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	_, err := s.UpsertMessages(ctx, []Message{msgAt("om_a", "oc_a", 10, 1, "one")}, 1)
+	require.NoError(t, err)
+	markUnread(t, s, "om_a")
+	_, err = s.MarkAllRead(ctx, 5000)
+	require.NoError(t, err)
+
+	before, err := s.DataRev(ctx)
+	require.NoError(t, err)
+	n, err := s.MarkAllRead(ctx, 6000)
+	require.NoError(t, err)
+	after, err := s.DataRev(ctx)
+	require.NoError(t, err)
+
+	require.Zero(t, n)
+	require.Equal(t, before, after, "an inert call must not wake the watchers that reload on it")
+}
+
+func TestChatsWithUnread_IsExactlyWhatMarkAllReadSettles(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	_, err := s.UpsertMessages(ctx, []Message{
+		msgAt("om_a", "oc_a", 10, 1, "one"),
+		msgAt("om_a2", "oc_a", 11, 2, "two"),
+		msgAt("om_b", "oc_b", 20, 1, "elsewhere"),
+		msgAt("om_c", "oc_c", 30, 1, "already read here"),
+	}, 1)
+	require.NoError(t, err)
+	for _, id := range []string{"om_a", "om_a2", "om_b", "om_c"} {
+		markUnread(t, s, id)
+	}
+	require.NoError(t, s.MarkChatRead(ctx, "oc_c", 4000))
+
+	chats, err := s.ChatsWithUnread(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []ChatUnread{{ChatID: "oc_a", Position: 2}, {ChatID: "oc_b", Position: 1}}, chats,
+		"one entry per chat, at that chat's newest still-unread message, and none the reader already took")
+
+	_, err = s.MarkAllRead(ctx, 5000)
+	require.NoError(t, err)
+	after, err := s.ChatsWithUnread(ctx)
+	require.NoError(t, err)
+	require.Empty(t, after, "the write settles everything the query listed, so a second pass fires nothing")
+}
+
+func TestChatsWithUnread_LeavesOutThreadRepliesAndRecalls(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	reply := msgAt("om_reply", "oc_thread", 20, -3, "answered an old topic")
+	reply.ThreadID = "omt_1"
+	gone := msgAt("om_gone", "oc_recalled", 30, 1, "recalled")
+	gone.Deleted = true
+	quiet := msgAt("om_quiet", "oc_quiet", 40, 1, "nightly build")
+	quiet.Silenced = true
+	_, err := s.UpsertMessages(ctx, []Message{reply, gone, quiet}, 1)
+	require.NoError(t, err)
+	for _, id := range []string{"om_reply", "om_gone", "om_quiet"} {
+		markUnread(t, s, id)
+	}
+
+	chats, err := s.ChatsWithUnread(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []ChatUnread{{ChatID: "oc_quiet", Position: 1}}, chats,
+		"the client renders neither a thread reply nor a recall, so an applink for one would never be answered")
+}

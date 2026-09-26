@@ -24,6 +24,8 @@ larkim messages show om_xxx                    # rendering, raw body, downloaded
 larkim messages thread om_xxx
 larkim messages list --query "发布 计划"         # full-text search (every term must match; CJK substrings work)
 larkim messages list --unread                  # Feishu says you have not read these yet
+larkim read-all --dry-run                      # how many chats still have a red dot in Feishu
+larkim read-all                                # take them all as read, and walk the client onto each
 larkim silence                                 # configured silence rules and what each one matches
 larkim sync --backfill-days 7                  # one tick in the foreground (daemon must be stopped)
 larkim db path && larkim schema                # for direct SQLite consumers, see docs/SCHEMA.md
@@ -86,8 +88,9 @@ The message list is split where the calendar day changes, and each message is he
 | `Ctrl+f` / `:search <text>` | search messages, chats and people in one panel, all three under the same cursor: the store answers as the query is typed and Feishu is asked once it stands still, `Enter` opens the hit, `Esc` leaves |
 | `a` / `:ai …` | assistant in the right pane: `summary`, `draft <how>` (result lands in the composer), `todo`, or any question about the open chat |
 | `:mentions` | everything that @'d you, across every chat, newest first; Enter jumps to it. A chat holding an unread mention wears an `@` badge in the list until it is read, however many messages have landed since |
-| `:` `;` | command line: `:copy <200\|7d\|all>` `:goto <chat>` `:send <chat\|ou_> <text>` `:react <emoji>` `:mentions` `:preview` `:sync` `:q` |
-| mouse | click focuses and selects, double-click opens, click a quote to land on the message it names, click a reaction to add yours or take it back, wheel scrolls |
+| `:read-all` | take every chat as read and clear the Feishu client's red dots, after a `y/n`. The same button the chats header draws |
+| `:` `;` | command line: `:copy <200\|7d\|all>` `:goto <chat>` `:send <chat\|ou_> <text>` `:react <emoji>` `:mentions` `:read-all` `:preview` `:sync` `:q` |
+| mouse | click focuses and selects, double-click opens, click a quote to land on the message it names, click a reaction to add yours or take it back, click the double check in the chats header to take every chat as read, wheel scrolls |
 
 Shift+Enter needs a terminal with the kitty keyboard protocol (kitty, Ghostty, WezTerm); elsewhere use Alt+Enter or Ctrl+J for newlines.
 

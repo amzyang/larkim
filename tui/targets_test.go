@@ -4,6 +4,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/amzyang/larkim/applink"
 	"github.com/amzyang/larkim/store"
 	"github.com/stretchr/testify/require"
 )
@@ -127,11 +128,11 @@ func TestOpenTargets_TheMessageItselfClosesTheList(t *testing.T) {
 	require.Len(t, m.targets.zones, 3, "what larkim cannot hand over is still reachable through the client")
 	last := m.targets.zones[2]
 	require.Equal(t, "open in Feishu", last.label)
-	require.Equal(t, []string{feishuChatLink("oc_a", 227)}, last.urls)
+	require.Equal(t, []string{applink.ChatLink("oc_a", 227)}, last.urls)
 
 	_, cmd := press(t, m, "G").onTargetKey(keyMsg("enter"))
 	collect(cmd)
-	require.Equal(t, []openCall{opened(feishuChatLink("oc_a", 227), false)}, *calls)
+	require.Equal(t, []openCall{opened(applink.ChatLink("oc_a", 227), false)}, *calls)
 }
 
 func TestOpenTargets_TheMessageIsNotListedTwice(t *testing.T) {

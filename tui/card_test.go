@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/amzyang/larkim/applink"
 	"github.com/amzyang/larkim/card"
 	"github.com/amzyang/larkim/store"
 	"github.com/stretchr/testify/require"
@@ -164,7 +165,7 @@ func TestCardRows_EachButtonOpensWhatItsPressWouldReach(t *testing.T) {
 	zones := rowZones(renderRows([]store.Message{msg}, baseStyle()))
 	require.Len(t, zones, 2)
 	require.Equal(t, []string{"https://example.com/run/1"}, zones[0].urls)
-	require.Equal(t, []string{feishuChatLink("oc_ops", 42)}, zones[1].urls,
+	require.Equal(t, []string{applink.ChatLink("oc_ops", 42)}, zones[1].urls,
 		"no open API submits a card callback, so the client is where that press still lands")
 	require.LessOrEqual(t, zones[0].x1, zones[1].x0, "each target sits under the pill it belongs to")
 }

@@ -265,6 +265,59 @@ func (s *Store) MarkChatRead(ctx context.Context, chatID string, now int64) erro
 	return err
 }
 
+// ChatUnread is a chat the Feishu client still has a red dot for, and the
+// newest message it is drawn over.
+type ChatUnread struct {
+	ChatID string `json:"chat_id"`
+	// Position addresses that message inside the chat. An applink carrying it
+	// lands the client at the tail rather than on its own unread divider,
+	// which for a deep backlog is somewhere in the middle of the history.
+	Position int64 `json:"position"`
+}
+
+// ChatsWithUnread names every chat an applink would still do something for,
+// oldest id first. It has to be read before MarkAllRead, whose write is what
+// erases the evidence.
+//
+// The predicate is unreadBadge, which makes this set a subset of the one
+// MarkAllRead settles. That containment is what stops the sweep firing for
+// ever: a chat listed here is settled by the same pass, so the next pass
+// leaves it out. Widening it past MarkAllRead's set would list chats no write
+// can collect, and every press would walk the client onto them again.
+//
+// Thread replies and recalls are out for a second reason: the client does not
+// render either when the applink opens the chat, so its dot never falls and
+// the chat would be listed on every press regardless.
+func (s *Store) ChatsWithUnread(ctx context.Context) ([]ChatUnread, error) {
+	scan := func(sc scanner) (ChatUnread, error) {
+		var c ChatUnread
+		return c, sc.Scan(&c.ChatID, &c.Position)
+	}
+	return queryAll(ctx, s.db, scan, `SELECT m.chat_id, max(m.message_position)
+ FROM messages m JOIN read_state r ON r.message_id = m.message_id
+ WHERE `+unreadBadge+` GROUP BY m.chat_id ORDER BY m.chat_id`)
+}
+
+// MarkAllRead takes as seen locally everything still waiting anywhere, thread
+// replies included: "mark all as read" is a statement about the whole list,
+// not about the pages the reader happened to visit. Feishu has no mark-read
+// call, so this is the only half larkim can write; the client's own dots are
+// walked down separately, chat by chat, over the applinks ChatsWithUnread
+// names.
+//
+// It returns how many messages it settled. Matching no row writes nothing, so
+// the data_rev trigger stays quiet and the TUI does not reload itself in a
+// circle.
+func (s *Store) MarkAllRead(ctx context.Context, now int64) (int64, error) {
+	res, err := s.db.ExecContext(ctx, `UPDATE read_state SET local_read_at = ?
+ WHERE message_id IN (SELECT m.message_id FROM messages m JOIN read_state r ON r.message_id = m.message_id
+   WHERE `+stillUnread+`)`, now)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
 // MarkThreadRead takes as seen locally every reply of one thread, which is
 // what opening its pane means: a thread is one screenful, so the whole of it
 // is in front of the reader at once.

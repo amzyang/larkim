@@ -2,6 +2,7 @@ package tui
 
 import (
 	tea "charm.land/bubbletea/v2"
+	"github.com/amzyang/larkim/store"
 )
 
 // recalledMsg closes a recall. id names the message so the row can be brought
@@ -54,6 +55,7 @@ type confirmKind int
 const (
 	confirmNone confirmKind = iota
 	confirmRecall
+	confirmMarkAllRead
 )
 
 // confirmation is an action waiting on y or n. A zero value is nothing
@@ -61,6 +63,9 @@ const (
 type confirmation struct {
 	kind      confirmKind
 	messageID string
+	// chats is what a mark-all would walk the client onto, read before the
+	// question because the write it answers is what erases that set.
+	chats []store.ChatUnread
 }
 
 // answerConfirm handles the key a pending confirmation is waiting on. ok is
@@ -72,13 +77,15 @@ func (m Model) answerConfirm(key string) (tea.Model, tea.Cmd, bool) {
 	pending := m.confirm
 	m.confirm = confirmation{}
 	if key != "y" {
-		// Anything but y cancels, rather than only n: this is the answer where
-		// a slip costs something everybody in the chat can see.
+		// Anything but y cancels, rather than only n: these are the answers
+		// where a slip costs something no undo reaches.
 		return m.notify("", false), nil, true
 	}
 	switch pending.kind {
 	case confirmRecall:
 		return m.notify("recalling…", false), recallCmd(m.deps, pending.messageID), true
+	case confirmMarkAllRead:
+		return m.notify("marking read…", false), markAllRead(m.deps, pending.chats), true
 	}
 	return m, nil, true
 }

@@ -27,6 +27,32 @@
 
 判据必须读页面查询时的状态：`markChatRead` 紧接着就把 `local_read_at` 写上，改用当前徽标数会被本次访问自己的写入打败。
 
+## applink 队列
+
+所有 applink 经 `applinkQueue`（`tui/applinkq.go`）排队，一条自续的 `tea.Tick` 链按 `applink.Pace` 逐条投出。read gate 一次压一个，批量清理一次压一批，两者共用这一条队列。
+
+理由是写者收敛：客户端只能停在一个会话里，两个写者同时投会把还在飞的那次导航顶掉。队列因此是节奏的唯一 owner。
+
+- **查重**：同一个 chat id 还在队里就不重复压；客户端到一次就够了，问几次无所谓。
+- **代次**：`gen` 让被清空的队列的迟到 tick 落地即丢——链一旦挂出去就撤不回来，能撤的只有它送达的那条消息。
+- **顺序**：读者当前所在的会话排在最后，客户端停在终端所在的地方。
+- **失败**：逐条计数，批量清理收尾时报一次；单条不报——那是导航的副产物，不是读者请求打开的东西。
+
+`tea.Tick` 的计时从构造时起，所以 tick 与 `open` 同批挂出时，间隔量的是两次 `open` 开始之间，`applink.Open` 同步等 `open` 返回的那段也算在内。
+
+## 批量的两个谓词
+
+|  | 谓词 | 常量 |
+|---|---|---|
+| `ChatsWithUnread` 查要走哪些会话 | `is_read_remote = 0 AND local_read_at = 0 AND deleted = 0 AND message_position >= 0` | `unreadBadge` |
+| `MarkAllRead` 写本地已读 | `is_read_remote = 0 AND local_read_at = 0 AND deleted = 0` | `stillUnread` |
+
+查集合必须是写集合的子集，与 `unreadWaiting` 同一个理由：查回来的每个会话都被同一次写收掉，下一次按下因此不再命中。放宽到写集合之外就会出现写永远收不掉的会话，每次按下都把客户端再走一遍。
+
+查必须在写之前跑：写上 `local_read_at` 之后，「客户端还欠着哪些」这个证据就没了。
+
+thread 回复与已撤回不进查询集合：applink 打开的是主消息流，客户端两者都不渲染，回执不翻，列进去就是每次都走。本地已读照收——`MarkAllRead` 用的是更宽的 `stillUnread`。
+
 不经 `Deps.Syncer`，与 `claimChatRefresh` 的门控相互独立：杠杆是桌面客户端，不是 data-dir 锁，跟着 daemon 跑的 TUI 同样要能清红点。
 
 ## readKey
@@ -54,9 +80,13 @@
 
 ## 注入缝
 
-`Deps.OpenURL func(url string, background bool) error`（`tui/data.go`）。`New` 在其为 nil 时填 `openURL`，测试替换为 recorder，`open` 不在测试里跑。
+`Deps.OpenURL func(targets []string, background bool) error`（`tui/data.go`）。`New` 在其为 nil 时填 `applink.Open`，测试替换为 recorder，`open` 不在测试里跑。CLI 侧同形：`App.openURL`（`cli/root.go`），`nil` 时走 `applink.Open`。
 
-`background` 分开两个调用点：`clearFeishuBadge` 传 true（`open -g`，焦点留在终端），`o` 键的 `openInFeishu` 传 false（用户要去飞书）。
+URL、节奏常量与 `open` 的调用都在 `applink` 包里，因为 TUI 与 `larkim read-all` 共用同一个桌面客户端，也就共用同一个节奏。
+
+`background` 分开两个调用点：`fireApplink` 传 true（`open -g`，焦点留在终端），`o` 键的 `openInFeishu` 传 false（用户要去飞书）。
+
+清红点的 URL 带上该会话**最新一条仍欠着的消息**的 `position`（`store.ChatUnread`）。不带的话客户端停在它自己的未读分隔线上，积压深的会话那条线就在历史中间——正是 `pageShown` 判为「没读」的那种落点。带上的是库里真实存在的序号，不是一个越界的大数：越界值客户端不保证跳到末尾。
 
 `openURL` 用 `Run()` 而非 `Start()`：自动路径一天要跑很多次，不 reap 会攒僵尸进程。
 
@@ -78,6 +108,8 @@
 | `TestTakeRead_IgnoresUnreadTheChatBadgeLeavesOut` | thread 回复与已撤回消息不构成投出理由 |
 | `TestTakeRead_ClearsBadgesWithoutASyncer` | `Syncer` 为 nil 照投 |
 | `TestOpenInFeishu_TakesTheScreen` | `o` 键走同一条缝且不带 `-g` |
+
+`tui/markall_test.go` 管批量，`cli/readall_cmd_test.go` 管 CLI 入口。两边的 `open` 都换成 recorder；TUI 侧用 `drain` 把队列走到底，它按 `applinkDueMsg` 逐格推进而不等 tick 自己响。
 
 `tui/readgate_test.go` 管门控。`scrolledBack` 造一个页面高过面板、已读过、视野被滚回历史的会话：
 

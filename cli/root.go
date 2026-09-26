@@ -32,6 +32,11 @@ type App struct {
 	sentrySource string
 	buildDSN     string
 
+	// openURL hands a lark:// applink to the desktop. A test replaces it so
+	// the walk is recorded rather than reaching macOS; left nil, it is the
+	// real one.
+	openURL func(targets []string, background bool) error
+
 	clientOnce gosync.Once
 	// larkClient is the Feishu boundary every command shares. A test sets it
 	// before the command runs so a fake stands where the subprocess would;
@@ -81,7 +86,7 @@ func New(version, buildDSN string) *cobra.Command {
 	root.PersistentFlags().StringVar(&app.sentryFlag, "sentry-dsn", "", "Sentry DSN for crash reporting (overrides SENTRY_DSN and the build-time default; empty disables)")
 	root.SetFlagErrorFunc(func(_ *cobra.Command, err error) error { return &usageError{err} })
 	root.AddCommand(app.syncCmd(), app.statusCmd(), app.daemonCmd(), app.chatsCmd(), app.messagesCmd(), app.contactsCmd(),
-		app.sendCmd(), app.replyCmd(), app.reactCmd(), app.watchCmd(), app.silenceCmd(), app.tuiCmd(), app.dbCmd(),
+		app.sendCmd(), app.replyCmd(), app.reactCmd(), app.watchCmd(), app.readAllCmd(), app.silenceCmd(), app.tuiCmd(), app.dbCmd(),
 		app.schemaCmd(), app.emojiCmd(), app.sentryCmd())
 	return root
 }

@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"cmp"
 	"hash/fnv"
 	"slices"
 	"strconv"
@@ -93,6 +94,21 @@ func atMeMark(c store.Chat) string {
 	}
 	return stMentionMe.Render("@")
 }
+
+// markAllGlyph is the button that takes every chat as read: the double check
+// an IM draws for "seen". It comes from the Codicons block of the Nerd Font
+// the terminal maps the private use area to, the same block botBadge is from,
+// so it takes the colour it is given and holds to a single column. The
+// Material Design double check is the better drawing and is unusable here:
+// its plane-15 codepoint falls outside every range the terminal maps, so it
+// would be left to font fallback and could come back double width.
+const markAllGlyph = "\uebb1"
+
+// markAllCol is the content column the button occupies in a w-wide header.
+// The strip to its right is a fixed three columns whether or not the muted
+// dot is drawn, because a click target that moves when some other chat is
+// silenced is a click target the reader has to look for.
+func markAllCol(w int) int { return w - 3 }
 
 // mutedDot stands for the do-not-disturb chats that have something waiting.
 // It carries no number: a chat the reader silenced is not one to be counted
@@ -510,14 +526,14 @@ func chatsHeader(rows []listRow, unread map[string]int64, filter string, w int) 
 	if filter != "" {
 		title = "Chats /" + filter
 	}
-	// The gap follows padBetween's rule: without a dot there is nothing for
-	// the title to keep clear of, so it gets that column too.
-	gap := 0
-	if dot != "" {
-		gap = 1
-	}
-	room := w - lipgloss.Width(count) - lipgloss.Width(dot) - gap
-	return padBetween(stBold.Render(truncate(title, room))+count, dot, w)
+	// The button stands whether or not anything is waiting. Neither signal
+	// beside it answers for the whole list — the count leaves muted chats
+	// out and the badge query leaves silenced ones out — so hiding the
+	// button on either would take it away in the state that most wants it.
+	// A press with nothing waiting says so.
+	right := stDim.Render(markAllGlyph) + " " + cmp.Or(dot, " ")
+	room := w - lipgloss.Width(count) - lipgloss.Width(right) - 1
+	return padBetween(stBold.Render(truncate(title, room))+count, right, w)
 }
 
 // unreadMessages sums the messages waiting for an answer and reports whether

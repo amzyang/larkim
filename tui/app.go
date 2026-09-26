@@ -17,6 +17,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/amzyang/larkim/agentctx"
 	"github.com/amzyang/larkim/ai"
+	"github.com/amzyang/larkim/applink"
 	"github.com/amzyang/larkim/emoji"
 	"github.com/amzyang/larkim/larkcli"
 	"github.com/amzyang/larkim/store"
@@ -157,6 +158,9 @@ type Model struct {
 	// view that leaves the tail and comes back from firing a second applink
 	// for the same message while the first one's write is still in flight.
 	readAt string
+	// applinks paces the walk of the Feishu client, which the read gate and a
+	// mark-all both feed. See applinkq.go.
+	applinks applinkQueue
 	// pendingChat is a chat whose page has been asked for but not arrived. The
 	// panes stay on the chat they are showing until it does, so a cursor
 	// running down the list never leaves a blank behind it.
@@ -323,7 +327,7 @@ func New(d Deps) Model {
 	if d.OpenURL == nil {
 		log := d.Log
 		d.OpenURL = func(targets []string, background bool) error {
-			return openURL(log, targets, background)
+			return applink.Open(log, targets, background)
 		}
 	}
 	prunePasted(d.DataDir, time.Now())
@@ -393,7 +397,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// too, and each of them is an ordinary message through this seam.
 	if k := nm.readKey(atTail(nm.msgRows, nm.msgTop, nm.msgListHeight())); k != "" && k != nm.readAt {
 		nm.readAt = k
-		cmd = tea.Batch(cmd, nm.takeRead(nm.chatID, nm.msgsBase))
+		var read tea.Cmd
+		nm, read = nm.takeRead(nm.chatID, nm.msgsBase)
+		cmd = tea.Batch(cmd, read)
 	}
 	if _, raw := msg.(tea.RawMsg); raw {
 		// The sequence the last round handed the terminal arrives back here.
@@ -697,6 +703,14 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.notify("recall: "+msg.err.Error(), true), nil
 		}
 		return m.notify("recalled", false), m.reloadCurrent()
+	case markAllAskMsg:
+		return m.onMarkAllAsk(msg)
+	case markAllDoneMsg:
+		return m.onMarkAllDone(msg)
+	case applinkDueMsg:
+		return m.onApplinkDue(msg)
+	case applinkFiredMsg:
+		return m.onApplinkFired(msg)
 	case reactedMsg:
 		if msg.err == nil {
 			// React brought the summary up to date in the same breath, so the
@@ -1099,12 +1113,14 @@ func (m *Model) clearBlockDots(msgs []store.Message, idx int, st msgStyle) {
 // markChatRead would settle, thread replies included; only what the chat badge
 // counts is worth an applink, because the client will not drop its dot for a
 // reply the chat's message flow does not show.
-func (m Model) takeRead(chatID string, msgs []store.Message) tea.Cmd {
-	cmds := []tea.Cmd{markChatRead(m.deps.Store, m.deps.Log, chatID)}
-	if unreadWaiting(msgs) {
-		cmds = append(cmds, clearFeishuBadge(m.deps, chatID))
+func (m Model) takeRead(chatID string, msgs []store.Message) (Model, tea.Cmd) {
+	cmd := markChatRead(m.deps.Store, m.deps.Log, chatID)
+	position, waiting := unreadWaiting(msgs)
+	if !waiting {
+		return m, cmd
 	}
-	return tea.Batch(cmds...)
+	m, tick := m.pushApplinks([]store.ChatUnread{{ChatID: chatID, Position: position}})
+	return m, tea.Batch(cmd, tick)
 }
 
 // selectCurrentChat puts the cursor on the chat being opened within the
@@ -1665,6 +1681,14 @@ func (m Model) onNormalKey(s string) (tea.Model, tea.Cmd) {
 		return m, m.cmdline.Focus()
 	case "esc":
 		switch {
+		// A mark-all sweep is the one thing here that keeps acting after the
+		// key that started it, so it is the first thing esc backs out of. A
+		// read gate's own applink is not on offer: markChatRead has already
+		// settled that chat, so it is in neither ChatsWithUnread nor
+		// ReadStatusProbes, and dropping the applink leaves the client's dot
+		// lit with nothing left to find it.
+		case m.applinks.swept > 0:
+			return m.clearApplinks().notify("stopped", false), nil
 		case m.aiOpen:
 			return m.closeAI(), nil
 		case m.searching:
@@ -2219,6 +2243,8 @@ func (m Model) runCommand(line string) (tea.Model, tea.Cmd) {
 			note = "preview on"
 		}
 		return m.notify(note, false), nil
+	case "read-all":
+		return m.startMarkAll()
 	case "mentions", "at":
 		return m.openMentions()
 	case "search", "s":
@@ -2361,8 +2387,12 @@ func (m Model) onClick(ms tea.Mouse) (tea.Model, tea.Cmd) {
 		m.input.Blur()
 		m.focus = p
 		// The pane's head takes the focus and nothing else: there is no row
-		// under the click to put the cursor on.
+		// under the click to put the cursor on. The one button it draws
+		// answers first, before the head falls back to taking focus.
 		if row < 0 {
+			if p == paneChats && ms.X-1 == markAllCol(chatsWidth-2) {
+				return m.startMarkAll()
+			}
 			return m, nil
 		}
 	}

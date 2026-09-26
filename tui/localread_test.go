@@ -40,8 +40,9 @@ func arrive(t *testing.T, m Model, st *store.Store, chatID string) Model {
 	msg, ok := loadMessages(Deps{Store: st}, chatID, 0, messagePageSize)().(messagesLoadedMsg)
 	require.True(t, ok)
 	next, cmd := m.Update(msg)
-	collect(cmd)
-	return next.(Model)
+	// The applinks a landing page queues are walked here rather than left
+	// hanging: a test asserting on the opener needs the whole chain run.
+	return drain(t, next.(Model), cmd)
 }
 
 func TestUpdate_OpeningAChatClearsItsBadge(t *testing.T) {

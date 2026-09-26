@@ -44,6 +44,7 @@ var helpEntries = []helpEntry{
 	{"NORMAL", "f", "forward it: type to filter chats and people, Enter sends"},
 	{"NORMAL", "D", "recall your own message, after a y/n it asks for"},
 	{"NORMAL", "n/N", "the next/previous row with something waiting, muted ones skipped"},
+	{"NORMAL", ":read-all", "take every chat as read and clear the Feishu client's red dots, after a y/n"},
 	{"NORMAL", "Y", "copy agent context"},
 	{"NORMAL", "yy", "copy the message id"},
 	{"NORMAL", "yr", "copy the raw json"},
@@ -54,7 +55,7 @@ var helpEntries = []helpEntry{
 	{"NORMAL", "Ctrl+f", "search messages, chats and people"},
 	{"NORMAL", ": or ;", "command"},
 	{"NORMAL", "?", "this panel"},
-	{"NORMAL", "Esc", "back out of the assistant, the search, one pane of the right column, the filter, then the quote"},
+	{"NORMAL", "Esc", "stop a running walk of the Feishu client, then back out of the assistant, the search, one pane of the right column, the filter, then the quote"},
 	{"NORMAL", "q", "quit"},
 
 	{"VISUAL", "v", "starts in the messages or thread pane"},
@@ -131,6 +132,7 @@ var helpEntries = []helpEntry{
 	{"MOUSE", "", "click a forwarded bundle's line to open it in the right pane"},
 	{"MOUSE", "", "one opened from inside that pane stacks over it; Esc peels one off"},
 	{"MOUSE", "", "click a reaction to add yours or take it back"},
+	{"MOUSE", "", "click the double check in the chats header to take every chat as read"},
 	{"MOUSE", "wheel", "scrolls"},
 	{"MOUSE", "", "over the preview it scrolls the band; over the writing area the caret follows"},
 

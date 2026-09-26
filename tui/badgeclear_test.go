@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/amzyang/larkim/larkcli"
 	"github.com/amzyang/larkim/store"
 	"github.com/stretchr/testify/require"
@@ -21,6 +22,37 @@ type openCall struct {
 // pictures going over as a set.
 func opened(url string, background bool) openCall {
 	return openCall{[]string{url}, background}
+}
+
+// drain runs a command tree and feeds every message it yields back through
+// Update, until nothing is left. It is what walks the applink queue to its
+// end: the chain advances on a tick, so a test that only ran the first
+// command would see the write and none of the applinks behind it.
+//
+// Each step costs one applink.Pace of real time, the way the chat poll's
+// tests pay for their own tick. The package has no clock to fake and the
+// alternative is a seam that exists for nothing but this.
+func drain(t *testing.T, m Model, cmd tea.Cmd) Model {
+	t.Helper()
+	queue := []tea.Cmd{cmd}
+	for i := 0; i < len(queue); i++ {
+		require.Less(t, i, 500, "the command tree never settled")
+		if queue[i] == nil {
+			continue
+		}
+		msg := queue[i]()
+		if b, ok := msg.(tea.BatchMsg); ok {
+			queue = append(queue, b...)
+			continue
+		}
+		if msg == nil {
+			continue
+		}
+		next, out := m.Update(msg)
+		m = next.(Model)
+		queue = append(queue, out)
+	}
+	return m
 }
 
 // badgeModel is readModel with the opener replaced, so the applinks a visit
@@ -67,7 +99,8 @@ func TestUpdate_OpeningAChatWithUnreadClearsTheFeishuBadge(t *testing.T) {
 func TestTakeRead_SendsNoApplinkWhenNothingWasWaiting(t *testing.T) {
 	m, _, calls := badgeModel(t)
 	read := true
-	collect(m.takeRead("oc_a", []store.Message{{MessageID: "om_a", IsReadRemote: &read}}))
+	next, cmd := m.takeRead("oc_a", []store.Message{{MessageID: "om_a", IsReadRemote: &read}})
+	drain(t, next, cmd)
 
 	require.Empty(t, *calls, "a chat with no badge here has none in Feishu either")
 }
@@ -76,15 +109,18 @@ func TestTakeRead_SendsNoApplinkForAPageAlreadyReadHere(t *testing.T) {
 	m, _, calls := badgeModel(t)
 	unread := false
 	page := []store.Message{{MessageID: "om_a", IsReadRemote: &unread, LocalReadAt: 900}}
-	collect(m.takeRead("oc_a", page))
+	next, cmd := m.takeRead("oc_a", page)
+	drain(t, next, cmd)
 
 	require.Empty(t, *calls, "the reload a visit causes must not fire a second applink")
 }
 
 func TestTakeRead_ClearsAgainForAMessageLandingInTheOpenChat(t *testing.T) {
 	m, _, calls := badgeModel(t)
-	collect(m.takeRead("oc_a", unreadPage()))
-	collect(m.takeRead("oc_a", unreadPage()))
+	next, cmd := m.takeRead("oc_a", unreadPage())
+	m = drain(t, next, cmd)
+	next, cmd = m.takeRead("oc_a", unreadPage())
+	drain(t, next, cmd)
 
 	require.Len(t, *calls, 2, "the client relights its dot per message, so clearing is not a one-shot")
 }
@@ -92,10 +128,11 @@ func TestTakeRead_ClearsAgainForAMessageLandingInTheOpenChat(t *testing.T) {
 func TestTakeRead_IgnoresUnreadTheChatBadgeLeavesOut(t *testing.T) {
 	m, _, calls := badgeModel(t)
 	unread := false
-	collect(m.takeRead("oc_a", []store.Message{
+	next, cmd := m.takeRead("oc_a", []store.Message{
 		{MessageID: "om_thread", IsReadRemote: &unread, MessagePosition: -3},
 		{MessageID: "om_gone", IsReadRemote: &unread, Deleted: true},
-	}))
+	})
+	drain(t, next, cmd)
 
 	require.Empty(t, *calls, "markChatRead never settles these, so firing for them would never stop")
 }
@@ -125,4 +162,18 @@ func TestUpdate_AMessageLandingInTheOpenChatClearsTheBadgeAgain(t *testing.T) {
 	arrive(t, m, st, "oc_a")
 
 	require.Len(t, *calls, 2, "the client lit its dot again, so it has to be cleared again")
+}
+
+func TestUpdate_EscapeLeavesTheReadGatesOwnApplinkQueued(t *testing.T) {
+	m, _, calls := badgeModel(t)
+	next, cmd := m.takeRead("oc_a", unreadPage())
+
+	// markChatRead has already landed, so the chat is in neither
+	// ChatsWithUnread nor ReadStatusProbes: an applink dropped here is a dot
+	// nothing ever goes back for.
+	stopped, _ := next.onNormalKey("esc")
+	m = drain(t, stopped.(Model), cmd)
+
+	require.Equal(t, []openCall{opened("lark://applink.feishu.cn/client/chat/open?openChatId=oc_a", true)}, *calls,
+		"esc backs out of a mark-all, not of the reader's own navigation")
 }

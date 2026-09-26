@@ -34,7 +34,7 @@ func wheel(t *testing.T, m Model, b tea.MouseButton, n int) Model {
 	t.Helper()
 	for range n {
 		next, cmd := m.Update(tea.MouseWheelMsg{X: chatsWidth + 5, Y: 5, Button: b})
-		collect(cmd)
+		next = drain(t, next.(Model), cmd)
 		m = next.(Model)
 	}
 	return m
@@ -140,7 +140,7 @@ func TestUpdate_ABlurredTerminalLeavesTheChatUnread(t *testing.T) {
 	require.Empty(t, *calls)
 
 	back, cmd := m.Update(tea.FocusMsg{})
-	collect(cmd)
+	back = drain(t, back.(Model), cmd)
 	m = back.(Model)
 
 	require.Zero(t, unreadOf(t, st, "oc_a"), "coming back to the window reads what is on screen")
@@ -159,8 +159,8 @@ func TestUpdate_TheHelpOverlayLeavesTheChatUnread(t *testing.T) {
 	require.EqualValues(t, 1, unreadOf(t, st, "oc_a"), "the overlay covers the panes whole")
 
 	m.help.open = false
-	_, cmd := m.Update(tea.FocusMsg{})
-	collect(cmd)
+	next, cmd := m.Update(tea.FocusMsg{})
+	drain(t, next.(Model), cmd)
 
 	require.Zero(t, unreadOf(t, st, "oc_a"), "closing it puts the page back in front of the reader")
 	require.Len(t, *calls, 1)
@@ -226,8 +226,8 @@ func TestUpdate_AFoldedAwayMessagePaneLeavesTheChatUnread(t *testing.T) {
 	require.EqualValues(t, 1, unreadOf(t, st, "oc_a"), "a pane that is not drawn shows nobody anything")
 	require.Empty(t, *calls)
 
-	_, cmd := m.Update(tea.WindowSizeMsg{Width: 160, Height: m.height})
-	collect(cmd)
+	next, cmd := m.Update(tea.WindowSizeMsg{Width: 160, Height: m.height})
+	drain(t, next.(Model), cmd)
 
 	require.Zero(t, unreadOf(t, st, "oc_a"), "widening the terminal unfolds the pane onto the message")
 	require.Len(t, *calls, 1)

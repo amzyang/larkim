@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/amzyang/larkim/applink"
 	"github.com/amzyang/larkim/store"
 	"github.com/stretchr/testify/require"
 )
@@ -43,11 +44,12 @@ func logDeps(t *testing.T, openErr error) (Deps, *bytes.Buffer) {
 	}, &buf
 }
 
-func TestClearFeishuBadge_LogsAFailureInsteadOfTakingTheNoticeBar(t *testing.T) {
+func TestFireApplink_LogsAFailureInsteadOfTakingTheNoticeBar(t *testing.T) {
 	d, buf := logDeps(t, errors.New("no application knows how to open URL"))
 
-	require.Nil(t, clearFeishuBadge(d, "oc_quiet")(), "a chat switch must not be reported as the reader's error")
+	msg := fireApplink(d, store.ChatUnread{ChatID: "oc_quiet"}, 3)().(applinkFiredMsg)
 
+	require.Error(t, msg.err, "the queue counts it; a chat switch is not reported as the reader's error")
 	require.Contains(t, buf.String(), "clear feishu badge")
 	require.Contains(t, buf.String(), "oc_quiet")
 	require.Contains(t, buf.String(), "no application knows how to open URL")
@@ -76,7 +78,7 @@ func TestOpenZone_LogsTheTargetsTheNoticeBarCannotHold(t *testing.T) {
 }
 
 func TestOpenURL_CarriesWhatOpenRefusedOn(t *testing.T) {
-	err := openURL(slog.New(slog.DiscardHandler), []string{filepath.Join(t.TempDir(), "nothing-here.txt")}, true)
+	err := applink.Open(slog.New(slog.DiscardHandler), []string{filepath.Join(t.TempDir(), "nothing-here.txt")}, true)
 
 	require.ErrorContains(t, err, "does not exist",
 		"exec drops stderr, which is the only place open says why")
@@ -86,7 +88,7 @@ func TestOpenURL_LogsTheArgvItBuilt(t *testing.T) {
 	var buf bytes.Buffer
 	log := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
-	openURL(log, []string{"lark://applink.feishu.cn/client/chat/open?openChatId=oc_quiet"}, true)
+	applink.Open(log, []string{"lark://applink.feishu.cn/client/chat/open?openChatId=oc_quiet"}, true)
 
 	require.Contains(t, buf.String(), `open -g 'lark://applink.feishu.cn/client/chat/open?openChatId=oc_quiet'`,
 		"-g is this function's own decision, so no caller can log it")

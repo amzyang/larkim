@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"charm.land/lipgloss/v2"
+	"github.com/amzyang/larkim/applink"
 	"github.com/amzyang/larkim/card"
 	"github.com/amzyang/larkim/emoji"
 	"github.com/amzyang/larkim/store"
@@ -964,7 +965,7 @@ func cardRows(c card.Card, x store.Message, idx int, st msgStyle, g *leads, ms m
 		case b.ImageKey != "":
 			rows = append(rows, pictureRows(b.ImageKey, x, idx, st, g)...)
 		case len(b.Buttons) > 0:
-			for _, l := range cardButtons(b.Buttons, st.inner(), feishuChatLink(x.ChatID, x.MessagePosition)) {
+			for _, l := range cardButtons(b.Buttons, st.inner(), applink.ChatLink(x.ChatID, x.MessagePosition)) {
 				row := msgRow{lead: g.take(), text: l.text, idx: idx}
 				for _, z := range l.zones {
 					z.x0, z.x1 = z.x0+row.lead.cols(), z.x1+row.lead.cols()
