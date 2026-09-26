@@ -38,7 +38,7 @@ type Deps struct {
 	DataDir    string
 	ConfigPath string
 	// AI is the assistant; nil when no API key is configured.
-	AI        *ai.Client
+	AI        AIStreamer
 	AIContext int // recent messages handed to the assistant
 	// Nudge signals that the store changed, so the watch checks without
 	// waiting out its interval. It carries this process's own writes, the
@@ -63,6 +63,13 @@ type Deps struct {
 	// here, so anything worth knowing has to reach the log file or be lost.
 	// New fills it with a discard logger when nil.
 	Log *slog.Logger
+}
+
+// AIStreamer is the one call the assistant pane makes. It is named here
+// rather than taken as *ai.Client because every chunk of it crosses the
+// network, and a pane nobody can drive is a pane nobody can test.
+type AIStreamer interface {
+	Stream(ctx context.Context, transcript, prompt string) <-chan ai.Chunk
 }
 
 // discardLog stands in for a Deps built by hand — in a test — which has no
@@ -154,8 +161,11 @@ type (
 	syncStatusMsg struct{ status, lastError string }
 	errMsg        struct{ err error }
 	noticeMsg     struct{ text string }
-	aiChunkMsg    struct{ chunk ai.Chunk }
-	searchMsg     struct {
+	aiChunkMsg    struct {
+		gen   int
+		chunk ai.Chunk
+	}
+	searchMsg struct {
 		gen  int
 		hits []searchHit
 		meta msgMeta
@@ -341,13 +351,13 @@ func localSearch(d Deps, chats []store.Chat, query string, gen int) tea.Cmd {
 	}
 }
 
-func waitForAI(ch <-chan ai.Chunk) tea.Cmd {
+func waitForAI(gen int, ch <-chan ai.Chunk) tea.Cmd {
 	return func() tea.Msg {
 		c, ok := <-ch
 		if !ok {
-			return aiChunkMsg{ai.Chunk{Done: true}}
+			return aiChunkMsg{gen: gen, chunk: ai.Chunk{Done: true}}
 		}
-		return aiChunkMsg{c}
+		return aiChunkMsg{gen: gen, chunk: c}
 	}
 }
 
@@ -511,6 +521,11 @@ func pollSyncStatus(st *store.Store) tea.Cmd {
 func readSyncStatus(st *store.Store) tea.Cmd {
 	return func() tea.Msg { return syncStatus(st) }
 }
+
+// syncTickTimeout bounds the one sweep a reader can ask for by hand. It is
+// far longer than any single call because a tick is many of them, and it
+// exists so a stalled gateway cannot hold the background lane for good.
+const syncTickTimeout = 5 * time.Minute
 
 // waited builds the context for a lark-cli call somebody pressed a key for. It
 // takes the interactive lane, so a send or a reaction does not queue behind
@@ -704,13 +719,17 @@ func ingestMessage(d Deps, messageID string) error {
 
 // loadSelfName names the account this process signed in as, which is all a
 // pending send has to go on until Feishu answers with a real message.
-func loadSelfName(st *store.Store, self string) tea.Cmd {
-	if self == "" {
+func loadSelfName(d Deps) tea.Cmd {
+	if d.Self == "" {
 		return nil
 	}
 	return func() tea.Msg {
-		contacts, _ := st.ContactsByIDs(context.Background(), []string{self})
-		return selfNameMsg{name: contacts[self].Name}
+		contacts, err := d.Store.ContactsByIDs(context.Background(), []string{d.Self})
+		if err != nil {
+			d.Log.Warn("load self name", "open_id", d.Self, "err", err)
+			return nil
+		}
+		return selfNameMsg{name: contacts[d.Self].Name}
 	}
 }
 
@@ -801,7 +820,12 @@ func coldHits(ctx context.Context, d Deps, found []larkcli.SearchHit, rendered [
 		meta[h.MessageID] = h
 		senders = append(senders, h.FromID)
 	}
-	people, _ := d.Store.ContactsByIDs(ctx, senders)
+	people, err := d.Store.ContactsByIDs(ctx, senders)
+	if err != nil {
+		// The hits still carry their text and their date; only the names
+		// beside them are lost, which is not worth discarding a search for.
+		d.Log.Warn("name search hit senders", "senders", len(senders), "err", err)
+	}
 	hits := make([]searchHit, 0, len(rendered))
 	for _, r := range rendered {
 		h, ok := meta[r.MessageID]

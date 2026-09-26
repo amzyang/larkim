@@ -180,3 +180,48 @@ func TestDataRev_AdvancesWhenSomethingVisibleChanges(t *testing.T) {
 		})
 	}
 }
+
+func TestWatch_DeliversEveryMessagePastOneBatch(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	ch := s.Watch(ctx, 5*time.Millisecond, "")
+
+	// The watcher takes its baseline in a goroutine, so the batch below has
+	// to land after it: probe until one delivery proves the cursor is armed.
+	deadline := time.After(5 * time.Second)
+	for i := 0; ; i++ {
+		_, err := s.UpsertMessages(ctx, []Message{msgAt(fmt.Sprintf("om_probe_%d", i), "oc_a", int64(i), 1, "probe")}, 1)
+		require.NoError(t, err)
+		select {
+		case <-ch:
+		case <-time.After(20 * time.Millisecond):
+			continue
+		case <-deadline:
+			t.Fatal("the watcher never delivered a probe")
+		}
+		break
+	}
+
+	const n = watchBatch + 500
+	batch := make([]Message, 0, n)
+	for i := range n {
+		batch = append(batch, msgAt(fmt.Sprintf("om_%04d", i), "oc_a", int64(1000+i), 1, "hi"))
+	}
+	_, err := s.UpsertMessages(ctx, batch, 1)
+	require.NoError(t, err)
+
+	seen := make(map[string]int, n)
+	for len(seen) < n {
+		select {
+		case msgs := <-ch:
+			for _, m := range msgs {
+				seen[m.MessageID]++
+			}
+		case <-deadline:
+			t.Fatalf("delivered %d of %d messages; the rest were skipped", len(seen), n)
+		}
+	}
+	for _, m := range batch {
+		require.Equal(t, 1, seen[m.MessageID], "%s was delivered %d times", m.MessageID, seen[m.MessageID])
+	}
+}

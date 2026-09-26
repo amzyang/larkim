@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"slices"
 )
 
@@ -100,7 +101,7 @@ func (s *Store) ForwardRootsDue(ctx context.Context, now int64, limit int) ([]Fo
 func (s *Store) GetForwardRoot(ctx context.Context, rootMessageID string) (ForwardRoot, error) {
 	row := s.db.QueryRowContext(ctx, `SELECT `+forwardRootColumns+` FROM forwarded_roots WHERE root_message_id = ?`, rootMessageID)
 	r, err := scanForwardRoot(row)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return ForwardRoot{}, ErrNotFound
 	}
 	return r, err

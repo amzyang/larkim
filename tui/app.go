@@ -241,6 +241,11 @@ type Model struct {
 	aiText  string
 	aiTop   int
 	aiChan  <-chan ai.Chunk
+	// aiGen numbers the streams. A wait is already armed when a pane closes,
+	// so one more chunk arrives for a stream nobody reads; the generation is
+	// what tells it apart from the answer now on screen.
+	aiGen    int
+	aiCancel context.CancelFunc
 
 	// roster is who is in the open chat: what @ completes against, and what
 	// turns the names it inserted into tags on the way out.
@@ -370,7 +375,7 @@ func (m Model) Init() tea.Cmd {
 	// will occupy; resampling is what makes small glyphs mushy.
 	cmds := tea.Batch(tea.RequestBackgroundColor, tea.Raw(ansi.WindowOp(ansi.RequestCellSizeWinOp)),
 		loadChats(m.deps), readSyncStatus(m.deps.Store), pollSyncStatus(m.deps.Store), waitForRev(m.revs),
-		loadSelfName(m.deps.Store, m.deps.Self))
+		loadSelfName(m.deps))
 	return tea.Batch(cmds, scheduleChatPoll())
 }
 
@@ -758,7 +763,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.notice = ""
 		return m, m.openChatFrom(msg.chatID, msg.sinceMs)
 	case aiChunkMsg:
-		return m.onAIChunk(msg.chunk)
+		return m.onAIChunk(msg)
 	case threadLoadedMsg:
 		if m.rightKind != rightThread || msg.threadID != m.threadID {
 			return m, nil
@@ -2264,7 +2269,12 @@ func (m Model) runCommand(line string) (tea.Model, tea.Cmd) {
 		}
 		s := m.deps.Syncer
 		return m.notify("syncing…", false), func() tea.Msg {
-			if _, err := s.Tick(context.Background()); err != nil {
+			// A tick fans out over every chat that moved, so it needs room;
+			// what it must not have is forever, which would hold the whole
+			// background lane against a gateway that stopped answering.
+			ctx, cancel := context.WithTimeout(context.Background(), syncTickTimeout)
+			defer cancel()
+			if _, err := s.Tick(ctx); err != nil {
 				return errMsg{err}
 			}
 			return noticeMsg{"synced"}
@@ -2314,6 +2324,7 @@ func (m Model) startAI(input string) (tea.Model, tea.Cmd) {
 	}
 	transcript := ai.Transcript(name, m.msgs[len(m.msgs)-n:], m.deps.Self)
 	m.closeRight()
+	m.stopAI()
 	m.aiOpen, m.aiBusy, m.aiDraft = true, true, draft
 	m.aiTitle = strings.TrimSpace(input)
 	if m.aiTitle == "" {
@@ -2322,13 +2333,19 @@ func (m Model) startAI(input string) (tea.Model, tea.Cmd) {
 	m.aiText, m.aiTop = "", 0
 	m.focus = paneThread
 	m.layout()
-	m.aiChan = m.deps.AI.Stream(context.Background(), transcript, prompt)
-	return m.notify("asking Claude…", false), waitForAI(m.aiChan)
+	ctx, cancel := context.WithCancel(context.Background())
+	m.aiCancel = cancel
+	m.aiChan = m.deps.AI.Stream(ctx, transcript, prompt)
+	return m.notify("asking Claude…", false), waitForAI(m.aiGen, m.aiChan)
 }
 
-func (m Model) onAIChunk(c ai.Chunk) (tea.Model, tea.Cmd) {
+func (m Model) onAIChunk(msg aiChunkMsg) (tea.Model, tea.Cmd) {
+	if msg.gen != m.aiGen {
+		return m, nil
+	}
+	c := msg.chunk
 	if c.Err != nil {
-		m.aiBusy = false
+		m.releaseAI()
 		m.aiText += "\n\n" + c.Err.Error()
 		return m.notify("assistant failed", true), nil
 	}
@@ -2339,9 +2356,9 @@ func (m Model) onAIChunk(c ai.Chunk) (tea.Model, tea.Cmd) {
 		if m.aiTop >= bottom-3 {
 			m.aiTop = bottom
 		}
-		return m, waitForAI(m.aiChan)
+		return m, waitForAI(m.aiGen, m.aiChan)
 	}
-	m.aiBusy = false
+	m.releaseAI()
 	if m.aiDraft && strings.TrimSpace(m.aiText) != "" {
 		m.input.SetValue(strings.TrimSpace(m.aiText))
 		m.replan()
@@ -2357,15 +2374,35 @@ func (m Model) focusMessages() Model {
 		// The reader is leaving the column, not stepping back through it, so
 		// the whole stack goes rather than one frame.
 		m.closeRight()
-		m.aiOpen, m.aiChan = false, nil
+		m.stopAI()
 		m.layout()
 	}
 	m.focus = paneMessages
 	return m
 }
 
-func (m Model) closeAI() Model {
+// stopAI drops the answer in flight. The request is cancelled so an abandoned
+// stream stops costing tokens, and the generation moves on so the wait already
+// armed on the old channel retires instead of re-arming on the nil one this
+// leaves behind.
+func (m *Model) stopAI() {
+	m.releaseAI()
 	m.aiOpen, m.aiChan = false, nil
+	m.aiGen++
+}
+
+// releaseAI retires the request once its stream has ended; the pane stays as
+// it is, because the answer in it is what the reader asked for.
+func (m *Model) releaseAI() {
+	m.aiBusy = false
+	if m.aiCancel != nil {
+		m.aiCancel()
+		m.aiCancel = nil
+	}
+}
+
+func (m Model) closeAI() Model {
+	m.stopAI()
 	if m.focus == paneThread {
 		m.focus = paneMessages
 	}

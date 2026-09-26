@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"slices"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -167,7 +166,7 @@ func (f *Fake) SearchMessageIDs(_ context.Context, start, end time.Time) ([]Sear
 		hits = append(hits, SearchHit{MessageID: m.MessageID, ChatID: m.ChatID, FromID: m.Sender.ID,
 			ThreadID: m.ThreadID, Type: m.MsgType, CreateTime: ct, Position: int64(m.MessagePosition)})
 	}
-	sort.Slice(hits, func(i, j int) bool { return hits[i].CreateTime.After(hits[j].CreateTime) })
+	slices.SortFunc(hits, func(a, b SearchHit) int { return b.CreateTime.Compare(a.CreateTime) })
 	if f.Truncate > 0 && len(hits) > f.Truncate {
 		return hits[:f.Truncate], true, nil
 	}
@@ -193,7 +192,7 @@ func (f *Fake) SearchMessages(_ context.Context, query string, limit int) ([]Sea
 			ThreadID: m.ThreadID, Type: m.MsgType, CreateTime: m.CreateTime.Time(),
 			Position: int64(m.MessagePosition)})
 	}
-	sort.Slice(hits, func(i, j int) bool { return hits[i].CreateTime.After(hits[j].CreateTime) })
+	slices.SortFunc(hits, func(a, b SearchHit) int { return b.CreateTime.Compare(a.CreateTime) })
 	if limit > 0 && len(hits) > limit {
 		hits = hits[:limit]
 	}
@@ -258,7 +257,7 @@ func (f *Fake) ListMessagesRaw(_ context.Context, containerType, containerID str
 		}
 		out = append(out, m)
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].CreateTime < out[j].CreateTime })
+	slices.SortFunc(out, func(a, b RawMessage) int { return cmp.Compare(a.CreateTime, b.CreateTime) })
 	return out, nil
 }
 
@@ -282,7 +281,7 @@ func (f *Fake) OlderMessagesRaw(_ context.Context, chatID string, before time.Ti
 		}
 		out = append(out, m)
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].CreateTime > out[j].CreateTime })
+	slices.SortFunc(out, func(a, b RawMessage) int { return cmp.Compare(b.CreateTime, a.CreateTime) })
 	size := cmp.Or(f.OlderPage, listPageSize)
 	return out[:min(len(out), size)], len(out) > size, nil
 }

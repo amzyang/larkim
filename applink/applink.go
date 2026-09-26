@@ -8,6 +8,7 @@
 package applink
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"os/exec"
@@ -22,6 +23,9 @@ import (
 // walked onto before it sends a receipt, so firing faster than it draws loses
 // the chats it was hurried through.
 const Pace = 250 * time.Millisecond
+
+// openTimeout bounds one invocation of the launcher.
+const openTimeout = 20 * time.Second
 
 // ChatLink addresses a chat, optionally at a message position. The lark://
 // scheme reaches the desktop client directly; the https applink form would
@@ -60,9 +64,14 @@ func Open(log *slog.Logger, targets []string, background bool) error {
 	// argv exists whole. It is logged the way lark-cli's is: quoted, nothing
 	// elided, paste-able back into a shell to see what macOS was asked.
 	log.Debug("open", "argv", "open "+larkcli.ArgvLine(args))
+	// open hands the URL to LaunchServices and returns, so a call still
+	// running after this is one that will not return; the applink queue waits
+	// on it, and a wait with no end would stop the sweep for good.
+	ctx, cancel := context.WithTimeout(context.Background(), openTimeout)
+	defer cancel()
 	// open reports why it refused on stderr and nothing but a status to the
 	// caller, so dropping stderr would leave every failure as "exit status 1".
-	cmd := exec.Command("open", args...)
+	cmd := exec.CommandContext(ctx, "open", args...)
 	var stderr strings.Builder
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {

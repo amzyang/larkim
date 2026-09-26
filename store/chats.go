@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 )
@@ -257,7 +258,7 @@ func (s *Store) SetMuteStatus(ctx context.Context, muted map[string]bool, unknow
 func (s *Store) GetChat(ctx context.Context, chatID string) (Chat, error) {
 	row := s.db.QueryRowContext(ctx, `SELECT `+chatColumns+` FROM chats c LEFT JOIN contacts ct ON ct.open_id = c.p2p_target_id WHERE c.chat_id = ?`, chatID)
 	c, err := scanChat(row)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return c, ErrNotFound
 	}
 	return c, err

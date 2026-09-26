@@ -336,8 +336,8 @@ func permanentFailure(err error) bool {
 	if errors.Is(err, errNotDownloadable) {
 		return true
 	}
-	var le *larkcli.Error
-	return errors.As(err, &le) && le.IsPermanent()
+	le, ok := errors.AsType[*larkcli.Error](err)
+	return ok && le.IsPermanent()
 }
 
 // pollReadStatus asks Feishu whether the user has read recent messages from

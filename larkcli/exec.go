@@ -225,11 +225,11 @@ func (c *ExecClient) exec(ctx context.Context, args ...string) (stdout, stderr [
 	runErr := cmd.Run()
 	dur := time.Since(started)
 	// One exit, so the response line is emitted exactly once.
-	var exitErr *exec.ExitError
+	exitErr, exited := errors.AsType[*exec.ExitError](runErr)
 	switch {
 	case runErr == nil:
 		stdout, stderr = out.Bytes(), errBuf.Bytes()
-	case errors.As(runErr, &exitErr):
+	case exited:
 		stdout, stderr, exitCode = out.Bytes(), errBuf.Bytes(), exitErr.ExitCode()
 	default:
 		if ctx.Err() != nil {
@@ -385,7 +385,10 @@ func decodeSearchHits(data json.RawMessage) ([]SearchHit, bool, error) {
 	hits := make([]SearchHit, 0, len(resp.Items))
 	for _, it := range resp.Items {
 		m := it.Meta
-		ct, _ := time.Parse(time.RFC3339, m.CreateTime)
+		ct, err := time.Parse(time.RFC3339, m.CreateTime)
+		if err != nil {
+			return nil, false, fmt.Errorf("decode search: create_time %q: %w", m.CreateTime, err)
+		}
 		hits = append(hits, SearchHit{
 			MessageID: m.MessageID, ChatID: m.ChatID, FromID: m.FromID, ThreadID: m.ThreadID,
 			Type: m.Type, IsP2P: m.IsP2P, Position: m.Position, CreateTime: ct,

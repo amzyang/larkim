@@ -222,7 +222,9 @@ func (s *Syncer) Tick(ctx context.Context) (Report, error) {
 	if rerr := s.Store.RecordRun(ctx, run); rerr != nil {
 		s.log().Warn("record run", "err", rerr)
 	}
-	_ = s.setStateTime(ctx, KeyLastTickAt, end)
+	if serr := s.setStateTime(ctx, KeyLastTickAt, end); serr != nil {
+		s.log().Warn("stamp last tick", "err", serr)
+	}
 	if s.OnChange != nil {
 		s.OnChange()
 	}
@@ -241,7 +243,11 @@ func (s *Syncer) changed(n int) {
 
 func (s *Syncer) tick(ctx context.Context, now time.Time) (Report, error) {
 	var rep Report
-	if status, _, _ := s.Store.GetState(ctx, KeyStatus); status == StatusNeedsLogin {
+	status, _, err := s.Store.GetState(ctx, KeyStatus)
+	if err != nil {
+		return rep, err
+	}
+	if status == StatusNeedsLogin {
 		if _, err := s.EnsureIdentity(ctx); err != nil {
 			return rep, err
 		}
@@ -287,8 +293,16 @@ func (s *Syncer) tick(ctx context.Context, now time.Time) (Report, error) {
 	// the ordering cannot show: edits, recalls, and a chat the page missed.
 	// It does not have to run often, which is the point: the search index is
 	// what was slow, not the search.
-	rep.Window = FastWindow(s.stateTime(ctx, KeyWatermark), now, s.Opt.Overlap)
-	if Due(s.stateTime(ctx, KeySearchAt), searchEvery, now) {
+	watermark, err := s.stateTime(ctx, KeyWatermark)
+	if err != nil {
+		return rep, err
+	}
+	rep.Window = FastWindow(watermark, now, s.Opt.Overlap)
+	searchedAt, err := s.stateTime(ctx, KeySearchAt)
+	if err != nil {
+		return rep, err
+	}
+	if Due(searchedAt, searchEvery, now) {
 		rep.Searched = true
 		hits, coveredEnd, err := s.searchWindow(ctx, rep.Window)
 		if err != nil {
@@ -335,7 +349,11 @@ func (s *Syncer) tick(ctx context.Context, now time.Time) (Report, error) {
 	rep.History = n
 
 	// 5. Full chat listing, and the per-user settings it does not carry.
-	if Due(s.stateTime(ctx, KeyChatsRefreshed), s.Opt.ChatsRefreshEvery, now) {
+	chatsRefreshed, err := s.stateTime(ctx, KeyChatsRefreshed)
+	if err != nil {
+		return rep, err
+	}
+	if Due(chatsRefreshed, s.Opt.ChatsRefreshEvery, now) {
 		n, err := s.refreshChats(ctx, now)
 		if err != nil {
 			return rep, fmt.Errorf("chats: %w", err)
@@ -348,7 +366,11 @@ func (s *Syncer) tick(ctx context.Context, now time.Time) (Report, error) {
 
 	// 6. Slow path: reconcile the most active chats, then the threads the
 	// reader has a stake in, which no chat's listing carries.
-	if Due(s.stateTime(ctx, KeySlowPathAt), s.Opt.SlowPathEvery, now) {
+	slowPathAt, err := s.stateTime(ctx, KeySlowPathAt)
+	if err != nil {
+		return rep, err
+	}
+	if Due(slowPathAt, s.Opt.SlowPathEvery, now) {
 		n, err := s.slowPath(ctx, active, now)
 		if err != nil {
 			return rep, fmt.Errorf("slow path: %w", err)
@@ -412,7 +434,11 @@ func (s *Syncer) tick(ctx context.Context, now time.Time) (Report, error) {
 	rep.ReadChecks = n
 
 	// 14. Keep the chat list's reactions current for the liveliest p2p chats.
-	if Due(s.stateTime(ctx, KeyReactionsAt), reactionsEvery, now) {
+	reactionsAt, err := s.stateTime(ctx, KeyReactionsAt)
+	if err != nil {
+		return rep, err
+	}
+	if Due(reactionsAt, reactionsEvery, now) {
 		n, err = s.reactionsSlice(ctx, now)
 		if err != nil {
 			return rep, fmt.Errorf("reactions: %w", err)
@@ -469,7 +495,10 @@ func (s *Syncer) searchWindow(ctx context.Context, w Window) ([]larkcli.SearchHi
 // historySlice searches [cursor, cursor+24h] ∩ [.., liveStart] and fetches
 // unknown messages; it returns 0 once history is caught up.
 func (s *Syncer) historySlice(ctx context.Context, liveStart, now time.Time) (int, error) {
-	cur := s.stateTime(ctx, KeyHistoryCursor)
+	cur, err := s.stateTime(ctx, KeyHistoryCursor)
+	if err != nil {
+		return 0, err
+	}
 	if cur.IsZero() {
 		cur = now.AddDate(0, 0, -s.Opt.BackfillDays)
 	}
@@ -881,8 +910,8 @@ func (s *Syncer) pullStakedThreads(ctx context.Context, now time.Time) (int, err
 // example "restricted mode" chats refuse listing) so the loop moves on. It
 // returns false for errors that must abort the tick (auth, network, rate limit).
 func (s *Syncer) recordChatError(ctx context.Context, chatID string, err error, now time.Time) bool {
-	var le *larkcli.Error
-	if !errors.As(err, &le) || !le.IsPermanent() {
+	le, ok := errors.AsType[*larkcli.Error](err)
+	if !ok || !le.IsPermanent() {
 		return false
 	}
 	s.log().Warn("chat listing rejected; skipping chat", "chat_id", chatID, "code", le.Code, "error", le.Message)
@@ -1004,16 +1033,23 @@ func rawString(r json.RawMessage) string {
 }
 
 // stateTime and setStateTime keep sync_state timestamps as Unix milliseconds.
-func (s *Syncer) stateTime(ctx context.Context, key string) time.Time {
+// An unset key is the zero time, which the planners read as "never run"; a
+// read that failed is reported, because a caller that took it for a first run
+// would plan the smallest possible window and then write its end over the
+// cursor it could not see.
+func (s *Syncer) stateTime(ctx context.Context, key string) (time.Time, error) {
 	v, ok, err := s.Store.GetState(ctx, key)
-	if err != nil || !ok {
-		return time.Time{}
+	if err != nil {
+		return time.Time{}, fmt.Errorf("read %s: %w", key, err)
+	}
+	if !ok {
+		return time.Time{}, nil
 	}
 	ms, err := strconv.ParseInt(v, 10, 64)
 	if err != nil || ms == 0 {
-		return time.Time{}
+		return time.Time{}, nil
 	}
-	return time.UnixMilli(ms)
+	return time.UnixMilli(ms), nil
 }
 
 func (s *Syncer) setStateTime(ctx context.Context, key string, t time.Time) error {
@@ -1060,8 +1096,8 @@ func (s *Syncer) Run(ctx context.Context) error {
 // errClass names why the loop is backing off, which the delay alone does not
 // say.
 func errClass(err error) string {
-	var le *larkcli.Error
-	if !errors.As(err, &le) {
+	le, ok := errors.AsType[*larkcli.Error](err)
+	if !ok {
 		return "other"
 	}
 	switch {
@@ -1076,8 +1112,7 @@ func errClass(err error) string {
 }
 
 func (s *Syncer) delayFor(err error, failures int) time.Duration {
-	var le *larkcli.Error
-	if errors.As(err, &le) {
+	if le, ok := errors.AsType[*larkcli.Error](err); ok {
 		switch {
 		case le.IsAuth(), le.IsNetwork():
 			return Backoff(failures, 30*time.Second, 10*time.Minute)
@@ -1093,8 +1128,7 @@ func (s *Syncer) SetStatus(ctx context.Context, err error) {
 	status, msg := StatusRunning, ""
 	if err != nil {
 		status, msg = StatusError, err.Error()
-		var le *larkcli.Error
-		if errors.As(err, &le) && le.IsAuth() {
+		if le, ok := errors.AsType[*larkcli.Error](err); ok && le.IsAuth() {
 			status = StatusNeedsLogin
 		}
 	}

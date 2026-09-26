@@ -12,8 +12,11 @@ One row per chat the user is (or was) in, from `GET /im/v1/chats` with `types=p2
 |---|---|
 | `chat_id` | `oc_…` primary key |
 | `name` | group name; for p2p, the peer's display name |
+| `description` | the group's description as the client shows it; empty for p2p |
 | `chat_mode` | `group`, `topic` or `p2p` |
 | `chat_status` | `normal`, `dissolved`, `dissolved_save` |
+| `owner_id` | the group owner's open id; empty for p2p and for groups the listing gave no owner for |
+| `external` | 1 when the chat crosses tenants |
 | `p2p_target_id`, `p2p_target_type` | peer open id and `user`/`bot` for p2p chats |
 | `avatar_url`, `avatar_path` | group avatar URL and local copy (relative to the data dir); empty for p2p |
 | `cursor_ms` | newest `create_ms` pulled by a per-chat listing; the slow path resumes from here minus overlap |
@@ -208,7 +211,7 @@ FTS5 external-content index over `messages(content, sender_name)` with the trigr
 
 ## contacts, chat_members
 
-`contacts` caches users and bots seen as chat members or senders (`open_id`, `name`, `email`, `p2p_chat_id`, `avatar_url`, `avatar_path`). `avatar_url = 'none'` means the user has no fetchable avatar; `avatar_path = '-'` means the download failed and is not retried. `chat_members` maps `chat_id` → `member_id` with `member_type` (`user` or `bot`) and the time the membership was last confirmed; group member lists refresh daily. A p2p chat keeps no rows — its pair is `chats.p2p_target_id` and the reader. `chats.members_truncated` marks a chat whose roster the tenant's security config caps: the rows held for it are a part of the membership, so a consumer must not read their count as the size of the chat.
+`contacts` caches users and bots seen as chat members or senders (`open_id`, `name`, `email`, `p2p_chat_id`, `avatar_url`, `avatar_path`, `is_bot`). `is_bot` is 1 for an app rather than a person, and it is the only thing that tells them apart: both carry an open id and a name. `avatar_url = 'none'` means the user has no fetchable avatar; `avatar_path = '-'` means the download failed and is not retried. `chat_members` maps `chat_id` → `member_id` with `member_type` (`user` or `bot`) and the time the membership was last confirmed; group member lists refresh daily. A p2p chat keeps no rows — its pair is `chats.p2p_target_id` and the reader. `chats.members_truncated` marks a chat whose roster the tenant's security config caps: the rows held for it are a part of the membership, so a consumer must not read their count as the size of the chat.
 
 `enterprise_email`, `department` and `is_cross_tenant` come from a separate identity lookup, marked by `detail_checked_at`; a non-zero `detail_checked_at` with empty fields means the lookup ran and the tenant did not return that user. The number ending the `enterprise_email` local part (`liming01`) is the tenant's own disambiguator for same-named colleagues.
 

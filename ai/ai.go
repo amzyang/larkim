@@ -64,11 +64,19 @@ func (c *Client) Stream(ctx context.Context, transcript, prompt string) <-chan C
 				}
 			}
 		}
+		// A reader that walked away leaves the buffer full, so both of these
+		// have to be able to give up the way the deltas above do.
 		if err := stream.Err(); err != nil {
-			out <- Chunk{Err: fmt.Errorf("claude: %w", err), Done: true}
+			select {
+			case out <- Chunk{Err: fmt.Errorf("claude: %w", err), Done: true}:
+			case <-ctx.Done():
+			}
 			return
 		}
-		out <- Chunk{Done: true}
+		select {
+		case out <- Chunk{Done: true}:
+		case <-ctx.Done():
+		}
 	}()
 	return out
 }

@@ -93,7 +93,8 @@ func (m Model) openRight(f rightFrame) (Model, tea.Cmd) {
 // list, the way walking onto a chat opens its page without leaving the list;
 // only a container the reader asked for opens around them.
 func (m Model) openRightIn(f rightFrame, p pane) (Model, tea.Cmd) {
-	m.aiOpen, m.aiChan, m.infoOpen = false, nil, false
+	m.stopAI()
+	m.infoOpen = false
 	m.rightStack = nil
 	m.focus = p
 	return m, m.showRight(f)

@@ -15,8 +15,9 @@ func TestOpenLog_RollsOverWhenTheFileIsFull(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "larkim.log")
 	require.NoError(t, os.WriteFile(path, bytes.Repeat([]byte("x"), maxLogBytes+1), 0o600))
 
-	f, err := openLog(path)
+	f, rotate, err := openLog(path)
 	require.NoError(t, err)
+	require.NoError(t, rotate)
 	require.NoError(t, f.Close())
 
 	st, err := os.Stat(path)
@@ -31,8 +32,9 @@ func TestOpenLog_AppendsToAFileUnderTheCap(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "larkim.log")
 	require.NoError(t, os.WriteFile(path, []byte("kept\n"), 0o600))
 
-	f, err := openLog(path)
+	f, rotate, err := openLog(path)
 	require.NoError(t, err)
+	require.NoError(t, rotate)
 	_, err = f.WriteString("added\n")
 	require.NoError(t, err)
 	require.NoError(t, f.Close())
@@ -41,6 +43,22 @@ func TestOpenLog_AppendsToAFileUnderTheCap(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "kept\nadded\n", string(b))
 	require.NoFileExists(t, path+".1")
+}
+
+// A rollover that could not be made leaves the cap not applying, which is the
+// one thing about it worth a record.
+func TestOpenLog_ReportsARolloverItCouldNotMake(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "larkim.log")
+	require.NoError(t, os.WriteFile(path, bytes.Repeat([]byte("x"), maxLogBytes+1), 0o600))
+	// A non-empty directory standing where the rolled file goes: rename
+	// cannot replace it.
+	require.NoError(t, os.Mkdir(path+".1", 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(path+".1", "occupied"), []byte("x"), 0o600))
+
+	f, rotate, err := openLog(path)
+	require.NoError(t, err)
+	require.NoError(t, f.Close())
+	require.Error(t, rotate)
 }
 
 // logApp builds an App logging into dir, for a command with the given

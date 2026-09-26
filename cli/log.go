@@ -28,7 +28,7 @@ func (a *App) initLog(cmd *cobra.Command) {
 	if a.debug {
 		level = slog.LevelDebug
 	}
-	w, err := a.logWriter(cmd)
+	w, rotate, err := a.logWriter(cmd)
 	if err != nil {
 		// The log is a derived artifact; it must never be the thing that
 		// breaks the tool.
@@ -37,30 +37,39 @@ func (a *App) initLog(cmd *cobra.Command) {
 	}
 	a.log = slog.New(slog.NewTextHandler(w, &slog.HandlerOptions{Level: level})).
 		With("pid", os.Getpid(), "cmd", cmd.Name())
+	if rotate != nil {
+		// Reported here rather than where it happened, because the logger it
+		// belongs in is what that step was opening.
+		a.log.Warn("log rollover failed; the size cap will not apply until it succeeds", "err", rotate)
+	}
 	a.log.Debug("larkim", "version", a.Version, "data_dir", a.cfg.DataDir, "debug", a.debug)
 }
 
-func (a *App) logWriter(cmd *cobra.Command) (io.Writer, error) {
-	f, err := openLog(a.cfg.LogPath())
+// logWriter returns the log's destination and, separately, a rollover that
+// failed: the cap stops applying, which is worth a record, but it is no reason
+// to leave the process without a log.
+func (a *App) logWriter(cmd *cobra.Command) (w io.Writer, rotate error, err error) {
+	f, rotate, err := openLog(a.cfg.LogPath())
 	if err != nil {
-		return nil, err
+		return nil, rotate, err
 	}
 	if cmd.Annotations[altScreen] != "" {
-		return f, nil
+		return f, rotate, nil
 	}
-	return io.MultiWriter(a.Err, f), nil
+	return io.MultiWriter(a.Err, f), rotate, nil
 }
 
 // openLog appends to path, rolling the file over once when it is full. The
 // handle is never closed: a record is one write() on an O_APPEND file, so
 // nothing is buffered to lose at exit, and several larkim processes can share
 // the file, which is why every line carries a pid.
-func openLog(path string) (*os.File, error) {
+func openLog(path string) (f *os.File, rotate error, err error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	if st, err := os.Stat(path); err == nil && st.Size() >= maxLogBytes {
-		_ = os.Rename(path, path+".1")
+	if st, serr := os.Stat(path); serr == nil && st.Size() >= maxLogBytes {
+		rotate = os.Rename(path, path+".1")
 	}
-	return os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	f, err = os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	return f, rotate, err
 }

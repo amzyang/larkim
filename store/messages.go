@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json/jsontext"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -288,7 +289,7 @@ func (s *Store) UnknownMessageIDs(ctx context.Context, ids []string) ([]string, 
 func (s *Store) GetMessage(ctx context.Context, messageID string) (Message, error) {
 	row := s.db.QueryRowContext(ctx, `SELECT `+messageColumns+` `+messageFrom+` WHERE m.message_id = ?`, messageID)
 	m, err := scanMessage(row)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return m, ErrNotFound
 	}
 	return m, err

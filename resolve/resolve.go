@@ -4,7 +4,9 @@ package resolve
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/amzyang/larkim/larkcli"
@@ -16,6 +18,14 @@ type Resolver struct {
 	Store  *store.Store
 	Client larkcli.Client
 	Now    func() int64 // Unix ms, for contact upserts
+	Log    *slog.Logger
+}
+
+func (r *Resolver) log() *slog.Logger {
+	if r.Log == nil {
+		return slog.New(slog.DiscardHandler)
+	}
+	return r.Log
 }
 
 // AmbiguousError lists the candidates a reference matched.
@@ -33,7 +43,7 @@ func (r *Resolver) Chat(ctx context.Context, ref string) (store.Chat, error) {
 	ref = strings.TrimSpace(ref)
 	if strings.HasPrefix(ref, "oc_") {
 		c, err := r.Store.GetChat(ctx, ref)
-		if err == store.ErrNotFound {
+		if errors.Is(err, store.ErrNotFound) {
 			return store.Chat{ChatID: ref}, nil
 		}
 		return c, err
@@ -74,7 +84,7 @@ func (r *Resolver) User(ctx context.Context, ref string) (store.Contact, error) 
 	ref = strings.TrimSpace(ref)
 	if strings.HasPrefix(ref, "ou_") {
 		c, err := r.Store.GetContact(ctx, ref)
-		if err == store.ErrNotFound {
+		if errors.Is(err, store.ErrNotFound) {
 			return store.Contact{OpenID: ref}, nil
 		}
 		return c, err
@@ -102,7 +112,11 @@ func (r *Resolver) User(ctx context.Context, ref string) (store.Contact, error) 
 	switch len(hits) {
 	case 1:
 		if r.Now != nil {
-			_ = r.Store.UpsertContacts(ctx, hits, r.Now())
+			// Caching the hit is best-effort: a failure costs the next
+			// reference the same lookup, not the answer to this one.
+			if err := r.Store.UpsertContacts(ctx, hits, r.Now()); err != nil {
+				r.log().Warn("cache resolved user", "ref", ref, "err", err)
+			}
 		}
 		return hits[0], nil
 	case 0:

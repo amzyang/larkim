@@ -21,6 +21,10 @@ func (s *Store) MessagesAfterRowID(ctx context.Context, rowID int64, chatID stri
 	return queryAll(ctx, s.db, scanMessage, q, args...)
 }
 
+// watchBatch is how many rows one delivery carries. A tick that finds more
+// keeps paging rather than waiting, so a backfill's batches cannot outrun it.
+const watchBatch = 1000
+
 // Watch polls the ingest counter every interval and delivers each batch of
 // newly stored messages (optionally for one chat) until ctx is done.
 // Rendering may lag a tick behind ingestion; consumers that need content
@@ -40,21 +44,36 @@ func (s *Store) Watch(ctx context.Context, every time.Duration, chatID string) <
 			case <-t.C:
 			}
 			cur, err := s.MaxMessageRowID(ctx)
-			if err != nil || cur == last {
+			if err != nil || cur <= last {
 				continue
 			}
-			msgs, err := s.MessagesAfterRowID(ctx, last, chatID, 1000)
-			if err != nil {
-				continue
-			}
-			last = cur
-			if len(msgs) == 0 {
-				continue
-			}
-			select {
-			case ch <- msgs:
-			case <-ctx.Done():
-				return
+			for last < cur {
+				msgs, err := s.MessagesAfterRowID(ctx, last, chatID, watchBatch)
+				if err != nil {
+					// The cursor stays put, so the next tick retries the
+					// same range rather than stepping over it.
+					break
+				}
+				if n := len(msgs); n == watchBatch {
+					last = msgs[n-1].ID
+				} else {
+					// A short page drained the table. The query has no
+					// ceiling, so it may have carried rows written past cur;
+					// starting the next round below them would deliver those
+					// twice.
+					last = cur
+					if n > 0 {
+						last = max(last, msgs[n-1].ID)
+					}
+				}
+				if len(msgs) == 0 {
+					break
+				}
+				select {
+				case ch <- msgs:
+				case <-ctx.Done():
+					return
+				}
 			}
 		}
 	}()

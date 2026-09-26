@@ -52,7 +52,10 @@ func (s *Syncer) repairSlice(ctx context.Context, now time.Time) (int, error) {
 	if s.Opt.RepairEvery <= 0 {
 		return 0, nil
 	}
-	started := s.stateTime(ctx, KeyRepairAt)
+	started, err := s.stateTime(ctx, KeyRepairAt)
+	if err != nil {
+		return 0, err
+	}
 	if Due(started, s.Opt.RepairEvery, now) {
 		if err := s.setStateTime(ctx, KeyRepairAt, now); err != nil {
 			return 0, err
@@ -188,8 +191,7 @@ func (s *Syncer) resolveBotAvatarURLs(ctx context.Context, now time.Time) error 
 		default:
 			// Same bargain as the user lookup: an app this tenant will not
 			// show is settled, so it is asked for once rather than forever.
-			var le *larkcli.Error
-			if !errors.As(err, &le) || !le.IsPermanent() {
+			if le, ok := errors.AsType[*larkcli.Error](err); !ok || !le.IsPermanent() {
 				return err
 			}
 		}
@@ -197,7 +199,9 @@ func (s *Syncer) resolveBotAvatarURLs(ctx context.Context, now time.Time) error 
 			return err
 		}
 		if name != "" {
-			_ = s.Store.UpsertContacts(ctx, []store.Contact{{OpenID: b.OpenID, Name: name, IsBot: true}}, now.UnixMilli())
+			if err := s.Store.UpsertContacts(ctx, []store.Contact{{OpenID: b.OpenID, Name: name, IsBot: true}}, now.UnixMilli()); err != nil {
+				s.log().Warn("name a bot", "open_id", b.OpenID, "err", err)
+			}
 		}
 	}
 	return nil
@@ -262,8 +266,7 @@ func (s *Syncer) resolveAvatarURLs(ctx context.Context, now time.Time) error {
 		// A permanent rejection settles the batch as having no avatar. Letting
 		// it propagate would fail the tick before the later slices run and
 		// hand back the same ids next time, forever.
-		var le *larkcli.Error
-		if !errors.As(err, &le) || !le.IsPermanent() {
+		if le, ok := errors.AsType[*larkcli.Error](err); !ok || !le.IsPermanent() {
 			return err
 		}
 		for _, id := range ids {
@@ -292,8 +295,11 @@ func (s *Syncer) resolveAvatarURLs(ctx context.Context, now time.Time) error {
 		}
 	}
 	if len(named) > 0 {
-		// A name refresh riding along with the avatar lookup is best-effort.
-		_ = s.Store.UpsertContacts(ctx, named, now.UnixMilli())
+		// A name refresh riding along with the avatar lookup is best-effort:
+		// the next lookup brings the same names round again.
+		if err := s.Store.UpsertContacts(ctx, named, now.UnixMilli()); err != nil {
+			s.log().Warn("refresh contact names", "contacts", len(named), "err", err)
+		}
 	}
 	return nil
 }

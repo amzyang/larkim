@@ -124,15 +124,27 @@ func (a *App) statusCmd() *cobra.Command {
 			defer st.Close()
 			ctx := context.Background()
 			var out statusOut
-			out.Status, _, _ = st.GetState(ctx, sync.KeyStatus)
+			if out.Status, _, err = st.GetState(ctx, sync.KeyStatus); err != nil {
+				return err
+			}
 			if out.Status == "" {
 				out.Status = "never_synced"
 			}
-			out.LastError, _, _ = st.GetState(ctx, sync.KeyLastError)
-			out.SelfOpenID, _, _ = st.GetState(ctx, sync.KeySelfOpenID)
-			out.WatermarkMs = stateInt(ctx, st, sync.KeyWatermark)
-			out.LastTickMs = stateInt(ctx, st, sync.KeyLastTickAt)
-			out.ChatsRefreshed = stateInt(ctx, st, sync.KeyChatsRefreshed)
+			if out.LastError, _, err = st.GetState(ctx, sync.KeyLastError); err != nil {
+				return err
+			}
+			if out.SelfOpenID, _, err = st.GetState(ctx, sync.KeySelfOpenID); err != nil {
+				return err
+			}
+			if out.WatermarkMs, err = stateInt(ctx, st, sync.KeyWatermark); err != nil {
+				return err
+			}
+			if out.LastTickMs, err = stateInt(ctx, st, sync.KeyLastTickAt); err != nil {
+				return err
+			}
+			if out.ChatsRefreshed, err = stateInt(ctx, st, sync.KeyChatsRefreshed); err != nil {
+				return err
+			}
 			if out.Status == sync.StatusNeedsLogin {
 				out.Hint = "run: lark-cli auth login"
 			}
@@ -141,13 +153,26 @@ func (a *App) statusCmd() *cobra.Command {
 			} else if errors.Is(err, sync.ErrLocked) {
 				out.DaemonLockHeld = true
 			}
-			out.Counts, _ = st.Counts(ctx)
-			out.Unread, _ = st.UnreadCount(ctx)
-			out.Resources, _ = st.ResourceCounts(ctx)
-			pending, _ := st.ChatsNeedingBackfill(ctx, 100000)
+			if out.Counts, err = st.Counts(ctx); err != nil {
+				return err
+			}
+			if out.Unread, err = st.UnreadCount(ctx); err != nil {
+				return err
+			}
+			if out.Resources, err = st.ResourceCounts(ctx); err != nil {
+				return err
+			}
+			pending, err := st.ChatsNeedingBackfill(ctx, 100000)
+			if err != nil {
+				return err
+			}
 			out.PendingBackfill = len(pending)
-			out.Runs, _ = st.LastRuns(ctx, 5)
-			out.Events, _ = st.LastEvents(ctx, 5)
+			if out.Runs, err = st.LastRuns(ctx, 5); err != nil {
+				return err
+			}
+			if out.Events, err = st.LastEvents(ctx, 5); err != nil {
+				return err
+			}
 			if a.json() {
 				return a.printJSON(out)
 			}
@@ -182,8 +207,12 @@ func (a *App) statusCmd() *cobra.Command {
 	}
 }
 
-func stateInt(ctx context.Context, st *store.Store, key string) int64 {
-	v, _, _ := st.GetState(ctx, key)
+func stateInt(ctx context.Context, st *store.Store, key string) (int64, error) {
+	v, _, err := st.GetState(ctx, key)
+	if err != nil {
+		return 0, err
+	}
+	// An unset or malformed stamp is zero, which prints as "never".
 	n, _ := strconv.ParseInt(v, 10, 64)
-	return n
+	return n, nil
 }

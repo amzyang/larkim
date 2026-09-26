@@ -36,7 +36,7 @@ func (a *App) sendCmd() *cobra.Command {
 			defer st.Close()
 			ctx := context.Background()
 			client := a.client()
-			r := &resolve.Resolver{Store: st, Client: client, Now: func() int64 { return time.Now().UnixMilli() }}
+			r := &resolve.Resolver{Store: st, Client: client, Now: func() int64 { return time.Now().UnixMilli() }, Log: a.logger()}
 			var target larkcli.Target
 			var label string
 			if chat != "" {

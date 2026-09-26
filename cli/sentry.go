@@ -83,13 +83,12 @@ func reportable(err error) bool {
 	if err == nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, store.ErrNotFound) {
 		return false
 	}
-	var le *larkcli.Error
-	if errors.As(err, &le) {
+	if le, ok := errors.AsType[*larkcli.Error](err); ok {
 		return !(le.IsAuth() || le.IsNetwork() || le.IsRateLimit() || le.IsPermanent())
 	}
-	var amb *resolve.AmbiguousError
-	var usage *usageError
-	return !errors.As(err, &amb) && !errors.As(err, &usage)
+	_, ambiguous := errors.AsType[*resolve.AmbiguousError](err)
+	_, misused := errors.AsType[*usageError](err)
+	return !ambiguous && !misused
 }
 
 // captureError sends a reportable error and waits briefly for delivery.

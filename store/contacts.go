@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"context"
 	"database/sql"
+	"errors"
 	"slices"
 	"strings"
 )
@@ -115,7 +116,7 @@ func (s *Store) ListContacts(ctx context.Context, limit int) ([]Contact, error) 
 // GetContact loads one contact.
 func (s *Store) GetContact(ctx context.Context, openID string) (Contact, error) {
 	c, err := scanContact(s.db.QueryRowContext(ctx, `SELECT `+contactColumns+` FROM contacts WHERE open_id = ?`, openID))
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return c, ErrNotFound
 	}
 	return c, err

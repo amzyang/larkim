@@ -4,13 +4,14 @@
 package store
 
 import (
+	"cmp"
 	"context"
 	"database/sql"
 	"embed"
 	"errors"
 	"fmt"
 	"io/fs"
-	"sort"
+	"slices"
 	"strings"
 
 	_ "modernc.org/sqlite"
@@ -155,7 +156,7 @@ func migrationFiles() []migration {
 			out = append(out, migration{version: v, name: e.Name()})
 		}
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].version < out[j].version })
+	slices.SortFunc(out, func(a, b migration) int { return cmp.Compare(a.version, b.version) })
 	return out
 }
 
@@ -173,7 +174,7 @@ func Schema() string {
 // GetState reads a sync_state value; ok is false when the key is absent.
 func (s *Store) GetState(ctx context.Context, key string) (value string, ok bool, err error) {
 	err = s.db.QueryRowContext(ctx, `SELECT value FROM sync_state WHERE key = ?`, key).Scan(&value)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return "", false, nil
 	}
 	return value, err == nil, err
