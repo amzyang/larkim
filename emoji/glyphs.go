@@ -45,7 +45,7 @@ var glyphs = map[string]string{
 	"LEMON": "🍋", "GET": "", "LGTM": "", "ONIT": "",
 	"ONESECOND": "", "VRHEADSET": "🥽", "YOUARETHEBEST": "", "SALUTE": "",
 	"SHAKE": "🤝", "HIGHFIVE": "🙌", "UPPERLEFT": "", "THUMBSDOWN": "👎",
-	"SLIGHT": "", "TONGUE": "😛", "EYESCLOSED": "", "ROARFORYOU": "",
+	"SLIGHT": "", "TONGUE": "😛", "EYESCLOSED": "",
 	"CALF": "🐮", "BEAR": "🐻", "BULL": "🐂", "RAINBOWPUKE": "",
 	"ROSE": "🌹", "HEART": "❤️", "PARTY": "🎉", "LIPS": "",
 	"BEER": "🍻", "CAKE": "🎂", "GIFT": "🎁", "CUCUMBER": "🥒",

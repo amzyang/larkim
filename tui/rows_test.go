@@ -210,7 +210,9 @@ func TestRenderRows_QuotesTheMessageAReplyAnswers(t *testing.T) {
 	require.Less(t, strings.Index(out, "▏Reply to 孙琪01"), strings.Index(out, "任务id HTK_36"), "the quote sits above the body")
 }
 
-func TestRenderRows_SkipsTheQuoteForTheMessageJustAbove(t *testing.T) {
+func TestRenderRows_QuotesTheMessageJustAboveToo(t *testing.T) {
+	// The client quotes it, and without the line a reply to the message above
+	// reads as the next thing said rather than an answer to it.
 	parent := store.Message{MessageID: "om_1", SenderName: "孙琪", Content: "问题", CreateMs: msgAt(23, 9, 0), RenderedAt: 1}
 	msgs := []store.Message{
 		parent,
@@ -218,7 +220,9 @@ func TestRenderRows_SkipsTheQuoteForTheMessageJustAbove(t *testing.T) {
 	}
 	st := baseStyle()
 	st.parents = map[string]store.Message{"om_1": parent}
-	require.NotContains(t, rowText(renderRows(msgs, st)), "▏", "quoting the line right above adds nothing")
+	out := rowText(renderRows(msgs, st))
+	require.Contains(t, out, "▏Reply to 孙琪: 问题")
+	require.Less(t, strings.Index(out, "▏Reply to 孙琪"), strings.Index(out, "答案"))
 }
 
 func TestRenderRows_QuoteSaysWhenTheParentIsMissing(t *testing.T) {

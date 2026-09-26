@@ -27,6 +27,7 @@ larkim messages list --unread                  # Feishu says you have not read t
 larkim silence                                 # configured silence rules and what each one matches
 larkim sync --backfill-days 7                  # one tick in the foreground (daemon must be stopped)
 larkim db path && larkim schema                # for direct SQLite consumers, see docs/SCHEMA.md
+larkim emoji list                              # the emoji table: names, search terms, panel order, pictures
 ```
 
 Output is a table on a terminal and JSON when piped or with `--json`.
@@ -45,7 +46,7 @@ larkim tui
 
 ## TUI
 
-`larkim tui` shows chats, the selected chat's messages and, when opened, a right-hand pane, plus a composer. The chat header names the chat, marked with a glyph for its kind, and a rule under it parts the header from the list. If no daemon holds the data-dir lock the TUI syncs in-process. Colours follow the terminal palette and its light or dark background. Below 114 columns the thread or assistant pane takes the place of the messages pane; the TUI needs at least 78×12. A reply carries the message it answers quoted above its body — sender and gist on one line — unless that message is the one right above it.
+`larkim tui` shows chats, the selected chat's messages and, when opened, a right-hand pane, plus a composer. The chat header names the chat, marked with a glyph for its kind, and a rule under it parts the header from the list. If no daemon holds the data-dir lock the TUI syncs in-process. Colours follow the terminal palette and its light or dark background. Below 114 columns the thread or assistant pane takes the place of the messages pane; the TUI needs at least 78×12. A reply carries the message it answers quoted above its body — sender and gist on one line.
 
 A message that holds other messages takes one line in the list and opens in the right pane. A thread root carries how many replies are under it and the last of them, the replies themselves having left the chat's flow; a merged forward carries how many messages it holds and the first of them, in place of the tagged, timestamped tree it would otherwise print. Clicking the line, or `Enter` or `t` on it, opens the pane. Opening a forward from inside the pane stacks it over what is there — a forwarded bundle inside a thread, a bundle inside a bundle — and `Esc` peels one layer off, closing the column on the last. Messages inside a forward belong to their own chat: they can be read and copied but not answered, reacted to or recalled. A thread's replies are taken as read when its pane is opened, not when the chat is, and until then the root's line carries the unread dot and the chat wears a `⤷` where its count would go — but only for a thread you have a stake in, having spoken in it or been named. A thread nobody asked you about is somebody else's conversation, which is why the badge leaves replies out in the first place. `n` and `N` do not follow the marker: the queue they clear is the badge's.
 

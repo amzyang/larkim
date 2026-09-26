@@ -7,6 +7,7 @@ import (
 
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/amzyang/larkim/fuzzy"
 	"github.com/amzyang/larkim/larkcli"
 	"github.com/amzyang/larkim/store"
@@ -187,7 +188,7 @@ func fwdPrompt() string { return stBold.Render("forward") + stAccent.Render(" �
 func (m Model) renderForward() string {
 	w := m.width - 2
 	rows := m.fwdRows()
-	gist := stDim.Render("↪ " + flatten(replyGist(m.fwd.msg)))
+	gist := m.fwdGist(w)
 	lines := []string{padBetween(fwdPrompt()+m.fwd.input.View(), stDim.Render(strconv.Itoa(len(m.fwd.hits))), w)}
 	if len(m.fwd.hits) == 0 {
 		lines = append(lines, fit(stDim.Render("  nothing matches "+m.fwd.input.Value()), w))
@@ -207,6 +208,27 @@ func (m Model) renderForward() string {
 		lines = append(lines, fit("", w))
 	}
 	return paneStyle(true, w).Render(strings.Join(append(lines[:rows+1], gist), "\n"))
+}
+
+// fwdGist names the message being sent on, above the chooser. An official
+// emoji in it is drawn the way the client draws it rather than spelled by the
+// name it was written with.
+func (m Model) fwdGist(w int) string {
+	if segs := m.fwdGistSegs(w); segs != nil {
+		return m.joinSegsWidth(segs)
+	}
+	head := stDim.Render(fwdGistMark)
+	return head + stDim.Render(truncate(flatten(replyGist(m.fwd.msg)), w-lipgloss.Width(head)))
+}
+
+// fwdGistMark opens the line, the same arrow the status bar marks a forward
+// with.
+const fwdGistMark = "↪ "
+
+// fwdGistSegs is that line in pieces, or nil when it needs no picture. The
+// pane asks for it twice, once to claim the pictures and once to draw them.
+func (m Model) fwdGistSegs(w int) []rowSeg {
+	return gistSegs(stDim.Render(fwdGistMark), flatten(replyGist(m.fwd.msg)), w, stDim, m.chatPics().gist)
 }
 
 // loadContacts fills the list the forward chooser offers people from. It reads

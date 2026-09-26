@@ -427,7 +427,7 @@ func renderRows(msgs []store.Message, st msgStyle) []msgRow {
 	var rows []msgRow
 	var b block
 	heads := blockHeads(msgs, st)
-	day, prev := "", ""
+	day := ""
 	// open starts a section — a system notice, a sender's block — holding it
 	// off whatever came before with a blank line. A day rule needs none on
 	// either side: it is a divider in its own right, and it heads the day
@@ -455,7 +455,6 @@ func renderRows(msgs []store.Message, st msgStyle) []msgRow {
 		if x.MsgType == "system" {
 			open(i, rule)
 			rows = append(rows, systemRows(x, i, st)...)
-			prev = x.MessageID
 			continue
 		}
 		if opensBlock {
@@ -471,7 +470,7 @@ func renderRows(msgs []store.Message, st msgStyle) []msgRow {
 				rows = append(rows, msgRow{lead: g.take(), text: head, idx: i})
 			}
 		}
-		if q, ok := quoteRow(x, prev, i, st, &g); ok {
+		if q, ok := quoteRow(x, i, st, &g); ok {
 			rows = append(rows, q)
 		}
 		// A message can be both, and the thread wins: a forward somebody
@@ -484,7 +483,6 @@ func renderRows(msgs []store.Message, st msgStyle) []msgRow {
 		}
 		rows = append(rows, bodyRows(x, i, st, &g)...)
 		rows = append(rows, reactionRows(x, i, st, &g)...)
-		prev = x.MessageID
 	}
 	return append(rows, discTail(&b)...)
 }
@@ -515,30 +513,35 @@ func solo(x store.Message, st msgStyle) bool {
 }
 
 // quoteRow names the message a reply answers, above its body, the way the
-// Feishu client quotes it. A reply to the message right above says nothing
-// the list does not already show, so that one is left out.
+// Feishu client quotes it. It is drawn for every reply, including one
+// answering the message directly above: the client quotes that one too, and a
+// reply that reads as an ordinary next line is a reply the reader cannot see.
 //
 // The line says "Reply to" outright because the bar it opens with is the same
 // one a merged forward's card draws, and a card's preview lines read
 // "Name: text" too — without the words the two containers look alike.
-func quoteRow(x store.Message, prev string, idx int, st msgStyle, g *leads) (msgRow, bool) {
-	if x.ReplyTo == "" || x.ReplyTo == prev {
+func quoteRow(x store.Message, idx int, st msgStyle, g *leads) (msgRow, bool) {
+	if x.ReplyTo == "" {
 		return msgRow{}, false
 	}
 	// The whole line is the target, the way the client makes the quote block
 	// one: it names a single message, and nothing else is drawn beside it.
-	row := func(s string) msgRow {
+	row := func(text string, segs []rowSeg) msgRow {
 		l := g.take()
 		x0 := l.cols()
-		return msgRow{lead: l, text: stDim.Render(s), idx: idx,
-			zones: []clickZone{{x0: x0, x1: x0 + lipgloss.Width(s), jump: x.ReplyTo}}}
+		return msgRow{lead: l, text: text, segs: segs, idx: idx,
+			zones: []clickZone{{x0: x0, x1: x0 + lipgloss.Width(text) + segsWidth(segs), jump: x.ReplyTo}}}
 	}
 	parent, ok := st.parents[x.ReplyTo]
 	if !ok {
-		return row("▏Reply to (not synced)"), true
+		return row(stDim.Render("▏Reply to (not synced)"), nil), true
 	}
 	head := "▏Reply to " + displaySender(parent, st.self, st.suffix[parent.SenderID]) + ": "
-	return row(head + truncate(replyGist(parent), st.inner()-lipgloss.Width(head))), true
+	gist := replyGist(parent)
+	if segs := gistSegs(stDim.Render(head), gist, st.inner(), stDim, st.emojiGist); segs != nil {
+		return row("", segs), true
+	}
+	return row(stDim.Render(head+truncate(gist, st.inner()-lipgloss.Width(head))), nil), true
 }
 
 // senderLabel names a message's sender: the display name Feishu sent, the
@@ -651,7 +654,7 @@ func bodyRows(x store.Message, idx int, st msgStyle, g *leads) []msgRow {
 		if rows, ok := postPictureRows(x, idx, st, g); ok {
 			return rows
 		}
-		return text(wrap(stDim.Render(expandEmoji(pendingText(x.MsgType, x.ContentRaw))), inner))
+		return dimRows(pendingText(x.MsgType, x.ContentRaw), idx, st, g)
 	}
 	// A sticker renders as the text "[Sticker]", which names the picture
 	// nowhere: the key is in the body.
@@ -710,11 +713,28 @@ func postPictureRows(x store.Message, idx int, st msgStyle, g *leads) ([]msgRow,
 		if strings.TrimSpace(p.text) == "" {
 			continue
 		}
-		for _, line := range wrap(stDim.Render(expandEmoji(p.text)), st.inner()) {
-			rows = append(rows, msgRow{lead: g.take(), text: line, idx: idx})
-		}
+		rows = append(rows, dimRows(p.text, idx, st, g)...)
 	}
 	return rows, true
+}
+
+// dimRows draw a body larkim holds no rendering for, its words dim. An
+// official emoji among them is drawn as the picture the client draws, the way
+// a rendered body draws one: these rows are what a merged forward's children
+// keep for good, since lark-cli's expansion answers with raw bodies and
+// renders none of them.
+func dimRows(body string, idx int, st msgStyle, g *leads) []msgRow {
+	var rows []msgRow
+	for _, line := range strings.Split(body, "\n") {
+		if segs := emojiSegs(line, st.emojiInline, func(t string) string { return stDim.Render(t) }); segs != nil {
+			rows = append(rows, segRows(segs, "", idx, st, g)...)
+			continue
+		}
+		for _, l := range wrap(stDim.Render(expandEmoji(line)), st.inner()) {
+			rows = append(rows, msgRow{lead: g.take(), text: l, idx: idx})
+		}
+	}
+	return rows
 }
 
 // segRows draw one body line as the pieces the client's own emoji pictures

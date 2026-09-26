@@ -16,6 +16,13 @@ var testNow = time.Date(2026, 9, 23, 10, 0, 0, 0, time.Local)
 
 func at(d time.Duration) int64 { return testNow.Add(d).UnixMilli() }
 
+// summaryText is the chat list's second line on a terminal with no graphics,
+// where the whole of it is one string.
+func summaryText(c store.Chat) string {
+	text, _ := chatSummary(c, "ou_me", emojiPics{})
+	return text
+}
+
 func plainRow(c store.Chat, unread int64, w int) (string, string) {
 	r := renderChatRow(textAvatars{}, c, store.Draft{}, unread, "ou_me", testNow, w, emojiPics{}, nil)
 	return ansi.Strip(r.top), ansi.Strip(r.bottom)

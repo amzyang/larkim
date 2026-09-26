@@ -56,23 +56,30 @@ func forwardSummary(x store.Message, root string, idx int, st msgStyle, g *leads
 		title += " · cannot be expanded"
 	}
 	inner := st.inner() - lipgloss.Width(forwardBar)
+	bar := stAccent.Render(forwardBar)
 	row := func(s string, style lipgloss.Style) msgRow {
 		lead := g.take()
 		x0 := lead.cols()
-		text := stAccent.Render(forwardBar) + style.Render(truncate(s, inner))
-		return msgRow{lead: lead, text: text, idx: idx, zones: []clickZone{{
-			x0: x0, x1: x0 + lipgloss.Width(text),
+		text, segs := "", gistSegs(bar, s, st.inner(), style, st.emojiGist)
+		if segs == nil {
+			text = bar + style.Render(truncate(s, inner))
+		}
+		return msgRow{lead: lead, text: text, segs: segs, idx: idx, zones: []clickZone{{
+			x0: x0, x1: x0 + lipgloss.Width(text) + segsWidth(segs),
 			open: x.MessageID, openRoot: root, openKind: rightForward, openName: title,
 		}}}
 	}
 	rows := []msgRow{row(title, stBold)}
-	for _, c := range gist.Preview {
+	for i, c := range gist.Preview {
 		who := displaySender(store.Message{SenderID: c.SenderID, SenderName: c.SenderName},
 			st.self, st.suffix[c.SenderID])
-		rows = append(rows, row(who+": "+replyGist(store.Message{MsgType: c.MsgType, ContentRaw: c.ContentRaw}), stDim))
-	}
-	if gist.ChildCount > len(gist.Preview) {
-		rows = append(rows, row("…", stDim))
+		line := who + ": " + replyGist(store.Message{MsgType: c.MsgType, ContentRaw: c.ContentRaw})
+		// The ellipsis trails the last preview rather than standing on a line
+		// of its own: a line holding nothing but it reads as a fifth child.
+		if i == len(gist.Preview)-1 && gist.ChildCount > len(gist.Preview) {
+			line += "…"
+		}
+		rows = append(rows, row(line, stDim))
 	}
 	return rows, true
 }
@@ -111,9 +118,12 @@ func threadSummary(x store.Message, idx int, st msgStyle, g *leads) (msgRow, boo
 		lead.mark = stAccent.Render("●")
 	}
 	x0 := lead.cols()
-	text := stAccent.Render(head) + stDim.Render(truncate(tail, st.inner()-lipgloss.Width(head)))
-	return msgRow{lead: lead, text: text, idx: idx, zones: []clickZone{{
-		x0: x0, x1: x0 + lipgloss.Width(text),
+	text, segs := "", gistSegs(stAccent.Render(head), tail, st.inner(), stDim, st.emojiGist)
+	if segs == nil {
+		text = stAccent.Render(head) + stDim.Render(truncate(tail, st.inner()-lipgloss.Width(head)))
+	}
+	return msgRow{lead: lead, text: text, segs: segs, idx: idx, zones: []clickZone{{
+		x0: x0, x1: x0 + lipgloss.Width(text) + segsWidth(segs),
 		open: x.ThreadID, openKind: rightThread,
 	}}}, true
 }

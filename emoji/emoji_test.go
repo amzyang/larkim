@@ -117,8 +117,11 @@ func keysOf(hits []Hit) []string {
 // A glyph for a key the client no longer ships is dead weight that nothing
 // will ever look up, so the table is what bounds the hand-kept column.
 func TestGlyphs_HoldNoKeyTheClientStoppedShipping(t *testing.T) {
-	// Spellings Feishu sends in message text without offering them as emoji.
-	beyondTable := map[string]bool{"FIGHTING": true, "GRIN": true, "OKHAND": true}
+	// Spellings Feishu sends in message text without offering them as emoji:
+	// the ones it never listed, and the new-year greetings the generator drops
+	// once their year is over — a message sent back then still carries one.
+	beyondTable := map[string]bool{"FIGHTING": true, "GRIN": true, "OKHAND": true,
+		"HAPPYDRAGON": true, "JUBILANTRABBIT": true}
 	inTable := map[string]bool{}
 	for _, e := range table {
 		inTable[Fold(e.Key)] = true
@@ -265,4 +268,33 @@ func TestDelisted_CoversEveryEmojiTheClientHasWithdrawn(t *testing.T) {
 		}
 	}
 	require.ElementsMatch(t, []string{"ATTENTION", "WELLDONE", "FOLLOWME", "DETERGENT", "AWESOME", "GOODJOB"}, got)
+}
+
+// The generator asks pypinyin rather than the go-pinyin this module carries,
+// because only pypinyin reads a name as a phrase: looked up a character at a
+// time, every one of these takes the first reading of its polyphone and comes
+// out as something nobody would type.
+func TestTerms_ReadAPolyphoneAsThePhraseItSitsIn(t *testing.T) {
+	for key, want := range map[string]string{
+		"Music":               "yinyue",       // not yinle
+		"WINK":                "tiaopi",       // not diaopi
+		"Get":                 "liaojie",      // not lejie
+		"GeneralBusinessTrip": "chuchai",      // not chucha
+		"SPITBLOOD":           "tuxie",        // not tuxue
+		"SLEEP":               "shuijiao",     // not shuijue
+		"StatusReading":       "jingshenbuji", // not jingshenbugei
+	} {
+		e, ok := ByKey(key)
+		require.True(t, ok, "%s is not in the table", key)
+		require.Contains(t, e.Terms, want, "%s (%s)", key, e.ZH)
+	}
+}
+
+func TestTable_LeavesOutTheNewYearGreetingsOfYearsGoneBy(t *testing.T) {
+	// Named after the year or after its zodiac animal; either way they crowd a
+	// picker with a wish nobody is making any more.
+	for _, key := range []string{"HappyDragon", "JubilantRabbit", "RoarForYou", "SiSiASYouWish"} {
+		e, ok := ByKey(key)
+		require.False(t, ok && e.Offerable(), "%s is a greeting for a year that is over", key)
+	}
 }

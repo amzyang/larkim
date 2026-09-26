@@ -166,16 +166,30 @@ func (m Model) composerAbove(w int) []string {
 // Feishu client does — who wrote it and how it reads — because a message id
 // is not something a person recognises a message by.
 func (m Model) renderReplyBar(w int) string {
+	hint := stDim.Render(replyBarHint)
+	head, gist, room := m.replyBarParts(w)
+	line, used := "", 0
+	if segs := gistSegs(head, gist, room, stDim, m.chatPics().gist); segs != nil {
+		line, used = m.joinSegsWidth(segs), segsWidth(segs)
+	} else {
+		line = head + stDim.Render(truncate(gist, room-lipgloss.Width(head)))
+		used = lipgloss.Width(line)
+	}
+	return line + strings.Repeat(" ", max(1, w-used-lipgloss.Width(hint))) + hint
+}
+
+// replyBarParts is the bar's head, the gist beside it and the columns the two
+// share once the hint at the far edge has taken its own. The pane asks for
+// them twice — once to claim the gist's pictures from the renderer, once to
+// draw them — so they are worked out in one place.
+func (m Model) replyBarParts(w int) (head, gist string, room int) {
 	x := m.replyTo
 	mark, kind := "↩", "reply to "
 	if m.inThrd {
 		mark, kind = "⤷", "reply in thread to "
 	}
-	head := stAccent.Render(mark+" "+kind) + stBold.Render(displaySender(*x, m.deps.Self, m.suffixOf(x.SenderID))) + stDim.Render(": ")
-	hint := stDim.Render(replyBarHint)
-	line := head + stDim.Render(truncate(replyGist(*x), w-lipgloss.Width(head)-lipgloss.Width(hint)-1))
-	gap := max(1, w-lipgloss.Width(line)-lipgloss.Width(hint))
-	return line + strings.Repeat(" ", gap) + hint
+	head = stAccent.Render(mark+" "+kind) + stBold.Render(displaySender(*x, m.deps.Self, m.suffixOf(x.SenderID))) + stDim.Render(": ")
+	return head, replyGist(*x), w - lipgloss.Width(stDim.Render(replyBarHint)) - 1
 }
 
 // replyGist is the quoted message on one line, styles stripped so it can be

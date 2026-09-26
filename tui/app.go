@@ -419,13 +419,31 @@ func (m Model) picturePrepare() string {
 			take(pic)
 		}
 	}
-	// The chat list is claimed next. Its reactions are a handful of icons
-	// that many rows draw from the same ids, and unlike the message bands
-	// below it reaches for nothing off screen.
+	// The lines standing over the composer are claimed with it: the message
+	// a reply quotes and the one being forwarded are what the reader is
+	// working on, and each spends at most a couple of ids.
+	if m.replyTo != nil {
+		head, gist, room := m.replyBarParts(m.width - 2)
+		for _, s := range gistSegs(head, gist, room, stDim, m.chatPics().gist) {
+			take(s.pic)
+		}
+	}
+	if m.mode == modeForward {
+		for _, s := range m.fwdGistSegs(m.width - 2) {
+			take(s.pic)
+		}
+	}
+	// The chat list is claimed next. Its reactions and the emoji on its
+	// summaries are a handful of icons that many rows draw from the same ids,
+	// and unlike the message bands below it reaches for nothing off screen.
 	vis := m.visibleChats()
 	pcs := m.chatPics()
 	for i := m.chatTop; i < len(vis) && i < m.chatTop+m.chatListHeight(); i++ {
 		for _, s := range chatChips(vis[i], pcs) {
+			take(s.pic)
+		}
+		_, summary := chatSummary(vis[i], m.deps.Self, pcs)
+		for _, s := range summary {
 			take(s.pic)
 		}
 	}

@@ -16,13 +16,11 @@ import (
 	"log"
 	"maps"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
-
-	"github.com/amzyang/larkim/fuzzy"
-	"github.com/mozillazg/go-pinyin"
 )
 
 // assetsDir is where the macOS client keeps the files below. Versions/Current
@@ -35,6 +33,14 @@ const assetsDir = "/Applications/sagtjy516.app/Contents/Frameworks/Lark Framewor
 // default belongs in a picker. Longest first, so MediumDark is not read as
 // Medium.
 var tones = []string{"MediumLight", "MediumDark", "Medium", "Light", "Dark"}
+
+// zodiac are the new-year greetings named after their animal rather than their
+// year. They go stale the same January the numbered ones do, and there is
+// nothing in their key to tell the year apart from the animal, so they are
+// listed by hand alongside yearly.
+var zodiac = map[string]bool{
+	"RoarForYou": true, "JubilantRabbit": true, "HappyDragon": true, "SiSiASYouWish": true,
+}
 
 // yearly matches the new-year emoji, which are dead the January after they
 // ship and would otherwise crowd the picker.
@@ -103,12 +109,19 @@ func main() {
 	var order map[string]int
 	readJSON("order.json", &order)
 
-	entries := make([]entry, 0, len(meta.KeyMap))
-	folded := map[string]string{}
-	for key, image := range meta.KeyMap {
-		if skip(key) {
-			continue
+	kept := make([]string, 0, len(meta.KeyMap))
+	for key := range meta.KeyMap {
+		if !skip(key) {
+			kept = append(kept, key)
 		}
+	}
+	slices.Sort(kept)
+	sound := sounds(spoken(i18n, aliases, kept))
+
+	entries := make([]entry, 0, len(kept))
+	folded := map[string]string{}
+	for _, key := range kept {
+		image := meta.KeyMap[key]
 		names, ok := i18n[key]
 		if !ok {
 			log.Fatalf("%s is in the sprite but carries no display name", key)
@@ -133,7 +146,7 @@ func main() {
 		entries = append(entries, entry{
 			Key: key, ZH: names["zh-CN"], EN: names["en-US"],
 			Rect:  [4]int{box.X, box.Y, box.Width, box.Height},
-			Terms: terms(names["zh-CN"], names["en-US"], key, aliases[key]),
+			Terms: terms(sound, names["zh-CN"], names["en-US"], key, aliases[key]),
 			Order: pos, NoReaction: foreign[key] || delisted[key], Delisted: delisted[key],
 		})
 	}
@@ -157,19 +170,23 @@ func copySheet(src, dst string) {
 	}
 }
 
-// skip drops the keys a picker must not offer: the skin-tone variants of an
-// emoji already listed, and the new-year emoji of years gone by.
-func skip(key string) bool {
-	if yearly.MatchString(key) {
-		return true
-	}
+// skip drops the keys a picker must not offer. The two reasons are told apart
+// because only one of them leaves an emoji behind to map onto: a tone is a
+// spelling of an emoji still in the table, an expired greeting is nothing.
+func skip(key string) bool { return expired(key) || tone(key) }
+
+// expired is a new-year emoji of a year gone by, named after either.
+func expired(key string) bool { return yearly.MatchString(key) || zodiac[key] }
+
+// tone is a skin-tone variant of an emoji the client offers alongside it.
+func tone(key string) bool {
 	return slices.ContainsFunc(tones, func(t string) bool { return strings.HasPrefix(key, t) })
 }
 
 // terms is what a query is matched against. Each Chinese name contributes the
 // name itself, its pinyin and the pinyin initials, because those are the three
 // ways one reaches for 赞 without leaving the home row.
-func terms(zh, en, key string, aliases []string) []string {
+func terms(sound map[string][2]string, zh, en, key string, aliases []string) []string {
 	var out []string
 	add := func(s string) {
 		if s = nonTerm.ReplaceAllString(strings.ToLower(s), ""); s != "" && !slices.Contains(out, s) {
@@ -181,12 +198,72 @@ func terms(zh, en, key string, aliases []string) []string {
 			continue
 		}
 		out = append(out, name) // the name itself keeps its Chinese
-		add(fuzzy.Sound(name, pinyin.Normal))
-		add(fuzzy.Sound(name, pinyin.FirstLetter))
+		add(sound[name][0])
+		add(sound[name][1])
 	}
 	add(en)
 	add(key)
 	return out
+}
+
+// pinyinScript reads one name per line and answers with its full pinyin and
+// its initials, tab-separated.
+//
+// It is pypinyin rather than the go-pinyin this module already carries because
+// only pypinyin reads a name as a phrase: go-pinyin looks a character up on its
+// own, so it takes the first reading of every polyphone and spells 音乐 yinle,
+// 调皮 diaopi and 精神补给 jingshenbugei — none of which anyone would type.
+// This runs at generation time and its answers are baked into table.go, so the
+// binary keeps its pure-Go runtime and nothing but `go generate` needs Python.
+const pinyinScript = `
+import sys
+from pypinyin import Style, lazy_pinyin
+for line in sys.stdin.read().splitlines():
+    full = "".join(lazy_pinyin(line, style=Style.NORMAL))
+    initials = "".join(lazy_pinyin(line, style=Style.FIRST_LETTER))
+    print(f"{full}\t{initials}")
+`
+
+// sounds spells every name in one call, because starting an interpreter per
+// name would cost more than the whole generation does.
+func sounds(names []string) map[string][2]string {
+	cmd := exec.Command("uv", "run", "--quiet", "--with", "pypinyin", "python", "-c", pinyinScript)
+	cmd.Stdin = strings.NewReader(strings.Join(names, "\n"))
+	cmd.Stderr = os.Stderr
+	out, err := cmd.Output()
+	if err != nil {
+		log.Fatalf("uv run pypinyin: %v", err)
+	}
+	lines := strings.Split(strings.TrimRight(string(out), "\n"), "\n")
+	if len(lines) != len(names) {
+		log.Fatalf("pypinyin answered %d of %d names", len(lines), len(names))
+	}
+	sound := make(map[string][2]string, len(names))
+	for i, line := range lines {
+		full, initials, _ := strings.Cut(line, "\t")
+		sound[names[i]] = [2]string{full, initials}
+	}
+	return sound
+}
+
+// spoken is every name a term is built from, deduplicated so one pypinyin call
+// covers the table.
+func spoken(i18n map[string]map[string]string, aliases map[string][]string, keys []string) []string {
+	var names []string
+	seen := map[string]bool{}
+	add := func(s string) {
+		if s != "" && !seen[s] {
+			seen[s] = true
+			names = append(names, s)
+		}
+	}
+	for _, key := range keys {
+		add(i18n[key]["zh-CN"])
+		for _, a := range aliases[key] {
+			add(a)
+		}
+	}
+	return names
 }
 
 // Fold is emoji.Fold, repeated here because the generator cannot import the
@@ -221,7 +298,7 @@ func toneBases(keyMap map[string]string, i18n map[string]map[string]string, entr
 	}
 	out := map[string]string{}
 	for key := range keyMap {
-		if !skip(key) || yearly.MatchString(key) {
+		if !tone(key) {
 			continue
 		}
 		name := toneSuffix.ReplaceAllString(i18n[key]["zh-CN"], "")

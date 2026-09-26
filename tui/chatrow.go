@@ -204,20 +204,21 @@ func chatTitle(c store.Chat) (name, suffix string) {
 func isBotChat(c store.Chat) bool { return c.P2PTargetType == "bot" }
 
 // chatSummary is the second line's text: who said what, or why there is
-// nothing to show.
-func chatSummary(c store.Chat, self string) string {
+// nothing to show. It comes back in pieces when the message spells an official
+// emoji no character carries, which the client draws as a picture here too.
+func chatSummary(c store.Chat, self string, pics emojiPics) (string, []rowSeg) {
 	if c.LastMessageID == "" {
 		if c.SyncError != "" {
-			return stDim.Render("history unavailable")
+			return stDim.Render("history unavailable"), nil
 		}
-		return stDim.Render("New chat")
+		return stDim.Render("New chat"), nil
 	}
 	sender := flatten(c.LastSenderName)
 	if sender == "" {
 		sender = c.LastSenderID
 	}
 	if c.LastDeleted {
-		return stDim.Render(sender + " recalled a message")
+		return stDim.Render(sender + " recalled a message"), nil
 	}
 
 	body := lastMessageSummary(c)
@@ -241,7 +242,11 @@ func chatSummary(c store.Chat, self string) string {
 	}
 	// The line is dim as a whole, so an @ that reaches the reader is the one
 	// thing on it that still carries a colour.
-	return mentionsIn(c.LastMentionsJSON, self).on(stDim).render(prefix + body)
+	ms := mentionsIn(c.LastMentionsJSON, self).on(stDim)
+	if segs := ms.segs(prefix+body, pics.gist); segs != nil {
+		return "", segs
+	}
+	return ms.render(prefix + body), nil
 }
 
 // lastMessageSummary is the chat's newest message pressed onto one line. A
@@ -347,22 +352,31 @@ func chatSummaryLine(c store.Chat, d store.Draft, self string, pics emojiPics, w
 	if len(chips) > 0 {
 		room-- // the space that keeps the summary clear of the icons
 	}
-	body := padBetween(chatSummary(c, self), muteMark(c), max(0, room))
-	if len(chips) == 0 {
-		return mine + body, nil
+	text, summary := chatSummary(c, self, pics)
+	body := []rowSeg{{text: padBetween(text, muteMark(c), max(0, room))}}
+	if summary != nil {
+		body = padSegs(summary, muteMark(c), max(0, room))
 	}
-	if !slices.ContainsFunc(chips, func(s rowSeg) bool { return s.pic.cols > 0 }) {
-		var b strings.Builder
-		for _, s := range chips {
-			b.WriteString(s.text)
-		}
-		return mine + b.String() + " " + body, nil
+
+	var segs []rowSeg
+	if mine != "" {
+		segs = append(segs, rowSeg{text: mine})
 	}
-	segs := append(chips, rowSeg{text: " " + body})
-	if mine == "" {
+	segs = append(segs, chips...)
+	if len(chips) > 0 {
+		segs = append(segs, rowSeg{text: " "})
+	}
+	segs = append(segs, body...)
+	// A line made of characters alone stays one string, which is what lets a
+	// selection tint it; only a picture in it forces the pieces on the pane.
+	if slices.ContainsFunc(segs, func(s rowSeg) bool { return s.pic.cols > 0 }) {
 		return "", segs
 	}
-	return "", append([]rowSeg{{text: mine}}, segs...)
+	var b strings.Builder
+	for _, s := range segs {
+		b.WriteString(s.text)
+	}
+	return b.String(), nil
 }
 
 // markName styles a name with the runes a filter landed on underlined. The

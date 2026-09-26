@@ -62,6 +62,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   lane 用 `larkcli.WithLane` 挂在 context 上，不写进方法签名
 - lark-cli 自身没有客户端限流器，飞书频控按「每 API × 每应用 × 每租户」分级计，所以 lane 宽度是 larkim
   唯一的速率控制点；加宽前先确认目标端点的频控等级
+- `go generate ./emoji` 需要已安装的飞书客户端（读它的 emoji 资源）与 `uv`（`uv run --with pypinyin`
+  给词表注音）：go-pinyin 逐字查表、多音字只取第一个读音，把音乐读成 yinle、调皮读成 diaopi。
+  只有 `table.go` 的生成走 Python，产物入库，运行时仍是纯 Go；会话名与人名的拼音仍走 go-pinyin
 
 ## Data contracts
 

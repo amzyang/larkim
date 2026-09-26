@@ -140,35 +140,65 @@ func (m mentions) draw(r mentionRun) string {
 	return m.other.Render(r.text)
 }
 
-// render draws a stretch of message text that carries no markup of its own:
-// the @ runs in their own colour, everything else in the base style with its
-// emoji expanded.
-func (m mentions) render(s string) string {
-	var b strings.Builder
-	plain := func(chunk string) {
-		if chunk != "" {
-			b.WriteString(m.base.Render(expandEmoji(chunk)))
-		}
-	}
+// walk splits s at the @ runs it holds, handing each stretch of ordinary text
+// to plain and each mention to run, in the order they were written.
+func (m mentions) walk(s string, plain func(string), run func(mentionRun)) {
 	last := 0
 	for i := 0; i < len(s); {
-		run, n, ok := m.at(s[i:])
+		r, n, ok := m.at(s[i:])
 		if !ok {
 			i++
 			continue
 		}
 		plain(s[last:i])
-		b.WriteString(m.draw(run))
+		run(r)
 		i += n
 		last = i
 		// The client sets a mention off as a chip; here it is the space the
 		// author wrote, so a body that runs straight on needs one lent to it.
 		if glues(s[i:]) {
-			b.WriteString(m.base.Render(" "))
+			plain(" ")
 		}
 	}
 	plain(s[last:])
+}
+
+// render draws a stretch of message text that carries no markup of its own:
+// the @ runs in their own colour, everything else in the base style with its
+// emoji expanded.
+func (m mentions) render(s string) string {
+	var b strings.Builder
+	m.walk(s, func(chunk string) {
+		if chunk != "" {
+			b.WriteString(m.plain(chunk))
+		}
+	}, func(r mentionRun) { b.WriteString(m.draw(r)) })
 	return b.String()
+}
+
+// plain styles a stretch that holds no @ of its own.
+func (m mentions) plain(s string) string { return m.base.Render(expandEmoji(s)) }
+
+// segs is render in pieces, so that an official emoji no character carries can
+// stand in the line as the picture the client draws. It answers nil when the
+// text spells none, which leaves the line on the string path render gives it.
+func (m mentions) segs(s string, pic func(key string) picture) []rowSeg {
+	var out []rowSeg
+	drawn := false
+	m.walk(s, func(chunk string) {
+		if chunk == "" {
+			return
+		}
+		if segs := emojiSegs(chunk, pic, m.plain); segs != nil {
+			out, drawn = append(out, segs...), true
+			return
+		}
+		out = append(out, rowSeg{text: m.plain(chunk)})
+	}, func(r mentionRun) { out = append(out, rowSeg{text: m.draw(r)}) })
+	if !drawn {
+		return nil
+	}
+	return out
 }
 
 // glues reports whether what follows a mention would read as part of it.

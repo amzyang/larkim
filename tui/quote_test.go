@@ -62,8 +62,8 @@ func TestRenderRows_QuoteReadsRecalledAndUnrenderedParents(t *testing.T) {
 	require.Contains(t, out, "▏Reply to 孙琪: [Image]", "a parent still waiting for its rendering is named by its type")
 }
 
-// quoteModel is a chat whose last message answers its first, with one message
-// in between so the quote line is drawn at all.
+// quoteModel is a chat whose last message answers its first, over a message
+// in between, so the quote leads somewhere off the cursor's own row.
 func quoteModel(t *testing.T) Model {
 	t.Helper()
 	m := New(Deps{Self: "ou_me"})

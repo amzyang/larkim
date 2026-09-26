@@ -84,10 +84,12 @@ func TestRenderRows_AForwardCardShowsAtMostFourChildren(t *testing.T) {
 
 	out := rowText(renderRows([]store.Message{theBundle()}, bundleStyle(g)))
 
-	for _, want := range []string{"张三: 一", "李四: 二", "王五: 三", "张三: 四"} {
+	for _, want := range []string{"张三: 一", "李四: 二", "王五: 三"} {
 		require.Contains(t, out, want)
 	}
-	require.Contains(t, out, "…", "the frame holds more than the card shows")
+	require.Contains(t, out, "张三: 四…", "the frame holds more than the card shows")
+	require.NotContains(t, strings.Split(out, "\n"), forwardBar+"…",
+		"and says so on the last child, not on a line of its own")
 }
 
 func TestRenderRows_AForwardCardCountsNothing(t *testing.T) {
@@ -113,8 +115,8 @@ func TestRenderRows_AForwardCardIsBoundedHoweverBigTheBundleIs(t *testing.T) {
 	big := fromGroup(kids("张三", "一", "李四", "二", "王五", "三", "张三", "四")...)
 	big.ChildCount = 400
 
-	require.Equal(t, store.ForwardPreview+2, forwardCardRows(renderRows([]store.Message{x}, bundleStyle(big))),
-		"a title, four children and the ellipsis, whatever is behind them")
+	require.Equal(t, store.ForwardPreview+1, forwardCardRows(renderRows([]store.Message{x}, bundleStyle(big))),
+		"a title and four children, whatever is behind them")
 	require.Less(t, len(small), strings.Count(x.Content, "\n"),
 		"and fewer lines than the rendering it replaces, which is the whole point")
 }
