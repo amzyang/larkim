@@ -216,6 +216,6 @@ func TestForwardFrame_AChildShowsTheReactionsItCollected(t *testing.T) {
 
 	require.Len(t, msg.msgs, 1)
 	out := rowText(renderRows(msg.msgs, baseStyle()))
-	require.Contains(t, out, "👍 You +2", "a child keeps the reactions its own chat collected")
-	require.Contains(t, out, "[+1] +1")
+	require.Contains(t, out, "👍⋮You +2", "a child keeps the reactions its own chat collected")
+	require.Contains(t, out, "[+1]⋮+1")
 }

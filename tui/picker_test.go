@@ -358,7 +358,7 @@ func chipAt(t *testing.T, m Model, key string) (Model, tea.Cmd) {
 func TestPressChip_DrawsThePressBeforeItIsSent(t *testing.T) {
 	m := pickerModel(t)
 	before := rowText(m.msgRows)
-	require.Contains(t, before, "👍 You", "the reader already reacted, which is what a press takes back")
+	require.Contains(t, before, "👍⋮You", "the reader already reacted, which is what a press takes back")
 	m, cmd := chipAt(t, m, "THUMBSUP")
 	require.NotNil(t, cmd)
 	require.Len(t, m.reacts, 1)
@@ -377,7 +377,7 @@ func TestPressChip_SecondPressGoesTheOtherWay(t *testing.T) {
 	require.NotNil(t, cmd)
 	require.Len(t, m.reacts, 1, "the last press is what the reader means")
 	require.True(t, m.reacts[0].on, "the direction answers the strip the first press left")
-	require.Contains(t, rowText(m.msgRows), "👍 You")
+	require.Contains(t, rowText(m.msgRows), "👍⋮You")
 }
 
 func TestPressChip_LeavesTheCursorWhereItWas(t *testing.T) {
@@ -394,7 +394,7 @@ func TestReactedMsg_TakesAFailedPressBackOffTheStrip(t *testing.T) {
 	next, _ := m.update(reactedMsg{p: m.reacts[0], err: errors.New("no network")})
 	m = next.(Model)
 	require.Empty(t, m.reacts)
-	require.Contains(t, rowText(m.msgRows), "👍 You", "the strip goes back to what Feishu holds")
+	require.Contains(t, rowText(m.msgRows), "👍⋮You", "the strip goes back to what Feishu holds")
 	require.Contains(t, m.notice, "no network")
 }
 
@@ -421,7 +421,7 @@ func TestReactedMsg_StopsDrawingARemovalFeishuTookWithoutChangingAnything(t *tes
 	m.applyOutbox()
 	m.layout()
 	require.Empty(t, m.reacts)
-	require.Contains(t, rowText(m.msgRows), "👍 You", "the strip goes back to what Feishu holds")
+	require.Contains(t, rowText(m.msgRows), "👍⋮You", "the strip goes back to what Feishu holds")
 }
 
 func TestReactedMsg_RollsBackOnlyThePressThatFailed(t *testing.T) {

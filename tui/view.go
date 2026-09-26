@@ -39,6 +39,12 @@ const (
 	// off, drawn from the Nerd Font this terminal maps U+E0B0-U+E0C8 to.
 	chipLeft  = "\ue0b6"
 	chipRight = "\ue0b4"
+	// chipRule parts a reaction's emoji from the names of who put it there.
+	// Dots rather than a box-drawing rule: kitty draws the box-drawing glyphs
+	// itself, edge to edge of the cell, and a stroke that tall beside one line
+	// of text reads as a border around the names instead of a break before
+	// them. This one is a font glyph, so it keeps to the text's own height.
+	chipRule = "\u22ee"
 	// chipPad is what a chip costs beside what it holds: a cap either side.
 	chipPad = 2
 )
@@ -98,6 +104,15 @@ var (
 	stChip      = lipgloss.NewStyle().Foreground(colChatSelText).Background(colChip)
 	stChipCells = lipgloss.NewStyle().Background(colChip)
 	stChipEdge  = lipgloss.NewStyle().Foreground(colChip)
+	// Who reacted is secondary to what they reacted with, and the rule parting
+	// them from the emoji carries less than either, so each step away from the
+	// label is a step lighter over the chip's backing. Neither uses SGR faint:
+	// the backing is a fixed light tint and a terminal dims by darkening its
+	// foreground, which over this blue reads as more weight rather than less.
+	colChipDim  = lipgloss.Color("#8f959e")
+	colChipRule = lipgloss.Color("#a5b1ca")
+	stChipDim   = lipgloss.NewStyle().Foreground(colChipDim).Background(colChip)
+	stChipRule  = lipgloss.NewStyle().Foreground(colChipRule).Background(colChip)
 
 	// A card's button is a filled rectangle darker than the chip: a block of
 	// colour with its label on it, not bracketed text, and the padding sits

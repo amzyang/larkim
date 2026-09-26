@@ -21,8 +21,8 @@ func TestRenderRows_DrawsReactionsBelowTheBody(t *testing.T) {
 		Content: "这个方案我同意", CreateMs: msgAt(23, 9, 0), RenderedAt: 1, ReactionsJSON: twoReactions}}
 	out := rowText(renderRows(msgs, baseStyle()))
 	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
-	require.Contains(t, lines[len(lines)-1], "👍 You +2", "the reader is named, and the two Feishu did not name are counted")
-	require.Contains(t, lines[len(lines)-1], "[+1] +1", "an emoji with no character is named the way the client names it")
+	require.Contains(t, lines[len(lines)-1], "👍⋮You +2", "the reader is named, and the two Feishu did not name are counted")
+	require.Contains(t, lines[len(lines)-1], "[+1]⋮+1", "an emoji with no character is named the way the client names it")
 	require.Contains(t, lines[len(lines)-2], "这个方案我同意", "the reactions follow the body, they do not replace it")
 }
 
@@ -33,9 +33,9 @@ func TestRenderRows_StylesEveryReactorAlike(t *testing.T) {
 	strip := segText(rows[len(rows)-1])
 	// 你 among the reactors is what marks a chip as the reader's own, so
 	// nothing on the strip needs a colour of its own to say it.
-	require.Contains(t, strip, stChip.Render("👍 You +2"))
-	require.Contains(t, strip, stChip.Render("[+1] +1"))
-	require.NotContains(t, strip, stAccent.Underline(true).Render("👍 You +2"))
+	require.Contains(t, strip, chipText("👍", "You +2"))
+	require.Contains(t, strip, chipText("[+1]", "+1"))
+	require.NotContains(t, strip, stAccent.Underline(true).Render("👍⋮You +2"))
 }
 
 func TestRenderRows_WrapsALongReactionStripRatherThanCuttingIt(t *testing.T) {
@@ -56,7 +56,7 @@ func TestRenderRows_WrapsALongReactionStripRatherThanCuttingIt(t *testing.T) {
 			"a row never runs past the pane: %q", ansi.Strip(segText(r)))
 	}
 	out := rowText(rows)
-	require.Contains(t, out, "🏆 +1", "the last reaction survives the wrap")
+	require.Contains(t, out, "🏆⋮+1", "the last reaction survives the wrap")
 }
 
 func TestRenderRows_DropsTheReactionsOfARecalledMessage(t *testing.T) {
@@ -80,20 +80,20 @@ func TestReactionChip_DrawsAPictureWhereNoCharacterCarriesTheEmoji(t *testing.T)
 	require.Positive(t, segs[1].pic.cols, "the emoji is the client's own picture")
 	require.Equal(t, 1, segs[1].pic.rows, "a picture on a line of text is one row tall")
 	require.True(t, segs[1].pic.chip, "the cells it sits in carry the chip's tint")
-	require.Equal(t, "+2"+chipRight, ansi.Strip(segs[2].text),
-		"the reactors close the chip the picture opened, spaced off it by nothing but the slack "+
-			"left over from rounding the picture's width up to the grid")
+	require.Equal(t, chipRule+"+2"+chipRight, ansi.Strip(segs[2].text),
+		"the reactors close the chip the picture opened, parted from it by the rule alone: the slack "+
+			"left over from rounding the picture's width up to the grid is the space before it")
 
 	// A terminal with no graphics, or a data dir the pictures were never cut
 	// into, names the emoji instead — on the same chip.
 	plain := reactionChip(emoji.Chip{Key: "JIAYI", Count: 2}, baseStyle())
 	require.Len(t, plain, 1, "a chip of characters alone stays one piece")
-	require.Equal(t, chipped("[+1] +2"), ansi.Strip(plain[0].text))
+	require.Equal(t, chipped("[+1]⋮+2"), ansi.Strip(plain[0].text))
 }
 
 func TestReactionChip_ReadsASkinToneAsTheEmojiItIsAToneOf(t *testing.T) {
 	segs := reactionChip(emoji.Chip{Key: "DarkThumbsup", Count: 1}, baseStyle())
-	require.Equal(t, chipped("👍 +1"), ansi.Strip(segs[0].text),
+	require.Equal(t, chipped("👍⋮+1"), ansi.Strip(segs[0].text),
 		"a tone Feishu sent but the picker never offered still draws")
 }
 
@@ -123,7 +123,7 @@ func TestRenderRows_KeepsAnAllCharacterStripAsOrdinaryText(t *testing.T) {
 	rows := renderRows(msgs, baseStyle())
 	strip := rows[len(rows)-1]
 	require.Empty(t, strip.segs, "no chip carries a picture, so the row is plain text")
-	require.Contains(t, ansi.Strip(strip.text), "👍 You +2")
+	require.Contains(t, ansi.Strip(strip.text), "👍⋮You +2")
 }
 
 // namedStyle is baseStyle with the contacts a chip's reactors are named from.
@@ -137,34 +137,40 @@ func namedStyle() msgStyle {
 // off: a cap either side of the text, which the caps are kept clear of.
 func chipped(s string) string { return chipLeft + s + chipRight }
 
+// chipText is a chip's styled body: the emoji in the chip's own ink, then the
+// rule and the reactors in the dim one.
+func chipText(label, who string) string {
+	return stChip.Render(label) + stChipRule.Render(chipRule) + stChipDim.Render(who)
+}
+
 func reacted(key string, count int, ids ...string) emoji.Chip {
 	return emoji.Chip{Key: key, Count: count, Operators: ids}
 }
 
 func TestReactionChip_NamesUpToThreeReactors(t *testing.T) {
 	segs := reactionChip(reacted("THUMBSUP", 3, "ou_a", "ou_b", "ou_c"), namedStyle())
-	require.Equal(t, chipped("👍 张三, 李四, 王五"), ansi.Strip(segs[0].text))
+	require.Equal(t, chipped("👍⋮张三, 李四, 王五"), ansi.Strip(segs[0].text))
 }
 
 func TestReactionChip_CountsTheRestAsPlusN(t *testing.T) {
 	segs := reactionChip(reacted("THUMBSUP", 9, "ou_a", "ou_b", "ou_c", "ou_d"), namedStyle())
-	require.Equal(t, chipped("👍 张三, 李四, 王五 +6"), ansi.Strip(segs[0].text),
+	require.Equal(t, chipped("👍⋮张三, 李四, 王五 +6"), ansi.Strip(segs[0].text),
 		"a fourth name costs more width than it tells, and the rest is a number")
 }
 
 func TestReactionChip_CallsTheReaderYou(t *testing.T) {
 	segs := reactionChip(reacted("THUMBSUP", 2, "ou_me", "ou_a"), namedStyle())
-	require.Equal(t, chipped("👍 You, 张三"), ansi.Strip(segs[0].text))
+	require.Equal(t, chipped("👍⋮You, 张三"), ansi.Strip(segs[0].text))
 }
 
 func TestReactionChip_LeavesAStrangerInThePlusN(t *testing.T) {
 	// A raw open id on screen says nothing, so somebody the contacts table
 	// has never seen is counted rather than named.
 	segs := reactionChip(reacted("THUMBSUP", 2, "ou_stranger", "ou_a"), namedStyle())
-	require.Equal(t, chipped("👍 张三 +1"), ansi.Strip(segs[0].text))
+	require.Equal(t, chipped("👍⋮张三 +1"), ansi.Strip(segs[0].text))
 
 	none := reactionChip(reacted("THUMBSUP", 2, "ou_stranger"), namedStyle())
-	require.Equal(t, chipped("👍 +2"), ansi.Strip(none[0].text), "nobody to name leaves the total alone")
+	require.Equal(t, chipped("👍⋮+2"), ansi.Strip(none[0].text), "nobody to name leaves the total alone")
 }
 
 func TestReactionChip_KeepsOneChipInsideThePane(t *testing.T) {
@@ -224,8 +230,8 @@ func TestReactionRows_ZonesLandOnTheChipTheyName(t *testing.T) {
 		x    int
 		want string
 	}{
-		{strip.zones[0].x0, "👍 You +2"},
-		{strip.zones[1].x0, "[+1] +1"},
+		{strip.zones[0].x0, "👍⋮You +2"},
+		{strip.zones[1].x0, "[+1]⋮+1"},
 	} {
 		z, ok := zoneAt(rows, line, tc.x)
 		require.True(t, ok, "column %d is inside a chip", tc.x)
@@ -265,8 +271,8 @@ func TestReactionRows_DrawAPressAheadOfFeishusAnswer(t *testing.T) {
 	st := baseStyle()
 	st.reacts = map[string]map[string]bool{"om_a": {"JIAYI": true}}
 	out := rowText(renderRows(msgs, st))
-	require.Contains(t, out, "[+1] You +1", "the press draws before it is sent")
-	require.Contains(t, out, "👍 You +2", "the chip beside it is left alone")
+	require.Contains(t, out, "[+1]⋮You +1", "the press draws before it is sent")
+	require.Contains(t, out, "👍⋮You +2", "the chip beside it is left alone")
 }
 
 func TestReactionRows_ClosesAChipAPressEmptied(t *testing.T) {

@@ -836,23 +836,26 @@ func reactionChip(c emoji.Chip, st msgStyle) []rowSeg {
 			label = "[" + e.Name() + "]"
 		}
 	}
-	// Nothing is spaced off the caps: a cap's flat side is the cell edge it
-	// hands over on, and a picture is drawn at its own shape inside cells
-	// rounded up to the grid, so the slack at its right edge is the only gap
-	// the chip needs. A character label does pay for the space parting it from
-	// the names, so it carries that space into the budget the names get.
-	if label != "" {
-		label += " "
+	// Nothing inside a chip is spaced off anything: a cap's flat side is the
+	// cell edge it hands over on, an emoji carries its own side bearing, and a
+	// picture is drawn at its own shape inside the cells it rounded to.
+	// The rule is what parts the emoji from the names, and it only has to be
+	// read as a break, not as a gap.
+	who := truncate(reactors(c, st), st.inner()-chipPad-pic.cols-lipgloss.Width(label)-lipgloss.Width(chipRule))
+	// The rule exists only to part the emoji from the names, so a chip too
+	// narrow to name anybody draws neither.
+	tail := ""
+	if who != "" {
+		tail = stChipRule.Render(chipRule) + stChipDim.Render(who)
 	}
-	who := truncate(reactors(c, st), st.inner()-chipPad-pic.cols-lipgloss.Width(label))
 	if pic.cols > 0 {
 		return []rowSeg{{text: stChipEdge.Render(chipLeft)}, {pic: pic},
-			{text: stChip.Render(who) + stChipEdge.Render(chipRight)}}
+			{text: tail + stChipEdge.Render(chipRight)}}
 	}
 	// A chip of characters alone stays one piece, so a strip made of them is
 	// ordinary text that a selected row can still tint.
 	return []rowSeg{{text: stChipEdge.Render(chipLeft) +
-		stChip.Render(strings.TrimSpace(label+who)) + stChipEdge.Render(chipRight)}}
+		stChip.Render(label) + tail + stChipEdge.Render(chipRight)}}
 }
 
 func segsWidth(segs []rowSeg) int {
