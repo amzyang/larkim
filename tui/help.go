@@ -44,7 +44,7 @@ var helpEntries = []helpEntry{
 	{"NORMAL", "f", "forward it: type to filter chats and people, Enter sends"},
 	{"NORMAL", "D", "recall your own message, after a y/n it asks for"},
 	{"NORMAL", "n/N", "the next/previous row with something waiting, muted ones skipped"},
-	{"NORMAL", ":read-all", "take every chat as read and clear the Feishu client's red dots, after a y/n"},
+	{"NORMAL", ":read-all", "take every chat as read and clear the Feishu client's red dots"},
 	{"NORMAL", "Y", "copy agent context"},
 	{"NORMAL", "yy", "copy the message id"},
 	{"NORMAL", "yr", "copy the raw json"},

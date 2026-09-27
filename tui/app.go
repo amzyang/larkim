@@ -708,8 +708,8 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.notify("recall: "+msg.err.Error(), true), nil
 		}
 		return m.notify("recalled", false), m.reloadCurrent()
-	case markAllAskMsg:
-		return m.onMarkAllAsk(msg)
+	case markAllSetMsg:
+		return m.onMarkAllSet(msg)
 	case markAllDoneMsg:
 		return m.onMarkAllDone(msg)
 	case applinkDueMsg:
@@ -2427,7 +2427,7 @@ func (m Model) onClick(ms tea.Mouse) (tea.Model, tea.Cmd) {
 		// under the click to put the cursor on. The one button it draws
 		// answers first, before the head falls back to taking focus.
 		if row < 0 {
-			if p == paneChats && ms.X-1 == markAllCol(chatsWidth-2) {
+			if p == paneChats && inMarkAll(ms.X-1, chatsWidth-2) {
 				return m.startMarkAll()
 			}
 			return m, nil

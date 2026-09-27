@@ -3,16 +3,15 @@ package tui
 import (
 	"context"
 	"slices"
-	"strconv"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/amzyang/larkim/store"
 )
 
-// markAllAskMsg carries the chats a mark-all would walk, for the question
-// that precedes it.
-type markAllAskMsg struct {
+// markAllSetMsg carries the chats a mark-all will walk. The set has to be read
+// before the write that erases it.
+type markAllSetMsg struct {
 	chats []store.ChatUnread
 	err   error
 }
@@ -23,25 +22,23 @@ type markAllDoneMsg struct {
 	err   error
 }
 
-// startMarkAll reads what is waiting. Nothing is written yet: the reader is
-// asked first, and the set has to be read before the write that erases it.
+// startMarkAll reads what is waiting: the set the local write settles, and the
+// one the client is then walked over.
 func (m Model) startMarkAll() (tea.Model, tea.Cmd) {
-	// A question already on screen owns the next key, so a second press must
-	// not put a second one behind it.
+	// A question on screen owns the next key. A sweep's own notes would go
+	// over it and leave the reader answering a prompt they can no longer see.
 	if m.confirm.kind != confirmNone {
 		return m, nil
 	}
 	d := m.deps
 	return m, func() tea.Msg {
 		chats, err := d.Store.ChatsWithUnread(context.Background())
-		return markAllAskMsg{chats: chats, err: err}
+		return markAllSetMsg{chats: chats, err: err}
 	}
 }
 
-// onMarkAllAsk puts the count in front of the reader. Marking everything read
-// cannot be undone and walks the client across every chat it names, which is
-// the same reason a recall asks.
-func (m Model) onMarkAllAsk(msg markAllAskMsg) (Model, tea.Cmd) {
+// onMarkAllSet orders the walk and starts the write.
+func (m Model) onMarkAllSet(msg markAllSetMsg) (Model, tea.Cmd) {
 	if msg.err != nil {
 		return m.notify(msg.err.Error(), true), nil
 	}
@@ -55,8 +52,7 @@ func (m Model) onMarkAllAsk(msg markAllAskMsg) (Model, tea.Cmd) {
 		here := chats[i]
 		chats = append(slices.Delete(chats, i, i+1), here)
 	}
-	m.confirm = confirmation{kind: confirmMarkAllRead, chats: chats}
-	return m.notify("mark "+strconv.Itoa(len(chats))+" chats read? y/n", false), nil
+	return m.notify("marking read…", false), markAllRead(m.deps, chats)
 }
 
 // markAllRead settles every waiting message locally, which is the half larkim

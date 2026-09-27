@@ -110,6 +110,12 @@ const markAllGlyph = "\uebb1"
 // silenced is a click target the reader has to look for.
 func markAllCol(w int) int { return w - 3 }
 
+// inMarkAll answers whether a content column presses the button. The whole
+// strip answers, not the glyph's own cell: a one-column target in a header is
+// missed more often than it is hit, and the two columns beside the glyph
+// carry nothing of their own to press.
+func inMarkAll(col, w int) bool { return col >= markAllCol(w) && col < w }
+
 // mutedDot stands for the do-not-disturb chats that have something waiting.
 // It carries no number: a chat the reader silenced is not one to be counted
 // at. A filled circle is the smallest glyph that still reads alone at the

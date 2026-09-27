@@ -170,3 +170,23 @@ func TestChatsHeader_LongFilterYieldsToTheButtonToo(t *testing.T) {
 	require.True(t, strings.HasSuffix(line, markAllGlyph+"  "),
 		"the right-hand strip is three columns whatever the name does: %q", line)
 }
+
+func TestOnClick_TheWholeRightStripPressesTheButton(t *testing.T) {
+	for col := markAllCol(chatsWidth - 2); col < chatsWidth-2; col++ {
+		m, _, _ := badgeModel(t)
+		_, cmd := m.onClick(tea.Mouse{Button: tea.MouseLeft, X: 1 + col, Y: 1})
+		require.NotNil(t, cmd, "content column %d is part of the button's strip", col)
+	}
+}
+
+func TestOnClick_TheColumnLeftOfTheStripIsNotTheButton(t *testing.T) {
+	m, _, _ := badgeModel(t)
+	_, cmd := m.onClick(tea.Mouse{Button: tea.MouseLeft, X: markAllCol(chatsWidth - 2), Y: 1})
+	require.Nil(t, cmd)
+}
+
+func TestOnClick_ThePanesRightBorderIsNotTheButton(t *testing.T) {
+	m, _, _ := badgeModel(t)
+	_, cmd := m.onClick(tea.Mouse{Button: tea.MouseLeft, X: chatsWidth - 1, Y: 1})
+	require.Nil(t, cmd)
+}

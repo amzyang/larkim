@@ -45,12 +45,19 @@ func sweepModel(t *testing.T, n int) (Model, *store.Store, *[]openCall, *error) 
 	return m, st, &calls, &openErr
 }
 
-// pressMarkAll is the click on the header button, at the column the header draws it
-// in and on the header's own row.
+// clickMarkAll is the click on the header button, at the column the header
+// draws it in and on the header's own row, with the sweep it starts left
+// unrun.
+func clickMarkAll(m Model) (Model, tea.Cmd) {
+	next, cmd := m.onClick(tea.Mouse{Button: tea.MouseLeft, X: 1 + markAllCol(chatsWidth-2), Y: 1})
+	return next.(Model), cmd
+}
+
+// pressMarkAll is that click carried through to the end of the walk.
 func pressMarkAll(t *testing.T, m Model) Model {
 	t.Helper()
-	next, cmd := m.onClick(tea.Mouse{Button: tea.MouseLeft, X: 1 + markAllCol(chatsWidth-2), Y: 1})
-	return drain(t, next.(Model), cmd)
+	m, cmd := clickMarkAll(m)
+	return drain(t, m, cmd)
 }
 
 // waiting is every chat the store would still walk the client onto.
@@ -61,36 +68,9 @@ func waiting(t *testing.T, st *store.Store) []store.ChatUnread {
 	return chats
 }
 
-func TestMarkAllRead_AsksBeforeItWritesAnything(t *testing.T) {
-	m, st, calls, _ := sweepModel(t, 3)
-
-	m = pressMarkAll(t, m)
-
-	require.Equal(t, confirmMarkAllRead, m.confirm.kind)
-	require.Contains(t, m.notice, "3 chats")
-	require.Empty(t, *calls, "the question is asked before the client is touched")
-	require.Len(t, waiting(t, st), 3, "and before anything is written")
-}
-
-func TestMarkAllRead_CancelledLeavesEverythingUnread(t *testing.T) {
-	m, st, calls, _ := sweepModel(t, 3)
-	m = pressMarkAll(t, m)
-
-	next, cmd, answered := m.answerConfirm("n")
-	require.True(t, answered)
-	m = drain(t, next.(Model), cmd)
-
-	require.Empty(t, *calls)
-	require.Len(t, waiting(t, st), 3)
-	require.Empty(t, m.confirm.chats, "a cancelled question leaves no set behind for the next press")
-}
-
 func TestMarkAllRead_WalksEveryChatThatWasWaiting(t *testing.T) {
 	m, st, calls, _ := sweepModel(t, 3)
 	m = pressMarkAll(t, m)
-
-	next, cmd, _ := m.answerConfirm("y")
-	m = drain(t, next.(Model), cmd)
 
 	require.Equal(t, []openCall{
 		opened("lark://applink.feishu.cn/client/chat/open?openChatId=oc_0&position=1", true),
@@ -103,9 +83,7 @@ func TestMarkAllRead_WalksEveryChatThatWasWaiting(t *testing.T) {
 
 func TestMarkAllRead_NeverBatchesSeveralTargetsIntoOneOpen(t *testing.T) {
 	m, _, calls, _ := sweepModel(t, 3)
-	m = pressMarkAll(t, m)
-	next, cmd, _ := m.answerConfirm("y")
-	drain(t, next.(Model), cmd)
+	pressMarkAll(t, m)
 
 	for _, c := range *calls {
 		require.Len(t, c.targets, 1,
@@ -115,8 +93,8 @@ func TestMarkAllRead_NeverBatchesSeveralTargetsIntoOneOpen(t *testing.T) {
 
 func TestMarkAllRead_WritesBeforeItFiresTheFirstApplink(t *testing.T) {
 	m, st, calls, _ := sweepModel(t, 3)
-	m = pressMarkAll(t, m)
-	next, cmd, _ := m.answerConfirm("y")
+	m, cmd := clickMarkAll(m)
+	next, cmd := m.Update(cmd())
 	m = next.(Model)
 
 	// Run only as far as the write's own answer: the durable half has to be
@@ -131,32 +109,30 @@ func TestMarkAllRead_EndsOnTheChatTheReaderHasOpen(t *testing.T) {
 	m, _, calls, _ := sweepModel(t, 3)
 	m.chatID = "oc_0"
 
-	m = pressMarkAll(t, m)
-	next, cmd, _ := m.answerConfirm("y")
-	drain(t, next.(Model), cmd)
+	pressMarkAll(t, m)
 
 	require.Len(t, *calls, 3)
 	require.Equal(t, opened("lark://applink.feishu.cn/client/chat/open?openChatId=oc_0&position=1", true), (*calls)[2],
 		"the client comes to rest where the terminal is")
 }
 
-func TestMarkAllRead_ASecondPressWhileAskingStartsNothing(t *testing.T) {
-	m, _, calls, _ := sweepModel(t, 3)
-	m = pressMarkAll(t, m)
+func TestMarkAllRead_APressWhileAQuestionIsOnScreenStartsNothing(t *testing.T) {
+	m, st, calls, _ := sweepModel(t, 3)
+	m.confirm = confirmation{kind: confirmRecall, messageID: "om_0"}
+	m = m.notify("recall this message? y/n", false)
+
 	m = pressMarkAll(t, m)
 
-	next, cmd, _ := m.answerConfirm("y")
-	drain(t, next.(Model), cmd)
-
-	require.Len(t, *calls, 3, "a question already on screen owns the next key")
+	require.Empty(t, *calls)
+	require.Len(t, waiting(t, st), 3)
+	require.Equal(t, "recall this message? y/n", m.notice, "the question is still the one on screen")
+	require.Equal(t, confirmRecall, m.confirm.kind)
 }
 
 func TestMarkAllRead_AnOpenFailureIsReportedAndDoesNotStopTheChain(t *testing.T) {
 	m, _, calls, openErr := sweepModel(t, 3)
 	*openErr = errFailedOpen
 	m = pressMarkAll(t, m)
-	next, cmd, _ := m.answerConfirm("y")
-	m = drain(t, next.(Model), cmd)
 
 	require.Len(t, *calls, 3, "the chats behind a refusal have dots of their own")
 	require.Contains(t, m.notice, "3 not cleared in Feishu")
@@ -175,8 +151,6 @@ func TestMarkAllRead_ReportsOnlyTheFailuresOfItsOwnSweep(t *testing.T) {
 	*calls = nil
 
 	m = pressMarkAll(t, m)
-	next, cmd, _ := m.answerConfirm("y")
-	m = drain(t, next.(Model), cmd)
 
 	require.Len(t, *calls, 2)
 	require.Equal(t, "2 chats marked read", m.notice, "a sweep whose every applink landed reports no failure")
@@ -186,8 +160,8 @@ func TestMarkAllRead_ReportsOnlyTheFailuresOfItsOwnSweep(t *testing.T) {
 func TestMarkAllRead_WaitsForTheLastOpenBeforeItReports(t *testing.T) {
 	m, _, calls, openErr := sweepModel(t, 1)
 	*openErr = errFailedOpen
-	m = pressMarkAll(t, m)
-	next, cmd, _ := m.answerConfirm("y")
+	m, cmd := clickMarkAll(m)
+	next, cmd := m.Update(cmd())
 	armed, _ := next.(Model).Update(cmd())
 	m = armed.(Model)
 
@@ -212,15 +186,14 @@ func TestMarkAllRead_OnAStoreWithNothingWaitingSaysSo(t *testing.T) {
 
 	m = pressMarkAll(t, m)
 
-	require.Equal(t, confirmNone, m.confirm.kind, "there is nothing to ask about")
 	require.Equal(t, "nothing waiting in Feishu", m.notice)
 	require.Empty(t, *calls)
 }
 
 func TestMarkAllRead_EscapeStopsTheWalk(t *testing.T) {
 	m, _, calls, _ := sweepModel(t, 4)
-	m = pressMarkAll(t, m)
-	next, cmd, _ := m.answerConfirm("y")
+	m, cmd := clickMarkAll(m)
+	next, cmd := m.Update(cmd())
 	m = next.(Model)
 
 	// The walk is driven by hand rather than drained, because backing out of
@@ -264,8 +237,7 @@ func TestRunCommand_ReadAllTakesTheSamePathAsTheButton(t *testing.T) {
 	next, cmd := m.runCommand("read-all")
 	m = drain(t, next.(Model), cmd)
 
-	require.Equal(t, confirmMarkAllRead, m.confirm.kind)
-	require.Contains(t, m.notice, "2 chats")
+	require.Equal(t, "2 chats marked read", m.notice)
 }
 
 // errFailedOpen stands for macOS refusing an applink, which is all the caller
