@@ -61,9 +61,11 @@ func Open(log *slog.Logger, targets []string, background bool) error {
 		args = append([]string{"-g"}, targets...)
 	}
 	// -g is decided here, not by the caller, so this is the only place the
-	// argv exists whole. It is logged the way lark-cli's is: quoted, nothing
-	// elided, paste-able back into a shell to see what macOS was asked.
-	log.Debug("open", "argv", "open "+larkcli.ArgvLine(args))
+	// argv exists whole. It carries at info because an applink moves the
+	// Feishu client under the reader's hands and a call that lands leaves no
+	// other trace. The argv is quoted and nothing is elided, so the line
+	// pastes back into a shell to see what macOS was asked.
+	log.Info("open", "argv", "open "+larkcli.ArgvLine(args))
 	// open hands the URL to LaunchServices and returns, so a call still
 	// running after this is one that will not return; the applink queue waits
 	// on it, and a wait with no end would stop the sweep for good.

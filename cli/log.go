@@ -42,7 +42,10 @@ func (a *App) initLog(cmd *cobra.Command) {
 		// belongs in is what that step was opening.
 		a.log.Warn("log rollover failed; the size cap will not apply until it succeeds", "err", rotate)
 	}
-	a.log.Debug("larkim", "version", a.Version, "data_dir", a.cfg.DataDir, "debug", a.debug)
+	// One line per invocation, at info: the file holds the daemon, the TUI
+	// and every CLI run interleaved, so without it there is nothing saying
+	// which build wrote the records under a given pid.
+	a.log.Info("larkim", "version", a.Version, "data_dir", a.cfg.DataDir, "debug", a.debug)
 }
 
 // logWriter returns the log's destination and, separately, a rollover that
