@@ -71,6 +71,7 @@ func (a *App) emojiAddCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&source, "image", "", "picture to keep; the clipboard's when left out")
+	mustWire(cmd.MarkFlagFilename("image"))
 	return cmd
 }
 
@@ -91,7 +92,7 @@ func (a *App) emojiRemoveCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.ValidArgsFunction = func(_ *cobra.Command, args []string, prefix string) ([]string, cobra.ShellCompDirective) {
+	cmd.ValidArgsFunction = func(_ *cobra.Command, args []string, prefix string) ([]cobra.Completion, cobra.ShellCompDirective) {
 		if len(args) > 0 {
 			return nil, cobra.ShellCompDirectiveNoFileComp
 		}
@@ -99,7 +100,7 @@ func (a *App) emojiRemoveCmd() *cobra.Command {
 		if err != nil {
 			return nil, cobra.ShellCompDirectiveError
 		}
-		var out []string
+		var out []cobra.Completion
 		for _, c := range all {
 			if strings.HasPrefix(c.Name, prefix) {
 				out = append(out, c.Name)

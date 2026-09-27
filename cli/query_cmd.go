@@ -62,6 +62,8 @@ func (a *App) chatsCmd() *cobra.Command {
 	list.Flags().StringVar(&search, "search", "", "fuzzy match on the chat name; Chinese names also answer to their pinyin or its initials")
 	list.Flags().BoolVar(&q.IncludeLeft, "include-left", false, "include chats you are no longer in")
 	list.Flags().IntVar(&q.Limit, "limit", 0, "max rows (default all)")
+	mustWire(list.RegisterFlagCompletionFunc("type",
+		cobra.FixedCompletions([]cobra.Completion{"group", "topic", "p2p"}, cobra.ShellCompDirectiveNoFileComp)))
 	chats.AddCommand(list)
 	return chats
 }
@@ -152,6 +154,18 @@ func (a *App) messagesListCmd() *cobra.Command {
 	f.StringVar(&order, "order", "desc", "asc | desc by create time")
 	f.IntVar(&q.Limit, "limit", 50, "max rows")
 	f.IntVar(&q.Offset, "offset", 0, "rows to skip")
+	mustWire(cmd.RegisterFlagCompletionFunc("chat", a.completeChatRef))
+	mustWire(cmd.RegisterFlagCompletionFunc("sender", a.completeSenderID))
+	// The list Feishu's own msg_type takes is open-ended; these are the ones
+	// the flag's help names, which is what a person is reaching for.
+	mustWire(cmd.RegisterFlagCompletionFunc("type", cobra.FixedCompletions(
+		[]cobra.Completion{"text", "post", "image", "file", "interactive", "system"},
+		cobra.ShellCompDirectiveNoFileComp)))
+	mustWire(cmd.RegisterFlagCompletionFunc("order",
+		cobra.FixedCompletions([]cobra.Completion{"asc", "desc"}, cobra.ShellCompDirectiveNoFileComp)))
+	for _, cursor := range []string{"before", "after", "around"} {
+		mustWire(cmd.RegisterFlagCompletionFunc(cursor, a.completeMessageID))
+	}
 	cmd.MarkFlagsMutuallyExclusive("around", "before")
 	cmd.MarkFlagsMutuallyExclusive("around", "after")
 	cmd.MarkFlagsMutuallyExclusive("around", "limit") // --around is sized by --context
@@ -218,9 +232,10 @@ func (a *App) printMessageTable(rows []store.Message, withChat bool) {
 
 func (a *App) messagesShowCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "show <message_id>",
-		Short: "Show one message with raw content and rendering",
-		Args:  cobra.ExactArgs(1),
+		Use:               "show <message_id>",
+		Short:             "Show one message with raw content and rendering",
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: a.completeMessageID,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			st, err := a.openStore()
 			if err != nil {
@@ -288,9 +303,10 @@ func (a *App) messagesShowCmd() *cobra.Command {
 
 func (a *App) messagesThreadCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "thread <message_id|thread_id>",
-		Short: "List a thread's root and replies in order",
-		Args:  cobra.ExactArgs(1),
+		Use:               "thread <message_id|thread_id>",
+		Short:             "List a thread's root and replies in order",
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: a.completeMessageID,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			st, err := a.openStore()
 			if err != nil {

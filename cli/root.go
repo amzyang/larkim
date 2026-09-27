@@ -66,7 +66,7 @@ func New(version, buildDSN string) *cobra.Command {
 			app.Out, app.Err = cmd.OutOrStdout(), cmd.ErrOrStderr()
 			// Shell completion must stay side-effect free and fast: no crash
 			// reporter, and no log file created just by pressing Tab.
-			completion := cmd.Name() == cobra.ShellCompRequestCmd || cmd.Name() == cobra.ShellCompNoDescRequestCmd
+			completion := isCompletion(cmd)
 			app.log = slog.New(slog.DiscardHandler)
 			if !completion {
 				envValue, envSet := os.LookupEnv("SENTRY_DSN")
@@ -94,6 +94,8 @@ func New(version, buildDSN string) *cobra.Command {
 	root.AddCommand(app.syncCmd(), app.statusCmd(), app.daemonCmd(), app.chatsCmd(), app.messagesCmd(), app.contactsCmd(),
 		app.sendCmd(), app.replyCmd(), app.reactCmd(), app.watchCmd(), app.readAllCmd(), app.silenceCmd(), app.tuiCmd(), app.dbCmd(),
 		app.schemaCmd(), app.emojiCmd(), app.sentryCmd())
+	mustWire(root.MarkPersistentFlagFilename("config", "yaml", "yml"))
+	completeNoFileDefault(root)
 	return root
 }
 

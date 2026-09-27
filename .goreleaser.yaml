@@ -70,5 +70,9 @@ brews:
       keep_alive true
       log_path var/"log/larkim.log"
       error_log_path var/"log/larkim.log"
+    install: |
+      bin.install "larkim"
+      generate_completions_from_executable(bin/"larkim", "completion")
     test: |
       system "#{bin}/larkim", "--version"
+      assert_match "larkim", shell_output("#{bin}/larkim completion fish")

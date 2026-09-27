@@ -52,6 +52,7 @@ func (a *App) watchCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&chat, "chat", "", "only this chat (id or exact name)")
 	cmd.Flags().DurationVar(&every, "every", 500*time.Millisecond, "poll interval")
+	mustWire(cmd.RegisterFlagCompletionFunc("chat", a.completeChatRef))
 	return cmd
 }
 

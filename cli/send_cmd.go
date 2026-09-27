@@ -68,6 +68,8 @@ func (a *App) sendCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&to, "to", "", "recipient: open_id (ou_…), email or exact name")
 	cmd.Flags().StringVar(&chat, "chat", "", "chat: id (oc_…) or exact name")
+	mustWire(cmd.RegisterFlagCompletionFunc("to", a.completeContactRef))
+	mustWire(cmd.RegisterFlagCompletionFunc("chat", a.completeChatRef))
 	body.register(cmd)
 	registerIdempotencyKey(cmd, &idemKey)
 	return cmd
@@ -105,6 +107,10 @@ func (o *outgoingFlags) register(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&o.markdown, "markdown", "", "markdown to send as a rich-text post")
 	cmd.Flags().StringVar(&o.image, "image", "", "image to send: a path, or an img_… key Feishu already holds")
 	cmd.Flags().StringVar(&o.file, "file", "", "file to send: a path, or a file_… key Feishu already holds")
+	// The two that really do take a path, which is what keeps
+	// completeNoFileDefault from turning file completion off for them.
+	mustWire(cmd.MarkFlagFilename("image"))
+	mustWire(cmd.MarkFlagFilename("file"))
 }
 
 func (o outgoingFlags) check() error {
@@ -175,9 +181,10 @@ func (a *App) replyCmd() *cobra.Command {
 	var inThread bool
 	var idemKey string
 	cmd := &cobra.Command{
-		Use:   "reply <message_id> --text|--markdown|--image <body>",
-		Short: "Reply to a message, optionally inside its thread",
-		Args:  cobra.ExactArgs(1),
+		Use:               "reply <message_id> --text|--markdown|--image <body>",
+		Short:             "Reply to a message, optionally inside its thread",
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: a.completeMessageID,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := body.check(); err != nil {
 				return err

@@ -13,6 +13,8 @@ lark-cli auth login --domain im,contact
 brew services start larkim
 ```
 
+The formula installs the bash, zsh and fish completions; reached any other way, `larkim completion <shell>` prints them.
+
 ## Use
 
 ```sh

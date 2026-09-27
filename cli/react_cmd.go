@@ -78,7 +78,8 @@ func (a *App) reactCmd() *cobra.Command {
 			"inside a message fine, so it is replied with; one the client has withdrawn reaches the\n" +
 			"other side as \"[Sensitive emoji]\" however it is named, so its picture is replied with\n" +
 			"instead. Which of the three happened is the `form` of the answer.",
-		Args: cobra.ExactArgs(1),
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: a.completeMessageID,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if strings.TrimSpace(key) == "" {
 				return fmt.Errorf("pass --emoji")
@@ -99,15 +100,15 @@ func (a *App) reactCmd() *cobra.Command {
 	cmd.Flags().StringVar(&key, "emoji", "", "emoji_type, as the client spells it (case-sensitive): DONE, THUMBSUP, Get")
 	// 200 opaque, case-sensitive keys is what completion is for: nobody
 	// remembers that 赞 is THUMBSUP and 破涕为笑 is Get.
-	_ = cmd.RegisterFlagCompletionFunc("emoji", func(_ *cobra.Command, _ []string, prefix string) ([]string, cobra.ShellCompDirective) {
-		var out []string
+	mustWire(cmd.RegisterFlagCompletionFunc("emoji", func(_ *cobra.Command, _ []string, prefix string) ([]cobra.Completion, cobra.ShellCompDirective) {
+		var out []cobra.Completion
 		for _, e := range emoji.All() {
-			if e.Offerable() && strings.HasPrefix(strings.ToLower(e.Key), strings.ToLower(prefix)) {
-				out = append(out, e.Key+"\t"+e.Name())
+			if e.Offerable() && hasPrefixFold(e.Key, prefix) {
+				out = append(out, cobra.CompletionWithDesc(e.Key, e.Name()))
 			}
 		}
 		return out, cobra.ShellCompDirectiveNoFileComp
-	})
+	}))
 	return cmd
 }
 
