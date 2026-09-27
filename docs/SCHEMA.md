@@ -190,12 +190,14 @@ A Feishu document link arrives in a message as a bare URL and nothing else: the 
 
 | column | meaning |
 |---|---|
-| `doc_type` | the type the URL path spells: `docx`, `doc`, `sheet`, `bitable`, `wiki`, `file`, `mindnote`, `slides`, `folder` |
+| `doc_type` | the type the URL path spells: `docx`, `doc`, `sheet`, `bitable`, `wiki`, `file`, `mindnote`, `slides`, `folder`, `baseform`, `minutes` |
 | `token` | the token after it; with `doc_type` this is the primary key |
 | `title` | the document's name once `status = done` |
 | `resolved_type` | what a `wiki` node turned out to wrap, which is the type worth showing; empty until resolved |
 | `status` | `pending`, `done`, `denied` |
 | `next_attempt_at` | when the title is worth reading again on a `done` row, `0` on a `pending` one, unused on a `denied` one |
+
+`baseform` and `minutes` are named one at a time, by `/open-apis/base/v3` and `/open-apis/minutes/v1` respectively: the batch endpoint below has no `doc_type` for a published Base form or a Minutes recording. Their `resolved_type` only ever repeats `doc_type`, because neither wraps anything the way a `wiki` node does.
 
 The identity is the URL's spelling, not the document the server resolves it to: `/open-apis/drive/v1/metas/batch_query` takes `doc_type: "wiki"` and answers with the document the node holds, so the resolved token is knowable only after the call while the next message carrying that wiki URL has to find this row before one.
 

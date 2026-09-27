@@ -86,6 +86,12 @@ type Fake struct {
 	// back by is optional upstream, so a token can come back neither named
 	// nor refused.
 	DocsSilent map[string]bool
+	// Forms are the Base forms FormTitle can name, by share token, and
+	// Minutes the recordings MinuteTitle can name, by minute token. A token
+	// listed in neither is refused the way the endpoints refuse a deleted or
+	// unreadable one: an API error, which is permanent.
+	Forms   map[string]string
+	Minutes map[string]string
 	// Apps are the apps AppDetail can resolve, by app id.
 	Apps map[string]AppDetail
 	// SentKeys records the idempotency key of every send, in order, so a
@@ -124,6 +130,8 @@ func NewFake() *Fake {
 		Apps:             map[string]AppDetail{},
 		Docs:             map[string]DocTitle{},
 		DocsSilent:       map[string]bool{},
+		Forms:            map[string]string{},
+		Minutes:          map[string]string{},
 		Self:             Identity{AppID: "cli_test", UserOpenID: "ou_self"},
 	}
 }
@@ -516,6 +524,30 @@ func (f *Fake) DocTitles(_ context.Context, refs []DocRef) (DocTitles, error) {
 		out.Found = append(out.Found, d)
 	}
 	return out, nil
+}
+
+func (f *Fake) FormTitle(_ context.Context, shareToken string) (string, error) {
+	if err := f.record("form-detail"); err != nil {
+		return "", err
+	}
+	return f.lookupTitle(f.Forms, shareToken)
+}
+
+func (f *Fake) MinuteTitle(_ context.Context, token string) (string, error) {
+	if err := f.record("minute-get"); err != nil {
+		return "", err
+	}
+	return f.lookupTitle(f.Minutes, token)
+}
+
+func (f *Fake) lookupTitle(from map[string]string, token string) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	title, ok := from[token]
+	if !ok {
+		return "", &Error{ExitCode: ExitAPI, Type: "api", Message: "resource not found"}
+	}
+	return title, nil
 }
 
 func (f *Fake) SearchChats(_ context.Context, query string) ([]RawChat, error) {

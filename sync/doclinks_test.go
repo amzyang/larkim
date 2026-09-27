@@ -1,6 +1,7 @@
 package sync
 
 import (
+	"strconv"
 	"testing"
 	"time"
 
@@ -119,4 +120,81 @@ func TestResolveDocLinks_WaitsBeforeAskingAgainAboutADocumentLeftUnanswered(t *t
 	require.NoError(t, err)
 	labels, _ := s.Store.DocLabels(ctx)
 	require.Equal(t, "排期", labels["docx/AbC123"].Title, "the document is still worth a title")
+}
+
+func TestResolveDocLinks_NamesTheFamiliesTheBatchEndpointHasNoTypeFor(t *testing.T) {
+	s, f, clk := newSyncer(t)
+	ctx := t.Context()
+	f.Docs["bitable/AbC123"] = larkcli.DocTitle{Type: "bitable", Title: "排期表"}
+	f.Forms["shrcnForm1"] = "评论收集表"
+	f.Minutes["obcnMin1"] = "周会妙记"
+	docMessage(t, s, "om_1", "https://example.feishu.cn/base/AbC123")
+	docMessage(t, s, "om_2", "https://example.feishu.cn/share/base/form/shrcnForm1?from=share")
+	docMessage(t, s, "om_3", "https://example.feishu.cn/minutes/obcnMin1")
+
+	n, err := s.resolveDocLinks(ctx, clk.t)
+	require.NoError(t, err)
+	require.Equal(t, 3, n)
+
+	labels, err := s.Store.DocLabels(ctx)
+	require.NoError(t, err)
+	require.Equal(t, store.DocLabel{Title: "排期表", Type: "bitable"}, labels["bitable/AbC123"])
+	require.Equal(t, store.DocLabel{Title: "评论收集表", Type: store.DocTypeBaseForm}, labels["baseform/shrcnForm1"])
+	require.Equal(t, store.DocLabel{Title: "周会妙记", Type: store.DocTypeMinutes}, labels["minutes/obcnMin1"])
+	require.Equal(t, 1, callsTo(f, "doc-titles"), "the batch keeps its own call whatever else is due")
+	require.Equal(t, 1, callsTo(f, "form-detail"))
+	require.Equal(t, 1, callsTo(f, "minute-get"))
+}
+
+func TestResolveDocLinks_SettlesAFormTheEndpointRefuses(t *testing.T) {
+	s, f, clk := newSyncer(t)
+	ctx := t.Context()
+	docMessage(t, s, "om_1", "https://example.feishu.cn/share/base/form/shrcnGone")
+
+	n, err := s.resolveDocLinks(ctx, clk.t)
+	require.NoError(t, err)
+	require.Equal(t, 1, n)
+	labels, _ := s.Store.DocLabels(ctx)
+	require.Equal(t, store.DocLabel{Type: store.DocTypeBaseForm, Denied: true}, labels["baseform/shrcnGone"])
+
+	_, err = s.resolveDocLinks(ctx, clk.t.Add(365*24*time.Hour))
+	require.NoError(t, err)
+	require.Equal(t, 1, callsTo(f, "form-detail"), "a deleted form stays deleted")
+}
+
+func TestResolveDocLinks_LeavesASingleThatOnlyFailedToTravelPending(t *testing.T) {
+	s, f, clk := newSyncer(t)
+	ctx := t.Context()
+	f.Err = &larkcli.Error{ExitCode: larkcli.ExitNetwork}
+	docMessage(t, s, "om_1", "https://example.feishu.cn/minutes/obcnMin1")
+
+	_, err := s.resolveDocLinks(ctx, clk.t)
+	require.Error(t, err, "a blip is the tick's failure, not the minute's")
+	labels, _ := s.Store.DocLabels(ctx)
+	require.Empty(t, labels, "nothing is recorded, so the row is still pending")
+
+	f.Err = nil
+	f.Minutes["obcnMin1"] = "周会妙记"
+	_, err = s.resolveDocLinks(ctx, clk.t)
+	require.NoError(t, err)
+	labels, _ = s.Store.DocLabels(ctx)
+	require.Equal(t, "周会妙记", labels["minutes/obcnMin1"].Title)
+}
+
+func TestResolveDocLinks_LeavesTheSinglesPastOneTicksShareForTheNext(t *testing.T) {
+	s, f, clk := newSyncer(t)
+	ctx := t.Context()
+	for i := range docSinglesPerTick + 2 {
+		token := "obcnMin" + strconv.Itoa(i)
+		f.Minutes[token] = "妙记 " + token
+		docMessage(t, s, "om_"+token, "https://example.feishu.cn/minutes/"+token)
+	}
+
+	n, err := s.resolveDocLinks(ctx, clk.t)
+	require.NoError(t, err)
+	require.Equal(t, docSinglesPerTick, n, "one tick names its share and no more")
+
+	n, err = s.resolveDocLinks(ctx, clk.t)
+	require.NoError(t, err)
+	require.Equal(t, 2, n, "the overflow kept its clock, so it is due on the very next tick")
 }

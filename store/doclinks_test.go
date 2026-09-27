@@ -20,6 +20,8 @@ func TestParseDocURL_ReadsTheDocumentThePathNames(t *testing.T) {
 		{"https://example.feishu.cn/bitable/AbC123", DocRef{"bitable", "AbC123"}},
 		{"https://example.feishu.cn/drive/folder/AbC123", DocRef{"folder", "AbC123"}},
 		{"https://example.feishu.cn/mindnote/AbC123", DocRef{"mindnote", "AbC123"}},
+		{"https://example.feishu.cn/share/base/form/shrcnAbC123", DocRef{DocTypeBaseForm, "shrcnAbC123"}},
+		{"https://example.feishu.cn/minutes/obcnAbC123", DocRef{DocTypeMinutes, "obcnAbC123"}},
 	} {
 		got, ok := ParseDocURL(tc.raw)
 		require.True(t, ok, tc.raw)
@@ -46,11 +48,6 @@ func TestParseDocURL_LeavesWhatIsNotADocument(t *testing.T) {
 		"https://example.feishu.cn/client/chat/open",
 		"https://example.feishu.cn/calendar/AbC123",
 		"https://example.feishu.cn/j/1234567",
-		// A form is shared under its own token, which names no document the
-		// metadata API knows; asking would only earn a refusal.
-		"https://example.feishu.cn/share/base/form/shrcnAbC123",
-		// Minutes are not a document type the metadata API takes either.
-		"https://example.feishu.cn/minutes/obcnAbC123",
 		"https://example.feishu.cn/docx/",
 	} {
 		_, ok := ParseDocURL(raw)

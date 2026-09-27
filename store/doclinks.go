@@ -30,12 +30,27 @@ type DocLabel struct {
 	Denied bool
 }
 
+// The two types the batch metadata endpoint has no doc_type for, spelled out
+// because the code that routes them to an endpoint of their own lives in
+// another package.
+const (
+	DocTypeBaseForm = "baseform"
+	DocTypeMinutes  = "minutes"
+)
+
 // docPathTypes maps a URL path prefix onto the document type the metadata
 // API names it by. Longer prefixes come first so /drive/folder/ is not read
 // as a document called "folder", and three of the spellings differ from the
 // API's word for the same thing: /docs/ is a doc, /sheets/ is a sheet,
 // /base/ is a bitable.
+//
+// The first two are named one at a time rather than by the batch endpoint,
+// which has no doc_type for either: a published form carries a share token
+// of its own rather than its base's, and a minute is not a drive document at
+// all.
 var docPathTypes = []struct{ prefix, docType string }{
+	{"/share/base/form/", DocTypeBaseForm},
+	{"/minutes/", DocTypeMinutes},
 	{"/drive/folder/", "folder"},
 	{"/drive/file/", "file"},
 	{"/drive/shr/", "folder"},

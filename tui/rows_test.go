@@ -152,9 +152,11 @@ func TestBodyRows_ImageReservesTheCellsItWillFill(t *testing.T) {
 		Content: "看这个\n![Image](img_v3_abc)", CreateMs: msgAt(23, 9, 0), RenderedAt: 1}}
 	st := baseStyle()
 	st.res = map[string][]store.Resource{"om_1": {{FileKey: "img_v3_abc", LocalPath: "a.png", Status: "done"}}}
+	wantCols, wantRows := st.picBox()
 	st.place = func(path string, maxCols, maxRows int) picture {
 		require.Equal(t, "a.png", path)
-		require.Equal(t, st.height, maxRows, "the pane's height bounds the picture too")
+		require.Equal(t, wantCols, maxCols, "the picture is boxed, not given the whole body")
+		require.Equal(t, wantRows, maxRows, "and the screen bounds it the same way")
 		return picture{path: path, cols: 8, rows: 4}
 	}
 	rows := renderRows(msgs, st)
@@ -167,6 +169,22 @@ func TestBodyRows_ImageReservesTheCellsItWillFill(t *testing.T) {
 	require.Len(t, pics, 4, "one row per cell row of the picture")
 	require.Equal(t, []int{0, 1, 2, 3}, []int{pics[0].picRow, pics[1].picRow, pics[2].picRow, pics[3].picRow})
 	require.Contains(t, rowText(rows), "看这个", "the text around the picture stays")
+}
+
+// A screenshot drawn at its own pixels is a whole screenful, so a picture in
+// the message flow gets a box rather than the room the body has.
+func TestPicBox_LeavesRoomAroundThePicture(t *testing.T) {
+	st := baseStyle()
+
+	cols, rows := st.picBox()
+
+	require.Less(t, cols, st.inner(), "the body is wider than the box")
+	require.Less(t, rows, st.height, "and the screen is taller")
+	require.Positive(t, cols)
+
+	st.height = 1
+	_, rows = st.picBox()
+	require.Equal(t, 1, rows, "a screen too short to divide still offers a row")
 }
 
 func TestSplitImages_KeepsTheTextAroundTheReference(t *testing.T) {

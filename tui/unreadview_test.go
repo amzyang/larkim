@@ -69,8 +69,8 @@ func TestFeed_PartsThePageByChat(t *testing.T) {
 	m := feedModel(t)
 	out := paneText(m)
 
-	require.Contains(t, out, "── 平台组 ", "each chat's stretch opens under a rule naming it")
-	require.Contains(t, out, "── 项目协作群 ")
+	require.Contains(t, out, "─ 平台组 ─", "each chat's stretch opens under a rule naming it")
+	require.Contains(t, out, "─ 项目协作群 ─")
 	require.Less(t, strings.Index(out, "平台组"), strings.Index(out, "项目协作群"),
 		"the chat that has waited longest opens the page")
 	require.Contains(t, out, "接口什么时候好")
@@ -113,7 +113,7 @@ func TestFeed_TheTopRowIsBlankWhenItIsTheSectionRuleItself(t *testing.T) {
 	lines := strings.Split(paneText(m), "\n")
 	pinned, first := lines[2], lines[3]
 
-	require.Contains(t, pinned, "── 项目协作群 ")
+	require.Contains(t, pinned, "─ 项目协作群 ─")
 	require.NotContains(t, first, "项目协作群", "the rule is pinned, not drawn twice")
 	require.Empty(t, strings.TrimSpace(strings.Trim(first, "│")), "and its line is held open")
 }
@@ -338,4 +338,25 @@ func TestFeed_AChatThatStartsWaitingLandsOnThePage(t *testing.T) {
 	require.Contains(t, out, "1 in 1 chats")
 	require.NotContains(t, out, "nothing waiting here")
 	require.NotContains(t, out, "more chat waiting")
+}
+
+func TestFeedRule_CentresTheChatNameBetweenBothEdges(t *testing.T) {
+	for w := 40; w < 48; w++ { // both remainders of the odd-column split
+		plain := ansi.Strip(feedRule("平台组", 0, w).text)
+
+		require.Equal(t, w, ansi.StringWidth(plain), "width %d", w)
+		require.True(t, strings.HasPrefix(plain, "─"), "width %d: %q", w, plain)
+		require.True(t, strings.HasSuffix(plain, "─"), "width %d: %q", w, plain)
+		arms := strings.Split(plain, " 平台组 ")
+		require.Len(t, arms, 2, "width %d: %q", w, plain)
+		left, right := ansi.StringWidth(arms[0]), ansi.StringWidth(arms[1])
+		require.LessOrEqual(t, left, right, "width %d: the odd column goes to the right arm", w)
+		require.LessOrEqual(t, right-left, 1, "width %d: %q", w, plain)
+	}
+}
+
+// The two rules the page alternates between are the same shape, so the chat
+// name is what has to be told from the day under it.
+func TestFeedRule_DrawsTheChatNameBrighterThanTheDayRule(t *testing.T) {
+	require.NotEqual(t, daySeparator("平台组", 40), feedRule("平台组", 0, 40).text)
 }

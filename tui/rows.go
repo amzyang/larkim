@@ -302,6 +302,16 @@ func (st msgStyle) docLabel(url string) (store.DocLabel, bool) {
 // inner is the width a message body has, once the lead is taken off.
 func (st msgStyle) inner() int { return st.width - leadWidth }
 
+// picBox bounds one picture in the message flow. Drawn at its own pixels a
+// screenshot is a whole screenful, and the conversation it was sent into
+// scrolls away behind it; the client hangs an inline picture in a box of its
+// own and opens the full one on a click, which is the same trade — enough of
+// the picture to know what it is, the rest a keypress away. A sticker sets its
+// own, tighter size and does not come through here.
+func (st msgStyle) picBox() (cols, rows int) {
+	return st.inner() / 2, max(1, st.height/3)
+}
+
 // lead is the columns a row opens with: the sender's disc, then the one
 // column carrying the marks belonging to the message. Only the
 // row that opens a block draws a disc; the rest hold its cells blank so every
@@ -1008,11 +1018,12 @@ func cardRows(c card.Card, x store.Message, idx int, st msgStyle, g *leads, ms m
 // downloaded yet, a format the decoder will not read — falls back to a
 // one-line stand-in.
 func pictureRows(key string, x store.Message, idx int, st msgStyle, g *leads) []msgRow {
-	cols, label := st.inner(), "[Image]"
+	boxCols, boxRows := st.picBox()
+	label := "[Image]"
 	if x.MsgType == "sticker" {
-		cols, label = min(cols, stickerCols), "[Sticker]"
+		boxCols, boxRows, label = min(st.inner(), stickerCols), st.height, "[Sticker]"
 	}
-	pic := placePicture(key, x, st, cols)
+	pic := placePicture(key, x, st, boxCols, boxRows)
 	if pic.cols == 0 {
 		return []msgRow{{lead: g.take(), text: stDim.Render(label), idx: idx}}
 	}
@@ -1072,7 +1083,7 @@ func pictureZone(key string, x store.Message, st msgStyle) (clickZone, bool) {
 // zero size means there is nothing to draw: no graphics protocol, a key the
 // message does not carry, a download still on its way, or a format the
 // decoder will not read.
-func placePicture(key string, x store.Message, st msgStyle, cols int) picture {
+func placePicture(key string, x store.Message, st msgStyle, cols, rows int) picture {
 	if st.place == nil || key == "" {
 		return picture{}
 	}
@@ -1080,7 +1091,7 @@ func placePicture(key string, x store.Message, st msgStyle, cols int) picture {
 	if r.Status != "done" {
 		return picture{}
 	}
-	return st.place(r.LocalPath, cols, st.height)
+	return st.place(r.LocalPath, cols, rows)
 }
 
 // picRows hold a picture's cells, one row of the pane per cell row.

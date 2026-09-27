@@ -899,6 +899,39 @@ func (c *ExecClient) DocTitles(ctx context.Context, refs []DocRef) (DocTitles, e
 	return out, nil
 }
 
+// FormTitle names a published Base form. As the user, for the reason
+// DocTitles is: a form is worth naming only if the reader could open it.
+func (c *ExecClient) FormTitle(ctx context.Context, shareToken string) (string, error) {
+	data, err := c.runAs(ctx, "user", "base", "+form-detail", "--share-token", shareToken)
+	if err != nil {
+		return "", err
+	}
+	var resp struct {
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return "", fmt.Errorf("decode form detail: %w", err)
+	}
+	return resp.Name, nil
+}
+
+// MinuteTitle names a Minutes recording.
+func (c *ExecClient) MinuteTitle(ctx context.Context, token string) (string, error) {
+	data, err := c.runAs(ctx, "user", "minutes", "minutes", "get", "--minute-token", token)
+	if err != nil {
+		return "", err
+	}
+	var resp struct {
+		Minute struct {
+			Title string `json:"title"`
+		} `json:"minute"`
+	}
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return "", fmt.Errorf("decode minute: %w", err)
+	}
+	return resp.Minute.Title, nil
+}
+
 // MaxUserDetailsBatch is the documented cap of contact/v3/users/batch.
 const MaxUserDetailsBatch = 50
 

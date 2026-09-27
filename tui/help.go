@@ -81,7 +81,7 @@ var helpEntries = []helpEntry{
 	{"OPEN", "o", "opens it when a message carries more than one target"},
 	{"OPEN", "j/k", "move"},
 	{"OPEN", "Enter", "open"},
-	{"OPEN", "1-9", "the line it is drawn on"},
+	{"OPEN", "1-9 then 0", "the line it is drawn on"},
 	{"OPEN", "Esc", "cancel"},
 	{"OPEN", "", "each line names the target and where it leads, a link by its host"},
 	{"OPEN", "", "the last line opens the message in Feishu, whatever the list left out"},

@@ -84,9 +84,10 @@ func (m Model) onTargetKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.targets.move(-m.targetRows()/2, m.targetRows())
 	default:
 		// A digit means the line it is drawn on, so it can never reach a
-		// target that scrolled out of sight.
-		if n, err := strconv.Atoi(s); err == nil && n >= 1 && n <= 9 {
-			return m.chooseTarget(m.targets.top + n - 1)
+		// target that scrolled out of sight. 0 is the tenth line, the row a
+		// grown box draws past the nine the other digits reach.
+		if n, err := strconv.Atoi(s); err == nil && n >= 0 && n <= 9 {
+			return m.chooseTarget(m.targets.top + (n+9)%10)
 		}
 	}
 	return m, nil
@@ -116,7 +117,7 @@ func (m Model) renderTargets() string {
 	rows := m.targetRows()
 	count := stDim.Render(strconv.Itoa(m.targets.idx+1) + "/" + strconv.Itoa(len(m.targets.zones)))
 	lines := []string{padBetween(stBold.Render("open")+stAccent.Render(" › ")+
-		stDim.Render("j/k move · enter open · 1-9 jump · esc cancel"), count, w)}
+		stDim.Render("j/k move · enter open · digits jump · esc cancel"), count, w)}
 	for i, z := range m.targetsVisible() {
 		lines = append(lines, m.targetLine(z, m.targets.top+i, w))
 	}
@@ -131,8 +132,8 @@ func (m Model) renderTargets() string {
 // alone, so without it the reader would be choosing blind.
 func (m Model) targetLine(z clickZone, i int, w int) string {
 	mark, num := "  ", stDim.Render(" ")
-	if n := i - m.targets.top; n < 9 {
-		num = stDim.Render(strconv.Itoa(n + 1))
+	if n := i - m.targets.top; n < 10 {
+		num = stDim.Render(strconv.Itoa((n + 1) % 10))
 	}
 	label := z.label
 	if label == "" {

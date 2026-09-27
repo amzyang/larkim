@@ -96,7 +96,8 @@ func attachRows(a attachment, x store.Message, idx int, st msgStyle, g *leads) [
 	}
 
 	var rows []msgRow
-	if pic := placePicture(a.coverKey, x, st, st.inner()); pic.cols > 0 {
+	boxCols, boxRows := st.picBox()
+	if pic := placePicture(a.coverKey, x, st, boxCols, boxRows); pic.cols > 0 {
 		for _, row := range picRows(pic, idx, g) {
 			row.zones = zone(row.lead.cols(), pic.cols)
 			rows = append(rows, row)

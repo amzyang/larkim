@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 
+	"charm.land/lipgloss/v2"
 	"github.com/amzyang/larkim/store"
 )
 
@@ -36,17 +37,25 @@ func nextSection(starts []int, idx, step int) int {
 	return starts[((at+step)%len(starts)+len(starts))%len(starts)]
 }
 
-// feedRule parts one chat's stretch from the next. It is the rule the search
-// panel groups its hits under, so the two panels read the same way; the day
-// rule below it is centred, which is what tells the two apart at a glance.
+// feedRule parts one chat's stretch from the next. The name is centred, as the
+// heading of the stretch under it rather than a label hung off the left edge,
+// and is drawn out of the dim its arms are in: the day rule inside the stretch
+// is centred too, so brightness is what tells the two apart.
+//
+// The odd column goes to the right arm rather than being dropped, for the
+// reason daySeparator splits it that way: fit would pad the shortfall with a
+// space, and UnreadPage trims trailing spaces off, so the rule would stop a
+// column short of the edge.
 //
 // It carries the index of the section's first message even though nothing can
 // select it: every row answering which chat it belongs to is what lets the
 // pinned rule be read straight off the viewport's top line.
 func feedRule(label string, idx, w int) msgRow {
-	r := searchRule(label, w)
-	r.idx = idx
-	return r
+	room := max(0, w-lipgloss.Width(label)-2)
+	left := room / 2
+	line := stDim.Render(strings.Repeat("─", left)) + " " + stBold.Render(label) + " " +
+		stDim.Render(strings.Repeat("─", room-left))
+	return msgRow{text: fit(line, w), idx: idx, plain: true, rule: true}
 }
 
 // feedNote is a dim line closing a section, or the page. It belongs to no

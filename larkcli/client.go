@@ -97,6 +97,13 @@ type Client interface {
 	// cannot read comes back under Denied rather than failing the call, so one
 	// unreadable link does not cost the rest of the batch their titles.
 	DocTitles(ctx context.Context, refs []DocRef) (DocTitles, error)
+	// FormTitle names a Base form by the share token its published URL
+	// carries. The metadata endpoint DocTitles uses has no doc_type for a
+	// form, so a form is asked for on its own.
+	FormTitle(ctx context.Context, shareToken string) (string, error)
+	// MinuteTitle names a Minutes recording by its token, which is likewise
+	// outside the metadata endpoint's reach.
+	MinuteTitle(ctx context.Context, token string) (string, error)
 	// Whoami returns the current user identity without hitting the IM API.
 	Whoami(ctx context.Context) (Identity, error)
 }

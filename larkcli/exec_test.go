@@ -579,3 +579,33 @@ func TestOlderMessagesRaw_ExhaustedHistoryReportsNoMore(t *testing.T) {
 	require.False(t, more)
 	require.Empty(t, msgs)
 }
+
+func TestFormTitleAndMinuteTitle_AskTheEndpointsTheBatchQueryCannot(t *testing.T) {
+	c := fakeBinary(t, `
+echo "$*" > "$(dirname "$0")/argv.$1"
+case "$1" in
+base) cat <<'JSON'
+{"ok":true,"identity":"user","data":{"base_token":"AbC123","name":"评论收集表","questions":[]}}
+JSON
+;;
+minutes) cat <<'JSON'
+{"ok":true,"identity":"user","data":{"minute":{"token":"obcnMin1","title":"周会妙记","duration":"2278000"}}}
+JSON
+;;
+*) echo "unexpected: $*" >&2; exit 5;;
+esac`)
+	form, err := c.FormTitle(t.Context(), "shrcnForm1")
+	require.NoError(t, err)
+	require.Equal(t, "评论收集表", form)
+	argv, err := os.ReadFile(filepath.Join(c.Dir, "argv.base"))
+	require.NoError(t, err)
+	require.Equal(t, "base +form-detail --share-token shrcnForm1 --as user --json\n", string(argv),
+		"a form's title tracks the reader's own view, so the identity is the user")
+
+	minute, err := c.MinuteTitle(t.Context(), "obcnMin1")
+	require.NoError(t, err)
+	require.Equal(t, "周会妙记", minute)
+	argv, err = os.ReadFile(filepath.Join(c.Dir, "argv.minutes"))
+	require.NoError(t, err)
+	require.Equal(t, "minutes minutes get --minute-token obcnMin1 --as user --json\n", string(argv))
+}

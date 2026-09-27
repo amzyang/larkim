@@ -149,7 +149,7 @@ func TestBodyRows_AFeishuDocumentIsDrawnAsTheDocument(t *testing.T) {
 }
 
 func TestDocGlyph_EveryFamilyStartsItsTitleInTheSameColumn(t *testing.T) {
-	for _, docType := range []string{"docx", "doc", "sheet", "bitable", "mindnote", "slides", "folder", "file", "wiki"} {
+	for _, docType := range []string{"docx", "doc", "sheet", "bitable", "mindnote", "slides", "folder", "file", "wiki", "baseform", "minutes"} {
 		require.Equal(t, 2, ansi.StringWidth(docGlyph(docType)), docType)
 	}
 }
@@ -191,12 +191,28 @@ func TestBodyRows_ADocumentTitleWrappedAcrossRowsOpensFromEitherHalf(t *testing.
 	}
 }
 
+func TestBodyRows_AFormAndAMinuteAreDrawnLikeAnyOtherResource(t *testing.T) {
+	st := docStyle(map[string]store.DocLabel{
+		"baseform/shrcnAbC123": {Title: "评论收集表", Type: store.DocTypeBaseForm},
+		"minutes/obcnAbC123":   {Title: "周会妙记", Type: store.DocTypeMinutes},
+	})
+	for url, want := range map[string]string{
+		"https://example.feishu.cn/share/base/form/shrcnAbC123?from=share": "📝 评论收集表",
+		"https://example.feishu.cn/minutes/obcnAbC123":                     "🎧 周会妙记",
+	} {
+		rows := bodyOf(url, st)
+		zones := rowZones(rows)
+		require.Len(t, zones, 1, url)
+		require.Equal(t, []string{url}, zones[0].urls, url)
+		require.Contains(t, ansi.Strip(rowSegText(rows[len(rows)-1])), want, url)
+	}
+}
+
 func TestBodyRows_ANonDocumentFeishuLinkIsLeftAlone(t *testing.T) {
-	// A form is shared under a token of its own, and minutes are not a
-	// document type at all; both stay the addresses they are.
+	// A calendar event and a video call are not resources anything names.
 	for _, url := range []string{
-		"https://example.feishu.cn/share/base/form/shrcnAbC123",
-		"https://example.feishu.cn/minutes/obcnAbC123",
+		"https://example.feishu.cn/calendar/AbC123",
+		"https://example.feishu.cn/j/1234567",
 	} {
 		rows := bodyOf(url, docStyle(map[string]store.DocLabel{"docx/AbC123": {Title: "季度排期", Type: "docx"}}))
 		zones := rowZones(rows)

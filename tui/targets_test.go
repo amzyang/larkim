@@ -197,8 +197,9 @@ func TestTargetHint_SaysWhereEachKindLeads(t *testing.T) {
 	require.Equal(t, "docx", targetHint([]string{"https://example.feishu.cn/docx/AbC123"}),
 		"a row showing a title no longer shows the token, and every document in a tenant shares one host")
 	require.Equal(t, "sheet", targetHint([]string{"https://example.feishu.cn/sheets/Xyz789"}))
-	require.Equal(t, "example.feishu.cn", targetHint([]string{"https://example.feishu.cn/minutes/obcnAbC123"}),
-		"what is not a document is still named by where it leads")
+	require.Equal(t, "minutes", targetHint([]string{"https://example.feishu.cn/minutes/obcnAbC123"}))
+	require.Equal(t, "example.feishu.cn", targetHint([]string{"https://example.feishu.cn/calendar/AbC123"}),
+		"what is not a resource is still named by where it leads")
 	require.Equal(t, "resources", targetHint([]string{"/data/resources/a.png"}))
 	require.Equal(t, "3 files", targetHint([]string{"/a.png", "/b.png", "/c.png"}))
 	require.Empty(t, targetHint(nil))
@@ -266,4 +267,21 @@ func TestOnTargetKey_ADigitMeansTheLineItIsDrawnOn(t *testing.T) {
 	want := "https://example.com/" + string(rune('a'+m.targets.top))
 	require.Equal(t, []openCall{opened(want, false)}, *calls,
 		"the first line on screen is what 1 reaches, not the first of the list")
+}
+
+func TestOnTargetKey_ZeroMeansTheTenthLine(t *testing.T) {
+	var body string
+	for i := range 20 {
+		body += "[链接" + string(rune('a'+i)) + "](https://example.com/" + string(rune('a'+i)) + ") "
+	}
+	m, calls := targetPage(t, linkMessage(body), nil)
+	m = press(t, m, "o")
+	require.GreaterOrEqual(t, m.targetRows(), 10, "the box draws a tenth line for 0 to reach")
+	require.Contains(t, m.targetLine(m.targets.zones[9], 9, 100), "0", "the tenth line is numbered")
+
+	_, cmd := m.onTargetKey(keyMsg("0"))
+	collect(cmd)
+	want := "https://example.com/" + string(rune('a'+m.targets.top+9))
+	require.Equal(t, []openCall{opened(want, false)}, *calls,
+		"0 reaches the tenth line on screen, the one past what 9 reaches")
 }

@@ -131,6 +131,10 @@ func docGlyph(docType string) string {
 	switch docType {
 	case "sheet":
 		return "📊"
+	case "baseform":
+		return "📝"
+	case "minutes":
+		return "🎧"
 	case "bitable":
 		return "🗂️"
 	case "mindnote":
