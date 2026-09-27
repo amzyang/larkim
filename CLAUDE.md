@@ -86,6 +86,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 - 注释与代码用英文；注释写 why 不写 what
 - 依赖注入用导出字段的 struct（如 `Syncer`、`cli.App`），接口定义在消费方
+- TUI 的 `update`/按键分支按值收 `Model`、按值还回去，而它们调的 helper 多是指针接收者：
+  `return m, m.openChat(id)` 里 `m` 与调用的求值顺序 Go 没有规定，另一个操作数也是调用时
+  （`return m.notify(…), m.closeUnread()`）左到右的规定反而保证拷贝先发生、写入丢掉。
+  一律先把 cmd 取出来：`cmd := m.openChat(id)` 再 `return m, cmd`
 - 错误用 `%w` 包装，`errors.AsType[T]` 分类；`*larkcli.Error` 提供 `IsAuth/IsNetwork/IsRateLimit/IsPermanent`
 - 写或改 Go 代码前先调用 skill `/modern-go-guidelines:use-modern-go`，用它的 `list` 取当前 Go 版本（go.mod 为 1.27）的惯用法清单并照做；与周边旧写法冲突时以清单为准，只有「编译不过 / 改变行为 / 明显不适用」才跳过（跳过前先 `explain` 该条）
 - 该清单里本仓库高频命中的：`errors.AsType[T]` 取代 `errors.As` 临时变量、`wg.Go`、`t.Context()`、`for i := range n`、`cmp.Or`、`slices`/`maps` 的迭代器版本（`SplitSeq`、`slices.Collect`、`slices.Sorted`、`maps.Keys`）、`min`/`max`/`clear`、typed atomics、`new(v)` 取代临时变量取址

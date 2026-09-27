@@ -53,7 +53,9 @@ func (m Model) floorRow(w int) msgRow {
 // because atLocalFloor holds from the moment it is raised until the wider page
 // lands. A stream of wheel events therefore asks exactly once.
 func (m *Model) growMessages() tea.Cmd {
-	if m.searching || m.msgTop > 0 {
+	// The Unread panel's sections are anchored where the backlog starts;
+	// reaching past that is what Enter into the chat is for.
+	if m.searching || m.feed != nil || m.msgTop > 0 {
 		return nil
 	}
 	if m.atLocalFloor() {

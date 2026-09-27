@@ -38,6 +38,11 @@ type msgRow struct {
 	// blank line parting one message from the next — so the selection never
 	// paints it.
 	plain bool
+	// rule marks the line parting one group of rows from the next: a search
+	// group, or one chat's stretch of the Unread panel. The panel pins the
+	// section's rule over the pane, so it has to know when the row under the
+	// pin is that rule already.
+	rule bool
 	// pic is set on the rows a picture occupies, picRow being which of its
 	// rows this one is. Those rows carry an image rather than text, so they
 	// are neither fitted nor highlighted, and their text is only known once

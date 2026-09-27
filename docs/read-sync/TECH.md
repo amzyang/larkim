@@ -21,7 +21,7 @@
 
 两道门，各管一件事。
 
-**`pageShown(tailed)`（`tui/readgate.go`）决定读不读。** 每一项都是「消息面板其实没在读者眼前」的一种：搜索/Mentions 面板借同一套 `msgRows`/`msgTop` 画自己的命中（`m.searching` 两者都置位），帮助层整屏盖住，终端窄到 `foldRight` 让右栏顶掉消息面板，尺寸低于 `minWidth`/`minHeight` 时 `View` 两栏都不画。视口本身的问题交给 `atTail` —— 滚轮把光标留在最新消息上也答不了它。
+**`pageShown(tailed)`（`tui/readgate.go`）决定读不读。** 每一项都是「消息面板其实没在读者眼前」的一种：搜索/Mentions 面板借同一套 `msgRows`/`msgTop` 画自己的命中（`m.searching` 两者都置位），Unread 面板借同一套画每个还欠着的会话（`m.feed` 非 nil；`m.chatID` 全程指着某个真实会话，但摆在读者眼前的是一页很多会话，光标停的那个并没有在被读——`Enter` 进去才是），帮助层整屏盖住，终端窄到 `foldRight` 让右栏顶掉消息面板，尺寸低于 `minWidth`/`minHeight` 时 `View` 两栏都不画。视口本身的问题交给 `atTail` —— 滚轮把光标留在最新消息上也答不了它。
 
 **`unreadWaiting(msgs)`（`tui/badgeclear.go`）决定投不投 applink。** 逐项复刻 `store.unreadBadge`——`is_read_remote = 0`、`local_read_at = 0`、`message_position >= 0`、未撤回。**它取的正是 `markChatRead` 的集合（`store.unreadBadge`），这是投出次数的上界所在**：这一页判为真的每一条，`markChatRead` 都在同一个 batch 里记为本地已读，下一页因此判为假。谓词放宽到那个集合之外，就会出现 `markChatRead` 永远收不掉的消息，每次 reload 都投一条 applink，直到会话被切走。
 

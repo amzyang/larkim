@@ -25,6 +25,11 @@ type Emoji struct {
 	// Glyph is the Unicode this terminal can draw in its place, or "" when no
 	// character carries the same feeling and a name or picture has to stand in.
 	Glyph string
+	// Insert is what a draft carries when this emoji is chosen, where that is
+	// not the glyph: an ASCII emoticon is several cells of text rather than one
+	// character, so it cannot be drawn in the column an emoji is drawn in and
+	// has to say separately what it writes.
+	Insert string
 	// ZH and EN are the names the client displays, which are also what a text
 	// message carries between brackets.
 	ZH, EN string
@@ -32,7 +37,8 @@ type Emoji struct {
 	// x, y, width, height. Sync cuts the picture out of it.
 	Rect [4]int
 	// Terms is what a picker query is matched against: the Chinese names, their
-	// pinyin and pinyin initials, the aliases, the English name and the key.
+	// pinyin and pinyin initials, the aliases, the English name, the key, and
+	// the character itself where this emoji is the one that owns it.
 	Terms []string
 	// Order is the emoji's place in the client's own panel, which is the order
 	// a picker falls back to when nothing has been typed.
@@ -52,10 +58,17 @@ type Emoji struct {
 
 // index is the table joined to its Unicode column, with the spellings that
 // carry a glyph but no table entry of their own added on the end.
+//
+// The character joins the search terms of the emoji that owns it, so the one
+// spelling a reader already has in the clipboard finds it. A bare spelling owns
+// nothing — it is a second name for a character the table already carries — so
+// it stays termless and the character keeps answering with one emoji.
 var index = sync.OnceValue(func() []Emoji {
 	out := make([]Emoji, 0, len(table)+len(glyphs))
 	for _, e := range table {
-		e.Glyph = glyphs[Fold(e.Key)]
+		if e.Glyph = glyphs[Fold(e.Key)]; e.Glyph != "" {
+			e.Terms = append(slices.Clip(e.Terms), e.Glyph)
+		}
 		out = append(out, e)
 	}
 	for key, glyph := range glyphs {

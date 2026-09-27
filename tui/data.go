@@ -200,6 +200,14 @@ type msgMeta struct {
 	replies map[string]store.ReplyGist
 }
 
+// style is the part of a render context the page's own lookups answer for.
+// The caller fills in the pane it is drawing to.
+func (meta msgMeta) style() msgStyle {
+	return msgStyle{suffix: meta.suffix, people: meta.people, avatars: meta.avatars,
+		res: meta.res, docs: meta.docs, parents: meta.parents, forwards: meta.forwards,
+		threads: meta.threads, replies: meta.replies}
+}
+
 func loadMeta(ctx context.Context, st *store.Store, self string, msgs []store.Message) (msgMeta, error) {
 	msgIDs := make([]string, 0, len(msgs))
 	ids := make([]string, 0, len(msgs))

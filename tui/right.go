@@ -97,7 +97,8 @@ func (m Model) openRightIn(f rightFrame, p pane) (Model, tea.Cmd) {
 	m.infoOpen = false
 	m.rightStack = nil
 	m.focus = p
-	return m, m.showRight(f)
+	cmd := m.showRight(f)
+	return m, cmd
 }
 
 // pushRight opens a container over the one on screen, which is what following
@@ -118,7 +119,8 @@ func (m Model) pushRight(f rightFrame) (Model, tea.Cmd) {
 	// one that was.
 	m.rightStack = append(slices.Clone(m.rightStack), m.frame())
 	m.focus = paneThread
-	return m, m.showRight(f)
+	cmd := m.showRight(f)
+	return m, cmd
 }
 
 // popRight uncovers the frame beneath; on the last one the column closes.
@@ -132,7 +134,8 @@ func (m Model) popRight() (Model, tea.Cmd) {
 	}
 	back := m.rightStack[len(m.rightStack)-1]
 	m.rightStack = slices.Clone(m.rightStack[:len(m.rightStack)-1])
-	return m, m.showRight(back)
+	cmd := m.showRight(back)
+	return m, cmd
 }
 
 // closeRight empties the column: the frame on screen and every one under it.

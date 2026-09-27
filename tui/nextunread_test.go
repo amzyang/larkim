@@ -106,7 +106,7 @@ func TestJumpUnread_TakesTheChatsPane(t *testing.T) {
 	m = next.(Model)
 
 	assert.Equal(t, paneChats, m.focus)
-	assert.Equal(t, 1, m.chatIdx)
+	assert.Equal(t, rowOf(1), m.chatIdx)
 }
 
 func TestJumpUnread_NothingWaitingLeavesTheCursorAlone(t *testing.T) {
@@ -149,7 +149,7 @@ func TestJumpUnread_AThreadRowKeepsTheCursorInTheChatsPane(t *testing.T) {
 	next, _ = next.(Model).Update(messagesLoadedMsg{chatID: "oc_a"})
 	m = next.(Model)
 
-	assert.Equal(t, 1, m.chatIdx)
+	assert.Equal(t, rowOf(1), m.chatIdx)
 	assert.Equal(t, "omt_x", m.threadID, "the thread is up")
 	assert.Equal(t, paneChats, m.focus)
 }

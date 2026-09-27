@@ -14,6 +14,25 @@ import (
 
 var testNow = time.Date(2026, 9, 23, 10, 0, 0, 0, time.Local)
 
+// A Nerd Font glyph is drawn at its own size only when the cell after it is
+// blank, and an en-space is the one blank a renderer will not fold into an
+// erase — so every glyph ships with one, and the layout budgets both cells.
+func TestNerdGlyphs_EachCarriesTheCellThatKeepsItFullSize(t *testing.T) {
+	for name, g := range map[string]string{
+		"botBadge":     botBadge,
+		"muteGlyph":    muteGlyph,
+		"draftGlyph":   draftGlyph,
+		"markAllGlyph": markAllGlyph,
+		"replyGlyph":   replyGlyph,
+		"p2p":          chatModeGlyph("p2p"),
+		"group":        chatModeGlyph("group"),
+		"topic":        chatModeGlyph("topic"),
+	} {
+		require.True(t, strings.HasSuffix(g, enSpace), "%s ends without its en-space", name)
+		require.Equal(t, 2, lipgloss.Width(g), "%s has to measure two columns", name)
+	}
+}
+
 func at(d time.Duration) int64 { return testNow.Add(d).UnixMilli() }
 
 // summaryText is the chat list's second line on a terminal with no graphics,
@@ -176,8 +195,10 @@ func TestRenderChats_LeavesTheOddLineBlankRatherThanHalveAChat(t *testing.T) {
 	out := ansi.Strip(m.renderChats(m.bodyHeight()))
 
 	require.Contains(t, out, "群 0 ", "the first chat is drawn")
-	require.Contains(t, out, fmt.Sprintf("群 %d ", fit-1), "so is the last one that fits whole")
-	require.NotContains(t, out, fmt.Sprintf("群 %d ", fit), "the chat that would be halved is left out")
+	// The Unread row takes the first of the pairs that fit, so the chats
+	// reach one short of where they would alone.
+	require.Contains(t, out, fmt.Sprintf("群 %d ", fit-2), "so is the last one that fits whole")
+	require.NotContains(t, out, fmt.Sprintf("群 %d ", fit-1), "the chat that would be halved is left out")
 
 	body := strings.Split(out, "\n")[2:]
 	blank := 0

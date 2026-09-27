@@ -30,9 +30,9 @@ func TestRenderHeader_NamesTheChatWithoutItsID(t *testing.T) {
 }
 
 func TestRenderHeader_MarksTheChatMode(t *testing.T) {
-	for mode, glyph := range map[string]string{"p2p": "", "group": "", "topic": ""} {
+	for mode, glyph := range map[string]string{"p2p": "\uf007", "group": "\uf0c0", "topic": "\uf075"} {
 		line := msgHead(t, store.Chat{ChatID: "oc_quiet", Name: "平台组", ChatMode: mode}, 40)
-		require.Equal(t, glyph+" 平台组", strings.TrimRight(line, " "), "mode %q", mode)
+		require.Equal(t, glyph+enSpace+"平台组", strings.TrimRight(line, " "), "mode %q", mode)
 	}
 }
 

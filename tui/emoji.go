@@ -51,17 +51,25 @@ func drawEmoji(re *regexp.Regexp, s string, lookup func(string) (emoji.Emoji, bo
 // too, so the cell would otherwise say it three times over; a query that
 // reached one of them through its key or its own name repeats it a fourth.
 //
-// The name arrives twice because the callers dress it differently — the picker
-// marks the reader's own reaction onto it, the popup bolds it — while the
-// comparison has to be made against the bare text.
-func emojiWords(key, name, drawn, term string, pos []int) string {
+// drawn is the name the caller has already dressed — the picker marks the
+// reader's own reaction onto it, the popup bolds it — while every comparison
+// here is made against the bare text the emoji carries.
+func emojiWords(e emoji.Emoji, drawn, term string, pos []int) string {
+	key, name := e.Key, e.Name()
 	if !strings.EqualFold(key, name) {
 		drawn = stDim.Render(key) + " " + drawn
 	}
+	// An emoji written rather than drawn has nothing in the icon column, so
+	// the line has to show the text itself: it is what pressing Enter writes,
+	// and a name alone says nothing about which face it is.
+	if e.Insert != "" {
+		drawn += " " + e.Insert
+	}
 	// A term that spells neither the key nor the name says which spelling
 	// answered — which pinyin, which alias — because otherwise a hit reached
-	// that way looks arbitrary.
-	if term != "" && !strings.EqualFold(term, name) && !strings.EqualFold(term, key) {
+	// that way looks arbitrary. The character is not one of them: it is already
+	// drawn in the icon column, so naming it would repeat what is on screen.
+	if term != "" && term != e.Glyph && !strings.EqualFold(term, name) && !strings.EqualFold(term, key) {
 		drawn += stDim.Render(" " + markMatch(term, pos))
 	}
 	return drawn

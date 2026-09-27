@@ -43,11 +43,21 @@ type chatRow struct {
 // chatTextWidth is how much of a w-wide pane the text half of a row gets.
 func chatTextWidth(w int) int { return max(minTitleWidth, w-avatarWidth-avatarGap) }
 
+// enSpace is the second cell every Nerd Font glyph below carries. Those glyphs
+// advance a full em against the text font's 0.6, and the terminal draws one at
+// its own size only when the cell after it is blank — otherwise it shrinks the
+// drawing to fit a single cell, so the same badge comes out at two sizes. A
+// plain space does not settle it: the renderer collapses a run of spaces into
+// an erase, and an erased cell is not the space character the terminal looks
+// for. An en-space is never collapsed and counts as blank, so a glyph paired
+// with one is always drawn full size and always measures two columns.
+const enSpace = "\u2002"
+
 // botBadge marks a machine: the peer a p2p chat's title names, or a speaker
 // named anywhere a turn is quoted. The robot head comes from the Nerd Font the
 // terminal maps the private use area to, so it takes the colour of the name it
-// rides and holds to a single column.
-const botBadge = ""
+// rides.
+const botBadge = "\ueb08" + enSpace
 
 // botMark badges a speaker whose turn came from an app. It rides the name
 // rather than a chat's title because it states what one message is, not what
@@ -62,22 +72,23 @@ func botMark(senderType string) string {
 // muteGlyph is the crossed-out bell, from the Nerd Font the terminal maps the
 // private use area to. Unlike the emoji bell it takes the colour it is given,
 // which is what lets it sit dim behind the summary.
-const muteGlyph = ""
+const muteGlyph = "\uf1f6" + enSpace
 
 // draftGlyph fills the row's own slot: what the reader left unsent in this
-// chat. It comes from the Nerd Font, so it takes the colour it is given and
-// holds to a single column. A send Feishu refused is not drawn here — it keeps
+// chat. The pencil comes from the Codicons block botBadge is from, so it takes
+// the colour it is given. A send Feishu refused is not drawn here — it keeps
 // its place in the message list as a (failed) bubble the outbox can resend.
-const draftGlyph = ""
+const draftGlyph = "\uea73" + enSpace
 
-// selfMark is the row's own slot: the draft waiting in this chat. It carries
-// its trailing space, so a chat with nothing unsent gives the whole line to
-// the summary rather than an indent that means nothing.
+// selfMark is the row's own slot: the draft waiting in this chat. The glyph
+// carries the cell that parts it from the summary, so a chat with nothing
+// unsent gives the whole line to the summary rather than an indent that means
+// nothing.
 func selfMark(d store.Draft) string {
 	if d.Empty() {
 		return ""
 	}
-	return stDim.Render(draftGlyph) + " "
+	return stDim.Render(draftGlyph)
 }
 
 // atMeMark is the other half of the row's marker pair: somebody in this chat
@@ -98,11 +109,11 @@ func atMeMark(c store.Chat) string {
 // markAllGlyph is the button that takes every chat as read: the double check
 // an IM draws for "seen". It comes from the Codicons block of the Nerd Font
 // the terminal maps the private use area to, the same block botBadge is from,
-// so it takes the colour it is given and holds to a single column. The
-// Material Design double check is the better drawing and is unusable here:
-// its plane-15 codepoint falls outside every range the terminal maps, so it
-// would be left to font fallback and could come back double width.
-const markAllGlyph = "\uebb1"
+// so it takes the colour it is given. The Material Design double check is the
+// better drawing and is unusable here: its plane-15 codepoint falls outside
+// every range the terminal maps, so it would be left to font fallback and
+// could come back double width.
+const markAllGlyph = "\uebb1" + enSpace
 
 // markAllCol is the content column the button occupies in a w-wide header.
 // The strip to its right is a fixed three columns whether or not the muted
@@ -475,6 +486,35 @@ func renderChatRow(av avatars, r listRow, d store.Draft, unread int64, g rowGist
 	}
 }
 
+// renderUnreadRow lays the Unread row out: what the panel would gather, over
+// the same two lines every other row takes. It draws no time, the page it
+// opens spanning whatever stretch the backlog does.
+//
+// It carries no badge. Every message it would count is already badged on the
+// row of the chat it is waiting in, and those rows are on the same screen, so
+// a number here would be the same backlog counted twice; how many chats are
+// waiting is what the row has to say that they do not.
+func renderUnreadRow(av avatars, r listRow, rows []listRow, unread map[string]int64, w int) chatRow {
+	textWidth := chatTextWidth(w)
+	avatarTop, avatarBottom, _ := av.cells(r, 0)
+	chats := 0
+	for _, r := range rows {
+		if feedWaiting(r, unread) {
+			chats++
+		}
+	}
+	title, bottom := stBold.Render(unreadLabel), plural(chats, "chat", "chats")+" waiting"
+	if chats == 0 {
+		title, bottom = stDim.Render(unreadLabel), "nothing waiting"
+	}
+	return chatRow{
+		avatarTop:    avatarTop,
+		avatarBottom: avatarBottom,
+		top:          fit(title, textWidth),
+		bottom:       fit(stDim.Render(bottom), textWidth),
+	}
+}
+
 // counterStyle shades the unread count the way the avatar's own badge is
 // shaded. A picture that could not be built leaves its chat on the text
 // fallback while its neighbours keep their discs, so the two have to agree on
@@ -534,7 +574,7 @@ func chatsHeader(rows []listRow, unread map[string]int64, filter string, w int) 
 	// out and the badge query leaves silenced ones out — so hiding the
 	// button on either would take it away in the state that most wants it.
 	// A press with nothing waiting says so.
-	right := stDim.Render(markAllGlyph) + " " + cmp.Or(dot, " ")
+	right := stDim.Render(markAllGlyph) + cmp.Or(dot, " ")
 	room := w - lipgloss.Width(count) - lipgloss.Width(right) - 1
 	return padBetween(stBold.Render(truncate(title, room))+count, right, w)
 }

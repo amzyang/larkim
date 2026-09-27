@@ -79,7 +79,18 @@ func TestVisibleChats_KeepsListOrderUnderFilter(t *testing.T) {
 func TestVisibleRows_UnfilteredIsTheWholeList(t *testing.T) {
 	m := New(Deps{Self: "ou_me"})
 	m.chats = []store.Chat{chat("oc_1", "平台组"), chat("oc_2", "财务组")}
-	require.Len(t, m.visibleRows(), 2)
+	vis := m.visibleRows()
+	require.Len(t, vis, 3, "both chats, under the Unread row")
+	require.True(t, vis[0].isFeed())
+}
+
+func TestVisibleRows_AFilterLeavesTheUnreadRowOut(t *testing.T) {
+	m := New(Deps{Self: "ou_me"})
+	m.chats = []store.Chat{chat("oc_1", "平台组"), chat("oc_2", "财务组")}
+	m.chatFilter = "平台"
+	vis := m.visibleRows()
+	require.Equal(t, []string{"oc_1"}, []string{vis[0].chatID()}, "what a filter narrows is chats")
+	require.Len(t, vis, 1)
 }
 
 func TestRenderChatRow_UnderlinesTheRunesTheFilterLandedOn(t *testing.T) {

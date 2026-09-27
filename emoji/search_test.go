@@ -139,3 +139,30 @@ func TestLoadUsed_LeavesTheListEmptyRatherThanFailing(t *testing.T) {
 	ix.LoadUsed(dir)
 	require.Empty(t, ix.Used())
 }
+
+func TestSearch_FindsAnEmojiByTheCharacterItDraws(t *testing.T) {
+	// The character is the one spelling a reader already has in the clipboard,
+	// and the only one they never have to translate into a name.
+	react := NewReactionIndex()
+	for query, want := range map[string]string{
+		"👍": "THUMBSUP",
+		"🌹": "ROSE",
+		"💯": "Hundred",
+	} {
+		require.Equal(t, want, first(t, react.Search(query)).Key, query)
+	}
+	require.Equal(t, "rocket", first(t, NewComposerIndex().Search("🚀")).Key,
+		"the Unicode extras answer to their character too")
+}
+
+func TestSearch_ACharacterAnswersWithOneEmoji(t *testing.T) {
+	// 👀 is the Unicode extra alone: Feishu's 看 is a face looking sideways
+	// and draws as its own picture, so nothing else claims the character.
+	hits := NewComposerIndex().Search("👀")
+	require.Len(t, hits, 1)
+	require.Equal(t, "eyes", hits[0].Emoji.Key)
+
+	glance, ok := ByKey("GLANCE")
+	require.True(t, ok)
+	require.Empty(t, glance.Glyph, "the picker draws Feishu's own picture for it")
+}

@@ -60,8 +60,9 @@ func (m Model) rowAtCursor() (listRow, bool) {
 // the cursor sits on nothing to load.
 //
 // What "already open" means differs by row: a chat is the page on screen, a
-// thread is the frame in the right column. The chat under a thread is often
-// the open one, and the thread over it still has to be opened.
+// thread is the frame in the right column, the Unread row is the panel. The
+// chat under a thread is often the open one, and the thread over it still has
+// to be opened.
 func (m Model) highlightedRow() (listRow, bool) {
 	r, ok := m.rowAtCursor()
 	if !ok {
@@ -70,6 +71,9 @@ func (m Model) highlightedRow() (listRow, bool) {
 	if r.isThread() {
 		return r, m.openThreadID() != r.thread.ThreadID
 	}
+	if r.isFeed() {
+		return r, m.feed == nil
+	}
 	return r, r.chat.ChatID != m.openingChat()
 }
 
@@ -77,10 +81,14 @@ func (m Model) highlightedRow() (listRow, bool) {
 // happens in, landing on its newest reply the way a search hit lands on the
 // message it named.
 //
-// take says the frame comes away with the focus. Walking the cursor onto a
-// thread row does not take it: the reader is reading the list, and a row that
-// pulled them into the right column would cost them the next j.
+// take says the pane the row leads to comes away with the focus. Walking the
+// cursor onto a thread or the Unread row does not take it: the reader is
+// reading the list, and a row that pulled them into the right column would
+// cost them the next j.
 func (m *Model) openRow(r listRow, take bool) tea.Cmd {
+	if r.isFeed() {
+		return m.startUnread(take)
+	}
 	if r.isThread() {
 		m.pendingSelect = pendingJump{id: r.thread.Last.MessageID, thread: r.thread.ThreadID, takeFocus: take}
 	}

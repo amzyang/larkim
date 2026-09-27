@@ -19,8 +19,16 @@ type listRow struct {
 	thread store.ThreadFeed
 }
 
+// unreadFeedRowID stands where a chat id would on the Unread row. Every real
+// chat id is oc_-prefixed, so it can collide with none of them.
+const unreadFeedRowID = "unread"
+
 // isThread reports which of the two a row is.
 func (r listRow) isThread() bool { return r.thread.ThreadID != "" }
+
+// isFeed reports the Unread row, which leads into the panel rather than into
+// a chat. It has no client counterpart — see unreadfeed.go.
+func (r listRow) isFeed() bool { return r.chat.ChatID == unreadFeedRowID }
 
 // chatID is the chat the row leads into, which a thread row has too.
 func (r listRow) chatID() string { return r.chat.ChatID }
@@ -148,7 +156,12 @@ func newRowsCache() *rowsCache { return &rowsCache{} }
 func (c *rowsCache) all(chats []store.Chat, threads []store.ThreadFeed) []listRow {
 	if !sameSlice(c.chats, chats) || !sameSlice(c.threads, threads) {
 		c.chats, c.threads = chats, threads
-		c.rows = listRows(chats, threads)
+		// The Unread row stands ahead of the interleave, and stands there
+		// however little is waiting: one that came and went with the count
+		// would move the list under the hand browsing it, which is the same
+		// reason unread stays out of the sort order. It is not part of the
+		// interleave itself — nothing about it is a chat or a thread.
+		c.rows = append([]listRow{{chat: store.Chat{ChatID: unreadFeedRowID}}}, listRows(chats, threads)...)
 		c.filter, c.shown = "", nil
 	}
 	return c.rows

@@ -119,7 +119,7 @@ func TestHighlightedRow_AThreadOverTheOpenChatIsStillWorthOpening(t *testing.T) 
 	m := cursorModel(t)
 	m.chats = []store.Chat{chatAt("oc_0", 300)}
 	m.threads = []store.ThreadFeed{feedAt("omt_a", "oc_0", 200)}
-	m.chatIdx = 1
+	m.chatIdx = rowOf(1)
 
 	r, ok := m.highlightedRow()
 
@@ -131,7 +131,7 @@ func TestHighlightedRow_AThreadAlreadyInTheRightColumnIsNot(t *testing.T) {
 	m := cursorModel(t)
 	m.chats = []store.Chat{chatAt("oc_0", 300)}
 	m.threads = []store.ThreadFeed{feedAt("omt_a", "oc_0", 200)}
-	m.chatIdx = 1
+	m.chatIdx = rowOf(1)
 	m.rightKind, m.threadID = rightThread, "omt_a"
 
 	_, ok := m.highlightedRow()
@@ -145,11 +145,11 @@ func TestOpenRow_LeavesTheCursorOnTheThreadRow(t *testing.T) {
 	m := cursorModel(t)
 	m.chats = []store.Chat{chatAt("oc_0", 300)}
 	m.threads = []store.ThreadFeed{feedAt("omt_a", "oc_0", 200)}
-	m.chatIdx = 1
+	m.chatIdx = rowOf(1)
 
-	m.openRow(m.visibleRows()[1], false)
+	m.openRow(m.visibleRows()[rowOf(1)], false)
 
-	assert.Equal(t, 1, m.chatIdx)
+	assert.Equal(t, rowOf(1), m.chatIdx)
 	assert.Equal(t, "omt_a", rowKeyAt(m.visibleRows(), m.chatIdx))
 }
 
@@ -196,30 +196,30 @@ func TestRowsCache_HoldsTheInterleaveUntilTheListIsReplaced(t *testing.T) {
 	chats := []store.Chat{chat("oc_1", "平台组"), chat("oc_2", "财务组")}
 
 	first := c.all(chats, nil)
-	require.Len(t, first, 2)
+	require.Len(t, first, rowOf(2), "the two chats, under the Unread row")
 	require.Equal(t, &first[0], &c.all(chats, nil)[0], "the same lists give back the same interleave")
 
 	replaced := append([]store.Chat{chat("oc_3", "项目协作群")}, chats...)
 	again := c.all(replaced, nil)
-	require.Len(t, again, 3, "a reload that brings a new list is interleaved again")
-	require.Equal(t, "oc_3", again[0].chat.ChatID)
+	require.Len(t, again, rowOf(3), "a reload that brings a new list is interleaved again")
+	require.Equal(t, "oc_3", again[rowOf(0)].chat.ChatID)
 }
 
 func TestRowsCache_AThreadArrivingRebuildsIt(t *testing.T) {
 	c := newRowsCache()
 	chats := []store.Chat{chat("oc_1", "平台组")}
-	require.Len(t, c.all(chats, nil), 1)
+	require.Len(t, c.all(chats, nil), rowOf(1))
 
 	feed := store.ThreadFeed{ThreadID: "omt_x", ChatID: "oc_1", ChatName: "平台组",
 		Root: store.Message{MessageID: "om_root", CreateMs: 10},
 		Last: store.Message{MessageID: "om_last", CreateMs: 20}}
-	require.Len(t, c.all(chats, []store.ThreadFeed{feed}), 2, "the thread takes a row of its own")
+	require.Len(t, c.all(chats, []store.ThreadFeed{feed}), rowOf(2), "the thread takes a row of its own")
 }
 
 func TestRowsCache_EachFilterIsNarrowedOnce(t *testing.T) {
 	c := newRowsCache()
 	rows := c.all([]store.Chat{chat("oc_1", "平台组"), chat("oc_2", "财务组")}, nil)
-	require.Len(t, rows, 2)
+	require.Len(t, rows, rowOf(2))
 
 	calls := 0
 	narrow := func(in []listRow) []listRow { calls++; return in[:1] }

@@ -15,6 +15,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// rowOf is where the nth chat sits in the chats pane. The Unread row stands
+// ahead of every chat, so a row index is never a chat index.
+func rowOf(n int) int { return n + 1 }
+
 func sized(w, h int) Model {
 	m := New(Deps{Self: "ou_me"})
 	m.width, m.height = w, h
@@ -60,7 +64,8 @@ func TestRenderChats_OneRowPerChat(t *testing.T) {
 	h := m.bodyHeight()
 	lines := strings.Split(m.renderChats(h), "\n")
 	require.Len(t, lines, h+2)
-	require.Contains(t, lines[2], "line1 line2", "multi-line names are flattened onto one row")
+	require.Contains(t, lines[2], "Unread", "the Unread row leads the pane")
+	require.Contains(t, lines[5], "line1 line2", "multi-line names are flattened onto one row")
 }
 
 func TestScrollTo_KeepsSelectionVisible(t *testing.T) {
@@ -80,7 +85,7 @@ func TestMove_LastChatStaysVisibleAfterG(t *testing.T) {
 	m.focus = paneChats
 	mm, _ := m.move(1 << 30)
 	m = mm.(Model)
-	require.Equal(t, len(m.chats)-1, m.chatIdx)
+	require.Equal(t, rowOf(len(m.chats)-1), m.chatIdx)
 	require.Contains(t, ansi.Strip(m.renderChats(m.bodyHeight())), "群 79 ", "the selected last chat is rendered")
 }
 
@@ -341,7 +346,7 @@ func TestHighlightChat_FocusedRowTakesTheFixedTint(t *testing.T) {
 
 func TestRenderChats_TintsTheAvatarColumnOfTheRowUnderTheCursor(t *testing.T) {
 	m := sized(120, 36)
-	m.focus = paneChats
+	m.focus, m.chatIdx = paneChats, rowOf(0) // a chat: the Unread row draws no disc
 	m.avatars = badgedAvatars{}
 
 	require.Contains(t, m.renderChats(m.bodyHeight()), "48;2;231;238;252m····",
@@ -391,7 +396,7 @@ func TestOnFilterKey_CancellingAnEmptyFilterChangesNothing(t *testing.T) {
 
 func TestOnFilterKey_CancellingPutsTheReaderBackWhereTheyWere(t *testing.T) {
 	m := sized(120, 36)
-	m.focus, m.chatID, m.chatIdx, m.chatTop = paneMessages, "oc_0", 40, 34
+	m.focus, m.chatID, m.chatIdx, m.chatTop = paneMessages, "oc_0", rowOf(40), rowOf(34)
 	onCursor, onTop := "oc_40", "oc_34"
 
 	mm, _ := m.onNormalKey("/")

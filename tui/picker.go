@@ -334,7 +334,7 @@ func (m Model) pickerCell(h emoji.Hit, selected bool, cell int) []rowSeg {
 	// The words are fitted to what is left of the cell, so the column the next
 	// emoji opens in stands still whatever shape this one has.
 	room := max(0, cell-pickerIconCols-2)
-	tail := " " + fit(truncate(emojiWords(h.Emoji.Key, name, drawn, h.Term, h.Positions), room), room)
+	tail := " " + fit(truncate(emojiWords(h.Emoji, drawn, h.Term, h.Positions), room), room)
 	icon, pic := m.pickerIcon(h.Emoji)
 	if pic.cols > 0 {
 		return []rowSeg{{text: mark}, {pic: pic}, {text: icon + tail}}

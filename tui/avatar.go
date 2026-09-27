@@ -33,6 +33,10 @@ type textAvatars struct{}
 
 func (textAvatars) cells(r listRow, _ int64) (string, string, bool) {
 	c := r.chat
+	if r.isFeed() {
+		top, bottom := unreadTextCells()
+		return top, bottom, false
+	}
 	if r.isThread() {
 		// The mark cannot be drawn in characters, so the glyph takes a column
 		// of the block and says which kind of row this is.
@@ -239,7 +243,10 @@ func (k *kittyAvatars) cachedPicture(r listRow) *image.RGBA {
 // across both.
 func pixKey(r listRow) string {
 	kind := "c"
-	if r.isThread() {
+	switch {
+	case r.isFeed():
+		kind = "u"
+	case r.isThread():
 		kind = "t"
 	}
 	c := r.chat
@@ -254,10 +261,14 @@ func cloneRGBA(m *image.RGBA) *image.RGBA {
 	return &c
 }
 
-// picture is what the row's column shows: the chat's own avatar, or the
-// client's thread mark carrying it when the row is a thread.
+// picture is what the row's column shows: the chat's own avatar, the client's
+// thread mark carrying it when the row is a thread, or the unread ring when
+// the row stands for the panel rather than for a chat.
 func (k *kittyAvatars) picture(r listRow) *image.RGBA {
 	w, h := k.box()
+	if r.isFeed() {
+		return unreadMark(w, h)
+	}
 	if !r.isThread() {
 		return k.chatPicture(r.chat, w, h)
 	}

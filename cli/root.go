@@ -2,6 +2,7 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"log/slog"
@@ -93,7 +94,7 @@ func New(version, buildDSN string) *cobra.Command {
 	root.SetFlagErrorFunc(func(_ *cobra.Command, err error) error { return &usageError{err} })
 	root.AddCommand(app.syncCmd(), app.statusCmd(), app.daemonCmd(), app.chatsCmd(), app.messagesCmd(), app.contactsCmd(),
 		app.sendCmd(), app.replyCmd(), app.reactCmd(), app.watchCmd(), app.readAllCmd(), app.silenceCmd(), app.tuiCmd(), app.dbCmd(),
-		app.schemaCmd(), app.emojiCmd(), app.sentryCmd())
+		app.schemaCmd(), app.emojiCmd(), app.sentryCmd(), app.unreadCmd())
 	mustWire(root.MarkPersistentFlagFilename("config", "yaml", "yml"))
 	completeNoFileDefault(root)
 	return root
@@ -126,6 +127,13 @@ func (a *App) logger() *slog.Logger {
 		return slog.New(slog.DiscardHandler)
 	}
 	return a.log
+}
+
+// selfOpenID is the reader's own open id as the last sync learned it, and ""
+// until one has.
+func selfOpenID(ctx context.Context, st *store.Store) string {
+	v, _, _ := st.GetState(ctx, sync.KeySelfOpenID)
+	return v
 }
 
 func (a *App) openStore() (*store.Store, error) {

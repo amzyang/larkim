@@ -8,7 +8,8 @@ package emoji
 // name reads as an emoji this terminal cannot draw.
 //
 // Faithful is a high bar, and three kinds of near-miss do not clear it:
-//   - the character means something else — 白眼 is not 🙂, 翻白眼 is not 🐶;
+//   - the character means something else — 白眼 is not 🙂, 翻白眼 is not 🐶,
+//     and 看 is one face looking sideways where 👀 is a disembodied pair;
 //   - Feishu draws a word and Unicode offers a shape — its OK, OKR, No, DONE
 //     and -1 are bold lettering, not 👌🎯❌✅➖;
 //   - the character has no colour of its own and lands as a thin monochrome
@@ -27,7 +28,7 @@ var glyphs = map[string]string{
 	"WINK": "😉", "PROUD": "😤", "WITTY": "", "SMART": "🤓",
 	"SCOWL": "", "THINKING": "🤔", "SOB": "😭", "CRY": "😢",
 	"ERROR": "", "NOSEPICK": "", "HAUGHTY": "", "SLAP": "",
-	"SPITBLOOD": "", "TOASTED": "", "GLANCE": "👀", "DULL": "",
+	"SPITBLOOD": "", "TOASTED": "", "GLANCE": "", "DULL": "",
 	"INNOCENTSMILE": "😇", "JOYFUL": "😃", "WOW": "😮", "TRICK": "",
 	"YEAH": "✌️", "ENOUGH": "", "TEARS": "🥲", "EMBARRASSED": "😅",
 	"KISS": "😘", "SMOOCH": "💋", "DROOL": "🤤", "OBSESSED": "",

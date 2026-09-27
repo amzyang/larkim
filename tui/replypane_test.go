@@ -28,7 +28,7 @@ func replyStyle(n int) msgStyle {
 func TestRenderRows_AnAnsweredMessageCountsItsWholeTree(t *testing.T) {
 	out := rowText(renderRows([]store.Message{theAnswered()}, replyStyle(5)))
 
-	require.Contains(t, out, " 5 replies")
+	require.Contains(t, out, replyGlyph+"5 replies")
 	require.Contains(t, out, "1", "the body stays: a reply folds nothing away")
 }
 
@@ -74,7 +74,7 @@ func TestRenderRows_AThreadRootDrawsItsThreadRatherThanItsReplies(t *testing.T) 
 	out := rowText(renderRows([]store.Message{x}, st))
 
 	require.Contains(t, out, "⤷ 2 replies")
-	require.NotContains(t, out, " 5 replies")
+	require.NotContains(t, out, replyGlyph+"5 replies")
 }
 
 func TestRenderRows_AReplyCountCarriesAnOpenZone(t *testing.T) {

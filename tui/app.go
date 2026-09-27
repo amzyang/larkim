@@ -141,6 +141,10 @@ type Model struct {
 	msgTop   int // first visible line of the message pane
 	msgRows  []msgRow
 	msgSince int64 // when set, the page starts here instead of at the newest messages
+	// feed is the Unread panel: one page holding every chat that still owes
+	// the reader an answer, parted into a section each. Non-nil is the whole
+	// discriminator — see unreadfeed.go.
+	feed *unreadFeed
 	// msgLimit is how many of the chat's messages the page asks the store
 	// for. Scrolling to the top of it raises it by another page.
 	msgLimit int
@@ -514,6 +518,17 @@ func (m Model) avatarPrepare() string {
 	return m.avatars.prepare(vis[top:top+n], m.unread)
 }
 
+// update is the handler Update wraps. Its arms take the model by value and
+// hand a new one back, while the helpers they call take it by pointer, so a
+// command is always drawn into a variable of its own before the return:
+//
+//	cmd := m.openChat(id)
+//	return m, cmd
+//
+// Written as one statement, Go leaves it unsaid whether the m being returned
+// is read before or after the call writes to it, and where the other operand
+// is itself a call — notify, say — the spec's left-to-right order guarantees
+// the copy wins and the write is lost.
 func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -563,12 +578,26 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		vis := m.visibleRows()
 		wasCursor, wasTop := rowKeyAt(vis, m.chatIdx), rowKeyAt(vis, m.chatTop)
 		m.chats, m.threads, m.unread, m.drafts = msg.chats, msg.threads, msg.unread, msg.drafts
-		if m.openingChat() == "" && len(m.chats) > 0 {
-			return m, m.openChat(m.chats[0].ChatID)
+		if m.openingChat() == "" && m.feed == nil && len(m.chats) > 0 {
+			cmd := m.openChat(m.chats[0].ChatID)
+			return m, cmd
 		}
 		m.repinChat(wasCursor, wasTop)
+		// The panel's closing note counts the chats its page leaves out, and
+		// this listing is what it counts over. Rows built against the previous
+		// one would state a number the list beside them contradicts.
+		if m.inFeed() {
+			m.rebuildMessages()
+		}
 		return m, nil
 	case messagesLoadedMsg:
+		// A page for the chat the panel's cursor happens to rest in is not the
+		// panel's page: it would put that chat's whole history under the
+		// frozen section rules. Only the chat the panel is leaving for counts,
+		// and enterChat takes the panel down as it lands.
+		if m.feed != nil && msg.chatID != m.pendingChat {
+			return m, nil
+		}
 		// A reload is not a cursor move. Cursor and viewport are held apart,
 		// each by the message it was on, because a page that slid a message off
 		// its head renumbers every row: the cursor keeps its own message, and
@@ -663,6 +692,59 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.msgTop = holdTop(m.msgRows, m.msgs, anchor, tailed, m.msgTop, m.msgListHeight())
 		}
 		return m, infoCmd
+	case unreadFeedLoadedMsg:
+		// The panel may have come down while the page was out.
+		if m.feed == nil {
+			return m, nil
+		}
+		// A reload is not a cursor move: cursor and viewport are each held by
+		// the message they were on, the way a chat's own reload holds them. A
+		// section dropping out renumbers every row behind it.
+		entering := len(m.msgs) == 0
+		wasOn := idAt(m.msgs, m.msgIdx)
+		anchor := topAnchor(m.msgRows, m.msgs, m.msgTop)
+		m.feed.sections = msg.sections
+		m.msgsBase, m.meta = msg.msgs, msg.meta
+		m.applyOutbox()
+		// Nothing here is taken as read, so every marker the page arrives with
+		// stands until the reader goes into the chat and reads it there.
+		m.markDots(msg.msgs)
+		m.rebuildMessages()
+		// With nothing waiting there is no section for the composer to answer,
+		// and the chat that was open before is not what the pane is showing.
+		if len(msg.msgs) == 0 {
+			m.chatID = ""
+		}
+		if entering {
+			m.msgIdx, m.msgTop = 0, 0
+		} else {
+			if i := indexOfID(m.msgs, wasOn); i >= 0 {
+				m.msgIdx = i
+			}
+			m.msgIdx = clamp(m.msgIdx, 0, max(0, len(m.msgs)-1))
+			m.msgTop = holdTop(m.msgRows, m.msgs, anchor, false, m.msgTop, m.msgListHeight())
+		}
+		// Taken before the return: feedRetarget writes to the receiver, and
+		// Go does not say whether the bare m beside it is read first.
+		cmd := m.feedRetarget()
+		return m, cmd
+	case chatSideMsg:
+		// The cursor may have walked on to another section while this was out.
+		if msg.chatID != m.chatID {
+			return m, nil
+		}
+		m.roster = msg.roster
+		// A composer already carrying something is the reader bringing it
+		// here; the chat's own draft would take it away, and restoreDraft
+		// would drop the quote r just put up along with it.
+		if m.composerHeld() {
+			return m, nil
+		}
+		m.restoreDraft(msg.draft, m.msgs)
+		if m.feed != nil {
+			m.feed.loaded = msg.chatID
+		}
+		return m, nil
 	case searchRestMsg:
 		if !m.claimSearch(msg.gen) {
 			return m, nil
@@ -672,7 +754,8 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if !m.claimSearch(msg.gen) {
 			return m, nil
 		}
-		return m, m.startRemote()
+		cmd := m.startRemote()
+		return m, cmd
 	case searchMsg:
 		if !m.claimSearch(msg.gen) {
 			return m, nil
@@ -764,7 +847,8 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.closeSearch()
 		m.pendingSelect = pendingJump{id: msg.messageID, thread: msg.threadID}
 		m.notice = ""
-		return m, m.openChatFrom(msg.chatID, msg.sinceMs)
+		cmd := m.openChatFrom(msg.chatID, msg.sinceMs)
+		return m, cmd
 	case aiChunkMsg:
 		return m.onAIChunk(msg)
 	case threadLoadedMsg:
@@ -912,7 +996,8 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.notePollResult(msg.err, time.Now())
 		return m, nil
 	case olderPulledMsg:
-		return m, m.noteOlderPull(msg)
+		cmd := m.noteOlderPull(msg)
+		return m, cmd
 	case chatRefreshDueMsg:
 		if !m.claimChatRefresh(msg.chatID) {
 			return m, nil
@@ -1030,16 +1115,24 @@ func (m Model) quit() tea.Cmd { return tea.Sequence(m.saveComposer(), tea.Quit) 
 // ever left showing one chat under another's name.
 func (m *Model) enterChat() {
 	m.searching, m.searchHits, m.searchQuery = false, nil, ""
-	m.dots = nil
+	m.feed = nil
+	m.clearMessagePane()
 	m.chatID, m.msgSince, m.msgLimit = m.pendingChat, m.pendingSince, m.pendingLimit
 	m.pendingChat, m.pendingSince, m.pendingLimit = "", 0, 0
-	m.msgs, m.msgsBase, m.msgRows, m.msgIdx, m.msgTop = nil, nil, nil, 0, 0
 	// A pull still out belongs to the chat being left; its answer is dropped
 	// on arrival, so the next chat starts free to ask for its own history.
 	m.msgPullInFlight = false
 	m.closeRight()
 	m.replyTo, m.inThrd = nil, false
 	m.selectCurrentChat()
+}
+
+// clearMessagePane empties the pane of the page it is showing, markers and
+// all. What the next page is comes from the caller: a chat, or the panel.
+func (m *Model) clearMessagePane() {
+	m.dots = nil
+	m.msgs, m.msgsBase, m.msgRows = nil, nil, nil
+	m.msgIdx, m.msgTop = 0, 0
 }
 
 // restoreDraft fills the composer from the chat being entered. The quote is
@@ -1079,11 +1172,12 @@ func (m *Model) markDots(msgs []store.Message) {
 // closest a list with a cursor comes to the client's own "the reader has seen
 // this".
 //
-// The search pane is left alone: its hits run across chats, none of which the
-// reader has opened, so the marker is all that says a hit is still waiting.
+// The search pane and the Unread panel are left alone: their rows run across
+// chats, none of which the reader has opened, so the marker is all that says
+// one is still waiting.
 func (m *Model) clearDotsAtCursor() bool {
 	switch {
-	case m.focus == paneMessages && !m.searching:
+	case m.focus == paneMessages && !m.searching && m.feed == nil:
 		return m.clearBlockDots(m.msgs, m.msgIdx, m.msgStyleFor(m.messagesWidth()-2, m.meta))
 	case m.focus == paneThread && !m.aiOpen:
 		return m.clearBlockDots(m.thread, m.threadIdx, m.msgStyleFor(m.rightWidth()-2, m.threadMeta))
@@ -1202,7 +1296,12 @@ func (m *Model) openHighlighted(take bool) tea.Cmd {
 
 func (m Model) reloadCurrent() tea.Cmd {
 	cmds := []tea.Cmd{loadChats(m.deps)}
-	if m.chatID != "" {
+	switch {
+	case m.feed != nil:
+		// The anchors travel with the reload: they are what holds a section
+		// still while the reader is inside it.
+		cmds = append(cmds, loadUnreadFeed(m.deps, m.feed.sections))
+	case m.chatID != "":
 		cmds = append(cmds, loadMessages(m.deps, m.chatID, m.msgSince, m.msgLimit))
 	}
 	// Only the visible frame: a covered one is reloaded when it is uncovered.
@@ -1321,9 +1420,10 @@ func (m Model) jumpToQuoted(p pane, id string) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 	}
-	// The search panel lists hits rather than a chat, so a quote drawn there
-	// never points at anything already on screen.
-	if !m.searching {
+	// The search panel lists hits rather than a chat, and the Unread panel
+	// holds only what is still waiting, so a quote drawn in either rarely
+	// points at anything on screen and never at the right copy of it.
+	if !m.searching && m.feed == nil {
 		// A thread reply can answer something said in the chat itself, which
 		// is in the other pane.
 		if i := indexOfID(m.msgs, id); i >= 0 {
@@ -1345,7 +1445,8 @@ func (m Model) jumpToQuoted(p pane, id string) (tea.Model, tea.Cmd) {
 	// pendingSelect always finds it.
 	m.pendingSelect = jumpTo(parent)
 	m.notice = ""
-	return m, m.openChatFrom(parent.ChatID, parent.CreateMs)
+	cmd := m.openChatFrom(parent.ChatID, parent.CreateMs)
+	return m, cmd
 }
 
 // selectedZones are the targets the selected message draws, in the order it
@@ -1406,6 +1507,11 @@ func (m Model) visibleRows() []listRow {
 	return m.rows.narrowed(m.chatFilter, func(rows []listRow) []listRow {
 		var out []listRow
 		for _, r := range rows {
+			// What the filter narrows is chats; the Unread row is not one and
+			// has no name to type at.
+			if r.isFeed() {
+				continue
+			}
 			if _, ok := m.chatIx.match(r.chat, m.chatFilter); ok {
 				out = append(out, r)
 				continue
@@ -1558,7 +1664,8 @@ func (m Model) onFilterKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.scrollChatToCursor()
 		// Settling the filter is not leaving the list, so the row it settles on
 		// opens where the cursor keys would have opened it.
-		return m, m.openHighlighted(false)
+		cmd := m.openHighlighted(false)
+		return m, cmd
 	}
 	var cmd tea.Cmd
 	m.cmdline, cmd = m.cmdline.Update(k)
@@ -1616,8 +1723,14 @@ func (m Model) onNormalKey(s string) (tea.Model, tea.Cmd) {
 	case "G", "end":
 		return m.move(1 << 30)
 	case "n":
+		if m.inFeed() {
+			return m.jumpSection(1)
+		}
 		return m.jumpUnread(1)
 	case "N":
+		if m.inFeed() {
+			return m.jumpSection(-1)
+		}
 		return m.jumpUnread(-1)
 	case "enter":
 		return m.activate()
@@ -1706,6 +1819,9 @@ func (m Model) onNormalKey(s string) (tea.Model, tea.Cmd) {
 		case m.searching:
 			m.closeSearch()
 			return m.notify("", false), nil
+		case m.feed != nil:
+			leave := m.closeUnread()
+			return m.notify("", false), leave
 		case m.threadOpen() && m.focus == paneThread:
 			return m.popRight()
 		case m.chatFilter != "":
@@ -1796,7 +1912,9 @@ func (m Model) yankSources() ([]yankSource, bool) {
 	switch {
 	case m.focus == paneChats:
 		vis := m.visibleRows()
-		if len(vis) == 0 {
+		// The Unread row stands for no chat, so it has no id, no json and no
+		// last message to hand over.
+		if len(vis) == 0 || vis[m.chatIdx].isFeed() {
 			return nil, true
 		}
 		// A thread yanks the chat it happens in: what is on offer here is a
@@ -1823,7 +1941,7 @@ func (m Model) yankSources() ([]yankSource, bool) {
 
 // startVisual anchors a range selection at the cursor of the focused list.
 func (m Model) startVisual() (tea.Model, tea.Cmd) {
-	if m.searching {
+	if m.searching || m.feed != nil {
 		return m.notify("press Enter to open the hit; v selects inside a chat", true), nil
 	}
 	selectable := m.focus == paneMessages && len(m.msgs) > 0 ||
@@ -1905,11 +2023,11 @@ func (m Model) inSelection(p pane, idx int) bool {
 // of the highlighted chat from the chats pane.
 func (m Model) copySelection() (Model, tea.Cmd) {
 	switch {
-	case m.searching:
+	case m.searching, m.feed != nil:
 		return m.notify("press Enter to open the hit; Y copies from inside a chat", true), nil
 	case m.focus == paneChats:
 		vis := m.visibleRows()
-		if len(vis) == 0 {
+		if len(vis) == 0 || vis[m.chatIdx].isFeed() {
 			return m.notify("nothing to copy", true), nil
 		}
 		spec := copySpec{chatID: vis[m.chatIdx].chatID(), rng: agentctx.Range{Since: chatsCopyAge, Limit: chatsCopyLimit}}
@@ -2005,7 +2123,8 @@ func (m Model) move(n int) (tea.Model, tea.Cmd) {
 		m.chatIdx = clamp(m.chatIdx+n, 0, len(m.visibleRows())-1)
 		m.clampChat()
 		m.scrollChatToCursor()
-		return m, m.moveToChat(time.Now())
+		cmd := m.moveToChat(time.Now())
+		return m, cmd
 	case paneMessages:
 		count := len(m.msgs)
 		if m.searching {
@@ -2020,7 +2139,12 @@ func (m Model) move(n int) (tea.Model, tea.Cmd) {
 			m.rebuildMessages()
 		}
 		m.scrollMessagesToSelection()
-		return m, m.growMessages()
+		if m.inFeed() {
+			cmd := m.feedRetarget()
+			return m, cmd
+		}
+		cmd := m.growMessages()
+		return m, cmd
 	case paneThread:
 		if m.scrollRight(n) {
 			return m, nil
@@ -2055,6 +2179,9 @@ func (m Model) activate() (tea.Model, tea.Cmd) {
 	case paneMessages:
 		if m.searching {
 			return m.openHit()
+		}
+		if m.feed != nil {
+			return m.openFeedHit()
 		}
 		sel, ok := m.selected()
 		if !ok {
@@ -2104,11 +2231,12 @@ func (m Model) startInsert(replyTo *store.Message, inThread bool) (tea.Model, te
 	}
 	m.mode = modeInsert
 	m.focus = paneInput
+	side := m.feedAnswer(replyTo)
 	// Planned before setReply lays the panes out, so the session's first
 	// frame previews the draft the composer actually holds.
 	m.replan()
 	m.setReply(replyTo, inThread)
-	return m, m.input.Focus()
+	return m, tea.Batch(side, m.input.Focus())
 }
 
 // replan re-resolves the draft after anything that can change it.
@@ -2229,7 +2357,8 @@ func (m Model) runCommand(line string) (tea.Model, tea.Cmd) {
 		for _, c := range m.chats {
 			if c.ChatID == rest || store.FoldName(c.Name) == want {
 				m = m.focusMessages()
-				return m, m.openChat(c.ChatID)
+				cmd := m.openChat(c.ChatID)
+				return m, cmd
 			}
 		}
 		return m.notify("no chat "+rest, true), nil
@@ -2265,6 +2394,8 @@ func (m Model) runCommand(line string) (tea.Model, tea.Cmd) {
 		return m.startMarkAll()
 	case "mentions", "at":
 		return m.openMentions()
+	case "unread", "u":
+		return m.openUnread()
 	case "search", "s":
 		// The same panel ctrl+f opens, with the argument already in it: one
 		// implementation, two ways in.
@@ -2458,11 +2589,19 @@ func (m Model) onClick(ms tea.Mouse) (tea.Model, tea.Cmd) {
 			// already be the one on screen while its frame is not. The click
 			// landed in the list, so the frame opens beside the reader and
 			// the focus stays where the click put it.
+			// A click on the Unread row asked for the panel: there is no
+			// chat under it for the click to be merely selecting.
+			case r.isFeed():
+				m = m.focusMessages()
+				open := m.openRow(r, true)
+				return m, open
 			case r.isThread():
-				return m, m.openRow(r, false)
+				cmd := m.openRow(r, false)
+				return m, cmd
 			case r.chat.ChatID != m.chatID, double:
 				m = m.focusMessages()
-				return m, m.openRow(r, false)
+				cmd := m.openRow(r, false)
+				return m, cmd
 			}
 		}
 	case paneMessages:
@@ -2548,7 +2687,8 @@ func (m Model) onWheel(ms tea.Mouse) (tea.Model, tea.Cmd) {
 		m.chatTop = clamp(m.chatTop+step, 0, max(0, len(m.visibleRows())-m.chatListHeight()))
 	case paneMessages:
 		m.msgTop = clamp(m.msgTop+step, 0, max(0, len(m.msgRows)-m.msgListHeight()))
-		return m, m.growMessages()
+		cmd := m.growMessages()
+		return m, cmd
 	case paneThread:
 		// The column is shared, and the wheel scrolls whichever of the three
 		// is drawn in it. The thread alone is scrolled by its own top, since

@@ -119,7 +119,7 @@ type emojiRow struct {
 	EN    string `json:"en"`
 	Glyph string `json:"glyph,omitempty"`
 	// Terms is what a query is matched against: the names, their pinyin and
-	// pinyin initials, the aliases, and the key.
+	// pinyin initials, the aliases, the key, and the character itself.
 	Terms []string `json:"terms"`
 	// Order is the emoji's place in the client's own panel, which is the
 	// order a picker falls back to when nothing has been typed.

@@ -193,6 +193,27 @@ func TestPum_AcceptingAnEmojiWithNoCharacterWritesTheBracketedName(t *testing.T)
 	require.True(t, ok)
 }
 
+func TestPum_AcceptingAnEmoticonWritesTheTextItself(t *testing.T) {
+	// It is typed, not drawn: there is no character to fall back on and no
+	// bracketed name Feishu would read back.
+	m := typeInto(newPumModel(t), ":xianzhuo")
+	require.True(t, m.pum.open())
+	require.Equal(t, "(╯°□°)╯︵ ┻━┻", m.pum.hits[0].insert)
+
+	mm, _ := m.onInsertKey(tea.KeyPressMsg{Code: tea.KeyTab})
+	require.Equal(t, "(╯°□°)╯︵ ┻━┻ ", mm.(Model).input.Value())
+}
+
+func TestPumLine_ShowsAnEmoticonBeforeItIsAccepted(t *testing.T) {
+	// The icon column cannot hold it, so the row itself has to say what Enter
+	// will write — a name alone does not tell one face from another.
+	m := typeInto(newPumModel(t), ":xianzhuo")
+	require.True(t, m.pum.open())
+	line := ansi.Strip(m.pumLine(m.pum.hits[0], true, 60))
+	require.Contains(t, line, "(╯°□°)╯︵ ┻━┻")
+	require.Contains(t, line, "tableflip")
+}
+
 func TestPum_StaysShutUntilTwoLettersStand(t *testing.T) {
 	m := typeInto(newPumModel(t), ":")
 	require.False(t, m.pum.open(), "a lone colon is punctuation")

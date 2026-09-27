@@ -11,7 +11,9 @@ import (
 // chat is a request not to be pulled by it, and being walked onto it is that
 // pull. A thread inherits the silence of the chat it happens in.
 func waitingFor(r listRow, unread map[string]int64) bool {
-	return !r.chat.Muted && r.unread(unread) > 0
+	// The Unread row gathers what the queue walks; landing the queue on it
+	// would be a step that reads nothing.
+	return !r.isFeed() && !r.chat.Muted && r.unread(unread) > 0
 }
 
 // nextUnread is the index of the row holding something to read, starting one

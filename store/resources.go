@@ -298,6 +298,29 @@ func (s *Store) ChatsWithUnread(ctx context.Context) ([]ChatUnread, error) {
  WHERE `+unreadBadge+` GROUP BY m.chat_id ORDER BY m.chat_id`)
 }
 
+// UnreadAnchor is where one chat's backlog starts.
+type UnreadAnchor struct {
+	ChatID string
+	// FirstMs is the oldest message the badge still counts. read_state rows
+	// exist only for messages the poller has checked, so this is the oldest
+	// the badge knows about rather than the oldest never read — the two have
+	// to agree for the list's count and the feed's to match.
+	FirstMs int64
+}
+
+// UnreadAnchors is, per chat, where its backlog starts. The predicate is
+// unreadCounted, the chat list's own, so the anchor opens on exactly the set
+// the badge beside that chat counts.
+func (s *Store) UnreadAnchors(ctx context.Context) ([]UnreadAnchor, error) {
+	scan := func(sc scanner) (UnreadAnchor, error) {
+		var a UnreadAnchor
+		return a, sc.Scan(&a.ChatID, &a.FirstMs)
+	}
+	return queryAll(ctx, s.db, scan, `SELECT m.chat_id, min(m.create_ms)
+ FROM messages m JOIN read_state r ON r.message_id = m.message_id
+ WHERE `+unreadCounted+` GROUP BY m.chat_id ORDER BY m.chat_id`)
+}
+
 // MarkAllRead takes as seen locally everything still waiting anywhere, thread
 // replies included: "mark all as read" is a statement about the whole list,
 // not about the pages the reader happened to visit. Feishu has no mark-read

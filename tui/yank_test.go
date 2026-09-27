@@ -180,7 +180,7 @@ func TestYank_SearchHitsCopyButAnAgentContextStillNeedsTheChat(t *testing.T) {
 
 func TestYank_ChatsPaneCopiesTheChatUnderTheCursor(t *testing.T) {
 	m := sized(120, 36)
-	m.focus, m.chatIdx = paneChats, 0
+	m.focus, m.chatIdx = paneChats, rowOf(0)
 	m.chats = slices.Clone(m.chats)
 	m.chats[0] = store.Chat{ChatID: "oc_9f3a", Name: "平台组", ChatMode: "group",
 		RawJSON:     `{"chat_id":"oc_9f3a","name":"平台组"}`,

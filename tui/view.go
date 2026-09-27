@@ -226,12 +226,13 @@ func (m Model) messagesWidth() int {
 // msgStyleFor is the render context of one message pane: its width and the
 // details the store holds.
 func (m Model) msgStyleFor(width int, meta msgMeta) msgStyle {
-	st := msgStyle{width: width, height: m.picHeight(), self: m.deps.Self, selfName: m.selfName, now: time.Now(),
-		suffix: meta.suffix, people: meta.people, avatars: meta.avatars,
-		res: meta.res, docs: meta.docs, parents: meta.parents, forwards: meta.forwards,
-		threads: meta.threads, replies: meta.replies, dataDir: m.deps.DataDir,
-		outbox: m.outboxStates(), reacts: m.reactStates(), dots: m.dots, dark: m.dark}
-	if c, ok := m.currentChat(); ok {
+	st := meta.style()
+	st.width, st.height, st.self, st.selfName, st.now = width, m.picHeight(), m.deps.Self, m.selfName, time.Now()
+	st.dataDir, st.dots, st.dark = m.deps.DataDir, m.dots, m.dark
+	st.outbox, st.reacts = m.outboxStates(), m.reactStates()
+	// The Unread panel runs across chats, so the chat the cursor happens to
+	// sit in says nothing about the messages above and below it.
+	if c, ok := m.currentChat(); ok && m.feed == nil {
 		st.p2p = c.ChatMode == "p2p"
 		if st.p2p {
 			st.peer = c.P2PTargetID
@@ -272,12 +273,18 @@ func (m *Model) rebuildPreview() {
 
 func (m *Model) rebuildMessages() {
 	w := m.messagesWidth() - 2
+	// The search panel draws over whatever the pane held, the Unread panel
+	// included, so it answers before the panel does.
 	if m.searching {
 		lead := "Messages"
 		if m.mentions {
 			lead = mentionsLabel
 		}
 		m.msgRows = renderSearchRows(m.searchHits, m.chats, lead, m.msgStyleFor(w, m.searchMeta))
+		return
+	}
+	if m.feed != nil {
+		m.msgRows = renderFeedRows(m.msgs, m.feed, m.chats, m.msgStyleFor(w, m.meta))
 		return
 	}
 	m.msgRows = renderRows(m.msgs, m.msgStyleFor(w, m.meta))
@@ -349,7 +356,7 @@ func groupLabel(k searchKind) string {
 // searchRule parts one group from the next. It belongs to no hit, so the
 // selection never paints it.
 func searchRule(label string, w int) msgRow {
-	return msgRow{text: fit(stDim.Render("── "+label+" "+strings.Repeat("─", max(0, w-len(label)-4))), w), plain: true}
+	return msgRow{text: fit(stDim.Render("── "+label+" "+strings.Repeat("─", max(0, w-len(label)-4))), w), plain: true, rule: true}
 }
 
 // searchRowText is the one line a chat or a person takes: the name with the
@@ -750,20 +757,28 @@ func (m Model) renderChats(h int) string {
 		}
 		return avatar + text
 	}
+	// The whole interleave, which the header and the Unread row count over:
+	// what a filter hides is still waiting.
+	all := m.rows.all(m.chats, m.threads)
 	lines := make([]string, 0, h)
 	// A trailing row that cannot show both its lines is left out entirely.
 	last := m.chatTop + min(len(vis)-m.chatTop, chatsThatFit(h-headerHeight)) - 1
 	for i := m.chatTop; i <= last; i++ {
 		row := vis[i]
-		g := m.gists.at(row, m.deps.Self, m.chatPics())
 		var r chatRow
-		if row.isThread() {
+		switch {
+		case row.isFeed():
+			// No summary to take: the row stands for the panel, not for a
+			// conversation, so the gist cache is never asked for one.
+			r = renderUnreadRow(m.avatars, row, all, m.unread, w)
+		case row.isThread():
 			// A thread's title is the words its root opened with, not a name,
 			// so the filter has no rune positions there to underline.
-			r = renderThreadRow(m.avatars, row, m.deps.Self, g, now, w)
-		} else {
+			r = renderThreadRow(m.avatars, row, m.deps.Self, m.gists.at(row, m.deps.Self, m.chatPics()), now, w)
+		default:
 			mark, _ := m.chatIx.match(row.chat, m.chatFilter)
-			r = renderChatRow(m.avatars, row, m.draftForRow(row.chatID()), m.unread[row.chatID()], g, now, w, mark)
+			r = renderChatRow(m.avatars, row, m.draftForRow(row.chatID()), m.unread[row.chatID()],
+				m.gists.at(row, m.deps.Self, m.chatPics()), now, w, mark)
 		}
 		sel := i == m.chatIdx
 		bottom := line(r.avatarBottom, r.bottom, sel)
@@ -778,29 +793,46 @@ func (m Model) renderChats(h int) string {
 	for len(lines) < h-headerHeight {
 		lines = append(lines, fit("", w))
 	}
-	content := chatsHeader(m.rows.all(m.chats, m.threads), m.unread, m.chatFilter, w) + "\n" + strings.Join(lines, "\n")
+	content := chatsHeader(all, m.unread, m.chatFilter, w) + "\n" + strings.Join(lines, "\n")
 	return paneStyle(m.focus == paneChats, w).Height(h).Render(content)
 }
 
 func (m Model) renderMessages(h int) string {
 	w := m.messagesWidth() - 2
 	header := m.renderHeader(w)
+	// In the panel the line under the title is the section the top row is in.
+	// A top row that is itself that rule is held open rather than drawn twice,
+	// so nothing under it moves as the section slides up into the pin.
+	rule, pinned := paneRule(w), false
+	if m.inFeed() {
+		rule, pinned = m.feedRuleLine(w)
+	}
 	lines := make([]string, 0, h)
 	for i := m.msgTop; i < len(m.msgRows) && len(lines) < h-msgHeaderHeight; i++ {
 		r := m.msgRows[i]
+		if pinned && i == m.msgTop {
+			lines = append(lines, fit("", w))
+			continue
+		}
 		line, tint := m.rowLine(r, w)
 		if tint && !r.plain && m.inSelection(paneMessages, r.idx) {
 			line = m.highlight(line, m.focus == paneMessages)
 		}
 		lines = append(lines, line)
 	}
-	if len(m.msgRows) == 0 {
+	// The panel answers for an empty page by the messages it holds, not by the
+	// rows: with every section emptied out it still draws the line counting
+	// the chats it left out, and that line is not a page.
+	switch {
+	case m.inFeed() && len(m.msgs) == 0:
+		lines = append(lines, fit(stDim.Render("nothing waiting here"), w))
+	case len(m.msgRows) == 0:
 		lines = append(lines, fit(stDim.Render("no messages synced for this chat yet"), w))
 	}
 	for len(lines) < h-msgHeaderHeight {
 		lines = append(lines, fit("", w))
 	}
-	content := header + "\n" + paneRule(w) + "\n" + strings.Join(lines, "\n")
+	content := header + "\n" + rule + "\n" + strings.Join(lines, "\n")
 	return paneStyle(m.focus == paneMessages, w).Height(h).Render(content)
 }
 
@@ -823,6 +855,9 @@ func (m Model) renderAI(h int) string {
 }
 
 func (m Model) renderHeader(w int) string {
+	if m.inFeed() {
+		return m.feedTitle(w)
+	}
 	if m.mentions {
 		tail := fmt.Sprintf(" · %d · Esc to leave", len(m.searchHits))
 		return fit(stBold.Render(mentionsLabel)+stDim.Render(tail), w)
@@ -847,7 +882,7 @@ func (m Model) renderHeader(w int) string {
 	}
 	title := stBold.Render(name)
 	if g := chatModeGlyph(c.ChatMode); g != "" {
-		title = stDim.Render(g) + " " + title
+		title = stDim.Render(g) + title
 	}
 	parts := []string{title}
 	if c.SyncError != "" {
@@ -857,17 +892,16 @@ func (m Model) renderHeader(w int) string {
 }
 
 // chatModeGlyph says what kind of chat the header names. The glyphs come from
-// the Nerd Font the terminal maps the private use area to, so each holds to a
-// single column and takes the colour it is given — the same arrangement
-// botBadge and muteGlyph rely on.
+// the Nerd Font the terminal maps the private use area to, so each takes the
+// colour it is given and, carrying its own enSpace, measures two columns.
 func chatModeGlyph(mode string) string {
 	switch mode {
 	case "p2p":
-		return "\uf007"
+		return "\uf007" + enSpace
 	case "group":
-		return "\uf0c0"
+		return "\uf0c0" + enSpace
 	case "topic":
-		return "\uf075"
+		return "\uf075" + enSpace
 	}
 	return ""
 }

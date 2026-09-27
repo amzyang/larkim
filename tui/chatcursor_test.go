@@ -33,20 +33,20 @@ func reorder(chats []store.Chat, from, to int) []store.Chat {
 
 func TestRepinChat_CursorAndViewportFollowTheirOwnChats(t *testing.T) {
 	m := sized(120, 36)
-	m.chatID, m.chatIdx, m.chatTop = "oc_40", 40, 34
+	m.chatID, m.chatIdx, m.chatTop = "oc_40", rowOf(40), rowOf(34)
 	// Moving 40 down to 45 walks 41..45 up one place each, carrying both the
 	// cursor's chat and the chat on the top row with it.
 	m.chats = reorder(m.chats, 40, 45)
 	m.repinChat("oc_40", "oc_34")
 
-	require.Equal(t, 45, m.chatIdx, "the cursor follows the chat, not the row")
-	require.Equal(t, 34, m.chatTop, "and the viewport follows the chat on its top row")
+	require.Equal(t, rowOf(45), m.chatIdx, "the cursor follows the chat, not the row")
+	require.Equal(t, rowOf(34), m.chatTop, "and the viewport follows the chat on its top row")
 	require.Equal(t, 11, m.chatIdx-m.chatTop, "so the cursor moved down the screen and the list did not move")
 }
 
 func TestRepinChat_ViewportHoldsItsTopRowWhenTheCursorsChatIsCarriedAway(t *testing.T) {
 	m := sized(120, 36)
-	m.chatID, m.chatIdx, m.chatTop = "oc_40", 40, 30
+	m.chatID, m.chatIdx, m.chatTop = "oc_40", rowOf(40), rowOf(30)
 
 	// A message lands in the chat under the cursor and carries it to the top.
 	// The Feishu client does not scroll the sidebar after it; the message
@@ -54,27 +54,27 @@ func TestRepinChat_ViewportHoldsItsTopRowWhenTheCursorsChatIsCarriedAway(t *test
 	m.chats = reorder(m.chats, 40, 1)
 	m.repinChat("oc_40", "oc_30")
 
-	require.Equal(t, 1, m.chatIdx, "the cursor follows its chat")
-	require.Equal(t, 31, m.chatTop, "the chat on the top row stayed on the top row")
+	require.Equal(t, rowOf(1), m.chatIdx, "the cursor follows its chat")
+	require.Equal(t, rowOf(31), m.chatTop, "the chat on the top row stayed on the top row")
 	require.Less(t, m.chatIdx, m.chatTop, "the cursor is allowed off screen")
 }
 
 func TestRepinChat_StaysInsideTheListWhenItShrinks(t *testing.T) {
 	m := sized(120, 36)
-	m.chatID, m.chatIdx, m.chatTop = "oc_40", 40, 30
+	m.chatID, m.chatIdx, m.chatTop = "oc_40", rowOf(40), rowOf(30)
 
 	m.chats = m.chats[:3]
 	m.chatID = "oc_1"
 	m.repinChat(m.chatID, "oc_30")
 
-	require.Equal(t, 1, m.chatIdx)
+	require.Equal(t, rowOf(1), m.chatIdx)
 	require.GreaterOrEqual(t, m.chatTop, 0)
-	require.LessOrEqual(t, m.chatTop, max(0, len(m.chats)-m.chatListHeight()))
+	require.LessOrEqual(t, m.chatTop, max(0, len(m.visibleRows())-m.chatListHeight()))
 }
 
 func TestMoveToChat_OpensWhatACursorAtRestLandsOn(t *testing.T) {
 	m := cursorModel(t)
-	m.chatIdx = 1
+	m.chatIdx = rowOf(1)
 
 	require.Contains(t, collect(m.moveToChat(time.Unix(1000, 0))), "tui.messagesLoadedMsg",
 		"a single move costs no delay")
@@ -84,10 +84,10 @@ func TestMoveToChat_OpensWhatACursorAtRestLandsOn(t *testing.T) {
 func TestMoveToChat_WaitsWhileTheCursorIsStillMoving(t *testing.T) {
 	m := cursorModel(t)
 	now := time.Unix(1000, 0)
-	m.chatIdx = 1
+	m.chatIdx = rowOf(1)
 	m.moveToChat(now)
 
-	m.chatIdx = 2
+	m.chatIdx = rowOf(2)
 	cmd := m.moveToChat(now.Add(30 * time.Millisecond))
 
 	require.Equal(t, "oc_1", m.pendingChat, "the second move asks for nothing yet")
@@ -102,7 +102,7 @@ func TestMoveToChat_ASweepLoadsOnePageNotOnePerRow(t *testing.T) {
 	// what a held j spends on the rows it passes.
 	var loaded []string
 	for i := 1; i <= 30; i++ {
-		m.chatIdx = i
+		m.chatIdx = rowOf(i)
 		was := m.pendingChat
 		m.moveToChat(now.Add(time.Duration(i) * 30 * time.Millisecond))
 		if m.pendingChat != was {
@@ -115,7 +115,7 @@ func TestMoveToChat_ASweepLoadsOnePageNotOnePerRow(t *testing.T) {
 
 func TestClaimRowOpen_OnlyForTheRowTheCursorStoppedOn(t *testing.T) {
 	m := cursorModel(t)
-	m.chatIdx = 9
+	m.chatIdx = rowOf(9)
 
 	_, ok := m.claimRowOpen("oc_5")
 	require.False(t, ok, "a row the cursor has already left")
@@ -147,7 +147,7 @@ func TestOpenChat_KeepsThePageItIsOnUntilTheNewOneArrives(t *testing.T) {
 
 func TestActivate_OpensTheHighlightedChatWithoutWaiting(t *testing.T) {
 	m := cursorModel(t)
-	m.focus, m.chatIdx = paneChats, 7
+	m.focus, m.chatIdx = paneChats, rowOf(7)
 
 	next, cmd := m.activate()
 	m = next.(Model)
@@ -162,7 +162,7 @@ func TestActivate_OpensTheHighlightedChatWithoutWaiting(t *testing.T) {
 func TestMoveToChat_AThreadRowOpensTheColumnWithoutTakingTheFocus(t *testing.T) {
 	m := cursorModel(t)
 	m.chats, m.threads = []store.Chat{chatAt("oc_0", 300)}, []store.ThreadFeed{feedAt("omt_a", "oc_0", 200)}
-	m.focus, m.chatIdx = paneChats, 1
+	m.focus, m.chatIdx = paneChats, rowOf(1)
 
 	// The cursor was at rest, so the row opens at once.
 	m.cursorMovedAt = time.Now().Add(-time.Second)
@@ -180,7 +180,7 @@ func TestMoveToChat_AThreadRowOpensTheColumnWithoutTakingTheFocus(t *testing.T) 
 func TestActivate_EnterOnAThreadRowLandsInTheColumn(t *testing.T) {
 	m := cursorModel(t)
 	m.chats, m.threads = []store.Chat{chatAt("oc_0", 300)}, []store.ThreadFeed{feedAt("omt_a", "oc_0", 200)}
-	m.focus, m.chatIdx = paneChats, 1
+	m.focus, m.chatIdx = paneChats, rowOf(1)
 
 	next, _ := m.activate()
 	next, _ = next.(Model).Update(messagesLoadedMsg{chatID: "oc_0"})
@@ -195,7 +195,7 @@ func TestActivate_EnterOnAThreadRowLandsInTheColumn(t *testing.T) {
 func TestActivate_EnterOnAnAlreadyOpenThreadRowTakesTheFocus(t *testing.T) {
 	m := cursorModel(t)
 	m.chats, m.threads = []store.Chat{chatAt("oc_0", 300)}, []store.ThreadFeed{feedAt("omt_a", "oc_0", 200)}
-	m.focus, m.chatIdx = paneChats, 1
+	m.focus, m.chatIdx = paneChats, rowOf(1)
 	m.rightKind, m.threadID = rightThread, "omt_a"
 
 	next, cmd := m.activate()
@@ -212,11 +212,12 @@ func TestOnClick_AThreadRowKeepsTheFocusInTheChatsPane(t *testing.T) {
 	m.chats, m.threads = []store.Chat{chatAt("oc_0", 300)}, []store.ThreadFeed{feedAt("omt_a", "oc_0", 200)}
 	m.focus, m.chatIdx, m.chatTop = paneMessages, 0, 0
 
-	// Row 1 of the chats pane: below its border and its header, second pair.
-	next, _ := m.onClick(tea.Mouse{Button: tea.MouseLeft, X: 4, Y: 1 + headerHeight + chatRowStride})
+	// The thread row of the chats pane: below its border and its header, past
+	// the Unread row and the chat the thread happens in.
+	next, _ := m.onClick(tea.Mouse{Button: tea.MouseLeft, X: 4, Y: 1 + headerHeight + rowOf(1)*chatRowStride})
 	m = next.(Model)
 
-	require.Equal(t, 1, m.chatIdx, "the cursor is on the thread row")
+	require.Equal(t, rowOf(1), m.chatIdx, "the cursor is on the thread row")
 	require.Equal(t, pendingJump{id: "om_last_omt_a", thread: "omt_a"}, m.pendingSelect)
 	require.Equal(t, paneChats, m.focus)
 }
@@ -225,13 +226,13 @@ func TestChatsLoaded_ACursorAheadOfTheOpenChatKeepsItsPlace(t *testing.T) {
 	m := sized(120, 36)
 	// A sweep down the list left the cursor far from the chat whose page is
 	// still the one on screen.
-	m.chatID, m.chatIdx, m.chatTop = "oc_1", 40, 34
+	m.chatID, m.chatIdx, m.chatTop = "oc_1", rowOf(40), rowOf(34)
 
 	mm, _ := m.update(chatsLoadedMsg{chats: m.chats})
 	m = mm.(Model)
 
-	require.Equal(t, 40, m.chatIdx, "a reload belongs to the list, not to the cursor")
-	require.Equal(t, 34, m.chatTop)
+	require.Equal(t, rowOf(40), m.chatIdx, "a reload belongs to the list, not to the cursor")
+	require.Equal(t, rowOf(34), m.chatTop)
 }
 
 // wheelChats turns the wheel n notches over the chat list, the way a hand does
@@ -275,4 +276,23 @@ func TestScrollChatToCursor_ACursorMoveBringsTheListBack(t *testing.T) {
 
 	require.GreaterOrEqual(t, m.chatIdx, m.chatTop, "moving the cursor is what scrolls back to it")
 	require.Less(t, m.chatIdx, m.chatTop+m.chatListHeight())
+}
+
+// Every other row of the list loads what it leads to when the cursor comes to
+// rest on it. The Unread row is the top of the list and the only way onto it
+// is a deliberate k there, so it loads too — a row that left the pane showing
+// the chat below would read as a list one row out of step with its own page.
+func TestMove_TheUnreadRowOpensUnderTheCursor(t *testing.T) {
+	m := cursorModel(t)
+	m.focus, m.chatIdx = paneChats, rowOf(0)
+	m.cursorMovedAt = time.Now().Add(-time.Second)
+
+	next, cmd := m.move(-1)
+	m = next.(Model)
+
+	require.Equal(t, 0, m.chatIdx)
+	require.True(t, m.visibleRows()[m.chatIdx].isFeed())
+	require.NotNil(t, m.feed, "the pane draws what the cursor stands on")
+	require.NotNil(t, cmd, "and the page it needs is on its way")
+	require.Equal(t, paneChats, m.focus, "the reader is still reading the list")
 }

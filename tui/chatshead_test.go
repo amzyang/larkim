@@ -69,7 +69,7 @@ func TestChatsHeader_CapsAt99Plus(t *testing.T) {
 func TestChatsHeader_SaysNothingWhenEverythingIsRead(t *testing.T) {
 	rows, unread := headRows("um")
 	unread["a"], unread["b"] = 0, 0
-	require.Equal(t, "Chats"+strings.Repeat(" ", 28)+markAllGlyph+"  ", head(t, rows, unread, "", 36),
+	require.Equal(t, "Chats"+strings.Repeat(" ", 28)+markAllGlyph+" ", head(t, rows, unread, "", 36),
 		"the button stands whether or not anything is waiting; nothing else does")
 }
 
@@ -77,7 +77,7 @@ func TestChatsHeader_DotSitsAtTheRightEdge(t *testing.T) {
 	rows, unread := headRows("mu")
 	line := head(t, rows, unread, "", 36)
 	require.True(t, strings.HasSuffix(line, mutedDot), "the dot ends the row: %q", line)
-	require.Equal(t, "Chats¹", strings.TrimSpace(strings.TrimSuffix(strings.TrimSuffix(line, mutedDot), markAllGlyph+" ")))
+	require.Equal(t, "Chats¹", strings.TrimSpace(strings.TrimSuffix(strings.TrimSuffix(line, mutedDot), markAllGlyph)))
 }
 
 // The mute column is the one every row's bell right-aligns to, and the button
@@ -93,7 +93,8 @@ func TestChatsHeader_HoldsTheButtonColumnWhetherOrNotADotIsDrawn(t *testing.T) {
 	}{{"no dot", quiet, unreadQuiet}, {"dot", muted, unreadMuted}} {
 		t.Run(tc.name, func(t *testing.T) {
 			line := []rune(head(t, tc.rows, tc.unread, "", 36))
-			require.Equal(t, markAllGlyph, string(line[markAllCol(36)]),
+			at := markAllCol(36)
+			require.Equal(t, markAllGlyph, string(line[at:at+len([]rune(markAllGlyph))]),
 				"a target that moves when another chat is silenced is one the reader has to look for")
 		})
 	}
@@ -126,7 +127,7 @@ func TestOnClick_TheChatsHeaderBesideTheButtonOnlyTakesFocus(t *testing.T) {
 func TestChatsHeader_DotStandsAloneWhenOnlyMutedChatsWait(t *testing.T) {
 	rows, unread := headRows("mm")
 	line := head(t, rows, unread, "", 36)
-	require.Equal(t, "Chats"+strings.Repeat(" ", 28)+markAllGlyph+" "+mutedDot, line)
+	require.Equal(t, "Chats"+strings.Repeat(" ", 28)+markAllGlyph+mutedDot, line)
 }
 
 func TestChatsHeader_CountsBehindAFilter(t *testing.T) {
@@ -167,7 +168,7 @@ func TestChatsHeader_LongFilterYieldsToTheButtonToo(t *testing.T) {
 	rows, unread := headRows("u")
 	line := head(t, rows, unread, strings.Repeat("x", 60), 36)
 	require.Contains(t, line, "…¹", "the filter is cut, the count is not: %q", line)
-	require.True(t, strings.HasSuffix(line, markAllGlyph+"  "),
+	require.True(t, strings.HasSuffix(line, markAllGlyph+" "),
 		"the right-hand strip is three columns whatever the name does: %q", line)
 }
 

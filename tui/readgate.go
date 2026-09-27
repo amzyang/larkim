@@ -37,13 +37,18 @@ func (m Model) readKey(tailed bool) string {
 
 // pageShown reports whether the chat's own messages are what the reader is
 // looking at. Every term names a way the message pane is not on screen: the
-// search pane draws its hits through the same rows and msgTop, the help
-// overlay covers the panes whole, a narrow terminal folds the pane away for
-// the thread beside it, and below the minimum View draws neither pane.
+// search pane draws its hits through the same rows and msgTop, the Unread
+// panel draws every waiting chat through them, the help overlay covers the
+// panes whole, a narrow terminal folds the pane away for the thread beside
+// it, and below the minimum View draws neither pane.
+//
+// The Unread panel is out although m.chatID names a real chat throughout it:
+// what is in front of the reader is a page of many chats, and the one the
+// cursor rests in is not being read there — Enter goes to it for that.
 //
 // tailed belongs to the caller. markDots asks about the viewport a message
 // arrived into, readKey about the one the update left behind.
 func (m Model) pageShown(tailed bool) bool {
-	return m.chatID != "" && m.focused && !m.searching && !m.help.open && !m.foldRight() &&
+	return m.chatID != "" && m.focused && !m.searching && m.feed == nil && !m.help.open && !m.foldRight() &&
 		m.width >= minWidth && m.height >= minHeight && tailed
 }

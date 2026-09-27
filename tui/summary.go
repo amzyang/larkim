@@ -143,10 +143,10 @@ func threadSummary(x store.Message, idx int, st msgStyle, g *leads) (msgRow, boo
 // row and all, so the replies themselves are already on screen.
 // replyGlyph is the speech bubble the client marks a reply count with, from
 // the Nerd Font the terminal maps the private use area to: it takes the
-// colour it is given and holds to a single column. The plain bubble beside it
+// colour it is given. The plain bubble beside it
 // in that font is spoken for — the header draws that one for a topic chat —
 // and so is "↩", which marks the message an open draft answers.
-const replyGlyph = ""
+const replyGlyph = "\uf27a" + enSpace
 
 func replySummary(x store.Message, idx int, st msgStyle, g *leads) (msgRow, bool) {
 	// Inside a frame the answers stand right below the root, so counting them
@@ -157,7 +157,7 @@ func replySummary(x store.Message, idx int, st msgStyle, g *leads) (msgRow, bool
 	}
 	lead := g.take()
 	x0 := lead.cols()
-	text := stAccent.Render(replyGlyph + " " + plural(gist.Replies, "reply", "replies"))
+	text := stAccent.Render(replyGlyph + plural(gist.Replies, "reply", "replies"))
 	return msgRow{lead: lead, text: text, idx: idx, zones: []clickZone{{
 		x0: x0, x1: x0 + lipgloss.Width(text),
 		open: gist.Root, openKind: rightReply, openName: replyGist(x),

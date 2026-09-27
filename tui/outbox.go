@@ -95,12 +95,19 @@ func (m Model) outboxStates() map[string]outboxState {
 // put together, which is why the reaction presses are retired here too: this
 // runs exactly when a reload has brought Feishu's own answer in.
 func (m *Model) applyOutbox() {
-	m.msgs = append(slices.Clone(m.msgsBase), m.pendingRows(m.msgsBase, func(it outboxItem) bool {
-		// A reply on its way belongs to the thread's pane alone. The chat's
-		// own flow no longer carries replies, so a bubble put there would
-		// show for a moment and vanish when the reload folds it away.
-		return m.chatID != "" && it.chatID == m.chatID && !it.inThread
-	})...)
+	// A reply on its way belongs to the thread's pane alone. The chat's own
+	// flow no longer carries replies, so a bubble put there would show for a
+	// moment and vanish when the reload folds it away.
+	inFlow := func(it outboxItem) bool { return !it.inThread }
+	if m.feed != nil {
+		// Every section is a chat the panel shows, so a send waits under its
+		// own rather than at the foot of the page.
+		m.msgs = spliceBySection(m.msgsBase, m.pendingRows(m.msgsBase, inFlow))
+	} else {
+		m.msgs = append(slices.Clone(m.msgsBase), m.pendingRows(m.msgsBase, func(it outboxItem) bool {
+			return m.chatID != "" && it.chatID == m.chatID && inFlow(it)
+		})...)
+	}
 	m.thread = append(slices.Clone(m.threadBase), m.pendingRows(m.threadBase, func(it outboxItem) bool {
 		return m.threadID != "" && it.threadID == m.threadID
 	})...)
@@ -173,4 +180,27 @@ func quotePending(meta *msgMeta, landed []store.Message, items []outboxItem) {
 		}
 		meta.parents[it.replyTo] = landed[i]
 	}
+}
+
+// spliceBySection puts each pending send at the end of its own chat's stretch.
+// A send to a chat the page does not show is dropped: the panel's sections are
+// frozen for the visit, and a bubble under a rule that is not there names no
+// conversation.
+func spliceBySection(landed, pending []store.Message) []store.Message {
+	if len(pending) == 0 {
+		return slices.Clone(landed)
+	}
+	byChat := make(map[string][]store.Message, len(pending))
+	for _, x := range pending {
+		byChat[x.ChatID] = append(byChat[x.ChatID], x)
+	}
+	out := make([]store.Message, 0, len(landed)+len(pending))
+	for i, x := range landed {
+		out = append(out, x)
+		if i+1 < len(landed) && landed[i+1].ChatID == x.ChatID {
+			continue
+		}
+		out = append(out, byChat[x.ChatID]...)
+	}
+	return out
 }

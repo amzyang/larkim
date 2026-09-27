@@ -119,6 +119,36 @@ func TestPicker_FiltersAsTheReaderTypes(t *testing.T) {
 	require.Len(t, m.picker.hits, m.emoji.Len(), "and opens back up")
 }
 
+func TestPicker_TakesTheCharacterItselfAsTheQuery(t *testing.T) {
+	// The reader has the emoji in the clipboard, not its name; pasting it is
+	// one keystroke against a spelling they would have to guess.
+	m := press(t, pickerModel(t), "e", "🌹")
+	require.Equal(t, "ROSE", m.picker.hits[0].Emoji.Key)
+
+	// A character of more than one rune arrives as a paste rather than as
+	// keys, which the filter takes the same way it takes anything else.
+	mm, _ := press(t, pickerModel(t), "e").Update(tea.PasteMsg{Content: "❤️"})
+	require.Equal(t, "HEART", mm.(Model).picker.hits[0].Emoji.Key)
+}
+
+func TestPicker_DrawsTheCharacterOnceInACell(t *testing.T) {
+	m := press(t, pickerModel(t), "e", "🌹")
+	require.Len(t, m.picker.hits, 1)
+
+	// The character is already in the icon column, so the cell does not name
+	// it a second time as the term that answered.
+	cell := ansi.Strip(m.joinSegs(m.pickerCell(m.picker.hits[0], true, 40), 40))
+	require.Equal(t, 1, strings.Count(cell, "🌹"), cell)
+}
+
+func TestPicker_OffersNothingForACharacterFeishuDrawsItsOwnWay(t *testing.T) {
+	// Feishu's ç is a face looking sideways, not 👀, so it keeps its picture and
+	// the character reaches no reaction at all â the Unicode one is a
+	// composer emoji Feishu would refuse.
+	m := press(t, pickerModel(t), "e", "👀")
+	require.Empty(t, m.picker.hits)
+}
+
 func TestPicker_MovesOnArrowsBecauseTheQueryOwnsTheLetters(t *testing.T) {
 	m := press(t, pickerModel(t), "e")
 	first := m.picker.hits[0].Emoji.Key

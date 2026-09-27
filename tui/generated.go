@@ -143,7 +143,7 @@ func generateAvatar(name string, hash uint32, w, h int, outlined bool) *image.RG
 	}
 	maskDisc(m)
 	if outlined {
-		strokeDisc(m, accent)
+		strokeDisc(m, accent, ringWidth)
 	}
 	return m
 }
@@ -199,13 +199,13 @@ func maskDisc(m *image.RGBA) {
 // pixels across, where the share alone rounds away.
 const ringWidth = 0.028
 
-// strokeDisc lays the outlined style's rim over an already masked picture.
-// The band is clipped to the disc on its outer side, so the rim inherits the
-// anti-aliased edge the mask cut rather than stepping past it.
-func strokeDisc(m *image.RGBA, c color.RGBA) {
+// strokeDisc lays a rim of share of the shorter side over an already masked
+// picture. The band is clipped to the disc on its outer side, so the rim
+// inherits the anti-aliased edge the mask cut rather than stepping past it.
+func strokeDisc(m *image.RGBA, c color.RGBA, share float64) {
 	b := m.Bounds()
 	w, h := float64(b.Dx()), float64(b.Dy())
-	t := math.Max(1, math.Min(w, h)*ringWidth)
+	t := math.Max(1, math.Min(w, h)*share)
 	for y := range b.Dy() {
 		for x := range b.Dx() {
 			d := discEdge(w, h, x, y)

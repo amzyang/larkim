@@ -2,6 +2,7 @@ package emoji
 
 import (
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
@@ -296,5 +297,32 @@ func TestTable_LeavesOutTheNewYearGreetingsOfYearsGoneBy(t *testing.T) {
 	for _, key := range []string{"HappyDragon", "JubilantRabbit", "RoarForYou", "SiSiASYouWish"} {
 		e, ok := ByKey(key)
 		require.False(t, ok && e.Offerable(), "%s is a greeting for a year that is over", key)
+	}
+}
+
+func TestAll_NoTwoOfferableEmojiShareACharacter(t *testing.T) {
+	// A character on two rows is a picker asking the reader to tell apart what
+	// it draws the same, and after a glyph query it is the same hit twice. The
+	// bare spellings in glyphs.go are the one allowed overlap: they carry no
+	// terms and no name, so no query ever reaches them.
+	owner := map[string]string{}
+	for _, e := range slices.Concat(All(), Common()) {
+		if e.Glyph == "" || len(e.Terms) == 0 {
+			continue
+		}
+		require.NotContains(t, owner, e.Glyph,
+			"%s and %s both answer to %s", owner[e.Glyph], e.Key, e.Glyph)
+		owner[e.Glyph] = e.Key
+	}
+}
+
+func TestAll_ABareSpellingStaysOutOfReachOfAQuery(t *testing.T) {
+	// They exist so ByName can read [Fighting] out of a message, not so a
+	// picker can offer a second 💪.
+	for _, key := range []string{"FIGHTING", "GRIN", "OKHAND"} {
+		e, ok := ByKey(key)
+		require.True(t, ok, key)
+		assert.Empty(t, e.Terms, "%s is a spelling of a character the table already owns", key)
+		assert.False(t, e.Offerable(), key)
 	}
 }

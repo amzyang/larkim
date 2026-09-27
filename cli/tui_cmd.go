@@ -43,9 +43,7 @@ func (a *App) runTUI(_ *cobra.Command, _ []string) error {
 	if key := os.Getenv(a.cfg.AI.APIKeyEnv); key != "" {
 		deps.AI = ai.New(key, a.cfg.AI.Model)
 	}
-	if v, _, _ := st.GetState(ctx, sync.KeySelfOpenID); v != "" {
-		deps.Self = v
-	}
+	deps.Self = selfOpenID(ctx, st)
 	// Every process pulls what the reader asks for: each of those
 	// calls names ids Feishu just answered for and upserts them, so
 	// they are safe beside a daemon. The lock decides one thing only,

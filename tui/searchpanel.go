@@ -56,7 +56,8 @@ func (m Model) openSearch(seed string) (tea.Model, tea.Cmd) {
 	m.cmdline.SetValue(seed)
 	m.searchQuery = seed
 	m.rebuildMessages()
-	return m, tea.Batch(m.cmdline.Focus(), m.armSearch())
+	arm := m.armSearch()
+	return m, tea.Batch(m.cmdline.Focus(), arm)
 }
 
 // armSearch starts the rest timers for the query in hand and drops whatever
@@ -156,7 +157,8 @@ func (m Model) onSearchKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	m.cmdline, cmd = m.cmdline.Update(k)
 	if v := m.cmdline.Value(); v != m.searchQuery {
 		m.searchQuery = v
-		return m, tea.Batch(cmd, m.armSearch())
+		arm := m.armSearch()
+		return m, tea.Batch(cmd, arm)
 	}
 	return m, cmd
 }
@@ -190,7 +192,8 @@ func (m Model) openHit() (tea.Model, tea.Cmd) {
 	switch h.kind {
 	case hitChat:
 		m.closeSearch()
-		return m, m.openChat(h.chat.ChatID)
+		cmd := m.openChat(h.chat.ChatID)
+		return m, cmd
 	case hitPerson:
 		return m.openPerson(h.user)
 	}
@@ -217,7 +220,8 @@ func (m Model) openPerson(u larkcli.User) (tea.Model, tea.Cmd) {
 	for _, c := range m.chats {
 		if c.ChatID == u.P2PChatID && u.P2PChatID != "" {
 			m.closeSearch()
-			return m, m.openChat(c.ChatID)
+			cmd := m.openChat(c.ChatID)
+			return m, cmd
 		}
 	}
 	m.closeSearch()

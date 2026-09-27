@@ -613,3 +613,78 @@ func TestChatsWithUnread_LeavesOutThreadRepliesAndRecalls(t *testing.T) {
 	require.Equal(t, []ChatUnread{{ChatID: "oc_quiet", Position: 1}}, chats,
 		"the client renders neither a thread reply nor a recall, so an applink for one would never be answered")
 }
+
+func TestUnreadAnchors_GivesTheOldestWaitingPerChat(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	require.NoError(t, s.EnsureChat(ctx, "oc_platform", 1))
+	require.NoError(t, s.EnsureChat(ctx, "oc_project", 1))
+	_, err := s.UpsertMessages(ctx, []Message{
+		msgAt("om_p1", "oc_platform", 100, 1, "read by now"),
+		msgAt("om_p2", "oc_platform", 200, 2, "the oldest still waiting"),
+		msgAt("om_p3", "oc_platform", 300, 3, "and one after it"),
+		msgAt("om_j1", "oc_project", 250, 1, "elsewhere"),
+	}, 1)
+	require.NoError(t, err)
+	read := true
+	require.NoError(t, s.SetReadStatus(ctx, "om_p1", &read, 100, 0))
+	markUnread(t, s, "om_p2")
+	markUnread(t, s, "om_p3")
+	markUnread(t, s, "om_j1")
+
+	got, err := s.UnreadAnchors(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []UnreadAnchor{
+		{ChatID: "oc_platform", FirstMs: 200},
+		{ChatID: "oc_project", FirstMs: 250},
+	}, got)
+}
+
+// The anchor has to name the same set the badge counts, or the panel and the
+// number beside the chat disagree about what is waiting.
+func TestUnreadAnchors_CountTheBadgesOwnSet(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	require.NoError(t, s.EnsureChat(ctx, "oc_a", 1))
+	root := msgAt("om_root", "oc_a", 100, 1, "root")
+	root.ThreadID = "omt_1"
+	reply := msgAt("om_reply", "oc_a", 50, -3, "a reply, older than the root")
+	reply.ThreadID = "omt_1"
+	s.Silence = SilenceRules{{Sender: "cli_c"}}
+	hushed := fromBot("om_hushed", "oc_a", 60, "nightly build #418 passed")
+	_, err := s.UpsertMessages(ctx, []Message{root, reply, hushed}, 1)
+	require.NoError(t, err)
+	for _, id := range []string{"om_root", "om_reply", "om_hushed"} {
+		markUnread(t, s, id)
+	}
+
+	got, err := s.UnreadAnchors(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []UnreadAnchor{{ChatID: "oc_a", FirstMs: 100}}, got,
+		"neither the thread reply nor the silenced message moves the anchor")
+	require.Equal(t, map[string]int64{"oc_a": 1}, unreadCounts(t, s), "which is the badge's own count")
+}
+
+// read_state rows exist only for messages the poller has reached, so a message
+// it has never asked about is not waiting — the badge does not count it either.
+func TestUnreadAnchors_SkipsMessagesTheStoreHasNeverCheckedOn(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	require.NoError(t, s.EnsureChat(ctx, "oc_a", 1))
+	_, err := s.UpsertMessages(ctx, []Message{
+		msgAt("om_unchecked", "oc_a", 10, 1, "never asked about"),
+		msgAt("om_waiting", "oc_a", 20, 2, "waiting"),
+	}, 1)
+	require.NoError(t, err)
+	markUnread(t, s, "om_waiting")
+
+	got, err := s.UnreadAnchors(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []UnreadAnchor{{ChatID: "oc_a", FirstMs: 20}}, got)
+}
+
+func TestUnreadAnchors_AnEmptyStoreAnswersWithNothing(t *testing.T) {
+	got, err := openTest(t).UnreadAnchors(t.Context())
+	require.NoError(t, err)
+	require.Empty(t, got)
+}

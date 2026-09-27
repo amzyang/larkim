@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"cmp"
 	"strings"
 	"unicode"
 
@@ -227,22 +228,23 @@ func (m Model) emojiHits(query string) []pumHit {
 	var out []pumHit
 	for _, h := range m.emojiWrite.Search(query) {
 		name := h.Emoji.Name()
-		label := emojiWords(h.Emoji.Key, name, stBold.Render(name), h.Term, h.Positions)
+		label := emojiWords(h.Emoji, stBold.Render(name), h.Term, h.Positions)
 		out = append(out, pumHit{insert: emojiInsert(h.Emoji), emoji: h.Emoji, label: label})
 	}
 	return out
 }
 
 // emojiInsert is what accepting an emoji writes: the character where one
-// carries the same feeling, and the bracketed name where none does.
+// carries the same feeling, the ASCII where the emoji is written rather than
+// drawn, and the bracketed name where neither does.
 //
 // The name is the English one this client displays, which is the spelling it
 // puts on the wire. A bracketed name is resolved against the reading client's
 // own table, which holds both languages' names for every emoji, so it draws
 // there whichever language that client is set to.
 func emojiInsert(e emoji.Emoji) string {
-	if e.Glyph != "" {
-		return e.Glyph
+	if s := cmp.Or(e.Insert, e.Glyph); s != "" {
+		return s
 	}
 	return "[" + e.Name() + "]"
 }
