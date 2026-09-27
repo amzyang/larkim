@@ -355,8 +355,13 @@ func groupLabel(k searchKind) string {
 
 // searchRule parts one group from the next. It belongs to no hit, so the
 // selection never paints it.
+//
+// The label is measured in columns, not bytes: a chat name is as often CJK as
+// ASCII, and counting its bytes would leave the rule short of the edge by two
+// columns for every character in it.
 func searchRule(label string, w int) msgRow {
-	return msgRow{text: fit(stDim.Render("── "+label+" "+strings.Repeat("─", max(0, w-len(label)-4))), w), plain: true, rule: true}
+	dashes := strings.Repeat("─", max(0, w-lipgloss.Width(label)-4))
+	return msgRow{text: fit(stDim.Render("── "+label+" "+dashes), w), plain: true, rule: true}
 }
 
 // searchRowText is the one line a chat or a person takes: the name with the
@@ -398,10 +403,10 @@ func (m *Model) rebuildThread() {
 }
 
 // rowLine is the drawn form of one row, and whether a selection may tint it.
-// A row that is one whole picture may not: it holds cells the terminal fills
-// with an image, so fitting it would cut the glyph cluster apart and the tint
-// would have nothing to colour. A row of pieces says for itself — body text
-// takes the tint under its emoji, a chip brings its own.
+// A row that is one whole picture takes the tint like any other: a terminal
+// paints the cell background under a placement, so it reaches the lead column
+// and whatever of the pane the picture leaves clear. A row of pieces says for
+// itself — body text takes the tint under its emoji, a chip brings its own.
 func (m Model) rowLine(r msgRow, w int) (string, bool) {
 	lead := m.leadCells(r.lead)
 	w -= r.lead.cols()
@@ -413,9 +418,11 @@ func (m Model) rowLine(r msgRow, w int) (string, bool) {
 	}
 	cells := m.pics.cells(r.pic, r.picRow)
 	if cells == "" {
-		return lead + fit("", w), false // still on its way to the terminal
+		return lead + fit("", w), true // still on its way to the terminal
 	}
-	return lead + cells + strings.Repeat(" ", max(0, w-r.pic.cols)), false
+	// Padded rather than fitted: fit measures a placeholder as the characters
+	// it is and would cut one out of its cluster.
+	return lead + cells + strings.Repeat(" ", max(0, w-r.pic.cols)), true
 }
 
 // leadCells draws the columns a row opens with. A disc is a picture the

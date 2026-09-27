@@ -242,6 +242,38 @@ func (p *pictures) pixels(abs string) (image.Point, bool) {
 	return pt, true
 }
 
+// picSet gathers the distinct pictures a pass will draw, in the order they are
+// claimed, and stops at the id space. Asking for more than it holds would evict
+// a picture the same pass is about to draw, so the claim order is what decides
+// which ones get drawn and which fall back to their stand-in.
+type picSet struct {
+	pics []picture
+	seen map[string]bool
+}
+
+func (s *picSet) take(p picture) {
+	if p.cols == 0 || len(s.pics) >= picIDs {
+		return
+	}
+	if s.seen == nil {
+		s.seen = map[string]bool{}
+	}
+	if s.seen[p.key()] {
+		return
+	}
+	s.seen[p.key()] = true
+	s.pics = append(s.pics, p)
+}
+
+// takeRows claims every picture the given rows draw.
+func (s *picSet) takeRows(rows []msgRow) {
+	for _, r := range rows {
+		for pic := range r.pictures() {
+			s.take(pic)
+		}
+	}
+}
+
 // cells is one row of a prepared picture, or "" while it has not been sent.
 func (p *pictures) cells(pic picture, row int) string {
 	if p == nil {

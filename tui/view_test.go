@@ -12,6 +12,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/amzyang/larkim/store"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/charmbracelet/x/ansi/kitty"
 	"github.com/stretchr/testify/require"
 )
 
@@ -413,4 +414,57 @@ func TestOnFilterKey_CancellingPutsTheReaderBackWhereTheyWere(t *testing.T) {
 	require.Equal(t, paneMessages, m.focus, "and hands the pane back")
 	require.Equal(t, onCursor, rowKeyAt(m.visibleRows(), m.chatIdx), "the cursor is on the chat it was on")
 	require.Equal(t, onTop, rowKeyAt(m.visibleRows(), m.chatTop), "and the list is where it was")
+}
+
+// A rule reaches the pane's edge whatever its label is spelled in. The dashes
+// are counted against the columns the label occupies, so a CJK chat name — two
+// columns a character, three bytes a character — does not cut the rule short.
+func TestSearchRule_FillsThePaneUnderALabelOfAnyScript(t *testing.T) {
+	for _, label := range []string{"Messages", "平台组", "项目协作群"} {
+		plain := ansi.Strip(searchRule(label, 60).text)
+
+		require.Equal(t, 60, ansi.StringWidth(plain), "label %q", label)
+		require.Equal(t, plain, strings.TrimRight(plain, " "),
+			"the rule is drawn to the edge, not padded out to it: label %q", label)
+	}
+}
+
+// A picture under the cursor has nothing but its own rows to say so: one
+// sender's run collapses the sender line into the message that opened it, so
+// the picture in the middle of a run carries no text row of its own.
+func TestRenderMessages_PaintsThePictureRowsOfTheSelectedMessage(t *testing.T) {
+	m := sized(106, 40)
+	p := testPictures(t)
+	m.pics = p
+	m.msgsBase = []store.Message{
+		{MessageID: "om_1", ChatID: "oc_1", SenderID: "ou_a", SenderName: "张三", Content: "4", RenderedAt: 1, CreateMs: 1_000},
+		{MessageID: "om_2", ChatID: "oc_1", SenderID: "ou_a", SenderName: "张三", MsgType: "image",
+			Content: "[Image: img_a]", RenderedAt: 1, CreateMs: 2_000},
+		{MessageID: "om_3", ChatID: "oc_1", SenderID: "ou_a", SenderName: "张三", Content: "5", RenderedAt: 1, CreateMs: 3_000},
+	}
+	m.meta.res = map[string][]store.Resource{"om_2": {
+		{FileKey: "img_a", LocalPath: writePNG(t, p.dataDir, "a.png", 300, 200), Status: "done"}}}
+	m.applyOutbox()
+	m.layout()
+	m.picturePrepare()
+	m.focus, m.msgIdx = paneMessages, 1
+	m.scrollMessagesToSelection()
+
+	require.Equal(t, []int{1}, highlighted(m))
+}
+
+func TestRowLine_APictureKeepsItsCellsUnderTheTint(t *testing.T) {
+	m := sized(106, 40)
+	p := testPictures(t)
+	m.pics = p
+	pic := p.place(writePNG(t, p.dataDir, "a.png", 300, 200), 30, 20)
+	require.NotZero(t, pic.cols)
+	require.NotEmpty(t, p.prepare([]picture{pic}))
+
+	line, tint := m.rowLine(msgRow{pic: pic, lead: lead{box: strings.Repeat(" ", avatarWidth), mark: " "}}, 60)
+	require.True(t, tint)
+	out := m.highlight(line, true)
+	require.Contains(t, out, ansi.Style{}.BackgroundColor(m.th.sel.GetBackground()).String())
+	require.Equal(t, pic.cols, strings.Count(ansi.Strip(out), string(kitty.Placeholder)),
+		"the placement names its image in the foreground, which the tint leaves alone")
 }

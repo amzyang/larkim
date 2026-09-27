@@ -2,6 +2,7 @@ package tui
 
 import (
 	"encoding/json"
+	"iter"
 	"slices"
 	"strconv"
 	"strings"
@@ -45,8 +46,8 @@ type msgRow struct {
 	rule bool
 	// pic is set on the rows a picture occupies, picRow being which of its
 	// rows this one is. Those rows carry an image rather than text, so they
-	// are neither fitted nor highlighted, and their text is only known once
-	// the terminal holds the picture.
+	// are padded rather than fitted, and their cells are only known once the
+	// terminal holds the picture.
 	pic    picture
 	picRow int
 	// zones are the click targets this row carries, in the order they are
@@ -63,6 +64,23 @@ type msgRow struct {
 	// left plain inside a selected block reads as a hole. A chip does not: it
 	// carries a tint of its own that the selection's would fight.
 	tinted bool
+}
+
+// pictures is every picture the row draws, in the order it draws them: the
+// disc it opens with, the image it may be whole, and the ones standing inside
+// its text. It is the one answer to what a row has to have transmitted, which
+// both the panes and the printed page ask.
+func (r msgRow) pictures() iter.Seq[picture] {
+	return func(yield func(picture) bool) {
+		if !yield(r.lead.pic) || !yield(r.pic) {
+			return
+		}
+		for _, s := range r.segs {
+			if !yield(s.pic) {
+				return
+			}
+		}
+	}
 }
 
 // clickZone is a target inside a row: the half-open column range [x0, x1)

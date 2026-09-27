@@ -92,6 +92,10 @@ func TestUnreadCmd_SaysSoWhenNothingIsWaiting(t *testing.T) {
 	require.Equal(t, "nothing waiting\n", runUnread(t, a))
 }
 
-func TestUnreadWidth_FallsBackWhenThereIsNoTerminalToAsk(t *testing.T) {
-	require.Equal(t, unreadDefaultWidth, (&App{Out: &bytes.Buffer{}}).unreadWidth())
+func TestUnreadScreen_FallsBackWhenThereIsNoTerminalToAsk(t *testing.T) {
+	sc := (&App{Out: &bytes.Buffer{}}).unreadScreen()
+
+	require.Equal(t, unreadDefaultWidth, sc.Width)
+	require.Equal(t, unreadDefaultHeight, sc.Height)
+	require.False(t, sc.TTY, "a buffer takes no pictures")
 }

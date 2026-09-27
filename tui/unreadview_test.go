@@ -170,11 +170,13 @@ func TestFeed_AnEmptyPanelSaysSo(t *testing.T) {
 }
 
 // rowTexts is what the rows say, for the tests whose subject is the layout
-// rather than the terminal.
+// rather than the terminal. The model places nothing, so every row draws the
+// stand-in renderRows already wrote.
 func rowTexts(rows []msgRow) []string {
 	out := make([]string, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, flatLine(r, 80))
+		line, _ := Model{}.rowLine(r, 80)
+		out = append(out, line)
 	}
 	return out
 }

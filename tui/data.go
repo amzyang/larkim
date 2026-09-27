@@ -725,20 +725,43 @@ func ingestMessage(d Deps, messageID string) error {
 	return d.Syncer.IngestIDs(ctx, []string{messageID})
 }
 
-// loadSelfName names the account this process signed in as, which is all a
-// pending send has to go on until Feishu answers with a real message.
+// selfNameOf is how the account this process signed in as spells its name. It
+// is what a pending send is attributed to until Feishu answers with a real
+// message, and what a forward the reader sent is titled by.
+func selfNameOf(ctx context.Context, d Deps) (string, error) {
+	if d.Self == "" {
+		return "", nil
+	}
+	contacts, err := d.Store.ContactsByIDs(ctx, []string{d.Self})
+	if err != nil {
+		return "", err
+	}
+	return contacts[d.Self].Name, nil
+}
+
+// loadSelfName is that lookup as the panes make it, where a name that cannot
+// be read is worth a log line rather than an error the reader has to see.
 func loadSelfName(d Deps) tea.Cmd {
 	if d.Self == "" {
 		return nil
 	}
 	return func() tea.Msg {
-		contacts, err := d.Store.ContactsByIDs(context.Background(), []string{d.Self})
+		name, err := selfNameOf(context.Background(), d)
 		if err != nil {
 			d.Log.Warn("load self name", "open_id", d.Self, "err", err)
 			return nil
 		}
-		return selfNameMsg{name: contacts[d.Self].Name}
+		return selfNameMsg{name: name}
 	}
+}
+
+// env reads the environment, falling back to the process's own where no
+// reader was injected. Tests replace it to keep the machine out of the run.
+func (d Deps) env() func(string) string {
+	if d.Env == nil {
+		return os.Getenv
+	}
+	return d.Env
 }
 
 // openInFeishu opens a chat (optionally at a message position) in the desktop client.

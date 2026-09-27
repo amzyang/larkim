@@ -313,9 +313,7 @@ func New(d Deps) Model {
 	ti := textinput.New()
 	ti.Prompt = ":"
 	ti.SetVirtualCursor(false)
-	if d.Env == nil {
-		d.Env = os.Getenv
-	}
+	d.Env = d.env()
 	if d.Clipboard == nil {
 		d.Clipboard = readClipboard
 	}
@@ -428,23 +426,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // pass that redraws that one evicts another, so the panes never settle.
 func (m Model) picturePrepare() string {
 	h := m.listHeight()
-	var pics []picture
-	seen := map[string]bool{}
-	take := func(p picture) {
-		if p.cols == 0 || seen[p.key()] || len(pics) >= picIDs {
-			return
-		}
-		seen[p.key()] = true
-		pics = append(pics, p)
-	}
+	var claimed picSet
 	collect := func(rows []msgRow, lo, hi int) {
-		for i := clamp(lo, 0, len(rows)); i < clamp(hi, 0, len(rows)) && len(pics) < picIDs; i++ {
-			take(rows[i].pic)
-			take(rows[i].lead.pic)
-			for _, s := range rows[i].segs {
-				take(s.pic)
-			}
-		}
+		claimed.takeRows(rows[clamp(lo, 0, len(rows)):clamp(hi, 0, len(rows))])
 	}
 	// The draft being previewed is claimed first, on the same rule: a picture
 	// the reader is looking at outranks one behind it. Without this the
@@ -455,14 +439,14 @@ func (m Model) picturePrepare() string {
 	if m.mode == modeEmoji {
 		for _, hit := range m.pickerVisible() {
 			_, pic := m.pickerIcon(hit.Emoji)
-			take(pic)
+			claimed.take(pic)
 		}
 	}
 	// The completion popup stands over the writing area on the same rule.
 	for _, hit := range m.pumVisible() {
 		if hit.emoji.Key != "" {
 			_, pic := m.pickerIcon(hit.emoji)
-			take(pic)
+			claimed.take(pic)
 		}
 	}
 	// The lines standing over the composer are claimed with it: the message
@@ -471,12 +455,12 @@ func (m Model) picturePrepare() string {
 	if m.replyTo != nil {
 		head, gist, room := m.replyBarParts(m.width - 2)
 		for _, s := range gistSegs(head, gist, room, stDim, m.chatPics().gist) {
-			take(s.pic)
+			claimed.take(s.pic)
 		}
 	}
 	if m.mode == modeForward {
 		for _, s := range m.fwdGistSegs(m.width - 2) {
-			take(s.pic)
+			claimed.take(s.pic)
 		}
 	}
 	// The chat list is claimed next. Its reactions and the emoji on its
@@ -487,10 +471,10 @@ func (m Model) picturePrepare() string {
 	for i := m.chatTop; i < len(vis) && i < m.chatTop+m.chatListHeight(); i++ {
 		g := m.gists.at(vis[i], m.deps.Self, pcs)
 		for _, s := range g.chips {
-			take(s.pic)
+			claimed.take(s.pic)
 		}
 		for _, s := range g.summary {
-			take(s.pic)
+			claimed.take(s.pic)
 		}
 	}
 	// Then the rows on screen, so a pane crowded with pictures spends what is
@@ -499,7 +483,7 @@ func (m Model) picturePrepare() string {
 		collect(m.msgRows, m.msgTop+band[0], m.msgTop+band[1])
 		collect(m.threadRows, m.threadTop+band[0], m.threadTop+band[1])
 	}
-	return m.pics.prepare(pics)
+	return m.pics.prepare(claimed.pics)
 }
 
 // avatarPrepare asks the renderer for what the chats around the viewport
