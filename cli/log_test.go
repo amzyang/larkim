@@ -84,15 +84,13 @@ func TestInitLog_AltScreenCommandKeepsStderrClean(t *testing.T) {
 }
 
 func TestNew_TUIIsMarkedAsOwningTheScreen(t *testing.T) {
-	var tui *cobra.Command
-	for _, c := range New("test", "").Commands() {
-		if c.Name() == "tui" {
-			tui = c
-		}
+	root := New("test", "")
+
+	// Both entry points into the TUI, since annotations are not inherited.
+	for _, cmd := range []*cobra.Command{root, sub(t, root, "tui")} {
+		require.Equal(t, "true", cmd.Annotations[altScreen],
+			"without the mark %q logs would be written over the alternate screen", cmd.CommandPath())
 	}
-	require.NotNil(t, tui)
-	require.Equal(t, "true", tui.Annotations[altScreen],
-		"without the mark its logs would be written over the alternate screen")
 }
 
 func TestInitLog_OrdinaryCommandWritesBothPlaces(t *testing.T) {

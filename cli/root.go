@@ -54,6 +54,12 @@ func New(version, buildDSN string) *cobra.Command {
 		Version:       version,
 		SilenceUsage:  true,
 		SilenceErrors: true,
+		// Bare `larkim` is the TUI, the way the desktop client opens on its
+		// chats. NoArgs keeps a mistyped subcommand an error instead of an
+		// argument the TUI would ignore.
+		Args:        cobra.NoArgs,
+		Annotations: map[string]string{altScreen: "true"},
+		RunE:        app.runTUI,
 		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
 			// Follow the streams cobra was handed, so a test can read what a
 			// command prints.

@@ -45,12 +45,12 @@ larkim send --chat "平台组" --image ~/Desktop/shot.png              # uploade
 larkim send --chat "平台组" --file ~/Desktop/发布说明.pdf            # any other file, same way
 larkim react om_xxx --emoji DONE                     # an emoji Feishu refuses is replied with instead
 larkim watch --chat "项目协作群"                     # stream new messages
-larkim tui
+larkim
 ```
 
 ## TUI
 
-`larkim tui` shows chats, the selected chat's messages and, when opened, a right-hand pane, plus a composer. The chat header names the chat, marked with a glyph for its kind, and a rule under it parts the header from the list. If no daemon holds the data-dir lock the TUI syncs in-process. Colours follow the terminal palette and its light or dark background. Below 114 columns the thread or assistant pane takes the place of the messages pane; the TUI needs at least 78×12. A reply carries the message it answers quoted above its body — sender and gist on one line.
+`larkim` (or `larkim tui`) shows chats, the selected chat's messages and, when opened, a right-hand pane, plus a composer. The chat header names the chat, marked with a glyph for its kind, and a rule under it parts the header from the list. If no daemon holds the data-dir lock the TUI syncs in-process. Colours follow the terminal palette and its light or dark background. Below 114 columns the thread or assistant pane takes the place of the messages pane; the TUI needs at least 78×12. A reply carries the message it answers quoted above its body — sender and gist on one line.
 
 A message that holds other messages takes one line in the list and opens in the right pane. A thread root carries how many replies are under it and the last of them, the replies themselves having left the chat's flow; a merged forward carries how many messages it holds and the first of them, in place of the tagged, timestamped tree it would otherwise print. Clicking the line, or `Enter` or `t` on it, opens the pane. Opening a forward from inside the pane stacks it over what is there — a forwarded bundle inside a thread, a bundle inside a bundle — and `Esc` peels one layer off, closing the column on the last. Messages inside a forward belong to their own chat: they can be read and copied but not answered, reacted to or recalled. A thread's replies are taken as read when its pane is opened, not when the chat is, and until then the root's line carries the unread dot and the chat wears a `⤷` where its count would go — but only for a thread you have a stake in, having spoken in it or been named. A thread nobody asked you about is somebody else's conversation, which is why the badge leaves replies out in the first place. `n` and `N` do not follow the marker: the queue they clear is the badge's.
 
@@ -124,7 +124,7 @@ When the user token expires the daemon stops calling the API, reports `needs_log
 
 Every process writes to `~/.larkim/larkim.log` — the daemon, the TUI and one-off commands alike, so each line carries the pid and the command that wrote it. It keeps the ticks that landed something, the lark-cli calls that failed with Feishu's own error code and `log_id`, and the failures the TUI has no room to show. The file is rolled aside once at 8 MB.
 
-`--debug` adds the call detail: one line for every lark-cli request and one for its response, paired by a call number, carrying the full argument vector, the lane the call waited in and how long it waited, then its duration, the bytes it returned and the pages it fetched. On an ordinary command the log also goes to stderr; `larkim tui` owns the screen, so there it goes to the file alone.
+`--debug` adds the call detail: one line for every lark-cli request and one for its response, paired by a call number, carrying the full argument vector, the lane the call waited in and how long it waited, then its duration, the bytes it returned and the pages it fetched. On an ordinary command the log also goes to stderr; the TUI owns the screen, so there it goes to the file alone.
 
 ```sh
 larkim --debug sync
