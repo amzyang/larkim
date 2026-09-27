@@ -1,7 +1,6 @@
 package sync
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -15,7 +14,7 @@ import (
 
 func TestRefreshReactions_AsksAboutTheNewestMessagesAndStoresTheAnswer(t *testing.T) {
 	s, f, clk := newSyncer(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	var msgs []store.Message
 	for i := range reactionWindow + 5 {
 		msgs = append(msgs, store.Message{MessageID: "om_" + string(rune('a'+i%26)) + string(rune('0'+i/26)),
@@ -42,7 +41,7 @@ func TestRefreshReactions_AsksAboutTheNewestMessagesAndStoresTheAnswer(t *testin
 
 func TestRefreshReactions_ClearsASummaryFeishuNoLongerHolds(t *testing.T) {
 	s, _, clk := newSyncer(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	_, err := s.Store.UpsertMessages(ctx, []store.Message{
 		{MessageID: "om_a", ChatID: "oc_team", MsgType: "text", CreateMs: clk.Now().UnixMilli(), RawJSON: "{}"},
 	}, 1)
@@ -60,7 +59,7 @@ func TestRefreshReactions_ClearsASummaryFeishuNoLongerHolds(t *testing.T) {
 
 func TestRefreshReactions_SaysNothingAboutAChatWithNoMessages(t *testing.T) {
 	s, f, _ := newSyncer(t)
-	n, err := s.RefreshReactions(context.Background(), "oc_quiet")
+	n, err := s.RefreshReactions(t.Context(), "oc_quiet")
 	require.NoError(t, err)
 	require.Zero(t, n)
 	require.Empty(t, f.Calls, "an empty chat costs no call")
@@ -69,7 +68,7 @@ func TestRefreshReactions_SaysNothingAboutAChatWithNoMessages(t *testing.T) {
 // p2pChats registers n p2p chats, each holding one message, newest first.
 func p2pChats(t *testing.T, s *Syncer, f *larkcli.Fake, clk *fakeClock, n int) []string {
 	t.Helper()
-	ctx := context.Background()
+	ctx := t.Context()
 	var msgs []store.Message
 	var ids []string
 	for i := range n {
@@ -91,7 +90,7 @@ func p2pChats(t *testing.T, s *Syncer, f *larkcli.Fake, clk *fakeClock, n int) [
 
 func TestReactionsSlice_AsksAboutTheNewestMessageOfTheP2PChatsAlone(t *testing.T) {
 	s, f, clk := newSyncer(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	f.Chats = []larkcli.RawChat{{ChatID: "oc_team", Name: "平台组", ChatMode: "group"}}
 	p2pChats(t, s, f, clk, 1)
 	now := clk.Now().UnixMilli()
@@ -116,7 +115,7 @@ func TestReactionsSlice_AsksAboutTheNewestMessageOfTheP2PChatsAlone(t *testing.T
 
 func TestReactionsSlice_SkipsAChatWhoseNewestMessageWasRecalled(t *testing.T) {
 	s, f, clk := newSyncer(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	p2pChats(t, s, f, clk, 1)
 	_, err := s.Store.UpsertMessages(ctx, []store.Message{
 		{MessageID: "om_p00", ChatID: "oc_peer00", MsgType: "text", Deleted: true,
@@ -135,7 +134,7 @@ func TestReactionsSlice_AsksNoMoreThanOneBatchPerTick(t *testing.T) {
 	s, f, clk := newSyncer(t)
 	ids := p2pChats(t, s, f, clk, reactionWindow+5)
 
-	n, err := s.reactionsSlice(context.Background(), clk.Now())
+	n, err := s.reactionsSlice(t.Context(), clk.Now())
 	require.NoError(t, err)
 	require.Equal(t, reactionWindow, n)
 	require.Equal(t, []string{"reaction-counts:" + strings.Join(ids[:reactionWindow], ",")}, f.Calls,

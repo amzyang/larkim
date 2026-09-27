@@ -12,7 +12,7 @@ import (
 // the peer.
 func p2pStore(t *testing.T, peerID, peerType, chatName string, contacts ...Contact) (*Store, context.Context) {
 	t.Helper()
-	s, ctx := openTest(t), context.Background()
+	s, ctx := openTest(t), t.Context()
 	require.NoError(t, s.UpsertChats(ctx, []Chat{{
 		ChatID: "oc_pair", Name: chatName, ChatMode: "p2p",
 		P2PTargetID: peerID, P2PTargetType: peerType,
@@ -68,7 +68,7 @@ func TestChatRoster_ListsOneEntryForTheChatWithYourself(t *testing.T) {
 }
 
 func TestChatRoster_AnswersTheMemberListForAGroup(t *testing.T) {
-	s, ctx := openTest(t), context.Background()
+	s, ctx := openTest(t), t.Context()
 	require.NoError(t, s.UpsertChats(ctx, []Chat{{ChatID: "oc_team", Name: "平台组", ChatMode: "group"}}, 1))
 	members := []Contact{{OpenID: "ou_a", Name: "张三"}, {OpenID: "ou_bot", Name: "构建机器人", IsBot: true}}
 	require.NoError(t, s.UpsertContacts(ctx, members, 1))

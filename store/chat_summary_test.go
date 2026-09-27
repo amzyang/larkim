@@ -1,7 +1,6 @@
 package store
 
 import (
-	"context"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -19,14 +18,14 @@ func msgAt(id, chatID string, createMs int64, position int64, text string) Messa
 
 func summaryOf(t *testing.T, s *Store, chatID string) Chat {
 	t.Helper()
-	c, err := s.GetChat(context.Background(), chatID)
+	c, err := s.GetChat(t.Context(), chatID)
 	require.NoError(t, err)
 	return c
 }
 
 func TestUpsertMessages_ColdStoresTheNewestMessage(t *testing.T) {
 	s := openTest(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	require.NoError(t, s.EnsureChat(ctx, "oc_a", 1))
 
 	_, err := s.UpsertMessages(ctx, []Message{
@@ -46,7 +45,7 @@ func TestUpsertMessages_ColdStoresTheNewestMessage(t *testing.T) {
 
 func TestUpsertMessages_SkipsThreadReplies(t *testing.T) {
 	s := openTest(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	require.NoError(t, s.EnsureChat(ctx, "oc_a", 1))
 
 	root := msgAt("om_root", "oc_a", 100, 1, "root")
@@ -63,7 +62,7 @@ func TestUpsertMessages_SkipsThreadReplies(t *testing.T) {
 
 func TestUpdateRendered_ReachesTheChatSummary(t *testing.T) {
 	s := openTest(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	require.NoError(t, s.EnsureChat(ctx, "oc_a", 1))
 	_, err := s.UpsertMessages(ctx, []Message{msgAt("om_1", "oc_a", 100, 1, "hi")}, 1)
 	require.NoError(t, err)
@@ -77,7 +76,7 @@ func TestUpdateRendered_ReachesTheChatSummary(t *testing.T) {
 
 func TestUpdateRendered_LeavesOlderMessagesOutOfTheSummary(t *testing.T) {
 	s := openTest(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	require.NoError(t, s.EnsureChat(ctx, "oc_a", 1))
 	_, err := s.UpsertMessages(ctx, []Message{
 		msgAt("om_1", "oc_a", 100, 1, "older"),
@@ -94,7 +93,7 @@ func TestUpdateRendered_LeavesOlderMessagesOutOfTheSummary(t *testing.T) {
 
 func TestUpsertMessages_CarriesEditsAndRecallsIntoTheSummary(t *testing.T) {
 	s := openTest(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	require.NoError(t, s.EnsureChat(ctx, "oc_a", 1))
 	_, err := s.UpsertMessages(ctx, []Message{msgAt("om_1", "oc_a", 100, 1, "hi")}, 1)
 	require.NoError(t, err)
@@ -121,7 +120,7 @@ func TestUpsertMessages_CarriesEditsAndRecallsIntoTheSummary(t *testing.T) {
 
 func TestUpsertMessages_ClearsAChatLeftWithNoMainFlowMessage(t *testing.T) {
 	s := openTest(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	require.NoError(t, s.EnsureChat(ctx, "oc_a", 1))
 	_, err := s.UpsertMessages(ctx, []Message{msgAt("om_1", "oc_a", 100, 1, "hi")}, 1)
 	require.NoError(t, err)
@@ -140,7 +139,7 @@ func TestUpsertMessages_ClearsAChatLeftWithNoMainFlowMessage(t *testing.T) {
 
 func TestListChats_OrdersByTheColdStoredTime(t *testing.T) {
 	s := openTest(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	for _, id := range []string{"oc_quiet", "oc_busy", "oc_empty"} {
 		require.NoError(t, s.EnsureChat(ctx, id, 1))
 	}
@@ -160,7 +159,7 @@ func TestListChats_OrdersByTheColdStoredTime(t *testing.T) {
 
 func TestUpdateRendered_CarriesMentionsIntoTheSummary(t *testing.T) {
 	s := openTest(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	require.NoError(t, s.EnsureChat(ctx, "oc_a", 1))
 	_, err := s.UpsertMessages(ctx, []Message{msgAt("om_1", "oc_a", 100, 1, "hi")}, 1)
 	require.NoError(t, err)
@@ -176,7 +175,7 @@ func TestUpdateRendered_CarriesMentionsIntoTheSummary(t *testing.T) {
 
 func TestUpdateReactions_ReachesTheChatSummary(t *testing.T) {
 	s := openTest(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	require.NoError(t, s.EnsureChat(ctx, "oc_a", 1))
 	_, err := s.UpsertMessages(ctx, []Message{msgAt("om_1", "oc_a", 100, 1, "hi")}, 1)
 	require.NoError(t, err)
@@ -189,7 +188,7 @@ func TestUpdateReactions_ReachesTheChatSummary(t *testing.T) {
 
 func TestUpdateReactions_LeavesOlderMessagesOutOfTheSummary(t *testing.T) {
 	s := openTest(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	require.NoError(t, s.EnsureChat(ctx, "oc_a", 1))
 	_, err := s.UpsertMessages(ctx, []Message{
 		msgAt("om_1", "oc_a", 100, 1, "older"),
@@ -205,7 +204,7 @@ func TestUpdateReactions_LeavesOlderMessagesOutOfTheSummary(t *testing.T) {
 
 func TestUpsertMessages_ClearsTheSummaryReactionsWhenANewerMessageArrives(t *testing.T) {
 	s := openTest(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	require.NoError(t, s.EnsureChat(ctx, "oc_a", 1))
 	_, err := s.UpsertMessages(ctx, []Message{msgAt("om_1", "oc_a", 100, 1, "hi")}, 1)
 	require.NoError(t, err)

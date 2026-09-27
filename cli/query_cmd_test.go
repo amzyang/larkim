@@ -2,7 +2,6 @@ package cli
 
 import (
 	"bytes"
-	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -27,7 +26,7 @@ func aroundFixture(t *testing.T) *store.Store {
 		{MessageID: "om_6", ChatID: "oc_a", CreateMs: 40, MessagePosition: 6, RawJSON: "{}"},
 		{MessageID: "om_7", ChatID: "oc_b", CreateMs: 35, MessagePosition: 1, RawJSON: "{}"},
 	}
-	_, err = s.UpsertMessages(context.Background(), msgs, 1)
+	_, err = s.UpsertMessages(t.Context(), msgs, 1)
 	require.NoError(t, err)
 	return s
 }
@@ -42,7 +41,7 @@ func listedIDs(msgs []store.Message) []string {
 
 func TestListAround_IncludesTheAnchorBetweenBothSides(t *testing.T) {
 	s := aroundFixture(t)
-	got, err := listAround(context.Background(), s, store.MessageQuery{}, "om_4", 2)
+	got, err := listAround(t.Context(), s, store.MessageQuery{}, "om_4", 2)
 	require.NoError(t, err)
 	require.Equal(t, []string{"om_2", "om_3", "om_4", "om_5", "om_6"}, listedIDs(got),
 		"2N+1 messages centred on the anchor, split correctly inside the shared millisecond")
@@ -50,14 +49,14 @@ func TestListAround_IncludesTheAnchorBetweenBothSides(t *testing.T) {
 
 func TestListAround_ScopesToTheAnchorsChat(t *testing.T) {
 	s := aroundFixture(t)
-	got, err := listAround(context.Background(), s, store.MessageQuery{}, "om_6", 3)
+	got, err := listAround(t.Context(), s, store.MessageQuery{}, "om_6", 3)
 	require.NoError(t, err)
 	require.NotContains(t, listedIDs(got), "om_7", "another chat's message of the same moment stays out")
 }
 
 func TestListAround_FollowsTheRequestedOrder(t *testing.T) {
 	s := aroundFixture(t)
-	got, err := listAround(context.Background(), s, store.MessageQuery{Desc: true}, "om_4", 1)
+	got, err := listAround(t.Context(), s, store.MessageQuery{Desc: true}, "om_4", 1)
 	require.NoError(t, err)
 	require.Equal(t, []string{"om_5", "om_4", "om_3"}, listedIDs(got))
 }

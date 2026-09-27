@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"context"
 	"path/filepath"
 	"testing"
 
@@ -19,7 +18,7 @@ func draftModel(t *testing.T) (Model, *store.Store) {
 	st, err := store.Open(filepath.Join(t.TempDir(), "t.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { st.Close() })
-	ctx := context.Background()
+	ctx := t.Context()
 	for _, c := range []struct{ id, name, body string }{
 		{"oc_group", "平台组", "发布计划定了吗"},
 		{"oc_peer", "张三", "在吗"},
@@ -103,7 +102,7 @@ func TestEnterChat_DraftCarriesItsQuoteBack(t *testing.T) {
 // comes back without it rather than pointing at nothing.
 func TestEnterChat_DraftQuotingAMissingMessageKeepsOnlyItsText(t *testing.T) {
 	m, st := draftModel(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	require.NoError(t, st.SaveDraft(ctx, store.Draft{
 		ChatID: "oc_group", Text: "好的", ReplyTo: "om_elsewhere", InThread: true,
 	}, 1))
@@ -137,7 +136,7 @@ func TestSaveComposer_SendingLeavesNoDraftBehind(t *testing.T) {
 
 	collect(m.saveComposer())
 
-	all, err := st.Drafts(context.Background())
+	all, err := st.Drafts(t.Context())
 	require.NoError(t, err)
 	assert.Empty(t, all)
 }
@@ -163,7 +162,7 @@ func TestDraftForRow_BlanksAreNotADraft(t *testing.T) {
 	assert.Empty(t, selfMark(m.draftForRow("oc_group")))
 
 	collect(m.saveComposer())
-	all, err := st.Drafts(context.Background())
+	all, err := st.Drafts(t.Context())
 	require.NoError(t, err)
 	assert.Empty(t, all, "blanks leave no row behind to mark the chat with later")
 }

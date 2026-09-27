@@ -22,32 +22,32 @@ echo '{"ok":true,"data":{}}'`)
 
 func TestLane_AcquireReturnsWhenContextEnds(t *testing.T) {
 	l := make(lane, 1)
-	require.NoError(t, l.acquire(context.Background()))
+	require.NoError(t, l.acquire(t.Context()))
 
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
 	defer cancel()
 	err := l.acquire(ctx)
 	require.ErrorIs(t, err, context.DeadlineExceeded)
 
 	l.release()
-	require.NoError(t, l.acquire(context.Background()))
+	require.NoError(t, l.acquire(t.Context()))
 }
 
 func TestLane_AcquireAdmitsUpToCapacity(t *testing.T) {
 	l := make(lane, 2)
-	require.NoError(t, l.acquire(context.Background()))
-	require.NoError(t, l.acquire(context.Background()))
+	require.NoError(t, l.acquire(t.Context()))
+	require.NoError(t, l.acquire(t.Context()))
 
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
 	defer cancel()
 	require.Error(t, l.acquire(ctx))
 }
 
 func TestLaneOf_DefaultsToBackground(t *testing.T) {
-	require.Equal(t, LaneBackground, LaneOf(context.Background()))
-	require.Equal(t, LaneInteractive, LaneOf(WithLane(context.Background(), LaneInteractive)))
-	require.Equal(t, LaneBeat, LaneOf(WithLane(context.Background(), LaneBeat)))
-	require.Equal(t, LaneBackground, LaneOf(WithLane(context.Background(), LaneBackground)))
+	require.Equal(t, LaneBackground, LaneOf(t.Context()))
+	require.Equal(t, LaneInteractive, LaneOf(WithLane(t.Context(), LaneInteractive)))
+	require.Equal(t, LaneBeat, LaneOf(WithLane(t.Context(), LaneBeat)))
+	require.Equal(t, LaneBackground, LaneOf(WithLane(t.Context(), LaneBackground)))
 }
 
 func TestExec_InteractiveDoesNotQueueBehindBackground(t *testing.T) {
@@ -55,7 +55,7 @@ func TestExec_InteractiveDoesNotQueueBehindBackground(t *testing.T) {
 	occupy(t, c, LaneBackground)
 
 	start := time.Now()
-	_, err := c.run(WithLane(context.Background(), LaneInteractive), "api", "GET", "/quick")
+	_, err := c.run(WithLane(t.Context(), LaneInteractive), "api", "GET", "/quick")
 	require.NoError(t, err)
 	require.Less(t, time.Since(start), time.Second,
 		"an interactive call waited out a background sweep")
@@ -66,7 +66,7 @@ func TestExec_BeatDoesNotQueueBehindBackground(t *testing.T) {
 	occupy(t, c, LaneBackground)
 
 	start := time.Now()
-	_, err := c.run(WithLane(context.Background(), LaneBeat), "api", "GET", "/quick")
+	_, err := c.run(WithLane(t.Context(), LaneBeat), "api", "GET", "/quick")
 	require.NoError(t, err)
 	require.Less(t, time.Since(start), time.Second,
 		"the open chat's beat waited out a background sweep")
@@ -77,7 +77,7 @@ func TestExec_InteractiveDoesNotQueueBehindTheBeat(t *testing.T) {
 	occupy(t, c, LaneBeat)
 
 	start := time.Now()
-	_, err := c.run(WithLane(context.Background(), LaneInteractive), "api", "GET", "/quick")
+	_, err := c.run(WithLane(t.Context(), LaneInteractive), "api", "GET", "/quick")
 	require.NoError(t, err)
 	require.Less(t, time.Since(start), time.Second,
 		"a keystroke waited out the beat it did not ask for")
@@ -88,7 +88,7 @@ func TestExec_BackgroundCallsStillQueue(t *testing.T) {
 	occupy(t, c, LaneBackground)
 
 	start := time.Now()
-	_, err := c.run(context.Background(), "api", "GET", "/second")
+	_, err := c.run(t.Context(), "api", "GET", "/second")
 	require.NoError(t, err)
 	require.GreaterOrEqual(t, time.Since(start), 500*time.Millisecond,
 		"the background lane admitted more calls than its width")
@@ -101,7 +101,7 @@ func TestExec_TimeoutStartsAfterTheLaneIsFree(t *testing.T) {
 	c.Timeout = 600 * time.Millisecond
 	occupy(t, c, LaneBackground)
 
-	_, err := c.run(context.Background(), "api", "GET", "/second")
+	_, err := c.run(t.Context(), "api", "GET", "/second")
 	require.NoError(t, err, "the queued call spent its timeout waiting for the lane")
 }
 
@@ -109,7 +109,7 @@ func TestExec_CancelledCallGivesUpItsPlaceInLine(t *testing.T) {
 	c := slowBinary(t, "2")
 	occupy(t, c, LaneBackground)
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	go func() {
 		time.Sleep(20 * time.Millisecond)
 		cancel()
@@ -123,10 +123,10 @@ func TestExec_CancelledCallGivesUpItsPlaceInLine(t *testing.T) {
 
 func TestExec_ResolvePathFailsBeforeTakingALane(t *testing.T) {
 	c := &ExecClient{Path: filepath.Join(t.TempDir(), "nope")}
-	_, err := c.run(context.Background(), "api", "GET", "/x")
+	_, err := c.run(t.Context(), "api", "GET", "/x")
 	require.Error(t, err)
 	// The lane must be free: a call that never ran must not hold one.
-	require.NoError(t, c.laneFor(LaneBackground).acquire(context.Background()))
+	require.NoError(t, c.laneFor(LaneBackground).acquire(t.Context()))
 }
 
 // occupy fills every slot in lane l with a slow call and waits until they are
@@ -137,7 +137,7 @@ func occupy(t *testing.T, c *ExecClient, l Lane) {
 	var wg sync.WaitGroup
 	for range cap(line) {
 		wg.Go(func() {
-			_, _ = c.run(WithLane(context.Background(), l), "api", "GET", "/slow")
+			_, _ = c.run(WithLane(t.Context(), l), "api", "GET", "/slow")
 		})
 	}
 	t.Cleanup(wg.Wait)
@@ -160,7 +160,7 @@ cat <<'JSON'
  {"meta_data":{"message_id":"om_1","chat_id":"oc_a","from_id":"ou_x","position":7,"type":"TEXT","create_time":"2026-09-15T10:19:45Z"}}
 ],"has_more":true}}
 JSON`)
-	hits, err := c.SearchMessages(context.Background(), "预算", 20)
+	hits, err := c.SearchMessages(t.Context(), "预算", 20)
 	require.NoError(t, err)
 	require.Len(t, hits, 1)
 	require.Equal(t, "om_1", hits[0].MessageID)
@@ -172,7 +172,7 @@ JSON`)
 
 func TestSearchMessages_AsksForNoMoreThanOnePage(t *testing.T) {
 	c := fakeBinary(t, `echo "$*" > "$(dirname "$0")/argv"; echo '{"ok":true,"data":{"items":[]}}'`)
-	_, err := c.SearchMessages(context.Background(), "预算", 500)
+	_, err := c.SearchMessages(t.Context(), "预算", 500)
 	require.NoError(t, err)
 	argv, err := os.ReadFile(filepath.Join(filepath.Dir(c.Path), "argv"))
 	require.NoError(t, err)
@@ -183,7 +183,7 @@ func TestSearchMessages_AsksForNoMoreThanOnePage(t *testing.T) {
 
 func TestSearchMessages_EmptyQueryAsksNothing(t *testing.T) {
 	c := fakeBinary(t, `exit 9`)
-	hits, err := c.SearchMessages(context.Background(), "  ", 10)
+	hits, err := c.SearchMessages(t.Context(), "  ", 10)
 	require.NoError(t, err)
 	require.Empty(t, hits)
 }

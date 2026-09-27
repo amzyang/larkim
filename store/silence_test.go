@@ -1,7 +1,6 @@
 package store
 
 import (
-	"context"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -16,7 +15,7 @@ func fromBot(id, chatID string, createMs int64, text string) Message {
 
 func silencedOf(t *testing.T, s *Store, messageID string) bool {
 	t.Helper()
-	m, err := s.GetMessage(context.Background(), messageID)
+	m, err := s.GetMessage(t.Context(), messageID)
 	require.NoError(t, err)
 	return m.Silenced
 }
@@ -36,7 +35,7 @@ func TestSilenceRules_FingerprintFollowsTheRules(t *testing.T) {
 func TestUpsertMessages_SilencesAMatchingSender(t *testing.T) {
 	s := openTest(t)
 	s.Silence = SilenceRules{{Chat: "oc_quiet", Sender: "cli_c"}}
-	ctx := context.Background()
+	ctx := t.Context()
 	_, err := s.UpsertMessages(ctx, []Message{
 		fromBot("om_noise", "oc_quiet", 200, "nightly build #418 passed"),
 		msgAt("om_human", "oc_quiet", 100, 1, "did anyone look at it"),
@@ -50,7 +49,7 @@ func TestUpsertMessages_SilencesAMatchingSender(t *testing.T) {
 func TestUpsertMessages_LeavesAnUnmatchedFieldAlone(t *testing.T) {
 	s := openTest(t)
 	s.Silence = SilenceRules{{Chat: "oc_quiet", Sender: "cli_c"}}
-	ctx := context.Background()
+	ctx := t.Context()
 	_, err := s.UpsertMessages(ctx, []Message{fromBot("om_elsewhere", "oc_loud", 200, "nightly build #418 passed")}, 1)
 	require.NoError(t, err)
 
@@ -60,7 +59,7 @@ func TestUpsertMessages_LeavesAnUnmatchedFieldAlone(t *testing.T) {
 func TestUpsertMessages_SilencesOnTheRawBodyBeforeRendering(t *testing.T) {
 	s := openTest(t)
 	s.Silence = SilenceRules{{Contains: "nightly build"}}
-	ctx := context.Background()
+	ctx := t.Context()
 	_, err := s.UpsertMessages(ctx, []Message{msgAt("om_noise", "oc_quiet", 200, 1, "nightly build #418 passed")}, 1)
 	require.NoError(t, err)
 
@@ -70,7 +69,7 @@ func TestUpsertMessages_SilencesOnTheRawBodyBeforeRendering(t *testing.T) {
 func TestUpdateRendered_SilencesOnTheRenderedBody(t *testing.T) {
 	s := openTest(t)
 	s.Silence = SilenceRules{{Contains: "nightly build"}}
-	ctx := context.Background()
+	ctx := t.Context()
 	card := Message{MessageID: "om_card", ChatID: "oc_quiet", MsgType: "interactive", SenderID: "cli_c",
 		SenderType: "app", ContentRaw: `{"elements":[{"tag":"div"}]}`, CreateMs: 200, UpdateMs: 200, MessagePosition: 1}
 	_, err := s.UpsertMessages(ctx, []Message{card}, 1)
@@ -84,7 +83,7 @@ func TestUpdateRendered_SilencesOnTheRenderedBody(t *testing.T) {
 func TestUpdateRendered_ClearsSilenceWhenTheRenderingStopsMatching(t *testing.T) {
 	s := openTest(t)
 	s.Silence = SilenceRules{{Contains: "nightly build"}}
-	ctx := context.Background()
+	ctx := t.Context()
 	_, err := s.UpsertMessages(ctx, []Message{msgAt("om_a", "oc_quiet", 200, 1, "nightly build")}, 1)
 	require.NoError(t, err)
 	require.True(t, silencedOf(t, s, "om_a"))
@@ -96,7 +95,7 @@ func TestUpdateRendered_ClearsSilenceWhenTheRenderingStopsMatching(t *testing.T)
 func TestUpdateRendered_RefreshesTheSummaryWhenSilenceFlips(t *testing.T) {
 	s := openTest(t)
 	s.Silence = SilenceRules{{Contains: "nightly build"}}
-	ctx := context.Background()
+	ctx := t.Context()
 	card := Message{MessageID: "om_card", ChatID: "oc_quiet", MsgType: "interactive", SenderID: "cli_c",
 		SenderType: "app", ContentRaw: `{"elements":[]}`, CreateMs: 200, UpdateMs: 200, MessagePosition: 2}
 	require.NoError(t, s.EnsureChat(ctx, "oc_quiet", 1))
@@ -112,7 +111,7 @@ func TestUpdateRendered_RefreshesTheSummaryWhenSilenceFlips(t *testing.T) {
 
 func TestReapplySilence_RewritesEveryMessageWhenTheRulesChange(t *testing.T) {
 	s := openTest(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	require.NoError(t, s.EnsureChat(ctx, "oc_quiet", 1))
 	_, err := s.UpsertMessages(ctx, []Message{
 		msgAt("om_human", "oc_quiet", 100, 1, "morning"),
@@ -139,7 +138,7 @@ func TestReapplySilence_RewritesEveryMessageWhenTheRulesChange(t *testing.T) {
 func TestReapplySilence_WritesNothingWhenTheFingerprintMatches(t *testing.T) {
 	s := openTest(t)
 	s.Silence = SilenceRules{{Sender: "cli_c"}}
-	ctx := context.Background()
+	ctx := t.Context()
 	_, err := s.UpsertMessages(ctx, []Message{fromBot("om_noise", "oc_quiet", 200, "nightly build")}, 1)
 	require.NoError(t, err)
 	_, err = s.ReapplySilence(ctx)
@@ -158,7 +157,7 @@ func TestReapplySilence_WritesNothingWhenTheFingerprintMatches(t *testing.T) {
 func TestRefreshChatSummary_KeepsTheNewestMessageAndSinksTheSortKey(t *testing.T) {
 	s := openTest(t)
 	s.Silence = SilenceRules{{Sender: "cli_c"}}
-	ctx := context.Background()
+	ctx := t.Context()
 	require.NoError(t, s.EnsureChat(ctx, "oc_quiet", 1))
 	_, err := s.UpsertMessages(ctx, []Message{
 		msgAt("om_human", "oc_quiet", 100, 1, "morning"),
@@ -175,7 +174,7 @@ func TestRefreshChatSummary_KeepsTheNewestMessageAndSinksTheSortKey(t *testing.T
 func TestListChats_SinksAFullySilencedChat(t *testing.T) {
 	s := openTest(t)
 	s.Silence = SilenceRules{{Chat: "oc_quiet"}}
-	ctx := context.Background()
+	ctx := t.Context()
 	require.NoError(t, s.EnsureChat(ctx, "oc_quiet", 1))
 	require.NoError(t, s.EnsureChat(ctx, "oc_loud", 1))
 	_, err := s.UpsertMessages(ctx, []Message{
@@ -193,7 +192,7 @@ func TestListChats_SinksAFullySilencedChat(t *testing.T) {
 func TestMarkChatRead_MarksSilencedMessagesToo(t *testing.T) {
 	s := openTest(t)
 	s.Silence = SilenceRules{{Sender: "cli_c"}}
-	ctx := context.Background()
+	ctx := t.Context()
 	_, err := s.UpsertMessages(ctx, []Message{fromBot("om_noise", "oc_quiet", 200, "nightly build")}, 1)
 	require.NoError(t, err)
 	markUnread(t, s, "om_noise")
@@ -207,7 +206,7 @@ func TestMarkChatRead_MarksSilencedMessagesToo(t *testing.T) {
 
 func TestSilenceMatches_CountsOneRule(t *testing.T) {
 	s := openTest(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	require.NoError(t, s.EnsureChat(ctx, "oc_quiet", 1))
 	_, err := s.UpsertMessages(ctx, []Message{
 		msgAt("om_human", "oc_quiet", 100, 1, "morning"),

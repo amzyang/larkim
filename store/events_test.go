@@ -1,7 +1,6 @@
 package store
 
 import (
-	"context"
 	"path/filepath"
 	"strconv"
 	"testing"
@@ -19,7 +18,7 @@ func eventStore(t *testing.T) *Store {
 
 func TestRecordEvent_ReadsBackNewestFirst(t *testing.T) {
 	s := eventStore(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	for i := 1; i <= 3; i++ {
 		require.NoError(t, s.RecordEvent(ctx, Event{AtMs: int64(i), Kind: EventResourceGone,
 			Subject: "om_" + strconv.Itoa(i) + " img_x", Detail: "deleted"}))
@@ -36,7 +35,7 @@ func TestRecordEvent_ReadsBackNewestFirst(t *testing.T) {
 
 func TestRecordEvent_PrunesToTheNewestThousand(t *testing.T) {
 	s := eventStore(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	for i := 1; i <= 1005; i++ {
 		require.NoError(t, s.RecordEvent(ctx, Event{AtMs: int64(i), Kind: EventResourceGone}))
 	}

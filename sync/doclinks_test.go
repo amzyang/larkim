@@ -1,7 +1,6 @@
 package sync
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -14,7 +13,7 @@ import (
 // body is registered as it is rendered, and the back-scan reads the same text.
 func docMessage(t *testing.T, s *Syncer, id, content string) {
 	t.Helper()
-	ctx := context.Background()
+	ctx := t.Context()
 	_, err := s.Store.UpsertMessages(ctx, []store.Message{{MessageID: id, ChatID: "oc_team",
 		MsgType: "text", CreateMs: 10, RawJSON: "{}"}}, 1)
 	require.NoError(t, err)
@@ -25,7 +24,7 @@ func docMessage(t *testing.T, s *Syncer, id, content string) {
 
 func TestResolveDocLinks_NamesWhatItCanAndSettlesWhatItCannot(t *testing.T) {
 	s, f, clk := newSyncer(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	f.Docs["docx/AbC123"] = larkcli.DocTitle{Type: "docx", Title: "排期"}
 	f.Docs["wiki/Xyz789"] = larkcli.DocTitle{Type: "sheet", Title: "组内约定"}
 	docMessage(t, s, "om_1", "排期 https://example.feishu.cn/docx/AbC123?from=from_copylink 见此")
@@ -45,7 +44,7 @@ func TestResolveDocLinks_NamesWhatItCanAndSettlesWhatItCannot(t *testing.T) {
 
 func TestResolveDocLinks_AsksOnceForADocumentSharedAround(t *testing.T) {
 	s, f, clk := newSyncer(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	f.Docs["docx/AbC123"] = larkcli.DocTitle{Type: "docx", Title: "排期"}
 	for _, id := range []string{"om_1", "om_2", "om_3"} {
 		docMessage(t, s, id, "https://example.feishu.cn/docx/AbC123?from=from_copylink")
@@ -67,7 +66,7 @@ func TestResolveDocLinks_AsksOnceForADocumentSharedAround(t *testing.T) {
 
 func TestResolveDocLinks_NeverAsksAgainForADocumentOutOfReach(t *testing.T) {
 	s, f, clk := newSyncer(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	docMessage(t, s, "om_1", "https://example.feishu.cn/docx/Nope456")
 
 	_, err := s.resolveDocLinks(ctx, clk.t)
@@ -82,7 +81,7 @@ func TestResolveDocLinks_NeverAsksAgainForADocumentOutOfReach(t *testing.T) {
 
 func TestResolveDocLinks_ReadsLinksFromBodiesStoredBeforeTitlesWere(t *testing.T) {
 	s, f, clk := newSyncer(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	f.Docs["docx/AbC123"] = larkcli.DocTitle{Type: "docx", Title: "排期"}
 	docMessage(t, s, "om_old", "https://example.feishu.cn/docx/AbC123")
 
@@ -100,7 +99,7 @@ func TestResolveDocLinks_ReadsLinksFromBodiesStoredBeforeTitlesWere(t *testing.T
 
 func TestResolveDocLinks_WaitsBeforeAskingAgainAboutADocumentLeftUnanswered(t *testing.T) {
 	s, f, clk := newSyncer(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	f.DocsSilent["docx/AbC123"] = true
 	docMessage(t, s, "om_1", "https://example.feishu.cn/docx/AbC123")
 

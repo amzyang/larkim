@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"context"
 	"path/filepath"
 	"testing"
 
@@ -62,7 +61,7 @@ func badgeModel(t *testing.T) (Model, *store.Store, *[]openCall) {
 	st, err := store.Open(filepath.Join(t.TempDir(), "t.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { st.Close() })
-	ctx := context.Background()
+	ctx := t.Context()
 	require.NoError(t, st.EnsureChat(ctx, "oc_a", 1))
 	_, err = st.UpsertMessages(ctx, []store.Message{{MessageID: "om_a", ChatID: "oc_a", MsgType: "text",
 		SenderID: "ou_x", SenderName: "孙琪", ContentRaw: `{"text":"在吗"}`, CreateMs: 100, UpdateMs: 100}}, 1)
@@ -152,7 +151,7 @@ func TestUpdate_AMessageLandingInTheOpenChatClearsTheBadgeAgain(t *testing.T) {
 
 	// A second message lands while the reader sits in the chat, and the read
 	// poller reports it unseen — the write that reloads the pane.
-	ctx := context.Background()
+	ctx := t.Context()
 	_, err := st.UpsertMessages(ctx, []store.Message{{MessageID: "om_b", ChatID: "oc_a", MsgType: "text",
 		SenderID: "ou_x", SenderName: "孙琪", ContentRaw: `{"text":"还在吗"}`, CreateMs: 200, UpdateMs: 200}}, 2)
 	require.NoError(t, err)

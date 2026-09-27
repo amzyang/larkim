@@ -1,7 +1,6 @@
 package larkcli
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -35,7 +34,7 @@ JSON
 ;;
 *) echo "unexpected: $*" >&2; exit 5;;
 esac`)
-	hits, truncated, err := c.SearchMessageIDs(context.Background(), time.Now().Add(-time.Hour), time.Now())
+	hits, truncated, err := c.SearchMessageIDs(t.Context(), time.Now().Add(-time.Hour), time.Now())
 	require.NoError(t, err)
 	require.True(t, truncated)
 	require.Len(t, hits, 2)
@@ -50,7 +49,7 @@ func TestMGetRaw_ParsesMillisecondTimesAndKeepsRaw(t *testing.T) {
 	c := fakeBinary(t, `cat <<'JSON'
 {"ok":true,"identity":"user","data":{"items":[{"message_id":"om_1","chat_id":"oc_a","msg_type":"text","create_time":"1790078010746","update_time":"1790078010746","message_position":"4745","deleted":false,"updated":false,"sender":{"id":"ou_x","id_type":"open_id","sender_type":"user","sender_name":"Alice"},"body":{"content":"{\"text\":\"hi\"}"},"mentions":[{"key":"@_user_1","id":"ou_y","name":"Bob"}]}]}}
 JSON`)
-	msgs, err := c.MGetRaw(context.Background(), []string{"om_1"})
+	msgs, err := c.MGetRaw(t.Context(), []string{"om_1"})
 	require.NoError(t, err)
 	require.Len(t, msgs, 1)
 	m := msgs[0]
@@ -67,7 +66,7 @@ func TestRun_DecodesErrorEnvelopeAfterProgressLines(t *testing.T) {
 echo "[page 1] fetching..." >&2
 echo '{"ok":false,"identity":"user","error":{"type":"api","subtype":"rate_limit","code":99991400,"message":"too many requests","retry_after_seconds":4}}' >&2
 exit 1`)
-	_, _, err := c.SearchMessageIDs(context.Background(), time.Now(), time.Now())
+	_, _, err := c.SearchMessageIDs(t.Context(), time.Now(), time.Now())
 	var lerr *Error
 	require.ErrorAs(t, err, &lerr)
 	require.Equal(t, 1, lerr.ExitCode)
@@ -93,7 +92,7 @@ cat >&2 <<'JSON'
 }
 JSON
 exit 1`)
-	_, err := c.ListMessagesRaw(context.Background(), "chat", "oc_1", time.Time{}, time.Time{})
+	_, err := c.ListMessagesRaw(t.Context(), "chat", "oc_1", time.Time{}, time.Time{})
 	var lerr *Error
 	require.ErrorAs(t, err, &lerr)
 	require.Equal(t, 231203, lerr.Code)
@@ -105,7 +104,7 @@ func TestRun_AuthExitCode(t *testing.T) {
 	c := fakeBinary(t, `
 echo '{"ok":false,"identity":"user","error":{"type":"auth","subtype":"token_missing","message":"no token"}}' >&2
 exit 3`)
-	_, err := c.MGetRaw(context.Background(), []string{"om_1"})
+	_, err := c.MGetRaw(t.Context(), []string{"om_1"})
 	var lerr *Error
 	require.ErrorAs(t, err, &lerr)
 	require.True(t, lerr.IsAuth())
@@ -116,14 +115,14 @@ func TestWhoami_UserIdentity(t *testing.T) {
 	c := fakeBinary(t, `cat <<'JSON'
 {"profile":"cli_x","appId":"cli_x","identity":"user","available":true,"tokenStatus":"ready","onBehalfOf":{"userName":"A","openId":"ou_me"}}
 JSON`)
-	id, err := c.Whoami(context.Background())
+	id, err := c.Whoami(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, Identity{AppID: "cli_x", UserOpenID: "ou_me"}, id)
 }
 
 func TestWhoami_BotFallbackIsAuthError(t *testing.T) {
 	c := fakeBinary(t, `echo '{"appId":"cli_x","identity":"bot","available":true}'`)
-	_, err := c.Whoami(context.Background())
+	_, err := c.Whoami(t.Context())
 	var lerr *Error
 	require.ErrorAs(t, err, &lerr)
 	require.True(t, lerr.IsAuth())
@@ -134,7 +133,7 @@ func TestListMessagesRaw_PassesEpochSecondsAndContainer(t *testing.T) {
 echo "$*" > "$(dirname "$0")/args.txt"
 echo '{"ok":true,"identity":"user","data":{"items":[]}}'`)
 	start := time.Unix(1700000000, 0)
-	_, err := c.ListMessagesRaw(context.Background(), "thread", "omt_1", start, time.Time{})
+	_, err := c.ListMessagesRaw(t.Context(), "thread", "omt_1", start, time.Time{})
 	require.NoError(t, err)
 	args, err := os.ReadFile(filepath.Join(c.Dir, "args.txt"))
 	require.NoError(t, err)
@@ -193,7 +192,7 @@ printf '{"ok":true,"identity":"user","data":{"users":[%s]}}' "$(cat "$(dirname "
 	for i := range ids {
 		ids[i] = fmt.Sprintf("ou_%02d", i)
 	}
-	users, err := c.SearchUsers(context.Background(), "", ids)
+	users, err := c.SearchUsers(t.Context(), "", ids)
 	require.NoError(t, err)
 	require.Len(t, users, len(ids), "every id is resolved across batches")
 	require.Equal(t, "ou_00", users[0].OpenID)
@@ -212,7 +211,7 @@ func TestSearchUsers_QueryModeSendsOneCall(t *testing.T) {
 	c := fakeBinary(t, `
 echo "$*" >> "$(dirname "$0")/calls"
 echo '{"ok":true,"identity":"user","data":{"users":[{"open_id":"ou_1","localized_name":"李明","enterprise_email":"liming01@example.com","department":"产品部"}]}}'`)
-	users, err := c.SearchUsers(context.Background(), "李明", nil)
+	users, err := c.SearchUsers(t.Context(), "李明", nil)
 	require.NoError(t, err)
 	require.Len(t, users, 1)
 	require.Equal(t, "产品部", users[0].Department)
@@ -228,7 +227,7 @@ echo "$*" >> "$(dirname "$0")/calls"
 echo '{"ok":true,"identity":"user","data":{"items":[
  {"open_id":"ou_in","name":"赵思远","avatar":{"avatar_240":"https://cdn/a.png"}}
 ]}}'`)
-	got, err := c.UserDetails(context.Background(), []string{"ou_in", "ou_out"})
+	got, err := c.UserDetails(t.Context(), []string{"ou_in", "ou_out"})
 	require.NoError(t, err)
 	require.Len(t, got, 1, "a user outside the directory scope is absent, not an error")
 	require.Equal(t, "ou_in", got[0].OpenID)
@@ -250,7 +249,7 @@ echo '{"ok":true,"identity":"user","data":{"items":[]}}'`)
 	for i := range ids {
 		ids[i] = fmt.Sprintf("ou_%02d", i)
 	}
-	_, err := c.UserDetails(context.Background(), ids)
+	_, err := c.UserDetails(t.Context(), ids)
 	require.NoError(t, err)
 
 	calls, err := os.ReadFile(filepath.Join(c.Dir, "calls"))
@@ -264,7 +263,7 @@ func TestMuteStatus_KeepsUnansweredChatsApartFromUnmutedOnes(t *testing.T) {
 echo "$*" >> "$(dirname "$0")/calls"
 echo '{"ok":true,"identity":"user","data":{"items":[{"chat_id":"oc_a","is_muted":true},{"chat_id":"oc_b","is_muted":false}],"invalid_id_list":[{"id":"oc_x","msg":"not a member"}]}}'`)
 
-	muted, unknown, err := c.MuteStatus(context.Background(), []string{"oc_a", "oc_b", "oc_x"})
+	muted, unknown, err := c.MuteStatus(t.Context(), []string{"oc_a", "oc_b", "oc_x"})
 	require.NoError(t, err)
 	require.Equal(t, map[string]bool{"oc_a": true, "oc_b": false}, muted)
 	require.Equal(t, []string{"oc_x"}, unknown, "a chat the API would not answer for is not an unmuted one")
@@ -285,7 +284,7 @@ echo '{"ok":true,"identity":"user","data":{"items":[]}}'`)
 		ids[i] = fmt.Sprintf("oc_%03d", i)
 	}
 
-	_, _, err := c.MuteStatus(context.Background(), ids)
+	_, _, err := c.MuteStatus(t.Context(), ids)
 	require.NoError(t, err)
 
 	calls, err := os.ReadFile(filepath.Join(c.Dir, "calls"))
@@ -310,7 +309,7 @@ func TestExecClient_SendMarkdownUsesContentNotTheMarkdownFlag(t *testing.T) {
 	c := fakeBinary(t, `
 echo "$*" > "$(dirname "$0")/args"
 echo '{"ok":true,"identity":"user","data":{"message_id":"om_new","chat_id":"oc_quiet"}}'`)
-	sent, err := c.Send(context.Background(), Target{ChatID: "oc_quiet"}, Markdown("# 发布说明"), "cli_c")
+	sent, err := c.Send(t.Context(), Target{ChatID: "oc_quiet"}, Markdown("# 发布说明"), "cli_c")
 	require.NoError(t, err)
 	require.Equal(t, "om_new", sent.MessageID)
 	args, err := os.ReadFile(filepath.Join(c.Dir, "args"))
@@ -382,7 +381,7 @@ func TestExecClient_SendImageUsesTheImageFlag(t *testing.T) {
 	c := fakeBinary(t, `
 echo "$*" > "$(dirname "$0")/args"
 echo '{"ok":true,"identity":"user","data":{"message_id":"om_new","chat_id":"oc_p2p_ou_a"}}'`)
-	_, err := c.Send(context.Background(), Target{UserID: "ou_a"}, Image("img_shot"), "")
+	_, err := c.Send(t.Context(), Target{UserID: "ou_a"}, Image("img_shot"), "")
 	require.NoError(t, err)
 	args, err := os.ReadFile(filepath.Join(c.Dir, "args"))
 	require.NoError(t, err)
@@ -393,7 +392,7 @@ func TestExecClient_ReplyInThreadKeepsTheBodyFlag(t *testing.T) {
 	c := fakeBinary(t, `
 echo "$*" > "$(dirname "$0")/args"
 echo '{"ok":true,"identity":"user","data":{"message_id":"om_new","chat_id":"oc_quiet"}}'`)
-	_, err := c.Reply(context.Background(), "om_elsewhere", Markdown("- a\n- b"), true, "cli_c")
+	_, err := c.Reply(t.Context(), "om_elsewhere", Markdown("- a\n- b"), true, "cli_c")
 	require.NoError(t, err)
 	args, err := os.ReadFile(filepath.Join(c.Dir, "args"))
 	require.NoError(t, err)
@@ -431,7 +430,7 @@ func TestMGetRaw_AsksForTheRealCardBody(t *testing.T) {
 	c := fakeBinary(t, `
 echo "$*" > "$(dirname "$0")/args"
 echo '{"ok":true,"identity":"user","data":{"items":[]}}'`)
-	_, err := c.MGetRaw(context.Background(), []string{"om_elsewhere"})
+	_, err := c.MGetRaw(t.Context(), []string{"om_elsewhere"})
 	require.NoError(t, err)
 
 	args, err := os.ReadFile(filepath.Join(c.Dir, "args"))
@@ -453,7 +452,7 @@ cat <<'JSON'
  "truncations":[],"has_more":false}}
 JSON`)
 
-	members, truncated, err := c.ChatMembers(context.Background(), "oc_team")
+	members, truncated, err := c.ChatMembers(t.Context(), "oc_team")
 
 	require.NoError(t, err)
 	require.False(t, truncated)
@@ -477,7 +476,7 @@ cat <<'JSON'
  "truncations":[{"member_type":"user","limit":100}],"has_more":false}}
 JSON`)
 
-	members, truncated, err := c.ChatMembers(context.Background(), "oc_team")
+	members, truncated, err := c.ChatMembers(t.Context(), "oc_team")
 
 	require.NoError(t, err)
 	require.True(t, truncated)
@@ -560,7 +559,7 @@ func TestOlderMessagesRaw_AsksOneDescendingPageEndingAtTheFloor(t *testing.T) {
 	c := fakeBinary(t, `
 echo "$*" > "$(dirname "$0")/args.txt"
 echo '{"ok":true,"identity":"user","data":{"items":[{"message_id":"om_1","chat_id":"oc_a","create_time":"1700000000000"}],"has_more":true}}'`)
-	msgs, more, err := c.OlderMessagesRaw(context.Background(), "oc_a", time.Unix(1700000000, 0))
+	msgs, more, err := c.OlderMessagesRaw(t.Context(), "oc_a", time.Unix(1700000000, 0))
 	require.NoError(t, err)
 	require.True(t, more, "whether history is exhausted is the server's answer, not a guess from the page length")
 	require.Len(t, msgs, 1)
@@ -575,7 +574,7 @@ echo '{"ok":true,"identity":"user","data":{"items":[{"message_id":"om_1","chat_i
 
 func TestOlderMessagesRaw_ExhaustedHistoryReportsNoMore(t *testing.T) {
 	c := fakeBinary(t, `echo '{"ok":true,"identity":"user","data":{"items":[],"has_more":false}}'`)
-	msgs, more, err := c.OlderMessagesRaw(context.Background(), "oc_a", time.Unix(1700000000, 0))
+	msgs, more, err := c.OlderMessagesRaw(t.Context(), "oc_a", time.Unix(1700000000, 0))
 	require.NoError(t, err)
 	require.False(t, more)
 	require.Empty(t, msgs)

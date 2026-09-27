@@ -1,7 +1,6 @@
 package store
 
 import (
-	"context"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -11,7 +10,7 @@ const dayMs = 24 * 60 * 60 * 1000
 
 func TestChatsNeedingMute_TakesTheLongestUnansweredAndSkipsQuietChats(t *testing.T) {
 	s := openTest(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	now := int64(100 * dayMs)
 	for _, id := range []string{"oc_asked", "oc_never", "oc_quiet"} {
 		require.NoError(t, s.EnsureChat(ctx, id, 1))
@@ -36,7 +35,7 @@ func TestChatsNeedingMute_TakesTheLongestUnansweredAndSkipsQuietChats(t *testing
 
 func TestSetMuteStatus_StampsTheChatsItCouldNotAnswerFor(t *testing.T) {
 	s := openTest(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	require.NoError(t, s.EnsureChat(ctx, "oc_a", 1))
 	require.NoError(t, s.EnsureChat(ctx, "oc_x", 1))
 

@@ -11,7 +11,7 @@ import (
 
 func TestDataRev_AdvancesOnRenderingUpdate(t *testing.T) {
 	s := openTest(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	base, err := s.DataRev(ctx)
 	require.NoError(t, err)
 
@@ -36,7 +36,7 @@ func TestDataRev_AdvancesOnRenderingUpdate(t *testing.T) {
 
 func TestDataRev_AdvancesOnReadState(t *testing.T) {
 	s := openTest(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	base, err := s.DataRev(ctx)
 	require.NoError(t, err)
 	require.NoError(t, s.SetReadStatus(ctx, "om_1", nil, 1000, 2000))
@@ -53,7 +53,7 @@ func TestDataRev_AdvancesOnReadState(t *testing.T) {
 
 func TestWatchRev_DeliversUpdateWithoutInsert(t *testing.T) {
 	s := openTest(t)
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	m := Message{MessageID: "om_1", ChatID: "oc_a", MsgType: "text", ContentRaw: `{"text":"1"}`, CreateMs: 100, UpdateMs: 100, RawJSON: "{}"}
 	_, err := s.UpsertMessages(ctx, []Message{m}, 1000)
@@ -78,7 +78,7 @@ func TestWatchRev_DeliversUpdateWithoutInsert(t *testing.T) {
 
 func TestWatchRev_NudgeBringsTheComparisonForward(t *testing.T) {
 	s := openTest(t)
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	nudge := make(chan struct{}, 1)
 	// An interval far beyond the test's patience: only the nudge can deliver.
@@ -104,7 +104,7 @@ func TestWatchRev_NudgeBringsTheComparisonForward(t *testing.T) {
 
 func TestWatchRev_NudgeWithoutAChangeDeliversNothing(t *testing.T) {
 	s := openTest(t)
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	nudge := make(chan struct{}, 1)
 	ch := s.WatchRev(ctx, time.Hour, nudge)
@@ -122,7 +122,7 @@ func TestWatchRev_NudgeWithoutAChangeDeliversNothing(t *testing.T) {
 
 func TestDataRev_IgnoresTheSyncersOwnBookkeeping(t *testing.T) {
 	s := openTest(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	chats := []Chat{{ChatID: "oc_a", Name: "平台组"}, {ChatID: "oc_b", Name: "项目协作群"}}
 	require.NoError(t, s.UpsertChats(ctx, chats, 1))
 	batch := []Message{msgAt("om_a", "oc_a", 100, 1, "morning"), msgAt("om_b", "oc_b", 200, 1, "elsewhere")}
@@ -148,7 +148,7 @@ func TestDataRev_IgnoresTheSyncersOwnBookkeeping(t *testing.T) {
 
 func TestDataRev_AdvancesWhenSomethingVisibleChanges(t *testing.T) {
 	s := openTest(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	require.NoError(t, s.UpsertChats(ctx, []Chat{{ChatID: "oc_a", Name: "平台组"}}, 1))
 	_, err := s.UpsertMessages(ctx, []Message{msgAt("om_a", "oc_a", 100, 1, "morning")}, 1)
 	require.NoError(t, err)

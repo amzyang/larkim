@@ -26,7 +26,7 @@ func TestReport_ChangedOnlyWhenSomethingLanded(t *testing.T) {
 // tick writes, so the tick stamp is what says the tick is over.
 func runOneTick(t *testing.T, s *Syncer) {
 	t.Helper()
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	s.OnChange = func() {
 		if v, ok, _ := s.Store.GetState(ctx, KeyLastTickAt); ok && v != "" {

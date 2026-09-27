@@ -2,7 +2,6 @@ package sync
 
 import (
 	"bytes"
-	"context"
 	"image"
 	"image/color/palette"
 	"image/gif"
@@ -35,7 +34,7 @@ func stickerMsg(id, key string, at time.Time) larkcli.RawMessage {
 
 func TestTick_StickerPicturesComeFromTheLarkClient(t *testing.T) {
 	s, f, clk := newSyncer(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	data, client := t.TempDir(), t.TempDir()
 	s.Opt.DataDir, s.Opt.ClientDir = data, client
 	pic := clientSticker(t, filepath.Join(client, "LarkShell", "sdk_storage", "u1", "resources", "stickers"), "v3_recv.png")
@@ -74,7 +73,7 @@ func TestTick_StickerPicturesComeFromTheLarkClient(t *testing.T) {
 
 func TestTick_StickerPicturesOverTheSizeLimitAreSkipped(t *testing.T) {
 	s, f, clk := newSyncer(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	data, client := t.TempDir(), t.TempDir()
 	s.Opt.DataDir, s.Opt.ClientDir, s.Opt.MaxBytes = data, client, 1
 	clientSticker(t, filepath.Join(client, "LarkShell", "sdk_storage", "u1", "resources", "stickers"), "v3_big.png")

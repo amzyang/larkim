@@ -1,7 +1,6 @@
 package store
 
 import (
-	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -9,7 +8,7 @@ import (
 )
 
 func TestLoadDraft_MissingChatIsZeroNotError(t *testing.T) {
-	s, ctx := openTest(t), context.Background()
+	s, ctx := openTest(t), t.Context()
 
 	d, err := s.LoadDraft(ctx, "oc_quiet")
 	require.NoError(t, err)
@@ -18,7 +17,7 @@ func TestLoadDraft_MissingChatIsZeroNotError(t *testing.T) {
 }
 
 func TestSaveDraft_RoundTripsEveryField(t *testing.T) {
-	s, ctx := openTest(t), context.Background()
+	s, ctx := openTest(t), t.Context()
 
 	want := Draft{ChatID: "oc_quiet", Text: "半句话", ReplyTo: "om_elsewhere", InThread: true}
 	require.NoError(t, s.SaveDraft(ctx, want, 1700))
@@ -32,7 +31,7 @@ func TestSaveDraft_RoundTripsEveryField(t *testing.T) {
 // The composer is one widget shared by every chat, so the store is what keeps
 // two chats' drafts apart.
 func TestSaveDraft_KeepsChatsApart(t *testing.T) {
-	s, ctx := openTest(t), context.Background()
+	s, ctx := openTest(t), t.Context()
 
 	require.NoError(t, s.SaveDraft(ctx, Draft{ChatID: "oc_group", Text: "群里的半句"}, 1))
 	require.NoError(t, s.SaveDraft(ctx, Draft{ChatID: "oc_peer", Text: "单聊的半句"}, 2))
@@ -46,7 +45,7 @@ func TestSaveDraft_KeepsChatsApart(t *testing.T) {
 }
 
 func TestSaveDraft_LastWriteWins(t *testing.T) {
-	s, ctx := openTest(t), context.Background()
+	s, ctx := openTest(t), t.Context()
 
 	require.NoError(t, s.SaveDraft(ctx, Draft{ChatID: "oc_quiet", Text: "first"}, 1))
 	require.NoError(t, s.SaveDraft(ctx, Draft{ChatID: "oc_quiet", Text: "second"}, 2))
@@ -60,7 +59,7 @@ func TestSaveDraft_LastWriteWins(t *testing.T) {
 // An empty draft leaves no row, so the chat list has nothing to draw a marker
 // from once the composer is cleared.
 func TestSaveDraft_EmptyTextDropsTheRow(t *testing.T) {
-	s, ctx := openTest(t), context.Background()
+	s, ctx := openTest(t), t.Context()
 	require.NoError(t, s.SaveDraft(ctx, Draft{ChatID: "oc_quiet", Text: "半句"}, 1))
 
 	require.NoError(t, s.SaveDraft(ctx, Draft{ChatID: "oc_quiet", ReplyTo: "om_elsewhere"}, 2))
@@ -71,7 +70,7 @@ func TestSaveDraft_EmptyTextDropsTheRow(t *testing.T) {
 }
 
 func TestDeleteDraft_IsWhatASuccessfulSendDoes(t *testing.T) {
-	s, ctx := openTest(t), context.Background()
+	s, ctx := openTest(t), t.Context()
 	require.NoError(t, s.SaveDraft(ctx, Draft{ChatID: "oc_quiet", Text: "半句"}, 1))
 
 	require.NoError(t, s.DeleteDraft(ctx, "oc_quiet"))
@@ -83,7 +82,7 @@ func TestDeleteDraft_IsWhatASuccessfulSendDoes(t *testing.T) {
 }
 
 func TestDrafts_KeyedByChat(t *testing.T) {
-	s, ctx := openTest(t), context.Background()
+	s, ctx := openTest(t), t.Context()
 	require.NoError(t, s.SaveDraft(ctx, Draft{ChatID: "oc_group", Text: "a"}, 1))
 	require.NoError(t, s.SaveDraft(ctx, Draft{ChatID: "oc_peer", Text: "b"}, 2))
 
@@ -97,7 +96,7 @@ func TestDrafts_KeyedByChat(t *testing.T) {
 // A draft is written by the same process that displays it, so counting it
 // would make saving a draft tell that process to reload.
 func TestSaveDraft_DoesNotAdvanceDataRev(t *testing.T) {
-	s, ctx := openTest(t), context.Background()
+	s, ctx := openTest(t), t.Context()
 	before, err := s.DataRev(ctx)
 	require.NoError(t, err)
 
@@ -110,7 +109,7 @@ func TestSaveDraft_DoesNotAdvanceDataRev(t *testing.T) {
 }
 
 func TestSaveDraft_BlanksDeleteTheRow(t *testing.T) {
-	s, ctx := openTest(t), context.Background()
+	s, ctx := openTest(t), t.Context()
 	require.NoError(t, s.SaveDraft(ctx, Draft{ChatID: "oc_group", Text: "半句"}, 1))
 
 	require.NoError(t, s.SaveDraft(ctx, Draft{ChatID: "oc_group", Text: " \n\t "}, 2))

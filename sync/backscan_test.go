@@ -1,7 +1,6 @@
 package sync
 
 import (
-	"context"
 	"testing"
 
 	"github.com/amzyang/larkim/store"
@@ -14,7 +13,7 @@ import (
 // back-scan is that way, so it has to select cards.
 func TestRegisterExistingResources_ReadsAStoredCardsAttachment(t *testing.T) {
 	s, _, clk := newSyncer(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	now := clk.t.UnixMilli()
 
 	_, err := s.Store.UpsertMessages(ctx, []store.Message{{

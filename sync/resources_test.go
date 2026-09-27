@@ -1,7 +1,6 @@
 package sync
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -38,7 +37,7 @@ func TestSchedules(t *testing.T) {
 
 func TestTick_DownloadsResourcesAndAppliesSizeCap(t *testing.T) {
 	s, f, clk := newSyncer(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := t.TempDir()
 	s.Opt.DataDir, s.Opt.MaxBytes, s.Opt.DownloadPerTick = dir, 100, 1
 	resDir := filepath.Join(dir, "resources", "lark-im-resources")
@@ -82,7 +81,7 @@ func TestTick_DownloadsResourcesAndAppliesSizeCap(t *testing.T) {
 
 func TestTick_FetchesAVideoCoverOnItsOwn(t *testing.T) {
 	s, f, clk := newSyncer(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := t.TempDir()
 	s.Opt.DataDir, s.Opt.DownloadPerTick = dir, 1
 	resDir := filepath.Join(dir, "resources", "lark-im-resources")
@@ -118,7 +117,7 @@ func TestTick_FetchesAVideoCoverOnItsOwn(t *testing.T) {
 
 func TestTick_ACoverFeishuRefusesStopsRetryingLikeAnyOtherResource(t *testing.T) {
 	s, f, clk := newSyncer(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	s.Opt.DataDir, s.Opt.DownloadPerTick = t.TempDir(), 1
 
 	f.Chats = []larkcli.RawChat{{ChatID: "oc_a", Name: "A", ChatMode: "group"}}
@@ -145,7 +144,7 @@ func TestTick_ACoverFeishuRefusesStopsRetryingLikeAnyOtherResource(t *testing.T)
 
 func TestTick_PollsReadStatusOnSchedule(t *testing.T) {
 	s, f, clk := newSyncer(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	f.Chats = []larkcli.RawChat{{ChatID: "oc_a", Name: "A", ChatMode: "group"}}
 	other := msg("om_other", "oc_a", clk.t.Add(-time.Minute), "hi")
 	other.Sender = larkcli.RawSender{ID: "ou_them", SenderType: "user"}
@@ -179,7 +178,7 @@ func TestTick_PollsReadStatusOnSchedule(t *testing.T) {
 
 func TestRegisterExistingResources_BackScansOldRows(t *testing.T) {
 	s, _, _ := newSyncer(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	s.Opt.DataDir = t.TempDir()
 	_, err := s.Store.UpsertMessages(ctx, []store.Message{
 		{MessageID: "om_old_img", ChatID: "oc", MsgType: "image", ContentRaw: `{"image_key":"img_old"}`, CreateMs: 1, RawJSON: "{}"},
@@ -239,7 +238,7 @@ func TestExtractResources_IgnoresANonImgRefInsideMd(t *testing.T) {
 
 func TestTick_DownloadsAPostImageTheBatchLeftOut(t *testing.T) {
 	s, f, clk := newSyncer(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := t.TempDir()
 	s.Opt.DataDir, s.Opt.DownloadPerTick = dir, 1
 	resDir := filepath.Join(dir, "resources", "lark-im-resources")
@@ -271,15 +270,15 @@ func TestFetchAside_StillRefusesAFileKey(t *testing.T) {
 	s, _, _ := newSyncer(t)
 	// Loosening the gate for images does not open it: a file lark-cli's batch
 	// left out is a gap to report, not a call to spend.
-	_, err := s.fetchAside(context.Background(), "om", store.Resource{FileKey: "file_x", Type: "file"})
+	_, err := s.fetchAside(t.Context(), "om", store.Resource{FileKey: "file_x", Type: "file"})
 	require.ErrorContains(t, err, "not returned by lark-cli")
-	_, err = s.fetchAside(context.Background(), "om", store.Resource{FileKey: "v3_s", Type: "sticker"})
+	_, err = s.fetchAside(t.Context(), "om", store.Resource{FileKey: "v3_s", Type: "sticker"})
 	require.ErrorContains(t, err, "not returned by lark-cli")
 }
 
 func TestTick_AFailureThatMightPassNextTimeKeepsItsRetries(t *testing.T) {
 	s, f, clk := newSyncer(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	s.Opt.DataDir, s.Opt.DownloadPerTick = t.TempDir(), 1
 
 	f.Chats = []larkcli.RawChat{{ChatID: "oc_a", Name: "A", ChatMode: "group"}}

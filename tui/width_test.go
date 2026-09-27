@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"context"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -75,7 +74,7 @@ func bodyModel(t *testing.T, msgType, body string) (Model, *store.Store) {
 	st, err := store.Open(filepath.Join(t.TempDir(), "t.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { st.Close() })
-	ctx := context.Background()
+	ctx := t.Context()
 	require.NoError(t, st.EnsureChat(ctx, "oc_keycap", 1))
 	_, err = st.UpsertMessages(ctx, []store.Message{{MessageID: "om_keycap", ChatID: "oc_keycap",
 		MsgType: msgType, SenderID: "ou_a", SenderName: "张三",

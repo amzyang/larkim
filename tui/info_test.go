@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"context"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -128,7 +127,7 @@ func TestToggleInfo_WithoutAChatSaysSo(t *testing.T) {
 
 func TestLoadInfo_ReadsTheRosterTheSyncStored(t *testing.T) {
 	m, st := infoModel(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	require.NoError(t, st.EnsureChat(ctx, "oc_group", 1))
 	members := []store.Contact{{OpenID: "ou_a", Name: "张三"}, {OpenID: "ou_b", Name: "李四"}}
 	require.NoError(t, st.UpsertContacts(ctx, members, 1))
@@ -144,7 +143,7 @@ func TestLoadInfo_ReadsTheRosterTheSyncStored(t *testing.T) {
 // would say the chat is smaller than it is.
 func TestChatMembers_KeepsAMemberWithNoContactRow(t *testing.T) {
 	_, st := infoModel(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	require.NoError(t, st.EnsureChat(ctx, "oc_group", 1))
 	require.NoError(t, st.SetChatMembers(ctx, "oc_group",
 		[]store.Contact{{OpenID: "ou_unknown"}}, false, 1))

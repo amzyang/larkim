@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"context"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -18,7 +17,7 @@ import (
 // message a reply answers is older than the page it arrives on, so it has to
 // be fetched by id, together with its sender's account suffix.
 func TestLoadMeta_LoadsTheQuotedParents(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	st, err := store.Open(filepath.Join(t.TempDir(), "t.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { st.Close() })

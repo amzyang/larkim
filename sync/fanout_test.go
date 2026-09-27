@@ -1,7 +1,6 @@
 package sync
 
 import (
-	"context"
 	"errors"
 	"strings"
 	"sync/atomic"
@@ -40,7 +39,7 @@ func gate(t *testing.T, f *larkcli.Fake, prefix string, want int) *atomic.Int64 
 // is the one reason pullFromCursor steps over a chat silently.
 func backfilled(t *testing.T, s *Syncer, now time.Time, ids ...string) {
 	t.Helper()
-	ctx := context.Background()
+	ctx := t.Context()
 	for _, id := range ids {
 		require.NoError(t, s.Store.EnsureChat(ctx, id, now.UnixMilli()))
 		require.NoError(t, s.Store.SetChatBackfillDone(ctx, id, now.Add(-24*time.Hour).UnixMilli(), now.UnixMilli()))
@@ -53,14 +52,14 @@ func TestPullFromCursor_ListsEveryChatAtOnce(t *testing.T) {
 	backfilled(t, s, clk.t, ids...)
 	arrived := gate(t, f, "list:chat:", len(ids))
 
-	_, _, err := s.pullFromCursor(context.Background(), ids, "test", clk.t)
+	_, _, err := s.pullFromCursor(t.Context(), ids, "test", clk.t)
 	require.NoError(t, err)
 	require.Equal(t, int64(len(ids)), arrived.Load())
 }
 
 func TestPullFromCursor_RecordsAPermanentRefusalAndPullsTheRest(t *testing.T) {
 	s, f, clk := newSyncer(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	ids := []string{"oc_a", "oc_quiet", "oc_b"}
 	backfilled(t, s, clk.t, ids...)
 	f.AddMessage(msg("om_1", "oc_a", clk.t.Add(-time.Minute), "hello"))
@@ -85,7 +84,7 @@ func TestPullFromCursor_RecordsAPermanentRefusalAndPullsTheRest(t *testing.T) {
 
 func TestPullFromCursor_ReturnsAFatalRefusalWithoutRecordingIt(t *testing.T) {
 	s, f, clk := newSyncer(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	backfilled(t, s, clk.t, "oc_a")
 	f.ListErr = map[string]error{"oc_a": &larkcli.Error{
 		ExitCode: larkcli.ExitAPI, Subtype: "rate_limit", Code: 99991400, RetryAfter: time.Minute}}
@@ -115,7 +114,7 @@ func TestPullChat_ListsEveryThreadAtOnce(t *testing.T) {
 	}
 	arrived := gate(t, f, "list:thread:", len(tids))
 
-	n, _, err := s.pullChat(context.Background(), "oc_a", at.Add(-time.Minute), time.Time{}, clk.t)
+	n, _, err := s.pullChat(t.Context(), "oc_a", at.Add(-time.Minute), time.Time{}, clk.t)
 	require.NoError(t, err)
 	require.Equal(t, int64(len(tids)), arrived.Load())
 	require.Equal(t, 2*len(tids), n, "every thread's reply reached the store")
@@ -123,7 +122,7 @@ func TestPullChat_ListsEveryThreadAtOnce(t *testing.T) {
 
 func TestBackfillSlice_MarksEveryChatDone(t *testing.T) {
 	s, f, clk := newSyncer(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	ids := []string{"oc_a", "oc_b", "oc_c"}
 	for _, id := range ids {
 		require.NoError(t, s.Store.EnsureChat(ctx, id, clk.t.UnixMilli()))

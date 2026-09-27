@@ -1,7 +1,6 @@
 package store
 
 import (
-	"context"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -28,7 +27,7 @@ func TestContact_AccountSuffixIsTheDisambiguatingNumber(t *testing.T) {
 
 func TestContactsNeedingDetail_PrefersP2PPartners(t *testing.T) {
 	s := openTest(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	require.NoError(t, s.UpsertContacts(ctx, []Contact{
 		{OpenID: "ou_group_only", Name: "G"},
 		{OpenID: "ou_partner", Name: "P", P2PChatID: "oc_p"},
@@ -43,7 +42,7 @@ func TestContactsNeedingDetail_PrefersP2PPartners(t *testing.T) {
 
 func TestSetContactDetails_MarksIDsTheServerOmitted(t *testing.T) {
 	s := openTest(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	require.NoError(t, s.UpsertContacts(ctx, []Contact{
 		{OpenID: "ou_found", Name: "stale"},
 		{OpenID: "ou_gone", Name: "Left"},
@@ -72,7 +71,7 @@ func TestSetContactDetails_MarksIDsTheServerOmitted(t *testing.T) {
 
 func TestUpsertContacts_KeepsResolvedDetails(t *testing.T) {
 	s := openTest(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	require.NoError(t, s.UpsertContacts(ctx, []Contact{{OpenID: "ou_a", Name: "A"}}, 1))
 	require.NoError(t, s.SetContactDetails(ctx, []string{"ou_a"},
 		[]ContactDetail{{OpenID: "ou_a", Name: "A", EnterpriseEmail: "a01@x.cn", Department: "研发部"}}, 2))
@@ -89,7 +88,7 @@ func TestUpsertContacts_KeepsResolvedDetails(t *testing.T) {
 
 func TestContactsByIDs_SkipsUnknownIDs(t *testing.T) {
 	s := openTest(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	require.NoError(t, s.UpsertContacts(ctx, []Contact{
 		{OpenID: "ou_a", Name: "A", Email: "a@x.cn"},
 		{OpenID: "cli_bot", Name: "Bot", IsBot: true},
@@ -105,7 +104,7 @@ func TestContactsByIDs_SkipsUnknownIDs(t *testing.T) {
 
 func TestSetContactDetails_KeepsAnEmailTheLookupOmits(t *testing.T) {
 	s := openTest(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	require.NoError(t, s.UpsertContacts(ctx, []Contact{{OpenID: "ou_a", Name: "A", Email: "a@example.com"}}, 1))
 
 	// The tenant search answered for the id but carried no address.

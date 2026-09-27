@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"context"
 	"fmt"
 	"path/filepath"
 	"slices"
@@ -202,7 +201,7 @@ func copyFixture(t *testing.T) Deps {
 	st, err := store.Open(filepath.Join(dir, "t.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { st.Close() })
-	ctx := context.Background()
+	ctx := t.Context()
 	now := time.Now()
 	ms := func(ago time.Duration) int64 { return now.Add(-ago).UnixMilli() }
 
@@ -258,7 +257,7 @@ func TestCopyContext_RangeDropsThreadRepliesAndResolvesEveryone(t *testing.T) {
 
 func TestCopyContext_ThreadSelectionKeepsItsReplies(t *testing.T) {
 	d := copyFixture(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	thread, err := d.Store.ListMessages(ctx, store.MessageQuery{ThreadID: "omt_1", Limit: 10})
 	require.NoError(t, err)
 	require.Len(t, thread, 2)
@@ -270,7 +269,7 @@ func TestCopyContext_ThreadSelectionKeepsItsReplies(t *testing.T) {
 
 func TestCopyContext_CountIsOfKeptMessages(t *testing.T) {
 	d := copyFixture(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	// Bury the chat in thread replies: a limit that counted rows before
 	// filtering would return almost nothing.
 	var noise []store.Message

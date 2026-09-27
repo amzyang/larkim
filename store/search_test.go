@@ -1,7 +1,6 @@
 package store
 
 import (
-	"context"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -9,7 +8,7 @@ import (
 
 func TestSearchMessages_TrigramMatchesCJKSubstrings(t *testing.T) {
 	s := openTest(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	_, err := s.UpsertMessages(ctx, []Message{
 		{MessageID: "om_1", ChatID: "oc_a", SenderName: "林岚", CreateMs: 1, RawJSON: "{}"},
 		{MessageID: "om_2", ChatID: "oc_b", SenderName: "张三", CreateMs: 2, RawJSON: "{}"},
@@ -43,7 +42,7 @@ func TestSearchMessages_TrigramMatchesCJKSubstrings(t *testing.T) {
 
 func TestMembersRepairAndAvatars(t *testing.T) {
 	s := openTest(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	require.NoError(t, s.UpsertChats(ctx, []Chat{{ChatID: "oc_g", Name: "G", ChatMode: "group", AvatarURL: "https://x/g.jpg"}, {ChatID: "oc_p", Name: "P", ChatMode: "p2p"}}, 1))
 	_, err := s.UpsertMessages(ctx, []Message{{MessageID: "om_1", ChatID: "oc_g", SenderID: "ou_a", CreateMs: 5000, RawJSON: "{}"}}, 1)
 	require.NoError(t, err)

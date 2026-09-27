@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"context"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -18,7 +17,7 @@ func readModel(t *testing.T) (Model, *store.Store) {
 	st, err := store.Open(filepath.Join(t.TempDir(), "t.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { st.Close() })
-	ctx := context.Background()
+	ctx := t.Context()
 	require.NoError(t, st.EnsureChat(ctx, "oc_a", 1))
 	_, err = st.UpsertMessages(ctx, []store.Message{{MessageID: "om_a", ChatID: "oc_a", MsgType: "text",
 		SenderID: "ou_x", SenderName: "孙琪", ContentRaw: `{"text":"在吗"}`, CreateMs: 100, UpdateMs: 100}}, 1)
@@ -51,7 +50,7 @@ func TestUpdate_OpeningAChatClearsItsBadge(t *testing.T) {
 
 	m = arrive(t, m, st, "oc_a")
 
-	chats, err := st.ListChats(context.Background(), store.ChatQuery{})
+	chats, err := st.ListChats(t.Context(), store.ChatQuery{})
 	require.NoError(t, err)
 	for _, c := range chats {
 		require.Zero(t, c.UnreadCount, "the chat the reader is looking at carries no badge")
@@ -92,7 +91,7 @@ func TestUpdate_TheUnreadMarkerIsGoneOnTheNextVisit(t *testing.T) {
 
 func TestUpdate_SearchHitsKeepTheirUnreadMarker(t *testing.T) {
 	m, st := readModel(t)
-	require.NoError(t, st.UpdateRendered(context.Background(), "om_a", "在吗", "", "", 1))
+	require.NoError(t, st.UpdateRendered(t.Context(), "om_a", "在吗", "", "", 1))
 
 	msg, ok := localSearch(Deps{Store: st}, nil, "在吗", 1)().(searchMsg)
 	require.True(t, ok)
@@ -107,7 +106,7 @@ func TestUpdate_SearchHitsKeepTheirUnreadMarker(t *testing.T) {
 
 func TestUpdate_OpeningTheChatLeavesAThreadReplyUnreadUntilTheThreadIsOpened(t *testing.T) {
 	m, st := readModel(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	_, err := st.UpsertMessages(ctx, []store.Message{
 		{MessageID: "om_root", ChatID: "oc_a", MsgType: "text", SenderID: "ou_x", SenderName: "张三",
 			ContentRaw: `{"text":"一个老话题"}`, CreateMs: 150, UpdateMs: 150, MessagePosition: 2, ThreadID: "omt_1"},
@@ -152,7 +151,7 @@ func idsOf(msgs []store.Message) []string {
 // reporting it unread.
 func lands(t *testing.T, st *store.Store, id, sender, name, text string, ms int64) {
 	t.Helper()
-	ctx := context.Background()
+	ctx := t.Context()
 	_, err := st.UpsertMessages(ctx, []store.Message{{MessageID: id, ChatID: "oc_a", MsgType: "text",
 		SenderID: sender, SenderName: name, ContentRaw: `{"text":"` + text + `"}`, CreateMs: ms, UpdateMs: ms}}, ms)
 	require.NoError(t, err)
@@ -248,7 +247,7 @@ func TestMove_ClearingAMarkerTakesEveryMessageUnderTheSenderLine(t *testing.T) {
 
 func TestMove_SearchHitsKeepTheirMarker(t *testing.T) {
 	m, st := readModel(t)
-	require.NoError(t, st.UpdateRendered(context.Background(), "om_a", "在吗", "", "", 1))
+	require.NoError(t, st.UpdateRendered(t.Context(), "om_a", "在吗", "", "", 1))
 	msg, ok := localSearch(Deps{Store: st}, nil, "在吗", 1)().(searchMsg)
 	require.True(t, ok)
 	m.searching, m.searchGen, m.focus = true, 1, paneMessages
@@ -265,7 +264,7 @@ func TestMove_SearchHitsKeepTheirMarker(t *testing.T) {
 
 func TestThreadLoaded_LightsAMarkerForAReplyTheChatPaneNeverShowed(t *testing.T) {
 	m, st := readModel(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	_, err := st.UpsertMessages(ctx, []store.Message{
 		{MessageID: "om_root", ChatID: "oc_a", MsgType: "text", SenderID: "ou_x", SenderName: "张三",
 			ContentRaw: `{"text":"一个老话题"}`, CreateMs: 150, UpdateMs: 150, MessagePosition: 2, ThreadID: "omt_1"},

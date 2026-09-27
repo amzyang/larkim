@@ -1,7 +1,6 @@
 package sync
 
 import (
-	"context"
 	"errors"
 	"path/filepath"
 	"slices"
@@ -56,7 +55,7 @@ func callsTo(f *larkcli.Fake, name string) int {
 
 func TestTick_FirstRunDiscoversRendersAndBackfills(t *testing.T) {
 	s, f, clk := newSyncer(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	now := clk.t
 	f.Chats = []larkcli.RawChat{{ChatID: "oc_a", Name: "Alpha", ChatMode: "group", Avatar: "https://x/a.jpg"}}
 	f.AddMessage(msg("om_new", "oc_a", now.Add(-30*time.Second), "fresh"))
@@ -100,7 +99,7 @@ func TestTick_FirstRunDiscoversRendersAndBackfills(t *testing.T) {
 
 func TestHistorySlice_WalksDayByDayUntilLive(t *testing.T) {
 	s, f, clk := newSyncer(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	now := clk.t
 	s.Opt.BackfillDays = 2
 	s.Opt.BackfillPerTick = 0 // isolate the search-based history
@@ -123,7 +122,7 @@ func TestHistorySlice_WalksDayByDayUntilLive(t *testing.T) {
 
 func TestTick_BisectsTruncatedWindowAndPullsThreads(t *testing.T) {
 	s, f, clk := newSyncer(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	now := clk.t
 	f.Truncate = 3
 	// Five hits in a 2-minute window exceed the cap; each 1-minute half fits.
@@ -152,7 +151,7 @@ func TestTick_BisectsTruncatedWindowAndPullsThreads(t *testing.T) {
 
 func TestTick_AuthErrorSetsNeedsLoginAndProbesBeforeRetry(t *testing.T) {
 	s, f, _ := newSyncer(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	f.Err = &larkcli.Error{ExitCode: larkcli.ExitAuth, Type: "auth", Subtype: "token_missing"}
 	_, err := s.Tick(ctx)
 	require.Error(t, err)
@@ -186,7 +185,7 @@ func TestDelayFor_RateLimitHonoursRetryAfter(t *testing.T) {
 
 func TestSlowPath_ReconcilesActiveChatsFromCursor(t *testing.T) {
 	s, f, clk := newSyncer(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	now := clk.t
 	// oc_head takes the head of the active-time ordering, which the probe
 	// lists on every tick; oc_a sits below it, so only the slow path reaches it.
@@ -234,7 +233,7 @@ func countCalls(calls []string, name string) int {
 
 func TestBackfill_PermanentChatErrorIsRecordedAndSkipped(t *testing.T) {
 	s, f, clk := newSyncer(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	f.Chats = []larkcli.RawChat{{ChatID: "oc_restricted", Name: "R", ChatMode: "group"}, {ChatID: "oc_ok", Name: "OK", ChatMode: "group"}}
 	f.AddMessage(msg("om_ok", "oc_ok", clk.t.Add(-time.Hour), "fine"))
 	f.ListErr = map[string]error{"oc_restricted": &larkcli.Error{ExitCode: larkcli.ExitAPI, Type: "api", Subtype: "unknown", Code: 231203, Message: "restricted"}}
@@ -257,7 +256,7 @@ func TestBackfill_PermanentChatErrorIsRecordedAndSkipped(t *testing.T) {
 
 func TestTick_MuteRidesTheChatRefresh(t *testing.T) {
 	s, f, clk := newSyncer(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	now := clk.t
 	f.Chats = []larkcli.RawChat{
 		{ChatID: "oc_a", Name: "Alpha", ChatMode: "group"},
@@ -289,7 +288,7 @@ func TestTick_MuteRidesTheChatRefresh(t *testing.T) {
 
 func TestTick_FiresOnChangeIncludingOnFailure(t *testing.T) {
 	s, f, _ := newSyncer(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	fired := 0
 	s.OnChange = func() { fired++ }
 
@@ -305,7 +304,7 @@ func TestTick_FiresOnChangeIncludingOnFailure(t *testing.T) {
 
 func TestRefreshReadStatus_OvertakesTheBackoff(t *testing.T) {
 	s, f, clk := newSyncer(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	now := clk.t
 	require.NoError(t, s.Store.SetState(ctx, KeySelfOpenID, "ou_me"))
 	f.AddMessage(msg("om_here", "oc_here", now.Add(-time.Hour), "hi"))
@@ -337,7 +336,7 @@ func TestRefreshReadStatus_OvertakesTheBackoff(t *testing.T) {
 
 func TestRefreshReadStatus_SpendsNoCallWhenNothingIsUnread(t *testing.T) {
 	s, f, _ := newSyncer(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	require.NoError(t, s.Store.SetState(ctx, KeySelfOpenID, "ou_me"))
 
 	n, err := s.RefreshReadStatus(ctx, "oc_empty")
@@ -348,7 +347,7 @@ func TestRefreshReadStatus_SpendsNoCallWhenNothingIsUnread(t *testing.T) {
 
 func TestPollReadStatus_DropsUnreadPastTheHorizon(t *testing.T) {
 	s, _, clk := newSyncer(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	now := clk.t
 	require.NoError(t, s.Store.SetState(ctx, KeySelfOpenID, "ou_me"))
 	old := now.Add(-readStatusHorizon - time.Hour)
@@ -370,7 +369,7 @@ func TestPollReadStatus_DropsUnreadPastTheHorizon(t *testing.T) {
 
 func TestTick_SystemMessagesRenderInProcess(t *testing.T) {
 	s, f, clk := newSyncer(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	now := clk.t
 	f.Chats = []larkcli.RawChat{{ChatID: "oc_a", Name: "Alpha", ChatMode: "group"}}
 	f.AddMessage(larkcli.RawMessage{MessageID: "om_sys", ChatID: "oc_a", MsgType: "system",
@@ -391,7 +390,7 @@ func TestRenderLocal_NamesTheCallInBothPanes(t *testing.T) {
 	// A call still running is the chat's last message until the marker that
 	// closes it arrives, so the list has to say which meeting it was.
 	s, _, clk := newSyncer(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	start := clk.t.UnixMilli()
 	require.NoError(t, s.Store.EnsureChat(ctx, "oc_a", start))
 	_, err := s.Store.UpsertMessages(ctx, []store.Message{
@@ -417,7 +416,7 @@ func TestRenderLocal_NamesTheCallInBothPanes(t *testing.T) {
 
 func TestRenderLocal_TimesTheCallItsMarkerClosesForBothPanes(t *testing.T) {
 	s, _, clk := newSyncer(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	start := clk.t.UnixMilli()
 	end := start + 32_000
 	require.NoError(t, s.Store.EnsureChat(ctx, "oc_a", start))
@@ -445,7 +444,7 @@ func TestRenderLocal_TimesTheCallItsMarkerClosesForBothPanes(t *testing.T) {
 
 func TestTick_RendersNewMessagesBeforeSweeps(t *testing.T) {
 	s, f, clk := newSyncer(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	f.Chats = []larkcli.RawChat{{ChatID: "oc_a", Name: "平台组", ChatMode: "group"}}
 	f.AddMessage(msg("om_new", "oc_a", clk.t.Add(-30*time.Second), "fresh"))
 
@@ -466,7 +465,7 @@ func TestTick_RendersNewMessagesBeforeSweeps(t *testing.T) {
 
 func TestTick_NudgesAsEachStageLands(t *testing.T) {
 	s, f, clk := newSyncer(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	var nudges int
 	s.OnChange = func() { nudges++ }
 	f.Chats = []larkcli.RawChat{{ChatID: "oc_a", Name: "平台组", ChatMode: "group"}}

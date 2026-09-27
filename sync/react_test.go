@@ -1,7 +1,6 @@
 package sync
 
 import (
-	"context"
 	"encoding/json"
 	"testing"
 
@@ -13,7 +12,7 @@ import (
 func reactSyncer(t *testing.T) (*Syncer, *larkcli.Fake) {
 	t.Helper()
 	s, f, clk := newSyncer(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	require.NoError(t, s.Store.SetState(ctx, KeySelfOpenID, f.Self.UserOpenID))
 	_, err := s.Store.UpsertMessages(ctx, []store.Message{
 		{MessageID: "om_a", ChatID: "oc_team", MsgType: "text", CreateMs: clk.Now().UnixMilli(), RawJSON: "{}"},
@@ -24,7 +23,7 @@ func reactSyncer(t *testing.T) (*Syncer, *larkcli.Fake) {
 
 func TestReact_AddsTheEmojiAndBringsTheSummaryBack(t *testing.T) {
 	s, f := reactSyncer(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	f.Reactions["om_a"] = json.RawMessage(`{"counts":[{"reaction_type":"OK","count":"1"}]}`)
 
 	require.NoError(t, s.React(ctx, "om_a", "OK", true))
@@ -40,7 +39,7 @@ func TestReact_LooksUpTheReactionIdBeforeTakingOneBack(t *testing.T) {
 	// The stored summary carries no reaction id, and the delete needs one, so
 	// taking a reaction back costs a lookup Feishu answers nowhere else.
 	s, f := reactSyncer(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	added, err := f.AddReaction(ctx, "om_a", "OK")
 	require.NoError(t, err)
 	f.Calls = nil
@@ -53,7 +52,7 @@ func TestReact_LooksUpTheReactionIdBeforeTakingOneBack(t *testing.T) {
 
 func TestReact_LeavesSomebodyElsesReactionAlone(t *testing.T) {
 	s, f := reactSyncer(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	f.Reacted["om_a"] = []larkcli.Reaction{{ReactionID: "rx_other", EmojiType: "OK", OperatorID: "ou_b"}}
 
 	require.NoError(t, s.React(ctx, "om_a", "OK", false))

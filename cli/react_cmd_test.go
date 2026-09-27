@@ -2,7 +2,6 @@ package cli
 
 import (
 	"bytes"
-	"context"
 	"errors"
 	"path/filepath"
 	"testing"
@@ -81,7 +80,7 @@ func reactApp(t *testing.T) (*App, *larkcli.Fake, *store.Store) {
 func TestReact_PutsAnOrdinaryEmojiOnTheMessageItself(t *testing.T) {
 	a, f, st := reactApp(t)
 
-	res, err := a.react(context.Background(), st, "om_elsewhere", "THUMBSUP")
+	res, err := a.react(t.Context(), st, "om_elsewhere", "THUMBSUP")
 	require.NoError(t, err)
 	require.Equal(t, formReaction, res.Form)
 	require.Empty(t, res.ReplyID, "a reaction is not a message")
@@ -93,7 +92,7 @@ func TestReact_RepliesWithAnotherTenantsCultureEmojiAsTheEmojiItself(t *testing.
 	a, f, st := reactApp(t)
 	f.Messages["om_elsewhere"] = larkcli.RawMessage{MessageID: "om_elsewhere", ChatID: "oc_quiet"}
 
-	res, err := a.react(context.Background(), st, "om_elsewhere", "PursueUltimate")
+	res, err := a.react(t.Context(), st, "om_elsewhere", "PursueUltimate")
 	require.NoError(t, err)
 	require.Equal(t, formEmotion, res.Form)
 	require.Equal(t, "om_sent_1", res.ReplyID)
@@ -106,7 +105,7 @@ func TestReact_RepliesWithThePictureOfAWithdrawnEmoji(t *testing.T) {
 	a, f, st := reactApp(t)
 	f.Messages["om_elsewhere"] = larkcli.RawMessage{MessageID: "om_elsewhere", ChatID: "oc_quiet"}
 
-	res, err := a.react(context.Background(), st, "om_elsewhere", "AWESOME")
+	res, err := a.react(t.Context(), st, "om_elsewhere", "AWESOME")
 	require.NoError(t, err)
 	require.Equal(t, formPicture, res.Form)
 	require.Equal(t, "img_fake_1", f.Sent[0].ImageKey)
@@ -116,7 +115,7 @@ func TestReact_RepliesWithThePictureOfAWithdrawnEmoji(t *testing.T) {
 
 func TestReact_KeepsAReplyToAThreadReplyInsideThatThread(t *testing.T) {
 	a, f, st := reactApp(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	f.Messages["om_in_thread"] = larkcli.RawMessage{MessageID: "om_in_thread", ChatID: "oc_quiet"}
 	_, err := st.UpsertMessages(ctx, []store.Message{
 		{MessageID: "om_in_thread", ChatID: "oc_quiet", MsgType: "text", ThreadID: "omt_a",
@@ -134,7 +133,7 @@ func TestReact_RepliesInTheMainFlowForAMessageTheStoreHasNeverSeen(t *testing.T)
 	a, f, st := reactApp(t)
 	f.Messages["om_elsewhere"] = larkcli.RawMessage{MessageID: "om_elsewhere", ChatID: "oc_quiet"}
 
-	_, err := a.react(context.Background(), st, "om_elsewhere", "PursueUltimate")
+	_, err := a.react(t.Context(), st, "om_elsewhere", "PursueUltimate")
 	require.NoError(t, err, "a message this store never synced is still answerable by id")
 	require.Empty(t, f.Messages["om_sent_1"].ThreadID)
 }
@@ -143,6 +142,6 @@ func TestReact_ReportsWhatFeishuRefused(t *testing.T) {
 	a, f, st := reactApp(t)
 	f.Err = errors.New("231001 invalid emoji_type")
 
-	_, err := a.react(context.Background(), st, "om_elsewhere", "THUMBSUP")
+	_, err := a.react(t.Context(), st, "om_elsewhere", "THUMBSUP")
 	require.ErrorContains(t, err, "231001", "Feishu keeps the emoji list, so its refusal is the answer")
 }

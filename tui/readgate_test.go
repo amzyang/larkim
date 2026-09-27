@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"context"
 	"fmt"
 	"testing"
 
@@ -43,7 +42,7 @@ func wheel(t *testing.T, m Model, b tea.MouseButton, n int) Model {
 // unreadOf is the badge the chat list would draw for one chat.
 func unreadOf(t *testing.T, st *store.Store, chatID string) int64 {
 	t.Helper()
-	chats, err := st.ListChats(context.Background(), store.ChatQuery{})
+	chats, err := st.ListChats(t.Context(), store.ChatQuery{})
 	require.NoError(t, err)
 	for _, c := range chats {
 		if c.ChatID == chatID {
@@ -110,7 +109,7 @@ func TestUpdate_TheReadFlagLandingLateStillTakesTheChatRead(t *testing.T) {
 
 	// Sync brings the message in; the read poller writes its flag on a pass of
 	// its own, so the page that lights the badge carries no new message.
-	ctx := context.Background()
+	ctx := t.Context()
 	_, err := st.UpsertMessages(ctx, []store.Message{{MessageID: "om_late", ChatID: "oc_a", MsgType: "text",
 		SenderID: "ou_b", SenderName: "李四", ContentRaw: `{"text":"排期确认一下"}`, CreateMs: 400, UpdateMs: 400}}, 400)
 	require.NoError(t, err)
@@ -188,7 +187,7 @@ func TestUpdate_AReadFlagOnAnOlderMessageStillTakesTheChatRead(t *testing.T) {
 
 	// Two messages arrive together and the read poller reaches them out of
 	// order, so the second flag lands behind a message already settled.
-	ctx := context.Background()
+	ctx := t.Context()
 	_, err := st.UpsertMessages(ctx, []store.Message{
 		{MessageID: "om_older", ChatID: "oc_a", MsgType: "text", SenderID: "ou_b", SenderName: "李四",
 			ContentRaw: `{"text":"排期确认一下"}`, CreateMs: 300, UpdateMs: 300},

@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"context"
 	"fmt"
 	"path/filepath"
 	"slices"
@@ -34,7 +33,7 @@ func TestUpdate_RevMsgReloadsEveryPane(t *testing.T) {
 	st, err := store.Open(filepath.Join(t.TempDir(), "t.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { st.Close() })
-	_, err = st.UpsertMessages(context.Background(), []store.Message{{MessageID: "om_1", ChatID: "oc_1",
+	_, err = st.UpsertMessages(t.Context(), []store.Message{{MessageID: "om_1", ChatID: "oc_1",
 		MsgType: "text", ContentRaw: `{"text":"1"}`, CreateMs: 100, UpdateMs: 100, ThreadID: "omt_1", RawJSON: "{}"}}, 1000)
 	require.NoError(t, err)
 

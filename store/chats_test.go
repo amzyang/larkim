@@ -1,7 +1,6 @@
 package store
 
 import (
-	"context"
 	"fmt"
 	"strings"
 	"testing"
@@ -20,12 +19,12 @@ func chatIDs(chats []Chat) []string {
 func markUnread(t *testing.T, s *Store, messageID string) {
 	t.Helper()
 	unread := false
-	require.NoError(t, s.SetReadStatus(context.Background(), messageID, &unread, 100, 0))
+	require.NoError(t, s.SetReadStatus(t.Context(), messageID, &unread, 100, 0))
 }
 
 func TestListChats_LeavesAChatWhereAThreadReplyLandsIt(t *testing.T) {
 	s := openTest(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	for _, id := range []string{"oc_recent", "oc_thread"} {
 		require.NoError(t, s.EnsureChat(ctx, id, 1))
 	}
@@ -47,7 +46,7 @@ func TestListChats_LeavesAChatWhereAThreadReplyLandsIt(t *testing.T) {
 
 func TestListChats_ThreadRootCountsAsMainFlow(t *testing.T) {
 	s := openTest(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	require.NoError(t, s.EnsureChat(ctx, "oc_topic", 1))
 	root := msgAt("om_root", "oc_topic", 100, 1, "a new topic")
 	root.ThreadID = "omt_1"
@@ -64,7 +63,7 @@ func TestListChats_ThreadRootCountsAsMainFlow(t *testing.T) {
 
 func TestListChats_KeepsAChatInPlaceWhenItIsRead(t *testing.T) {
 	s := openTest(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	for _, id := range []string{"oc_recent", "oc_stale"} {
 		require.NoError(t, s.EnsureChat(ctx, id, 1))
 	}
@@ -84,7 +83,7 @@ func TestListChats_KeepsAChatInPlaceWhenItIsRead(t *testing.T) {
 
 func TestListChats_TiebreaksOnChatID(t *testing.T) {
 	s := openTest(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	for _, id := range []string{"oc_c", "oc_a", "oc_b"} {
 		require.NoError(t, s.UpsertChats(ctx, []Chat{{ChatID: id, Name: "平台组"}}, 1))
 	}
@@ -98,7 +97,7 @@ func TestListChats_TiebreaksOnChatID(t *testing.T) {
 func TestListChats_CarriesTheUnreadCount(t *testing.T) {
 	s := openTest(t)
 	s.Silence = SilenceRules{{Sender: "cli_c"}}
-	ctx := context.Background()
+	ctx := t.Context()
 	require.NoError(t, s.EnsureChat(ctx, "oc_loud", 1))
 	_, err := s.UpsertMessages(ctx, []Message{
 		msgAt("om_1", "oc_loud", 100, 1, "did anyone look at it"),
@@ -135,7 +134,7 @@ func unreadCounts(t *testing.T, s *Store) map[string]int64 {
 
 func listChats(t *testing.T, s *Store) []Chat {
 	t.Helper()
-	chats, err := s.ListChats(context.Background(), ChatQuery{})
+	chats, err := s.ListChats(t.Context(), ChatQuery{})
 	require.NoError(t, err)
 	return chats
 }
@@ -208,7 +207,7 @@ func TestListChats_DoesNotCountMessagesPerRow(t *testing.T) {
 
 func TestChats_HistoryFloorRecordsHowFarBackAChatReaches(t *testing.T) {
 	s := openTest(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	require.NoError(t, s.UpsertChats(ctx, []Chat{{ChatID: "oc_a", Name: "Alpha", ChatMode: "p2p"}}, 100))
 
 	// Until backfill has run the floor says nothing, which is what the zero

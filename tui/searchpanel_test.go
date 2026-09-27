@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"context"
 	"errors"
 	"path/filepath"
 	"strings"
@@ -33,7 +32,7 @@ func panelModel(t *testing.T) (Model, *store.Store) {
 	st, err := store.Open(filepath.Join(t.TempDir(), "t.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { st.Close() })
-	ctx := context.Background()
+	ctx := t.Context()
 
 	require.NoError(t, st.EnsureChat(ctx, "oc_budget", 1))
 	_, err = st.UpsertMessages(ctx, []store.Message{{MessageID: "om_1", ChatID: "oc_budget", MsgType: "text",
@@ -282,7 +281,7 @@ func coldFake(content string) *larkcli.Fake {
 // remoteSearched runs the panel's remote command and folds the answer in.
 func remoteSearched(t *testing.T, m Model, query string) Model {
 	t.Helper()
-	msg := remoteSearch(context.Background(), m.deps, query, m.searchGen)()
+	msg := remoteSearch(t.Context(), m.deps, query, m.searchGen)()
 	next, _ := m.update(msg)
 	return next.(Model)
 }
@@ -408,7 +407,7 @@ func TestOpenColdHit_PullsItInBeforeOpeningThePage(t *testing.T) {
 	require.Equal(t, "om_cold", m.pendingSelect.id)
 
 	// The message is in the store now, so the page that opens holds it.
-	got, err := st.GetMessage(context.Background(), "om_cold")
+	got, err := st.GetMessage(t.Context(), "om_cold")
 	require.NoError(t, err)
 	require.Equal(t, "oc_budget", got.ChatID)
 }

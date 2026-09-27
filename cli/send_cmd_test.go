@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -27,7 +26,7 @@ func TestSendCmd_FileFlagUploadsFirst(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "发布说明.pdf")
 	require.NoError(t, os.WriteFile(path, []byte("pdf"), 0o644))
 
-	msg, err := outgoingFlags{file: path}.outgoing(context.Background(), f)
+	msg, err := outgoingFlags{file: path}.outgoing(t.Context(), f)
 	require.NoError(t, err)
 	require.Equal(t, "file_fake_1", msg.FileKey)
 	require.Equal(t, []string{path}, f.Uploads)
@@ -35,7 +34,7 @@ func TestSendCmd_FileFlagUploadsFirst(t *testing.T) {
 
 func TestSendCmd_FileFlagPassesAKeyThrough(t *testing.T) {
 	f := larkcli.NewFake()
-	msg, err := outgoingFlags{file: "file_v3_report"}.outgoing(context.Background(), f)
+	msg, err := outgoingFlags{file: "file_v3_report"}.outgoing(t.Context(), f)
 	require.NoError(t, err)
 	require.Equal(t, "file_v3_report", msg.FileKey)
 	require.Empty(t, f.Uploads, "a key Feishu already holds needs no upload")
@@ -44,14 +43,14 @@ func TestSendCmd_FileFlagPassesAKeyThrough(t *testing.T) {
 func TestSendCmd_TextIsStillVerbatim(t *testing.T) {
 	// A script piping a changelog into --text must not start sending posts
 	// just because the text happens to look like markdown.
-	msg, err := outgoingFlags{text: "## 发布说明\n- a"}.outgoing(context.Background(), larkcli.NewFake())
+	msg, err := outgoingFlags{text: "## 发布说明\n- a"}.outgoing(t.Context(), larkcli.NewFake())
 	require.NoError(t, err)
 	require.Equal(t, "## 发布说明\n- a", msg.Text)
 	require.Empty(t, msg.Markdown)
 }
 
 func TestSendCmd_MarkdownFlagSendsAPost(t *testing.T) {
-	msg, err := outgoingFlags{markdown: "## 发布说明"}.outgoing(context.Background(), larkcli.NewFake())
+	msg, err := outgoingFlags{markdown: "## 发布说明"}.outgoing(t.Context(), larkcli.NewFake())
 	require.NoError(t, err)
 	require.Equal(t, "## 发布说明", msg.Markdown)
 	require.Empty(t, msg.Text)
@@ -62,7 +61,7 @@ func TestSendCmd_ImageFlagUploadsFirst(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "shot.png")
 	require.NoError(t, os.WriteFile(path, []byte("png"), 0o644))
 
-	msg, err := outgoingFlags{image: path}.outgoing(context.Background(), f)
+	msg, err := outgoingFlags{image: path}.outgoing(t.Context(), f)
 	require.NoError(t, err)
 	require.Equal(t, "img_fake_1", msg.ImageKey)
 	require.Equal(t, []string{path}, f.Uploads)
@@ -70,7 +69,7 @@ func TestSendCmd_ImageFlagUploadsFirst(t *testing.T) {
 
 func TestSendCmd_ImageFlagPassesAKeyThrough(t *testing.T) {
 	f := larkcli.NewFake()
-	msg, err := outgoingFlags{image: "img_v3_shot"}.outgoing(context.Background(), f)
+	msg, err := outgoingFlags{image: "img_v3_shot"}.outgoing(t.Context(), f)
 	require.NoError(t, err)
 	require.Equal(t, "img_v3_shot", msg.ImageKey)
 	require.Empty(t, f.Uploads, "a key Feishu already holds needs no upload")

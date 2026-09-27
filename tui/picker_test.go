@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -26,7 +25,7 @@ func pickerModel(t *testing.T) Model {
 	st, err := store.Open(filepath.Join(t.TempDir(), "t.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { st.Close() })
-	ctx := context.Background()
+	ctx := t.Context()
 	require.NoError(t, st.EnsureChat(ctx, "oc_team", 1))
 	_, err = st.UpsertMessages(ctx, []store.Message{{MessageID: "om_a", ChatID: "oc_team", MsgType: "text",
 		SenderID: "ou_a", SenderName: "张三", ContentRaw: `{"text":"下周一发版"}`, CreateMs: 100, UpdateMs: 100}}, 1)

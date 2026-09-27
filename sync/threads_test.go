@@ -16,7 +16,7 @@ import (
 func stakedThreadTick(t *testing.T, rootFrom string) (*Syncer, *larkcli.Fake, context.Context) {
 	t.Helper()
 	s, f, clk := newSyncer(t)
-	ctx, now := context.Background(), clk.t
+	ctx, now := t.Context(), clk.t
 	require.NoError(t, s.Store.SetState(ctx, KeySelfOpenID, "ou_me"))
 	f.Chats = []larkcli.RawChat{{ChatID: "oc_a", Name: "Alpha", ChatMode: "group"}}
 	require.NoError(t, s.Store.EnsureChat(ctx, "oc_a", now.UnixMilli()))

@@ -1,7 +1,6 @@
 package store
 
 import (
-	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -12,7 +11,7 @@ import (
 // followed by n unread messages that do not.
 func atMeStore(t *testing.T, mentions string, after int) *Store {
 	t.Helper()
-	s, ctx := openTest(t), context.Background()
+	s, ctx := openTest(t), t.Context()
 	require.NoError(t, s.EnsureChat(ctx, "oc_group", 1))
 
 	msgs := []Message{{MessageID: "om_at", ChatID: "oc_group", MsgType: "text", SenderID: "ou_a",
@@ -35,7 +34,7 @@ func atMeStore(t *testing.T, mentions string, after int) *Store {
 
 func listOne(t *testing.T, s *Store, self string) Chat {
 	t.Helper()
-	chats, err := s.ListChats(context.Background(), ChatQuery{Self: self})
+	chats, err := s.ListChats(t.Context(), ChatQuery{Self: self})
 	require.NoError(t, err)
 	require.Len(t, chats, 1)
 	return chats[0]
@@ -67,7 +66,7 @@ func TestListChats_AtMeGoesOutWhenTheChatIsRead(t *testing.T) {
 	s := atMeStore(t, `[{"id":"ou_me","key":"@_user_1","name":"林岚"}]`, 2)
 	require.True(t, listOne(t, s, "ou_me").UnreadMention)
 
-	require.NoError(t, s.MarkChatRead(context.Background(), "oc_group", 500))
+	require.NoError(t, s.MarkChatRead(t.Context(), "oc_group", 500))
 
 	assert.False(t, listOne(t, s, "ou_me").UnreadMention)
 }
@@ -84,7 +83,7 @@ func TestListChats_NoSelfLeavesEveryChatUnmarked(t *testing.T) {
 // listing must still bind its arguments in the right order.
 func TestListChats_AtMeSurvivesAFilteredListing(t *testing.T) {
 	s := atMeStore(t, `[{"id":"ou_me","key":"@_user_1","name":"林岚"}]`, 0)
-	ctx := context.Background()
+	ctx := t.Context()
 	require.NoError(t, s.UpsertChats(ctx, []Chat{{ChatID: "oc_group", Name: "平台组", ChatMode: "group"}}, 1))
 
 	chats, err := s.ListChats(ctx, ChatQuery{Self: "ou_me", Search: "平台", Mode: "group"})
@@ -95,7 +94,7 @@ func TestListChats_AtMeSurvivesAFilteredListing(t *testing.T) {
 }
 
 func TestMentionsOf_ListsWhatNamesTheReaderNewestFirst(t *testing.T) {
-	s, ctx := openTest(t), context.Background()
+	s, ctx := openTest(t), t.Context()
 	require.NoError(t, s.EnsureChat(ctx, "oc_group", 1))
 	_, err := s.UpsertMessages(ctx, []Message{
 		{MessageID: "om_old", ChatID: "oc_group", MsgType: "text", SenderID: "ou_a", CreateMs: 100, UpdateMs: 100},
@@ -120,7 +119,7 @@ func TestMentionsOf_ListsWhatNamesTheReaderNewestFirst(t *testing.T) {
 // keeps its place in the list.
 func TestMentionsOf_KeepsMentionsTheReaderHasSeen(t *testing.T) {
 	s := atMeStore(t, `[{"id":"ou_me","key":"@_user_1","name":"林岚"}]`, 0)
-	ctx := context.Background()
+	ctx := t.Context()
 	require.NoError(t, s.MarkChatRead(ctx, "oc_group", 500))
 
 	hits, err := s.MentionsOf(ctx, "ou_me", 0)
@@ -131,7 +130,7 @@ func TestMentionsOf_KeepsMentionsTheReaderHasSeen(t *testing.T) {
 func TestMentionsOf_WithoutASelfIdAnswersNothing(t *testing.T) {
 	s := atMeStore(t, `[{"id":"ou_me","key":"@_user_1","name":"林岚"}]`, 0)
 
-	hits, err := s.MentionsOf(context.Background(), "", 0)
+	hits, err := s.MentionsOf(t.Context(), "", 0)
 	require.NoError(t, err)
 	assert.Empty(t, hits)
 }
@@ -139,7 +138,7 @@ func TestMentionsOf_WithoutASelfIdAnswersNothing(t *testing.T) {
 // A rule that says "do not pull me by this" holds for the list too.
 func TestMentionsOf_LeavesOutSilencedMessages(t *testing.T) {
 	s := atMeStore(t, `[{"id":"ou_me","key":"@_user_1","name":"林岚"}]`, 0)
-	ctx := context.Background()
+	ctx := t.Context()
 	_, err := s.db.ExecContext(ctx, `UPDATE messages SET silenced = 1 WHERE message_id = 'om_at'`)
 	require.NoError(t, err)
 

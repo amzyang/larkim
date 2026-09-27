@@ -1,7 +1,6 @@
 package store
 
 import (
-	"context"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -9,7 +8,7 @@ import (
 
 func TestResources_Lifecycle(t *testing.T) {
 	s := openTest(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	_, err := s.UpsertMessages(ctx, []Message{{MessageID: "om_1", ChatID: "oc", CreateMs: 10, RawJSON: "{}"}, {MessageID: "om_2", ChatID: "oc", CreateMs: 20, RawJSON: "{}"}}, 1)
 	require.NoError(t, err)
 	require.NoError(t, s.AddPendingResources(ctx, []ResourceRef{{MessageID: "om_1", FileKey: "img_a", Type: "image"}, {MessageID: "om_2", FileKey: "file_b", Type: "file"}}))
@@ -42,7 +41,7 @@ func TestResources_Lifecycle(t *testing.T) {
 
 func TestUnrenderedMessageIDs_SkipsMessagesWithUnfinishedResources(t *testing.T) {
 	s := openTest(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	_, err := s.UpsertMessages(ctx, []Message{
 		{MessageID: "om_plain", ChatID: "oc", CreateMs: 60, RawJSON: "{}"},
 		{MessageID: "om_pending", ChatID: "oc", CreateMs: 50, RawJSON: "{}"},
@@ -73,7 +72,7 @@ func TestUnrenderedMessageIDs_SkipsMessagesWithUnfinishedResources(t *testing.T)
 
 func TestReadStatus_CandidatesAndSchedule(t *testing.T) {
 	s := openTest(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	_, err := s.UpsertMessages(ctx, []Message{
 		{MessageID: "om_mine", ChatID: "oc", SenderID: "ou_me", CreateMs: 1000, RawJSON: "{}"},
 		{MessageID: "om_a", ChatID: "oc", SenderID: "ou_x", CreateMs: 900, RawJSON: "{}"},
@@ -111,7 +110,7 @@ func TestReadStatus_CandidatesAndSchedule(t *testing.T) {
 
 func TestReadStatusCandidates_ChatScopeOvertakesTheBackoff(t *testing.T) {
 	s := openTest(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	_, err := s.UpsertMessages(ctx, []Message{
 		{MessageID: "om_here", ChatID: "oc_here", SenderID: "ou_x", CreateMs: 900, RawJSON: "{}"},
 		{MessageID: "om_elsewhere", ChatID: "oc_other", SenderID: "ou_x", CreateMs: 901, RawJSON: "{}"},
@@ -132,7 +131,7 @@ func TestReadStatusCandidates_ChatScopeOvertakesTheBackoff(t *testing.T) {
 
 func TestExpireReadStatus_RelaxesUnreadPastTheHorizon(t *testing.T) {
 	s := openTest(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	_, err := s.UpsertMessages(ctx, []Message{
 		{MessageID: "om_old", ChatID: "oc", SenderID: "ou_x", CreateMs: 100, RawJSON: "{}"},
 		{MessageID: "om_recent", ChatID: "oc", SenderID: "ou_x", CreateMs: 900, RawJSON: "{}"},
@@ -161,7 +160,7 @@ func TestExpireReadStatus_RelaxesUnreadPastTheHorizon(t *testing.T) {
 
 func TestListChats_CountTheBadgeOfMutedChats(t *testing.T) {
 	s := openTest(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	require.NoError(t, s.UpsertChats(ctx, []Chat{{ChatID: "oc_loud", Name: "loud"}, {ChatID: "oc_muted", Name: "muted"}}, 1))
 	require.NoError(t, s.SetMuteStatus(ctx, map[string]bool{"oc_muted": true}, nil, 1))
 	_, err := s.UpsertMessages(ctx, []Message{
@@ -182,7 +181,7 @@ func TestListChats_CountTheBadgeOfMutedChats(t *testing.T) {
 
 func TestResourcesForMessages_GroupsByMessage(t *testing.T) {
 	s := openTest(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	_, err := s.UpsertMessages(ctx, []Message{
 		{MessageID: "om_1", ChatID: "oc", CreateMs: 10, RawJSON: "{}"},
 		{MessageID: "om_2", ChatID: "oc", CreateMs: 20, RawJSON: "{}"},
@@ -204,7 +203,7 @@ func TestResourcesForMessages_GroupsByMessage(t *testing.T) {
 
 func TestListChats_LeaveThreadRepliesOutOfTheBadge(t *testing.T) {
 	s := openTest(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	require.NoError(t, s.EnsureChat(ctx, "oc_a", 1))
 	root := msgAt("om_root", "oc_a", 100, 1, "root")
 	root.ThreadID = "omt_1"
@@ -223,7 +222,7 @@ func TestListChats_LeaveThreadRepliesOutOfTheBadge(t *testing.T) {
 
 func TestMarkChatRead_ClearsTheBadgeOfOneChat(t *testing.T) {
 	s := openTest(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	require.NoError(t, s.EnsureChat(ctx, "oc_a", 1))
 	require.NoError(t, s.EnsureChat(ctx, "oc_b", 1))
 	_, err := s.UpsertMessages(ctx, []Message{
@@ -250,7 +249,7 @@ func TestMarkChatRead_ClearsTheBadgeOfOneChat(t *testing.T) {
 
 func TestMarkChatRead_LeavesThreadRepliesUnread(t *testing.T) {
 	s := openTest(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	reply := msgAt("om_reply", "oc_a", 20, -3, "answered an old topic")
 	reply.ThreadID = "omt_1"
 	_, err := s.UpsertMessages(ctx, []Message{msgAt("om_root", "oc_a", 10, 1, "an old topic"), reply}, 1)
@@ -270,7 +269,7 @@ func TestMarkChatRead_LeavesThreadRepliesUnread(t *testing.T) {
 
 func TestMarkThreadRead_SettlesOnlyItsOwnReplies(t *testing.T) {
 	s := openTest(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	mine := msgAt("om_mine", "oc_a", 20, -3, "in this thread")
 	mine.ThreadID = "omt_1"
 	// Silence decides whether to interrupt, not whether something was read:
@@ -301,7 +300,7 @@ func TestMarkThreadRead_SettlesOnlyItsOwnReplies(t *testing.T) {
 
 func TestMarkChatRead_LeavesReadAndDeletedMessagesAlone(t *testing.T) {
 	s := openTest(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	deleted := msgAt("om_gone", "oc_a", 30, 1, "recalled")
 	deleted.Deleted = true
 	_, err := s.UpsertMessages(ctx, []Message{msgAt("om_seen", "oc_a", 10, 1, "read"), deleted}, 1)
@@ -320,7 +319,7 @@ func TestMarkChatRead_LeavesReadAndDeletedMessagesAlone(t *testing.T) {
 
 func TestMarkChatRead_WritesNothingWhenTheChatIsAlreadyRead(t *testing.T) {
 	s := openTest(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	_, err := s.UpsertMessages(ctx, []Message{msgAt("om_a", "oc_a", 10, 1, "one")}, 1)
 	require.NoError(t, err)
 	markUnread(t, s, "om_a")
@@ -344,14 +343,14 @@ func sharedFixture(t *testing.T) *Store {
 	for _, id := range []string{"om_a", "om_b", "om_c"} {
 		msgs = append(msgs, Message{MessageID: id, ChatID: "oc_a", CreateMs: 10, RawJSON: "{}"})
 	}
-	_, err := s.UpsertMessages(context.Background(), msgs, 1)
+	_, err := s.UpsertMessages(t.Context(), msgs, 1)
 	require.NoError(t, err)
 	return s
 }
 
 func TestAddPendingResources_OneLedgerRowPerKey(t *testing.T) {
 	s := sharedFixture(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	require.NoError(t, s.AddPendingResources(ctx, []ResourceRef{
 		{MessageID: "om_a", FileKey: "img_shared", Type: "image"},
 		{MessageID: "om_b", FileKey: "img_shared", Type: "image"},
@@ -374,7 +373,7 @@ func TestAddPendingResources_OneLedgerRowPerKey(t *testing.T) {
 
 func TestResourceMessagesDue_LeavesOutMessagesWhoseKeyIsSettled(t *testing.T) {
 	s := sharedFixture(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	require.NoError(t, s.AddPendingResources(ctx, []ResourceRef{
 		{MessageID: "om_a", FileKey: "img_gone", Type: "image"},
 		{MessageID: "om_b", FileKey: "img_gone", Type: "image"},
@@ -394,7 +393,7 @@ func TestResourceMessagesDue_LeavesOutMessagesWhoseKeyIsSettled(t *testing.T) {
 
 func TestResourcesFor_ReadsThroughTheReferences(t *testing.T) {
 	s := sharedFixture(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	require.NoError(t, s.AddPendingResources(ctx, []ResourceRef{
 		{MessageID: "om_a", FileKey: "img_1", Type: "image"},
 		{MessageID: "om_a", FileKey: "img_2", Type: "image"},
@@ -413,7 +412,7 @@ func TestResourcesFor_ReadsThroughTheReferences(t *testing.T) {
 
 func TestResourcesDueFor_LeavesALandedKeyAloneWhenItsMessageIsReachedForAnother(t *testing.T) {
 	s := sharedFixture(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	require.NoError(t, s.AddPendingResources(ctx, []ResourceRef{
 		{MessageID: "om_a", FileKey: "img_gone", Type: "image"},
 		{MessageID: "om_a", FileKey: "img_new", Type: "image"},
@@ -437,7 +436,7 @@ func TestResourcesDueFor_LeavesALandedKeyAloneWhenItsMessageIsReachedForAnother(
 
 func TestResourcesDueFor_AsksAgainOnceTheBackoffIsOwed(t *testing.T) {
 	s := sharedFixture(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	require.NoError(t, s.AddPendingResources(ctx, []ResourceRef{{MessageID: "om_a", FileKey: "img_slow", Type: "image"}}))
 	require.NoError(t, s.MarkResourceFailed(ctx, "img_slow", "timeout", 500))
 

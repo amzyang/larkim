@@ -1,7 +1,6 @@
 package store
 
 import (
-	"context"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -9,7 +8,7 @@ import (
 
 func TestUnrenderedLocalMessages_TakeTheirOwnQueue(t *testing.T) {
 	s := openTest(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	call := `{"topic":"站会的视频会议","meet_number":"100000000","start_time":"1000"}`
 	_, err := s.UpsertMessages(ctx, []Message{
 		{MessageID: "om_text", ChatID: "oc", MsgType: "text", CreateMs: 30, ContentRaw: `{"text":"hi"}`, RawJSON: "{}"},
@@ -41,7 +40,7 @@ func TestUnrenderedLocalMessages_CarryTheCallThatRanBeforeThem(t *testing.T) {
 	// length is on the video_chat message the call left behind, so the queue
 	// hands both to the renderer together.
 	s := openTest(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	call := `{"topic":"x","start_time":"1000","end_time":"33000"}`
 	_, err := s.UpsertMessages(ctx, []Message{
 		{MessageID: "om_call", ChatID: "oc_a", MsgType: "video_chat", CreateMs: 1000, ContentRaw: call, RawJSON: "{}"},
@@ -64,7 +63,7 @@ func TestUnrenderedLocalMessages_CarryTheCallThatRanBeforeThem(t *testing.T) {
 
 func TestMessagesByIDs_SkipsWhatTheStoreNeverSaw(t *testing.T) {
 	s := openTest(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	_, err := s.UpsertMessages(ctx, []Message{
 		{MessageID: "om_a", ChatID: "oc", MsgType: "text", CreateMs: 10, RawJSON: "{}"},
 		{MessageID: "om_gone", ChatID: "oc", MsgType: "text", CreateMs: 20, Deleted: true, RawJSON: "{}"},
@@ -85,7 +84,7 @@ func TestMessagesByIDs_SkipsWhatTheStoreNeverSaw(t *testing.T) {
 
 func TestUpdateReactions_LeavesTheRenderingAlone(t *testing.T) {
 	s := openTest(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	_, err := s.UpsertMessages(ctx, []Message{
 		{MessageID: "om_a", ChatID: "oc", MsgType: "text", CreateMs: 10, ContentRaw: `{"text":"hi"}`, RawJSON: "{}"},
 	}, 1)
@@ -107,7 +106,7 @@ func TestUpdateReactions_DoesNotAdvanceTheRevisionForAnUnchangedSummary(t *testi
 	// Every open pane reloads on a revision bump, and a chat is re-asked about
 	// on every visit, so re-stating what the row already holds must be silent.
 	s := openTest(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	_, err := s.UpsertMessages(ctx, []Message{
 		{MessageID: "om_a", ChatID: "oc", MsgType: "text", CreateMs: 10, RawJSON: "{}"},
 	}, 1)

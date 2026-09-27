@@ -1,7 +1,6 @@
 package sync
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -12,7 +11,7 @@ import (
 
 func TestTick_RebuildsSilenceWhenTheRulesChange(t *testing.T) {
 	s, f, clk := newSyncer(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	now := clk.t
 	f.Chats = []larkcli.RawChat{{ChatID: "oc_quiet", Name: "Platform", ChatMode: "group"}}
 	noise := msg("om_noise", "oc_quiet", now.Add(-30*time.Second), "nightly build #418 passed")
@@ -41,7 +40,7 @@ func TestTick_RebuildsSilenceWhenTheRulesChange(t *testing.T) {
 
 func TestTick_LeavesSilenceAloneWhenTheRulesHold(t *testing.T) {
 	s, f, clk := newSyncer(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	s.Store.Silence = store.SilenceRules{{Sender: "cli_c"}}
 	f.AddMessage(msg("om_a", "oc_quiet", clk.t.Add(-30*time.Second), "morning"))
 	_, err := s.Tick(ctx)
@@ -59,7 +58,7 @@ func TestTick_LeavesSilenceAloneWhenTheRulesHold(t *testing.T) {
 
 func chatOf(t *testing.T, s *Syncer, chatID string) store.Chat {
 	t.Helper()
-	c, err := s.Store.GetChat(context.Background(), chatID)
+	c, err := s.Store.GetChat(t.Context(), chatID)
 	require.NoError(t, err)
 	return c
 }

@@ -1,7 +1,6 @@
 package resolve
 
 import (
-	"context"
 	"path/filepath"
 	"testing"
 
@@ -20,7 +19,7 @@ func newResolver(t *testing.T) (*Resolver, *larkcli.Fake) {
 
 func TestChat_LocalNameIgnoresSpacesThenRemote(t *testing.T) {
 	r, f := newResolver(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	require.NoError(t, r.Store.UpsertChats(ctx, []store.Chat{{ChatID: "oc_1", Name: "项目协作群", ChatMode: "group"}}, 1))
 
 	c, err := r.Chat(ctx, "项目 协作群")
@@ -43,7 +42,7 @@ func TestChat_LocalNameIgnoresSpacesThenRemote(t *testing.T) {
 
 func TestUser_EmailViaRemoteIsCached(t *testing.T) {
 	r, f := newResolver(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	f.Users = []larkcli.User{{OpenID: "ou_z", Name: "林岚", Email: "linlan@example.com", P2PChatID: "oc_p"}}
 
 	c, err := r.User(ctx, "linlan@example.com")

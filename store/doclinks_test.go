@@ -1,7 +1,6 @@
 package store
 
 import (
-	"context"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -67,7 +66,7 @@ func TestFindDocRefs_ReadsEveryDocumentABodyLinksTo(t *testing.T) {
 
 func TestDeferDocLinks_PushesBackWhatCameBackUnanswered(t *testing.T) {
 	s := openTest(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	ref := DocRef{"docx", "AbC123"}
 	require.NoError(t, s.AddPendingDocLinks(ctx, []DocRef{ref}))
 
@@ -84,7 +83,7 @@ func TestDeferDocLinks_PushesBackWhatCameBackUnanswered(t *testing.T) {
 
 func TestDocLinks_Lifecycle(t *testing.T) {
 	s := openTest(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	named := DocRef{"docx", "AbC123"}
 	wiki := DocRef{"wiki", "Xyz789"}
 	shut := DocRef{"docx", "Nope456"}
@@ -116,7 +115,7 @@ func TestDocLinks_Lifecycle(t *testing.T) {
 
 func TestDocLinks_ARedrawFollowsATitleLanding(t *testing.T) {
 	s := openTest(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	ref := DocRef{"docx", "AbC123"}
 
 	before, err := s.DataRev(ctx)
@@ -135,7 +134,7 @@ func TestDocLinks_ARedrawFollowsATitleLanding(t *testing.T) {
 
 func mustRev(t *testing.T, s *Store) int64 {
 	t.Helper()
-	rev, err := s.DataRev(context.Background())
+	rev, err := s.DataRev(t.Context())
 	require.NoError(t, err)
 	return rev
 }

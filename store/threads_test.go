@@ -27,7 +27,7 @@ type threadRow struct {
 // by the build bot is silenced, which is the one rule the store is given.
 func stakeStore(t *testing.T, chatID string, rows []threadRow) (*Store, context.Context) {
 	t.Helper()
-	s, ctx := openTest(t), context.Background()
+	s, ctx := openTest(t), t.Context()
 	s.Silence = SilenceRules{{Sender: "cli_c"}}
 	require.NoError(t, s.EnsureChat(ctx, chatID, 1))
 	msgs := make([]Message, 0, len(rows))

@@ -1,7 +1,6 @@
 package sync
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -35,7 +34,7 @@ func TestRenderedText_UnwrapsAnHTMLTextBody(t *testing.T) {
 
 func TestTick_StoresAnEditedBodyAsPlainLines(t *testing.T) {
 	s, f, clk := newSyncer(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	now := clk.t
 	f.Chats = []larkcli.RawChat{{ChatID: "oc_a", Name: "Alpha", ChatMode: "group"}}
 	f.AddMessage(msg("om_edit", "oc_a", now.Add(-time.Minute), "abc"))

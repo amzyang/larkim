@@ -1,7 +1,6 @@
 package store
 
 import (
-	"context"
 	"fmt"
 	"path/filepath"
 	"testing"
@@ -30,7 +29,7 @@ func TestMigrate_IsIdempotentAndSchemaLists(t *testing.T) {
 
 func TestMigrate_RewindsResourceScanForCardImages(t *testing.T) {
 	dir := t.TempDir()
-	ctx := context.Background()
+	ctx := t.Context()
 	s, err := Open(filepath.Join(dir, "t.db"))
 	require.NoError(t, err)
 	require.NoError(t, s.SetState(ctx, "resource_scan_id", "9720"))
@@ -50,7 +49,7 @@ func TestMigrate_RewindsResourceScanForCardImages(t *testing.T) {
 
 func TestMigrate_QueuesCardImagesThatRanOutOfAttempts(t *testing.T) {
 	dir := t.TempDir()
-	ctx := context.Background()
+	ctx := t.Context()
 	s, err := Open(filepath.Join(dir, "t.db"))
 	require.NoError(t, err)
 	require.NoError(t, s.AddPendingResources(ctx, []ResourceRef{
@@ -90,7 +89,7 @@ func TestMigrate_QueuesCardImagesThatRanOutOfAttempts(t *testing.T) {
 
 func TestUpsertMessages_PreservesRenderingAndRecalledContent(t *testing.T) {
 	s := openTest(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	m := Message{MessageID: "om_1", ChatID: "oc_a", MsgType: "text", ContentRaw: `{"text":"hi"}`, CreateMs: 100, UpdateMs: 100, MessagePosition: 3, RawJSON: "{}"}
 	n, err := s.UpsertMessages(ctx, []Message{m}, 1000)
 	require.NoError(t, err)
@@ -133,7 +132,7 @@ func TestUpsertMessages_PreservesRenderingAndRecalledContent(t *testing.T) {
 
 func TestUnknownMessageIDs_PreservesOrder(t *testing.T) {
 	s := openTest(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	_, err := s.UpsertMessages(ctx, []Message{{MessageID: "om_b", ChatID: "oc", CreateMs: 1, RawJSON: "{}"}}, 1)
 	require.NoError(t, err)
 	unknown, err := s.UnknownMessageIDs(ctx, []string{"om_a", "om_b", "om_c"})
@@ -143,7 +142,7 @@ func TestUnknownMessageIDs_PreservesOrder(t *testing.T) {
 
 func TestListMessages_FiltersAndOrders(t *testing.T) {
 	s := openTest(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	rows := []Message{
 		{MessageID: "om_1", ChatID: "oc_a", SenderID: "ou_x", MsgType: "text", CreateMs: 100, MessagePosition: 1, RawJSON: "{}"},
 		{MessageID: "om_2", ChatID: "oc_a", SenderID: "ou_y", MsgType: "image", CreateMs: 200, MessagePosition: 2, RawJSON: "{}"},
@@ -179,7 +178,7 @@ func TestListMessages_FiltersAndOrders(t *testing.T) {
 
 func TestChats_UpsertLeaveReviveAndBackfill(t *testing.T) {
 	s := openTest(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	chats := []Chat{{ChatID: "oc_a", Name: "Alpha", ChatMode: "group"}, {ChatID: "oc_b", Name: "Bob", ChatMode: "p2p", P2PTargetID: "ou_b"}}
 	require.NoError(t, s.UpsertChats(ctx, chats, 100))
 	require.NoError(t, s.SetChatCursor(ctx, "oc_a", 5000))
@@ -220,7 +219,7 @@ func TestChats_UpsertLeaveReviveAndBackfill(t *testing.T) {
 
 func TestStateAndRuns(t *testing.T) {
 	s := openTest(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	_, ok, err := s.GetState(ctx, "watermark_ms")
 	require.NoError(t, err)
 	require.False(t, ok)
@@ -252,7 +251,7 @@ func cursorFixture(t *testing.T) (*Store, []string) {
 		{MessageID: "om_d", ChatID: "oc_a", CreateMs: 100, MessagePosition: 3, RawJSON: "{}"},
 		{MessageID: "om_e", ChatID: "oc_a", CreateMs: 200, MessagePosition: 4, RawJSON: "{}"},
 	}
-	_, err := s.UpsertMessages(context.Background(), msgs, 1)
+	_, err := s.UpsertMessages(t.Context(), msgs, 1)
 	require.NoError(t, err)
 	return s, []string{"om_a", "om_b", "om_c", "om_d", "om_e"}
 }
@@ -267,7 +266,7 @@ func ids(msgs []Message) []string {
 
 func TestListMessages_CursorsSplitAtTheAnchorWithinOneMillisecond(t *testing.T) {
 	s, all := cursorFixture(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	before, err := s.ListMessages(ctx, MessageQuery{ChatID: "oc_a", BeforeID: "om_c", Limit: 10})
 	require.NoError(t, err)
@@ -282,7 +281,7 @@ func TestListMessages_CursorsSplitAtTheAnchorWithinOneMillisecond(t *testing.T) 
 
 func TestListMessages_CursorPagesDoNotRepeat(t *testing.T) {
 	s, all := cursorFixture(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	var walked []string
 	cursor := "om_e"
 	for range 4 {
@@ -300,13 +299,13 @@ func TestListMessages_CursorPagesDoNotRepeat(t *testing.T) {
 
 func TestListMessages_UnknownCursorIsNotFound(t *testing.T) {
 	s, _ := cursorFixture(t)
-	_, err := s.ListMessages(context.Background(), MessageQuery{BeforeID: "om_nope"})
+	_, err := s.ListMessages(t.Context(), MessageQuery{BeforeID: "om_nope"})
 	require.ErrorIs(t, err, ErrNotFound)
 }
 
 func TestThreadReplyCounts_CountsLiveRepliesOnly(t *testing.T) {
 	s := openTest(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	msgs := []Message{
 		{MessageID: "om_root", ChatID: "oc_a", CreateMs: 10, MessagePosition: 1, ThreadID: "omt_1", RawJSON: "{}"},
 		{MessageID: "om_r1", ChatID: "oc_a", CreateMs: 20, MessagePosition: -3, ThreadID: "omt_1", RawJSON: "{}"},
@@ -324,7 +323,7 @@ func TestThreadReplyCounts_CountsLiveRepliesOnly(t *testing.T) {
 
 func TestListMessages_ExcludeThreadRepliesAppliesBeforeTheLimit(t *testing.T) {
 	s := openTest(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	var msgs []Message
 	for i := range 20 {
 		pos := int64(-3) // a thread reply, whatever sentinel the API chose
@@ -344,7 +343,7 @@ func TestListMessages_ExcludeThreadRepliesAppliesBeforeTheLimit(t *testing.T) {
 
 func TestUpsertMessages_EditedAtOnlyTracksObservedContentChange(t *testing.T) {
 	s := openTest(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	m := Message{MessageID: "om_1", ChatID: "oc_a", MsgType: "text", ContentRaw: `{"text":"3"}`, CreateMs: 100, UpdateMs: 100, RawJSON: "{}"}
 	_, err := s.UpsertMessages(ctx, []Message{m}, 1000)
 	require.NoError(t, err)
@@ -383,7 +382,7 @@ func TestUpsertMessages_EditedAtOnlyTracksObservedContentChange(t *testing.T) {
 
 func TestUpsertMessages_EditedAtIgnoresTypesFeishuCannotEdit(t *testing.T) {
 	s := openTest(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	card := Message{MessageID: "om_c", ChatID: "oc_a", MsgType: "interactive", ContentRaw: `{"elements":["v1"]}`, CreateMs: 100, UpdateMs: 100, RawJSON: "{}"}
 	_, err := s.UpsertMessages(ctx, []Message{card}, 1000)
 	require.NoError(t, err)
@@ -401,7 +400,7 @@ func TestUpsertMessages_EditedAtIgnoresTypesFeishuCannotEdit(t *testing.T) {
 
 func TestMigrate_CollapsesResourcesOntoTheirKey(t *testing.T) {
 	dir := t.TempDir()
-	ctx := context.Background()
+	ctx := t.Context()
 	s, err := Open(filepath.Join(dir, "t.db"))
 	require.NoError(t, err)
 	// Rebuild the shape the ledger had while it was keyed by (message, key),

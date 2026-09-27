@@ -2,7 +2,6 @@ package cli
 
 import (
 	"bytes"
-	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -29,7 +28,7 @@ func TestSilenceCmd_ReportsPerRuleMatches(t *testing.T) {
 	dir := t.TempDir()
 	st, err := store.Open(filepath.Join(dir, "larkim.db"))
 	require.NoError(t, err)
-	_, err = st.UpsertMessages(context.Background(), []store.Message{
+	_, err = st.UpsertMessages(t.Context(), []store.Message{
 		{MessageID: "om_human", ChatID: "oc_quiet", MsgType: "text", SenderID: "ou_a", CreateMs: 100, MessagePosition: 1},
 		{MessageID: "om_noise", ChatID: "oc_quiet", MsgType: "text", SenderID: "cli_c", CreateMs: 200, MessagePosition: 2},
 	}, 1)

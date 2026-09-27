@@ -1,7 +1,6 @@
 package sync
 
 import (
-	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -30,7 +29,7 @@ func TestExtractRendered_TakesPicturesOnlyFromAForwardedBundle(t *testing.T) {
 
 func TestTick_DownloadsThePicturesInsideAForwardedBundle(t *testing.T) {
 	s, f, clk := newSyncer(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := t.TempDir()
 	s.Opt.DataDir = dir
 	resDir := filepath.Join(dir, "resources", "lark-im-resources")
@@ -63,7 +62,7 @@ func TestTick_DownloadsThePicturesInsideAForwardedBundle(t *testing.T) {
 
 func TestRegisterExistingResources_ReadsAStoredBundlesRendering(t *testing.T) {
 	s, _, clk := newSyncer(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	now := clk.t.UnixMilli()
 
 	_, err := s.Store.UpsertMessages(ctx, []store.Message{{
