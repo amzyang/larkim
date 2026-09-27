@@ -500,8 +500,8 @@ func renderUnreadRow(av avatars, r listRow, rows []listRow, unread map[string]in
 	textWidth := chatTextWidth(w)
 	avatarTop, avatarBottom, _ := av.cells(r, 0)
 	chats := 0
-	for _, r := range rows {
-		if feedWaiting(r, unread) {
+	for _, row := range rows {
+		if feedWaiting(row, unread) {
 			chats++
 		}
 	}

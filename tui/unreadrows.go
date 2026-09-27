@@ -141,12 +141,8 @@ type UnreadScreen struct {
 // UnreadRows is the messages the Unread panel would show, in the order it
 // shows them: one chat's stretch after another, oldest backlog first.
 func UnreadRows(ctx context.Context, d Deps) ([]store.Message, error) {
-	chats, err := d.Store.ListChats(ctx, store.ChatQuery{Self: d.Self})
-	if err != nil {
-		return nil, err
-	}
-	_, msgs, _, err := gatherUnread(ctx, d.Store, d.Self, chats, nil)
-	return msgs, err
+	p, err := readFeed(ctx, d, nil)
+	return p.msgs, err
 }
 
 // UnreadPage draws every chat that still owes the reader an answer, the way the
@@ -155,42 +151,33 @@ func UnreadRows(ctx context.Context, d Deps) ([]store.Message, error) {
 // beside it, so a field the panes learn to draw reaches this page too.
 // Empty when nothing is waiting.
 func UnreadPage(ctx context.Context, d Deps, sc UnreadScreen) (string, error) {
-	chats, err := d.Store.ListChats(ctx, store.ChatQuery{Self: d.Self})
+	p, err := readFeed(ctx, d, nil)
 	if err != nil {
 		return "", err
 	}
-	sections, msgs, meta, err := gatherUnread(ctx, d.Store, d.Self, chats, nil)
-	if err != nil {
-		return "", err
-	}
-	if len(msgs) == 0 {
+	if len(p.msgs) == 0 {
 		return "", nil
 	}
 	selfName, err := selfNameOf(ctx, d)
 	if err != nil {
 		return "", err
 	}
-	// Every message here is one the badge still counts, and there is no cursor
-	// to walk the marker off, so all of them wear it.
-	dots := make(map[string]bool, len(msgs))
-	for _, x := range msgs {
-		if isUnread(x) {
-			dots[x.MessageID] = true
-		}
-	}
 	// A page-shaped Model: what the rows are drawn from, and nothing the reader
 	// would have pressed a key to reach. feed is what parts the page into
 	// sections, and it is also what keeps msgStyleFor from reading a p2p peer
 	// off a current chat — this page runs across chats and has none.
-	m := Model{deps: d, meta: meta, chats: chats, msgs: msgs,
-		feed: &unreadFeed{sections: sections}, dots: dots,
+	m := Model{deps: d, meta: p.meta, chats: p.chats, msgs: p.msgs,
+		feed: &unreadFeed{sections: p.sections},
 		dark: sc.Dark, selfName: selfName, pics: unreadPictures(d, sc)}
-	st := m.msgStyleFor(sc.Width, meta)
+	// Every message here is one the badge still counts, and there is no cursor
+	// to walk the marker off, so all of them wear it.
+	m.markDots(p.msgs)
+	st := m.msgStyleFor(sc.Width, p.meta)
 	// The one measurement the panes cannot answer for: picHeight takes the
 	// composer, the status line and the pane's own title off the terminal, and
 	// this page carries none of them.
 	st.height = sc.Height
-	rows := renderFeedRows(msgs, m.feed, chats, st)
+	rows := renderFeedRows(p.msgs, m.feed, p.chats, st)
 	var b strings.Builder
 	// The pictures reach the terminal before the cells that name them.
 	var claimed picSet

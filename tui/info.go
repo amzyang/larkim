@@ -55,6 +55,20 @@ func loadInfo(d Deps, chatID string) tea.Cmd {
 	}
 }
 
+// chatTags are the marks a chat wears wherever it is named: who the reader is
+// talking to outside this tenant, and a room that is no longer normal. They
+// are not stErr alike — being external is a fact about the chat, not a fault.
+func chatTags(c store.Chat) []string {
+	var tags []string
+	if c.External {
+		tags = append(tags, stExternal.Render("external"))
+	}
+	if c.ChatStatus != "" && c.ChatStatus != "normal" {
+		tags = append(tags, stErr.Render(c.ChatStatus))
+	}
+	return tags
+}
+
 // infoLines is what the pane draws, one line per row, already styled. It is
 // built whole rather than streamed so the pane scrolls like any list.
 //
@@ -79,13 +93,7 @@ func (m Model) infoLines(w int) []string {
 	}
 	out = append(out, fit(stBold.Render(truncate(name, w)), w))
 
-	var tags []string
-	if c.External {
-		tags = append(tags, stExternal.Render("external"))
-	}
-	if c.ChatStatus != "" && c.ChatStatus != "normal" {
-		tags = append(tags, stErr.Render(c.ChatStatus))
-	}
+	tags := chatTags(c)
 	if c.Muted {
 		tags = append(tags, stDim.Render("muted"))
 	}

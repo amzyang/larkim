@@ -917,12 +917,7 @@ func (m Model) renderHeader(w int) string {
 	// up: who you are talking to outside this tenant, and whether the room is
 	// still there, are answers the reader wants before they type, not after
 	// they think to press I.
-	if c.External {
-		parts = append(parts, stExternal.Render("external"))
-	}
-	if c.ChatStatus != "" && c.ChatStatus != "normal" {
-		parts = append(parts, stErr.Render(c.ChatStatus))
-	}
+	parts = append(parts, chatTags(c)...)
 	if c.SyncError != "" {
 		parts = append(parts, stErr.Render("history unavailable"))
 	}

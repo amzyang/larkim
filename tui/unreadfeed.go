@@ -212,22 +212,38 @@ func gatherUnread(ctx context.Context, st *store.Store, self string, chats []sto
 	return sections, msgs, meta, nil
 }
 
-// loadUnreadFeed reads the page. The chats listing is read here rather than
-// taken from the model: it is what says a chat exists and what its rule is
-// named, and the one the model holds is by definition the one from before
-// whatever prompted the reload.
+// feedPage is one read of the panel: the sections it filled and their
+// messages, beside the chat listing the page is measured against — what says a
+// chat exists, what its rule is named, and how many chats were left out.
+type feedPage struct {
+	chats    []store.Chat
+	sections []unreadSection
+	msgs     []store.Message
+	meta     msgMeta
+}
+
+// readFeed reads one page. The chats listing is read here rather than taken
+// from the model: it is what says a chat exists and what its rule is named,
+// and the one the model holds is by definition the one from before whatever
+// prompted the reload.
+func readFeed(ctx context.Context, d Deps, keep []unreadSection) (feedPage, error) {
+	chats, err := d.Store.ListChats(ctx, store.ChatQuery{Self: d.Self})
+	if err != nil {
+		return feedPage{}, err
+	}
+	p := feedPage{chats: chats}
+	p.sections, p.msgs, p.meta, err = gatherUnread(ctx, d.Store, d.Self, chats, keep)
+	return p, err
+}
+
+// loadUnreadFeed reads the page for the panel.
 func loadUnreadFeed(d Deps, keep []unreadSection) tea.Cmd {
 	return func() tea.Msg {
-		ctx := context.Background()
-		chats, err := d.Store.ListChats(ctx, store.ChatQuery{Self: d.Self})
+		p, err := readFeed(context.Background(), d, keep)
 		if err != nil {
 			return errMsg{err}
 		}
-		sections, msgs, meta, err := gatherUnread(ctx, d.Store, d.Self, chats, keep)
-		if err != nil {
-			return errMsg{err}
-		}
-		return unreadFeedLoadedMsg{sections: sections, msgs: msgs, meta: meta}
+		return unreadFeedLoadedMsg{sections: p.sections, msgs: p.msgs, meta: p.meta}
 	}
 }
 

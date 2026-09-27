@@ -265,9 +265,14 @@ func (s *picSet) take(p picture) {
 	s.pics = append(s.pics, p)
 }
 
-// takeRows claims every picture the given rows draw.
+// takeRows claims every picture the given rows draw. A full set stops the
+// walk: the printed page hands over every row it holds, not a viewport's
+// worth, and past the id space there is nothing left to claim.
 func (s *picSet) takeRows(rows []msgRow) {
 	for _, r := range rows {
+		if len(s.pics) >= picIDs {
+			return
+		}
 		for pic := range r.pictures() {
 			s.take(pic)
 		}
