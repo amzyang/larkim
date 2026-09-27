@@ -162,10 +162,12 @@ func (m Model) onSearchKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 }
 
 // moveSelection walks the hit list under the panel, where a row is a hit
-// rather than a message.
+// rather than a message. The rows are left where they are: they carry no
+// cursor — the selection is tinted where they are drawn — and a hit keeps its
+// marker however long the cursor rests on it, so nothing a move touches is
+// among the things they were rendered from.
 func (m Model) moveSelection(n int) (tea.Model, tea.Cmd) {
 	m.msgIdx = clamp(m.msgIdx+n, 0, len(m.searchHits)-1)
-	m.rebuildMessages()
 	m.scrollMessagesToSelection()
 	return m, nil
 }

@@ -113,6 +113,22 @@ func TestSearchPanel_OneCursorWalksAllThreeGroups(t *testing.T) {
 	require.Equal(t, 2, m.msgIdx, "the cursor stops at the last hit")
 }
 
+func TestSearchPanel_WalkingTheHitsLeavesTheRowsAlone(t *testing.T) {
+	m, _ := panelModel(t)
+	m = search(t, m, "预算")
+
+	before := m.msgRows
+	mm, _ := m.moveSelection(1)
+	m = mm.(Model)
+	require.True(t, sameSlice(before, m.msgRows),
+		"a hit keeps its marker under the cursor, so the panel has nothing to draw again")
+
+	// The same slices differ once the panel really is redrawn, so the check
+	// above is one this test can fail.
+	m.rebuildMessages()
+	require.False(t, sameSlice(before, m.msgRows))
+}
+
 func TestSearchPanel_RuleRowsBelongToNoHit(t *testing.T) {
 	m, _ := panelModel(t)
 	m = search(t, m, "预算")

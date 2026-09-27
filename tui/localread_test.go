@@ -245,6 +245,32 @@ func TestMove_ClearingAMarkerTakesEveryMessageUnderTheSenderLine(t *testing.T) {
 	require.Equal(t, 1, strings.Count(rowText(m.msgRows), "●"))
 }
 
+func TestMove_RepaintsOnlyWhenTheCursorClearsAMarker(t *testing.T) {
+	m, st := readModel(t)
+	lands(t, st, "om_b", "ou_b", "李四", "在的", 300)
+	lands(t, st, "om_c", "ou_c", "王五", "我来看看", 500)
+	m = watching(t, m, st)
+
+	before := m.msgRows
+	out, _ := m.move(-1)
+	m = out.(Model)
+	require.False(t, sameSlice(before, m.msgRows), "a marker dropped is a page to draw again")
+
+	// Off the last of the markers, so nothing the rows are drawn from is left
+	// for a move to change.
+	for range len(m.msgs) {
+		out, _ = m.move(-1)
+		m = out.(Model)
+	}
+	require.Empty(t, m.dots)
+
+	settled := m.msgRows
+	out, _ = m.move(1)
+	m = out.(Model)
+	require.True(t, sameSlice(settled, m.msgRows),
+		"the rows carry no cursor, so a move that clears no marker re-renders nothing")
+}
+
 func TestMove_SearchHitsKeepTheirMarker(t *testing.T) {
 	m, st := readModel(t)
 	require.NoError(t, st.UpdateRendered(t.Context(), "om_a", "在吗", "", "", 1))

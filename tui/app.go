@@ -1074,36 +1074,40 @@ func (m *Model) markDots(msgs []store.Message) {
 }
 
 // clearDotsAtCursor drops the unread marker of the block the cursor has just
-// been moved onto. The Feishu client has no message cursor, so there is
-// nothing to copy: moving onto a block is the closest a list with a cursor
-// comes to the client's own "the reader has seen this".
+// been moved onto, and reports whether it dropped one. The Feishu client has
+// no message cursor, so there is nothing to copy: moving onto a block is the
+// closest a list with a cursor comes to the client's own "the reader has seen
+// this".
 //
 // The search pane is left alone: its hits run across chats, none of which the
 // reader has opened, so the marker is all that says a hit is still waiting.
-func (m *Model) clearDotsAtCursor() {
+func (m *Model) clearDotsAtCursor() bool {
 	switch {
 	case m.focus == paneMessages && !m.searching:
-		m.clearBlockDots(m.msgs, m.msgIdx, m.msgStyleFor(m.messagesWidth()-2, m.meta))
+		return m.clearBlockDots(m.msgs, m.msgIdx, m.msgStyleFor(m.messagesWidth()-2, m.meta))
 	case m.focus == paneThread && !m.aiOpen:
-		m.clearBlockDots(m.thread, m.threadIdx, m.msgStyleFor(m.rightWidth()-2, m.threadMeta))
+		return m.clearBlockDots(m.thread, m.threadIdx, m.msgStyleFor(m.rightWidth()-2, m.threadMeta))
 	}
+	return false
 }
 
 // clearBlockDots drops the markers of every message under one sender line.
 // The dot is the block's, and a block splits where its messages disagree
 // about it, so clearing one message alone would open a second sender line
 // under the reader's eyes.
-func (m *Model) clearBlockDots(msgs []store.Message, idx int, st msgStyle) {
+func (m *Model) clearBlockDots(msgs []store.Message, idx int, st msgStyle) bool {
 	if len(m.dots) == 0 || idx < 0 || idx >= len(msgs) {
-		return
+		return false
 	}
 	heads := blockHeads(msgs, st)
 	head := heads[idx]
+	before := len(m.dots)
 	for i, h := range heads {
 		if h == head {
 			delete(m.dots, msgs[i].MessageID)
 		}
 	}
+	return before > len(m.dots)
 }
 
 // takeRead records that the reader has had a chat's page in front of them,
@@ -2008,8 +2012,13 @@ func (m Model) move(n int) (tea.Model, tea.Cmd) {
 			count = len(m.searchHits)
 		}
 		m.msgIdx = clamp(m.msgIdx+n, 0, count-1)
-		m.clearDotsAtCursor()
-		m.rebuildMessages()
+		// The rows carry no cursor — the selection is tinted where they are
+		// drawn — so the only thing a move can change about them is a marker
+		// it just dropped. Rebuilding regardless re-renders the whole page on
+		// every press of a repeating key.
+		if m.clearDotsAtCursor() {
+			m.rebuildMessages()
+		}
 		m.scrollMessagesToSelection()
 		return m, m.growMessages()
 	case paneThread:
@@ -2017,8 +2026,9 @@ func (m Model) move(n int) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.threadIdx = clamp(m.threadIdx+n, 0, len(m.thread)-1)
-		m.clearDotsAtCursor()
-		m.rebuildThread()
+		if m.clearDotsAtCursor() {
+			m.rebuildThread()
+		}
 		m.scrollThreadToSelection()
 	}
 	return m, nil
