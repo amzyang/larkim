@@ -372,3 +372,62 @@ func TestFeed_AnEmptyPanelDoesNotCloseItself(t *testing.T) {
 	require.NotNil(t, m.feed, "the panel is what is being shown, not a blank to fill")
 	require.Empty(t, m.pendingChat)
 }
+
+// pointedAtProject leaves the composer pointed at 项目协作群 with nothing in
+// it and that chat's own draft never shown: r moved the target, and the side
+// load that would have caught m.feed.loaded up returned early while the quote
+// was still up. Every write from here on is an empty one.
+func pointedAtProject(t *testing.T) Model {
+	t.Helper()
+	m := feedModel(t)
+	require.NoError(t, m.deps.Store.SaveDraft(t.Context(), store.Draft{ChatID: "oc_project", Text: "周四没问题"}, 900))
+
+	var sel store.Message
+	for _, x := range m.msgs {
+		if x.ChatID == "oc_project" {
+			sel = x
+			break
+		}
+	}
+	require.NotEmpty(t, sel.ChatID, "no 项目协作群 message in the backlog")
+
+	next, cmd := m.startInsert(&sel, false)
+	m = applyAll(t, next.(Model), cmd)
+	require.Equal(t, "oc_project", m.chatID, "r points the composer at the message's chat")
+	require.Empty(t, m.feed.loaded, "the side load left while the quote held the composer")
+
+	// The quote comes down and nothing was typed, so the widget is empty and
+	// belongs to no chat.
+	m.setReply(nil, false)
+	m.input.SetValue("")
+	return m
+}
+
+// The reader goes to another window while the panel is up.
+func TestFeed_BlurKeepsTheDraftOfAChatOnlyPointedAt(t *testing.T) {
+	m := pointedAtProject(t)
+
+	next, cmd := m.Update(tea.BlurMsg{})
+	m = applyAll(t, next.(Model), cmd)
+
+	require.Equal(t, "周四没问题", draftOf(t, m, "oc_project"))
+}
+
+// Enter on a message leaves the panel for that message's chat.
+func TestFeed_OpeningAHitKeepsTheDraftOfAChatOnlyPointedAt(t *testing.T) {
+	m := pointedAtProject(t)
+
+	next, cmd := m.openFeedHit()
+	m = applyAll(t, next.(Model), cmd)
+
+	require.Equal(t, "周四没问题", draftOf(t, m, "oc_project"))
+}
+
+// q from inside the panel.
+func TestFeed_QuitKeepsTheDraftOfAChatOnlyPointedAt(t *testing.T) {
+	m := pointedAtProject(t)
+
+	m = applyAll(t, m, m.quit())
+
+	require.Equal(t, "周四没问题", draftOf(t, m, "oc_project"))
+}

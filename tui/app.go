@@ -1082,6 +1082,14 @@ func (m Model) saveComposer() tea.Cmd {
 	if m.chatID == "" {
 		return nil
 	}
+	// Under the unread panel the composer is only the chat's to write when the
+	// reader put words in it or the chat's own draft is what it is showing.
+	// The panel walks m.chatID between chats without waiting for a page, so a
+	// chat can be the target for a beat before its draft arrives — and an
+	// empty write is a delete.
+	if m.feed != nil && m.input.Value() == "" && m.feed.loaded != m.chatID {
+		return nil
+	}
 	replyTo := ""
 	if m.replyTo != nil {
 		replyTo = m.replyTo.MessageID

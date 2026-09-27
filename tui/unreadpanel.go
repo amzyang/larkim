@@ -52,10 +52,10 @@ func (m *Model) startUnread(take bool) tea.Cmd {
 // chat's page lands, so the panes never show its rows under a chat's name.
 func (m *Model) closeUnread() tea.Cmd {
 	from := m.feed.from
-	keep := m.feedSave()
+	keep := m.saveComposer()
 	m.focus = paneChats
 	// Cleared before openChat, whose own saveComposer would otherwise write
-	// the widget back a second time under a target feedSave just refused.
+	// the emptied widget back a second time under the chat just saved.
 	m.chatID = ""
 	m.input.SetValue("")
 	if from == "" {
@@ -65,19 +65,6 @@ func (m *Model) closeUnread() tea.Cmd {
 		return keep
 	}
 	return tea.Batch(keep, m.openChat(from))
-}
-
-// feedSave writes the composer back under the chat it is pointed at, and only
-// when that widget is that chat's to write: either the reader put words in it,
-// or the chat's own draft is what it is showing. Anywhere else the composer is
-// empty and unowned — the panel walks m.chatID between chats without waiting
-// for a page, so a chat can be the target for a beat before its draft arrives
-// — and an empty write is a delete.
-func (m Model) feedSave() tea.Cmd {
-	if m.input.Value() == "" && m.feed.loaded != m.chatID {
-		return nil
-	}
-	return m.saveComposer()
 }
 
 // feedAnswer points the composer at the chat of the message r or R was pressed
@@ -132,7 +119,7 @@ func (m *Model) feedRetarget() tea.Cmd {
 	if want == "" || want == m.chatID || m.composerHeld() {
 		return nil
 	}
-	keep := m.feedSave()
+	keep := m.saveComposer()
 	m.chatID, m.feed.loaded, m.roster = want, "", nil
 	return tea.Batch(keep, loadChatSide(m.deps, want))
 }
