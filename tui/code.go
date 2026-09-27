@@ -3,6 +3,7 @@ package tui
 import (
 	"strconv"
 	"strings"
+	"sync"
 
 	"charm.land/lipgloss/v2"
 	"github.com/alecthomas/chroma/v2"
@@ -54,6 +55,32 @@ func codeRows(code []string, lang string, width int, dark bool) []string {
 // pad right-aligns a line number under the widest one in the block.
 func pad(s string, w int) string { return strings.Repeat(" ", max(0, w-len(s))) + s }
 
+// lexerFor resolves a fence's language to a lexer, once per language. A name
+// chroma's registry has no entry for falls through to a filename-glob scan
+// across every bundled lexer, which costs milliseconds; the cursor keys
+// re-render the whole page, so a chat of code blocks would pay that scan on
+// every keystroke.
+var lexerFor = memoLexer(lexers.Get)
+
+// memoLexer wraps a lookup so each language is resolved once. A fence naming
+// no language is answered without asking at all: there is nothing to match on,
+// and it is the name chroma spends longest refusing.
+func memoLexer(lookup func(string) chroma.Lexer) func(string) chroma.Lexer {
+	var cache sync.Map
+	return func(lang string) chroma.Lexer {
+		if lang == "" {
+			return nil
+		}
+		if v, ok := cache.Load(lang); ok {
+			lexer, _ := v.(chroma.Lexer)
+			return lexer
+		}
+		lexer := lookup(lang)
+		cache.Store(lang, lexer)
+		return lexer
+	}
+}
+
 // highlightCode colours one code block, a styled string per source line.
 // Tokenising is done over the whole block because a string or a comment
 // carries its colour across the line it opened on; the tokens are cut back
@@ -63,7 +90,7 @@ func pad(s string, w int) string { return strings.Repeat(" ", max(0, w-len(s))) 
 // falls back to no colour at all rather than a guess.
 func highlightCode(src, lang string, dark bool) []string {
 	want := strings.Split(src, "\n")
-	lexer := lexers.Get(strings.ToLower(lang))
+	lexer := lexerFor(strings.ToLower(lang))
 	if lexer == nil {
 		return want
 	}

@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/alecthomas/chroma/v2"
+	"github.com/alecthomas/chroma/v2/lexers"
 	"github.com/amzyang/larkim/store"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/stretchr/testify/require"
@@ -96,6 +98,42 @@ func TestBodyRows_KeepsTextAroundACodeBlock(t *testing.T) {
 	require.Contains(t, out, "看下这个")
 	require.Contains(t, out, "谢谢🙏", "the body around the block still renders as a body")
 	require.Contains(t, out, codeRule+" 1 {}")
+}
+
+// countingLexers puts a recording lookup behind the memo for one test and
+// reports, in order, the languages that reached chroma's registry.
+func countingLexers(t *testing.T) func() []string {
+	t.Helper()
+	var asked []string
+	prev := lexerFor
+	t.Cleanup(func() { lexerFor = prev })
+	lexerFor = memoLexer(func(lang string) chroma.Lexer {
+		asked = append(asked, lang)
+		return lexers.Get(lang)
+	})
+	return func() []string { return asked }
+}
+
+func TestHighlightCode_NeverAsksTheRegistryForAnUnlabelledBlock(t *testing.T) {
+	asked := countingLexers(t)
+	for range 3 {
+		highlightCode("id,name\n1,张三", "", false)
+	}
+	require.Empty(t, asked(), "a fence naming no language has nothing to look up")
+	// A named language does reach the registry through the same seam, so the
+	// assertion above is one this test can fail.
+	highlightCode("{}", "json", false)
+	require.Equal(t, []string{"json"}, asked())
+}
+
+func TestHighlightCode_ResolvesEachLanguageOnce(t *testing.T) {
+	asked := countingLexers(t)
+	for range 3 {
+		highlightCode("{}", "json", false)
+		highlightCode("id,name", "plain_text", false)
+	}
+	require.Equal(t, []string{"json", "plain_text"}, asked(),
+		"a language chroma refuses is refused once, not once per code block")
 }
 
 // lipglossWidth is the display width of a styled row, which is what the pane
