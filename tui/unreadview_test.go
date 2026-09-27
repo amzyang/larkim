@@ -69,8 +69,8 @@ func TestFeed_PartsThePageByChat(t *testing.T) {
 	m := feedModel(t)
 	out := paneText(m)
 
-	require.Contains(t, out, "─ 平台组 ─", "each chat's stretch opens under a rule naming it")
-	require.Contains(t, out, "─ 项目协作群 ─")
+	require.Contains(t, out, "─ 平台组 · 2 ─", "each chat's stretch opens under a rule naming it and counting what waits")
+	require.Contains(t, out, "─ 项目协作群 · 1 ─")
 	require.Less(t, strings.Index(out, "平台组"), strings.Index(out, "项目协作群"),
 		"the chat that has waited longest opens the page")
 	require.Contains(t, out, "接口什么时候好")
@@ -113,7 +113,7 @@ func TestFeed_TheTopRowIsBlankWhenItIsTheSectionRuleItself(t *testing.T) {
 	lines := strings.Split(paneText(m), "\n")
 	pinned, first := lines[2], lines[3]
 
-	require.Contains(t, pinned, "─ 项目协作群 ─")
+	require.Contains(t, pinned, "─ 项目协作群 · 1 ─")
 	require.NotContains(t, first, "项目协作群", "the rule is pinned, not drawn twice")
 	require.Empty(t, strings.TrimSpace(strings.Trim(first, "│")), "and its line is held open")
 }

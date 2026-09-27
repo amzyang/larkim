@@ -1,14 +1,45 @@
 package tui
 
 import (
+	"hash/fnv"
+	"net/url"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/amzyang/larkim/emoji"
 	"github.com/amzyang/larkim/store"
 	"github.com/charmbracelet/x/ansi"
 )
+
+// hyperlink hands drawn text to the terminal as a link. A label says where it
+// leads only once it is followed, and following one meant reaching for the
+// OPEN list; kitty draws the target under the pointer instead, underlines the
+// run while it is there, and opens it on Ctrl+Shift+click even while larkim
+// holds the mouse. The link also travels with the text through a copy.
+//
+// The name is the target's own hash, which is what makes the halves of a link
+// wrapped across rows hover as the one link they are: the fragments share it
+// by construction, without anything having to number them.
+func hyperlink(target, text string) string {
+	if target == "" {
+		return text
+	}
+	h := fnv.New64a()
+	h.Write([]byte(target))
+	return ansi.SetHyperlink(target, "id="+strconv.FormatUint(h.Sum64(), 36)) + text + ansi.ResetHyperlink()
+}
+
+// fileURL spells a downloaded attachment as a link to it. A path is not a URL
+// until it is escaped: the names Feishu sends carry spaces and Chinese
+// characters, and both end a URL where they stand.
+func fileURL(path string) string {
+	if path == "" {
+		return ""
+	}
+	return (&url.URL{Scheme: "file", Path: path}).String()
+}
 
 // emojiSpelling matches both ways Feishu spells an official emoji inside a
 // body: the emoji_type between colons that a rich-text post's emotion element

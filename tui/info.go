@@ -81,7 +81,7 @@ func (m Model) infoLines(w int) []string {
 
 	var tags []string
 	if c.External {
-		tags = append(tags, stErr.Render("external"))
+		tags = append(tags, stExternal.Render("external"))
 	}
 	if c.ChatStatus != "" && c.ChatStatus != "normal" {
 		tags = append(tags, stErr.Render(c.ChatStatus))

@@ -2,6 +2,7 @@ package tui
 
 import (
 	"regexp"
+	"slices"
 	"strings"
 
 	"charm.land/lipgloss/v2"
@@ -26,6 +27,35 @@ var (
 	stStrike = lipgloss.NewStyle().Strikethrough(true)
 	stCode   = lipgloss.NewStyle().Foreground(colAccent)
 )
+
+// hitPositions reports the runes of s that a search term stands on, in the
+// form markName takes. Terms are matched the way the store matched them to
+// find this message at all — every whitespace-separated word, case-insensitive
+// substring — so what is marked is what was searched for. Overlapping terms
+// coalesce, marking once.
+func hitPositions(s string, terms []string) []int {
+	if len(terms) == 0 {
+		return nil
+	}
+	// Positions are rune indices, so the lowered copy is walked as runes too;
+	// a byte offset would land mid-character on any Chinese word.
+	lower := []rune(strings.ToLower(s))
+	var pos []int
+	for _, t := range terms {
+		term := []rune(strings.ToLower(t))
+		if len(term) == 0 {
+			continue
+		}
+		for i := 0; i+len(term) <= len(lower); i++ {
+			if slices.Equal(lower[i:i+len(term)], term) {
+				for j := range len(term) {
+					pos = append(pos, i+j)
+				}
+			}
+		}
+	}
+	return pos
+}
 
 // personName is how a colleague is named on screen: the account suffix runs
 // on from the name ("李明" + "01"), the way the tenant spells the account

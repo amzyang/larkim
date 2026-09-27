@@ -1,6 +1,10 @@
 package tui
 
-import "github.com/charmbracelet/x/ansi"
+import (
+	"strings"
+
+	"github.com/charmbracelet/x/ansi"
+)
 
 // A cut and a measurement disagree about one shape. ansi.Truncate starts a
 // grapheme cluster only on a non-ASCII lead byte, so a keycap emoji — an
@@ -27,11 +31,35 @@ func cut(s string, w int) string {
 		out := ansi.Truncate(s, n, "")
 		over := ansi.StringWidth(out) - w
 		if over <= 0 {
-			return out
+			return closeLink(out)
 		}
 		n -= over
 	}
 	return ""
+}
+
+// closeLink ends a hyperlink the cut went through. A link is opened and
+// closed by escapes rather than by the run of text between them, so a cut
+// that keeps the opening and loses the closing leaves the link running: every
+// cell drawn after it, to the end of the line and on into the next pane,
+// leads where that one link led.
+func closeLink(s string) string {
+	i := strings.LastIndex(s, "\x1b]8;")
+	if i < 0 {
+		return s
+	}
+	// Both halves of a link start alike; what tells them apart is the target,
+	// which only the opening one names.
+	_, after, ok := strings.Cut(s[i+len("\x1b]8;"):], ";")
+	if !ok {
+		return s
+	}
+	uri, _, _ := strings.Cut(after, "\a")
+	uri, _, _ = strings.Cut(uri, "\x1b")
+	if uri == "" {
+		return s
+	}
+	return s + ansi.ResetHyperlink()
 }
 
 // cutLeft drops w columns off the front of s, measured the same way.

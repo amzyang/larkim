@@ -64,8 +64,8 @@ func TestUnreadCmd_PrintsThePagePartedByChat(t *testing.T) {
 
 	// The chat name is drawn brighter than the arms around it, so the rule only
 	// reads as one run of dashes once the colours are off it.
-	require.Contains(t, ansi.Strip(out), "─ 平台组 ─")
-	require.Contains(t, ansi.Strip(out), "─ 项目协作群 ─")
+	require.Contains(t, ansi.Strip(out), "─ 平台组 · 1 ─")
+	require.Contains(t, ansi.Strip(out), "─ 项目协作群 · 1 ─")
 	require.Less(t, strings.Index(out, "平台组"), strings.Index(out, "项目协作群"),
 		"the chat that has waited longest opens the page")
 	require.Contains(t, out, "接口什么时候好")

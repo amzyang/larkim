@@ -93,6 +93,7 @@ func cardButtons(bs []card.Button, w int, client string) []cardButtonLine {
 		if url != "" {
 			cur.zones = append(cur.zones, clickZone{x0: used, x1: used + width,
 				urls: []string{url}, label: label, note: note})
+			pill = hyperlink(url, pill)
 		}
 		cur.text += pill
 		used += width

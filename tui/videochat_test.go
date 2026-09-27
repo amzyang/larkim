@@ -8,6 +8,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/amzyang/larkim/applink"
 	"github.com/amzyang/larkim/store"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/stretchr/testify/require"
 )
 
@@ -168,3 +169,11 @@ func TestOnNormalKey_OOnAnEndedCallOpensTheMessage(t *testing.T) {
 }
 
 func mustCmd(_ tea.Model, cmd tea.Cmd) tea.Cmd { return cmd }
+
+func TestBodyRows_TheJoinButtonIsALinkToTheMeeting(t *testing.T) {
+	rows := renderRows(callMessage(liveCall, 1), baseStyle())
+	join, ok := zoneRow(rows)
+	require.True(t, ok)
+	require.Contains(t, join.text, ";lark://vc.feishu.cn/j/100000000\a")
+	require.True(t, strings.HasSuffix(join.text, ansi.ResetHyperlink()))
+}

@@ -84,3 +84,24 @@ func TestDaySeparator_ReachesBothPaneEdges(t *testing.T) {
 		require.True(t, strings.HasSuffix(plain, "─"), "width %d: %q", w, plain)
 	}
 }
+
+func TestRenderHeader_CarriesTheTagsTheChatsCardWould(t *testing.T) {
+	line := msgHead(t, store.Chat{ChatID: "oc_quiet", Name: "项目协作群", ChatMode: "group",
+		External: true, ChatStatus: "dissolved"}, 60)
+	require.Contains(t, line, "external", "who you are talking to outside this tenant is worth knowing before you type")
+	require.Contains(t, line, "dissolved")
+}
+
+func TestRenderHeader_AnOrdinaryChatCarriesNoTags(t *testing.T) {
+	line := msgHead(t, store.Chat{ChatID: "oc_quiet", Name: "平台组", ChatMode: "group", ChatStatus: "normal"}, 60)
+	require.NotContains(t, line, "normal", "the ordinary state is not news")
+	require.NotContains(t, line, "external")
+}
+
+func TestRenderHeader_ExternalIsNotDrawnAsAFault(t *testing.T) {
+	m := New(Deps{Self: "ou_me"})
+	c := store.Chat{ChatID: "oc_quiet", Name: "项目协作群", ChatMode: "group", External: true}
+	m.chats, m.chatID = []store.Chat{c}, c.ChatID
+	require.Contains(t, m.renderHeader(60), stExternal.Render("external"))
+	require.NotContains(t, m.renderHeader(60), stErr.Render("external"))
+}

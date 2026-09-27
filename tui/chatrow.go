@@ -99,8 +99,8 @@ func selfMark(d store.Draft) string {
 // It outranks the reaction chips and takes their slot, which is what the
 // client does: being named is the louder of the two, and at 38 columns only
 // one of them fits in front of the summary.
-func atMeMark(c store.Chat) string {
-	if !c.UnreadMention {
+func atMeMark(named bool) string {
+	if !named {
 		return ""
 	}
 	return stMentionMe.Render("@")
@@ -385,16 +385,16 @@ func chatSummaryLine(c store.Chat, d store.Draft, g rowGist, w int) (string, []r
 	chips := g.chips
 	// A message that wants the reader outranks the reactions on it, so the
 	// mention badge stands in their place rather than beside them.
-	if at := atMeMark(c); at != "" {
+	if at := atMeMark(c.UnreadMention); at != "" {
 		chips = []rowSeg{{text: at}}
 	}
 	room := w - segsWidth(chips) - lipgloss.Width(mine)
 	if len(chips) > 0 {
 		room -= len(chatChipGap)
 	}
-	body := []rowSeg{{text: padBetween(g.text, muteMark(c), max(0, room))}}
+	body := []rowSeg{{text: padBetween(g.text, muteMark(c.Muted), max(0, room))}}
 	if g.summary != nil {
-		body = padSegs(g.summary, muteMark(c), max(0, room))
+		body = padSegs(g.summary, muteMark(c.Muted), max(0, room))
 	}
 
 	var segs []rowSeg
@@ -422,10 +422,12 @@ func oneLineOr(segs []rowSeg) (string, []rowSeg) {
 	return b.String(), nil
 }
 
-// markName styles a name with the runes a filter landed on underlined. The
-// underline is folded into the base style rather than nested inside it: an
-// inner reset would end the bold for the rest of the line. Runs are rendered
-// whole so a name costs a handful of escapes rather than one per rune.
+// markName styles a name with the runes a filter landed on marked. The mark
+// is dotted rather than straight: a straight underline is what a link and a
+// post's <u> wear, and this one is larkim's own doing, not the text's. It is
+// folded into the base style rather than nested inside it: an inner reset
+// would end the bold for the rest of the line. Runs are rendered whole so a
+// name costs a handful of escapes rather than one per rune.
 func markName(s string, pos []int, base lipgloss.Style) string {
 	if len(pos) == 0 {
 		return base.Render(s)
@@ -434,7 +436,7 @@ func markName(s string, pos []int, base lipgloss.Style) string {
 	for _, p := range pos {
 		at[p] = true
 	}
-	under := base.Underline(true)
+	under := base.UnderlineStyle(lipgloss.UnderlineDotted).UnderlineColor(colAccent)
 	var b strings.Builder
 	r := []rune(s)
 	for i := 0; i < len(r); {
@@ -529,8 +531,8 @@ func counterStyle(c store.Chat) lipgloss.Style {
 // muteMark tells a do-not-disturb chat apart. The counter on the avatar goes
 // grey for the same reason, but a muted chat with nothing unread has no
 // counter to grey, so this is the only place the setting always shows.
-func muteMark(c store.Chat) string {
-	if !c.Muted {
+func muteMark(muted bool) string {
+	if !muted {
 		return ""
 	}
 	return stDim.Render(muteGlyph)

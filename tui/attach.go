@@ -92,6 +92,11 @@ func attachRows(a attachment, x store.Message, idx int, st msgStyle, g *leads) [
 	line := func(s string) msgRow {
 		row := msgRow{lead: g.take(), text: s, idx: idx}
 		row.zones = zone(row.lead.cols(), lipgloss.Width(s))
+		// Measured before the link goes on: the escapes it adds draw nothing,
+		// and the zone is in columns.
+		if len(row.zones) > 0 {
+			row.text = hyperlink(fileURL(open), s)
+		}
 		return row
 	}
 

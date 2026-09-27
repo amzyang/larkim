@@ -120,6 +120,18 @@ var (
 	colBtn = lipgloss.Color("#9db4e0")
 	stBtn  = lipgloss.NewStyle().Foreground(colChatSelText).Background(colBtn).Padding(0, 1)
 
+	// stFaint is the tier under stDim, for the badges beside a sender name
+	// that stDim already draws: two things in the same grey read as equals.
+	// It names no colour of its own — faint darkens whatever foreground is
+	// current, and over colDim's grey there is nothing left to darken.
+	stFaint = lipgloss.NewStyle().Faint(true)
+
+	// A chat outside this tenant wears the colour the client marks one with.
+	// It is not stErr: being external is a fact about the chat, not a fault,
+	// and the red was only ever the nearest thing the palette had.
+	colExternal = lipgloss.Color("#ff8800")
+	stExternal  = lipgloss.NewStyle().Foreground(colExternal)
+
 	// sgrReset is the sequence that ends a styled run; lipgloss writes the
 	// short spelling, a hand-written line may carry the long one.
 	sgrReset = regexp.MustCompile("\x1b\\[0?m")
@@ -280,7 +292,11 @@ func (m *Model) rebuildMessages() {
 		if m.mentions {
 			lead = mentionsLabel
 		}
-		m.msgRows = renderSearchRows(m.searchHits, m.chats, lead, m.msgStyleFor(w, m.searchMeta))
+		st := m.msgStyleFor(w, m.searchMeta)
+		// The panel's own query, split the way the store split it to match:
+		// what is marked is then what was searched for.
+		st.hits = strings.Fields(m.searchQuery)
+		m.msgRows = renderSearchRows(m.searchHits, m.chats, lead, st)
 		return
 	}
 	if m.feed != nil {
@@ -471,8 +487,13 @@ func (m Model) joinSegs(segs []rowSeg, w int) string {
 			continue
 		}
 		text := cut(s.text, w-used)
-		b.WriteString(text)
 		used += lipgloss.Width(text)
+		// The link goes on after the cut, so the closing sequence is there
+		// whatever the cut took.
+		if len(s.urls) > 0 {
+			text = hyperlink(s.urls[0], text)
+		}
+		b.WriteString(text)
 	}
 	return b.String() + strings.Repeat(" ", max(0, w-used))
 }
@@ -892,6 +913,16 @@ func (m Model) renderHeader(w int) string {
 		title = stDim.Render(g) + title
 	}
 	parts := []string{title}
+	// The same tags the chat's own card carries, on the line that is always
+	// up: who you are talking to outside this tenant, and whether the room is
+	// still there, are answers the reader wants before they type, not after
+	// they think to press I.
+	if c.External {
+		parts = append(parts, stExternal.Render("external"))
+	}
+	if c.ChatStatus != "" && c.ChatStatus != "normal" {
+		parts = append(parts, stErr.Render(c.ChatStatus))
+	}
 	if c.SyncError != "" {
 		parts = append(parts, stErr.Render("history unavailable"))
 	}

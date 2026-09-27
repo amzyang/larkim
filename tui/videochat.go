@@ -36,6 +36,9 @@ func videoChatRows(v sync.VideoChat, idx int, st msgStyle, g *leads) []msgRow {
 			x0 := row.lead.cols()
 			row.zones = []clickZone{{x0: x0, x1: x0 + lipgloss.Width(s),
 				urls: []string{url}, label: "the meeting", note: "joining the meeting"}}
+			// Measured before the link goes on: the escapes it adds draw
+			// nothing, and the zone is in columns.
+			row.text = hyperlink(url, s)
 		}
 		rows = append(rows, row)
 	}

@@ -58,9 +58,9 @@ func threadRowLine(r listRow, g rowGist, w int) (string, []rowSeg) {
 		at = stMentionMe.Render("@") + " "
 	}
 	room := max(0, w-lipgloss.Width(at))
-	body := []rowSeg{{text: padBetween(g.text, muteMark(r.chat), room)}}
+	body := []rowSeg{{text: padBetween(g.text, muteMark(r.chat.Muted), room)}}
 	if g.summary != nil {
-		body = padSegs(g.summary, muteMark(r.chat), room)
+		body = padSegs(g.summary, muteMark(r.chat.Muted), room)
 	}
 	var segs []rowSeg
 	if at != "" {

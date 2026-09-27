@@ -37,10 +37,11 @@ func nextSection(starts []int, idx, step int) int {
 	return starts[((at+step)%len(starts)+len(starts))%len(starts)]
 }
 
-// feedRule parts one chat's stretch from the next. The name is centred, as the
-// heading of the stretch under it rather than a label hung off the left edge,
-// and is drawn out of the dim its arms are in: the day rule inside the stretch
-// is centred too, so brightness is what tells the two apart.
+// feedRule parts one chat's stretch from the next. The heading is centred, as
+// the title of the stretch under it rather than a label hung off the left
+// edge, and arrives already drawn — out of the dim its arms are in, the day
+// rule inside the stretch being centred too, so brightness is what tells the
+// two apart.
 //
 // The odd column goes to the right arm rather than being dropped, for the
 // reason daySeparator splits it that way: fit would pad the shortfall with a
@@ -53,7 +54,7 @@ func nextSection(starts []int, idx, step int) int {
 func feedRule(label string, idx, w int) msgRow {
 	room := max(0, w-lipgloss.Width(label)-2)
 	left := room / 2
-	line := stDim.Render(strings.Repeat("─", left)) + " " + stBold.Render(label) + " " +
+	line := stDim.Render(strings.Repeat("─", left)) + " " + label + " " +
 		stDim.Render(strings.Repeat("─", room-left))
 	return msgRow{text: fit(line, w), idx: idx, plain: true, rule: true}
 }
@@ -99,7 +100,7 @@ func renderFeedRows(msgs []store.Message, feed *unreadFeed, chats []store.Chat, 
 			end = starts[n+1]
 		}
 		sec := feed.section(msgs[at].ChatID)
-		rows = append(rows, feedRule(sec.label(), at, st.width))
+		rows = append(rows, feedRule(sec.rule(), at, st.width))
 		for _, r := range renderRows(msgs[at:end], st) {
 			r.idx += at
 			rows = append(rows, r)

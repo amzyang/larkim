@@ -761,3 +761,47 @@ func TestBlockHeads_ASystemNoticeEndsTheBlockAboveIt(t *testing.T) {
 	require.Equal(t, []int{0, 1, 2}, blockHeads(msgs, baseStyle()),
 		"the sender coming back writes a sender line of their own")
 }
+
+func TestRenderRows_MarksTheWordsASearchWasLookingFor(t *testing.T) {
+	st := baseStyle()
+	st.hits = []string{"发布"}
+	rows := renderRows([]store.Message{{MessageID: "om_1", SenderID: "ou_a", SenderName: "张三",
+		MsgType: "text", Content: "发布推迟到周四", CreateMs: msgAt(23, 9, 0), RenderedAt: 1}}, st)
+
+	var body string
+	for _, r := range rows {
+		if strings.Contains(ansi.Strip(segText(r)), "推迟") {
+			body = segText(r)
+		}
+	}
+	require.Contains(t, body, dottedMark, "the hit is marked where it stands in the words")
+	require.Contains(t, body, markColour)
+	require.Equal(t, "发布推迟到周四", strings.TrimSpace(ansi.Strip(body)))
+}
+
+func TestRenderRows_MarksASenderNameASearchMatched(t *testing.T) {
+	st := baseStyle()
+	st.hits = []string{"张"}
+	rows := renderRows([]store.Message{{MessageID: "om_1", SenderID: "ou_a", SenderName: "张三",
+		MsgType: "text", Content: "在", CreateMs: msgAt(23, 9, 0), RenderedAt: 1}}, st)
+
+	require.Contains(t, rows[1].text, dottedMark,
+		"a hit whose only match is the name would otherwise look like a block included for no reason")
+	require.Contains(t, rows[1].text, markColour)
+}
+
+func TestRenderRows_NoSearchLeavesTheWordsUnmarked(t *testing.T) {
+	rows := renderRows([]store.Message{{MessageID: "om_1", SenderID: "ou_a", SenderName: "张三",
+		MsgType: "text", Content: "发布推迟到周四", CreateMs: msgAt(23, 9, 0), RenderedAt: 1}}, baseStyle())
+	for _, r := range rows {
+		require.NotContains(t, segText(r), dottedMark)
+	}
+}
+
+func TestHeadLine_TheBadgesAreFainterThanTheNameTheyFollow(t *testing.T) {
+	rows := renderRows([]store.Message{{MessageID: "om_1", SenderID: "ou_a", SenderName: "张三",
+		MsgType: "text", Content: "好的", CreateMs: msgAt(23, 9, 0), EditedAt: msgAt(23, 9, 5),
+		RenderedAt: 1}}, baseStyle())
+
+	require.Contains(t, rows[1].text, stFaint.Render("(Edited)"))
+}

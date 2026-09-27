@@ -181,7 +181,7 @@ func (m Model) feedRuleLine(w int) (line string, pinned bool) {
 	if chat == "" {
 		return paneRule(w), false
 	}
-	return feedRule(m.feed.section(chat).label(), 0, w).text, top.rule
+	return feedRule(m.feed.section(chat).rule(), 0, w).text, top.rule
 }
 
 // feedTitle names the panel and the chat a reply would go to.

@@ -207,3 +207,28 @@ func firstZone(r msgRow) clickZone {
 	}
 	return r.zones[0]
 }
+
+func TestAttachRows_TheCardLeadsToTheDownloadedFile(t *testing.T) {
+	st := downloaded(store.Resource{FileKey: "file_conf", Type: "file",
+		LocalPath: "resources/dev.yaml", Status: "done", SizeBytes: 2048})
+	rows := renderRows(fileMessage(), st)
+
+	var card string
+	for _, r := range rows {
+		if strings.Contains(ansi.Strip(r.text), "dev.yaml") {
+			card = r.text
+		}
+	}
+	require.NotEmpty(t, card)
+	require.Contains(t, card, ";file:///data/resources/dev.yaml\a",
+		"the terminal shows the path under the pointer and opens it on Ctrl+Shift+click")
+	require.Contains(t, card, ansi.ResetHyperlink())
+}
+
+func TestAttachRows_ACardWithNothingToOpenIsNotALink(t *testing.T) {
+	st := downloaded(store.Resource{FileKey: "file_conf", Type: "file", Status: "pending"})
+	rows := renderRows(fileMessage(), st)
+	for _, r := range rows {
+		require.NotContains(t, r.text, "\x1b]8;", "nothing is downloaded yet, so there is nowhere to lead")
+	}
+}

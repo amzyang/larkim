@@ -207,6 +207,10 @@ type msgStyle struct {
 	// search results, which run across chats; inside one chat, naming it on
 	// every block says nothing.
 	names map[string]string
+	// hits are the words the search panel is looking for. They are marked
+	// where they stand in a body or a sender name, which is what says why a
+	// block is in the list at all. Empty on every other page.
+	hits []string
 	// height is how many rows the pane shows, which bounds a picture the way
 	// width does.
 	height int
@@ -621,7 +625,11 @@ func headLine(x store.Message, st msgStyle) string {
 	if !st.p2p {
 		// The name is dim: the disc beside it is what picks a sender out of
 		// the list, and a bold name on every block would shout over the words.
-		name := stDim.Render(displaySender(x, st.self, st.suffix[x.SenderID]))
+		// A search matches sender names as well as bodies, so the mark goes
+		// on here too — a hit whose only match is the name would otherwise
+		// look like a block the panel included for no reason.
+		who := displaySender(x, st.self, st.suffix[x.SenderID])
+		name := markName(who, hitPositions(who, st.hits), stDim)
 		if st.names != nil {
 			chat := st.names[x.ChatID]
 			if chat == "" {
@@ -631,8 +639,11 @@ func headLine(x store.Message, st msgStyle) string {
 		}
 		parts = append(parts, name)
 	}
+	// The badges are fainter than the name they follow, which stDim already
+	// draws: in one grey the two would read as equals, and the name is what
+	// the reader is scanning for.
 	if x.EditedAt > 0 {
-		parts = append(parts, stDim.Render("(Edited)"))
+		parts = append(parts, stFaint.Render("(Edited)"))
 	}
 	// Absent from the map is the ordinary case — a message the store
 	// returned — which no zero value may stand in for.
@@ -640,7 +651,7 @@ func headLine(x store.Message, st msgStyle) string {
 		if state == outFailed {
 			parts = append(parts, stErr.Render("(failed)"))
 		} else {
-			parts = append(parts, stDim.Render("(sending)"))
+			parts = append(parts, stFaint.Render("(sending)"))
 		}
 	}
 	return strings.Join(parts, " ")
@@ -686,7 +697,7 @@ func bodyRows(x store.Message, idx int, st msgStyle, g *leads) []msgRow {
 	if a, ok := attachmentOf(x.MsgType, x.ContentRaw); ok {
 		return attachRows(a, x, idx, st, g)
 	}
-	ms := mentionsIn(x.MentionsJSON, st.self).facing(st.peer)
+	ms := mentionsIn(x.MentionsJSON, st.self).facing(st.peer).marking(st.hits)
 	// A card describes itself in full, so it is drawn as soon as it lands:
 	// waiting on a rendering would hold back the whole of what it says.
 	if x.MsgType == "interactive" {

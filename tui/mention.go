@@ -58,6 +58,11 @@ type mentions struct {
 	// the accent, the @ runs being the only colour the body carries; a chat row
 	// hands it the row's own dim instead, on() below.
 	other lipgloss.Style
+	// hits are the words a search is looking for, marked in the text around
+	// the runs. They ride here rather than being applied to a finished line
+	// because this is the last place the text is still text: once a body has
+	// been drawn, the words and the escapes that colour them are one string.
+	hits []string
 }
 
 // mentionsIn reads the `[{id,name}]` a message's rendering carries. The text
@@ -94,6 +99,15 @@ func mentionsIn(mentionsJSON, self string) mentions {
 // reaches them is worth breaking out of it.
 func (m mentions) on(base lipgloss.Style) mentions {
 	m.base, m.other = base, base
+	return m
+}
+
+// marking has the text around the runs carry the words a search matched on.
+// A mention itself is left alone: its badge is a stronger mark than the one a
+// hit would put under it, and a name the reader searched for is usually the
+// one they are already looking at.
+func (m mentions) marking(hits []string) mentions {
+	m.hits = hits
 	return m
 }
 
@@ -177,7 +191,10 @@ func (m mentions) render(s string) string {
 }
 
 // plain styles a stretch that holds no @ of its own.
-func (m mentions) plain(s string) string { return m.base.Render(expandEmoji(s)) }
+func (m mentions) plain(s string) string {
+	text := expandEmoji(s)
+	return markName(text, hitPositions(text, m.hits), m.base)
+}
 
 // segs is render in pieces, so that an official emoji no character carries can
 // stand in the line as the picture the client draws. It answers nil when the

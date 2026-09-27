@@ -9,6 +9,7 @@ import (
 	"github.com/amzyang/larkim/applink"
 	"github.com/amzyang/larkim/card"
 	"github.com/amzyang/larkim/store"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/stretchr/testify/require"
 )
 
@@ -269,4 +270,23 @@ func TestZoneAt_AClickPicksTheButtonItLandsOn(t *testing.T) {
 
 	_, ok = zoneAt(rows, 0, 8)
 	require.False(t, ok, "the gap between two pills is no target")
+}
+
+func TestCardRows_EachPillIsALinkToWhereItLeads(t *testing.T) {
+	msg := cardOf(cardActionRow(
+		cardButton("详情", `{"type":"open_url","action":{"url":"https://example.com/run/1"}}`),
+		cardButton("同意", cardCallback)), nil)
+	msg.ChatID, msg.MessagePosition = "oc_ops", 42
+	rows := renderRows([]store.Message{msg}, baseStyle())
+
+	var pills string
+	for _, r := range rows {
+		if strings.Contains(ansi.Strip(r.text), "详情") {
+			pills = r.text
+		}
+	}
+	require.Contains(t, pills, ";https://example.com/run/1\a")
+	require.Contains(t, pills, ";"+applink.ChatLink("oc_ops", 42)+"\a",
+		"the pill a callback sits behind leads to the client, the way its press does")
+	require.Equal(t, 2, strings.Count(pills, ansi.ResetHyperlink()))
 }

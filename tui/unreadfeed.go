@@ -12,6 +12,7 @@ import (
 	"cmp"
 	"context"
 	"slices"
+	"strconv"
 
 	tea "charm.land/bubbletea/v2"
 
@@ -59,11 +60,38 @@ type unreadSection struct {
 	anchorMs int64
 	// cut says the stretch hit unreadSectionLimit and there is more below it.
 	cut bool
+	// count, atMe and muted are what the chat's own row in the list says
+	// about it, taken once when the section is anchored. The page runs across
+	// chats with that list out of sight, so the rule has to answer what the
+	// row would have: how much is waiting here, whether any of it names the
+	// reader, and whether this chat asked not to be pulled at.
+	count int64
+	atMe  bool
+	muted bool
 }
 
-// label is what the section's rule says.
+// label is what the section's rule is named by, and what a line pointing at
+// the section elsewhere calls it.
 func (s unreadSection) label() string {
 	return cmp.Or(flatten(s.name), s.chatID)
+}
+
+// rule is the whole of what the section's rule says. It is built here rather
+// than where the rule is drawn because two places draw it — the row in the
+// page and the copy pinned under the title — and a reader scrolling past the
+// boundary sees both at once.
+func (s unreadSection) rule() string {
+	out := stBold.Render(s.label())
+	if s.count > 0 {
+		out += stDim.Render(" · " + strconv.FormatInt(s.count, 10))
+	}
+	if at := atMeMark(s.atMe); at != "" {
+		out += " " + at
+	}
+	if mute := muteMark(s.muted); mute != "" {
+		out += " " + mute
+	}
+	return out
 }
 
 // section is the stretch a chat holds on the page.
@@ -110,7 +138,8 @@ func unreadAnchors(rows []store.UnreadAnchor, chats []store.Chat) []unreadSectio
 		if !ok {
 			continue
 		}
-		out = append(out, unreadSection{chatID: a.ChatID, name: c.Name, anchorMs: a.FirstMs})
+		out = append(out, unreadSection{chatID: a.ChatID, name: c.Name, anchorMs: a.FirstMs,
+			count: c.UnreadCount, atMe: c.UnreadMention, muted: c.Muted})
 	}
 	slices.SortFunc(out, func(a, b unreadSection) int {
 		return cmp.Or(cmp.Compare(a.anchorMs, b.anchorMs), cmp.Compare(a.chatID, b.chatID))

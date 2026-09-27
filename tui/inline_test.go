@@ -110,3 +110,41 @@ func TestReactionRows_StayUntinted(t *testing.T) {
 		}
 	}
 }
+
+func TestHyperlink_NamesTheTargetAndClosesAfterIt(t *testing.T) {
+	out := hyperlink("https://example.com/x", "详情")
+	require.True(t, strings.HasPrefix(out, "\x1b]8;id="))
+	require.Contains(t, out, ";https://example.com/x\a详情")
+	require.True(t, strings.HasSuffix(out, ansi.ResetHyperlink()))
+	require.Equal(t, "详情", ansi.Strip(out))
+	require.Equal(t, "详情", hyperlink("", "详情"), "no target, no link")
+}
+
+func TestHyperlink_TheHalvesOfAWrappedLinkShareOneName(t *testing.T) {
+	head, tail := hyperlink("https://example.com/x", "上"), hyperlink("https://example.com/x", "下")
+	id, _, _ := strings.Cut(strings.TrimPrefix(head, "\x1b]8;"), ";")
+	require.Contains(t, tail, id, "the terminal hovers the two fragments as the one link they are")
+	require.NotContains(t, hyperlink("https://example.com/y", "别处"), id)
+}
+
+func TestFileURL_EscapesWhatAPathMayHoldAndAURLMayNot(t *testing.T) {
+	require.Equal(t, "file:///Users/linlan/a%20b/%E6%8A%A5%E5%91%8A.pdf",
+		fileURL("/Users/linlan/a b/报告.pdf"))
+	require.Empty(t, fileURL(""), "nothing downloaded, nowhere to lead")
+}
+
+func TestJoinSegs_LinksOnlyTheSegmentsThatLeadSomewhere(t *testing.T) {
+	segs := []rowSeg{{text: "见 "}, {text: stLink.Render("详情"), urls: []string{"https://example.com/x"}}}
+	out := Model{}.joinSegs(segs, 20)
+	require.Contains(t, out, ";https://example.com/x\a")
+	require.Equal(t, 1, strings.Count(out, "\x1b]8;id="), "the plain run is not a link")
+	require.Equal(t, 1, strings.Count(out, ansi.ResetHyperlink()))
+	require.Equal(t, "见 详情"+strings.Repeat(" ", 13), ansi.Strip(out))
+}
+
+func TestJoinSegs_ClosesALinkTheRowWidthCutThrough(t *testing.T) {
+	segs := []rowSeg{{text: stLink.Render("很长的标签"), urls: []string{"https://example.com/x"}}}
+	out := Model{}.joinSegs(segs, 4)
+	require.True(t, strings.HasSuffix(out, ansi.ResetHyperlink()))
+	require.Equal(t, "很长", ansi.Strip(out))
+}

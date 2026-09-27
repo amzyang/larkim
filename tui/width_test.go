@@ -135,3 +135,21 @@ func TestTruncate_KeepsAGraphemeClusterWhole(t *testing.T) {
 	require.Equal(t, "…", truncate("1️⃣x", 2), "no room for the keycap and the mark both")
 	require.Equal(t, "1️⃣…", truncate("1️⃣xy", 3))
 }
+
+func TestCut_ClosesAHyperlinkItCutThrough(t *testing.T) {
+	line := hyperlink("https://example.com/x", "一个很长的标签")
+	out := cut(line, 4)
+	require.Equal(t, "一个", ansi.Strip(out))
+	require.True(t, strings.HasSuffix(out, ansi.ResetHyperlink()),
+		"a link left open runs on into every cell drawn after it")
+}
+
+func TestCut_LeavesAWholeHyperlinkAlone(t *testing.T) {
+	line := hyperlink("https://example.com/x", "ab")
+	require.Equal(t, line, cut(line, 10), "nothing was cut, so nothing needs closing")
+	require.Equal(t, 1, strings.Count(cut(line, 10), ansi.ResetHyperlink()))
+}
+
+func TestCut_LeavesTextWithNoHyperlinkAlone(t *testing.T) {
+	require.Equal(t, "ab", cut("abcd", 2))
+}

@@ -4,6 +4,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/charmbracelet/x/ansi"
 	"github.com/stretchr/testify/require"
 
 	"github.com/amzyang/larkim/store"
@@ -277,4 +278,18 @@ func TestJoinUnread_TheHeldPageIsNotWrittenThrough(t *testing.T) {
 
 	require.Equal(t, []string{"oc_platform", "oc_late"}, []string{out[0].chatID, out[1].chatID})
 	require.Empty(t, held[:cap(held)][1].chatID, "the newcomer went into a slice of its own")
+}
+
+func TestUnreadSection_TheRuleAnswersWhatTheChatsRowWould(t *testing.T) {
+	s := unreadSection{name: "平台组", count: 3, atMe: true, muted: true}
+	out := ansi.Strip(s.rule())
+	require.Equal(t, "平台组 · 3 @ "+muteGlyph, out,
+		"the page runs with the chats list out of sight, so the rule carries its marks")
+	require.Contains(t, s.rule(), stMentionMe.Render("@"), "the same badge the chat row wears")
+}
+
+func TestUnreadSection_ARuleWithNothingToAddIsJustTheName(t *testing.T) {
+	require.Equal(t, "项目协作群", ansi.Strip(unreadSection{name: "项目协作群"}.rule()))
+	require.Equal(t, "oc_nameless", ansi.Strip(unreadSection{chatID: "oc_nameless"}.rule()),
+		"an unnamed chat falls back to its id, the way label does")
 }
