@@ -202,5 +202,5 @@ func TestChatSummaryLine_AtMeOutranksTheReactionChips(t *testing.T) {
 
 	assert.Empty(t, segs, "the badge is text, so the line stays one string")
 	assert.Contains(t, line, "@")
-	assert.NotContains(t, ansi.Strip(line), chipRule, "one mark is not a strip, so nothing ends it")
+	assert.NotContains(t, ansi.Strip(line), chipLeft, "the badge stands in place of the reactions")
 }

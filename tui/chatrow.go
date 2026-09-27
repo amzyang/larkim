@@ -372,17 +372,14 @@ func chatChips(c store.Chat, pics emojiPics) []rowSeg {
 func chatSummaryLine(c store.Chat, d store.Draft, g rowGist, w int) (string, []rowSeg) {
 	mine := selfMark(d)
 	chips := g.chips
-	// The rule is what ends the strip: with a space alone the gap before the
-	// summary reads like the gap between two badges, and the message behind
-	// them like one more reaction. The mention badge that outranks the
-	// reactions is a single mark rather than a strip, so it needs no end.
-	sep := stDim.Render(chipRule) + " "
+	// A message that wants the reader outranks the reactions on it, so the
+	// mention badge stands in their place rather than beside them.
 	if at := atMeMark(c); at != "" {
-		chips, sep = []rowSeg{{text: at}}, " "
+		chips = []rowSeg{{text: at}}
 	}
 	room := w - segsWidth(chips) - lipgloss.Width(mine)
 	if len(chips) > 0 {
-		room -= lipgloss.Width(sep)
+		room -= len(chatChipGap)
 	}
 	body := []rowSeg{{text: padBetween(g.text, muteMark(c), max(0, room))}}
 	if g.summary != nil {
@@ -395,7 +392,7 @@ func chatSummaryLine(c store.Chat, d store.Draft, g rowGist, w int) (string, []r
 	}
 	segs = append(segs, chips...)
 	if len(chips) > 0 {
-		segs = append(segs, rowSeg{text: sep})
+		segs = append(segs, rowSeg{text: chatChipGap})
 	}
 	return oneLineOr(append(segs, body...))
 }

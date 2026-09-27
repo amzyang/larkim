@@ -329,13 +329,13 @@ func reactedP2P(keys ...string) store.Chat {
 }
 
 // chatBadges is the strip of reactions a chat row wears in front of its
-// summary: a badge each, parted by a cell, closed by the rule that ends it.
+// summary: a badge each, parted by a cell, and a cell before the summary.
 func chatBadges(glyphs ...string) string {
 	out := make([]string, 0, len(glyphs))
 	for _, g := range glyphs {
 		out = append(out, chipLeft+g+chipRight)
 	}
-	return strings.Join(out, chatChipGap) + chipRule + " "
+	return strings.Join(out, chatChipGap) + chatChipGap
 }
 
 func TestChatSummary_LeadsAP2PLineWithTheReactionIcons(t *testing.T) {
@@ -399,7 +399,7 @@ func TestChatSummary_DrawsAReactionNoCharacterCarriesAsAPicture(t *testing.T) {
 	require.Equal(t, 1, row.segs[1].pic.rows, "an icon on a line of text is one row tall")
 	require.LessOrEqual(t, row.segs[1].pic.cols, chatChipCols, "narrower here than beside a message")
 	require.Equal(t, chipRight, ansi.Strip(row.segs[2].text), "and closes around the icon alone")
-	require.Equal(t, chipRule+" ", ansi.Strip(row.segs[3].text), "the rule ends the strip")
+	require.Equal(t, chatChipGap, ansi.Strip(row.segs[3].text), "a cell parts the strip from the summary")
 	require.Equal(t, chatTextWidth(w), segsWidth(row.segs), "the line still fills its column exactly")
 	require.Contains(t, ansi.Strip(row.segs[len(row.segs)-1].text), "You: 明天上午的排期")
 }
