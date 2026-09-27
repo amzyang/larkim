@@ -10,17 +10,30 @@ type rowGist struct {
 	summary []rowSeg
 }
 
-// gistCache holds one frame of them. picturePrepare walks the visible rows for
-// the pictures on them and the pane then draws those same rows, so without
-// this every row parses its card and its mentions twice a frame — once per
-// keystroke, on a list a screen tall.
-type gistCache struct{ rows map[string]rowGist }
+// gistCache holds them between the calls that ask. picturePrepare walks the
+// visible rows for the pictures on them and the pane then draws those same
+// rows, so without this every row parses its card and its mentions twice a
+// frame — once per keystroke, on a list a screen tall.
+type gistCache struct {
+	of   []listRow
+	rows map[string]rowGist
+}
 
 func newGistCache() *gistCache { return &gistCache{rows: map[string]rowGist{}} }
 
-// begin drops the frame before. These lines are derived from model state that
-// Update is about to change, so they live exactly one pass through it.
-func (g *gistCache) begin() { clear(g.rows) }
+// hold keeps what was summarised while the interleave behind it is the same
+// one, and drops the lot when a reload builds a new one. rowsCache already
+// rebuilds that slice exactly when either list arrives anew, so taking its
+// answer leaves one rule to keep in step rather than two that have to agree.
+// A key that only moves a cursor rebuilds nothing, and the lines it drew
+// stand with it.
+func (g *gistCache) hold(rows []listRow) {
+	if sameSlice(g.of, rows) {
+		return
+	}
+	g.of = rows
+	clear(g.rows)
+}
 
 // at is the row's gist, computed once per frame. A thread is summarised by its
 // own replies and carries no reactions; the chat's row is where those show.

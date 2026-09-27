@@ -386,15 +386,15 @@ func (m Model) Init() tea.Cmd {
 // and after the alternate screen is up — which is the only screen a virtual
 // placement made earlier would not reach.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	// The lines the last frame summarised are derived from state this pass is
-	// about to change. The cache is held through a pointer, so dropping them
-	// here reaches the copy picturePrepare fills and View then draws.
-	m.gists.begin()
 	next, cmd := m.update(msg)
 	nm, ok := next.(Model)
 	if !ok {
 		return next, cmd
 	}
+	// After the handler, so the interleave compared is the one this frame
+	// will draw. The cache is held through a pointer, so what it drops here
+	// is gone for the picturePrepare below and the View that follows.
+	nm.gists.hold(nm.rows.all(nm.chats, nm.threads))
 	// Reading is settled here rather than where a page arrives, because
 	// arriving is only one of the ways a page comes to be in front of the
 	// reader: scrolling back to the tail, closing the help overlay, widening
@@ -540,6 +540,9 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if !moved {
 			return m, nil
 		}
+		// The summaries carry pictures sized for the old grid, and the lists
+		// they were taken from have not moved, so nothing else drops them.
+		clear(m.gists.rows)
 		m.layout()
 		return m, nil
 	case tea.FocusMsg:

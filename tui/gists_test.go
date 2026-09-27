@@ -7,6 +7,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/amzyang/larkim/store"
+	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/stretchr/testify/require"
 )
 
@@ -26,16 +27,62 @@ func TestGistCache_SummarisesEachRowOnce(t *testing.T) {
 	require.Same(t, &first.chips[0], &second.chips[0], "the second ask is answered from the frame")
 }
 
-func TestGistCache_BeginDropsTheFrameBefore(t *testing.T) {
+func TestGistCache_HoldsTheSummariesWhileTheInterleaveStands(t *testing.T) {
 	g := newGistCache()
-	r := listRow{chat: reactedP2P("THUMBSUP")}
-	first := g.at(r, "ou_me", emojiPics{})
+	chats := []store.Chat{reactedP2P("THUMBSUP")}
+	rows := listRows(chats, nil)
 
-	g.begin()
-	require.Empty(t, g.rows)
-	again := g.at(r, "ou_me", emojiPics{})
-	require.NotSame(t, &first.chips[0], &again.chips[0], "a new frame summarises the row again")
+	g.hold(rows)
+	first := g.at(rows[0], "ou_me", emojiPics{})
+	g.hold(rows)
+	held := g.at(rows[0], "ou_me", emojiPics{})
+	require.Same(t, &first.chips[0], &held.chips[0], "a key that reloaded nothing leaves the lines alone")
+
+	g.hold(listRows(chats, nil))
+	require.Empty(t, g.rows, "a reload builds its own interleave, so nothing summarised stands")
+	again := g.at(rows[0], "ou_me", emojiPics{})
+	require.NotSame(t, &first.chips[0], &again.chips[0], "the row is summarised afresh")
 	require.Equal(t, first, again, "to the same line")
+}
+
+// The interleave is what the summaries are keyed on, so a list that reaches
+// them only through it — the threads — has to reach them through Update too.
+func TestUpdate_ThreadsArrivingAnewDropTheSummaries(t *testing.T) {
+	m := sized(100, 30)
+	m.chats = []store.Chat{reactedP2P("THUMBSUP")}
+	row := listRow{chat: m.chats[0]}
+
+	next, _ := m.Update(tea.KeyPressMsg{Code: 'j', Text: "j"})
+	m = next.(Model)
+	first := m.gists.at(row, m.deps.Self, m.chatPics())
+
+	next, _ = m.Update(tea.KeyPressMsg{Code: 'j', Text: "j"})
+	m = next.(Model)
+	held := m.gists.at(row, m.deps.Self, m.chatPics())
+	require.Same(t, &first.chips[0], &held.chips[0], "a second key reloads neither list")
+
+	m.threads = []store.ThreadFeed{{ThreadID: "omt_x", ChatID: m.chats[0].ChatID}}
+	next, _ = m.Update(tea.KeyPressMsg{Code: 'j', Text: "j"})
+	m = next.(Model)
+	again := m.gists.at(row, m.deps.Self, m.chatPics())
+	require.NotSame(t, &first.chips[0], &again.chips[0], "the threads took the summaries with them")
+}
+
+func TestGistCache_DropsTheSummariesWhenTheCellGridMoves(t *testing.T) {
+	dir := t.TempDir()
+	writeTestEmoji(t, dir, getKey)
+	m := sized(100, 30)
+	m.deps.DataDir = dir
+	m.pics = picturesIn(dir)
+	m.chats = []store.Chat{reactedP2P(getKey)}
+
+	m.gists.hold(m.rows.all(m.chats, m.threads))
+	m.gists.at(listRow{chat: m.chats[0]}, m.deps.Self, m.chatPics())
+	require.Len(t, m.gists.rows, 1)
+
+	next, _ := m.update(uv.CellSizeEvent{Width: 9, Height: 19})
+	m = next.(Model)
+	require.Empty(t, m.gists.rows, "a badge cut for the old cells is not the one this grid draws")
 }
 
 func TestGistCache_AThreadTakesItsOwnRepliesAndNoReactions(t *testing.T) {
@@ -65,10 +112,12 @@ func TestPicturePrepare_ClaimsThePicturesTheRowsDraw(t *testing.T) {
 	first.ChatID = "oc_0"
 	m.chats = append([]store.Chat{first}, m.chats[1:]...)
 
-	m.gists.begin()
+	clear(m.gists.rows)
 	require.NotEmpty(t, m.picturePrepare(), "the reaction's picture is sent")
 
-	m.gists.begin()
+	// Summarised afresh, so the two walks are compared on their own reading of
+	// the row rather than on one answer handed to both.
+	clear(m.gists.rows)
 	g := m.gists.at(listRow{chat: m.chats[0]}, m.deps.Self, m.chatPics())
 	drawn := 0
 	for _, s := range append(slices.Clone(g.chips), g.summary...) {
