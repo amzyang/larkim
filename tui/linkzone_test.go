@@ -94,6 +94,22 @@ func TestBodyRows_ASentenceMarkAfterAURLIsNotPartOfIt(t *testing.T) {
 	}
 }
 
+func TestBodyRows_ChineseAfterAURLIsNotPartOfIt(t *testing.T) {
+	// An address is ASCII. Chinese running straight on after one — the bracket
+	// somebody put it in, or the words they wrote next — is the sentence, and
+	// swallowing it leaves a target that opens nothing.
+	for _, body := range []string{
+		"见 https://example.com/x（接入文档）",
+		"见 https://example.com/x，稍后补充",
+		"见 https://example.com/x接入文档",
+		"见 https://example.com/x【平台组】",
+	} {
+		zones := rowZones(bodyOf(body, baseStyle()))
+		require.Len(t, zones, 1, body)
+		require.Equal(t, []string{"https://example.com/x"}, zones[0].urls, body)
+	}
+}
+
 func TestBodyRows_ASpelledLinkDoesNotAlsoOpenItsTarget(t *testing.T) {
 	rows := postOf("[了解](https://example.com/x)", baseStyle())
 	zones := rowZones(rows)
