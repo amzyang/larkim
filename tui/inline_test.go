@@ -148,3 +148,29 @@ func TestJoinSegs_ClosesALinkTheRowWidthCutThrough(t *testing.T) {
 	require.True(t, strings.HasSuffix(out, ansi.ResetHyperlink()))
 	require.Equal(t, "很长", ansi.Strip(out))
 }
+
+func TestWrapSegs_FillsTheRowWithCJKRatherThanOrphaningWhatCameBefore(t *testing.T) {
+	// CJK breaks nowhere, so a run that will not fit whole is cut where the
+	// row ends. Moving it down instead would leave the piece before it — a
+	// list marker, a mention — alone on a row of its own.
+	rows := wrapSegs([]rowSeg{{text: "1. "}, {text: strings.Repeat("中", 40)}}, 20)
+	require.Greater(t, len(rows), 1, "the run did not wrap; the test proves nothing")
+	require.Equal(t, 2, len(rows[0]), "the marker keeps company on its row")
+	for i, row := range rows {
+		require.LessOrEqual(t, segsWidth(row), 20, "row %d runs past the width", i)
+	}
+	var got string
+	for _, row := range rows {
+		for _, s := range row {
+			got += s.text
+		}
+	}
+	require.Equal(t, "1. "+strings.Repeat("中", 40), got, "nothing was dropped in the cutting")
+}
+
+func TestWrapSegs_ALongWordStillMovesToARowOfItsOwn(t *testing.T) {
+	// A word that would fit on an empty row is not cut to fill this one.
+	rows := wrapSegs([]rowSeg{{text: "ab "}, {text: "supercalifragilistic"}}, 22)
+	require.Len(t, rows, 2)
+	require.Equal(t, "supercalifragilistic", rows[1][0].text)
+}

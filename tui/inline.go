@@ -240,15 +240,24 @@ func wrapSegs(segs []rowSeg, w int) [][]rowSeg {
 		}
 		for text := s.text; text != ""; {
 			head, rest := takeText(text, w-used)
-			if head == "" && used > 0 {
-				flush()
-				continue
-			}
 			if head == "" {
-				// A row's worth of one unbreakable word: cut it, the way a
-				// wrapped body already cuts an overlong line.
-				head = cut(text, w)
+				// The run breaks nowhere the row has space for. One that could
+				// start on a row of its own moves down whole; one that could
+				// not — a stretch of CJK, which has no word boundaries — is
+				// cut where the row ends, the way a wrapped body cuts an
+				// overlong line.
+				if used > 0 {
+					if h, _ := takeText(text, w); h != "" {
+						flush()
+						continue
+					}
+				}
+				head = cut(text, w-used)
 				if head == "" {
+					if used > 0 {
+						flush()
+						continue
+					}
 					break
 				}
 				rest = cutLeft(text, ansi.StringWidth(head))
