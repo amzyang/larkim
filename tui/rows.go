@@ -756,10 +756,7 @@ func bodyRows(x store.Message, idx int, st msgStyle, g *leads) []msgRow {
 	// A sticker's rendering is the words "[Sticker]", which name the picture
 	// nowhere, and an image's only spells its key back out: both are in the
 	// body, so the body is what draws them.
-	if key := stickerKey(x); key != "" {
-		return pictureRows(key, x, idx, st, g)
-	}
-	if key := imageKey(x); key != "" {
+	if key := pictureKey(x); key != "" {
 		return pictureRows(key, x, idx, st, g)
 	}
 	if x.RenderedAt == 0 {
@@ -839,33 +836,24 @@ const emojiCols = 4
 // pane it would take a screenful for one shrug.
 const stickerCols = 12
 
-// stickerKey is the picture a sticker message carries, and "" for any other
-// message.
-// imageKey is the picture an image message carries.
-func imageKey(x store.Message) string {
-	if x.MsgType != "image" {
+// pictureKey is the picture a message is rather than one it carries: an
+// image's key, or a sticker's own file, which the two bodies spell with
+// different field names. Empty for every other message.
+func pictureKey(x store.Message) string {
+	if x.MsgType != "image" && x.MsgType != "sticker" {
 		return ""
 	}
 	var body struct {
 		ImageKey string `json:"image_key"`
+		FileKey  string `json:"file_key"`
 	}
 	if json.Unmarshal([]byte(x.ContentRaw), &body) != nil {
 		return ""
+	}
+	if x.MsgType == "sticker" {
+		return body.FileKey
 	}
 	return body.ImageKey
-}
-
-func stickerKey(x store.Message) string {
-	if x.MsgType != "sticker" {
-		return ""
-	}
-	var body struct {
-		FileKey string `json:"file_key"`
-	}
-	if json.Unmarshal([]byte(x.ContentRaw), &body) != nil {
-		return ""
-	}
-	return body.FileKey
 }
 
 // reactorLimit is how many of an emoji's reactors are named. It is what the
