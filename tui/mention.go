@@ -19,9 +19,15 @@ const (
 	allName = "@All"
 )
 
-// atTag matches the `<at user_id="…">name</at>` run a rendered post carries. A
+// atRun matches the `<at user_id="…">name</at>` run a rendered post carries. A
 // text message's mentions arrive already spelled as "@name", a post's do not.
-var atTag = regexp.MustCompile(`^<at user_id="([^"]*)"[^>]*>([^<]*)</at>`)
+// atTag is the same run at the head of what is being read, which is how the
+// walk below takes one: the two are one spelling so a line flattened without
+// styling reads the same mentions a styled one does.
+var (
+	atRun = regexp.MustCompile(`<at user_id="([^"]*)"[^>]*>([^<]*)</at>`)
+	atTag = regexp.MustCompile(`^` + atRun.String())
+)
 
 // mentionKind is how loudly one @ run is drawn, which follows who it reaches:
 // the reader's own takes the filled badge the client paints, a name the room

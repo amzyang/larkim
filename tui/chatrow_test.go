@@ -297,7 +297,17 @@ func TestChatSummary_ReadsAPostPastThePictureKeysItNames(t *testing.T) {
 		LastContent: "看这个\n![Image](img_a)\n谢谢"}
 	_, bottom := plainRow(c, 0, 40)
 	require.Contains(t, bottom, "看这个", "the words are what the line has room for")
+	require.Contains(t, bottom, "[Image]", "the picture is named where it was written")
 	require.NotContains(t, bottom, "img_a", "a key is markup, not something the sender wrote")
+}
+
+func TestChatSummary_NamesTheFileAPostCarries(t *testing.T) {
+	c := store.Chat{ChatID: "oc_1", ChatMode: "group", LastMessageID: "om_1", LastRenderedAt: 1,
+		LastSenderName: "张三", LastMsgType: "post",
+		LastContent: "周报\n<file key=\"file_b\" name=\"report.pdf\"/>"}
+	_, bottom := plainRow(c, 0, 40)
+	require.Contains(t, bottom, "[File] report.pdf")
+	require.NotContains(t, bottom, "file_b", "a tag is markup, not something the sender wrote")
 }
 
 func TestChatSummary_NamesAPostThatIsOnlyAPicture(t *testing.T) {

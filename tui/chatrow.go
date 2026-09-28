@@ -190,6 +190,8 @@ func msgTypeLabel(msgType string) string {
 		return "[Image]"
 	case "file":
 		return "[File]"
+	case "folder":
+		return "[Folder]"
 	case "audio":
 		return "[Audio]"
 	case "media":
@@ -301,18 +303,11 @@ func lastMessageSummary(c store.Chat) string {
 	if c.LastMsgType == "merge_forward" {
 		return msgTypeLabel(c.LastMsgType)
 	}
-	// A picture renders into a reference naming its key, which is fifty
-	// characters of markup that would crowd the words beside it off the line.
-	// The pane draws the picture itself; here it is only worth naming when
-	// there are no words to show instead.
-	keys, rest := splitImages(c.LastContent)
-	if text := flatten(rest); text != "" {
-		return text
-	}
-	if len(keys) > 0 {
-		return "[Image]"
-	}
-	return ""
+	// A picture, a clip and a file each render into markup naming their key,
+	// which is fifty characters the words beside them would be crowded off the
+	// line by. Each is named here instead, where it was written: the line says
+	// what the message holds, and the pane below draws it.
+	return flatten(gistBody(c.LastContent))
 }
 
 // chatChipLimit is how many reactions a chat row shows. Past three the icons

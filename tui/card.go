@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"slices"
 	"strings"
 
 	"charm.land/lipgloss/v2"
@@ -41,10 +42,14 @@ func cardGist(c card.Card) string {
 	}
 	for _, b := range c.Blocks {
 		for _, line := range strings.Split(b.Markdown, "\n") {
-			if text := plainInline(strings.TrimLeft(line, "#>-* \t")); strings.TrimSpace(text) != "" {
+			if text := inlineText(strings.TrimLeft(line, "#>-* \t")); strings.TrimSpace(text) != "" {
 				return text
 			}
 		}
+	}
+	// A card that is a picture is named by it, the way a post of one is.
+	if slices.ContainsFunc(c.Blocks, func(b card.Block) bool { return b.ImageKey != "" }) {
+		return msgTypeLabel("image")
 	}
 	return ""
 }

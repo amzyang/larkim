@@ -74,6 +74,30 @@ func TestReplyGist_NamesWhatHasNoText(t *testing.T) {
 	require.Equal(t, "设备版本周报 「兜底」", replyGist(card), "a card quotes what it is called")
 }
 
+func TestReplyGist_PostKeepsThePictureItPlaced(t *testing.T) {
+	x := store.Message{MsgType: "post", Content: "a\n![Image](img_a)\nb\n\nd", RenderedAt: 1}
+	require.Equal(t, "a [Image] b d", replyGist(x), "the quote holds every element the post does")
+}
+
+func TestReplyGist_PostNamesItsClipAndItsFile(t *testing.T) {
+	clip := store.Message{MsgType: "post", Content: "看这个 [Media: file_b]", RenderedAt: 1}
+	require.Equal(t, "看这个 [Video]", replyGist(clip))
+
+	file := store.Message{MsgType: "post", Content: "周报\n<file key=\"file_b\" name=\"report.pdf\"/>", RenderedAt: 1}
+	require.Equal(t, "周报 [File] report.pdf", replyGist(file))
+}
+
+func TestReplyGist_SpellsTheMentionsAPostCarries(t *testing.T) {
+	x := store.Message{MsgType: "post", Content: `<at user_id="ou_a">张三</at> 看下`, RenderedAt: 1}
+	require.Equal(t, "@张三 看下", replyGist(x), "a quote is dim as a whole, so the tag has to read as the name")
+}
+
+func TestReplyGist_UnrenderedFileIsNamedByItsFile(t *testing.T) {
+	x := store.Message{MsgType: "file", ContentRaw: `{"file_key":"file_b","file_name":"report.pdf"}`}
+	require.Equal(t, "[File] report.pdf", replyGist(x),
+		"the file is in the body Feishu sent, so a forwarded child names it too")
+}
+
 func TestReplyGist_ReadsACardLarkCliNeverRendered(t *testing.T) {
 	pending := weeklyCard
 	pending.Content, pending.RenderedAt = "", 0

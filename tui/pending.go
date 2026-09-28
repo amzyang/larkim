@@ -27,12 +27,8 @@ func pendingText(msgType, contentRaw string) string {
 			return sync.UnwrapParagraphs(v.Text)
 		}
 	case "post":
-		text, pics := postText(contentRaw)
-		switch {
-		case text != "":
+		if text := postText(contentRaw); text != "" {
 			return text
-		case pics:
-			return msgTypeLabel("image")
 		}
 	}
 	return msgTypeLabel(msgType)
@@ -100,24 +96,24 @@ func postParts(contentRaw string) ([]postPart, bool) {
 	return parts, true
 }
 
-// postText reads the words a rich-text body carries, paragraph per line, and
-// whether it carries pictures besides. This is what the post can say before
-// its rendering lands. A post of pictures alone has no words to return, and
-// the picture names it better than the type does.
-func postText(contentRaw string) (text string, pics bool) {
+// postText reads what a rich-text body says, paragraph per line, before its
+// rendering lands. A picture is named where it was placed, the way the
+// rendering names one: the words alone would have the post read as though the
+// sender never sent it.
+func postText(contentRaw string) string {
 	parts, ok := postParts(contentRaw)
 	if !ok {
-		return "", false
+		return ""
 	}
 	lines := make([]string, 0, len(parts))
 	for _, p := range parts {
 		if p.image != "" {
-			pics = true
+			lines = append(lines, msgTypeLabel("image"))
 			continue
 		}
 		lines = append(lines, p.text)
 	}
-	return strings.TrimSpace(strings.Join(lines, "\n")), pics
+	return strings.TrimSpace(strings.Join(lines, "\n"))
 }
 
 // postBodyOf reads a body in either form the wire uses: the bare

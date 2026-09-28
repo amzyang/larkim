@@ -250,6 +250,11 @@ func TestCardGist_SaysWhatTheCardSays(t *testing.T) {
 	require.Equal(t, "报表", cardGist(c))
 }
 
+func TestCardGist_PictureOnlyCardIsNamedByItsPicture(t *testing.T) {
+	require.Equal(t, "[Image]", cardGist(card.Card{Blocks: []card.Block{{ImageKey: "img_a"}}}),
+		"a card with nothing but a picture is still a card that said something")
+}
+
 // An alarm bot puts the same band on every card it posts and says which alarm
 // this one is in the summary, which is the line the client shows as well.
 func TestCardGist_TakesTheSummaryOverTheBand(t *testing.T) {

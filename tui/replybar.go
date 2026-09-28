@@ -216,29 +216,45 @@ func replyGist(x store.Message) string {
 		return msgTypeLabel(x.MsgType)
 	}
 	if c, ok := card.Parse(x.ContentRaw); ok {
-		return flatten(expandEmoji(cardGist(c)))
+		if text := flatten(expandEmoji(plainAt(cardGist(c)))); text != "" {
+			return text
+		}
+		return msgTypeLabel(x.MsgType)
 	}
-	if x.RenderedAt == 0 {
-		return flatten(expandEmoji(pendingText(x.MsgType, x.ContentRaw)))
-	}
+	// The file a message is comes from the body Feishu sent, so it names itself
+	// whether or not the rendering has landed.
 	if a, ok := attachmentOf(x.MsgType, x.ContentRaw); ok {
 		return attachGist(a)
 	}
-	keys, rest := splitImages(x.Content)
-	if text := flatten(expandEmoji(plainInline(rest))); text != "" {
-		return text
+	if x.RenderedAt == 0 {
+		return flatten(expandEmoji(plainAt(pendingText(x.MsgType, x.ContentRaw))))
 	}
-	if len(keys) > 0 {
-		return "[Image]"
+	if text := flatten(expandEmoji(plainAt(gistBody(x.Content)))); text != "" {
+		return text
 	}
 	return msgTypeLabel(x.MsgType)
 }
 
-// plainInline is renderInline without the styling: a link keeps its label,
-// bold and underlined runs keep their text, and an @-everyone reads as the
-// name the client gives it.
-func plainInline(s string) string {
+// plainAt spells the mentions of a line that carries no styling of its own: a
+// quote is dim as a whole, so there is no colour for a run to break into and
+// the tags have to read as the names they stand for.
+func plainAt(s string) string {
 	s = strings.ReplaceAll(s, allKey, allName)
+	return atRun.ReplaceAllStringFunc(s, func(m string) string {
+		g := atRun.FindStringSubmatch(m)
+		switch {
+		case g[1] == "all" || g[1] == allKey:
+			return allName
+		case g[2] != "":
+			return "@" + g[2]
+		}
+		return "@" + g[1]
+	})
+}
+
+// inlineText is renderInline without the styling: a link keeps its label, and
+// bold, underlined, struck and code runs keep their text.
+func inlineText(s string) string {
 	return inlineMD.ReplaceAllStringFunc(s, func(m string) string {
 		g := inlineMD.FindStringSubmatch(m)
 		for _, alt := range g[1:] {
