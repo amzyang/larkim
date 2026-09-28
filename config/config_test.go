@@ -14,17 +14,17 @@ import (
 func TestLoad_MissingFileGivesDefaults(t *testing.T) {
 	cfg, err := Load(filepath.Join(t.TempDir(), "nope.yaml"))
 	require.NoError(t, err)
-	require.Equal(t, 3*time.Second, cfg.PollInterval)
+	require.Equal(t, 3000, cfg.PollIntervalMS)
 	require.Equal(t, int64(50<<20), cfg.Resources.MaxBytes)
 	require.True(t, filepath.IsAbs(cfg.DataDir))
 }
 
 func TestLoad_OverridesAndFloors(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "c.yaml")
-	require.NoError(t, os.WriteFile(p, []byte("poll_interval: 100ms\ndata_dir: ~/x\nbackfill_days: 7\nresources:\n  max_bytes: 1\n"), 0o644))
+	require.NoError(t, os.WriteFile(p, []byte("poll_interval_ms: 0\ndata_dir: ~/x\nbackfill_days: 7\nresources:\n  max_bytes: 1\n"), 0o644))
 	cfg, err := Load(p)
 	require.NoError(t, err)
-	require.Equal(t, time.Second, cfg.PollInterval, "floored at 1s")
+	require.Equal(t, 100, cfg.PollIntervalMS, "floored at 100ms")
 	require.Equal(t, 7, cfg.BackfillDays)
 	require.Equal(t, int64(1), cfg.Resources.MaxBytes)
 	require.NotContains(t, cfg.DataDir, "~")
@@ -86,9 +86,17 @@ func TestLoadWith_ParsesAValueTheWayTheFileWould(t *testing.T) {
 func TestLoadWith_StillFloorsThePollInterval(t *testing.T) {
 	// The reason the sets land before normalisation: the floor has to judge
 	// the value that will actually be used.
-	cfg, err := LoadWith(filepath.Join(t.TempDir(), "nope.yaml"), []string{"poll_interval=10ms"})
+	cfg, err := LoadWith(filepath.Join(t.TempDir(), "nope.yaml"), []string{"poll_interval_ms=0"})
 	require.NoError(t, err)
-	require.Equal(t, time.Second, cfg.PollInterval)
+	require.Equal(t, 100, cfg.PollIntervalMS)
+}
+
+func TestLoad_KeepsASubSecondPollInterval(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "c.yaml")
+	require.NoError(t, os.WriteFile(p, []byte("poll_interval_ms: 250\n"), 0o644))
+	cfg, err := Load(p)
+	require.NoError(t, err)
+	require.Equal(t, 250, cfg.PollIntervalMS)
 }
 
 func TestLoadWith_NamesAKeyTheConfigHasNot(t *testing.T) {
@@ -128,7 +136,7 @@ func TestGet_RoundTripsEveryKey(t *testing.T) {
 func TestGet_SpellsValuesTheWayTheFileDoes(t *testing.T) {
 	cfg := Default()
 	for key, want := range map[string]string{
-		"poll_interval":       "3s",
+		"poll_interval_ms":    "3000",
 		"repair_every":        "6h",
 		"overlap":             "2m",
 		"backfill_days":       "30",

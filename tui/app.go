@@ -11,7 +11,6 @@ import (
 	"strings"
 	"time"
 
-	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/textarea"
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
@@ -85,6 +84,8 @@ type Model struct {
 	// marker. The open chat's draft lives in the composer, not here, so this
 	// map is one refresh behind for that one row — see draftForRow.
 	drafts map[string]store.Draft
+	// frameDrafts is the same for the thread rows, keyed by thread.
+	frameDrafts map[string]store.Draft
 	// chatPollInFlight holds the open chat's poll to one call at a time, so a
 	// slow one costs a skipped beat instead of a queue.
 	chatPollInFlight bool
@@ -215,6 +216,10 @@ type Model struct {
 	// covered ones are packed, so every pane, rebuild and scroll goes on
 	// reading the fields it always read.
 	rightStack []rightFrame
+	// rightDraftPin says the column's box is still waiting for its frame's
+	// draft, and is spent on the first list to land under it. Without it a
+	// reload would put back a draft the reader has just cleared.
+	rightDraftPin bool
 	// rightPin puts a popped frame back where the reader left it, spent on
 	// the first list to land under it.
 	rightPin rightFrame
@@ -276,10 +281,19 @@ type Model struct {
 	// name rather than by offset, because the draft goes on being edited.
 	picked map[string]string
 
-	input   textarea.Model
-	cmdline textinput.Model
-	replyTo *store.Message
-	inThrd  bool
+	// input is the box under the message panes and rightInput the one the
+	// right column carries; side says which of the two the keys go to. See
+	// sidebox.go.
+	input      textarea.Model
+	rightInput textarea.Model
+	side       composerSide
+	cmdline    textinput.Model
+	replyTo    *store.Message
+	inThrd     bool
+	// rightReply is what the right box answers, nil for the frame itself.
+	// Whether that lands inside a thread is the frame's business, not a flag
+	// of its own, so there is no inThrd beside it.
+	rightReply *store.Message
 	// draft is what the composer holds, resolved on every keystroke so the
 	// badge names the message type — and any refused path — before Enter
 	// commits to it. files resolves the paths a draft names.
@@ -319,14 +333,6 @@ type Model struct {
 
 // New builds the model.
 func New(d Deps) Model {
-	ta := textarea.New()
-	ta.Prompt = ""
-	ta.ShowLineNumbers = false
-	ta.KeyMap.InsertNewline = key.NewBinding(key.WithKeys("shift+enter", "alt+enter", "ctrl+j"))
-	ta.SetHeight(3)
-	// The terminal's own cursor carries the mode, so bubbles must stop drawing
-	// its reverse-video stand-in: a virtual cursor has no shape to change.
-	ta.SetVirtualCursor(false)
 	ti := textinput.New()
 	ti.Prompt = ":"
 	ti.SetVirtualCursor(false)
@@ -360,7 +366,8 @@ func New(d Deps) Model {
 		d.Config.ApplinkPaceMS = applink.DefaultPaceMS
 	}
 	prunePasted(d.DataDir, time.Now())
-	m := Model{deps: d, input: ta, cmdline: ti, focus: paneChats, focused: true, previewOpen: true,
+	m := Model{deps: d, input: newComposer(), rightInput: newComposer(), cmdline: ti,
+		focus: paneChats, focused: true, previewOpen: true,
 		cfg:        d.Config,
 		ai:         d.AI,
 		msgLimit:   messagePageSize,
@@ -382,6 +389,7 @@ func (m *Model) setBackground(bg color.Color, dark bool) {
 	m.dark = dark
 	m.th = themeFor(bg, dark)
 	m.input.SetStyles(composerStyles(dark))
+	m.rightInput.SetStyles(composerStyles(dark))
 	m.cmdline.SetStyles(textinput.DefaultStyles(dark))
 }
 
@@ -476,14 +484,18 @@ func (m Model) picturePrepare() string {
 	// The lines standing over the composer are claimed with it: the message
 	// a reply quotes and the one being forwarded are what the reader is
 	// working on, and each spends at most a couple of ids.
-	if m.replyTo != nil {
-		head, gist, room := m.replyBarParts(m.width - 2)
+	for _, side := range []composerSide{sideMain, sideRight} {
+		x, ok := m.quotedOn(side)
+		if !ok {
+			continue
+		}
+		head, gist, room := m.replyBarParts(side, x, m.bandWidth(side)-2)
 		for _, s := range gistSegs(head, gist, room, stDim, m.chatPics().gist) {
 			claimed.take(s.pic)
 		}
 	}
 	if m.mode == modeForward {
-		for _, s := range m.fwdGistSegs(m.width - 2) {
+		for _, s := range m.fwdGistSegs(m.bandWidth(m.side) - 2) {
 			claimed.take(s.pic)
 		}
 	}
@@ -585,10 +597,16 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case chatsLoadedMsg:
 		vis := m.visibleRows()
 		wasCursor, wasTop := rowKeyAt(vis, m.chatIdx), rowKeyAt(vis, m.chatTop)
-		m.chats, m.threads, m.unread, m.drafts = msg.chats, msg.threads, msg.unread, msg.drafts
+		m.chats, m.threads, m.unread = msg.chats, msg.threads, msg.unread
+		m.drafts, m.frameDrafts = msg.drafts, msg.frameDrafts
+		// The list opens on the Unread row, which is the one row that answers
+		// what is waiting without taking any of it as read. Opening a chat
+		// instead would put its page in front of a reader who has not looked
+		// at anything yet, and the read gate would settle it and send the
+		// client after it.
+		var open tea.Cmd
 		if m.openingChat() == "" && m.feed == nil && len(m.chats) > 0 {
-			cmd := m.openChat(m.chats[0].ChatID)
-			return m, cmd
+			open = m.startUnread(false)
 		}
 		m.repinChat(wasCursor, wasTop)
 		// The panel's closing note counts the chats its page leaves out, and
@@ -597,7 +615,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.inFeed() {
 			m.rebuildMessages()
 		}
-		return m, nil
+		return m, open
 	case messagesLoadedMsg:
 		// A page for the chat the panel's cursor happens to rest in is not the
 		// panel's page: it would put that chat's whole history under the
@@ -616,9 +634,10 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		anchor := topAnchor(m.msgRows, m.msgs, m.msgTop)
 		tailed := atTail(m.msgRows, m.msgTop, m.msgListHeight())
 		entering := msg.chatID == m.pendingChat
+		var entered tea.Cmd
 		switch msg.chatID {
 		case m.pendingChat:
-			m.enterChat()
+			entered = m.enterChat()
 			wasOn, atEnd, tailed = "", true, true
 		case m.chatID:
 		default:
@@ -634,7 +653,9 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if entering || !m.pageShown(tailed) {
 			m.markDots(msg.msgs)
 		}
-		var infoCmd tea.Cmd
+		// entered carries the write the closing right column owed, since the
+		// chat being left is the chat its frame belonged to.
+		infoCmd := entered
 		m.msgsBase, m.meta = msg.msgs, msg.meta
 		m.applyOutbox()
 		// Only the page that opens the chat carries its draft back into the
@@ -870,6 +891,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.markDots(msg.msgs)
 		m.threadBase, m.threadMeta = msg.msgs, msg.meta
 		m.applyOutbox()
+		m.takeRightDraft(msg.draft, m.thread)
 		if m.threadIdx >= len(m.thread) {
 			m.threadIdx = max(0, len(m.thread)-1)
 		}
@@ -922,17 +944,17 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case clipEmpty:
 			return m.notify("the clipboard is empty", true), nil
 		case clipText:
-			m.input.InsertString(msg.clip.text)
+			m.areap().InsertString(msg.clip.text)
 		case clipImage:
-			m.input.InsertString(imageRef(msg.clip.path))
+			m.areap().InsertString(imageRef(msg.clip.path))
 		case clipFile:
 			// A picture goes in as one so it draws in the list; anything else
 			// goes in as an attachment, which is what a file copied in Finder
 			// was meant to be.
 			if isImagePath(msg.clip.path) {
-				m.input.InsertString(imageRef(msg.clip.path))
+				m.areap().InsertString(imageRef(msg.clip.path))
 			} else {
-				m.input.InsertString(fileRef(msg.clip.path))
+				m.areap().InsertString(fileRef(msg.clip.path))
 			}
 		}
 		m.replan()
@@ -956,7 +978,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.notify("editor: "+err.Error(), true), nil
 		}
 		// Taken verbatim, empty included: that is the user clearing the draft.
-		m.input.SetValue(string(b))
+		m.areap().SetValue(string(b))
 		m.replan()
 		// The editor owned the screen, so every placement it cleared has to be
 		// transmitted again before the panes are drawn.
@@ -1038,7 +1060,8 @@ func (m Model) forward(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch m.mode {
 	case modeInsert:
 		before := m.composerRows()
-		m.input, cmd = m.input.Update(msg)
+		ta := m.areap()
+		*ta, cmd = ta.Update(msg)
 		m.tookDraft(before)
 	case modeCommand, modeFilter, modeSearch:
 		m.cmdline, cmd = m.cmdline.Update(msg)
@@ -1088,7 +1111,7 @@ func (m *Model) openChatFrom(chatID string, sinceMs int64) tea.Cmd {
 	return tea.Batch(keep, loadMessages(m.deps, chatID, sinceMs, limit), scheduleChatRefresh(chatID))
 }
 
-// draftForRow is the draft the chat list draws its marker from. The open chat
+// draftForRow is the draft a chat's row draws its marker from. The open chat
 // answers from the composer rather than from the map: its row is beside the
 // text being typed, so a marker one refresh behind would visibly disagree with
 // what is on screen.
@@ -1099,10 +1122,27 @@ func (m Model) draftForRow(chatID string) store.Draft {
 	return m.drafts[chatID]
 }
 
-// saveComposer puts what the composer holds back under the chat it was typed
-// in. One widget serves every chat, so without this a half-written message
-// follows the reader into the next chat and is sent to the wrong person.
+// draftForThreadRow is draftForRow for the thread rows the list carries beside
+// the chats: the frame standing in the right column answers from the box it is
+// being typed into, every other from the map.
+func (m Model) draftForThreadRow(threadID string) store.Draft {
+	if m.rightHasComposer() && threadID == m.threadID {
+		return store.Draft{ChatID: m.chatID, FrameID: threadID, Text: m.rightInput.Value()}
+	}
+	return m.frameDrafts[threadID]
+}
+
+// saveComposer puts both boxes back under the chat and the frame they were
+// typed in. One widget serves every chat, so without this a half-written
+// message follows the reader into the next chat and is sent to the wrong
+// person.
 func (m Model) saveComposer() tea.Cmd {
+	keep := m.saveRightBox()
+	return tea.Batch(keep, m.saveChatBox())
+}
+
+// saveChatBox writes the box under the message panes back under the open chat.
+func (m Model) saveChatBox() tea.Cmd {
 	if m.chatID == "" {
 		return nil
 	}
@@ -1118,7 +1158,8 @@ func (m Model) saveComposer() tea.Cmd {
 	if m.replyTo != nil {
 		replyTo = m.replyTo.MessageID
 	}
-	return saveDraft(m.deps, m.chatID, m.input.Value(), replyTo, m.inThrd)
+	return saveDraft(m.deps, store.Draft{ChatID: m.chatID, Text: m.input.Value(),
+		ReplyTo: replyTo, InThread: m.inThrd})
 }
 
 // quit ends the program, keeping what is in the composer. Sequence, not Batch:
@@ -1129,7 +1170,7 @@ func (m Model) quit() tea.Cmd { return tea.Sequence(m.saveComposer(), tea.Quit) 
 // Everything the previous chat owned — its thread, the message being quoted,
 // the search it was reached from — goes at that same moment, so no pane is
 // ever left showing one chat under another's name.
-func (m *Model) enterChat() {
+func (m *Model) enterChat() tea.Cmd {
 	m.searching, m.searchHits, m.searchQuery = false, nil, ""
 	m.feed = nil
 	m.clearMessagePane()
@@ -1138,9 +1179,10 @@ func (m *Model) enterChat() {
 	// A pull still out belongs to the chat being left; its answer is dropped
 	// on arrival, so the next chat starts free to ask for its own history.
 	m.msgPullInFlight = false
-	m.closeRight()
+	keep := m.closeRight()
 	m.replyTo, m.inThrd = nil, false
 	m.selectCurrentChat()
+	return keep
 }
 
 // clearMessagePane empties the pane of the page it is showing, markers and
@@ -1609,10 +1651,17 @@ func (m Model) onInsertKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch k.String() {
 	case "esc":
 		m.mode = modeNormal
-		m.input.Blur()
-		return m.focusMessages(), nil
+		m.areap().Blur()
+		if m.side == sideRight {
+			// The box belongs to the right column, so that is the pane behind
+			// it to step back into.
+			m.focus = paneThread
+			return m, nil
+		}
+		next, keep := m.focusMessages()
+		return next, keep
 	case "ctrl+r":
-		m.setReply(nil, false)
+		m.setQuote(nil, false)
 		return m, nil
 	case "ctrl+o":
 		m.previewOpen = !m.previewOpen
@@ -1625,12 +1674,13 @@ func (m Model) onInsertKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "ctrl+g":
 		// Intercepted before the textarea, which binds ctrl+g to select-all.
 		// A chat composer has far more use for a real editor than for that.
-		return m, editExternally(m.deps.Env, m.input.Value())
+		return m, editExternally(m.deps.Env, m.area().Value())
 	case "enter":
 		return m.submit()
 	}
 	var cmd tea.Cmd
-	m.input, cmd = m.input.Update(k)
+	ta := m.areap()
+	*ta, cmd = ta.Update(k)
 	// The run is re-read rather than watched for: the trigger can arrive by
 	// paste or be reached by moving the cursor, and neither is a keypress that
 	// says so.
@@ -1846,11 +1896,10 @@ func (m Model) onNormalKey(s string) (tea.Model, tea.Cmd) {
 	case "esc":
 		switch {
 		// A mark-all sweep is the one thing here that keeps acting after the
-		// key that started it, so it is the first thing esc backs out of. A
-		// read gate's own applink is not on offer: markChatRead has already
-		// settled that chat, so it is in neither ChatsWithUnread nor
-		// ReadStatusProbes, and dropping the applink leaves the client's dot
-		// lit with nothing left to find it.
+		// key that started it, so esc is scoped to it. A read gate's own
+		// applink is not on offer: it is the tail of a navigation the reader
+		// already made, not something still unfolding. Dropping it costs one
+		// dot until the next sweep, which does find that chat again.
 		case m.applinks.swept > 0:
 			return m.clearApplinks().notify("stopped", false), nil
 		case m.aiOpen:
@@ -1868,7 +1917,9 @@ func (m Model) onNormalKey(s string) (tea.Model, tea.Cmd) {
 			m.selectCurrentChat()
 			return m.notify("", false), nil
 		}
-		m.setReply(nil, false)
+		// The chat's box is what this rung is about: a quote in the right
+		// column belongs to the frame, which the rung above pops.
+		m.setQuoteOn(sideMain, nil, false)
 		return m.notify("", false), nil
 	}
 	return m, nil
@@ -2214,7 +2265,8 @@ func (m Model) activate() (tea.Model, tea.Cmd) {
 			}
 			return m, cmd
 		}
-		return m.focusMessages(), cmd
+		next, keep := m.focusMessages()
+		return next, tea.Batch(keep, cmd)
 	case paneMessages:
 		if m.searching {
 			return m.openHit()
@@ -2254,13 +2306,6 @@ func (m Model) activate() (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// setReply points the composer at the message a draft answers, nil for none.
-// The quote takes a row of its own, so every pane above it is re-laid out.
-func (m *Model) setReply(replyTo *store.Message, inThread bool) {
-	m.replyTo, m.inThrd = replyTo, inThread
-	m.layout()
-}
-
 func (m Model) startInsert(replyTo *store.Message, inThread bool) (tea.Model, tea.Cmd) {
 	if m.chatID == "" {
 		return m.notify("open a chat first", true), nil
@@ -2272,23 +2317,46 @@ func (m Model) startInsert(replyTo *store.Message, inThread bool) (tea.Model, te
 	if replyTo != nil && replyTo.Deleted {
 		return m.notify("that message was recalled", true), nil
 	}
+	m.pickSide()
 	m.mode = modeInsert
 	m.focus = paneInput
-	side := m.feedAnswer(replyTo)
-	// Planned before setReply lays the panes out, so the session's first
+	var panel tea.Cmd
+	if m.side == sideMain {
+		// The Unread panel retargets the chat's box at the chat the quoted
+		// message came from. The right column is always the open chat's, so
+		// there is nothing there to retarget.
+		panel = m.feedAnswer(replyTo)
+	}
+	// Planned before setQuote lays the panes out, so the session's first
 	// frame previews the draft the composer actually holds.
 	m.replan()
-	m.setReply(replyTo, inThread)
-	return m, tea.Batch(side, m.input.Focus())
+	m.setQuote(replyTo, inThread)
+	cmd := m.areap().Focus()
+	return m, tea.Batch(panel, cmd)
+}
+
+// resumeInsert goes back to writing in the box that already has the keys,
+// which is what a click on one means: the press was about the box, not about
+// the message it answers.
+func (m Model) resumeInsert() (tea.Model, tea.Cmd) {
+	if m.chatID == "" {
+		return m.notify("open a chat first", true), nil
+	}
+	m.mode = modeInsert
+	m.focus = paneInput
+	m.replan()
+	m.layout()
+	cmd := m.areap().Focus()
+	return m, cmd
 }
 
 // replan re-resolves the draft after anything that can change it.
-func (m *Model) replan() { m.draft, m.draftErr = m.files.planDraft(m.input.Value()) }
+func (m *Model) replan() { m.draft, m.draftErr = m.files.planDraft(m.area().Value()) }
 
 // submit puts the draft on screen before it puts it on the wire: the bubble
 // is what says the message went, so nothing holds a second one back either.
 func (m Model) submit() (tea.Model, tea.Cmd) {
-	text := strings.TrimSpace(m.input.Value())
+	text := strings.TrimSpace(m.area().Value())
 	if text == "" {
 		return m, nil
 	}
@@ -2303,7 +2371,19 @@ func (m Model) submit() (tea.Model, tea.Cmd) {
 	p.send = m.tagMentions(p.send)
 	it := outboxItem{localID: uuid.NewString(), chatID: m.chatID, msgType: p.kind.msgType(),
 		send: p.send, body: p.body, images: p.uploads(), file: p.file, createMs: time.Now().UnixMilli()}
-	if m.replyTo != nil {
+	switch {
+	case m.side == sideRight:
+		// A frame's answer always names a message, even when the reader only
+		// meant the thread: Feishu has no way to post into one otherwise.
+		x, ok := m.rightTarget()
+		if !ok {
+			return m.notify("nothing to answer here yet", true), nil
+		}
+		it.chatID, it.replyTo, it.inThread = x.ChatID, x.MessageID, m.rightKind == rightThread
+		if it.inThread {
+			it.threadID = m.threadID
+		}
+	case m.replyTo != nil:
 		it.chatID, it.replyTo, it.inThread = m.replyTo.ChatID, m.replyTo.MessageID, m.inThrd
 		if m.inThrd {
 			it.threadID = m.replyTo.ThreadID
@@ -2311,10 +2391,18 @@ func (m Model) submit() (tea.Model, tea.Cmd) {
 	}
 	cmd := m.sendItem(it)
 	m.enqueue(it)
-	m.input.Reset()
+	m.areap().Reset()
 	m.replan()
-	m.setReply(nil, false)
+	m.setQuote(nil, false)
 	m.refreshPanes()
+	if m.side == sideRight {
+		if i := indexOfID(m.thread, it.localID); i >= 0 {
+			m.threadIdx = i
+			m.rebuildThread()
+			m.scrollThreadToSelection()
+		}
+		return m.notify("", false), cmd
+	}
 	if i := indexOfID(m.msgs, it.localID); i >= 0 {
 		m.msgIdx = i
 		m.rebuildMessages()
@@ -2406,9 +2494,9 @@ func (m Model) runCommand(line string) (tea.Model, tea.Cmd) {
 		want := store.FoldName(rest)
 		for _, c := range m.chats {
 			if c.ChatID == rest || store.FoldName(c.Name) == want {
-				m = m.focusMessages()
+				m, keep := m.focusMessages()
 				cmd := m.openChat(c.ChatID)
-				return m, cmd
+				return m, tea.Batch(keep, cmd)
 			}
 		}
 		return m.notify("no chat "+rest, true), nil
@@ -2529,7 +2617,7 @@ func (m Model) startAI(input string) (tea.Model, tea.Cmd) {
 		n = len(m.msgs)
 	}
 	transcript := ai.Transcript(name, m.msgs[len(m.msgs)-n:], m.deps.Self)
-	m.closeRight()
+	keep := m.closeRight()
 	m.stopAI()
 	m.aiOpen, m.aiBusy, m.aiDraft = true, true, draft
 	m.aiTitle = strings.TrimSpace(input)
@@ -2542,7 +2630,7 @@ func (m Model) startAI(input string) (tea.Model, tea.Cmd) {
 	ctx, cancel := context.WithCancel(context.Background())
 	m.aiCancel = cancel
 	m.aiChan = m.ai.Stream(ctx, transcript, prompt)
-	return m.notify("asking Claude…", false), waitForAI(m.aiGen, m.aiChan)
+	return m.notify("asking Claude…", false), tea.Batch(keep, waitForAI(m.aiGen, m.aiChan))
 }
 
 func (m Model) onAIChunk(msg aiChunkMsg) (tea.Model, tea.Cmd) {
@@ -2566,7 +2654,7 @@ func (m Model) onAIChunk(msg aiChunkMsg) (tea.Model, tea.Cmd) {
 	}
 	m.releaseAI()
 	if m.aiDraft && strings.TrimSpace(m.aiText) != "" {
-		m.input.SetValue(strings.TrimSpace(m.aiText))
+		m.areap().SetValue(strings.TrimSpace(m.aiText))
 		m.replan()
 		return m.notify("draft placed in the composer: i to edit, Enter to send", false), nil
 	}
@@ -2575,16 +2663,17 @@ func (m Model) onAIChunk(msg aiChunkMsg) (tea.Model, tea.Cmd) {
 
 // focusMessages moves focus to the messages pane; on a folded layout the
 // right pane stood in for it, so that pane closes first.
-func (m Model) focusMessages() Model {
+func (m Model) focusMessages() (Model, tea.Cmd) {
+	var keep tea.Cmd
 	if m.foldRight() {
 		// The reader is leaving the column, not stepping back through it, so
 		// the whole stack goes rather than one frame.
-		m.closeRight()
+		keep = m.closeRight()
 		m.stopAI()
 		m.layout()
 	}
 	m.focus = paneMessages
-	return m
+	return m, keep
 }
 
 // stopAI drops the answer in flight. The request is cancelled so an abandoned
@@ -2627,7 +2716,7 @@ func (m Model) onClick(ms tea.Mouse) (tea.Model, tea.Cmd) {
 	p, row := m.hit(ms.X, ms.Y)
 	if p == paneChats || p == paneMessages || p == paneThread {
 		m.mode = modeNormal
-		m.input.Blur()
+		m.areap().Blur()
 		m.focus = p
 		// The pane's head takes the focus and nothing else: there is no row
 		// under the click to put the cursor on. The one button it draws
@@ -2654,16 +2743,16 @@ func (m Model) onClick(ms tea.Mouse) (tea.Model, tea.Cmd) {
 			// A click on the Unread row asked for the panel: there is no
 			// chat under it for the click to be merely selecting.
 			case r.isFeed():
-				m = m.focusMessages()
+				m, keep := m.focusMessages()
 				open := m.openRow(r, true)
-				return m, open
+				return m, tea.Batch(keep, open)
 			case r.isThread():
 				cmd := m.openRow(r, false)
 				return m, cmd
 			case r.chat.ChatID != m.chatID, double:
-				m = m.focusMessages()
+				m, keep := m.focusMessages()
 				cmd := m.openRow(r, false)
-				return m, cmd
+				return m, tea.Batch(keep, cmd)
 			}
 		}
 	case paneMessages:
@@ -2694,7 +2783,10 @@ func (m Model) onClick(ms tea.Mouse) (tea.Model, tea.Cmd) {
 			}
 		}
 	case paneInput:
-		return m.startInsert(m.replyTo, m.inThrd)
+		if s, ok := m.bandAt(ms.X); ok {
+			m.side = s
+		}
+		return m.resumeInsert()
 	}
 	return m, nil
 }
@@ -2763,6 +2855,11 @@ func (m Model) onWheel(ms tea.Mouse) (tea.Model, tea.Cmd) {
 			m.threadTop = clamp(m.threadTop+step, 0, max(0, len(m.threadRows)-m.listHeight()))
 		}
 	case paneInput:
+		// The box without the keys has nothing to scroll: what it draws is the
+		// draft it holds and the message it answers, neither of which moves.
+		if s, ok := m.bandAt(ms.X); !ok || s != m.side {
+			return m, nil
+		}
 		switch m.composerBand(row) {
 		case bandPreview:
 			m.previewTop = clamp(m.previewTop+step, 0, m.previewBottom())
@@ -2777,11 +2874,12 @@ func (m Model) onWheel(ms tea.Mouse) (tea.Model, tea.Cmd) {
 			// so moving the caret is the only scroll its API reaches. The
 			// Feishu client leaves the caret where it was; there is no way to
 			// do that here without reimplementing the widget.
+			ta := m.areap()
 			for range wheelStep {
 				if step < 0 {
-					m.input.CursorUp()
+					ta.CursorUp()
 				} else {
-					m.input.CursorDown()
+					ta.CursorDown()
 				}
 			}
 		}

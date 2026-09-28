@@ -169,9 +169,21 @@ func composerStyles(dark bool) textarea.Styles {
 }
 
 func (m *Model) layout() {
-	m.input.SetWidth(max(10, m.width-2))
-	m.input.SetHeight(m.composerRows().input)
-	m.cmdline.SetWidth(max(10, m.width-4))
+	// A box that is not on screen cannot be the one being written in, so the
+	// keys are sent back before anything is measured against the side.
+	m.holdSide()
+	m.input.SetWidth(max(10, m.bandWidth(sideMain)-2))
+	m.rightInput.SetWidth(max(10, m.bandWidth(sideRight)-2))
+	// Only a Thread frame is answered without naming a message, so only it has
+	// a prompt to stand where a quote would.
+	m.rightInput.Placeholder = ""
+	if m.rightKind == rightThread {
+		m.rightInput.Placeholder = threadPrompt
+	}
+	rows := m.composerRows()
+	m.sized(sideMain, rows)
+	m.sized(sideRight, rows)
+	m.cmdline.SetWidth(max(10, m.bandWidth(m.cmdSide())-4))
 	m.rebuildPreview()
 	// A resize rewraps every row, so each pane is held by the message on its
 	// top row rather than scrolled back to its cursor: a resize is not a
@@ -190,9 +202,37 @@ func (m *Model) layout() {
 	}
 }
 
-// bodyHeight is the inner height of the list panes.
+// sized gives a box its share of the band. The box with the keys splits its
+// rows between the preview, the popup and the badge; the other one spends
+// everything the band has on its quote and its text.
+func (m *Model) sized(s composerSide, rows composerRows) {
+	ta := &m.input
+	if s == sideRight {
+		ta = &m.rightInput
+	}
+	if s == m.side {
+		ta.SetHeight(rows.input)
+		return
+	}
+	h := m.composerHeight()
+	if _, ok := m.quotedOn(s); ok {
+		h--
+	}
+	ta.SetHeight(max(1, h))
+}
+
+// bodyHeight is the inner height of the message panes, the ones the composer
+// box stands under.
 func (m Model) bodyHeight() int {
 	return max(1, m.height-m.composerHeight()-2-statusHeight-2) // input border + pane border
+}
+
+// chatsBodyHeight is the inner height of the chats pane, which runs past the
+// composer to the status bar the way the client's chat list does. It is the
+// body plus the box below it, so it holds still while a growing draft shortens
+// the panes beside it.
+func (m Model) chatsBodyHeight() int {
+	return m.bodyHeight() + m.composerHeight() + 2 // input border
 }
 
 // listHeight is the number of rows a list pane shows below its title.
@@ -210,9 +250,13 @@ func (m Model) picHeight() int {
 	return max(1, m.height-restingComposer-statusHeight-msgHeaderHeight-4) // input border + pane border
 }
 
+// chatRowsHeight is listHeight for the chats pane, which has a column of its
+// own and so goes on past the composer box beside it.
+func (m Model) chatRowsHeight() int { return max(1, m.chatsBodyHeight()-headerHeight) }
+
 // chatListHeight is how many whole chats the chat pane shows; a chat is never
 // drawn with only one of its two lines.
-func (m Model) chatListHeight() int { return max(1, chatsThatFit(m.listHeight())) }
+func (m Model) chatListHeight() int { return max(1, chatsThatFit(m.chatRowsHeight())) }
 
 // foldRight reports whether the terminal is too narrow for three columns, in
 // which case the thread or assistant pane replaces the messages pane.
@@ -415,6 +459,11 @@ func (m *Model) rebuildThread() {
 	// Inside a frame every nested bundle belongs to the tree the frame came
 	// from, not to itself, which is where its rows and its pictures are kept.
 	st.forwardRoot, st.inFrame = m.rightRoot, true
+	// The box under the column marks what it answers. A quote taken into the
+	// chat's box keeps its own mark, since that message is in this list too.
+	if x, ok := m.quotedOn(sideRight); ok {
+		st.quoted = x.MessageID
+	}
 	m.threadRows = renderRows(m.thread, st)
 }
 
@@ -609,32 +658,44 @@ func scrollTo(rows []msgRow, idx, top, h int) int {
 // on a real row.
 func (m Model) hit(x, y int) (pane, int) {
 	body := m.bodyHeight()
-	if y >= 1+body+1 && y < 1+body+1+m.composerHeight()+2 {
-		// The row inside the box, counted past its top border. Borders land
-		// outside the box's own height, which composerBand reads as neither
-		// the preview nor the writing area.
-		return paneInput, y - (body + 3)
-	}
-	if y < 1 || y > body {
-		return -1, 0
-	}
 	listRow := func(head int) int {
 		if row := y - 1 - head; row >= 0 {
 			return row
 		}
 		return -1
 	}
-	switch {
-	case x < chatsWidth:
+	// The chats pane has a column to itself, so its rows go on past the row
+	// the composer box starts at beside it.
+	if x < chatsWidth {
+		if y < 1 || y > m.chatsBodyHeight() {
+			return -1, 0
+		}
 		if row := listRow(headerHeight); row >= 0 {
 			return paneChats, row / chatRowStride
 		}
 		return paneChats, -1
-	case m.rightOpen() && x >= m.width-m.rightWidth():
-		return paneThread, listRow(headerHeight)
-	default:
-		return paneMessages, listRow(msgHeaderHeight)
 	}
+	inRight := m.rightOpen() && x >= m.width-m.rightWidth()
+	_, boxed := m.bandAt(x)
+	if boxed && y >= 1+body+1 && y < 1+body+1+m.composerHeight()+2 {
+		// The row inside the box, counted past its top border. Borders land
+		// outside the box's own height, which composerBand reads as neither
+		// the preview nor the writing area.
+		return paneInput, y - (body + 3)
+	}
+	// A column with no box under it runs its pane to the status bar, the way
+	// the chats pane does.
+	bottom := body
+	if !boxed {
+		bottom = m.chatsBodyHeight()
+	}
+	if y < 1 || y > bottom {
+		return -1, 0
+	}
+	if inRight {
+		return paneThread, listRow(headerHeight)
+	}
+	return paneMessages, listRow(msgHeaderHeight)
 }
 
 func (m Model) View() tea.View {
@@ -653,33 +714,23 @@ func (m Model) View() tea.View {
 			stDim.Render(fmt.Sprintf("terminal too small · need %d×%d", minWidth, minHeight)))
 		return v
 	}
-	body := m.bodyHeight()
-	panes := []string{m.renderChats(body)}
+	// Every column owns the box under it: the box belongs to the conversation
+	// it writes into, not to the whole width of the screen, and the chats pane
+	// writes into none and so runs to the status bar.
+	cols := []string{m.renderChats(m.chatsBodyHeight())}
 	if !m.foldRight() {
-		panes = append(panes, m.renderMessages(body))
+		cols = append(cols, m.renderMessages(m.bodyHeight())+"\n"+m.renderBand(sideMain))
 	}
 	switch {
 	case m.aiOpen:
-		panes = append(panes, m.renderAI(body))
+		cols = append(cols, m.rightColumn(m.renderAI))
 	case m.infoOpen:
-		panes = append(panes, m.renderInfo(body))
+		cols = append(cols, m.rightColumn(m.renderInfo))
 	case m.threadOpen():
-		panes = append(panes, m.renderThread(body))
+		cols = append(cols, m.rightColumn(m.renderThread))
 	}
-	top := lipgloss.JoinHorizontal(lipgloss.Top, panes...)
 	var out strings.Builder
-	out.WriteString(top)
-	out.WriteString("\n")
-	switch m.mode {
-	case modeEmoji:
-		out.WriteString(m.renderPicker())
-	case modeForward:
-		out.WriteString(m.renderForward())
-	case modeTarget:
-		out.WriteString(m.renderTargets())
-	default:
-		out.WriteString(m.renderInput())
-	}
+	out.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, cols...))
 	out.WriteString("\n")
 	out.WriteString(m.renderStatus())
 	if m.config.open {
@@ -712,36 +763,39 @@ func cursorShape(md mode) (tea.CursorShape, bool) {
 // cursor even in the modes that do not write into it, so the block sits on the
 // spot i would resume at, the way vim's does.
 func (m Model) cursorAt() *tea.Cursor {
-	w := m.width - 2
 	// The panes with their border, then the composer box's own top border.
 	top := m.bodyHeight() + 3
 	shape, blink := cursorShape(m.mode)
-	place := func(c *tea.Cursor, x, y int) *tea.Cursor {
+	// A box starts where the column it belongs to does, so every caret inside
+	// it is offset by that column as well as by its own border.
+	place := func(s composerSide, c *tea.Cursor, x, y int) *tea.Cursor {
 		if c == nil {
 			return nil
 		}
+		left, w := m.bandLeft(s), m.bandWidth(s)-2
 		// A line wider than its box scrolls under it and bubbles keeps the
 		// offset to itself, so the caret is pinned to the last column it can
 		// be in — which is where it is whenever it is the thing pushing the
 		// text along.
-		c.X, c.Y = min(c.X+x, m.width-2), c.Y+y
+		c.X, c.Y = min(c.X+left+x, left+w), c.Y+y
 		c.Shape, c.Blink = shape, blink
 		c.Color = nil // the terminal's own cursor colour wins
 		return c
 	}
 	switch m.mode {
 	case modeCommand, modeFilter, modeSearch:
-		return place(textinputCursor(m.cmdline), 1, top+len(m.cmdCompLines(m.width-2)))
+		cs := m.cmdSide()
+		return place(cs, textinputCursor(m.cmdline), 1, top+len(m.cmdCompLines(m.bandWidth(cs)-2)))
 	case modeEmoji:
-		return place(textinputCursor(m.picker.input), 1+lipgloss.Width(pickerPrompt()), top)
+		return place(m.side, textinputCursor(m.picker.input), 1+lipgloss.Width(pickerPrompt()), top)
 	case modeForward:
-		return place(textinputCursor(m.fwd.input), 1+lipgloss.Width(fwdPrompt()), top)
+		return place(m.side, textinputCursor(m.fwd.input), 1+lipgloss.Width(fwdPrompt()), top)
 	}
 	// bubbles reports no cursor for a blurred widget, and every mode but
 	// insert blurs the composer, so the caret is asked of a focused copy.
-	ta := m.input
+	ta := m.area()
 	ta.Focus()
-	return place(ta.Cursor(), 1, top+len(m.composerAbove(w)))
+	return place(m.side, ta.Cursor(), 1, top+len(m.composerAbove(m.side, m.bandWidth(m.side)-2)))
 }
 
 // textinputCursor is where a text input's caret sits, in cells. bubbles counts
@@ -807,7 +861,8 @@ func (m Model) renderChats(h int) string {
 		case row.isThread():
 			// A thread's title is the words its root opened with, not a name,
 			// so the filter has no rune positions there to underline.
-			r = renderThreadRow(m.avatars, row, m.deps.Self, m.gists.at(row, m.deps.Self, m.chatPics()), now, w)
+			r = renderThreadRow(m.avatars, row, m.draftForThreadRow(row.thread.ThreadID), m.deps.Self,
+				m.gists.at(row, m.deps.Self, m.chatPics()), now, w)
 		default:
 			mark, _ := m.chatIx.match(row.chat, m.chatFilter)
 			r = renderChatRow(m.avatars, row, m.draftForRow(row.chatID()), m.unread[row.chatID()],
@@ -991,9 +1046,13 @@ func (m Model) rightTitle(w int) string {
 	return stBold.Render(name) + stDim.Render(truncate(tail, w-lipgloss.Width(name)))
 }
 
-func (m Model) renderInput() string {
-	w, h := m.width-2, m.composerHeight()
-	if m.mode == modeCommand || m.mode == modeFilter || m.mode == modeSearch {
+// renderInput draws one box. The box without the keys shows its quote and its
+// text and nothing else — the preview, the popup and the badge all describe
+// the draft being typed, and the command line is the whole program's, so it
+// stands in the box the reader is in.
+func (m Model) renderInput(s composerSide) string {
+	w, h := m.bandWidth(s)-2, m.composerHeight()
+	if s == m.cmdSide() && (m.mode == modeCommand || m.mode == modeFilter || m.mode == modeSearch) {
 		// The offers go above the line rather than below it, so the line the
 		// reader is typing on stands still while the box grows upward under
 		// the panes.
@@ -1007,11 +1066,45 @@ func (m Model) renderInput() string {
 		rows = append(rows, m.renderCmdCompHint(w))
 		return paneStyle(true, w).Height(h).Render(fitBlock(strings.Join(rows, "\n"), w, h))
 	}
-	content := strings.Join(append(m.composerAbove(w), m.input.View()), "\n")
-	if m.composerRows().badge > 0 {
+	ta := m.input
+	if s == sideRight {
+		ta = m.rightInput
+	}
+	content := strings.Join(append(m.composerAbove(s, w), ta.View()), "\n")
+	if s == m.side && m.composerRows().badge > 0 {
 		content += "\n" + m.renderBadge(w)
 	}
-	return paneStyle(m.focus == paneInput, w).Height(h).Render(fitBlock(content, w, h))
+	return paneStyle(m.focus == paneInput && s == m.side, w).Height(h).Render(fitBlock(content, w, h))
+}
+
+// renderBand is the box under one column, with whichever chooser has taken the
+// reader's own box standing in for it.
+func (m Model) renderBand(s composerSide) string {
+	if s == m.side {
+		switch m.mode {
+		case modeEmoji:
+			return m.renderPicker()
+		case modeForward:
+			return m.renderForward()
+		case modeTarget:
+			return m.renderTargets()
+		}
+	}
+	return m.renderInput(s)
+}
+
+// rightColumn draws the right pane with whatever stands under it: its own box
+// when the frame has one, the chat's box when the column is standing in for
+// the messages pane, and nothing at all otherwise — in which case the pane
+// runs to the status bar the way the chats pane does.
+func (m Model) rightColumn(render func(int) string) string {
+	switch {
+	case m.rightHasComposer():
+		return render(m.bodyHeight()) + "\n" + m.renderBand(sideRight)
+	case m.foldRight():
+		return render(m.bodyHeight()) + "\n" + m.renderBand(sideMain)
+	}
+	return render(m.chatsBodyHeight())
 }
 
 // composerHint names the two keys the composer's own mode owns, and writeHint

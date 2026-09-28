@@ -66,7 +66,7 @@ func TestFeed_AQuotePinsTheTargetTheCursorWalksAwayFrom(t *testing.T) {
 	m = onSection(t, m, "oc_project")
 	sel, ok := m.selected()
 	require.True(t, ok)
-	m.setReply(&sel, false)
+	m.setQuote(&sel, false)
 
 	m = onSection(t, m, "oc_platform")
 
@@ -74,7 +74,7 @@ func TestFeed_AQuotePinsTheTargetTheCursorWalksAwayFrom(t *testing.T) {
 	require.Equal(t, "om_j1", m.replyTo.MessageID)
 	require.Equal(t, "oc_project", m.chatID, "and the answer is still bound for its chat")
 
-	m.setReply(nil, false)
+	m.setQuote(nil, false)
 	m = applyAll(t, m, m.feedRetarget())
 	require.Equal(t, "oc_platform", m.chatID, "dropping it hands the target back to the cursor")
 }
@@ -243,7 +243,7 @@ func TestOnClick_TheUnreadRowOpensThePanel(t *testing.T) {
 // draftOf is what the store holds for a chat.
 func draftOf(t *testing.T, m Model, chatID string) string {
 	t.Helper()
-	d, err := m.deps.Store.LoadDraft(t.Context(), chatID)
+	d, err := m.deps.Store.LoadDraft(t.Context(), chatID, "")
 	require.NoError(t, err)
 	return d.Text
 }
@@ -398,7 +398,7 @@ func pointedAtProject(t *testing.T) Model {
 
 	// The quote comes down and nothing was typed, so the widget is empty and
 	// belongs to no chat.
-	m.setReply(nil, false)
+	m.setQuote(nil, false)
 	m.input.SetValue("")
 	return m
 }
@@ -430,4 +430,48 @@ func TestFeed_QuitKeepsTheDraftOfAChatOnlyPointedAt(t *testing.T) {
 	m = applyAll(t, m, m.quit())
 
 	require.Equal(t, "周四没问题", draftOf(t, m, "oc_project"))
+}
+
+func TestChatsLoaded_TheFirstListingOpensTheUnreadRow(t *testing.T) {
+	m := sized(120, 36)
+	// A cold start: the model has been built but no listing has landed yet,
+	// so nothing is open and nothing has been asked for.
+	chats := m.chats
+	m.chats, m.chatID, m.msgsBase, m.msgs = nil, "", nil, nil
+
+	mm, _ := m.update(chatsLoadedMsg{chats: chats})
+	m = mm.(Model)
+
+	require.True(t, m.visibleRows()[m.chatIdx].isFeed(), "the cursor opens on the Unread row")
+	require.NotNil(t, m.feed, "and the row's page is what the message pane holds")
+	require.Equal(t, paneChats, m.focus, "the page loads beside the reader, not under them")
+	require.Empty(t, m.pendingChat, "no chat is asked for, so nothing is taken as read")
+}
+
+func TestChatsLoaded_ALaterListingLeavesTheOpenChatAlone(t *testing.T) {
+	m := sized(120, 36)
+	mm, _ := m.update(chatsLoadedMsg{chats: m.chats})
+	m = mm.(Model)
+
+	require.Nil(t, m.feed, "a chat is already open, so the panel does not come up over it")
+	require.Equal(t, "oc_1", m.chatID)
+}
+
+func TestCloseUnread_WithNothingBehindItFallsBackToTheFirstChat(t *testing.T) {
+	m := sized(120, 36)
+	m.chatID, m.feed = "", &unreadFeed{}
+
+	require.NotNil(t, m.closeUnread())
+	require.Equal(t, "oc_0", m.pendingChat, "Esc leaves the reader in a chat, not an empty pane")
+	require.Equal(t, paneChats, m.focus)
+}
+
+func TestCloseUnread_WithNoChatsLeavesThePaneEmpty(t *testing.T) {
+	m := sized(120, 36)
+	m.chats, m.chatID, m.feed = nil, "", &unreadFeed{}
+
+	m.closeUnread()
+	require.Nil(t, m.feed)
+	require.Empty(t, m.pendingChat)
+	require.Empty(t, m.msgs)
 }

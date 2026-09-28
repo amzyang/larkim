@@ -170,7 +170,7 @@ func TestCmdComp_TheColonLineStandsStillAsTheListGrows(t *testing.T) {
 	m = press(t, m, "backspace", "r", "e", "a", "c", "t", " ")
 	require.Greater(t, m.composerRows().pum, one, "an emoji list is longer than two commands")
 	require.Equal(t, at.Y, m.View().Cursor.Y, "the line the reader types on does not move")
-	require.Equal(t, m.composerHeight()+2, lipgloss.Height(m.renderInput()), "the box is exactly as tall as it claims")
+	require.Equal(t, m.composerHeight()+2, lipgloss.Height(m.renderInput(sideMain)), "the box is exactly as tall as it claims")
 }
 
 func TestRunCommand_RunsWhatTheListWroteIntoTheLine(t *testing.T) {

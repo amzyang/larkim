@@ -88,7 +88,7 @@ func TestEnterChat_DraftCarriesItsQuoteBack(t *testing.T) {
 	m, st := draftModel(t)
 	m = enter(t, m, st, "oc_group")
 	m.input.SetValue("好的")
-	m.setReply(&m.msgs[0], true)
+	m.setQuote(&m.msgs[0], true)
 
 	m = enter(t, m, st, "oc_peer")
 	m = enter(t, m, st, "oc_group")

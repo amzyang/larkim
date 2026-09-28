@@ -18,8 +18,8 @@ import (
 // It delays; it never drops. The number of applinks is still the number of
 // unread messages (docs/read-sync/PRD.md). A cooling window would drop the
 // ones that landed inside it, leaving messages markChatRead settles quietly
-// and a dot the client never takes down — which is the thing that paragraph
-// rules out.
+// and a dot only the next sweep would find — which is the thing that
+// paragraph rules out.
 type applinkQueue struct {
 	// left is the chats still to be walked onto, each with the message to
 	// land on. The reader's own chat ends up last, so the client comes to

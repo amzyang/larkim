@@ -16,7 +16,9 @@ type readAllResult struct {
 	// main message flow still had something Feishu reports unseen.
 	Chats int `json:"chats"`
 	// Failed is how many of those macOS refused to open, which leaves the
-	// client's own dot up while larkim's badge is already down.
+	// client's own dot up while larkim's badge is already down. Those chats
+	// stay in the set until Feishu reports them read, so the next pass
+	// retries them.
 	Failed int `json:"failed"`
 }
 
@@ -27,6 +29,8 @@ func (a *App) readAllCmd() *cobra.Command {
 		Short: "Take every chat as read and clear the Feishu client's red dots",
 		Long: "Feishu has no mark-read call. The local half is a write; the client's own dots come down by\n" +
 			"walking it onto each chat over a lark:// applink, in the background, one chat at a time.\n" +
+			"A chat leaves the set when Feishu reports it read, not when the walk is attempted, so a chat\n" +
+			"the client slept through is walked again by the next pass.\n" +
 			"Thread replies are taken as read locally but leave no dot to clear: the chat the applink\n" +
 			"opens does not render them, so the client never answers for one.",
 		Args: cobra.NoArgs,
@@ -37,8 +41,6 @@ func (a *App) readAllCmd() *cobra.Command {
 			}
 			defer st.Close()
 			ctx := context.Background()
-			// Read before the write: the write is what erases the evidence of
-			// which chats the client still has a dot for.
 			chats, err := st.ChatsWithUnread(ctx)
 			if err != nil {
 				return err
@@ -85,10 +87,12 @@ func (a *App) reportReadAll(cmd *cobra.Command, res readAllResult, dry bool) err
 		return a.printJSON(res)
 	}
 	if dry {
-		cmd.Printf("%d chats waiting\n", res.Chats)
+		cmd.Printf("%d chats waiting in Feishu\n", res.Chats)
 		return nil
 	}
-	cmd.Printf("%d messages read, %d chats cleared in Feishu\n", res.Messages, res.Chats-res.Failed)
+	// "walked", not "cleared": open returning nil is not the client saying it
+	// drew the chat, and the whole set turns on that difference now.
+	cmd.Printf("%d messages read, %d chats walked in Feishu\n", res.Messages, res.Chats-res.Failed)
 	if res.Failed > 0 {
 		cmd.Printf("%d chats kept their red dot: open refused them\n", res.Failed)
 	}

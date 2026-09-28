@@ -110,7 +110,7 @@ func TestRenderInput_BoxIsExactlyAsTallAsItClaims(t *testing.T) {
 		m.input.SetValue(draft)
 		m.replan()
 		m.layout()
-		require.Equal(t, m.composerHeight()+2, lipgloss.Height(m.renderInput()), "draft %q", draft)
+		require.Equal(t, m.composerHeight()+2, lipgloss.Height(m.renderInput(sideMain)), "draft %q", draft)
 	}
 }
 

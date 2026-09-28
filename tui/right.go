@@ -126,11 +126,7 @@ func (m Model) pushRight(f rightFrame) (Model, tea.Cmd) {
 // popRight uncovers the frame beneath; on the last one the column closes.
 func (m Model) popRight() (Model, tea.Cmd) {
 	if len(m.rightStack) == 0 {
-		m.closeRight()
-		if m.focus == paneThread {
-			m.focus = paneMessages
-		}
-		return m, nil
+		return m.leaveRight()
 	}
 	back := m.rightStack[len(m.rightStack)-1]
 	m.rightStack = slices.Clone(m.rightStack[:len(m.rightStack)-1])
@@ -141,21 +137,79 @@ func (m Model) popRight() (Model, tea.Cmd) {
 // closeRight empties the column: the frame on screen and every one under it.
 // Focus is the caller's business — Esc walks back to the messages pane, while
 // a root view keeps the pane it is taking.
-func (m *Model) closeRight() {
+func (m *Model) closeRight() tea.Cmd {
+	keep := m.saveRightBox()
 	m.rightKind, m.threadID, m.rightRoot = rightNone, "", ""
 	m.thread, m.threadBase, m.threadRows, m.threadMeta = nil, nil, nil, msgMeta{}
 	m.threadIdx, m.threadTop = 0, 0
 	m.rightStack, m.rightPin, m.rightNote, m.rightName = nil, rightFrame{}, "", ""
+	m.emptyRightBox()
 	m.layout()
+	return keep
+}
+
+// emptyRightBox clears the box the column carries and arms it for the frame
+// about to stand there. A draft belongs to the frame it was written under, so
+// it neither follows the reader into the next frame nor waits in a column
+// showing another conversation.
+func (m *Model) emptyRightBox() {
+	m.rightInput.Reset()
+	m.rightReply = nil
+	m.rightDraftPin = true
+}
+
+// saveRightBox writes the column's box back under the frame standing in it. A
+// frame that holds no box — a forwarded bundle, the assistant, the chat's own
+// card — has nothing to write.
+func (m Model) saveRightBox() tea.Cmd {
+	if !m.rightHasComposer() || m.chatID == "" {
+		return nil
+	}
+	replyTo := ""
+	if m.rightReply != nil {
+		replyTo = m.rightReply.MessageID
+	}
+	return saveDraft(m.deps, store.Draft{ChatID: m.chatID, FrameID: m.threadID,
+		Text: m.rightInput.Value(), ReplyTo: replyTo, InThread: m.rightKind == rightThread})
+}
+
+// restoreRightDraft fills the column's box from the frame being entered. The
+// quote is put back with the text, since a draft that answers something is
+// only that draft while it still says what it answers.
+func (m *Model) restoreRightDraft(d store.Draft, msgs []store.Message) {
+	m.rightInput.SetValue(d.Text)
+	m.rightInput.MoveToEnd()
+	m.rightReply = nil
+	if d.ReplyTo != "" {
+		if i := indexOfID(msgs, d.ReplyTo); i >= 0 {
+			m.rightReply = new(msgs[i])
+		}
+	}
+	m.layout()
+}
+
+// takeRightDraft spends the pin the frame was opened with. A reload has to
+// leave the box alone: the reader may have cleared it since, and a draft is
+// only deleted when it is written back.
+func (m *Model) takeRightDraft(d store.Draft, msgs []store.Message) {
+	if !m.rightDraftPin {
+		return
+	}
+	m.rightDraftPin = false
+	m.restoreRightDraft(d, msgs)
 }
 
 // showRight loads a container into the unpacked fields. The old list goes
 // first: a frame drawn from the list of the one it replaced would show
 // another container's messages under this one's title.
 func (m *Model) showRight(f rightFrame) tea.Cmd {
+	// First, while the fields still name the frame being left: after they are
+	// overwritten there is nothing left to say which frame the box belonged to.
+	keep := m.saveRightBox()
 	m.rightKind, m.threadID, m.rightRoot = f.kind, f.id, f.root
 	m.thread, m.threadBase, m.threadRows, m.threadMeta = nil, nil, nil, msgMeta{}
 	m.threadIdx, m.threadTop, m.rightNote, m.rightName = 0, 0, "", f.name
+	m.emptyRightBox()
 	// A frame that names where it wants to land — one being uncovered, or one
 	// a search hit opened — says so through sel; the pin is spent on the
 	// first list to arrive under it.
@@ -164,18 +218,18 @@ func (m *Model) showRight(f rightFrame) tea.Cmd {
 		m.rightPin = f
 	}
 	m.layout()
-	return m.loadRight()
+	return tea.Batch(keep, m.loadRight())
 }
 
 // loadRight fetches the visible frame's list.
 func (m Model) loadRight() tea.Cmd {
 	switch m.rightKind {
 	case rightThread:
-		return loadThread(m.deps, m.threadID)
+		return loadThread(m.deps, m.chatID, m.threadID)
 	case rightForward:
 		return loadForward(m.deps, m.rightRoot, m.threadID)
 	case rightReply:
-		return loadReplies(m.deps, m.threadID)
+		return loadReplies(m.deps, m.chatID, m.threadID)
 	}
 	return nil
 }
@@ -205,14 +259,16 @@ func (m Model) toggleRight() (tea.Model, tea.Cmd) {
 	}
 	switch {
 	case ok && m.rightKind == f.kind && m.threadID == f.id:
-		return m.leaveRight(), nil
+		next, cmd := m.leaveRight()
+		return next, cmd
 	case ok:
 		return m.openContainer(m.focus, f)
 	case m.threadOpen():
 		// The cursor is on nothing to open, so t is read as the other half of
 		// its own toggle rather than as an error: without this the only way
 		// out of the column is to focus it first.
-		return m.leaveRight(), nil
+		next, cmd := m.leaveRight()
+		return next, cmd
 	}
 	return m.notify("selected message opens no thread, forward or replies", true), nil
 }
@@ -277,12 +333,12 @@ func (m Model) onForwardedChild() bool {
 }
 
 // leaveRight closes the column and takes the focus back with it.
-func (m Model) leaveRight() Model {
-	m.closeRight()
+func (m Model) leaveRight() (Model, tea.Cmd) {
+	cmd := m.closeRight()
 	if m.focus == paneThread {
 		m.focus = paneMessages
 	}
-	return m
+	return m, cmd
 }
 
 // openContainer opens a container from the pane the reader reached it in,

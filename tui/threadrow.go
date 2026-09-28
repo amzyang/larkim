@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"charm.land/lipgloss/v2"
+	"github.com/amzyang/larkim/store"
 )
 
 // threadGlyph marks a row as a conversation inside a chat rather than a chat.
@@ -23,7 +24,7 @@ const threadGlyph = "⤷"
 // colour block. Either way it is the avatars renderer's to draw, keyed by the
 // thread rather than by the chat, so the two rows of one chat can carry two
 // different counters.
-func renderThreadRow(av avatars, r listRow, self string, g rowGist, now time.Time, w int) chatRow {
+func renderThreadRow(av avatars, r listRow, d store.Draft, self string, g rowGist, now time.Time, w int) chatRow {
 	t := r.thread
 	textWidth := chatTextWidth(w)
 	avatarTop, avatarBottom, badged := av.cells(r, t.Unread)
@@ -38,7 +39,7 @@ func renderThreadRow(av avatars, r listRow, self string, g rowGist, now time.Tim
 	room := textWidth - lipgloss.Width(right) - 1
 	top := padBetween(stBold.Render(truncate(title, max(minTitleWidth, room))), right, textWidth)
 
-	text, segs := threadRowLine(r, g, textWidth)
+	text, segs := threadRowLine(r, d, g, textWidth)
 	return chatRow{
 		avatarTop:    avatarTop,
 		avatarBottom: avatarBottom,
@@ -48,21 +49,26 @@ func renderThreadRow(av avatars, r listRow, self string, g rowGist, now time.Tim
 	}
 }
 
-// threadRowLine is the thread row's second line: the mention mark the
-// unread replies earned, then the last of them, then the mute mark at the far
-// edge. The reader's own slot stays empty — a draft belongs to the chat, and
-// the chat's own row is where it shows.
-func threadRowLine(r listRow, g rowGist, w int) (string, []rowSeg) {
+// threadRowLine is the thread row's second line: what the reader left unsent
+// in this thread, then the mention mark the unread replies earned, then the
+// last of them, then the mute mark at the far edge. The thread carries a box
+// of its own in the right column, so a draft left in it belongs to this row
+// rather than to the chat's.
+func threadRowLine(r listRow, d store.Draft, g rowGist, w int) (string, []rowSeg) {
+	mine := selfMark(d)
 	at := ""
 	if r.thread.NamesSelf {
 		at = stMentionMe.Render("@") + " "
 	}
-	room := max(0, w-lipgloss.Width(at))
+	room := max(0, w-lipgloss.Width(at)-lipgloss.Width(mine))
 	body := []rowSeg{{text: padBetween(g.text, muteMark(r.chat.Muted), room)}}
 	if g.summary != nil {
 		body = padSegs(g.summary, muteMark(r.chat.Muted), room)
 	}
 	var segs []rowSeg
+	if mine != "" {
+		segs = append(segs, rowSeg{text: mine})
+	}
 	if at != "" {
 		segs = append(segs, rowSeg{text: at})
 	}

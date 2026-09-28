@@ -139,7 +139,7 @@ func TestFocusMessages_OnAFoldedLayoutEmptiesTheWholeStack(t *testing.T) {
 	require.True(t, m.foldRight())
 	m, _ = m.pushRight(rightFrame{kind: rightForward, id: "om_fwd", root: "om_fwd"})
 
-	m = m.focusMessages()
+	m, _ = m.focusMessages()
 
 	require.False(t, m.threadOpen(), "the reader is leaving the column, not stepping back through it")
 	require.Empty(t, m.rightStack)

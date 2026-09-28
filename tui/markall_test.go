@@ -61,12 +61,28 @@ func pressMarkAll(t *testing.T, m Model) Model {
 	return drain(t, m, cmd)
 }
 
-// waiting is every chat the store would still walk the client onto.
+// waiting is every chat the store would still walk the client onto: the half
+// only a Feishu receipt settles.
 func waiting(t *testing.T, st *store.Store) []store.ChatUnread {
 	t.Helper()
 	chats, err := st.ChatsWithUnread(t.Context())
 	require.NoError(t, err)
 	return chats
+}
+
+// badges is the other half: the chats larkim still draws a number beside,
+// which is what a local write brings down.
+func badges(t *testing.T, st *store.Store) map[string]int64 {
+	t.Helper()
+	chats, err := st.ListChats(t.Context(), store.ChatQuery{})
+	require.NoError(t, err)
+	out := map[string]int64{}
+	for _, c := range chats {
+		if c.UnreadCount > 0 {
+			out[c.ChatID] = c.UnreadCount
+		}
+	}
+	return out
 }
 
 func TestMarkAllRead_WalksEveryChatThatWasWaiting(t *testing.T) {
@@ -78,7 +94,9 @@ func TestMarkAllRead_WalksEveryChatThatWasWaiting(t *testing.T) {
 		opened("lark://applink.feishu.cn/client/chat/open?openChatId=oc_1&position=1", true),
 		opened("lark://applink.feishu.cn/client/chat/open?openChatId=oc_2&position=1", true),
 	}, *calls, "one background applink per chat, each landing on that chat's newest unread")
-	require.Empty(t, waiting(t, st), "and the local half is settled")
+	require.Empty(t, badges(t, st), "and the local half is settled")
+	require.Len(t, waiting(t, st), 3,
+		"the client's half is not: no receipt has come back yet, so another press would walk them again")
 	require.Contains(t, m.notice, "3 chats marked read")
 }
 
@@ -102,7 +120,7 @@ func TestMarkAllRead_WritesBeforeItFiresTheFirstApplink(t *testing.T) {
 	// down before the best-effort half starts (ARCH.md 三).
 	msg := cmd()
 	require.IsType(t, markAllDoneMsg{}, msg)
-	require.Empty(t, waiting(t, st))
+	require.Empty(t, badges(t, st))
 	require.Empty(t, *calls)
 }
 
@@ -125,7 +143,9 @@ func TestMarkAllRead_APressWhileAQuestionIsOnScreenStartsNothing(t *testing.T) {
 	m = pressMarkAll(t, m)
 
 	require.Empty(t, *calls)
-	require.Len(t, waiting(t, st), 3)
+	// Not waiting(): that set survives the write now, so it would read the
+	// same whether or not the press was swallowed.
+	require.Len(t, badges(t, st), 3, "nothing was taken as read either")
 	require.Equal(t, "recall this message? y/n", m.notice, "the question is still the one on screen")
 	require.Equal(t, confirmRecall, m.confirm.kind)
 }
@@ -180,6 +200,35 @@ func TestMarkAllRead_WaitsForTheLastOpenBeforeItReports(t *testing.T) {
 	require.Len(t, *calls, 1)
 	require.Contains(t, m.notice, "1 not cleared in Feishu", "the last open's failure is in the report")
 	require.True(t, m.noticeErr)
+}
+
+func TestMarkAllRead_WalksAgainWhatTheLastSweepFailedToClear(t *testing.T) {
+	m, _, calls, openErr := sweepModel(t, 2)
+	*openErr = errFailedOpen
+	m = pressMarkAll(t, m)
+	require.Len(t, *calls, 2)
+	*openErr, *calls = nil, nil
+
+	m = pressMarkAll(t, m)
+
+	require.Len(t, *calls, 2,
+		"nothing said the client's dots came down, so the second press is the reader's retry")
+	require.Contains(t, m.notice, "2 chats marked read")
+	require.False(t, m.noticeErr)
+}
+
+func TestMarkAllRead_LeavesOutWhatFeishuConfirmedRead(t *testing.T) {
+	m, st, calls, _ := sweepModel(t, 2)
+	m = pressMarkAll(t, m)
+	*calls = nil
+	for _, id := range []string{"om_0", "om_1"} {
+		require.NoError(t, st.SetReadStatus(t.Context(), id, new(true), 200, 0))
+	}
+
+	m = pressMarkAll(t, m)
+
+	require.Empty(t, *calls)
+	require.Equal(t, "nothing waiting in Feishu", m.notice, "the receipts are what end the sweep")
 }
 
 func TestMarkAllRead_OnAStoreWithNothingWaitingSaysSo(t *testing.T) {

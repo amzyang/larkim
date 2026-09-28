@@ -201,9 +201,9 @@ func TestRenderChatRow_KeepsTheRightEdgeAlignedAndBothLinesInWidth(t *testing.T)
 func TestRenderChats_LeavesTheOddLineBlankRatherThanHalveAChat(t *testing.T) {
 	m := sized(130, 31)
 	fit := m.chatListHeight()
-	require.Equal(t, 1, m.listHeight()-(fit*chatRowStride-chatRowGap),
+	require.Equal(t, 1, m.chatRowsHeight()-(fit*chatRowStride-chatRowGap),
 		"this size is the interesting one: one line over what the chats take")
-	out := ansi.Strip(m.renderChats(m.bodyHeight()))
+	out := ansi.Strip(m.renderChats(m.chatsBodyHeight()))
 
 	require.Contains(t, out, "群 0 ", "the first chat is drawn")
 	// The Unread row takes the first of the pairs that fit, so the chats
@@ -224,12 +224,12 @@ func TestRenderChats_LeavesTheOddLineBlankRatherThanHalveAChat(t *testing.T) {
 func TestRenderChats_SeparatesEachChatFromTheNextButNotFromTheFoot(t *testing.T) {
 	m := sized(130, 30)
 	fit := m.chatListHeight()
-	require.Equal(t, 0, m.listHeight()-(fit*chatRowStride-chatRowGap),
+	require.Equal(t, 0, m.chatRowsHeight()-(fit*chatRowStride-chatRowGap),
 		"this size is the interesting one: the chats take the body exactly")
 
-	body := strings.Split(ansi.Strip(m.renderChats(m.bodyHeight())), "\n")
+	body := strings.Split(ansi.Strip(m.renderChats(m.chatsBodyHeight())), "\n")
 	body = body[2 : len(body)-1] // past the top border and the title, short of the bottom border
-	require.Len(t, body, m.listHeight())
+	require.Len(t, body, m.chatRowsHeight())
 	for i, l := range body {
 		blank := strings.TrimSpace(strings.Trim(l, "│")) == ""
 		require.Equal(t, i%chatRowStride == chatRowHeight, blank,
@@ -241,7 +241,7 @@ func TestRenderChats_HoldsTogetherAtTheNarrowestSupportedWidth(t *testing.T) {
 	m := sized(minWidth, 24)
 	require.Equal(t, chatsWidth+minMessagesWidth, minWidth, "minWidth is what the two left panes need")
 
-	out := m.renderChats(m.bodyHeight())
+	out := m.renderChats(m.chatsBodyHeight())
 	for _, line := range strings.Split(ansi.Strip(out), "\n") {
 		require.Equal(t, chatsWidth, lipgloss.Width(line), "every pane line is exactly the pane's width: %q", line)
 	}

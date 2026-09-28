@@ -91,7 +91,7 @@ func TestView_CursorSitsAtTheEndOfTheDraftUnderTheQuote(t *testing.T) {
 
 	v := m.View()
 	require.Contains(t, cursorRow(t, v), "收到")
-	require.Equal(t, 1+lipgloss.Width("收到"), v.Cursor.X, "one cell of border, then the draft")
+	require.Equal(t, chatsWidth+1+lipgloss.Width("收到"), v.Cursor.X, "the chats column, one cell of border, then the draft")
 	above := ansi.Strip(strings.Split(v.Content, "\n")[v.Cursor.Y-1])
 	require.Contains(t, above, "下周一发版", "the quote row is counted, not written over")
 }
@@ -105,24 +105,24 @@ func TestView_CursorClearsThePreviewRowsAboveTheDraft(t *testing.T) {
 
 	v := m.View()
 	require.Contains(t, cursorRow(t, v), "发布说明")
-	require.Equal(t, 1+lipgloss.Width("## 发布说明"), v.Cursor.X)
+	require.Equal(t, chatsWidth+1+lipgloss.Width("## 发布说明"), v.Cursor.X)
 }
 
 func TestComposerAbove_CountsTheQuoteAndThePreviewRows(t *testing.T) {
 	base := pickerModel(t)
-	w := base.width - 2
+	w := base.bandWidth(base.side) - 2
 
 	m := press(t, base, "i")
-	require.Empty(t, m.composerAbove(w), "a plain draft has nothing over it")
+	require.Empty(t, m.composerAbove(sideMain, w), "a plain draft has nothing over it")
 
 	mm, _ := base.startInsert(&base.msgs[0], false)
 	m = mm.(Model)
-	require.Len(t, m.composerAbove(w), 1, "the quote takes one row")
+	require.Len(t, m.composerAbove(sideMain, w), 1, "the quote takes one row")
 
 	m.input.SetValue("## 发布说明")
 	m.replan()
 	m.layout()
-	require.Len(t, m.composerAbove(w), len(m.previewRows)+2, "preview rows, the rule under them, then the quote")
+	require.Len(t, m.composerAbove(sideMain, w), len(m.previewRows)+2, "preview rows, the rule under them, then the quote")
 }
 
 func TestView_CursorFollowsTheCommandLinePrompt(t *testing.T) {
@@ -130,21 +130,21 @@ func TestView_CursorFollowsTheCommandLinePrompt(t *testing.T) {
 
 	cmd := press(t, pickerModel(t), ":").View()
 	require.Equal(t, top, cmd.Cursor.Y, "the command line is the box's first row")
-	require.Equal(t, 1+lipgloss.Width(":"), cmd.Cursor.X)
+	require.Equal(t, chatsWidth+1+lipgloss.Width(":"), cmd.Cursor.X)
 
 	typed := press(t, pickerModel(t), ":", "l", "s").View()
-	require.Equal(t, 1+lipgloss.Width(":ls"), typed.Cursor.X)
+	require.Equal(t, chatsWidth+1+lipgloss.Width(":ls"), typed.Cursor.X)
 
 	filter := press(t, pickerModel(t), "/", "平").View()
 	require.Equal(t, top, filter.Cursor.Y)
-	require.Equal(t, 1+lipgloss.Width("/平"), filter.Cursor.X)
+	require.Equal(t, chatsWidth+1+lipgloss.Width("/平"), filter.Cursor.X)
 }
 
 func TestView_CursorSitsInThePickersQueryBox(t *testing.T) {
 	m := press(t, pickerModel(t), "e", "z")
 	v := m.View()
 	require.Equal(t, m.bodyHeight()+3, v.Cursor.Y)
-	require.Equal(t, 1+lipgloss.Width(pickerPrompt())+lipgloss.Width("z"), v.Cursor.X)
+	require.Equal(t, chatsWidth+1+lipgloss.Width(pickerPrompt())+lipgloss.Width("z"), v.Cursor.X)
 	require.Contains(t, cursorRow(t, v), "react")
 }
 

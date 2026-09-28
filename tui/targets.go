@@ -113,7 +113,7 @@ func (m Model) targetsVisible() []clickZone {
 // renderTargets draws the chooser in the composer's place, filling exactly the
 // box the composer would have drawn.
 func (m Model) renderTargets() string {
-	w := m.width - 2
+	w := m.bandWidth(m.side) - 2
 	rows := m.targetRows()
 	count := stDim.Render(strconv.Itoa(m.targets.idx+1) + "/" + strconv.Itoa(len(m.targets.zones)))
 	lines := []string{padBetween(stBold.Render("open")+stAccent.Render(" › ")+

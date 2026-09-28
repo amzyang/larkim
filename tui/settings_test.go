@@ -41,7 +41,7 @@ func TestRunSet_RestoresTheDefault(t *testing.T) {
 func TestRunSet_ListsEveryOptionWhenGivenNothing(t *testing.T) {
 	m := setModel(t).runSet("")
 	require.Equal(t, "applink_pace_ms=40  ai.model=claude-opus-5  ai.api_key_env=ANTHROPIC_API_KEY  ai.context=80", m.notice)
-	require.NotContains(t, m.notice, "poll_interval", "a key read once at startup is not listed here")
+	require.NotContains(t, m.notice, "poll_interval_ms", "a key read once at startup is not listed here")
 }
 
 func TestRunSet_RebuildsTheAssistantOnANewModel(t *testing.T) {
@@ -72,9 +72,9 @@ func TestRunSet_RefusesAGapOfNothing(t *testing.T) {
 }
 
 func TestRunSet_NamesAnOptionItHasNot(t *testing.T) {
-	m := setModel(t).runSet("poll_interval=5s")
+	m := setModel(t).runSet("poll_interval_ms=5000")
 	require.True(t, m.noticeErr)
-	require.Contains(t, m.notice, "poll_interval", "a config key that takes effect only at startup is not an option here")
+	require.Contains(t, m.notice, "poll_interval_ms", "a config key that takes effect only at startup is not an option here")
 }
 
 func TestSettings_NameEveryConfigKeyInOrder(t *testing.T) {

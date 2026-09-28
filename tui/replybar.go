@@ -49,7 +49,7 @@ func (r composerRows) total() int {
 // every time the reader pressed i or e, which costs more than the row.
 func (m Model) composerRows() composerRows {
 	var r composerRows
-	if m.replyTo != nil {
+	if _, ok := m.quotedOn(m.side); ok {
 		r.quote = 1
 	}
 	r.badge = 1
@@ -64,7 +64,7 @@ func (m Model) composerRows() composerRows {
 	}
 	switch m.mode {
 	case modeInsert:
-		grow := room(draftRows(m.input.Value(), m.input.Width()))
+		grow := room(draftRows(m.area().Value(), m.area().Width()))
 		r.input += grow
 		// The popup outranks the preview: it is what the reader is choosing
 		// from, where the preview only shows what they have already written.
@@ -135,7 +135,7 @@ const (
 // composerBand reads the same row split renderInput draws and cursorAt counts.
 func (m Model) composerBand(row int) composerBand {
 	r := m.composerRows()
-	first := len(m.composerAbove(m.width - 2))
+	first := len(m.composerAbove(m.side, m.bandWidth(m.side)-2))
 	switch {
 	case row >= 0 && row < r.preview:
 		return bandPreview
@@ -150,17 +150,23 @@ func (m Model) composerBand(row int) composerBand {
 // not disagree about which row the writing area starts on. It draws exactly
 // the rows composerRows claimed above the writing area, so the box neither
 // pads nor clips.
-func (m Model) composerAbove(w int) []string {
+func (m Model) composerAbove(s composerSide, w int) []string {
 	var lines []string
-	if r := m.composerRows(); r.preview > 0 {
+	if r := m.composerRows(); s == m.side && r.preview > 0 {
 		for _, row := range m.previewRows[m.previewTop:min(len(m.previewRows), m.previewTop+r.preview)] {
 			line, _ := m.rowLine(row, w)
 			lines = append(lines, line)
 		}
 		lines = append(lines, paneRule(w))
 	}
-	if m.replyTo != nil {
-		lines = append(lines, m.renderReplyBar(w))
+	if x, ok := m.quotedOn(s); ok {
+		lines = append(lines, m.renderReplyBar(s, x, w))
+	}
+	if s != m.side {
+		// The box without the keys shows what it holds and nothing about what
+		// is being done to it: the preview, the popup and the badge all belong
+		// to the draft being typed.
+		return lines
 	}
 	// Last, so the offers sit directly over the run being completed — which at
 	// the bottom of the screen is where a popup menu opens.
@@ -170,9 +176,9 @@ func (m Model) composerAbove(w int) []string {
 // renderReplyBar quotes the reply's target above the composer the way the
 // Feishu client does — who wrote it and how it reads — because a message id
 // is not something a person recognises a message by.
-func (m Model) renderReplyBar(w int) string {
+func (m Model) renderReplyBar(s composerSide, x store.Message, w int) string {
 	hint := stDim.Render(replyBarHint)
-	head, gist, room := m.replyBarParts(w)
+	head, gist, room := m.replyBarParts(s, x, w)
 	line, used := "", 0
 	if segs := gistSegs(head, gist, room, stDim, m.chatPics().gist); segs != nil {
 		line, used = m.joinSegsWidth(segs), segsWidth(segs)
@@ -187,14 +193,13 @@ func (m Model) renderReplyBar(w int) string {
 // share once the hint at the far edge has taken its own. The pane asks for
 // them twice — once to claim the gist's pictures from the renderer, once to
 // draw them — so they are worked out in one place.
-func (m Model) replyBarParts(w int) (head, gist string, room int) {
-	x := m.replyTo
+func (m Model) replyBarParts(s composerSide, x store.Message, w int) (head, gist string, room int) {
 	mark, kind := "↩", "reply to "
-	if m.inThrd {
+	if m.inThreadOn(s) {
 		mark, kind = "⤷", "reply in thread to "
 	}
-	head = stAccent.Render(mark+" "+kind) + stBold.Render(displaySender(*x, m.deps.Self, m.suffixOf(x.SenderID))) + stDim.Render(": ")
-	return head, replyGist(*x), w - lipgloss.Width(stDim.Render(replyBarHint)) - 1
+	head = stAccent.Render(mark+" "+kind) + stBold.Render(displaySender(x, m.deps.Self, m.suffixOf(x.SenderID))) + stDim.Render(": ")
+	return head, replyGist(x), w - lipgloss.Width(stDim.Render(replyBarHint)) - 1
 }
 
 // replyGist is the quoted message on one line, styles stripped so it can be

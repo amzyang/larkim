@@ -63,7 +63,7 @@ type Options struct {
 // OptionsFrom maps the user config onto loop options.
 func OptionsFrom(cfg config.Config) Options {
 	return Options{
-		PollInterval:          cfg.PollInterval,
+		PollInterval:          time.Duration(cfg.PollIntervalMS) * time.Millisecond,
 		Overlap:               cfg.Overlap,
 		ChatsRefreshEvery:     cfg.ChatsRefreshEvery,
 		SlowPathEvery:         cfg.SlowPathEvery,
@@ -1120,7 +1120,9 @@ func (s *Syncer) delayFor(err error, failures int) time.Duration {
 			return max(le.RetryAfter, 30*time.Second)
 		}
 	}
-	return Backoff(failures, s.Opt.PollInterval, 5*time.Minute)
+	// The poll interval can be set below a second, which is a pace for ticks
+	// that succeed, not for retrying an API that just failed.
+	return Backoff(failures, max(s.Opt.PollInterval, time.Second), 5*time.Minute)
 }
 
 // SetStatus records the outcome of the last tick in sync_state.

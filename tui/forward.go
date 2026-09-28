@@ -186,7 +186,7 @@ func fwdPrompt() string { return stBold.Render("forward") + stAccent.Render(" â€
 // renderForward draws the chooser in the composer's place, naming above it the
 // message being sent on so the reader can see they picked the right one.
 func (m Model) renderForward() string {
-	w := m.width - 2
+	w := m.bandWidth(m.side) - 2
 	rows := m.fwdRows()
 	gist := m.fwdGist(w)
 	lines := []string{padBetween(fwdPrompt()+m.fwd.input.View(), stDim.Render(strconv.Itoa(len(m.fwd.hits))), w)}

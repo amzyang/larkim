@@ -500,8 +500,24 @@ func TestReadStatusProbes_SkipsMessagesNoAnswerCanReach(t *testing.T) {
 
 	probes, err := s.ReadStatusProbes(ctx, ReadCheckQuery{Self: "ou_me", SinceMs: 100, Limit: 10})
 	require.NoError(t, err)
-	require.Equal(t, []ReadProbe{{"om_ctl", "oc_ctl"}, {"om_answerable", "oc_refused"}}, probes,
-		"a refused id spends the chat's one slot on a question with no answer; a chat read here has no badge left to clear")
+	require.Equal(t, []ReadProbe{{"om_ctl", "oc_ctl"}, {"om_seen_here", "oc_seen_here"}, {"om_answerable", "oc_refused"}}, probes,
+		"a refused id spends the chat's one slot on a question with no answer")
+}
+
+func TestReadStatusProbes_KeepsAskingAboutAChatReadHere(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	_, err := s.UpsertMessages(ctx, []Message{
+		{MessageID: "om_walked", ChatID: "oc_walked", SenderID: "ou_x", CreateMs: 1000, RawJSON: "{}"},
+	}, 1)
+	require.NoError(t, err)
+	require.NoError(t, s.SetReadStatus(ctx, "om_walked", new(false), 1000, 9e12))
+	require.NoError(t, s.MarkChatRead(ctx, "oc_walked", 1100))
+
+	probes, err := s.ReadStatusProbes(ctx, ReadCheckQuery{Self: "ou_me", SinceMs: 100, Limit: 10})
+	require.NoError(t, err)
+	require.Equal(t, []ReadProbe{{"om_walked", "oc_walked"}}, probes,
+		"the receipt is what takes the chat out of ChatsWithUnread, so this is the question the sweep converges on")
 }
 
 func TestMarkAllRead_SettlesEveryChatIncludingThreadReplies(t *testing.T) {
@@ -566,7 +582,7 @@ func TestMarkAllRead_OnAReadStoreBumpsNoRevision(t *testing.T) {
 	require.Equal(t, before, after, "an inert call must not wake the watchers that reload on it")
 }
 
-func TestChatsWithUnread_IsExactlyWhatMarkAllReadSettles(t *testing.T) {
+func TestChatsWithUnread_KeepsAChatTheReaderAlreadyTookHere(t *testing.T) {
 	s := openTest(t)
 	ctx := t.Context()
 	_, err := s.UpsertMessages(ctx, []Message{
@@ -581,16 +597,40 @@ func TestChatsWithUnread_IsExactlyWhatMarkAllReadSettles(t *testing.T) {
 	}
 	require.NoError(t, s.MarkChatRead(ctx, "oc_c", 4000))
 
+	want := []ChatUnread{{ChatID: "oc_a", Position: 2}, {ChatID: "oc_b", Position: 1}, {ChatID: "oc_c", Position: 1}}
 	chats, err := s.ChatsWithUnread(ctx)
 	require.NoError(t, err)
-	require.Equal(t, []ChatUnread{{ChatID: "oc_a", Position: 2}, {ChatID: "oc_b", Position: 1}}, chats,
-		"one entry per chat, at that chat's newest still-unread message, and none the reader already took")
+	require.Equal(t, want, chats,
+		"one entry per chat at its newest waiting message; reading oc_c here said nothing about the client's dot")
 
 	_, err = s.MarkAllRead(ctx, 5000)
 	require.NoError(t, err)
 	after, err := s.ChatsWithUnread(ctx)
 	require.NoError(t, err)
-	require.Empty(t, after, "the write settles everything the query listed, so a second pass fires nothing")
+	require.Equal(t, want, after,
+		"the local write settles larkim's half only, so a pass the client slept through can be run again")
+}
+
+func TestChatsWithUnread_DropsAChatFeishuReportsRead(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	_, err := s.UpsertMessages(ctx, []Message{
+		msgAt("om_a", "oc_a", 10, 1, "one"),
+		msgAt("om_b", "oc_b", 20, 1, "elsewhere"),
+	}, 1)
+	require.NoError(t, err)
+	markUnread(t, s, "om_a")
+	markUnread(t, s, "om_b")
+	_, err = s.MarkAllRead(ctx, 5000)
+	require.NoError(t, err)
+
+	// The client navigated to oc_a and sent its receipt; oc_b it never drew.
+	require.NoError(t, s.SetReadStatus(ctx, "om_a", new(true), 6000, 0))
+
+	chats, err := s.ChatsWithUnread(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []ChatUnread{{ChatID: "oc_b", Position: 1}}, chats,
+		"the receipt is the only thing that takes a chat out, local read or not")
 }
 
 func TestChatsWithUnread_LeavesOutThreadRepliesAndRecalls(t *testing.T) {
@@ -607,6 +647,10 @@ func TestChatsWithUnread_LeavesOutThreadRepliesAndRecalls(t *testing.T) {
 	for _, id := range []string{"om_reply", "om_gone", "om_quiet"} {
 		markUnread(t, s, id)
 	}
+	// Taking them read here must not be what keeps them out: their receipts
+	// never flip, so listing one would walk the client onto it on every press.
+	_, err = s.MarkAllRead(ctx, 5000)
+	require.NoError(t, err)
 
 	chats, err := s.ChatsWithUnread(ctx)
 	require.NoError(t, err)

@@ -177,11 +177,16 @@ type ReadProbe struct{ MessageID, ChatID string }
 // q.DueAt is ignored on purpose: the probe is the thing that overtakes the
 // per-message backoff.
 //
-// Two kinds of unread are left out, because a chat gets one slot and spending
-// it on either would leave the badge that chat does show waiting on the
-// ladder. A message Feishu refused to speak for comes back among the invalid
-// ids however often it is asked about, and one already read here shows nothing
-// a remote answer could take away.
+// A message Feishu refused to speak for is left out: it comes back among the
+// invalid ids however often it is asked about, and a chat gets one slot, so
+// spending it there would leave the badge that chat does show waiting on the
+// ladder.
+//
+// A chat already read here keeps its slot, because the receipt is what takes
+// a chat out of ChatsWithUnread. The ladder asks about it either way —
+// ReadStatusCandidates has no local_read_at term — so what the probe buys is
+// latency: one tick instead of a backoff step that tops out at six hours, over
+// which a sweep would walk the client onto chats whose dot is long down.
 func (s *Store) ReadStatusProbes(ctx context.Context, q ReadCheckQuery) ([]ReadProbe, error) {
 	scan := func(sc scanner) (ReadProbe, error) {
 		var p ReadProbe
@@ -192,7 +197,7 @@ func (s *Store) ReadStatusProbes(ctx context.Context, q ReadCheckQuery) ([]ReadP
 	return queryAll(ctx, s.db, scan, `SELECT message_id, chat_id FROM
  (SELECT m.message_id AS message_id, m.chat_id AS chat_id, max(m.create_ms) AS newest `+messageFrom+`
   WHERE m.sender_id <> ? AND m.deleted = 0 AND m.create_ms > ?
-   AND (r.message_id IS NULL OR r.is_read_remote = 0) AND COALESCE(r.local_read_at, 0) = 0
+   AND (r.message_id IS NULL OR r.is_read_remote = 0)
   GROUP BY m.chat_id)
  ORDER BY newest DESC LIMIT ?`, q.Self, q.SinceMs, q.Limit)
 }
@@ -245,6 +250,13 @@ const unreadBadge = stillUnread + ` AND m.message_position >= 0`
 // a silence rule matched.
 const unreadCounted = unreadBadge + ` AND m.silenced = 0`
 
+// clientDot is what the Feishu client still has a red dot for: its own
+// receipt, on a live message of the main flow. local_read_at is out of it on
+// purpose. It is a fact about this machine, which the client cannot see, so
+// taking it as "the dot is down" made a sweep that lost a chat unrepeatable:
+// the write settled the chat whether or not the client ever navigated.
+const clientDot = `r.is_read_remote = 0 AND m.deleted = 0 AND m.message_position >= 0`
+
 // MarkChatRead takes as seen locally every message the chat's page showed the
 // reader. Feishu has no mark-read call, so this is the only way a badge falls
 // without leaving larkim. Matching no row — the ordinary case on a chat
@@ -276,18 +288,16 @@ type ChatUnread struct {
 }
 
 // ChatsWithUnread names every chat an applink would still do something for,
-// oldest id first. It has to be read before MarkAllRead, whose write is what
-// erases the evidence.
+// oldest id first.
 //
-// The predicate is unreadBadge, which makes this set a subset of the one
-// MarkAllRead settles. That containment is what stops the sweep firing for
-// ever: a chat listed here is settled by the same pass, so the next pass
-// leaves it out. Widening it past MarkAllRead's set would list chats no write
-// can collect, and every press would walk the client onto them again.
+// The predicate is clientDot, so what takes a chat out of the set is the
+// client's own receipt and nothing else. That is what stops the sweep firing
+// for ever, and it is also what makes a lost pass repeatable: an applink the
+// client never acted on leaves the chat here, so pressing again walks it.
 //
-// Thread replies and recalls are out for a second reason: the client does not
-// render either when the applink opens the chat, so its dot never falls and
-// the chat would be listed on every press regardless.
+// Thread replies and recalls are out: the client renders neither when the
+// applink opens the chat, so their receipts never flip and the chat would be
+// listed on every press regardless.
 func (s *Store) ChatsWithUnread(ctx context.Context) ([]ChatUnread, error) {
 	scan := func(sc scanner) (ChatUnread, error) {
 		var c ChatUnread
@@ -295,7 +305,7 @@ func (s *Store) ChatsWithUnread(ctx context.Context) ([]ChatUnread, error) {
 	}
 	return queryAll(ctx, s.db, scan, `SELECT m.chat_id, max(m.message_position)
  FROM messages m JOIN read_state r ON r.message_id = m.message_id
- WHERE `+unreadBadge+` GROUP BY m.chat_id ORDER BY m.chat_id`)
+ WHERE `+clientDot+` GROUP BY m.chat_id ORDER BY m.chat_id`)
 }
 
 // UnreadAnchor is where one chat's backlog starts.
@@ -326,7 +336,9 @@ func (s *Store) UnreadAnchors(ctx context.Context) ([]UnreadAnchor, error) {
 // not about the pages the reader happened to visit. Feishu has no mark-read
 // call, so this is the only half larkim can write; the client's own dots are
 // walked down separately, chat by chat, over the applinks ChatsWithUnread
-// names.
+// names. The two halves no longer share a predicate: this one answers "has
+// the reader seen it", ChatsWithUnread answers "does the client still show
+// it", and only the second decides who gets walked.
 //
 // It returns how many messages it settled. Matching no row writes nothing, so
 // the data_rev trigger stays quiet and the TUI does not reload itself in a

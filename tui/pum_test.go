@@ -325,7 +325,7 @@ func TestPum_TakesNoKeysOnATerminalWithNoRoomToDrawIt(t *testing.T) {
 
 func TestRenderInput_BoxIsAsTallAsItClaimsWithThePopupOpen(t *testing.T) {
 	m := typeInto(newPumModel(t), "@")
-	require.Equal(t, m.composerHeight()+2, strings.Count(m.renderInput(), "\n")+1)
+	require.Equal(t, m.composerHeight()+2, strings.Count(m.renderInput(sideMain), "\n")+1)
 }
 
 func TestModelPicturePrepare_ClaimsWhatTheOpenPopupOffers(t *testing.T) {

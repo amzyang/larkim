@@ -22,8 +22,11 @@ type Config struct {
 	DataDir string `yaml:"data_dir"`
 	// LarkCLIPath is the lark-cli binary; empty tries /opt/homebrew/bin then $PATH.
 	LarkCLIPath string `yaml:"lark_cli_path"`
-	// PollInterval is the pause between daemon ticks.
-	PollInterval time.Duration `yaml:"poll_interval"`
+	// PollIntervalMS is the pause in milliseconds between daemon ticks.
+	// Milliseconds rather than a duration string for the same reason as
+	// ApplinkPaceMS: the unit belongs in the key's name once a reader retunes
+	// the value by hand.
+	PollIntervalMS int `yaml:"poll_interval_ms"`
 	// Overlap is how far each search window reaches behind the watermark to
 	// absorb search-index latency (measured ≈10s).
 	Overlap time.Duration `yaml:"overlap"`
@@ -65,11 +68,14 @@ type Resources struct {
 	MaxBytes int64 `yaml:"max_bytes"`
 }
 
+// minPollIntervalMS is the smallest pause LoadWith will hand the daemon.
+const minPollIntervalMS = 100
+
 // Default returns the built-in configuration.
 func Default() Config {
 	return Config{
 		DataDir:           filepath.Join(homeDir(), ".larkim"),
-		PollInterval:      3 * time.Second,
+		PollIntervalMS:    3000,
 		Overlap:           2 * time.Minute,
 		BackfillDays:      30,
 		ActiveTopK:        30,
@@ -107,7 +113,7 @@ func Load(path string) (Config, error) { return LoadWith(path, nil) }
 // and spelling it has there.
 //
 // The sets land before normalisation rather than on the returned Config, so
-// the PollInterval floor and the silence rules judge the value that will
+// the PollIntervalMS floor and the silence rules judge the value that will
 // actually be used.
 func LoadWith(path string, sets []string) (Config, error) {
 	cfg := Default()
@@ -129,9 +135,10 @@ func LoadWith(path string, sets []string) (Config, error) {
 	}
 	cfg.DataDir = expandHome(cfg.DataDir)
 	cfg.LarkCLIPath = expandHome(cfg.LarkCLIPath)
-	if cfg.PollInterval < time.Second {
-		cfg.PollInterval = time.Second
-	}
+	// A tick's own work measures in hundreds of milliseconds, so the floor is
+	// not a rate limit — it only keeps 0 from turning the loop into a busy
+	// spin over lark-cli.
+	cfg.PollIntervalMS = max(cfg.PollIntervalMS, minPollIntervalMS)
 	if err := cfg.Silence.Validate(); err != nil {
 		return cfg, fmt.Errorf("%s: %w", path, err)
 	}

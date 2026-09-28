@@ -122,7 +122,7 @@ func TestSubmit_PlainDraftStillSendsText(t *testing.T) {
 func TestReply_CarriesTheDraftsType(t *testing.T) {
 	m, f := newOutboxModel(t)
 	f.AddMessage(larkcli.RawMessage{MessageID: "om_elsewhere", ChatID: "oc_1", MsgType: "text"})
-	m.setReply(&store.Message{MessageID: "om_elsewhere", ChatID: "oc_1"}, false)
+	m.setQuote(&store.Message{MessageID: "om_elsewhere", ChatID: "oc_1"}, false)
 	m.input.SetValue("- a\n- b")
 
 	mm, cmd := m.submit()
@@ -163,7 +163,7 @@ func TestComposerHeight_StandsStillWhateverModeTheReaderIsIn(t *testing.T) {
 	// The composer box has to be exactly as tall as it claims, or the panes
 	// above it give up the wrong number of rows.
 	m.mode = modeInsert
-	require.Equal(t, m.composerHeight()+2, lipgloss.Height(m.renderInput()))
+	require.Equal(t, m.composerHeight()+2, lipgloss.Height(m.renderInput(sideMain)))
 }
 
 func TestRenderBadge_NamesTheKeyThatFitsTheMode(t *testing.T) {
@@ -550,7 +550,7 @@ func TestComposerRows_ShortPreviewLeavesNoRowUnderBadge(t *testing.T) {
 
 	require.Less(t, len(m.previewRows), previewMaxRows, "the fixture has to be shorter than the band allows")
 
-	lines := strings.Split(ansi.Strip(m.renderInput()), "\n")
+	lines := strings.Split(ansi.Strip(m.renderInput(sideMain)), "\n")
 	last := lines[len(lines)-2] // the row above the box's bottom border
 	require.Contains(t, last, m.draft.kind.msgType(), "the badge is the composer's last row")
 	require.Equal(t, len(m.previewRows), m.composerRows().preview, "the band claims only the rows the preview has")

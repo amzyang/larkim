@@ -127,6 +127,17 @@ func TestConfig_ARefusedValueKeepsWhatWasTyped(t *testing.T) {
 	require.Equal(t, applinkDefaultPaceForTest, m.applinkPace(), "nothing was applied")
 }
 
+func TestConfig_RefusesADurationSpellingOfThePollInterval(t *testing.T) {
+	// The unit is in the key's name, so 3s is the reader writing it twice.
+	m := configModel(t)
+	m = m.openConfig("poll_interval_ms")
+	m = press(t, m, "enter", "ctrl+u", "3", "s", "enter")
+
+	require.True(t, m.config.editing)
+	require.Contains(t, m.config.err, "milliseconds")
+	require.Equal(t, 3000, configFile(t, m).PollIntervalMS, "nothing was written")
+}
+
 func TestConfig_RestoresTheDefault(t *testing.T) {
 	m := configModel(t)
 	m = m.openConfig("backfill_days")
@@ -259,21 +270,21 @@ func TestConfig_ANewContextReachesTheNextQuestion(t *testing.T) {
 
 func TestConfig_TheEditorOpensInTheCellItReplaces(t *testing.T) {
 	m := configModel(t)
-	m = m.openConfig("poll_interval")
+	m = m.openConfig("poll_interval_ms")
 	m = press(t, m, "enter")
 
 	v := m.View()
 	require.NotNil(t, v.Cursor)
 	lines := strings.Split(ansi.Strip(v.Content), "\n")
 	row := []rune(lines[v.Cursor.Position.Y])
-	require.Contains(t, string(row), "poll_interval", "the caret sits in the row being edited")
+	require.Contains(t, string(row), "poll_interval_ms", "the caret sits in the row being edited")
 	x := v.Cursor.Position.X
-	require.Equal(t, "3s", string(row[x-2:x]), "and just past the value it is editing")
+	require.Equal(t, "3000", string(row[x-4:x]), "and just past the value it is editing")
 }
 
 func TestConfig_TheCellBeingEditedLooksUnlikeAValue(t *testing.T) {
 	m := configModel(t)
-	m = m.openConfig("poll_interval")
+	m = m.openConfig("poll_interval_ms")
 	// The box's own border, its head row and the blank under it come first.
 	at := m.config.idx + 3
 	resting := strings.Split(m.renderConfig(), "\n")[at]

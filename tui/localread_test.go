@@ -130,7 +130,7 @@ func TestUpdate_OpeningTheChatLeavesAThreadReplyUnreadUntilTheThreadIsOpened(t *
 	// thread is one screenful: having it on top is having read it.
 	m, cmd := m.openRight(rightFrame{kind: rightThread, id: "omt_1"})
 	collect(cmd)
-	next, cmd := m.Update(loadThread(Deps{Store: st}, "omt_1")().(threadLoadedMsg))
+	next, cmd := m.Update(loadThread(Deps{Store: st}, "oc_1", "omt_1")().(threadLoadedMsg))
 	collect(cmd)
 
 	reply, err = st.GetMessage(ctx, "om_reply")
@@ -305,7 +305,7 @@ func TestThreadLoaded_LightsAMarkerForAReplyTheChatPaneNeverShowed(t *testing.T)
 	// The chat's page carries no replies, so this pane is the only place
 	// their markers can be lit.
 	m.rightKind, m.threadID = rightThread, "omt_1"
-	next, cmd := m.Update(loadThread(Deps{Store: st}, "omt_1")().(threadLoadedMsg))
+	next, cmd := m.Update(loadThread(Deps{Store: st}, "oc_1", "omt_1")().(threadLoadedMsg))
 	m = next.(Model)
 	collect(cmd)
 

@@ -232,9 +232,9 @@ func TestPicker_LeavesTheMessageOnScreenBehindIt(t *testing.T) {
 func TestRenderPicker_StandsInTheComposersBoxRatherThanBesideIt(t *testing.T) {
 	shut := pickerModel(t)
 	open := press(t, shut, "e")
-	require.Equal(t, lipgloss.Width(shut.renderInput()), lipgloss.Width(open.renderPicker()),
+	require.Equal(t, lipgloss.Width(shut.renderInput(shut.side)), lipgloss.Width(open.renderPicker()),
 		"the chooser replaces the composer, so it takes the same columns")
-	require.Equal(t, lipgloss.Height(shut.renderInput()), lipgloss.Height(open.renderPicker()),
+	require.Equal(t, lipgloss.Height(shut.renderInput(shut.side)), lipgloss.Height(open.renderPicker()),
 		"and exactly the same rows, so nothing above it moves")
 	require.Equal(t, shut.bodyHeight(), open.bodyHeight(), "the panes keep their height")
 	for i, line := range strings.Split(open.View().Content, "\n") {

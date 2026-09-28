@@ -258,7 +258,7 @@ func pickerPrompt() string { return stBold.Render("react") + stAccent.Render(" â
 // box the composer would have drawn: the query it is being narrowed by, then
 // the hits laid across the width.
 func (m Model) renderPicker() string {
-	w := m.width - 2
+	w := m.bandWidth(m.side) - 2
 	rows := m.pickerRows()
 	// An unnarrowed query answers with the emoji this reader reaches for, the
 	// way the client's own panel opens on its frequently used band, so the

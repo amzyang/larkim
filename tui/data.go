@@ -117,6 +117,8 @@ type (
 		// drafts is every chat's unsent composer state, fetched with the list
 		// rather than per row so the marker costs one query a refresh.
 		drafts map[string]store.Draft
+		// frameDrafts is the same for the thread rows, keyed by thread.
+		frameDrafts map[string]store.Draft
 	}
 	messagesLoadedMsg struct {
 		chatID string
@@ -138,13 +140,17 @@ type (
 		threadID string
 		msgs     []store.Message
 		meta     msgMeta
+		// draft is the box the column carries, which belongs to this frame
+		// rather than to the chat. See rightDraftPin.
+		draft store.Draft
 	}
 	// replyLoadedMsg carries a reply tree: the message the conversation
 	// started from and every live answer under it.
 	replyLoadedMsg struct {
-		root string
-		msgs []store.Message
-		meta msgMeta
+		root  string
+		msgs  []store.Message
+		meta  msgMeta
+		draft store.Draft
 	}
 	// revMsg says the store changed, not what changed: the revision is a
 	// counter, so every pane reloads.
@@ -419,7 +425,13 @@ func loadChats(d Deps) tea.Cmd {
 			d.log().Error("load drafts", "err", err)
 			drafts = nil
 		}
-		return chatsLoadedMsg{chats: chats, threads: threads, unread: unread, drafts: drafts}
+		frameDrafts, err := d.Store.FrameDrafts(context.Background())
+		if err != nil {
+			d.log().Error("load frame drafts", "err", err)
+			frameDrafts = nil
+		}
+		return chatsLoadedMsg{chats: chats, threads: threads, unread: unread,
+			drafts: drafts, frameDrafts: frameDrafts}
 	}
 }
 
@@ -456,7 +468,7 @@ func loadMessages(d Deps, chatID string, sinceMs int64, limit int) tea.Cmd {
 		}
 		// A draft the store cannot answer for costs the composer its text, not
 		// the reader their page.
-		draft, err := d.Store.LoadDraft(ctx, chatID)
+		draft, err := d.Store.LoadDraft(ctx, chatID, "")
 		if err != nil {
 			d.log().Error("load draft", "chat_id", chatID, "err", err)
 			draft = store.Draft{ChatID: chatID}
@@ -478,7 +490,7 @@ func threadQuery(threadID string) store.MessageQuery {
 	return store.MessageQuery{ThreadID: threadID, Limit: threadPageSize, IncludeDeleted: true}
 }
 
-func loadThread(d Deps, threadID string) tea.Cmd {
+func loadThread(d Deps, chatID, threadID string) tea.Cmd {
 	return func() tea.Msg {
 		ctx := context.Background()
 		rows, err := d.Store.ListMessages(ctx, threadQuery(threadID))
@@ -489,14 +501,26 @@ func loadThread(d Deps, threadID string) tea.Cmd {
 		if err != nil {
 			return errMsg{err}
 		}
-		return threadLoadedMsg{threadID: threadID, msgs: rows, meta: meta}
+		return threadLoadedMsg{threadID: threadID, msgs: rows, meta: meta,
+			draft: frameDraft(d, chatID, threadID)}
 	}
+}
+
+// frameDraft is the box a frame carries. A draft the store cannot answer for
+// costs the box its text, not the reader their frame.
+func frameDraft(d Deps, chatID, frameID string) store.Draft {
+	draft, err := d.Store.LoadDraft(context.Background(), chatID, frameID)
+	if err != nil {
+		d.log().Error("load draft", "chat_id", chatID, "frame_id", frameID, "err", err)
+		return store.Draft{ChatID: chatID, FrameID: frameID}
+	}
+	return draft
 }
 
 // loadReplies fetches a reply tree for the right column. The rows are
 // ordinary messages of the open chat, already synced with it, so nothing is
 // asked of Feishu here.
-func loadReplies(d Deps, rootID string) tea.Cmd {
+func loadReplies(d Deps, chatID, rootID string) tea.Cmd {
 	return func() tea.Msg {
 		ctx := context.Background()
 		rows, err := d.Store.ReplyTree(ctx, rootID)
@@ -507,7 +531,8 @@ func loadReplies(d Deps, rootID string) tea.Cmd {
 		if err != nil {
 			return errMsg{err}
 		}
-		return replyLoadedMsg{root: rootID, msgs: rows, meta: meta}
+		return replyLoadedMsg{root: rootID, msgs: rows, meta: meta,
+			draft: frameDraft(d, chatID, rootID)}
 	}
 }
 
@@ -941,20 +966,17 @@ func threadOf(x store.Message) string {
 	return ""
 }
 
-// saveDraft writes the composer's state under the chat it was typed in. It is
-// fire-and-forget: a draft is a convenience, and a chat switch must not wait on
-// the disk. A failure is logged rather than shown, since the reader is already
-// looking at the next chat by the time it could be.
-func saveDraft(d Deps, chatID, text, replyTo string, inThread bool) tea.Cmd {
-	if chatID == "" {
+// saveDraft writes one box's state under the chat and frame it was typed in.
+// It is fire-and-forget: a draft is a convenience, and a chat switch must not
+// wait on the disk. A failure is logged rather than shown, since the reader is
+// already looking at the next chat by the time it could be.
+func saveDraft(d Deps, draft store.Draft) tea.Cmd {
+	if draft.ChatID == "" {
 		return nil
 	}
 	return func() tea.Msg {
-		err := d.Store.SaveDraft(context.Background(), store.Draft{
-			ChatID: chatID, Text: text, ReplyTo: replyTo, InThread: inThread,
-		}, time.Now().UnixMilli())
-		if err != nil {
-			d.log().Error("save draft", "chat_id", chatID, "err", err)
+		if err := d.Store.SaveDraft(context.Background(), draft, time.Now().UnixMilli()); err != nil {
+			d.log().Error("save draft", "chat_id", draft.ChatID, "frame_id", draft.FrameID, "err", err)
 		}
 		return draftSavedMsg{}
 	}

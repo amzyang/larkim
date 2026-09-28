@@ -23,7 +23,7 @@
 
 **`pageShown(tailed)`（`tui/readgate.go`）决定读不读。** 每一项都是「消息面板其实没在读者眼前」的一种：搜索/Mentions 面板借同一套 `msgRows`/`msgTop` 画自己的命中（`m.searching` 两者都置位），Unread 面板借同一套画每个还欠着的会话（`m.feed` 非 nil；`m.chatID` 全程指着某个真实会话，但摆在读者眼前的是一页很多会话，光标停的那个并没有在被读——`Enter` 进去才是），帮助层整屏盖住，终端窄到 `foldRight` 让右栏顶掉消息面板，尺寸低于 `minWidth`/`minHeight` 时 `View` 两栏都不画。视口本身的问题交给 `atTail` —— 滚轮把光标留在最新消息上也答不了它。
 
-**`unreadWaiting(msgs)`（`tui/badgeclear.go`）决定投不投 applink。** 逐项复刻 `store.unreadBadge`——`is_read_remote = 0`、`local_read_at = 0`、`message_position >= 0`、未撤回。**它取的正是 `markChatRead` 的集合（`store.unreadBadge`），这是投出次数的上界所在**：这一页判为真的每一条，`markChatRead` 都在同一个 batch 里记为本地已读，下一页因此判为假。谓词放宽到那个集合之外，就会出现 `markChatRead` 永远收不掉的消息，每次 reload 都投一条 applink，直到会话被切走。
+**`unreadWaiting(msgs)`（`tui/badgeclear.go`）决定投不投 applink。** 它与批量清理的集合**不同**，这是故意的：自动路径每次 reload 都跑，上界必须是「每条未读消息一次」，所以它绑在 `markChatRead` 的写上；批量清理是读者按一次才跑一次，上界是按下的次数，所以它绑在回执上。逐项复刻 `store.unreadBadge`——`is_read_remote = 0`、`local_read_at = 0`、`message_position >= 0`、未撤回。**它取的正是 `markChatRead` 的集合（`store.unreadBadge`），这是投出次数的上界所在**：这一页判为真的每一条，`markChatRead` 都在同一个 batch 里记为本地已读，下一页因此判为假。谓词放宽到那个集合之外，就会出现 `markChatRead` 永远收不掉的消息，每次 reload 都投一条 applink，直到会话被切走。
 
 判据必须读页面查询时的状态：`markChatRead` 紧接着就把 `local_read_at` 写上，改用当前徽标数会被本次访问自己的写入打败。
 
@@ -46,18 +46,24 @@
 
 ## 批量的两个谓词
 
+两个谓词互不包含，各自回答一件事。
+
 |  | 谓词 | 常量 |
 |---|---|---|
-| `ChatsWithUnread` 查要走哪些会话 | `is_read_remote = 0 AND local_read_at = 0 AND deleted = 0 AND message_position >= 0` | `unreadBadge` |
+| `ChatsWithUnread` 查要走哪些会话 | `is_read_remote = 0 AND deleted = 0 AND message_position >= 0` | `clientDot` |
 | `MarkAllRead` 写本地已读 | `is_read_remote = 0 AND local_read_at = 0 AND deleted = 0` | `stillUnread` |
 
-查集合必须是写集合的子集，与 `unreadWaiting` 同一个理由：查回来的每个会话都被同一次写收掉，下一次按下因此不再命中。放宽到写集合之外就会出现写永远收不掉的会话，每次按下都把客户端再走一遍。
+查集合里没有 `local_read_at`：红点是客户端的，larkim 在这边把消息记为已读从来没让它落下来。用本地事实去回答「客户端还亮不亮」，会让一次没落到客户端的 sweep 变成不可重复的——写已经把会话收掉了，再按一次也找不回来。
 
-查必须在写之前跑：写上 `local_read_at` 之后，「客户端还欠着哪些」这个证据就没了。
+因此收敛点不是同一次写，而是**飞书的回执**：会话被走过 → 客户端发回执 → read-status 轮询问到它 → `is_read_remote` 翻 1 → 离开集合。没有回执的会话留在集合里，下一次按下重走它，直到 7 天视野把 `is_read_remote` 刷成 NULL。
 
-thread 回复与已撤回不进查询集合：applink 打开的是主消息流，客户端两者都不渲染，回执不翻，列进去就是每次都走。本地已读照收——`MarkAllRead` 用的是更宽的 `stillUnread`。
+这就是 `ReadStatusProbes` 不再过滤 `local_read_at` 的理由。阶梯（`ReadStatusCandidates`）本来就不看它，所以探针买的是延迟：一个 tick，而不是最长 6 小时的退避步长——那段时间里 sweep 会一直走向红点早就落下的会话。
 
-不经 `Deps.Syncer`，与 `claimChatRefresh` 的门控相互独立：杠杆是桌面客户端，不是 data-dir 锁，跟着 daemon 跑的 TUI 同样要能清红点。
+查在写之前跑只是顺序上的省事，不再是约束：写不会抹掉查所依据的证据。
+
+thread 回复与已撤回不进查询集合：applink 打开的是主消息流，客户端两者都不渲染，回执不翻，列进去就是每次都走。现在 `message_position >= 0` 与 `deleted = 0` 是唯二做这件排除的条件。本地已读照收——`MarkAllRead` 用的是更宽的 `stillUnread`。
+
+不经 `Deps.Syncer`，与 `claimChatRefresh` 的门控相互独立：杠杆是桌面客户端，不是 data-dir 锁，跟着 daemon 跑的 TUI 同样要能清红点。收敛所依赖的那趟轮询不受此影响——没有 daemon 的 TUI 自己拿 `daemon.lock` 并内嵌跑 `Syncer.Run`（`cli/tui_cmd.go`），凡是在同步数据的配置都有一趟。
 
 ## readKey
 
@@ -96,7 +102,9 @@ URL、节奏常量与 `open` 的调用都在 `applink` 包里，因为 TUI 与 `
 
 ## 数据
 
-无 schema 变更、无 migration。`local_read_at` 不因 applink 能翻回执而退休：徽标要立刻落（回执有往返延迟）、回执过 7 天视野归 NULL、applink 可能静默失败。
+无 schema 变更、无 migration。`read_state_unread(is_read_remote, local_read_at, message_id)` 仍以 `is_read_remote` 领衔，`clientDot` 只约束首列，索引照样能驱动 read_state 一侧且仍然覆盖——拿得到 `message_id` 去 join，不必回表。代价只是选择性：命中的行从「当前有徽标的」变成「7 天视野内远端仍未读的」，而 `ExpireReadStatus` 是这个集合现在唯一的上界。
+
+`local_read_at` 不因 applink 能翻回执而退休：徽标要立刻落（回执有往返延迟）、回执过 7 天视野归 NULL、applink 可能静默失败。
 
 ## 测试
 

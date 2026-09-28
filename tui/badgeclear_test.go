@@ -116,6 +116,19 @@ func TestTakeRead_SendsNoApplinkForAPageAlreadyReadHere(t *testing.T) {
 	require.Empty(t, *calls, "the reload a visit causes must not fire a second applink")
 }
 
+func TestTakeRead_StaysOffAChatTheSweepWouldStillWalk(t *testing.T) {
+	m, st, calls := badgeModel(t)
+	require.NoError(t, st.MarkChatRead(t.Context(), "oc_a", 900))
+
+	next, cmd := m.takeRead("oc_a", []store.Message{{MessageID: "om_a", IsReadRemote: new(false), LocalReadAt: 900}})
+	drain(t, next, cmd)
+
+	require.Empty(t, *calls)
+	require.Len(t, waiting(t, st), 1,
+		"the two gates disagree on purpose: the sweep is bounded by the receipt and may walk this chat, "+
+			"the read gate is bounded by markChatRead's write so that a reload cannot fire per visit")
+}
+
 func TestTakeRead_ClearsAgainForAMessageLandingInTheOpenChat(t *testing.T) {
 	m, _, calls := badgeModel(t)
 	next, cmd := m.takeRead("oc_a", unreadPage())

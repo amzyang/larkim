@@ -132,29 +132,36 @@ Per-message read state, joined on `message_id`. Rows exist only for messages who
 | `remote_checked_at`, `check_count`, `next_check_at` | polling schedule for the remote flag |
 | `local_read_at` | local: the reader had the message in front of them in larkim, which is set for a whole chat at once when it is opened. Feishu offers no way to write a read receipt, so this is what lets a badge fall without leaving larkim; the Feishu client's own red dot is unaffected |
 
+`is_read_remote` is also read on its own, without `local_read_at`: on a live message with a non-negative `message_position` that combination means the Feishu desktop client still shows a red dot for the chat, which reading the chat in larkim never takes down. That is the set `larkim read-all` walks the client over, and it is bounded only by the 7-day horizon, so it is wider than any badge — a chat whose badge is 0 can still be in it.
+
 A chat's badge counts the rows where `is_read_remote` is 0 and `local_read_at` is 0 on a live, unsilenced message with a non-negative `message_position`; thread replies are left out. Both flags can only witness that a message was seen, so taking either one as read adds no false unread. Marking a chat read is deliberately wider than the badge: it takes every live row with both flags still unset in the chat, silenced messages and thread replies included, because the chat's page put them in front of the reader too. Anything that page shows but marking read cannot collect keeps its flags for good, and the unread marker beside it relights on every visit.
 
 ## drafts
 
-What the reader has typed but not sent, one row per chat. Consumer-owned, like
-`read_state.local_read_at`: the daemon never writes it, and it is outside the
-`data_rev` triggers, since the process that writes a draft is the one that
+What the reader has typed but not sent, one row per composer. Consumer-owned,
+like `read_state.local_read_at`: the daemon never writes it, and it is outside
+the `data_rev` triggers, since the process that writes a draft is the one that
 displays it.
 
 | column | meaning |
 |---|---|
-| `chat_id` | `oc_…` primary key |
+| `chat_id` | `oc_…`, first half of the primary key |
+| `frame_id` | which of the chat's composers this is, and second half of the key: `omt_…` for a thread, the tree's root `om_…` for a reply tree, and empty for the chat's own |
 | `text` | the unsent composer contents; a row exists only while this is non-empty |
 | `reply_to` | the message the draft answers, empty for none |
 | `in_thread` | whether that reply lands inside the thread rather than the main flow |
 | `updated_at` | last write |
 
-The composer is one widget shared by every chat, so this table is what keeps a
-half-written message from following the reader into the next chat. It is
-written when the reader leaves a chat, when the terminal loses focus and on
-quit — not on every keystroke. Two TUIs on one chat: last write wins, and
-nothing detects the conflict. Clearing the composer deletes the row rather than
-storing an empty one, so the chat list has nothing to draw a marker from.
+The TUI draws a composer under each conversation column — the chat's own, and
+one for the thread or reply tree standing in the right column — so a chat's
+half-written message and an answer inside one of its threads are separate
+drafts and are keyed apart here. Within one composer the widget is still shared
+by every chat, which is what this table keeps a half-written message from
+following the reader through. It is written when the reader leaves a chat or a
+frame, when the terminal loses focus and on quit — not on every keystroke. Two
+TUIs on one chat: last write wins, and nothing detects the conflict. Clearing a
+composer deletes its row rather than storing an empty one, so the chat list has
+nothing to draw a marker from.
 
 A send that Feishu refused is not kept here. It stays in the TUI's in-memory
 outbox as a `(failed)` bubble the reader resends with `.` or drops with `x`, so

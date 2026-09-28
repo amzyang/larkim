@@ -28,11 +28,11 @@ func (m Model) toggleInfo() (tea.Model, tea.Cmd) {
 	if m.chatID == "" {
 		return m.notify("open a chat first", true), nil
 	}
-	m.closeRight()
+	keep := m.closeRight()
 	m.infoOpen, m.infoTop = true, 0
 	m.aiOpen = false
 	m.layout()
-	cmds := []tea.Cmd{loadInfo(m.deps, m.chatID)}
+	cmds := []tea.Cmd{keep, loadInfo(m.deps, m.chatID)}
 	// A chat of two answers with the person across from it, whom the contacts
 	// table names because a pair keeps no roster. A group's card draws nobody
 	// the roster has not already brought, so it pays for no such read.

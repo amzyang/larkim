@@ -18,6 +18,7 @@ func (m Model) onReplyLoaded(msg replyLoadedMsg) (tea.Model, tea.Cmd) {
 	wasOn, anchor, tailed := m.rightLanded(msg.msgs)
 	m.threadBase, m.threadMeta = msg.msgs, msg.meta
 	m.applyOutbox()
+	m.takeRightDraft(msg.draft, m.thread)
 	// The frame is titled by its root, which the reader only had in hand when
 	// they opened it from the root itself.
 	if i := indexOfID(m.thread, msg.root); i >= 0 {

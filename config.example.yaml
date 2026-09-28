@@ -7,8 +7,9 @@ data_dir: ~/.larkim
 # Empty tries /opt/homebrew/bin/lark-cli, then $PATH.
 lark_cli_path: ""
 
-# Pause between daemon ticks; values below 1s are raised to 1s.
-poll_interval: 3s
+# Pause between daemon ticks, in milliseconds; values below 100 are raised
+# to 100.
+poll_interval_ms: 3000
 
 # How far each search window reaches behind the watermark, to absorb the
 # search index's own latency (measured around 10s).

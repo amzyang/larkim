@@ -83,7 +83,7 @@ func (a *App) daemonCmd() *cobra.Command {
 			ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 			defer cancel()
 			s := a.syncer(st)
-			s.Log.Info("larkim daemon starting", "version", a.Version, "data_dir", a.cfg.DataDir, "poll_interval", a.cfg.PollInterval)
+			s.Log.Info("larkim daemon starting", "version", a.Version, "data_dir", a.cfg.DataDir, "poll_interval_ms", a.cfg.PollIntervalMS)
 			err = s.Run(ctx)
 			if errors.Is(err, context.Canceled) {
 				return nil

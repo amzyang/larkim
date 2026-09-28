@@ -160,7 +160,7 @@ func lineBeforeCursor(ta textarea.Model) string {
 // paste and a cursor move as readily as typing, and there is no second place
 // that has to know what a trigger looks like.
 func (m *Model) takePum() {
-	line := lineBeforeCursor(m.input)
+	line := lineBeforeCursor(m.area())
 	if m.pum.dismissed != "" && strings.HasPrefix(line, m.pum.dismissed) {
 		m.pum = pum{dismissed: m.pum.dismissed}
 		return
@@ -180,7 +180,7 @@ func (m *Model) takePum() {
 
 // closePum dismisses the popup for the rest of the run the reader is on.
 func (m *Model) closePum() {
-	m.pum = pum{dismissed: lineBeforeCursor(m.input)}
+	m.pum = pum{dismissed: lineBeforeCursor(m.area())}
 }
 
 // pumHits is what a run offers, best first.
@@ -277,11 +277,12 @@ func (m Model) onPumKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 func (m Model) acceptPum() Model {
 	hit := m.pum.hits[m.pum.idx]
 	for range m.pum.run.runes {
-		m.input, _ = m.input.Update(tea.KeyPressMsg{Code: tea.KeyBackspace})
+		ta := m.areap()
+		*ta, _ = ta.Update(tea.KeyPressMsg{Code: tea.KeyBackspace})
 	}
 	// A trailing space, because what is named is followed by what is being said
 	// about it and the client leaves one too.
-	m.input.InsertString(hit.insert + " ")
+	m.areap().InsertString(hit.insert + " ")
 	if hit.id != "" && hit.id != allKey {
 		// Which person a name stood for, so two colleagues sharing a display
 		// name resolve to the one chosen. resolveMentions reads it on the way

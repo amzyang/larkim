@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/amzyang/larkim/config"
 	"github.com/amzyang/larkim/larkcli"
 	"github.com/amzyang/larkim/store"
 	"github.com/stretchr/testify/require"
@@ -181,6 +182,20 @@ func TestDelayFor_RateLimitHonoursRetryAfter(t *testing.T) {
 	require.Equal(t, 45*time.Second, s.delayFor(err, 1))
 	err.RetryAfter = 0
 	require.Equal(t, 30*time.Second, s.delayFor(err, 1))
+}
+
+func TestDelayFor_KeepsASubSecondPollIntervalOutOfTheBackoff(t *testing.T) {
+	s, _, _ := newSyncer(t)
+	s.Opt.PollInterval = 100 * time.Millisecond
+	err := &larkcli.Error{ExitCode: 1, Subtype: "internal"}
+	require.Equal(t, time.Second, s.delayFor(err, 1), "a tick pace is not a retry pace")
+	require.Equal(t, 4*time.Second, s.delayFor(err, 3))
+}
+
+func TestOptionsFrom_ReadsThePollIntervalAsMilliseconds(t *testing.T) {
+	cfg := config.Default()
+	cfg.PollIntervalMS = 250
+	require.Equal(t, 250*time.Millisecond, OptionsFrom(cfg).PollInterval)
 }
 
 func TestSlowPath_ReconcilesActiveChatsFromCursor(t *testing.T) {
@@ -716,4 +731,32 @@ func TestActiveProbe_AFailedPullLeavesTheMovedChatsNamedNextTick(t *testing.T) {
 	rep, err := s.Tick(ctx)
 	require.NoError(t, err)
 	require.Equal(t, 1, rep.Probed, "the retained ordering names oc_c again")
+}
+
+func TestPollReadStatus_TakesAChatOutOfTheSweepOnceTheClientAnswers(t *testing.T) {
+	s, f, clk := newSyncer(t)
+	ctx := t.Context()
+	now := clk.t
+	require.NoError(t, s.Store.SetState(ctx, KeySelfOpenID, "ou_me"))
+	f.AddMessage(msg("om_walked", "oc_walked", now.Add(-time.Hour), "hi"))
+	_, err := s.Store.UpsertMessages(ctx, []store.Message{{MessageID: "om_walked", ChatID: "oc_walked",
+		SenderID: "ou_a", CreateMs: now.Add(-time.Hour).UnixMilli(), RawJSON: "{}"}}, now.UnixMilli())
+	require.NoError(t, err)
+	require.NoError(t, s.Store.SetReadStatus(ctx, "om_walked", new(false), now.UnixMilli(), now.Add(6*time.Hour).UnixMilli()))
+	// What a sweep leaves behind: larkim's half written, the client walked.
+	_, err = s.Store.MarkAllRead(ctx, now.UnixMilli())
+	require.NoError(t, err)
+	chats, err := s.Store.ChatsWithUnread(ctx)
+	require.NoError(t, err)
+	require.Len(t, chats, 1, "the local write says nothing about the client's dot")
+
+	f.Read["om_walked"] = true
+	_, err = s.pollReadStatus(ctx, now)
+	require.NoError(t, err)
+
+	m, _ := s.Store.GetMessage(ctx, "om_walked")
+	require.True(t, *m.IsReadRemote, "the probe asks about a chat read here, which is what closes the loop")
+	chats, err = s.Store.ChatsWithUnread(ctx)
+	require.NoError(t, err)
+	require.Empty(t, chats, "so the next press walks nothing: the receipt is what ends the sweep")
 }

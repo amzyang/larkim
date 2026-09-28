@@ -49,10 +49,13 @@ func withThread(m Model) Model {
 func TestView_PanesShareHeight(t *testing.T) {
 	m := sized(120, 40)
 	h := m.bodyHeight()
-	require.Equal(t, h+2, lipgloss.Height(m.renderChats(h)), "chats pane = body + border")
 	require.Equal(t, h+2, lipgloss.Height(m.renderMessages(h)), "messages pane = body + border")
 	m = withThread(m)
 	require.Equal(t, h+2, lipgloss.Height(m.renderThread(h)))
+	// The chats pane has a column of its own, so it takes the rows the box
+	// beside it takes as well.
+	require.Equal(t, m.height-statusHeight, lipgloss.Height(m.renderChats(m.chatsBodyHeight())),
+		"chats pane = the screen less the status bar")
 	v := m.View()
 	require.Equal(t, m.height, lipgloss.Height(v.Content), "whole view fits the terminal exactly")
 	for _, line := range strings.Split(v.Content, "\n") {
@@ -60,9 +63,51 @@ func TestView_PanesShareHeight(t *testing.T) {
 	}
 }
 
+func TestChatsPane_RunsPastTheComposerBand(t *testing.T) {
+	m := sized(120, 40)
+	require.Equal(t, m.bodyHeight()+m.composerHeight()+2, m.chatsBodyHeight(),
+		"the chats pane takes the body and the box beside it")
+	tall := m.chatsBodyHeight()
+
+	mm, _ := m.startInsert(nil, false)
+	m = mm.(Model)
+	m.input.SetValue(strings.Repeat("一行\n", composerMaxRows))
+	m.replan()
+	m.layout()
+	require.Greater(t, m.composerHeight(), restingComposer, "the box grew with the draft")
+	require.Equal(t, tall, m.chatsBodyHeight(), "and the chats pane did not move")
+	require.Equal(t, m.height-statusHeight, lipgloss.Height(m.renderChats(m.chatsBodyHeight())))
+}
+
+func TestHit_ChatsPaneAnswersBesideTheComposer(t *testing.T) {
+	m := sized(120, 30)
+	for _, y := range []int{m.bodyHeight() + 2, m.chatsBodyHeight()} {
+		p, row := m.hit(2, y)
+		require.Equal(t, paneChats, p, "row %d is still the chats pane", y)
+		require.GreaterOrEqual(t, row, 0)
+		p, _ = m.hit(chatsWidth+2, y)
+		require.Equal(t, paneInput, p, "row %d is the box beside it", y)
+	}
+	p, _ := m.hit(2, m.chatsBodyHeight()+1)
+	require.Equal(t, pane(-1), p, "the pane's bottom border belongs to nothing")
+}
+
+func TestCursorAt_SitsInsideTheNarrowedBand(t *testing.T) {
+	m := sized(120, 30)
+	mm, _ := m.startInsert(nil, false)
+	m = mm.(Model)
+	m.input.SetValue("hi")
+	m.replan()
+	m.layout()
+	c := m.View().Cursor
+	require.NotNil(t, c)
+	require.Equal(t, chatsWidth+1+lipgloss.Width("hi"), c.X, "the caret is past the chats column")
+	require.Less(t, c.X, m.width)
+}
+
 func TestRenderChats_OneRowPerChat(t *testing.T) {
 	m := sized(120, 30)
-	h := m.bodyHeight()
+	h := m.chatsBodyHeight()
 	lines := strings.Split(m.renderChats(h), "\n")
 	require.Len(t, lines, h+2)
 	require.Contains(t, lines[2], "Unread", "the Unread row leads the pane")
@@ -87,7 +132,7 @@ func TestMove_LastChatStaysVisibleAfterG(t *testing.T) {
 	mm, _ := m.move(1 << 30)
 	m = mm.(Model)
 	require.Equal(t, rowOf(len(m.chats)-1), m.chatIdx)
-	require.Contains(t, ansi.Strip(m.renderChats(m.bodyHeight())), "群 79 ", "the selected last chat is rendered")
+	require.Contains(t, ansi.Strip(m.renderChats(m.chatsBodyHeight())), "群 79 ", "the selected last chat is rendered")
 }
 
 func TestHit_MapsPanesBelowTitles(t *testing.T) {
@@ -110,8 +155,11 @@ func TestHit_MapsPanesBelowTitles(t *testing.T) {
 	p, row = m.hit(m.width-5, 3)
 	require.Equal(t, paneThread, p)
 	require.Equal(t, 1, row, "thread rows start below the title")
-	p, _ = m.hit(5, m.bodyHeight()+3)
+	p, _ = m.hit(chatsWidth+5, m.bodyHeight()+3)
 	require.Equal(t, paneInput, p)
+	p, row = m.hit(2, m.bodyHeight()+3)
+	require.Equal(t, paneChats, p, "the chats pane goes on beside the box")
+	require.Equal(t, (m.bodyHeight()+2-headerHeight)/chatRowStride, row)
 }
 
 func TestHighlight_SurvivesInnerResets(t *testing.T) {
@@ -203,12 +251,28 @@ func TestView_FoldsRightPaneOnNarrowTerminal(t *testing.T) {
 }
 
 func TestOnInsertKey_EscOnFoldedLayoutShowsMessages(t *testing.T) {
-	m := withThread(sized(82, 35))
+	// A forwarded bundle has no box of its own, so the folded column is
+	// carrying the chat's — and leaving it is leaving the column.
+	m := sized(82, 35)
+	m.rightKind, m.threadID, m.thread = rightForward, "om_bundle", m.msgs[:3]
+	m.layout()
+	require.True(t, m.foldRight())
 	m.mode, m.focus = modeInsert, paneInput
 	mm, _ := m.onInsertKey(tea.KeyPressMsg{Code: tea.KeyEscape})
 	m = mm.(Model)
 	require.Equal(t, paneMessages, m.focus)
 	require.False(t, m.threadOpen(), "the right pane that covered the messages closes")
+}
+
+func TestOnInsertKey_EscLeavesTheThreadBoxForItsOwnColumn(t *testing.T) {
+	m := withThread(sized(82, 35))
+	require.True(t, m.foldRight())
+	require.Equal(t, sideRight, m.side, "the folded column carries its own box")
+	m.mode, m.focus = modeInsert, paneInput
+	mm, _ := m.onInsertKey(tea.KeyPressMsg{Code: tea.KeyEscape})
+	m = mm.(Model)
+	require.Equal(t, paneThread, m.focus, "the pane behind the box is the column it belongs to")
+	require.True(t, m.threadOpen(), "leaving the box is not leaving the frame")
 }
 
 func TestView_TooSmallTerminal(t *testing.T) {
@@ -340,7 +404,7 @@ func TestHighlightChat_FocusedRowTakesTheFixedTint(t *testing.T) {
 	tint := "48;2;231;238;252"
 	m := sized(120, 36)
 	m.focus = paneChats
-	require.Contains(t, m.renderChats(m.bodyHeight()), tint, "the row under the cursor carries the client's tint")
+	require.Contains(t, m.renderChats(m.chatsBodyHeight()), tint, "the row under the cursor carries the client's tint")
 	require.NotContains(t, m.highlightChat("plain", false), tint,
 		"without focus the row falls back to the shaded selection")
 }
@@ -350,7 +414,7 @@ func TestRenderChats_TintsTheAvatarColumnOfTheRowUnderTheCursor(t *testing.T) {
 	m.focus, m.chatIdx = paneChats, rowOf(0) // a chat: the Unread row draws no disc
 	m.avatars = badgedAvatars{}
 
-	require.Contains(t, m.renderChats(m.bodyHeight()), "48;2;231;238;252m····",
+	require.Contains(t, m.renderChats(m.chatsBodyHeight()), "48;2;231;238;252m····",
 		"the tint reaches the avatar cells, so the cleared corners of a disc take it too")
 }
 

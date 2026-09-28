@@ -261,7 +261,7 @@ func TestOnWheel_ChatsKeepsItsScrollAcrossAReload(t *testing.T) {
 	require.Equal(t, 0, m.chatIdx, "and must not move the cursor either")
 
 	// Nothing downstream may assume the cursor is among the rows being drawn.
-	require.NotPanics(t, func() { m.renderChats(m.bodyHeight()) })
+	require.NotPanics(t, func() { m.renderChats(m.chatsBodyHeight()) })
 	require.NotPanics(t, func() { m.avatarPrepare() })
 }
 

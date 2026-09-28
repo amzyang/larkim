@@ -22,18 +22,18 @@ func replying(w, h int, x store.Message, inThread bool) Model {
 func TestRenderInput_QuotesTheMessageBeingRepliedTo(t *testing.T) {
 	m := replying(120, 30, store.Message{MessageID: "om_x", SenderID: "ou_her", SenderName: "林岚",
 		Content: "@Announcement hey", RenderedAt: 1}, false)
-	out := ansi.Strip(m.renderInput())
+	out := ansi.Strip(m.renderInput(sideMain))
 	require.Contains(t, out, "林岚", "the quoted sender is named")
 	require.Contains(t, out, "@Announcement hey", "the quoted message reads as text, not as an id")
 	require.NotContains(t, out, "om_x", "the id is not what a person recognises a message by")
 	require.Equal(t, inputHeight, m.composerRows().input, "the quote does not eat into the writing area")
-	require.Equal(t, m.composerHeight()+2, lipgloss.Height(m.renderInput()))
+	require.Equal(t, m.composerHeight()+2, lipgloss.Height(m.renderInput(sideMain)))
 }
 
 func TestRenderInput_ThreadReplyIsMarkedApart(t *testing.T) {
 	x := store.Message{MessageID: "om_x", SenderID: "ou_her", SenderName: "林岚", Content: "hey", RenderedAt: 1}
-	plain := ansi.Strip(replying(120, 30, x, false).renderInput())
-	thread := ansi.Strip(replying(120, 30, x, true).renderInput())
+	plain := ansi.Strip(replying(120, 30, x, false).renderInput(sideMain))
+	thread := ansi.Strip(replying(120, 30, x, true).renderInput(sideMain))
 	require.NotEqual(t, plain, thread, "a thread reply is not drawn like a plain one")
 	require.Contains(t, thread, "thread")
 }
@@ -41,7 +41,7 @@ func TestRenderInput_ThreadReplyIsMarkedApart(t *testing.T) {
 func TestRenderInput_NoQuoteWithoutAReplyTarget(t *testing.T) {
 	m := sized(120, 30)
 	require.Equal(t, restingComposer, m.composerHeight(), "the writing area and the badge row")
-	require.Equal(t, restingComposer+2, lipgloss.Height(m.renderInput()))
+	require.Equal(t, restingComposer+2, lipgloss.Height(m.renderInput(sideMain)))
 }
 
 func TestView_ReplyBarKeepsTheTerminalHeight(t *testing.T) {
@@ -55,9 +55,9 @@ func TestView_ReplyBarKeepsTheTerminalHeight(t *testing.T) {
 
 func TestHit_ComposerGrowsWithTheReplyBar(t *testing.T) {
 	m := replying(120, 30, store.Message{MessageID: "om_x", SenderName: "林岚", Content: "hey", RenderedAt: 1}, false)
-	p, _ := m.hit(2, m.bodyHeight()+2)
+	p, _ := m.hit(chatsWidth+2, m.bodyHeight()+2)
 	require.Equal(t, paneInput, p, "the quote row belongs to the composer")
-	p, _ = m.hit(2, m.height-statusHeight-1)
+	p, _ = m.hit(chatsWidth+2, m.height-statusHeight-1)
 	require.Equal(t, paneInput, p, "the composer still reaches the status bar")
 }
 

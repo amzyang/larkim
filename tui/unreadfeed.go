@@ -269,7 +269,7 @@ func loadUnreadFeed(d Deps, keep []unreadSection) tea.Cmd {
 func loadChatSide(d Deps, chatID string) tea.Cmd {
 	return func() tea.Msg {
 		ctx := context.Background()
-		draft, err := d.Store.LoadDraft(ctx, chatID)
+		draft, err := d.Store.LoadDraft(ctx, chatID, "")
 		if err != nil {
 			d.log().Error("load draft", "chat_id", chatID, "err", err)
 			draft = store.Draft{ChatID: chatID}

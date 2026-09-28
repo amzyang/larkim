@@ -45,8 +45,15 @@ var settings = []setting{{
 	key:  "lark_cli_path",
 	help: "the lark-cli binary; empty tries /opt/homebrew/bin, then $PATH",
 }, {
-	key:  "poll_interval",
-	help: "pause between daemon ticks; anything under 1s is raised to 1s",
+	key:  "poll_interval_ms",
+	help: "pause between daemon ticks, in milliseconds; under 100 is raised to 100",
+	check: func(raw string) error {
+		// The unit is in the key's name, so 3s is the reader writing it twice.
+		if ms, err := strconv.Atoi(raw); err != nil || ms <= 0 {
+			return fmt.Errorf("want a positive count of milliseconds, not %q", raw)
+		}
+		return nil
+	},
 }, {
 	key:  "overlap",
 	help: "how far each search window reaches behind the watermark",

@@ -14,7 +14,7 @@ import (
 
 // readAllApp is n chats each carrying one message Feishu still reports
 // unseen, with the opener recorded instead of reaching macOS.
-func readAllApp(t *testing.T, n int, openErr error) (*App, *bytes.Buffer, *[][]string) {
+func readAllApp(t *testing.T, n int, openErr error) (*App, *[][]string, *error) {
 	t.Helper()
 	dir := t.TempDir()
 	st, err := store.Open(filepath.Join(dir, "larkim.db"))
@@ -37,15 +37,16 @@ func readAllApp(t *testing.T, n int, openErr error) (*App, *bytes.Buffer, *[][]s
 
 	var out bytes.Buffer
 	var walked [][]string
+	refuse := openErr
 	// A pace of 1ms rather than the configured second: what these cases are
 	// about is which chats get walked, not how far apart.
 	a := &App{Out: &out, Err: &out, jsonOut: true, cfg: config.Config{DataDir: dir, ApplinkPaceMS: 1},
 		openURL: func(targets []string, background bool) error {
 			require.True(t, background, "the walk must leave the screen to whatever the reader is in")
 			walked = append(walked, targets)
-			return openErr
+			return refuse
 		}}
-	return a, &out, &walked
+	return a, &walked, &refuse
 }
 
 func runReadAll(t *testing.T, a *App, args ...string) string {
@@ -59,7 +60,7 @@ func runReadAll(t *testing.T, a *App, args ...string) string {
 }
 
 func TestReadAllCmd_WalksTheClientOntoEveryChatThatWasWaiting(t *testing.T) {
-	a, _, walked := readAllApp(t, 3, nil)
+	a, walked, _ := readAllApp(t, 3, nil)
 
 	out := runReadAll(t, a)
 
@@ -74,7 +75,7 @@ func TestReadAllCmd_WalksTheClientOntoEveryChatThatWasWaiting(t *testing.T) {
 }
 
 func TestReadAllCmd_SettlesTheLocalHalfEvenWhenOpenRefuses(t *testing.T) {
-	a, _, walked := readAllApp(t, 2, errors.New("no application knows how to open URL"))
+	a, walked, _ := readAllApp(t, 2, errors.New("no application knows how to open URL"))
 
 	out := runReadAll(t, a)
 
@@ -84,13 +85,33 @@ func TestReadAllCmd_SettlesTheLocalHalfEvenWhenOpenRefuses(t *testing.T) {
 	st, err := store.Open(a.cfg.DBPath())
 	require.NoError(t, err)
 	defer st.Close()
+	chats, err := st.ListChats(t.Context(), store.ChatQuery{})
+	require.NoError(t, err)
+	for _, c := range chats {
+		require.Zero(t, c.UnreadCount, "the durable half landed before the best-effort half was tried")
+	}
 	left, err := st.ChatsWithUnread(t.Context())
 	require.NoError(t, err)
-	require.Empty(t, left, "the durable half landed before the best-effort half was tried")
+	require.Len(t, left, 2, "and the refused chats are still the client's, so the next pass finds them")
+}
+
+func TestReadAllCmd_WalksAgainWhatTheLastPassFailedToClear(t *testing.T) {
+	a, walked, refuse := readAllApp(t, 2, errors.New("no application knows how to open URL"))
+	runReadAll(t, a)
+	require.Len(t, *walked, 2)
+	*refuse, *walked = nil, nil
+
+	out := runReadAll(t, a)
+
+	require.Len(t, *walked, 2,
+		"no receipt said the dots came down, so the chats are still the client's and the pass is repeatable")
+	require.Contains(t, out, `"chats": 2`)
+	require.Contains(t, out, `"failed": 0`)
+	require.Contains(t, out, `"messages": 0`, "the local half was already settled by the first pass")
 }
 
 func TestReadAllCmd_DryRunCountsAndWritesNothing(t *testing.T) {
-	a, _, walked := readAllApp(t, 2, nil)
+	a, walked, _ := readAllApp(t, 2, nil)
 
 	out := runReadAll(t, a, "--dry-run")
 
@@ -107,7 +128,7 @@ func TestReadAllCmd_DryRunCountsAndWritesNothing(t *testing.T) {
 }
 
 func TestReadAllCmd_OnAReadStoreOpensNothing(t *testing.T) {
-	a, _, walked := readAllApp(t, 0, nil)
+	a, walked, _ := readAllApp(t, 0, nil)
 
 	out := runReadAll(t, a)
 

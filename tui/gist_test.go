@@ -171,12 +171,12 @@ func gistModel(t *testing.T) Model {
 func TestRenderReplyBar_DrawsTheEmojiTheQuotedMessageSpelled(t *testing.T) {
 	m := gistModel(t)
 	m.replyTo = &store.Message{MessageID: "om_1", SenderName: "孙琪", Content: "[了解]", RenderedAt: 1}
-	w := m.width - 2
+	w := m.bandWidth(sideMain) - 2
 
-	head, gist, room := m.replyBarParts(w)
+	head, gist, room := m.replyBarParts(sideMain, *m.replyTo, w)
 	require.Equal(t, 1, picSegs(gistSegs(head, gist, room, stDim, m.chatPics().gist)))
 
-	line := ansi.Strip(m.renderReplyBar(w))
+	line := ansi.Strip(m.renderReplyBar(sideMain, *m.replyTo, w))
 	require.NotContains(t, line, "[了解]", "the name it was spelled with is not what the client shows")
 	require.Contains(t, line, "孙琪")
 	require.Equal(t, w, ansi.StringWidth(line), "the bar still fills the composer's width")

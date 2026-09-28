@@ -25,7 +25,7 @@ func posting(m Model, items int) Model {
 	// textarea only learns how far it can scroll when something renders it:
 	// its viewport is handed the wrapped draft inside View. A running app has
 	// always drawn a frame before a wheel event reaches it.
-	m.renderInput()
+	m.renderInput(sideMain)
 	return m
 }
 
@@ -41,7 +41,7 @@ func composerY(m Model, want composerBand) int {
 
 func wheelAt(m Model, y int, b tea.MouseButton, n int) Model {
 	for range n {
-		mm, _ := m.onWheel(tea.Mouse{Button: b, X: 10, Y: y})
+		mm, _ := m.onWheel(tea.Mouse{Button: b, X: chatsWidth + 10, Y: y})
 		m = mm.(Model)
 	}
 	return m
@@ -49,12 +49,12 @@ func wheelAt(m Model, y int, b tea.MouseButton, n int) Model {
 
 func TestComposerBand_ResolvesPreviewRuleAndInput(t *testing.T) {
 	m := posting(sized(120, 40), 20)
-	m.setReply(&m.msgs[0], false)
+	m.setQuote(&m.msgs[0], false)
 	r := m.composerRows()
 	require.Positive(t, r.preview, "the fixture has to draw a preview")
 	require.Positive(t, r.quote, "and a quote, so composerAbove over-fills the box")
 
-	above := m.composerAbove(m.width - 2)
+	above := m.composerAbove(sideMain, m.bandWidth(sideMain)-2)
 	require.Equal(t, r.total(), len(above)+r.input+r.badge,
 		"the box draws exactly the rows the split claimed, so it neither pads nor clips")
 
@@ -79,14 +79,14 @@ func TestWheel_PreviewScrollsPastPreviewMaxRows(t *testing.T) {
 	m := posting(sized(120, 40), 20)
 	require.Greater(t, len(m.previewRows), m.composerRows().preview,
 		"the fixture has to render more rows than the band shows")
-	head, _ := m.rowLine(m.previewRows[0], m.width-2)
-	require.Contains(t, m.composerAbove(m.width - 2)[0], head)
+	head, _ := m.rowLine(m.previewRows[0], m.bandWidth(sideMain)-2)
+	require.Contains(t, m.composerAbove(sideMain, m.bandWidth(sideMain)-2)[0], head)
 
 	m = wheelAt(m, composerY(m, bandPreview), tea.MouseWheelDown, 1)
 
 	require.Equal(t, 3, m.previewTop)
-	want, _ := m.rowLine(m.previewRows[3], m.width-2)
-	require.Contains(t, m.composerAbove(m.width - 2)[0], want, "the band now starts on row 3")
+	want, _ := m.rowLine(m.previewRows[3], m.bandWidth(sideMain)-2)
+	require.Contains(t, m.composerAbove(sideMain, m.bandWidth(sideMain)-2)[0], want, "the band now starts on row 3")
 }
 
 func TestWheel_PreviewClampsAtBothEnds(t *testing.T) {
@@ -98,7 +98,7 @@ func TestWheel_PreviewClampsAtBothEnds(t *testing.T) {
 
 	m = wheelAt(m, y, tea.MouseWheelDown, 40)
 	require.Equal(t, m.previewBottom(), m.previewTop, "nor past the last")
-	require.Len(t, m.composerAbove(m.width - 2)[:m.composerRows().preview], m.composerRows().preview,
+	require.Len(t, m.composerAbove(sideMain, m.bandWidth(sideMain)-2)[:m.composerRows().preview], m.composerRows().preview,
 		"the band stays full at the bottom")
 }
 
@@ -122,7 +122,7 @@ func TestPreview_TopClampsWhenTheDraftShrinks(t *testing.T) {
 	m = posting(m, 2)
 
 	require.Equal(t, m.previewBottom(), m.previewTop)
-	require.NotPanics(t, func() { m.composerAbove(m.width - 2) })
+	require.NotPanics(t, func() { m.composerAbove(sideMain, m.bandWidth(sideMain)-2) })
 }
 
 func TestPreview_TopGoesBackToTheTopWhenThePreviewCloses(t *testing.T) {
@@ -165,7 +165,7 @@ func TestWheel_WritingAreaIgnoredOutsideInsert(t *testing.T) {
 
 func TestWheel_ComposerQuoteAndBadgeScrollNothing(t *testing.T) {
 	m := posting(sized(120, 40), 20)
-	m.setReply(&m.msgs[0], false)
+	m.setQuote(&m.msgs[0], false)
 	m = wheelAt(m, composerY(m, bandPreview), tea.MouseWheelDown, 2)
 	top, line, msgTop := m.previewTop, m.input.Line(), m.msgTop
 

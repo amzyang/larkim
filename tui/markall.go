@@ -9,8 +9,8 @@ import (
 	"github.com/amzyang/larkim/store"
 )
 
-// markAllSetMsg carries the chats a mark-all will walk. The set has to be read
-// before the write that erases it.
+// markAllSetMsg carries the chats a mark-all will walk: what Feishu still
+// reports unseen, which the local write below does not touch.
 type markAllSetMsg struct {
 	chats []store.ChatUnread
 	err   error
@@ -22,8 +22,9 @@ type markAllDoneMsg struct {
 	err   error
 }
 
-// startMarkAll reads what is waiting: the set the local write settles, and the
-// one the client is then walked over.
+// startMarkAll reads what the Feishu client is still showing. That set and the
+// one the local write settles are no longer the same, and only this one
+// decides who gets walked.
 func (m Model) startMarkAll() (tea.Model, tea.Cmd) {
 	// A question on screen owns the next key. A sweep's own notes would go
 	// over it and leave the reader answering a prompt they can no longer see.

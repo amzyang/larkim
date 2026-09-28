@@ -38,8 +38,10 @@ func (m *Model) startUnread(take bool) tea.Cmd {
 	if take {
 		m.focus = paneMessages
 	}
+	// saveComposer above already wrote both boxes back, so the close owes
+	// nothing further.
 	m.closeRight()
-	m.setReply(nil, false)
+	m.setQuoteOn(sideMain, nil, false)
 	m.input.SetValue("")
 	m.clearMessagePane()
 	m.msgSince, m.msgLimit = 0, 0
@@ -58,6 +60,12 @@ func (m *Model) closeUnread() tea.Cmd {
 	// the emptied widget back a second time under the chat just saved.
 	m.chatID = ""
 	m.input.SetValue("")
+	// The panel the list opens into has no chat behind it. The list's own
+	// first chat is where Esc leaves the reader, so taking the page down
+	// hands them a chat rather than an empty pane.
+	if from == "" && len(m.chats) > 0 {
+		from = m.chats[0].ChatID
+	}
 	if from == "" {
 		m.feed = nil
 		m.clearMessagePane()
