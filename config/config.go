@@ -232,8 +232,7 @@ func formatValue(v reflect.Value) (string, bool) {
 		return strconv.FormatInt(v.Int(), 10), true
 	case reflect.Bool:
 		return strconv.FormatBool(v.Bool()), true
-	}
-	if v.Kind() == reflect.Struct {
+	case reflect.Struct:
 		// A section holds keys, not a value; Keys() does not name one either.
 		return "", false
 	}
@@ -279,7 +278,7 @@ func keysOf(t reflect.Type, prefix string) []string {
 		key := prefix + tag
 		// Only a struct has keys under it; a slice of them, like silence, is
 		// one value written whole.
-		if ft := t.Field(f).Type; ft.Kind() == reflect.Struct && ft != reflect.TypeFor[time.Time]() {
+		if ft := t.Field(f).Type; ft.Kind() == reflect.Struct {
 			out = append(out, keysOf(ft, key+".")...)
 			continue
 		}
