@@ -8,8 +8,12 @@ import (
 	"strings"
 )
 
-// postElem is one element of a rich-text body, with the fields every tag uses.
-type postElem struct {
+// PostElem is one element of a rich-text body, with the fields every tag
+// uses. Every tag keeps the fields it arrived with rather than a spelling of
+// them: flattening the body to markdown makes an asterisk somebody typed and
+// one the flattening added the same character, which is a reading a drawn
+// body must not be built on.
+type PostElem struct {
 	Tag       string   `json:"tag"`
 	Text      string   `json:"text"`
 	Style     []string `json:"style"`
@@ -22,13 +26,14 @@ type postElem struct {
 	Language  string   `json:"language"`
 }
 
-// postBody is a rich-text body. content_v2 is the paragraph list the client
-// writes now and content the older spelling of the same body, so whichever is
-// read is read whole.
-type postBody struct {
+// PostBody is a rich-text body: a title, and the paragraphs below it.
+// content_v2 is the paragraph list the client writes now and content the older
+// spelling of the same body, so the two are never merged — whichever is read
+// is read whole.
+type PostBody struct {
 	Title     string       `json:"title"`
-	ContentV2 [][]postElem `json:"content_v2"`
-	Content   [][]postElem `json:"content"`
+	ContentV2 [][]PostElem `json:"content_v2"`
+	Content   [][]PostElem `json:"content"`
 	Files     []postFile   `json:"files"`
 }
 
@@ -40,7 +45,8 @@ type postFile struct {
 	IsFolder bool   `json:"is_folder"`
 }
 
-func (b postBody) paragraphs() [][]postElem {
+// Paragraphs is whichever of the two spellings this body arrived in.
+func (b PostBody) Paragraphs() [][]PostElem {
 	if len(b.ContentV2) > 0 {
 		return b.ContentV2
 	}
@@ -60,7 +66,7 @@ func postText(contentRaw, mentionsJSON string) string {
 	if b.Title != "" {
 		parts = append(parts, b.Title)
 	}
-	for _, para := range b.paragraphs() {
+	for _, para := range b.Paragraphs() {
 		var line strings.Builder
 		for _, el := range para {
 			line.WriteString(postElemText(el))
@@ -98,12 +104,12 @@ func postText(contentRaw, mentionsJSON string) string {
 // postBodyIn reads the body out of the two shapes the wire uses: the bare
 // {title, content} the API returns, and the locale-wrapped {zh_cn: {...}} a
 // post larkim sent itself reads back as.
-func postBodyIn(contentRaw string) postBody {
+func postBodyIn(contentRaw string) PostBody {
 	var probe map[string]json.RawMessage
 	if json.Unmarshal([]byte(contentRaw), &probe) != nil {
-		return postBody{}
+		return PostBody{}
 	}
-	var b postBody
+	var b PostBody
 	_, bare := probe["content"]
 	if _, ok := probe["title"]; ok || bare {
 		json.Unmarshal([]byte(contentRaw), &b)
@@ -116,24 +122,24 @@ func postBodyIn(contentRaw string) postBody {
 			return b
 		}
 	}
-	return postBody{}
+	return PostBody{}
 }
 
 // postElemText renders one element to its inline form.
-func postElemText(el postElem) string {
+func postElemText(el PostElem) string {
 	switch el.Tag {
 	case "text":
-		return postStyleText(el.Text, el.Style)
+		return StyleMarkdown(el.Text, el.Style)
 	case "a":
 		switch {
 		case el.Href != "" && el.Text != "":
-			return postStyleText(fmt.Sprintf("[%s](%s)", escapeMDLinkText(el.Text), el.Href), el.Style)
+			return StyleMarkdown(fmt.Sprintf("[%s](%s)", escapeMDLinkText(el.Text), el.Href), el.Style)
 		case el.Href != "":
-			return postStyleText(el.Href, el.Style)
+			return StyleMarkdown(el.Href, el.Style)
 		}
-		return postStyleText(el.Text, el.Style)
+		return StyleMarkdown(el.Text, el.Style)
 	case "at":
-		return postStyleText(atRunText(el), el.Style)
+		return StyleMarkdown(atRunText(el), el.Style)
 	case "emotion":
 		// Deliberately unstyled: a shortcode is an atomic token, not prose.
 		if el.EmojiType == "" {
@@ -165,7 +171,7 @@ func postElemText(el postElem) string {
 
 // atRunText spells one mention the way a rendering carries it, which is the
 // form the @ runs are read back out of a body by.
-func atRunText(el postElem) string {
+func atRunText(el PostElem) string {
 	if el.UserID == "@_all" || el.UserID == "all" {
 		return `<at user_id="all"></at>`
 	}
@@ -178,9 +184,11 @@ func atRunText(el postElem) string {
 	return "@" + el.UserName
 }
 
-// postStyleText wraps text in the markup its style names, innermost first, so
-// the same styles always come out spelled the same way.
-func postStyleText(text string, styles []string) string {
+// StyleMarkdown wraps text in the markup an element's style names, innermost
+// first, so the same styles always come out spelled the same way. Feishu keeps
+// emphasis as names beside the words rather than as markup around them, and
+// this is what spells it back.
+func StyleMarkdown(text string, styles []string) string {
 	if text == "" || len(styles) == 0 {
 		return text
 	}

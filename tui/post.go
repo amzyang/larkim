@@ -10,62 +10,31 @@ import (
 
 	"charm.land/lipgloss/v2"
 	"github.com/amzyang/larkim/store"
+	"github.com/amzyang/larkim/sync"
 )
 
-// postElem is one element of a rich-text body. Every tag keeps the fields it
-// arrived with rather than a spelling of them: a rendering flattens the whole
-// body to markdown, where an asterisk somebody typed and one the flattening
-// added are the same character.
-type postElem struct {
-	Tag       string   `json:"tag"`
-	Text      string   `json:"text"`
-	Style     []string `json:"style"`
-	Href      string   `json:"href"`
-	UserID    string   `json:"user_id"`
-	UserName  string   `json:"user_name"`
-	EmojiType string   `json:"emoji_type"`
-	ImageKey  string   `json:"image_key"`
-	FileKey   string   `json:"file_key"`
-	Language  string   `json:"language"`
-}
-
-// postBody is a rich-text body: a title, and the paragraphs below it. The
-// client writes content_v2 and keeps content beside it as the older spelling
-// of the same body, so the two are never merged — whichever is read is read
-// whole.
-type postBody struct {
-	Title     string       `json:"title"`
-	ContentV2 [][]postElem `json:"content_v2"`
-	Content   [][]postElem `json:"content"`
-}
-
-func (b postBody) paragraphs() [][]postElem {
-	if len(b.ContentV2) > 0 {
-		return b.ContentV2
-	}
-	return b.Content
-}
-
-func (b postBody) empty() bool { return b.Title == "" && len(b.paragraphs()) == 0 }
+// postEmpty reports a body with nothing in it, which is how a locale-wrapped
+// one is told from the bare shape it parses into first.
+func postEmpty(b sync.PostBody) bool { return b.Title == "" && len(b.Paragraphs()) == 0 }
 
 // postBodyOf reads a body in either form the wire uses: the bare
 // {title, content} the API returns, and the locale-wrapped {zh_cn: {...}}
 // lark-cli sends, which is how a post larkim sent itself reads back.
-func postBodyOf(contentRaw string) (postBody, bool) {
-	var b postBody
-	if json.Unmarshal([]byte(contentRaw), &b) == nil && !b.empty() {
+func postBodyOf(contentRaw string) (sync.PostBody, bool) {
+	var b sync.PostBody
+	if json.Unmarshal([]byte(contentRaw), &b) == nil && !postEmpty(b) {
 		return b, true
 	}
-	var byLocale map[string]postBody
+	var byLocale map[string]sync.PostBody
 	if json.Unmarshal([]byte(contentRaw), &byLocale) != nil {
-		return postBody{}, false
+		return sync.PostBody{}, false
 	}
 	for _, loc := range slices.Sorted(maps.Keys(byLocale)) {
-		if b := byLocale[loc]; !b.empty() {
+		if b := byLocale[loc]; !postEmpty(b) {
 			return b, true
 		}
 	}
-	return postBody{}, false
+	return sync.PostBody{}, false
 }
 
 // postRows draw a rich-text body as the elements it was written from. The
@@ -73,13 +42,13 @@ func postBodyOf(contentRaw string) (postBody, bool) {
 // empty one is a blank line, a code block carries the language it was tagged
 // with, a picture stands where it was placed, and the words between them are
 // words rather than markup.
-func postRows(b postBody, x store.Message, idx int, st msgStyle, g *leads, ms mentions) []msgRow {
+func postRows(b sync.PostBody, x store.Message, idx int, st msgStyle, g *leads, ms mentions) []msgRow {
 	d := postDoc{x: x, idx: idx, st: st, g: g, ms: ms}
 	var rows []msgRow
 	if b.Title != "" {
 		rows = append(rows, d.segRows(d.words(b.Title, []string{"bold"}))...)
 	}
-	paras := b.paragraphs()
+	paras := b.Paragraphs()
 	for i := 0; i < len(paras); {
 		if md, n := postList(paras[i:]); n > 0 {
 			rows = append(rows, mdRows(md, x, idx, st, g, ms)...)
@@ -105,7 +74,7 @@ var postListMarker = regexp.MustCompile(`^( *)(?:[-*+]|\d{1,9}[.)]) +\S`)
 //
 // This is the one place a post's words are read as markup: somebody who wrote
 // a marker meant a list, and the paragraphs around it stay literal.
-func postList(paras [][]postElem) (string, int) {
+func postList(paras [][]sync.PostElem) (string, int) {
 	var lines []string
 	for _, para := range paras {
 		line, ok := postMDLine(para)
@@ -130,7 +99,7 @@ func postList(paras [][]postElem) (string, int) {
 // elements it holds. It answers false for a paragraph carrying something no
 // list item does — a code block, a rule, a media file — which leaves that
 // paragraph on the element path whatever it opens with.
-func postMDLine(para []postElem) (string, bool) {
+func postMDLine(para []sync.PostElem) (string, bool) {
 	var b strings.Builder
 	for _, el := range para {
 		switch el.Tag {
@@ -147,7 +116,7 @@ func postMDLine(para []postElem) (string, bool) {
 		case "md":
 			b.WriteString(el.Text)
 		default:
-			b.WriteString(postMDStyle(el.Text, el.Style))
+			b.WriteString(sync.StyleMarkdown(el.Text, el.Style))
 		}
 	}
 	return b.String(), true
@@ -156,7 +125,7 @@ func postMDLine(para []postElem) (string, bool) {
 // postMDLink spells an `a` element. A label that is the address itself is
 // written out rather than spelled as a link, which is what sends it down the
 // path that names a Feishu document by its title.
-func postMDLink(el postElem) string {
+func postMDLink(el sync.PostElem) string {
 	switch {
 	case el.Href == "":
 		return el.Text
@@ -164,28 +133,6 @@ func postMDLink(el postElem) string {
 		return el.Href
 	}
 	return "[" + el.Text + "](" + el.Href + ")"
-}
-
-// postMDStyle spells an element's emphasis as the markup the markdown path
-// reads it back from. It is postStyle written out instead of painted.
-func postMDStyle(text string, styles []string) string {
-	if text == "" || len(styles) == 0 {
-		return text
-	}
-	has := func(name string) bool { return slices.Contains(styles, name) }
-	if has("bold") {
-		text = "**" + text + "**"
-	}
-	if has("italic") {
-		text = "*" + text + "*"
-	}
-	if has("underline") {
-		text = "<u>" + text + "</u>"
-	}
-	if has("lineThrough") {
-		text = "~~" + text + "~~"
-	}
-	return text
 }
 
 // postDoc is what every paragraph of one body is drawn against: the message
@@ -201,7 +148,7 @@ type postDoc struct {
 // paragraph draws one paragraph. Words gather into the pieces a row is packed
 // from; a picture, a code block or an embedded markdown document takes rows of
 // its own, so the words written beside it are laid down first.
-func (d postDoc) paragraph(para []postElem) []msgRow {
+func (d postDoc) paragraph(para []sync.PostElem) []msgRow {
 	var rows []msgRow
 	var segs []rowSeg
 	flush := func() {
@@ -272,7 +219,7 @@ func (d postDoc) words(s string, style []string) []rowSeg {
 // link draws an `a` element. A label that is the address itself is drawn the
 // way a written-out address is, so a Feishu document link becomes the document
 // rather than its token.
-func (d postDoc) link(el postElem) []rowSeg {
+func (d postDoc) link(el sync.PostElem) []rowSeg {
 	if el.Text == "" || el.Text == el.Href {
 		return d.words(el.Href, el.Style)
 	}
@@ -327,11 +274,11 @@ func postText(contentRaw string) string {
 	if !ok {
 		return ""
 	}
-	lines := make([]string, 0, len(b.paragraphs())+1)
+	lines := make([]string, 0, len(b.Paragraphs())+1)
 	if b.Title != "" {
 		lines = append(lines, b.Title)
 	}
-	for _, para := range b.paragraphs() {
+	for _, para := range b.Paragraphs() {
 		var line strings.Builder
 		for _, el := range para {
 			switch el.Tag {
