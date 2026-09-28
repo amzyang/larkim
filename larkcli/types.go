@@ -96,7 +96,7 @@ type RawChat struct {
 	Raw           json.RawMessage
 }
 
-// Resource is one entry of resources[] produced by --download-resources.
+// Resource is one attachment DownloadResource brought down.
 type Resource struct {
 	MessageID string `json:"message_id"`
 	Key       string `json:"key"`
@@ -113,7 +113,6 @@ type RenderedMessage struct {
 	Content   string          `json:"content"`
 	Mentions  json.RawMessage `json:"mentions"`
 	Reactions json.RawMessage `json:"reactions"`
-	Resources []Resource      `json:"resources"`
 	Raw       json.RawMessage
 }
 

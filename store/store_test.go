@@ -94,7 +94,7 @@ func TestUpsertMessages_PreservesRenderingAndRecalledContent(t *testing.T) {
 	n, err := s.UpsertMessages(ctx, []Message{m}, 1000)
 	require.NoError(t, err)
 	require.Equal(t, 1, n)
-	require.NoError(t, s.UpdateRendered(ctx, "om_1", "hi", "[]", "", 1001))
+	require.NoError(t, s.UpdateRendered(ctx, "om_1", "hi", "", 1001))
 
 	// Re-sync unchanged: rendering stays.
 	_, err = s.UpsertMessages(ctx, []Message{m}, 2000)
@@ -486,7 +486,7 @@ func TestMigrate_RerendersBodiesThatKeptTheirParagraphMarkup(t *testing.T) {
 		{"om_bundle", "<forwarded_messages>\n    <p>abc</p>"},
 		{"om_post", "<p>abc</p>"},
 	} {
-		require.NoError(t, s.UpdateRendered(ctx, r.id, r.content, "", "", 1))
+		require.NoError(t, s.UpdateRendered(ctx, r.id, r.content, "", 1))
 	}
 	// Pretend the database predates the migration.
 	_, err = s.db.ExecContext(ctx, `DELETE FROM schema_migrations WHERE version = 34`)
@@ -499,6 +499,11 @@ func TestMigrate_RerendersBodiesThatKeptTheirParagraphMarkup(t *testing.T) {
 
 	ids, err := s.UnrenderedMessageIDs(ctx, "", 10)
 	require.NoError(t, err)
-	require.ElementsMatch(t, []string{"om_edited", "om_bundle"}, ids,
+	require.ElementsMatch(t, []string{"om_bundle"}, ids,
 		"a post is never unwrapped, and a body that never held markup has nothing to redo")
+
+	local, err := s.UnrenderedLocalMessages(ctx, nil, 10)
+	require.NoError(t, err)
+	require.Len(t, local, 1)
+	require.Equal(t, "om_edited", local[0].MessageID, "a text body is unwrapped in process")
 }

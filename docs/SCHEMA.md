@@ -31,7 +31,7 @@ One row per chat the user is (or was) in, from `GET /im/v1/chats` with `types=p2
 | `last_message_id`, `last_message_ms` | the chat's newest main-flow message; empty and 0 when it has none |
 | `last_sender_id`, `last_sender_name`, `last_sender_type` | that message's sender |
 | `last_msg_type`, `last_content`, `last_content_raw` | that message's type and body; `last_content` is empty until `last_rendered_at` is set |
-| `last_mentions_json` | that message's rendered mentions, the shape `messages.mentions_json` holds; empty until the rendering lands |
+| `last_mentions_json` | that message's mentions, the shape `messages.mentions_json` holds |
 | `last_reactions_json` | that message's reaction block, the shape `messages.reactions_json` holds; empty while nobody has reacted |
 | `last_rendered_at`, `last_deleted` | that message's rendering state and recall flag |
 | `last_unsilenced_ms` | the newest main-flow message no silence rule matched, and the key the list orders on; 0 when every message is silenced |
@@ -57,7 +57,7 @@ One row per message id, from the raw message API (`create_ms` is millisecond pre
 | `sender_type` | `user` or `app` |
 | `sender_name` | server-provided display name; may be empty for system messages |
 | `content_raw` | `body.content` JSON string, shape depends on `msg_type` (`{"text":"…"}`, post blocks, `{"image_key":…}`, card JSON) |
-| `content` | human-readable rendering; empty until `rendered_at` is set. `system` and `video_chat` messages are rendered in process from bodies already on disk, every other type by lark-cli (`+messages-mget`) |
+| `content` | human-readable rendering; empty until `rendered_at` is set. every type larkim can read off the body it stores is rendered in process — `text`, `post`, `interactive`, `image`, `file`, `audio`, `media`, `video`, `sticker`, `system`, `video_chat`, `calendar`, `share_calendar_event`, `general_calendar` — in the shapes lark-cli renders them to, except a card, which is rendered from its own JSON and so keeps the block structure lark-cli's flattening runs together. `merge_forward`, whose expansion needs the API, and any type larkim has no renderer for go to lark-cli (`+messages-mget`) |
 | `create_ms`, `update_ms` | creation, and the last time the API's copy of the message changed for any reason |
 | `message_position` | per-chat monotonic position; negative for thread replies (the API picks the sentinel, `-3` in current data) |
 | `updated`, `deleted` | the API's own flags; `updated` also covers Feishu's post-send patches (mention resolution, link and time-phrase enrichment), so it is not an edit badge |
@@ -66,7 +66,7 @@ One row per message id, from the raw message API (`create_ms` is millisecond pre
 | `deleted_seen_at` | when the recall was first observed; `content_raw` keeps the last known body |
 | `thread_id` | `omt_…` for thread roots and replies |
 | `reply_to` | parent message of a direct reply |
-| `mentions_json` | rendered mentions, `[{key,id,name}]`. Stored minified, like every JSON column here, so an id can be matched as text |
+| `mentions_json` | the message's mentions, `[{id,key,name}]`, taken from the body as it arrives rather than from its rendering, so it is set as soon as the row is. `key` is the `@_user_n` placeholder the body spells the mention as. Stored minified, like every JSON column here, so an id can be matched as text |
 | `reactions_json` | reaction summary, `{counts:[{reaction_type,count}], details:[{emoji_type,operator:{operator_id,operator_type},action_time,…}]}`; empty when the message carries none. `count` and `action_time` are **strings**, the latter in Unix seconds. `counts` is the server's total and arrives alphabetically; `details` is one page of the individual reactions, so it may not name every reactor. The client's own order is by each emoji's earliest `action_time` |
 | `raw_json` | the API item as received |
 | `rendered_at` | 0 = rendering pending (also reset when `update_ms` changes) |
@@ -78,6 +78,8 @@ One row per message id, from the raw message API (`create_ms` is millisecond pre
 A `system` message is its `template` with the values the same body carries filled in (`from_user`, `to_chatters`, `divider_text`). Feishu ships no value for the remaining slots, so `{old_group_name}`, `{count}` and the like read as `…` rather than as the placeholder.
 
 A `video_chat` message is a call, and its body (`topic`, `meet_number`, `start_time`, `end_time`) is all the rendering needs: `[Video call] 站会的视频会议 · 100000000 · 32s`, leaving out whatever the body does not carry. `end_time` arrives with the update that closes the call, so a message carrying none is a call still running and its rendering has no length yet.
+
+The three calendar types are an event, and their bodies (`summary`, `start_time`, `end_time`, `open_calendar_id`, `open_event_id`) are all the rendering needs: `[Event] 平台组周会 · 2026-08-31 10:30 ~ 12:00`, or `[Shared Event] …` for a `share_calendar_event`. Timestamps are Unix milliseconds written as strings, and read as seconds when they are too small to be milliseconds. The closing half of a span drops its date when the event ends on the day it started. `share_calendar_event` and `general_calendar` bodies also carry a `share_token`, which is the credential that joins the event and is deliberately left out of the rendering.
 
 Feishu closes a call with a `system` message whose template is a single space. The API carries no text for it, so the rendering comes from the newest `video_chat` message before it in the same chat, whose `end_time` falls within five seconds of the marker's `create_ms`: `Meeting ended: 32s`, over the two largest units (`32s`, `24m28s`, `1h52m`). A p2p call leaves no `video_chat` message behind, so those read `Call ended`.
 

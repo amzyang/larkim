@@ -31,7 +31,7 @@ func pickerModel(t *testing.T) Model {
 	_, err = st.UpsertMessages(ctx, []store.Message{{MessageID: "om_a", ChatID: "oc_team", MsgType: "text",
 		SenderID: "ou_a", SenderName: "张三", ContentRaw: `{"text":"下周一发版"}`, CreateMs: 100, UpdateMs: 100}}, 1)
 	require.NoError(t, err)
-	require.NoError(t, st.UpdateRendered(ctx, "om_a", "下周一发版", "", "", 2))
+	require.NoError(t, st.UpdateRendered(ctx, "om_a", "下周一发版", "", 2))
 	require.NoError(t, st.UpdateReactions(ctx, "om_a",
 		`{"counts":[{"reaction_type":"THUMBSUP","count":"1"}],"details":[{"emoji_type":"THUMBSUP","operator":{"operator_id":"ou_me"}}]}`))
 

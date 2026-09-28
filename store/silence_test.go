@@ -76,7 +76,7 @@ func TestUpdateRendered_SilencesOnTheRenderedBody(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, silencedOf(t, s, "om_card"), "the body carries no text yet")
 
-	require.NoError(t, s.UpdateRendered(ctx, "om_card", "nightly build #418 passed", "", "", 2))
+	require.NoError(t, s.UpdateRendered(ctx, "om_card", "nightly build #418 passed", "", 2))
 	require.True(t, silencedOf(t, s, "om_card"))
 }
 
@@ -88,7 +88,7 @@ func TestUpdateRendered_ClearsSilenceWhenTheRenderingStopsMatching(t *testing.T)
 	require.NoError(t, err)
 	require.True(t, silencedOf(t, s, "om_a"))
 
-	require.NoError(t, s.UpdateRendered(ctx, "om_a", "the release is out", "", "", 2))
+	require.NoError(t, s.UpdateRendered(ctx, "om_a", "the release is out", "", 2))
 	require.False(t, silencedOf(t, s, "om_a"), "the rendering is what the rule matches once it lands")
 }
 
@@ -103,7 +103,7 @@ func TestUpdateRendered_RefreshesTheSummaryWhenSilenceFlips(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, int64(200), summaryOf(t, s, "oc_quiet").LastUnsilencedMs)
 
-	require.NoError(t, s.UpdateRendered(ctx, "om_card", "nightly build #418 passed", "", "", 2))
+	require.NoError(t, s.UpdateRendered(ctx, "om_card", "nightly build #418 passed", "", 2))
 	c := summaryOf(t, s, "oc_quiet")
 	require.Equal(t, "om_card", c.LastMessageID, "the row still shows what arrived last")
 	require.Equal(t, int64(100), c.LastUnsilencedMs, "the chat keeps the place its last real message gave it")

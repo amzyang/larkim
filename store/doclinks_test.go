@@ -151,7 +151,7 @@ func TestMessagesAfterIDForDocScan_TakesACardBeforeItIsRendered(t *testing.T) {
 			ContentRaw: `{"text":"收到"}`, RawJSON: "{}"},
 	}, 1)
 	require.NoError(t, err)
-	require.NoError(t, s.UpdateRendered(ctx, "om_said", "收到", "", "", 1))
+	require.NoError(t, s.UpdateRendered(ctx, "om_said", "收到", "", 1))
 
 	rows, err := s.MessagesAfterIDForDocScan(ctx, 0, 10)
 	require.NoError(t, err)

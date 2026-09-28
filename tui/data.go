@@ -889,7 +889,7 @@ func remoteSearch(ctx context.Context, d Deps, query string, gen int) tea.Cmd {
 		if len(cold) == 0 {
 			return remoteSearchMsg{gen: gen}
 		}
-		rendered, err := d.Client.MGetRendered(ctx, cold, false)
+		rendered, err := d.Client.MGetRendered(ctx, cold)
 		if err != nil {
 			return remoteSearchMsg{gen: gen, err: err}
 		}

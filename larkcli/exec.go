@@ -33,8 +33,9 @@ const extraPath = "/opt/homebrew/bin:/usr/local/bin"
 // messages/search forwards the string to the server verbatim.
 const larkTimeLayout = "2006-01-02T15:04:05-07:00"
 
-// resourceSubdir is the directory lark-cli's own batch download writes below
-// the client's Dir; a single download is aimed at it so both land together.
+// resourceSubdir is the directory downloads land in below the client's Dir.
+// It is lark-cli's own name for it, which is what the paths stored before
+// larkim fetched resources one at a time still point into.
 const resourceSubdir = "lark-im-resources"
 
 const (
@@ -53,7 +54,7 @@ const (
 type ExecClient struct {
 	// Path to the lark-cli binary; empty means DefaultPath then $PATH lookup.
 	Path string
-	// Dir is the working directory; --download-resources writes below it.
+	// Dir is the working directory; a download lands below it.
 	Dir string
 	// Timeout bounds a single invocation including all auto-paginated pages.
 	// It starts once the call holds a lane, so time spent queued behind
@@ -533,24 +534,20 @@ func (c *ExecClient) ListChats(ctx context.Context, activeFirstPage bool) ([]Raw
 	return decodeItems[RawChat](data, "items")
 }
 
-func (c *ExecClient) MGetRendered(ctx context.Context, ids []string, download bool) ([]RenderedMessage, error) {
+func (c *ExecClient) MGetRendered(ctx context.Context, ids []string) ([]RenderedMessage, error) {
 	if len(ids) == 0 {
 		return nil, nil
 	}
-	args := []string{"im", "+messages-mget", "--message-ids", strings.Join(ids, ",")}
-	if download {
-		args = append(args, "--download-resources")
-	}
-	data, err := c.run(ctx, args...)
+	data, err := c.run(ctx, "im", "+messages-mget", "--message-ids", strings.Join(ids, ","))
 	if err != nil {
 		return nil, err
 	}
 	return decodeItems[RenderedMessage](data, "messages")
 }
 
-// DownloadResource fetches one attachment on its own. It lands beside the
-// batch download's files and under the same name, so a reader holding either
-// kind of path finds them in one place.
+// DownloadResource fetches one attachment. It lands under the key it is named
+// by, in the directory lark-cli's own download writes to, so a path stored
+// before this became the only way down still points at its file.
 func (c *ExecClient) DownloadResource(ctx context.Context, messageID, fileKey, typ string) (Resource, error) {
 	data, err := c.run(ctx, "im", "+messages-resources-download", "--message-id", messageID,
 		"--file-key", fileKey, "--type", typ, "--output", resourceSubdir+"/"+fileKey)

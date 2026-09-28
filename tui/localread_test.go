@@ -91,7 +91,7 @@ func TestUpdate_TheUnreadMarkerIsGoneOnTheNextVisit(t *testing.T) {
 
 func TestUpdate_SearchHitsKeepTheirUnreadMarker(t *testing.T) {
 	m, st := readModel(t)
-	require.NoError(t, st.UpdateRendered(t.Context(), "om_a", "在吗", "", "", 1))
+	require.NoError(t, st.UpdateRendered(t.Context(), "om_a", "在吗", "", 1))
 
 	msg, ok := localSearch(Deps{Store: st}, nil, "在吗", 1)().(searchMsg)
 	require.True(t, ok)
@@ -273,7 +273,7 @@ func TestMove_RepaintsOnlyWhenTheCursorClearsAMarker(t *testing.T) {
 
 func TestMove_SearchHitsKeepTheirMarker(t *testing.T) {
 	m, st := readModel(t)
-	require.NoError(t, st.UpdateRendered(t.Context(), "om_a", "在吗", "", "", 1))
+	require.NoError(t, st.UpdateRendered(t.Context(), "om_a", "在吗", "", 1))
 	msg, ok := localSearch(Deps{Store: st}, nil, "在吗", 1)().(searchMsg)
 	require.True(t, ok)
 	m.searching, m.searchGen, m.focus = true, 1, paneMessages

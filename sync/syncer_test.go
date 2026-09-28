@@ -75,7 +75,7 @@ func TestTick_FirstRunDiscoversRendersAndBackfills(t *testing.T) {
 
 	got, err := s.Store.GetMessage(ctx, "om_new")
 	require.NoError(t, err)
-	require.Equal(t, `rendered:{"text":"fresh"}`, got.Content)
+	require.Equal(t, "fresh", got.Content, "a text body is its own words; no call was spent on it")
 	_, err = s.Store.GetMessage(ctx, "om_ancient")
 	require.ErrorIs(t, err, store.ErrNotFound)
 
@@ -394,7 +394,7 @@ func TestTick_SystemMessagesRenderInProcess(t *testing.T) {
 	rep, err := s.Tick(ctx)
 	require.NoError(t, err)
 	require.Equal(t, 1, rep.Rendered)
-	require.NotContains(t, f.Calls, "render:false", "a system message needs no render call")
+	require.NotContains(t, f.Calls, "render", "a system message needs no render call")
 
 	m, err := s.Store.GetMessage(ctx, "om_sys")
 	require.NoError(t, err)
@@ -415,7 +415,7 @@ func TestRenderLocal_NamesTheCallInBothPanes(t *testing.T) {
 	}, start)
 	require.NoError(t, err)
 
-	n, err := s.renderLocal(ctx, clk.t)
+	n, err := s.renderLocal(ctx, nil, 50, clk.t)
 	require.NoError(t, err)
 	require.Equal(t, 1, n)
 
@@ -443,7 +443,7 @@ func TestRenderLocal_TimesTheCallItsMarkerClosesForBothPanes(t *testing.T) {
 	}, start)
 	require.NoError(t, err)
 
-	n, err := s.renderLocal(ctx, clk.t)
+	n, err := s.renderLocal(ctx, nil, 50, clk.t)
 	require.NoError(t, err)
 	require.Equal(t, 2, n, "the call and the marker closing it are both rendered in process")
 
@@ -461,13 +461,17 @@ func TestTick_RendersNewMessagesBeforeSweeps(t *testing.T) {
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	f.Chats = []larkcli.RawChat{{ChatID: "oc_a", Name: "平台组", ChatMode: "group"}}
-	f.AddMessage(msg("om_new", "oc_a", clk.t.Add(-30*time.Second), "fresh"))
+	// A shared chat: larkim has no renderer for that type, and this test is
+	// about where the call that asks lark-cli sits among the sweeps.
+	shared := msg("om_new", "oc_a", clk.t.Add(-30*time.Second), "")
+	shared.MsgType, shared.Body.Content = "share_chat", `{"chat_id":"oc_b"}`
+	f.AddMessage(shared)
 
 	rep, err := s.Tick(ctx)
 	require.NoError(t, err)
 	require.Equal(t, 1, rep.New)
 
-	render := slices.Index(f.Calls, "render:false")
+	render := slices.Index(f.Calls, "render")
 	require.GreaterOrEqual(t, render, 0, "the new message was rendered")
 	sweep := slices.IndexFunc(f.Calls, func(c string) bool {
 		// The activity probe ("chats:true") is discovery, not a sweep: it runs
@@ -616,7 +620,9 @@ func TestActiveProbe_ReachesAMessageBeforeTheSearchDoes(t *testing.T) {
 
 	// A message in oc_b puts it at position 1. The search index has not caught
 	// up, which the fake stands in for by holding the hit back.
-	f.AddMessage(msg("om_fresh", "oc_b", clk.t.Add(-time.Second), "fresh"))
+	fresh := msg("om_fresh", "oc_b", clk.t.Add(-time.Second), "")
+	fresh.MsgType, fresh.Body.Content = "share_chat", `{"chat_id":"oc_c"}`
+	f.AddMessage(fresh)
 	f.SearchHidden = []string{"om_fresh"}
 	f.Chats = []larkcli.RawChat{f.Chats[1], f.Chats[0]}
 	clk.t = clk.t.Add(searchEvery) // let the safety net run, so the order is visible
@@ -627,7 +633,7 @@ func TestActiveProbe_ReachesAMessageBeforeTheSearchDoes(t *testing.T) {
 	require.Equal(t, 1, rep.Moved)
 	require.Equal(t, 1, rep.Probed, "only the new message counts; the cursor overlap re-lists the chat's older one")
 	require.Zero(t, rep.New, "the search had nothing left to find")
-	require.Equal(t, []string{"chats:true", "list:chat:oc_b", "search", "render:false"},
+	require.Equal(t, []string{"chats:true", "list:chat:oc_b", "search", "render"},
 		f.Calls[:4], "the probe pulls before the search asks, and what it found is rendered with the rest")
 
 	m, err := s.Store.GetMessage(ctx, "om_fresh")

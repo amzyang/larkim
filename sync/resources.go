@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"slices"
 	"strconv"
+	stdsync "sync"
 	"time"
 
 	"github.com/amzyang/larkim/larkcli"
@@ -203,7 +204,12 @@ func (s *Syncer) registerExistingResources(ctx context.Context) error {
 	return s.Store.SetState(ctx, KeyResourceScanID, strconv.FormatInt(after, 10))
 }
 
-// downloadPending fetches attachments for messages with due resources.
+// downloadPending fetches the attachments still owed. The queue is keyed by
+// resource, not by message: one key is referenced by thousands of messages
+// where a bot reuses a card header, and the bytes are the same bytes. Nothing
+// here writes to messages — a download and a rendering are two errands, and
+// carrying them in one call had every message in the batch re-rendered on each
+// tick its attachment had not landed yet.
 func (s *Syncer) downloadPending(ctx context.Context, now time.Time) (int, error) {
 	if s.Opt.DataDir == "" {
 		return 0, nil
@@ -211,71 +217,52 @@ func (s *Syncer) downloadPending(ctx context.Context, now time.Time) (int, error
 	if err := s.registerExistingResources(ctx); err != nil {
 		return 0, err
 	}
-	ids, err := s.Store.ResourceMessagesDue(ctx, now.UnixMilli(), s.Opt.DownloadPerTick*50)
+	due, err := s.Store.ResourcesDue(ctx, now.UnixMilli(), s.Opt.DownloadPerTick*50)
 	if err != nil {
 		return 0, err
 	}
+	// Fetched together and recorded afterwards: the lane bounds how many
+	// subprocesses run at once, and the store keeps its single writer.
+	got := make([]larkcli.Resource, len(due))
+	errs := make([]error, len(due))
+	var wg stdsync.WaitGroup
+	for i, d := range due {
+		wg.Go(func() { got[i], errs[i] = s.Client.DownloadResource(ctx, d.MessageID, d.FileKey, apiType(d.Type)) })
+	}
+	wg.Wait()
 	done := 0
-	for batch := range slices.Chunk(ids, readStatusBatch) {
-		rendered, err := s.Client.MGetRendered(ctx, batch, true)
+	for i, d := range due {
+		if errs[i] != nil {
+			// A shutdown cancelled every call still in flight at once. Charging
+			// each of them an attempt would spend a key's whole retry budget on
+			// one Ctrl-C.
+			if ctx.Err() != nil {
+				return done, ctx.Err()
+			}
+			if err := s.failResource(ctx, d.Resource, errs[i], now); err != nil {
+				return done, err
+			}
+			continue
+		}
+		stored, err := s.storeResource(ctx, d.Resource, got[i], now)
 		if err != nil {
 			return done, err
 		}
-		got := map[string]map[string]larkcli.Resource{}
-		for _, r := range rendered {
-			if err := s.storeRendered(ctx, r, now); err != nil {
-				return done, err
-			}
-			byKey := map[string]larkcli.Resource{}
-			for _, res := range r.Resources {
-				byKey[res.Key] = res
-			}
-			got[r.MessageID] = byKey
-		}
-		for _, id := range batch {
-			pending, err := s.Store.ResourcesDueFor(ctx, id, now.UnixMilli())
-			if err != nil {
-				return done, err
-			}
-			for _, p := range pending {
-				res, ok := got[id][p.FileKey]
-				if !ok {
-					var err error
-					if res, err = s.fetchAside(ctx, id, p); err != nil {
-						if err := s.failResource(ctx, p, err, now); err != nil {
-							return done, err
-						}
-						continue
-					}
-				}
-				stored, err := s.storeResource(ctx, p, res, now)
-				if err != nil {
-					return done, err
-				}
-				if stored {
-					done++
-				}
-			}
+		if stored {
+			done++
 		}
 	}
 	return done, nil
 }
 
-// errNotDownloadable is a type nothing here fetches. It is permanent for this
-// build: widening fetchAside is a code change, and the migration that ships it
-// puts the rows back in the queue (see 0019).
-var errNotDownloadable = errors.New("not returned by lark-cli")
-
-// fetchAside downloads an attachment the batch left out. Two kinds end up
-// here, both because lark-cli's download worklist walks only img and media
-// elements: a video's cover, and an image named from inside a post's md
-// element or a card's attachment table. Anything else is reported as the gap
-// it is rather than costing a call.
-func (s *Syncer) fetchAside(ctx context.Context, messageID string, p store.Resource) (larkcli.Resource, error) {
-	if p.Type != "cover" && p.Type != "image" {
-		return larkcli.Resource{}, errNotDownloadable
+// apiType maps a stored resource type onto the two the resource endpoint
+// takes. A video's cover is an image of its own, whatever the clip beside it
+// is.
+func apiType(t string) string {
+	if t == "image" || t == "cover" {
+		return "image"
 	}
-	return s.Client.DownloadResource(ctx, messageID, p.FileKey, "image")
+	return "file"
 }
 
 // storeResource records a downloaded file; stored is false when the file was
@@ -333,9 +320,6 @@ func (s *Syncer) failResource(ctx context.Context, p store.Resource, cause error
 // sticker missing from the Lark client's storage is not one: viewing it there
 // puts the picture on disk.
 func permanentFailure(err error) bool {
-	if errors.Is(err, errNotDownloadable) {
-		return true
-	}
 	le, ok := errors.AsType[*larkcli.Error](err)
 	return ok && le.IsPermanent()
 }

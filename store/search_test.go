@@ -14,8 +14,8 @@ func TestSearchMessages_TrigramMatchesCJKSubstrings(t *testing.T) {
 		{MessageID: "om_2", ChatID: "oc_b", SenderName: "张三", CreateMs: 2, RawJSON: "{}"},
 	}, 1)
 	require.NoError(t, err)
-	require.NoError(t, s.UpdateRendered(ctx, "om_1", "今天下午三点开会讨论 release 计划", "", "", 1))
-	require.NoError(t, s.UpdateRendered(ctx, "om_2", "release notes are ready", "", "", 1))
+	require.NoError(t, s.UpdateRendered(ctx, "om_1", "今天下午三点开会讨论 release 计划", "", 1))
+	require.NoError(t, s.UpdateRendered(ctx, "om_2", "release notes are ready", "", 1))
 
 	hits, err := s.SearchMessages(ctx, "开会讨论", "", 10)
 	require.NoError(t, err)
@@ -35,7 +35,7 @@ func TestSearchMessages_TrigramMatchesCJKSubstrings(t *testing.T) {
 	require.Len(t, hits, 1)
 
 	// Re-rendering keeps the index in step.
-	require.NoError(t, s.UpdateRendered(ctx, "om_1", "改成明天", "", "", 2))
+	require.NoError(t, s.UpdateRendered(ctx, "om_1", "改成明天", "", 2))
 	hits, _ = s.SearchMessages(ctx, "开会讨论", "", 10)
 	require.Empty(t, hits)
 }

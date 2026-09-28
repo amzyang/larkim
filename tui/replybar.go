@@ -227,7 +227,7 @@ func replyGist(x store.Message) string {
 		return attachGist(a)
 	}
 	if x.RenderedAt == 0 {
-		return flatten(expandEmoji(plainAt(pendingText(x.MsgType, x.ContentRaw))))
+		return flatten(expandEmoji(plainAt(pendingText(x.MsgType, x.ContentRaw, x.MentionsJSON))))
 	}
 	if text := flatten(expandEmoji(plainAt(gistBody(x.Content)))); text != "" {
 		return text

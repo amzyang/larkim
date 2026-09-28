@@ -108,6 +108,15 @@ func (m mentions) on(base lipgloss.Style) mentions {
 	return m
 }
 
+// styled draws the text around the runs in s, leaving the runs the colours
+// that say who they reach. A rich-text element carries its emphasis as names
+// beside the words rather than as markup around them, and this is where those
+// names land.
+func (m mentions) styled(s lipgloss.Style) mentions {
+	m.base = s
+	return m
+}
+
 // marking has the text around the runs carry the words a search matched on.
 // A mention itself is left alone: its badge is a stronger mark than the one a
 // hit would put under it, and a name the reader searched for is usually the

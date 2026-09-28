@@ -153,7 +153,8 @@ func forwardedContent(f store.Forwarded) (string, bool) {
 		if json.Unmarshal([]byte(f.ContentRaw), &v) == nil && v.ImageKey != "" {
 			return "![Image](" + v.ImageKey + ")", true
 		}
-	case "file", "audio", "media", "video", "interactive", "video_chat", "sticker", "merge_forward":
+	case "file", "audio", "media", "video", "interactive", "video_chat", "sticker", "merge_forward",
+		"calendar", "share_calendar_event", "general_calendar":
 		return "", true
 	}
 	return "", false

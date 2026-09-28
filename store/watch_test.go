@@ -24,7 +24,7 @@ func TestDataRev_AdvancesOnRenderingUpdate(t *testing.T) {
 
 	rowID, err := s.MaxMessageRowID(ctx)
 	require.NoError(t, err)
-	require.NoError(t, s.UpdateRendered(ctx, "om_1", "1", "", "", 1001))
+	require.NoError(t, s.UpdateRendered(ctx, "om_1", "1", "", 1001))
 	after, err := s.MaxMessageRowID(ctx)
 	require.NoError(t, err)
 	require.Equal(t, rowID, after, "a rendering inserts no row, which is what the ingest id misses")
@@ -64,7 +64,7 @@ func TestWatchRev_DeliversUpdateWithoutInsert(t *testing.T) {
 	// land before it and go unnoticed. Keep re-rendering until one arrives.
 	deadline := time.After(2 * time.Second)
 	for i := 0; ; i++ {
-		require.NoError(t, s.UpdateRendered(ctx, "om_1", "1", "", "", int64(1001+i)))
+		require.NoError(t, s.UpdateRendered(ctx, "om_1", "1", "", int64(1001+i)))
 		select {
 		case rev := <-ch:
 			require.NotZero(t, rev)

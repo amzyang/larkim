@@ -67,10 +67,11 @@ func scanMessage(sc scanner) (Message, error) {
 	return m, err
 }
 
-// UpsertMessages inserts or refreshes synced fields. Rendering columns
-// (content, mentions_json, reactions_json, rendered_at) are owned by
-// UpdateRendered and left untouched; a recalled message keeps its last known
-// content_raw.
+// UpsertMessages inserts or refreshes synced fields. The rendering columns
+// (content, reactions_json, rendered_at) are owned by UpdateRendered and left
+// untouched; a recalled message keeps its last known content_raw. The mention
+// list is not one of them: it rides on the raw message, which is what lets a
+// body be rendered from disk before lark-cli has said anything about it.
 func (s *Store) UpsertMessages(ctx context.Context, msgs []Message, now int64) (int, error) {
 	if len(msgs) == 0 {
 		return 0, nil
@@ -81,8 +82,8 @@ func (s *Store) UpsertMessages(ctx context.Context, msgs []Message, now int64) (
 	}
 	defer tx.Rollback()
 	stmt, err := tx.PrepareContext(ctx, `INSERT INTO messages (message_id, chat_id, msg_type, sender_id, sender_type, sender_name,
- content_raw, create_ms, update_ms, message_position, updated, deleted, deleted_seen_at, thread_id, reply_to, raw_json, first_seen_at, last_seen_at)
- VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+ content_raw, create_ms, update_ms, message_position, updated, deleted, deleted_seen_at, thread_id, reply_to, mentions_json, raw_json, first_seen_at, last_seen_at)
+ VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
  ON CONFLICT(message_id) DO UPDATE SET
    chat_id = excluded.chat_id,
    msg_type = excluded.msg_type,
@@ -98,6 +99,7 @@ func (s *Store) UpsertMessages(ctx context.Context, msgs []Message, now int64) (
    deleted_seen_at = CASE WHEN excluded.deleted = 1 AND messages.deleted = 0 THEN excluded.last_seen_at ELSE messages.deleted_seen_at END,
    thread_id = CASE WHEN excluded.thread_id <> '' THEN excluded.thread_id ELSE messages.thread_id END,
    reply_to = CASE WHEN excluded.reply_to <> '' THEN excluded.reply_to ELSE messages.reply_to END,
+   mentions_json = excluded.mentions_json,
    raw_json = excluded.raw_json,
    rendered_at = CASE WHEN excluded.update_ms <> messages.update_ms THEN 0 ELSE messages.rendered_at END,
    edited_at = CASE WHEN excluded.msg_type IN ('text', 'post') AND messages.content_raw <> ''
@@ -114,7 +116,7 @@ func (s *Store) UpsertMessages(ctx context.Context, msgs []Message, now int64) (
 	for _, m := range msgs {
 		if _, err := stmt.ExecContext(ctx, m.MessageID, m.ChatID, m.MsgType, m.SenderID, m.SenderType, m.SenderName,
 			m.ContentRaw, m.CreateMs, m.UpdateMs, m.MessagePosition, m.Updated, m.Deleted, m.DeletedSeenAt, m.ThreadID, m.ReplyTo,
-			m.RawJSON, now, now); err != nil {
+			compactJSON(m.MentionsJSON), m.RawJSON, now, now); err != nil {
 			return n, fmt.Errorf("upsert %s: %w", m.MessageID, err)
 		}
 		touched[m.ChatID] = struct{}{}
@@ -149,15 +151,16 @@ func compactJSON(s string) string {
 
 // UpdateRendered stores the human-readable rendering of a message. When the
 // message is its chat's newest, the chat's cold-stored summary picks up the
-// rendering in the same transaction.
-func (s *Store) UpdateRendered(ctx context.Context, messageID, content, mentionsJSON, reactionsJSON string, now int64) error {
+// rendering in the same transaction. Mentions are not written here: they come
+// with the body, and UpsertMessages owns them.
+func (s *Store) UpdateRendered(ctx context.Context, messageID, content, reactionsJSON string, now int64) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
-	if _, err := tx.ExecContext(ctx, `UPDATE messages SET content = ?, mentions_json = ?, reactions_json = ?, rendered_at = ? WHERE message_id = ?`,
-		content, compactJSON(mentionsJSON), compactJSON(reactionsJSON), now, messageID); err != nil {
+	if _, err := tx.ExecContext(ctx, `UPDATE messages SET content = ?, reactions_json = ?, rendered_at = ? WHERE message_id = ?`,
+		content, compactJSON(reactionsJSON), now, messageID); err != nil {
 		return err
 	}
 	// A contains rule reads the rendering, so this is where a card first
@@ -210,16 +213,28 @@ func (s *Store) UpdateReactions(ctx context.Context, messageID, reactionsJSON st
 	return tx.Commit()
 }
 
+// localRenderTypes are the msg_types larkim renders from bodies it already
+// holds. UnrenderedMessageIDs and UnrenderedLocalMessages split the render
+// queue on exactly this list, so it is written once: a type missing from both
+// would never be rendered at all, and a type in both would be rendered twice.
+var localRenderTypes = []string{"text", "post", "interactive", "image", "file", "audio", "media",
+	"video", "sticker", "system", "video_chat", "calendar", "share_calendar_event", "general_calendar"}
+
+// LocallyRendered reports whether larkim renders this msg_type itself, which
+// is what tells a caller holding fresh message ids which of them are worth a
+// render call.
+func LocallyRendered(msgType string) bool { return slices.Contains(localRenderTypes, msgType) }
+
+// localRenderList is that list as a SQL IN list.
+var localRenderList = `'` + strings.Join(localRenderTypes, `', '`) + `'`
+
 // UnrenderedMessageIDs returns up to limit live message ids that still need
-// rendering, newest first. An empty chatID takes them from every chat.
-// Messages with attachments still to download are left out: the download step
-// renders them in the same lark-cli call. The types larkim renders from bodies
-// it already holds are left out too; UnrenderedLocalMessages owns them.
+// rendering, newest first. An empty chatID takes them from every chat. The
+// types larkim renders from bodies it already holds are left out;
+// UnrenderedLocalMessages owns them.
 func (s *Store) UnrenderedMessageIDs(ctx context.Context, chatID string, limit int) ([]string, error) {
 	q := `SELECT m.message_id FROM messages m
- WHERE m.rendered_at = 0 AND m.deleted = 0 AND m.msg_type NOT IN ('system', 'video_chat')
- AND NOT EXISTS (SELECT 1 FROM message_resources mr JOIN resources r ON r.file_key = mr.file_key
-   WHERE mr.message_id = m.message_id AND r.status IN ('pending', 'failed'))`
+ WHERE m.rendered_at = 0 AND m.deleted = 0 AND m.msg_type NOT IN (` + localRenderList + `)`
 	args := []any{}
 	if chatID != "" {
 		q += ` AND m.chat_id = ?`
@@ -240,24 +255,34 @@ type PendingLocalMessage struct {
 	ContentRaw string
 	CreateMs   int64
 	CallRaw    string
+	// MentionsJSON is what a text body's @_user_n placeholders stand for.
+	MentionsJSON string
 }
 
 // UnrenderedLocalMessages returns up to limit live messages that still need
-// rendering and whose text follows from bodies already on disk, newest
-// first: system messages and the calls they close.
-func (s *Store) UnrenderedLocalMessages(ctx context.Context, limit int) ([]PendingLocalMessage, error) {
+// rendering and whose text follows from bodies already on disk, newest first:
+// plain text, stickers, system messages, the calls they close, and calendar
+// events. A non-empty ids narrows it to those messages, which is what an
+// ingest somebody is waiting on asks for rather than taking the queue's head.
+func (s *Store) UnrenderedLocalMessages(ctx context.Context, ids []string, limit int) ([]PendingLocalMessage, error) {
 	scan := func(sc scanner) (PendingLocalMessage, error) {
 		var m PendingLocalMessage
-		err := sc.Scan(&m.MessageID, &m.MsgType, &m.ContentRaw, &m.CreateMs, &m.CallRaw)
+		err := sc.Scan(&m.MessageID, &m.MsgType, &m.ContentRaw, &m.CreateMs, &m.CallRaw, &m.MentionsJSON)
 		return m, err
 	}
-	return queryAll(ctx, s.db, scan, `SELECT m.message_id, m.msg_type, m.content_raw, m.create_ms, COALESCE((
+	q := `SELECT m.message_id, m.msg_type, m.content_raw, m.create_ms, COALESCE((
    SELECT v.content_raw FROM messages v
     WHERE v.chat_id = m.chat_id AND v.msg_type = 'video_chat' AND v.create_ms <= m.create_ms
-    ORDER BY v.create_ms DESC LIMIT 1), '')
+    ORDER BY v.create_ms DESC LIMIT 1), ''), m.mentions_json
  FROM messages m
- WHERE m.rendered_at = 0 AND m.deleted = 0 AND m.msg_type IN ('system', 'video_chat')
- ORDER BY m.create_ms DESC LIMIT ?`, limit)
+ WHERE m.rendered_at = 0 AND m.deleted = 0 AND m.msg_type IN (` + localRenderList + `)`
+	args := []any{}
+	if len(ids) > 0 {
+		q += ` AND m.message_id IN ` + inClause(len(ids))
+		args = append(args, anySlice(ids)...)
+	}
+	q += ` ORDER BY m.create_ms DESC LIMIT ?`
+	return queryAll(ctx, s.db, scan, q, append(args, limit)...)
 }
 
 // UnknownMessageIDs filters ids down to those not yet stored, preserving order.

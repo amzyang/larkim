@@ -78,7 +78,8 @@ func Parse(contentRaw string) (Card, bool) {
 }
 
 // Markdown is the card as a document to read elsewhere: the band, the body as
-// the markdown it was built from, and the buttons as their labels.
+// the markdown it was built from, and the buttons as their labels, each one a
+// link where pressing it leads somewhere a reader outside the client can go.
 func (c Card) Markdown() string {
 	var parts []string
 	if head := strings.TrimSpace(strings.TrimSpace(c.Title+" "+c.Subtitle) + " " + c.Tags); head != "" {
@@ -91,9 +92,13 @@ func (c Card) Markdown() string {
 		case len(b.Buttons) > 0:
 			labels := make([]string, 0, len(b.Buttons))
 			for _, btn := range b.Buttons {
-				labels = append(labels, btn.Label)
+				if btn.URL == "" {
+					labels = append(labels, "["+btn.Label+"]")
+					continue
+				}
+				labels = append(labels, "["+btn.Label+"]("+btn.URL+")")
 			}
-			parts = append(parts, "["+strings.Join(labels, "] [")+"]")
+			parts = append(parts, strings.Join(labels, " "))
 		}
 	}
 	return strings.Join(parts, "\n\n")

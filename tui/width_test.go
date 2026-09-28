@@ -80,7 +80,7 @@ func bodyModel(t *testing.T, msgType, body string) (Model, *store.Store) {
 		MsgType: msgType, SenderID: "ou_a", SenderName: "张三",
 		ContentRaw: `{"text":"x"}`, CreateMs: 100, UpdateMs: 100}}, 1)
 	require.NoError(t, err)
-	require.NoError(t, st.UpdateRendered(ctx, "om_keycap", body, "", "", 100))
+	require.NoError(t, st.UpdateRendered(ctx, "om_keycap", body, "", 100))
 
 	m := New(Deps{Store: st, Self: "ou_me"})
 	m.width, m.height = 101, 59

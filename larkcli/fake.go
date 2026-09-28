@@ -18,13 +18,11 @@ type Fake struct {
 	Messages map[string]RawMessage
 	Chats    []RawChat
 	Rendered map[string]RenderedMessage
-	// Resources are returned by MGetRendered with download=true.
-	Resources map[string][]Resource
-	// Singles answer DownloadResource, keyed "<message id>/<file key>". A key
+	// Resources answer DownloadResource, keyed "<message id>/<file key>". A key
 	// listed nowhere is refused the way Feishu refuses one the message does
 	// not carry.
-	Singles map[string]Resource
-	Read    map[string]bool
+	Resources map[string]Resource
+	Read      map[string]bool
 	// Reactions answers ReactionCounts; a message absent from it holds none.
 	Reactions map[string]json.RawMessage
 	// Reacted is what AddReaction and DeleteReaction write, keyed by message
@@ -118,8 +116,7 @@ func NewFake() *Fake {
 		Bundles:          map[string][]RawForwarded{},
 		BundleErr:        map[string]error{},
 		Rendered:         map[string]RenderedMessage{},
-		Resources:        map[string][]Resource{},
-		Singles:          map[string]Resource{},
+		Resources:        map[string]Resource{},
 		Read:             map[string]bool{},
 		Reactions:        map[string]json.RawMessage{},
 		Reacted:          map[string][]Reaction{},
@@ -303,8 +300,11 @@ func (f *Fake) ListChats(_ context.Context, activeFirstPage bool) ([]RawChat, er
 	return append([]RawChat(nil), f.Chats...), nil
 }
 
-func (f *Fake) MGetRendered(_ context.Context, ids []string, download bool) ([]RenderedMessage, error) {
-	if err := f.record(fmt.Sprintf("render:%v", download)); err != nil {
+func (f *Fake) MGetRendered(_ context.Context, ids []string) ([]RenderedMessage, error) {
+	if len(ids) == 0 {
+		return nil, nil // no subprocess either, the way ExecClient answers
+	}
+	if err := f.record("render"); err != nil {
 		return nil, err
 	}
 	f.mu.Lock()
@@ -319,9 +319,6 @@ func (f *Fake) MGetRendered(_ context.Context, ids []string, download bool) ([]R
 			}
 			r = RenderedMessage{MessageID: id, ChatID: m.ChatID, Content: "rendered:" + m.Body.Content}
 		}
-		if download {
-			r.Resources = append([]Resource(nil), f.Resources[id]...)
-		}
 		out = append(out, r)
 	}
 	return out, nil
@@ -333,7 +330,7 @@ func (f *Fake) DownloadResource(_ context.Context, messageID, fileKey, typ strin
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	r, ok := f.Singles[messageID+"/"+fileKey]
+	r, ok := f.Resources[messageID+"/"+fileKey]
 	if !ok {
 		return Resource{}, &Error{ExitCode: ExitAPI, Message: "234003 File not in msg"}
 	}

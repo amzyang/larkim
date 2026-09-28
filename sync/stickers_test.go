@@ -48,7 +48,9 @@ func TestTick_StickerPicturesComeFromTheLarkClient(t *testing.T) {
 	rep, err := s.Tick(ctx)
 	require.NoError(t, err)
 	require.Equal(t, 2, rep.Stickers)
-	require.Zero(t, countCalls(f.Calls, "render:true"), "a sticker is never asked of lark-cli")
+	for _, c := range f.Calls {
+		require.NotContains(t, c, "download:", "a sticker is never asked of lark-cli")
+	}
 
 	rs, _ := s.Store.ResourcesFor(ctx, "om_recv")
 	require.Equal(t, "done", rs[0].Status)

@@ -23,8 +23,7 @@ func atMeStore(t *testing.T, mentions string, after int) *Store {
 	}
 	_, err := s.UpsertMessages(ctx, msgs, 1)
 	require.NoError(t, err)
-	// mentions_json belongs to the rendering pass, not to ingest.
-	require.NoError(t, s.UpdateRendered(ctx, "om_at", "@林岚 看下", mentions, "", 150))
+	require.NoError(t, s.UpdateRendered(ctx, "om_at", "@林岚 看下", "", 150))
 	unread := false
 	for _, m := range msgs {
 		require.NoError(t, s.SetReadStatus(ctx, m.MessageID, &unread, 100, 0))
@@ -96,17 +95,17 @@ func TestListChats_AtMeSurvivesAFilteredListing(t *testing.T) {
 func TestMentionsOf_ListsWhatNamesTheReaderNewestFirst(t *testing.T) {
 	s, ctx := openTest(t), t.Context()
 	require.NoError(t, s.EnsureChat(ctx, "oc_group", 1))
+	const me = `[{"id":"ou_me","key":"@_user_1","name":"林岚"}]`
 	_, err := s.UpsertMessages(ctx, []Message{
-		{MessageID: "om_old", ChatID: "oc_group", MsgType: "text", SenderID: "ou_a", CreateMs: 100, UpdateMs: 100},
-		{MessageID: "om_new", ChatID: "oc_group", MsgType: "text", SenderID: "ou_a", CreateMs: 300, UpdateMs: 300},
-		{MessageID: "om_other", ChatID: "oc_group", MsgType: "text", SenderID: "ou_a", CreateMs: 200, UpdateMs: 200},
+		{MessageID: "om_old", ChatID: "oc_group", MsgType: "text", SenderID: "ou_a", CreateMs: 100, UpdateMs: 100, MentionsJSON: me},
+		{MessageID: "om_new", ChatID: "oc_group", MsgType: "text", SenderID: "ou_a", CreateMs: 300, UpdateMs: 300, MentionsJSON: me},
+		{MessageID: "om_other", ChatID: "oc_group", MsgType: "text", SenderID: "ou_a", CreateMs: 200, UpdateMs: 200,
+			MentionsJSON: `[{"id":"ou_a","key":"@_user_1","name":"张三"}]`},
 	}, 1)
 	require.NoError(t, err)
-	me := `[{"id":"ou_me","key":"@_user_1","name":"林岚"}]`
-	require.NoError(t, s.UpdateRendered(ctx, "om_old", "@林岚 早", me, "", 1))
-	require.NoError(t, s.UpdateRendered(ctx, "om_new", "@林岚 晚", me, "", 1))
-	require.NoError(t, s.UpdateRendered(ctx, "om_other", "@张三 你好",
-		`[{"id":"ou_a","key":"@_user_1","name":"张三"}]`, "", 1))
+	require.NoError(t, s.UpdateRendered(ctx, "om_old", "@林岚 早", "", 1))
+	require.NoError(t, s.UpdateRendered(ctx, "om_new", "@林岚 晚", "", 1))
+	require.NoError(t, s.UpdateRendered(ctx, "om_other", "@张三 你好", "", 1))
 
 	hits, err := s.MentionsOf(ctx, "ou_me", 0)
 	require.NoError(t, err)
@@ -176,13 +175,13 @@ func TestMentionsOf_FindsMentionsAsLarkCliPrintsThem(t *testing.T) {
 }
 
 // A body that does not parse is still the only copy of what arrived.
-func TestUpdateRendered_KeepsUnparsableJSONAsItCame(t *testing.T) {
+func TestUpsertMessages_KeepUnparsableMentionsAsTheyCame(t *testing.T) {
 	s, ctx := openTest(t), t.Context()
 	require.NoError(t, s.EnsureChat(ctx, "oc_quiet", 1))
-	_, err := s.UpsertMessages(ctx, []Message{msgAt("om_a", "oc_quiet", 100, 1, "hi")}, 1)
+	m0 := msgAt("om_a", "oc_quiet", 100, 1, "hi")
+	m0.MentionsJSON = "{not json"
+	_, err := s.UpsertMessages(ctx, []Message{m0}, 1)
 	require.NoError(t, err)
-
-	require.NoError(t, s.UpdateRendered(ctx, "om_a", "hi", "{not json", "", 150))
 
 	m, err := s.GetMessage(ctx, "om_a")
 	require.NoError(t, err)

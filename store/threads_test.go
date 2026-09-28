@@ -35,14 +35,13 @@ func stakeStore(t *testing.T, chatID string, rows []threadRow) (*Store, context.
 		msgs = append(msgs, Message{MessageID: r.id, ChatID: chatID, MsgType: "text", SenderID: r.sender,
 			SenderType: "user", SenderName: r.sender, ThreadID: r.thread, MessagePosition: r.position,
 			ContentRaw: `{"text":"` + cmp.Or(r.text, "x") + `"}`, Deleted: r.deleted,
-			CreateMs: r.createMs, UpdateMs: r.createMs})
+			MentionsJSON: r.mentions, CreateMs: r.createMs, UpdateMs: r.createMs})
 	}
 	_, err := s.UpsertMessages(ctx, msgs, 1)
 	require.NoError(t, err)
 	for _, r := range rows {
-		// mentions_json belongs to the rendering pass, not to ingest.
 		if r.mentions != "" || r.text != "" {
-			require.NoError(t, s.UpdateRendered(ctx, r.id, cmp.Or(r.text, "x"), r.mentions, "", r.createMs))
+			require.NoError(t, s.UpdateRendered(ctx, r.id, cmp.Or(r.text, "x"), "", r.createMs))
 		}
 		if r.unread {
 			unread := false

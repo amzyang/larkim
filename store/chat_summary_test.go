@@ -67,7 +67,7 @@ func TestUpdateRendered_ReachesTheChatSummary(t *testing.T) {
 	_, err := s.UpsertMessages(ctx, []Message{msgAt("om_1", "oc_a", 100, 1, "hi")}, 1)
 	require.NoError(t, err)
 
-	require.NoError(t, s.UpdateRendered(ctx, "om_1", "hello there", "", "", 42))
+	require.NoError(t, s.UpdateRendered(ctx, "om_1", "hello there", "", 42))
 
 	c := summaryOf(t, s, "oc_a")
 	require.Equal(t, "hello there", c.LastContent)
@@ -84,7 +84,7 @@ func TestUpdateRendered_LeavesOlderMessagesOutOfTheSummary(t *testing.T) {
 	}, 1)
 	require.NoError(t, err)
 
-	require.NoError(t, s.UpdateRendered(ctx, "om_1", "rendering of the older one", "", "", 42))
+	require.NoError(t, s.UpdateRendered(ctx, "om_1", "rendering of the older one", "", 42))
 
 	c := summaryOf(t, s, "oc_a")
 	require.Equal(t, "om_2", c.LastMessageID)
@@ -97,7 +97,7 @@ func TestUpsertMessages_CarriesEditsAndRecallsIntoTheSummary(t *testing.T) {
 	require.NoError(t, s.EnsureChat(ctx, "oc_a", 1))
 	_, err := s.UpsertMessages(ctx, []Message{msgAt("om_1", "oc_a", 100, 1, "hi")}, 1)
 	require.NoError(t, err)
-	require.NoError(t, s.UpdateRendered(ctx, "om_1", "hi", "", "", 10))
+	require.NoError(t, s.UpdateRendered(ctx, "om_1", "hi", "", 10))
 
 	edited := msgAt("om_1", "oc_a", 100, 1, "hi, edited")
 	edited.UpdateMs = 150
@@ -157,16 +157,17 @@ func TestListChats_OrdersByTheColdStoredTime(t *testing.T) {
 	require.Equal(t, "oc_empty", chats[2].ChatID, "a chat with no messages sorts last")
 }
 
-func TestUpdateRendered_CarriesMentionsIntoTheSummary(t *testing.T) {
+func TestUpsertMessages_CarriesMentionsIntoTheSummary(t *testing.T) {
 	s := openTest(t)
 	ctx := t.Context()
 	require.NoError(t, s.EnsureChat(ctx, "oc_a", 1))
-	_, err := s.UpsertMessages(ctx, []Message{msgAt("om_1", "oc_a", 100, 1, "hi")}, 1)
-	require.NoError(t, err)
-
 	mentions := `[{"id":"ou_me","key":"@_user_1","name":"林岚"}]`
-	require.NoError(t, s.UpdateRendered(ctx, "om_1", "@林岚 hi", mentions, "", 42))
-	require.Equal(t, mentions, summaryOf(t, s, "oc_a").LastMentionsJSON)
+	m1 := msgAt("om_1", "oc_a", 100, 1, "hi")
+	m1.MentionsJSON = mentions
+	_, err := s.UpsertMessages(ctx, []Message{m1}, 1)
+	require.NoError(t, err)
+	require.Equal(t, mentions, summaryOf(t, s, "oc_a").LastMentionsJSON,
+		"the mention list rides on the body, so the summary has it before any rendering")
 
 	_, err = s.UpsertMessages(ctx, []Message{msgAt("om_2", "oc_a", 200, 2, "newer")}, 2)
 	require.NoError(t, err)

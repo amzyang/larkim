@@ -92,13 +92,30 @@ func (s *Store) MarkResourceFailed(ctx context.Context, fileKey, reason string, 
 	return err
 }
 
-// ResourceMessagesDue returns message ids with pending or retryable
-// resources, newest messages first. Stickers are left out: nothing downloads
-// them, so asking lark-cli for their messages would buy nothing.
-func (s *Store) ResourceMessagesDue(ctx context.Context, now int64, limit int) ([]string, error) {
-	return queryAll(ctx, s.db, scanOne[string], `SELECT mr.message_id `+resourceFrom+`
+// DueResource is a resource worth fetching and the message to ask under. The
+// key identifies the bytes and is what the queue is keyed by; the message is
+// the handle the endpoint needs, and the newest one referencing the key is
+// taken — a key named by many messages is fetched once, not once per message.
+type DueResource struct {
+	Resource
+	MessageID string
+}
+
+// ResourcesDue returns the resources worth an attempt now, newest first.
+// Stickers are left out: nothing downloads them, copyStickers takes that
+// picture out of the Lark client's own storage.
+func (s *Store) ResourcesDue(ctx context.Context, now int64, limit int) ([]DueResource, error) {
+	scan := func(sc scanner) (DueResource, error) {
+		var d DueResource
+		err := sc.Scan(&d.FileKey, &d.Type, &d.LocalPath, &d.SizeBytes, &d.Status,
+			&d.Attempts, &d.NextAttemptAt, &d.LastError, &d.MessageID)
+		return d, err
+	}
+	return queryAll(ctx, s.db, scan, `SELECT `+resourceColumns+`,
+ (SELECT mr2.message_id FROM message_resources mr2 JOIN messages m2 ON m2.message_id = mr2.message_id
+   WHERE mr2.file_key = r.file_key ORDER BY m2.create_ms DESC LIMIT 1) `+resourceFrom+`
  WHERE r.type <> 'sticker' AND `+resourceDue+`
- GROUP BY mr.message_id ORDER BY max(m.create_ms) DESC LIMIT ?`, now, limit)
+ GROUP BY r.file_key ORDER BY max(m.create_ms) DESC LIMIT ?`, now, limit)
 }
 
 // StickerResourcesDue returns sticker rows still waiting for their picture,
@@ -114,18 +131,6 @@ func (s *Store) ResourcesFor(ctx context.Context, messageID string) ([]Resource,
 	return queryAll(ctx, s.db, scanResource, `SELECT `+resourceColumns+` FROM resources r
  JOIN message_resources mr ON mr.file_key = r.file_key
  WHERE mr.message_id = ? ORDER BY r.file_key`, messageID)
-}
-
-// ResourcesDueFor lists the resources of one message worth an attempt now. A
-// message reached for one key carries its others along, and a key that has
-// landed must not be asked again just because it shares a message with one
-// that has not. Stickers are left out here as they are in
-// ResourceMessagesDue, so both ends of the download loop select the same rows.
-func (s *Store) ResourcesDueFor(ctx context.Context, messageID string, now int64) ([]Resource, error) {
-	return queryAll(ctx, s.db, scanResource, `SELECT `+resourceColumns+` FROM resources r
- JOIN message_resources mr ON mr.file_key = r.file_key
- WHERE mr.message_id = ? AND r.type <> 'sticker' AND `+resourceDue+`
- ORDER BY r.file_key`, messageID, now)
 }
 
 // ResourceCounts summarizes resource states.

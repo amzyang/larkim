@@ -35,7 +35,7 @@ type Options struct {
 	ActiveTopK        int
 	BackfillPerTick   int
 	RenderPerTick     int // batches of 50
-	DownloadPerTick   int // batches of 50 messages with due resources
+	DownloadPerTick   int // batches of 50 due resources
 	// ForwardsPerTick bounds one tick's merged-forward expansions. The
 	// endpoint takes one bundle per call, so this is a count of calls.
 	ForwardsPerTick   int
@@ -537,7 +537,19 @@ func (s *Syncer) IngestIDs(ctx context.Context, ids []string) error {
 		if _, _, err := s.upsertRaw(ctx, msgs, now); err != nil {
 			return err
 		}
-		rendered, err := s.Client.MGetRendered(ctx, batch, false)
+		// The types larkim renders itself are done here rather than asked
+		// about: the sender is waiting, and a call for a body already on disk
+		// would only slow that down.
+		if _, err := s.renderLocal(ctx, batch, len(msgs), now); err != nil {
+			return err
+		}
+		remote := make([]string, 0, len(msgs))
+		for _, m := range msgs {
+			if !store.LocallyRendered(m.MsgType) {
+				remote = append(remote, m.MessageID)
+			}
+		}
+		rendered, err := s.Client.MGetRendered(ctx, remote)
 		if err != nil {
 			return err
 		}
@@ -643,7 +655,8 @@ func ToRow(m larkcli.RawMessage) store.Message {
 		SenderID: senderIDOf(m), SenderType: m.Sender.SenderType, SenderName: m.Sender.SenderName,
 		ContentRaw: m.Body.Content, CreateMs: int64(m.CreateTime), UpdateMs: int64(m.UpdateTime),
 		MessagePosition: int64(m.MessagePosition), Updated: m.Updated, Deleted: m.Deleted,
-		ThreadID: m.ThreadID, ReplyTo: m.ParentID, RawJSON: string(m.Raw),
+		ThreadID: m.ThreadID, ReplyTo: m.ParentID, MentionsJSON: mentionsJSON(m.Mentions),
+		RawJSON: string(m.Raw),
 	}
 }
 
@@ -956,12 +969,12 @@ func (s *Syncer) pullChat(ctx context.Context, chatID string, since, until, now 
 	return n, fresh, nil
 }
 
-// renderPending renders messages without attachments; those with pending
-// downloads are rendered by downloadPending in the same lark-cli call. An
-// empty chatID takes them from every chat; the chat somebody is reading names
-// itself, so its own arrivals are not stuck behind a backlog elsewhere.
+// renderPending renders every message still without a rendering, whatever its
+// attachments are doing. An empty chatID takes them from every chat; the chat
+// somebody is reading names itself, so its own arrivals are not stuck behind a
+// backlog elsewhere.
 func (s *Syncer) renderPending(ctx context.Context, chatID string, limit int, now time.Time) (int, error) {
-	total, err := s.renderLocal(ctx, now)
+	total, err := s.renderLocal(ctx, nil, s.Opt.RenderPerTick*50, now)
 	if err != nil {
 		return total, err
 	}
@@ -970,7 +983,7 @@ func (s *Syncer) renderPending(ctx context.Context, chatID string, limit int, no
 		return total, err
 	}
 	for batch := range slices.Chunk(ids, 50) {
-		rendered, err := s.Client.MGetRendered(ctx, batch, false)
+		rendered, err := s.Client.MGetRendered(ctx, batch)
 		if err != nil {
 			return total, err
 		}
@@ -986,7 +999,7 @@ func (s *Syncer) renderPending(ctx context.Context, chatID string, limit int, no
 		// so they are not retried every tick.
 		for _, id := range batch {
 			if !got[id] {
-				if err := s.Store.UpdateRendered(ctx, id, "", "", "", now.UnixMilli()); err != nil {
+				if err := s.Store.UpdateRendered(ctx, id, "", "", now.UnixMilli()); err != nil {
 					return total, err
 				}
 			}
@@ -995,28 +1008,33 @@ func (s *Syncer) renderPending(ctx context.Context, chatID string, limit int, no
 	return total, nil
 }
 
-// renderLocal renders the messages larkim can read off the API body already
-// on disk: a system message Feishu templates out of values the body carries,
-// and a call, whose body names the meeting. They cost no call and stay
-// correct whatever lark-cli does with them.
-func (s *Syncer) renderLocal(ctx context.Context, now time.Time) (int, error) {
-	pending, err := s.Store.UnrenderedLocalMessages(ctx, s.Opt.RenderPerTick*50)
+// renderLocal renders the messages larkim can read off the API body already on
+// disk: a plain text message, which is its own words once its mention
+// placeholders are resolved, a system message Feishu templates out of values
+// the body carries, a call, whose body names the meeting, and a calendar
+// event. They cost no call and stay correct whatever lark-cli does with them.
+// renderLocal renders the local queue's head, or, with ids, exactly those
+// messages.
+func (s *Syncer) renderLocal(ctx context.Context, ids []string, limit int, now time.Time) (int, error) {
+	pending, err := s.Store.UnrenderedLocalMessages(ctx, ids, limit)
 	if err != nil {
 		return 0, err
 	}
 	for i, m := range pending {
-		if err := s.Store.UpdateRendered(ctx, m.MessageID, localText(m), "", "", now.UnixMilli()); err != nil {
+		if err := s.Store.UpdateRendered(ctx, m.MessageID, localText(m), "", now.UnixMilli()); err != nil {
 			return i, err
 		}
 	}
 	return len(pending), nil
 }
 
-// storeRendered saves a rendered message's text, mentions and reactions, and
-// registers the pictures that exist nowhere but that text.
+// storeRendered saves a rendered message's text and reactions, and registers
+// the pictures that exist nowhere but that text. The mentions that came back
+// with it are dropped: they are the ones the body already carried, which
+// UpsertMessages stored before anything was rendered.
 func (s *Syncer) storeRendered(ctx context.Context, r larkcli.RenderedMessage, now time.Time) error {
 	text := renderedText(r)
-	if err := s.Store.UpdateRendered(ctx, r.MessageID, text, rawString(r.Mentions), rawString(r.Reactions), now.UnixMilli()); err != nil {
+	if err := s.Store.UpdateRendered(ctx, r.MessageID, text, rawString(r.Reactions), now.UnixMilli()); err != nil {
 		return err
 	}
 	if err := s.Store.AddPendingResources(ctx, ExtractRendered(r.MessageID, r.MsgType, text)); err != nil {

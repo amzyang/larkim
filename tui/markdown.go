@@ -53,9 +53,51 @@ type mdDoc struct {
 func (d mdDoc) blocks(parent ast.Node, depth, indent int) []msgRow {
 	var rows []msgRow
 	for n := parent.FirstChild(); n != nil; n = n.NextSibling() {
+		if n.PreviousSibling() != nil {
+			rows = append(rows, d.gap(n)...)
+		}
 		rows = append(rows, d.block(n, depth, indent)...)
 	}
 	return rows
+}
+
+// gap draws back the blank lines standing above a block. A post is written as
+// a list of paragraphs and an empty one is a line the client draws, but a
+// markdown parser reads blank lines as the separator between blocks and keeps
+// no count of them, so they are read back out of the source.
+func (d mdDoc) gap(n ast.Node) []msgRow {
+	var rows []msgRow
+	for range mdBlanks(d.src, n.Pos()) {
+		rows = append(rows, msgRow{lead: d.g.take(), idx: d.idx})
+	}
+	return rows
+}
+
+// mdBlanks counts the blank lines directly above the line off falls on.
+func mdBlanks(src []byte, off int) int {
+	if off <= 0 || off > len(src) {
+		return 0
+	}
+	// A block need not open at its line's first byte — one nested in a list
+	// item starts past the marker — so the indent is stepped over before the
+	// line above comes into view.
+	i := off - 1
+	for i >= 0 && (src[i] == ' ' || src[i] == '\t') {
+		i--
+	}
+	n := 0
+	for i >= 0 && src[i] == '\n' {
+		j := i - 1
+		for j >= 0 && (src[j] == ' ' || src[j] == '\t') {
+			j--
+		}
+		if j >= 0 && src[j] != '\n' {
+			break // the line above carries text
+		}
+		n++
+		i = j
+	}
+	return n
 }
 
 func (d mdDoc) block(n ast.Node, depth, indent int) []msgRow {
@@ -129,6 +171,9 @@ func (d mdDoc) list(l *ast.List, depth, indent int) []msgRow {
 	var rows []msgRow
 	n := l.Start
 	for item := l.FirstChild(); item != nil; item = item.NextSibling() {
+		if item.PreviousSibling() != nil {
+			rows = append(rows, d.gap(item)...)
+		}
 		marker := "•"
 		if depth > 0 {
 			marker = "◦"

@@ -26,8 +26,23 @@ const callEndWindowMs = 5_000
 // localText renders a message larkim renders itself, from the bodies it
 // already stores.
 func localText(m store.PendingLocalMessage) string {
-	if m.MsgType == "video_chat" {
+	switch {
+	case m.MsgType == "text":
+		return textLocal(m)
+	case m.MsgType == "post":
+		return postText(m.ContentRaw, m.MentionsJSON)
+	case m.MsgType == "interactive":
+		return cardText(m.ContentRaw)
+	case LocalAttachment(m.MsgType):
+		return attachText(m.MsgType, m.ContentRaw)
+	case m.MsgType == "sticker":
+		// A sticker's rendering is this label and nothing else; the picture it
+		// stands for is named in the body.
+		return "[Sticker]"
+	case m.MsgType == "video_chat":
 		return videoChatText(m.ContentRaw)
+	case LocalCalendar(m.MsgType):
+		return calendarText(m.MsgType, m.ContentRaw)
 	}
 	return systemText(m)
 }

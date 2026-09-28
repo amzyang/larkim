@@ -61,22 +61,29 @@ func inlineSegs(line string, ms mentions, pic func(key string) picture, doc func
 	if len(cuts) == 0 {
 		return nil
 	}
-	slices.SortFunc(cuts, func(a, b inlineCut) int { return a.lo - b.lo })
+	return cutSegs(line, cuts, func(s string) string { return renderInline(s, ms) })
+}
 
+// cutSegs lays a line out as the pieces cuts names and the stretches of
+// ordinary text between them, which plain draws. How that text is drawn is the
+// caller's: a rendered line carries markup in it, a rich-text element's own
+// words do not.
+func cutSegs(line string, cuts []inlineCut, plain func(string) string) []rowSeg {
+	slices.SortFunc(cuts, func(a, b inlineCut) int { return a.lo - b.lo })
 	var segs []rowSeg
 	last := 0
 	for _, c := range cuts {
 		if c.lo > last {
-			segs = append(segs, rowSeg{text: renderInline(line[last:c.lo], ms)})
+			segs = append(segs, rowSeg{text: plain(line[last:c.lo])})
 		}
 		if len(c.seg.urls) > 0 && c.seg.text == "" {
-			c.seg.text = renderInline(line[c.lo:c.hi], ms)
+			c.seg.text = plain(line[c.lo:c.hi])
 		}
 		segs = append(segs, c.seg)
 		last = c.hi
 	}
 	if last < len(line) {
-		segs = append(segs, rowSeg{text: renderInline(line[last:], ms)})
+		segs = append(segs, rowSeg{text: plain(line[last:])})
 	}
 	return segs
 }

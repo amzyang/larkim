@@ -21,7 +21,7 @@ func docMessage(t *testing.T, s *Syncer, id, content string) {
 	require.NoError(t, err)
 	// Only the rendering, not AddPendingDocLinks: the back-scan is what has
 	// to find a link in a body that was stored before titles were read.
-	require.NoError(t, s.Store.UpdateRendered(ctx, id, content, "", "", 1))
+	require.NoError(t, s.Store.UpdateRendered(ctx, id, content, "", 1))
 }
 
 func TestResolveDocLinks_NamesWhatItCanAndSettlesWhatItCannot(t *testing.T) {

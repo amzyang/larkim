@@ -833,3 +833,42 @@ func TestHeadLine_TheBadgesAreFainterThanTheNameTheyFollow(t *testing.T) {
 
 	require.Contains(t, rows[1].text, stFaint.Render("(Edited)"))
 }
+
+func TestBodyRows_AStickerDrawsBeforeItsRenderingLands(t *testing.T) {
+	// The picture key is in the body, and the rendering only ever says
+	// "[Sticker]", so there is nothing to wait for.
+	msgs := []store.Message{{MessageID: "om_1", MsgType: "sticker", SenderName: "张三",
+		ContentRaw: `{"file_key":"v3_shrug"}`, CreateMs: msgAt(23, 9, 0)}}
+	st := baseStyle()
+	st.res = map[string][]store.Resource{"om_1": {{FileKey: "v3_shrug", Type: "sticker",
+		LocalPath: "resources/stickers/v3_shrug.gif", Status: "done"}}}
+	st.place = func(path string, maxCols, maxRows int) picture {
+		return picture{path: path, cols: 6, rows: 3}
+	}
+	n := 0
+	for _, r := range renderRows(msgs, st) {
+		if r.pic.cols > 0 {
+			n++
+		}
+	}
+	require.Equal(t, 3, n, "the picture is drawn, not the stand-in")
+}
+
+func TestBodyRows_AnImageDrawsBeforeItsRenderingLands(t *testing.T) {
+	// The key is in the body; the rendering only spells it back out.
+	msgs := []store.Message{{MessageID: "om_1", MsgType: "image", SenderName: "张三",
+		ContentRaw: `{"image_key":"img_a"}`, CreateMs: msgAt(23, 9, 0)}}
+	st := baseStyle()
+	st.res = map[string][]store.Resource{"om_1": {{FileKey: "img_a", Type: "image",
+		LocalPath: "resources/img_a.png", Status: "done"}}}
+	st.place = func(path string, maxCols, maxRows int) picture {
+		return picture{path: path, cols: 6, rows: 2}
+	}
+	n := 0
+	for _, r := range renderRows(msgs, st) {
+		if r.pic.cols > 0 {
+			n++
+		}
+	}
+	require.Equal(t, 2, n, "the picture is drawn, not the stand-in")
+}

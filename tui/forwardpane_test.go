@@ -99,7 +99,7 @@ func TestForwardedRow_APostKeepsTheDimStandIn(t *testing.T) {
 		ContentRaw: `{"title":"周报","content":[[{"tag":"text","text":"3 * 4 * 5"}]]}`, CreateMs: 20})
 
 	require.Zero(t, x.RenderedAt)
-	require.Contains(t, pendingText(x.MsgType, x.ContentRaw), "3 * 4 * 5")
+	require.Contains(t, pendingText(x.MsgType, x.ContentRaw, x.MentionsJSON), "3 * 4 * 5")
 }
 
 func TestOnForwardLoaded_AnUnexpandedBundleIsAskedForNow(t *testing.T) {

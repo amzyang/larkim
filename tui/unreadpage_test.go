@@ -48,9 +48,9 @@ func unreadPageDeps(t *testing.T) Deps {
 	}, 1)
 	require.NoError(t, err)
 	// The body a pane draws is the rendering, which lands in its own write.
-	require.NoError(t, st.UpdateRendered(ctx, "om_react", "接口什么时候好", "",
+	require.NoError(t, st.UpdateRendered(ctx, "om_react", "接口什么时候好",
 		`{"counts":[{"reaction_type":"JIAYI","count":"3"}]}`, 1))
-	require.NoError(t, st.UpdateRendered(ctx, "om_pic", "看这个\n![Image](img_a)", "", "", 1))
+	require.NoError(t, st.UpdateRendered(ctx, "om_pic", "看这个\n![Image](img_a)", "", 1))
 
 	require.NoError(t, st.AddPendingResources(ctx, []store.ResourceRef{
 		{MessageID: "om_pic", FileKey: "img_a", Type: "image"},

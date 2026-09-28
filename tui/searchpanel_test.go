@@ -38,7 +38,7 @@ func panelModel(t *testing.T) (Model, *store.Store) {
 	_, err = st.UpsertMessages(ctx, []store.Message{{MessageID: "om_1", ChatID: "oc_budget", MsgType: "text",
 		SenderID: "ou_x", SenderName: "张三", ContentRaw: `{"text":"下个季度预算"}`, CreateMs: 100, UpdateMs: 100}}, 1)
 	require.NoError(t, err)
-	require.NoError(t, st.UpdateRendered(ctx, "om_1", "下个季度预算", "", "", 1))
+	require.NoError(t, st.UpdateRendered(ctx, "om_1", "下个季度预算", "", 1))
 	require.NoError(t, st.UpsertContacts(ctx, []store.Contact{
 		{OpenID: "ou_a", Name: "预算负责人", Email: "a@example.com", P2PChatID: "oc_a"},
 	}, 1))

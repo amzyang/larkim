@@ -214,6 +214,8 @@ func msgTypeLabel(msgType string) string {
 		return "[Event]"
 	case "share_calendar_event":
 		return "[Shared Event]"
+	case "general_calendar":
+		return "[Event]"
 	case "system":
 		return "[System Message]"
 	case "":

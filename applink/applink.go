@@ -11,6 +11,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -50,6 +51,32 @@ func ChatLink(chatID string, position int64) string {
 // a browser redirect.
 func MeetingLink(meetNumber string) string {
 	return "lark://vc.feishu.cn/j/" + meetNumber
+}
+
+// EventLink addresses a calendar event's detail page, and is empty for a body
+// naming no event: the desktop client needs both ids to find one.
+//
+// The client builds this URL from an event's calendarId, key, originalTime and
+// startTime, while the API names an event by a single id that is key and
+// originalTime joined with an underscore, so the id is split back apart here.
+// startTime is seconds, the unit every calendar applink takes.
+func EventLink(calendarID, eventID string, startMs int64) string {
+	if calendarID == "" || eventID == "" {
+		return ""
+	}
+	key, original, ok := strings.CutLast(eventID, "_")
+	if !ok {
+		// A non-recurring event is written with a 0 original time rather
+		// than without one, so the client is given one either way.
+		key, original = eventID, "0"
+	}
+	q := url.Values{
+		"calendarId":   {calendarID},
+		"key":          {key},
+		"originalTime": {original},
+		"startTime":    {strconv.FormatInt(startMs/1000, 10)},
+	}
+	return "lark://applink.feishu.cn/client/calendar/event/detail?" + q.Encode()
 }
 
 // Open hands targets to macOS. A keypress asking for the Feishu client wants

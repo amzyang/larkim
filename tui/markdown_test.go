@@ -163,3 +163,32 @@ func TestBodyRows_TextMessagesStayLiteral(t *testing.T) {
 	require.Contains(t, out, "x := 1")
 	require.NotContains(t, out, codeRule, "nothing is framed as a block")
 }
+
+// mdLines is the body drawn one string per row, past the day rule and the
+// sender line. Blank rows are the subject here, so nothing is filtered out.
+func mdLines(t *testing.T, body string) []string {
+	t.Helper()
+	rows := renderRows(postWith(body), baseStyle())
+	out := make([]string, 0, len(rows))
+	for _, r := range rows[2:] {
+		out = append(out, strings.TrimRight(ansi.Strip(segText(r)), " "))
+	}
+	return out
+}
+
+func TestMdRows_KeepsTheBlankLinesBetweenBlocks(t *testing.T) {
+	// A post is a list of paragraphs and an empty one is a line the client
+	// draws, so a run of them is content, not the block separator a markdown
+	// parser reads it as.
+	require.Equal(t, []string{"甲", "", "乙", "", "", "丙"}, mdLines(t, "甲\n\n乙\n\n\n丙"))
+}
+
+func TestMdRows_BlankLinesPartListItems(t *testing.T) {
+	require.Equal(t, []string{"• 甲", "", "• 乙"}, mdLines(t, "- 甲\n\n- 乙"))
+}
+
+func TestMdRows_NoBlankLineOpensOrClosesABody(t *testing.T) {
+	// lark-cli trims the body, and a block that opens a level has nothing
+	// above it to count.
+	require.Equal(t, []string{"甲", "乙"}, mdLines(t, "甲\n乙"))
+}

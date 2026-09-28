@@ -710,6 +710,11 @@ func bodyRows(x store.Message, idx int, st msgStyle, g *leads) []msgRow {
 	if v, ok := videoChatOf(x); ok {
 		return videoChatRows(v, idx, st, g)
 	}
+	// An event's body likewise names the whole card, and the rendering it
+	// would get wraps the same two lines in XML.
+	if c, ok := calendarOf(x); ok {
+		return calendarRows(c, x, idx, st, g)
+	}
 	// An attachment's body likewise names the whole card, and the text a
 	// rendering would bring is the markup the card replaces.
 	if a, ok := attachmentOf(x.MsgType, x.ContentRaw); ok {
@@ -723,16 +728,26 @@ func bodyRows(x store.Message, idx int, st msgStyle, g *leads) []msgRow {
 			return cardRows(c, x, idx, st, g, ms)
 		}
 	}
-	if x.RenderedAt == 0 {
-		if rows, ok := postPictureRows(x, idx, st, g); ok {
-			return rows
+	// A post likewise says everything about itself, and says it better than
+	// its rendering does: that rendering flattens the paragraphs it was
+	// written in to markdown, which cannot tell an asterisk somebody typed
+	// from one it added, and drops the empty paragraphs that are blank lines.
+	if x.MsgType == "post" {
+		if b, ok := postBodyOf(x.ContentRaw); ok {
+			return postRows(b, x, idx, st, g, ms)
 		}
-		return dimRows(pendingText(x.MsgType, x.ContentRaw), idx, st, g)
 	}
-	// A sticker renders as the text "[Sticker]", which names the picture
-	// nowhere: the key is in the body.
+	// A sticker's rendering is the words "[Sticker]", which name the picture
+	// nowhere, and an image's only spells its key back out: both are in the
+	// body, so the body is what draws them.
 	if key := stickerKey(x); key != "" {
 		return pictureRows(key, x, idx, st, g)
+	}
+	if key := imageKey(x); key != "" {
+		return pictureRows(key, x, idx, st, g)
+	}
+	if x.RenderedAt == 0 {
+		return dimRows(pendingText(x.MsgType, x.ContentRaw, x.MentionsJSON), idx, st, g)
 	}
 	// A post is markdown by construction, so it is drawn as the document it
 	// is. A text message is not: someone typing "3 * 4 * 5" means the
@@ -757,38 +772,6 @@ func bodyRows(x store.Message, idx int, st msgStyle, g *leads) []msgRow {
 		}
 	}
 	return rows
-}
-
-// postPictureRows draw a rich-text body that carries pictures but has no
-// rendering: its words dim, the way pendingText gives them, and each picture
-// where its paragraph placed it. pendingText alone drops the pictures, which
-// for a merged forward's child is final — lark-cli's expansion answers with
-// raw bodies and never renders one.
-//
-// A body with no picture is left to that stand-in, which wraps as one block
-// rather than a row per paragraph.
-func postPictureRows(x store.Message, idx int, st msgStyle, g *leads) ([]msgRow, bool) {
-	if x.MsgType != "post" {
-		return nil, false
-	}
-	parts, ok := postParts(x.ContentRaw)
-	if !ok || !slices.ContainsFunc(parts, func(p postPart) bool { return p.image != "" }) {
-		return nil, false
-	}
-	var rows []msgRow
-	for _, p := range parts {
-		if p.image != "" {
-			rows = append(rows, pictureRows(p.image, x, idx, st, g)...)
-			continue
-		}
-		// A paragraph the picture took over has no words of its own, and a
-		// blank row between two pictures is not the parting the list uses.
-		if strings.TrimSpace(p.text) == "" {
-			continue
-		}
-		rows = append(rows, dimRows(p.text, idx, st, g)...)
-	}
-	return rows, true
 }
 
 // dimRows draw a body larkim holds no rendering for, its words dim. An
@@ -842,6 +825,20 @@ const stickerCols = 12
 
 // stickerKey is the picture a sticker message carries, and "" for any other
 // message.
+// imageKey is the picture an image message carries.
+func imageKey(x store.Message) string {
+	if x.MsgType != "image" {
+		return ""
+	}
+	var body struct {
+		ImageKey string `json:"image_key"`
+	}
+	if json.Unmarshal([]byte(x.ContentRaw), &body) != nil {
+		return ""
+	}
+	return body.ImageKey
+}
+
 func stickerKey(x store.Message) string {
 	if x.MsgType != "sticker" {
 		return ""

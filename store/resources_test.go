@@ -14,18 +14,19 @@ func TestResources_Lifecycle(t *testing.T) {
 	require.NoError(t, s.AddPendingResources(ctx, []ResourceRef{{MessageID: "om_1", FileKey: "img_a", Type: "image"}, {MessageID: "om_2", FileKey: "file_b", Type: "file"}}))
 	require.NoError(t, s.AddPendingResources(ctx, []ResourceRef{{MessageID: "om_1", FileKey: "img_a", Type: "image"}}), "re-adding is a no-op")
 
-	due, err := s.ResourceMessagesDue(ctx, 100, 10)
+	due, err := s.ResourcesDue(ctx, 100, 10)
 	require.NoError(t, err)
-	require.Equal(t, []string{"om_2", "om_1"}, due, "newest message first")
+	require.Equal(t, []string{"file_b", "img_a"}, dueKeys(due), "the newest message's key first")
+	require.Equal(t, "om_2", due[0].MessageID, "the key is asked for under a message that names it")
 
 	require.NoError(t, s.MarkResourceDone(ctx, "img_a", "resources/lark-im-resources/img_a.jpg", 123))
 	require.NoError(t, s.MarkResourceFailed(ctx, "file_b", "timeout", 500))
-	due, _ = s.ResourceMessagesDue(ctx, 100, 10)
+	due, _ = s.ResourcesDue(ctx, 100, 10)
 	require.Empty(t, due, "failed row waits for next_attempt_at")
-	due, _ = s.ResourceMessagesDue(ctx, 500, 10)
-	require.Equal(t, []string{"om_2"}, due)
+	due, _ = s.ResourcesDue(ctx, 500, 10)
+	require.Equal(t, []string{"file_b"}, dueKeys(due))
 	require.NoError(t, s.MarkResourceFailed(ctx, "file_b", "gave up", 0))
-	due, _ = s.ResourceMessagesDue(ctx, 1e12, 10)
+	due, _ = s.ResourcesDue(ctx, 1e12, 10)
 	require.Empty(t, due, "next_attempt_at = 0 means permanently failed")
 
 	rs, err := s.ResourcesFor(ctx, "om_2")
@@ -39,7 +40,7 @@ func TestResources_Lifecycle(t *testing.T) {
 	require.Equal(t, int64(1), counts["skipped"])
 }
 
-func TestUnrenderedMessageIDs_SkipsMessagesWithUnfinishedResources(t *testing.T) {
+func TestUnrenderedMessageIDs_DoesNotWaitOnADownload(t *testing.T) {
 	s := openTest(t)
 	ctx := t.Context()
 	_, err := s.UpsertMessages(ctx, []Message{
@@ -61,13 +62,16 @@ func TestUnrenderedMessageIDs_SkipsMessagesWithUnfinishedResources(t *testing.T)
 	require.NoError(t, s.MarkResourceDone(ctx, "k_done", "resources/k_done.jpg", 1))
 	require.NoError(t, s.MarkResourceSkipped(ctx, "k_skipped", 999, "too large"))
 
+	// A rendering and a download are two errands: an attachment still on its
+	// way says nothing about whether the words are readable yet.
 	ids, err := s.UnrenderedMessageIDs(ctx, "", 10)
 	require.NoError(t, err)
-	require.Equal(t, []string{"om_plain", "om_done", "om_skipped"}, ids, "pending/failed downloads and deleted messages wait; newest first")
+	require.Equal(t, []string{"om_plain", "om_pending", "om_failed", "om_done", "om_skipped"}, ids,
+		"only a deleted message is left out; newest first")
 
-	require.NoError(t, s.UpdateRendered(ctx, "om_plain", "hi", "", "", 2))
+	require.NoError(t, s.UpdateRendered(ctx, "om_plain", "hi", "", 2))
 	ids, _ = s.UnrenderedMessageIDs(ctx, "", 10)
-	require.Equal(t, []string{"om_done", "om_skipped"}, ids)
+	require.Equal(t, []string{"om_pending", "om_failed", "om_done", "om_skipped"}, ids)
 }
 
 func TestReadStatus_CandidatesAndSchedule(t *testing.T) {
@@ -371,24 +375,66 @@ func TestAddPendingResources_OneLedgerRowPerKey(t *testing.T) {
 	require.Equal(t, int64(1), counts["pending"])
 }
 
-func TestResourceMessagesDue_LeavesOutMessagesWhoseKeyIsSettled(t *testing.T) {
+// dueKeys is the queue in the order it came back, which is what the download
+// loop walks.
+func dueKeys(due []DueResource) []string {
+	keys := make([]string, len(due))
+	for i, d := range due {
+		keys[i] = d.FileKey
+	}
+	return keys
+}
+
+func TestResourcesDue_OneRowPerKeyWhateverNamesIt(t *testing.T) {
+	s := sharedFixture(t)
+	ctx := t.Context()
+	require.NoError(t, s.AddPendingResources(ctx, []ResourceRef{
+		{MessageID: "om_a", FileKey: "img_shared", Type: "image"},
+		{MessageID: "om_b", FileKey: "img_shared", Type: "image"},
+		{MessageID: "om_c", FileKey: "img_own", Type: "image"},
+	}))
+
+	due, err := s.ResourcesDue(ctx, 100, 10)
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{"img_shared", "img_own"}, dueKeys(due),
+		"a key two messages name is fetched once")
+	for _, d := range due {
+		require.Contains(t, []string{"om_a", "om_b", "om_c"}, d.MessageID)
+	}
+}
+
+func TestResourcesDue_LeavesSettledBusinessAlone(t *testing.T) {
 	s := sharedFixture(t)
 	ctx := t.Context()
 	require.NoError(t, s.AddPendingResources(ctx, []ResourceRef{
 		{MessageID: "om_a", FileKey: "img_gone", Type: "image"},
-		{MessageID: "om_b", FileKey: "img_gone", Type: "image"},
-		{MessageID: "om_c", FileKey: "img_slow", Type: "image"},
+		{MessageID: "om_a", FileKey: "img_new", Type: "image"},
+		{MessageID: "om_a", FileKey: "img_kept", Type: "image"},
+		{MessageID: "om_a", FileKey: "img_big", Type: "image"},
+		{MessageID: "om_a", FileKey: "v3_face", Type: "sticker"},
 	}))
 	require.NoError(t, s.MarkResourceFailed(ctx, "img_gone", "Resource Has Been Deleted", 0))
+	require.NoError(t, s.MarkResourceDone(ctx, "img_kept", "resources/img_kept.png", 9))
+	require.NoError(t, s.MarkResourceSkipped(ctx, "img_big", 999, "too large"))
+
+	due, err := s.ResourcesDue(ctx, 100, 10)
+	require.NoError(t, err)
+	require.Equal(t, []string{"img_new"}, dueKeys(due),
+		"a landed refusal, a fetched key, a skipped one and a sticker are all settled business")
+}
+
+func TestResourcesDue_AsksAgainOnceTheBackoffIsOwed(t *testing.T) {
+	s := sharedFixture(t)
+	ctx := t.Context()
+	require.NoError(t, s.AddPendingResources(ctx, []ResourceRef{{MessageID: "om_a", FileKey: "img_slow", Type: "image"}}))
 	require.NoError(t, s.MarkResourceFailed(ctx, "img_slow", "timeout", 500))
 
-	due, err := s.ResourceMessagesDue(ctx, 100, 10)
+	due, err := s.ResourcesDue(ctx, 100, 10)
 	require.NoError(t, err)
-	require.Empty(t, due, "one refusal answers every message that names the key")
-
-	due, err = s.ResourceMessagesDue(ctx, 500, 10)
+	require.Empty(t, due)
+	due, err = s.ResourcesDue(ctx, 500, 10)
 	require.NoError(t, err)
-	require.Equal(t, []string{"om_c"}, due, "a failure still in backoff is asked again")
+	require.Len(t, due, 1)
 }
 
 func TestResourcesFor_ReadsThroughTheReferences(t *testing.T) {
@@ -408,44 +454,6 @@ func TestResourcesFor_ReadsThroughTheReferences(t *testing.T) {
 	require.Len(t, byMsg["om_a"], 2)
 	require.Len(t, byMsg["om_b"], 1)
 	require.NotContains(t, byMsg, "om_c", "a message with no references is absent")
-}
-
-func TestResourcesDueFor_LeavesALandedKeyAloneWhenItsMessageIsReachedForAnother(t *testing.T) {
-	s := sharedFixture(t)
-	ctx := t.Context()
-	require.NoError(t, s.AddPendingResources(ctx, []ResourceRef{
-		{MessageID: "om_a", FileKey: "img_gone", Type: "image"},
-		{MessageID: "om_a", FileKey: "img_new", Type: "image"},
-		{MessageID: "om_a", FileKey: "img_kept", Type: "image"},
-		{MessageID: "om_a", FileKey: "img_big", Type: "image"},
-		{MessageID: "om_a", FileKey: "v3_face", Type: "sticker"},
-	}))
-	require.NoError(t, s.MarkResourceFailed(ctx, "img_gone", "Resource Has Been Deleted", 0))
-	require.NoError(t, s.MarkResourceDone(ctx, "img_kept", "resources/img_kept.png", 9))
-	require.NoError(t, s.MarkResourceSkipped(ctx, "img_big", 999, "too large"))
-
-	due, err := s.ResourcesDueFor(ctx, "om_a", 100)
-	require.NoError(t, err)
-	keys := make([]string, len(due))
-	for i, r := range due {
-		keys[i] = r.FileKey
-	}
-	require.Equal(t, []string{"img_new"}, keys,
-		"a landed refusal, a fetched key, a skipped one and a sticker are all settled business")
-}
-
-func TestResourcesDueFor_AsksAgainOnceTheBackoffIsOwed(t *testing.T) {
-	s := sharedFixture(t)
-	ctx := t.Context()
-	require.NoError(t, s.AddPendingResources(ctx, []ResourceRef{{MessageID: "om_a", FileKey: "img_slow", Type: "image"}}))
-	require.NoError(t, s.MarkResourceFailed(ctx, "img_slow", "timeout", 500))
-
-	due, err := s.ResourcesDueFor(ctx, "om_a", 100)
-	require.NoError(t, err)
-	require.Empty(t, due)
-	due, err = s.ResourcesDueFor(ctx, "om_a", 500)
-	require.NoError(t, err)
-	require.Len(t, due, 1)
 }
 
 func TestReadStatusProbes_OneNewestMessagePerUnreadChat(t *testing.T) {

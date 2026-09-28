@@ -11,28 +11,40 @@ func TestUnrenderedLocalMessages_TakeTheirOwnQueue(t *testing.T) {
 	s := openTest(t)
 	ctx := t.Context()
 	call := `{"topic":"站会的视频会议","meet_number":"100000000","start_time":"1000"}`
+	event := `{"summary":"平台组周会","start_time":"1788143400000"}`
 	_, err := s.UpsertMessages(ctx, []Message{
-		{MessageID: "om_text", ChatID: "oc", MsgType: "text", CreateMs: 30, ContentRaw: `{"text":"hi"}`, RawJSON: "{}"},
+		{MessageID: "om_share", ChatID: "oc", MsgType: "share_chat", CreateMs: 40, ContentRaw: `{"chat_id":"oc_b"}`, RawJSON: "{}"},
+		{MessageID: "om_text", ChatID: "oc", MsgType: "text", CreateMs: 30, ContentRaw: `{"text":"hi"}`,
+			MentionsJSON: `[{"id":"ou_me","key":"@_user_1","name":"林岚"}]`, RawJSON: "{}"},
 		{MessageID: "om_sys", ChatID: "oc", MsgType: "system", CreateMs: 20, ContentRaw: `{"template":"{from_user} left"}`, RawJSON: "{}"},
 		{MessageID: "om_call", ChatID: "oc_v", MsgType: "video_chat", CreateMs: 15, ContentRaw: call, RawJSON: "{}"},
+		{MessageID: "om_invite", ChatID: "oc", MsgType: "calendar", CreateMs: 14, ContentRaw: event, RawJSON: "{}"},
+		{MessageID: "om_shared", ChatID: "oc", MsgType: "share_calendar_event", CreateMs: 13, ContentRaw: event, RawJSON: "{}"},
 		{MessageID: "om_gone", ChatID: "oc", MsgType: "system", CreateMs: 10, Deleted: true, RawJSON: "{}"},
 	}, 1)
 	require.NoError(t, err)
 
 	ids, err := s.UnrenderedMessageIDs(ctx, "", 10)
 	require.NoError(t, err)
-	require.Equal(t, []string{"om_text"}, ids, "the messages larkim renders itself never reach lark-cli")
+	require.Equal(t, []string{"om_share"}, ids, "the messages larkim renders itself never reach lark-cli")
 
-	pending, err := s.UnrenderedLocalMessages(ctx, 10)
+	pending, err := s.UnrenderedLocalMessages(ctx, nil, 10)
 	require.NoError(t, err)
 	require.Equal(t, []PendingLocalMessage{
+		{MessageID: "om_text", MsgType: "text", ContentRaw: `{"text":"hi"}`, CreateMs: 30,
+			MentionsJSON: `[{"id":"ou_me","key":"@_user_1","name":"林岚"}]`},
 		{MessageID: "om_sys", MsgType: "system", ContentRaw: `{"template":"{from_user} left"}`, CreateMs: 20},
 		{MessageID: "om_call", MsgType: "video_chat", ContentRaw: call, CreateMs: 15, CallRaw: call},
+		{MessageID: "om_invite", MsgType: "calendar", ContentRaw: event, CreateMs: 14},
+		{MessageID: "om_shared", MsgType: "share_calendar_event", ContentRaw: event, CreateMs: 13},
 	}, pending)
 
-	require.NoError(t, s.UpdateRendered(ctx, "om_sys", "A left", "", "", 2))
-	require.NoError(t, s.UpdateRendered(ctx, "om_call", "[Video call]", "", "", 2))
-	pending, _ = s.UnrenderedLocalMessages(ctx, 10)
+	require.NoError(t, s.UpdateRendered(ctx, "om_text", "@林岚 hi", "", 2))
+	require.NoError(t, s.UpdateRendered(ctx, "om_sys", "A left", "", 2))
+	require.NoError(t, s.UpdateRendered(ctx, "om_call", "[Video call]", "", 2))
+	require.NoError(t, s.UpdateRendered(ctx, "om_invite", "[Event]", "", 2))
+	require.NoError(t, s.UpdateRendered(ctx, "om_shared", "[Shared Event]", "", 2))
+	pending, _ = s.UnrenderedLocalMessages(ctx, nil, 10)
 	require.Empty(t, pending)
 }
 
@@ -51,7 +63,7 @@ func TestUnrenderedLocalMessages_CarryTheCallThatRanBeforeThem(t *testing.T) {
 	}, 1)
 	require.NoError(t, err)
 
-	pending, err := s.UnrenderedLocalMessages(ctx, 10)
+	pending, err := s.UnrenderedLocalMessages(ctx, nil, 10)
 	require.NoError(t, err)
 	got := map[string]string{}
 	for _, m := range pending {
@@ -87,10 +99,11 @@ func TestUpdateReactions_LeavesTheRenderingAlone(t *testing.T) {
 	s := openTest(t)
 	ctx := t.Context()
 	_, err := s.UpsertMessages(ctx, []Message{
-		{MessageID: "om_a", ChatID: "oc", MsgType: "text", CreateMs: 10, ContentRaw: `{"text":"hi"}`, RawJSON: "{}"},
+		{MessageID: "om_a", ChatID: "oc", MsgType: "text", CreateMs: 10, ContentRaw: `{"text":"hi"}`,
+			MentionsJSON: `[{"id":"ou_a"}]`, RawJSON: "{}"},
 	}, 1)
 	require.NoError(t, err)
-	require.NoError(t, s.UpdateRendered(ctx, "om_a", "hi", `[{"id":"ou_a"}]`, "", 2))
+	require.NoError(t, s.UpdateRendered(ctx, "om_a", "hi", "", 2))
 
 	const block = `{"counts":[{"reaction_type":"OK","count":"1"}]}`
 	require.NoError(t, s.UpdateReactions(ctx, "om_a", block))
@@ -210,13 +223,14 @@ func TestThreadGists_WaitingOnlyForAThreadIAmIn(t *testing.T) {
 		{MessageID: "om_r2", ChatID: "oc_a", MsgType: "text", CreateMs: 120, MessagePosition: -2,
 			ThreadID: "omt_1", SenderID: "ou_x", ContentRaw: `{"text":"新的"}`, RawJSON: "{}"},
 		{MessageID: "om_r3", ChatID: "oc_a", MsgType: "text", CreateMs: 130, MessagePosition: -1,
-			ThreadID: "omt_2", SenderID: "ou_x", ContentRaw: `{"text":"@我"}`, RawJSON: "{}"},
+			ThreadID: "omt_2", SenderID: "ou_x", ContentRaw: `{"text":"@我"}`, RawJSON: "{}",
+			MentionsJSON: `[{"key":"@_user_1","id":"ou_me","name":"林岚"}]`},
 		{MessageID: "om_r4", ChatID: "oc_a", MsgType: "text", CreateMs: 140, MessagePosition: -1,
 			ThreadID: "omt_3", SenderID: "ou_x", ContentRaw: `{"text":"与我无关"}`, RawJSON: "{}"},
 	}
 	_, err := s.UpsertMessages(ctx, rows, 1)
 	require.NoError(t, err)
-	require.NoError(t, s.UpdateRendered(ctx, "om_r3", "@林岚 看下", `[{"key":"@_user_1","id":"ou_me","name":"林岚"}]`, "", 2))
+	require.NoError(t, s.UpdateRendered(ctx, "om_r3", "@林岚 看下", "", 2))
 	for _, r := range rows {
 		markUnreadMsg(t, s, r.MessageID)
 	}

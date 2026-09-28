@@ -30,8 +30,8 @@ func TestLoadMeta_LoadsTheQuotedParents(t *testing.T) {
 		{MessageID: "om_new", ChatID: "oc_a", CreateMs: 20, MessagePosition: 2, SenderID: "ou_b", SenderName: "唐婉", ReplyTo: "om_old", RawJSON: "{}"},
 	}, 1)
 	require.NoError(t, err)
-	require.NoError(t, st.UpdateRendered(ctx, "om_old", "瞅一眼", "", "", 2))
-	require.NoError(t, st.UpdateRendered(ctx, "om_new", "好的", "", "", 2))
+	require.NoError(t, st.UpdateRendered(ctx, "om_old", "瞅一眼", "", 2))
+	require.NoError(t, st.UpdateRendered(ctx, "om_new", "好的", "", 2))
 
 	page, err := st.ListMessages(ctx, store.MessageQuery{ChatID: "oc_a", SinceMs: 15})
 	require.NoError(t, err)

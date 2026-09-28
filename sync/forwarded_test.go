@@ -46,7 +46,7 @@ func TestTick_DownloadsThePicturesInsideAForwardedBundle(t *testing.T) {
 	f.AddMessage(fwd)
 	f.Rendered["om_fwd"] = larkcli.RenderedMessage{MessageID: "om_fwd", ChatID: "oc_a",
 		MsgType: "merge_forward", Content: "<p>张三: 看这个</p>\n![Image](img_fwd)"}
-	f.Singles["om_fwd/img_fwd"] = larkcli.Resource{LocalPath: shot, SizeBytes: 4}
+	f.Resources["om_fwd/img_fwd"] = larkcli.Resource{LocalPath: shot, SizeBytes: 4}
 
 	rep, err := s.Tick(ctx)
 	require.NoError(t, err)
@@ -70,7 +70,7 @@ func TestRegisterExistingResources_ReadsAStoredBundlesRendering(t *testing.T) {
 		ContentRaw: `{"text":"Merged and Forwarded Message"}`, CreateMs: now, UpdateMs: now,
 	}}, now)
 	require.NoError(t, err)
-	require.NoError(t, s.Store.UpdateRendered(ctx, "om_old", "李四: 见图\n![Image](img_old)", "", "", now))
+	require.NoError(t, s.Store.UpdateRendered(ctx, "om_old", "李四: 见图\n![Image](img_old)", "", now))
 
 	require.NoError(t, s.registerExistingResources(ctx))
 
