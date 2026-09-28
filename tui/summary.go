@@ -91,61 +91,75 @@ func threadRoot(x store.Message, st msgStyle) bool {
 	return !st.inFrame && x.ThreadID != "" && x.MessagePosition >= 0 && !x.Deleted
 }
 
-// threadSummary is the one line a thread root takes in the chat: how many
-// replies are under it and the last of them, with the whole line leading into
-// the pane that lists them.
+// threadRows are the lines a thread root takes in the chat: a head saying what
+// is not on screen, then the thread's newest replies, all of them leading into
+// the pane that lists the whole of it.
 //
-// It is drawn whether or not anybody has answered. A root with no reply looks
-// like any other message otherwise, and the reader would have no way to tell
-// that Enter opens a thread there rather than answering the message.
+// The head is the client's own: it names what is hidden rather than what is
+// shown, so a thread whose tail is all of it counts its replies instead. A
+// root nobody has answered still draws one, because otherwise it looks like
+// any other message and the reader has no way to tell that Enter opens a
+// thread there rather than answering it.
 //
-// The representative reply is the newest, which is the opposite of a forward:
-// a thread is alive, and the last word is where it stands.
+// The tail runs oldest first, the way the chat itself does, so the newest
+// reply is the line nearest the next message.
 //
-// The replier's own face stands in the line rather than in the lead column,
-// the way the client marks who is talking in a thread: the column belongs to
-// the root, and a face out at the margin names somebody the eye has to travel
-// back for. Standing against the name, it is the parting mark too, so the line
-// needs no dot between the count and who answered.
-func threadSummary(x store.Message, idx int, st msgStyle, g *leads) (msgRow, bool) {
+// A replier's face stands in their line rather than in the lead column, the
+// way the client marks who is talking in a thread: the column belongs to the
+// root, and a face out at the margin names somebody the eye has to travel back
+// for. Standing against the name, it is the parting mark too, so the line needs
+// no dot before who answered.
+func threadRows(x store.Message, idx int, st msgStyle, g *leads) ([]msgRow, bool) {
 	if !threadRoot(x, st) {
-		return msgRow{}, false
+		return nil, false
 	}
 	gist := st.threads[x.ThreadID]
-	lead := g.take()
+	head := g.take()
 	if gist.Waiting {
 		// The dot is set here rather than through leadFor, which only reaches
 		// a message's first row: by the time this line is drawn the sender
 		// line and any quote have already spent it. It is derived from the
 		// read flags, not from the dots this visit gathered, so walking the
 		// cursor past the root cannot wipe a reply nobody has seen.
-		lead.mark = stAccent.Render("●")
+		head.mark = stAccent.Render("●")
 	}
+	label := "⤷ No replies yet"
+	if hidden := gist.Replies - len(gist.Tail); hidden > 0 {
+		label = "⤷ View earlier " + plural(hidden, "reply", "replies")
+	} else if gist.Replies > 0 {
+		label = "⤷ " + plural(gist.Replies, "reply", "replies")
+	}
+	rows := []msgRow{threadRow(x, idx, head, stAccent.Render(label), nil)}
+	for _, r := range gist.Tail {
+		line := " " + displaySender(r, st.self, st.suffix[r.SenderID]) + ": " + replyGist(r)
+		rows = append(rows, threadRow(x, idx, g.take(), "",
+			faceSegs("", replierFace(r, st), line, st.inner(), stDim, st.emojiGist)))
+	}
+	return rows, true
+}
+
+// threadRow is one line of the block, whole-line clickable: every part of a
+// thread's fold leads into the same pane, the head no differently from the
+// reply under it.
+func threadRow(x store.Message, idx int, lead lead, text string, segs []rowSeg) msgRow {
 	x0 := lead.cols()
-	text, segs := stAccent.Render("⤷ No replies yet"), []rowSeg(nil)
-	if gist.Replies > 0 {
-		last := gist.Last()
-		head := stAccent.Render("⤷ "+plural(gist.Replies, "reply", "replies")) + " "
-		tail := " " + displaySender(last, st.self, st.suffix[gist.SenderID]) + ": " + replyGist(last)
-		text, segs = "", faceSegs(head, replierFace(last, st), tail, st.inner(), stDim, st.emojiGist)
-	}
 	return msgRow{lead: lead, text: text, segs: segs, idx: idx, zones: []clickZone{{
 		x0: x0, x1: x0 + lipgloss.Width(text) + segsWidth(segs),
 		open: x.ThreadID, openKind: rightThread,
-	}}}, true
+	}}}
 }
 
-// replierFace is the newest replier's picture as one piece of the line: their
-// avatar at the narrow size a summary line gives a picture, or the colour
-// block standing in for it where the terminal draws none.
-func replierFace(last store.Message, st msgStyle) rowSeg {
-	name := senderLabel(last, "")
+// replierFace is a replier's picture as one piece of their line: their avatar
+// at the narrow size a summary line gives a picture, or the colour block
+// standing in for it where the terminal draws none.
+func replierFace(r store.Message, st msgStyle) rowSeg {
+	name := senderLabel(r, "")
 	if st.disc != nil {
-		if pic := st.disc(st.avatars[last.SenderID], last.SenderID, name, gistCols, 1); pic.cols > 0 {
+		if pic := st.disc(st.avatars[r.SenderID], r.SenderID, name, gistCols, 1); pic.cols > 0 {
 			return rowSeg{pic: pic}
 		}
 	}
-	return rowSeg{text: avatarBlock(last.SenderID, name, gistCols)}
+	return rowSeg{text: avatarBlock(r.SenderID, name, gistCols)}
 }
 
 // replySummary is the line a message carries when answers hang under it: how

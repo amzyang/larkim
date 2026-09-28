@@ -83,3 +83,45 @@ func TestBeat_TakesTheBeatLane(t *testing.T) {
 	_, ok := ctx.Deadline()
 	require.True(t, ok, "a beat still needs a deadline of its own")
 }
+
+// A recall is an event in the chat, not an absence: the client draws a notice
+// where the message stood, so the page has to be handed the row.
+func TestMessageQuery_KeepsARecallOnThePage(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "t.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { st.Close() })
+	ctx := t.Context()
+	kept := store.Message{MessageID: "om_kept", ChatID: "oc_a", MsgType: "text", CreateMs: 100,
+		MessagePosition: 100, SenderID: "ou_a", SenderName: "张三", ContentRaw: `{"text":"排期"}`, RawJSON: "{}"}
+	gone := store.Message{MessageID: "om_gone", ChatID: "oc_a", MsgType: "text", CreateMs: 110,
+		MessagePosition: 101, SenderID: "ou_a", SenderName: "张三", Deleted: true, RawJSON: "{}"}
+	_, err = st.UpsertMessages(ctx, []store.Message{kept, gone}, 1)
+	require.NoError(t, err)
+
+	rows, err := st.ListMessages(ctx, messageQuery("oc_a", 0, 50))
+	require.NoError(t, err)
+	ids := make([]string, len(rows))
+	for i, r := range rows {
+		ids[i] = r.MessageID
+	}
+	require.ElementsMatch(t, []string{"om_kept", "om_gone"}, ids)
+}
+
+func TestThreadQuery_KeepsARecalledReply(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "t.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { st.Close() })
+	ctx := t.Context()
+	root := store.Message{MessageID: "om_root", ChatID: "oc_a", MsgType: "text", CreateMs: 100,
+		MessagePosition: 100, SenderID: "ou_a", SenderName: "张三", ThreadID: "omt_1",
+		ContentRaw: `{"text":"排期"}`, RawJSON: "{}"}
+	gone := store.Message{MessageID: "om_gone", ChatID: "oc_a", MsgType: "text", CreateMs: 110,
+		MessagePosition: -3, SenderID: "ou_b", SenderName: "李四", ThreadID: "omt_1",
+		Deleted: true, RawJSON: "{}"}
+	_, err = st.UpsertMessages(ctx, []store.Message{root, gone}, 1)
+	require.NoError(t, err)
+
+	rows, err := st.ListMessages(ctx, threadQuery("omt_1"))
+	require.NoError(t, err)
+	require.Len(t, rows, 2, "a recalled reply keeps its slot, so the pane and the reply count agree")
+}

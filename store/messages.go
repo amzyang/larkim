@@ -432,8 +432,8 @@ func (s *Store) ThreadReplyCounts(ctx context.Context, chatID string, threadIDs 
 	return out, nil
 }
 
-// ThreadGist is what a collapsed thread's one line needs: how many replies it
-// holds and the last of them. A thread is alive, so the newest reply is the
+// ThreadGist is what a collapsed thread's lines need: how many replies it
+// holds and the newest few of them. A thread is alive, so its tail is the
 // state of it — unlike a forward, which is frozen and opens with its own
 // first line.
 type ThreadGist struct {
@@ -443,32 +443,25 @@ type ThreadGist struct {
 	// in it, the root counting as their turn, or a reply named them. A thread
 	// nobody asked them about is somebody else's conversation, which is why
 	// the badge leaves replies out in the first place.
-	Waiting    bool
-	SenderID   string
-	SenderName string
-	MsgType    string
-	Content    string
-	ContentRaw string
-	RenderedAt int64
+	Waiting bool
+	// Tail is the newest replies in the list's own order, oldest first, at most
+	// as many as the caller asked for. Replies stays the whole count, so what
+	// it leaves over is what the tail is not showing.
+	Tail []Message
 }
 
-// Last is the newest reply shaped as a message, for the one-line gist the
-// summary and the quote bar share.
-func (g ThreadGist) Last() Message {
-	return Message{SenderID: g.SenderID, SenderName: g.SenderName, MsgType: g.MsgType,
-		Content: g.Content, ContentRaw: g.ContentRaw, RenderedAt: g.RenderedAt}
-}
-
-// ThreadGists answers the collapsed line of each thread named; a thread with
-// no live reply is absent. A reply is any message whose position is negative:
-// the API hands out several such sentinels, so the sign is the only thing to
-// test. The stored rows are read rather than a loaded page, which would
-// undercount a thread whose root is older than the page.
-func (s *Store) ThreadGists(ctx context.Context, threadIDs []string, self string) (map[string]ThreadGist, error) {
+// ThreadGists answers the collapsed lines of each thread named, tail of them
+// at most; a thread with no live reply is absent. A reply is any message whose
+// position is negative: the API hands out several such sentinels, so the sign
+// is the only thing to test. The stored rows are read rather than a loaded
+// page, which would undercount a thread whose root is older than the page.
+func (s *Store) ThreadGists(ctx context.Context, threadIDs []string, self string, tail int) (map[string]ThreadGist, error) {
 	out := make(map[string]ThreadGist, len(threadIDs))
 	type row struct {
-		id string
-		g  ThreadGist
+		id      string
+		replies int
+		waiting bool
+		msg     Message
 	}
 	// An empty reader marks nothing rather than everything: instr with an
 	// empty needle answers 1 on any string, the way ChatQuery.Self guards.
@@ -484,13 +477,15 @@ func (s *Store) ThreadGists(ctx context.Context, threadIDs []string, self string
 		if self != "" {
 			args = append([]any{self, self}, args...)
 		}
-		// The newest reply is the last one in the list's own order, so the
-		// window walks the canonical sort key backwards rather than taking
-		// max(id), which is the order rows were ingested in.
+		// The tail is the last few in the list's own order, so the window walks
+		// the canonical sort key backwards rather than taking max(id), which is
+		// the order rows were ingested in — then the rows come back by falling
+		// rank, so appending them lands the tail oldest first.
+		args = append(args, tail)
 		rows, err := queryAll(ctx, s.db, func(sc scanner) (row, error) {
 			var r row
-			err := sc.Scan(&r.id, &r.g.Replies, &r.g.Waiting, &r.g.SenderID, &r.g.SenderName,
-				&r.g.MsgType, &r.g.Content, &r.g.ContentRaw, &r.g.RenderedAt)
+			err := sc.Scan(&r.id, &r.replies, &r.waiting, &r.msg.SenderID, &r.msg.SenderName,
+				&r.msg.MsgType, &r.msg.Content, &r.msg.ContentRaw, &r.msg.RenderedAt)
 			return r, err
 		}, `SELECT x.thread_id, x.n, x.unread AND (`+stake+`), x.sender_id, x.sender_name,
  x.msg_type, x.content, x.content_raw, x.rendered_at FROM (
@@ -501,12 +496,17 @@ func (s *Store) ThreadGists(ctx context.Context, threadIDs []string, self string
    row_number() OVER (PARTITION BY m.thread_id ORDER BY m.create_ms DESC, m.message_position DESC, m.id DESC) AS rn
  FROM messages m LEFT JOIN read_state r ON r.message_id = m.message_id
  WHERE m.message_position < 0 AND m.deleted = 0 AND m.thread_id IN `+inClause(len(chunk))+`
-) x WHERE x.rn = 1`, args...)
+) x WHERE x.rn <= ? ORDER BY x.thread_id, x.rn DESC`, args...)
 		if err != nil {
 			return nil, err
 		}
+		// The count and the waiting flag are window functions over the whole
+		// partition, so every row of a thread carries the same pair.
 		for _, r := range rows {
-			out[r.id] = r.g
+			g := out[r.id]
+			g.Replies, g.Waiting = r.replies, r.waiting
+			g.Tail = append(g.Tail, r.msg)
+			out[r.id] = g
 		}
 	}
 	return out, nil

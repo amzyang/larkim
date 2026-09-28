@@ -105,12 +105,12 @@ func TestThreadSummary_DrawsTheEmojiItsLastReplySpelled(t *testing.T) {
 	root := store.Message{MessageID: "om_root", ChatID: "oc_a", SenderName: "孙琪", Content: "开个话题",
 		ThreadID: "omt_1", CreateMs: msgAt(23, 9, 0), RenderedAt: 1}
 	st := gistStyle(t)
-	st.threads = map[string]store.ThreadGist{"omt_1": {Replies: 1,
-		SenderID: "ou_b", SenderName: "沈知远", Content: "[了解]", RenderedAt: 1}}
+	st.threads = map[string]store.ThreadGist{"omt_1": {Replies: 1, Tail: []store.Message{
+		{SenderID: "ou_b", SenderName: "沈知远", Content: "[了解]", RenderedAt: 1}}}}
 
 	rows := renderRows([]store.Message{root}, st)
 
-	line := summaryLine(t, rows, "⤷")
+	line := summaryLine(t, rows, "沈知远")
 	require.Equal(t, 1, picSegs(line.segs))
 	require.NotContains(t, rowText([]msgRow{line}), "[了解]")
 	require.Equal(t, "omt_1", line.zones[0].open)

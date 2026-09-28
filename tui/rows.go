@@ -448,13 +448,13 @@ func blockHeads(msgs []store.Message, st msgStyle) []int {
 	day, run := "", -1
 	for i, x := range msgs {
 		d := msgDay(x.CreateMs, st.now)
-		if d != day || x.MsgType == "system" || run < 0 || !mergeable(msgs[run], x, st) {
+		if d != day || standsAlone(x) || run < 0 || !mergeable(msgs[run], x, st) {
 			run = i
 		}
 		day, heads[i] = d, run
-		// A system notice stands alone, so a sender coming back under it
-		// opens a block rather than reaching over it.
-		if x.MsgType == "system" {
+		// A notice stands alone, so a sender coming back under it opens a
+		// block rather than reaching over it.
+		if standsAlone(x) {
 			run = -1
 		}
 	}
@@ -492,9 +492,15 @@ func renderRows(msgs []store.Message, st msgStyle) []msgRow {
 			day = d
 			rows = append(rows, msgRow{text: daySeparator(d, st.width), idx: i, plain: true})
 		}
-		if x.MsgType == "system" {
+		// A notice carries no sender line, no quote, no card, no reactions
+		// and no thread summary: continuing here is what drops them all.
+		if standsAlone(x) {
 			open(i, rule)
-			rows = append(rows, systemRows(x, i, st)...)
+			if x.Deleted {
+				rows = append(rows, recallRows(x, i, st)...)
+			} else {
+				rows = append(rows, systemRows(x, i, st)...)
+			}
 			continue
 		}
 		if opensBlock {
@@ -525,8 +531,8 @@ func renderRows(msgs []store.Message, st msgStyle) []msgRow {
 		rows = append(rows, reactionRows(x, i, st, &g)...)
 		// Outermost, past the reactions: those decorate the message itself,
 		// where these lines point away from it at the answers it drew.
-		if r, ok := threadSummary(x, i, st, &g); ok {
-			rows = append(rows, r)
+		if rs, ok := threadRows(x, i, st, &g); ok {
+			rows = append(rows, rs...)
 		}
 		if r, ok := replySummary(x, i, st, &g); ok {
 			rows = append(rows, r)
@@ -657,11 +663,26 @@ func headLine(x store.Message, st msgStyle) string {
 	return strings.Join(parts, " ")
 }
 
+// standsAlone reports whether a message is a notice rather than something
+// somebody said: it takes no sender line and merges into no block.
+func standsAlone(x store.Message) bool { return x.MsgType == "system" || x.Deleted }
+
 // systemRows draw a system message the way the client does: centred and
 // muted, with no sender of its own.
 func systemRows(x store.Message, idx int, st msgStyle) []msgRow {
+	return noticeRows(flatten(x.Content), idx, st)
+}
+
+// recallRows name who took a message back. The body is not drawn: a recall
+// removes it for everybody, and the client says only that it happened.
+func recallRows(x store.Message, idx int, st msgStyle) []msgRow {
+	who := displaySender(x, st.self, st.suffix[x.SenderID])
+	return noticeRows(who+" recalled a message.", idx, st)
+}
+
+func noticeRows(text string, idx int, st msgStyle) []msgRow {
 	var rows []msgRow
-	for _, line := range wrap(stDim.Render(flatten(x.Content)), st.width-4) {
+	for _, line := range wrap(stDim.Render(text), st.width-4) {
 		rows = append(rows, msgRow{text: centre(line, st.width), idx: idx})
 	}
 	return rows
@@ -677,9 +698,6 @@ func bodyRows(x store.Message, idx int, st msgStyle, g *leads) []msgRow {
 			out = append(out, msgRow{lead: g.take(), text: l, idx: idx})
 		}
 		return out
-	}
-	if x.Deleted {
-		return text(wrap(stDim.Render("(Recalled) "+flatten(x.Content)), inner))
 	}
 	// A merged forward's summary line is its body. What lark-cli renders it
 	// into is the whole tree, tags and ISO timestamps included, which is
@@ -926,16 +944,12 @@ func segsWidth(segs []rowSeg) int {
 }
 
 // reactionRows draw the emoji a message collected, below its body the way the
-// Feishu client puts them. A recalled message keeps no reactions: the client
-// drops them with the body.
+// Feishu client puts them.
 //
 // The chips are packed by hand rather than wrapped: a picture stands in the
 // text as placeholder cells the terminal fills, and a wrap that measured them
 // as the characters they are would break one apart.
 func reactionRows(x store.Message, idx int, st msgStyle, g *leads) []msgRow {
-	if x.Deleted {
-		return nil
-	}
 	chips := pendingChips(emoji.Summary(x.ReactionsJSON, st.self), st.reacts[x.MessageID], st.self)
 	if len(chips) == 0 {
 		return nil

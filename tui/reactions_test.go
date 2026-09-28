@@ -63,7 +63,7 @@ func TestRenderRows_DropsTheReactionsOfARecalledMessage(t *testing.T) {
 	msgs := []store.Message{{MessageID: "om_a", SenderID: "ou_a", SenderName: "张三",
 		Content: "撤回前的内容", CreateMs: msgAt(23, 9, 0), RenderedAt: 1, Deleted: true, ReactionsJSON: twoReactions}}
 	out := rowText(renderRows(msgs, baseStyle()))
-	require.Contains(t, out, "(Recalled)")
+	require.Contains(t, out, "张三 recalled a message.")
 	require.NotContains(t, out, "👍", "the client drops a recalled message's reactions with its body")
 }
 

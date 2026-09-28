@@ -156,3 +156,37 @@ func TestOnKey_PendingConfirmationSwallowsTheNextKey(t *testing.T) {
 
 	assert.Equal(t, before, next2.(Model).msgIdx, "j answered the question, it did not move the cursor")
 }
+
+// A recall leaves a notice the cursor can land on, so every action needing a
+// body has to say why it will not run.
+func TestStartInsert_RefusesToQuoteARecalledMessage(t *testing.T) {
+	m, _ := recallModel(t)
+	sel := m.msgs[0]
+	sel.Deleted = true
+
+	next, _ := m.startInsert(&sel, false)
+	m = next.(Model)
+
+	assert.Equal(t, modeNormal, m.mode)
+	assert.Contains(t, m.notice, "was recalled")
+}
+
+func TestOpenPicker_RefusesToReactToARecalledMessage(t *testing.T) {
+	m, _ := recallModel(t)
+	m.msgs[0].Deleted = true
+
+	next, _ := m.openPicker()
+	m = next.(Model)
+
+	assert.Contains(t, m.notice, "was recalled")
+}
+
+func TestRunReact_RefusesARecalledMessage(t *testing.T) {
+	m, _ := recallModel(t)
+	m.msgs[0].Deleted = true
+
+	next, _ := m.runReact("zan")
+	m = next.(Model)
+
+	assert.Contains(t, m.notice, "was recalled")
+}

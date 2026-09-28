@@ -127,7 +127,35 @@ func TestRenderRows_UnrenderedAndRecalledStaySpelledOut(t *testing.T) {
 	require.Contains(t, out, "x", "text carries its own body while the rendering is pending")
 	require.Contains(t, out, "[Card]", "a body only lark-cli can read is named by its type")
 	require.NotContains(t, out, "json_card", "raw OpenAPI JSON never reaches the screen")
-	require.Contains(t, out, "(Recalled) gone")
+	require.Contains(t, out, "孙琪 recalled a message.")
+	require.NotContains(t, out, "gone", "a recall takes the body back from everybody, the reader included")
+}
+
+// The client draws a recall the way it draws a system notice: centred, with
+// the sender named in the line rather than above it.
+func TestRenderRows_ARecallOfTheReadersOwnSaysYou(t *testing.T) {
+	st := baseStyle()
+	msgs := []store.Message{{MessageID: "om_1", SenderID: st.self, SenderName: "林岚",
+		Content: "gone", Deleted: true, CreateMs: msgAt(23, 9, 0), RenderedAt: 1}}
+	out := rowText(renderRows(msgs, st))
+	require.Contains(t, out, "You recalled a message.")
+	require.NotContains(t, out, "林岚", "the reader is named the way the client names them")
+}
+
+// A notice between two of one sender's messages ends the block above it, so
+// the sender coming back after it introduces themselves again.
+func TestRenderRows_ARecallSplitsTheBlockAroundIt(t *testing.T) {
+	msgs := []store.Message{
+		{MessageID: "om_1", SenderID: "ou_a", SenderName: "孙琪", MsgType: "text",
+			ContentRaw: `{"text":"before"}`, CreateMs: msgAt(23, 9, 0)},
+		{MessageID: "om_2", SenderID: "ou_a", SenderName: "孙琪", Deleted: true,
+			CreateMs: msgAt(23, 9, 1), RenderedAt: 1},
+		{MessageID: "om_3", SenderID: "ou_a", SenderName: "孙琪", MsgType: "text",
+			ContentRaw: `{"text":"after"}`, CreateMs: msgAt(23, 9, 2)},
+	}
+	out := rowText(renderRows(msgs, baseStyle()))
+	require.Equal(t, 3, strings.Count(out, "孙琪"),
+		"a head line on either side of the notice, and the notice naming them itself")
 }
 
 func TestRenderRows_BadgesOnlyAnObservedEdit(t *testing.T) {

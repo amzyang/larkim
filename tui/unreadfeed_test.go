@@ -89,6 +89,21 @@ func TestGatherUnread_ASectionRunsFromItsAnchorToTheNewest(t *testing.T) {
 	require.NotContains(t, idsOf(msgs), "om_p0", "nothing from before the anchor")
 }
 
+// The panel is the chat's own rows from the anchor on, so it tells the same
+// story the chat does — recall included.
+func TestGatherUnread_ASectionKeepsARecallInTheBacklog(t *testing.T) {
+	st, chats := backlog(t)
+	gone := say(t, st, "om_p3", "oc_platform", 400, "说错了")
+	gone.Deleted = true
+	_, err := st.UpsertMessages(t.Context(), []store.Message{gone}, 2)
+	require.NoError(t, err)
+
+	_, msgs, _, err := gatherUnread(t.Context(), st, "ou_me", chats, nil)
+	require.NoError(t, err)
+
+	require.Contains(t, idsOf(msgs), "om_p3")
+}
+
 func TestUnreadAnchors_TakeInMutedChats(t *testing.T) {
 	_, chats := backlog(t)
 	chats[1].Muted = true

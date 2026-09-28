@@ -207,8 +207,9 @@ func gatherUnread(ctx context.Context, st *store.Store, self string, chats []sto
 		if err != nil {
 			return nil, nil, msgMeta{}, err
 		}
-		// A section whose every message has since been recalled has nothing
-		// left to show, and an empty rule is not a section.
+		// An anchor can be a thread reply, which the page folds into a root
+		// older than the anchor and so outside the window. Nothing is left to
+		// draw then, and an empty rule is not a section.
 		if len(rows) == 0 {
 			continue
 		}

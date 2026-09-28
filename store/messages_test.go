@@ -1,6 +1,7 @@
 package store
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -145,12 +146,58 @@ func TestThreadGists_CountsTheRepliesAndTakesTheNewest(t *testing.T) {
 	}, 1)
 	require.NoError(t, err)
 
-	got, err := s.ThreadGists(ctx, []string{"omt_1", "omt_2"}, "ou_me")
+	got, err := s.ThreadGists(ctx, []string{"omt_1", "omt_2"}, "ou_me", 5)
 	require.NoError(t, err)
 	require.Equal(t, 2, got["omt_1"].Replies, "the root is not a reply, and a recalled one is gone")
-	require.Equal(t, "王五", got["omt_1"].SenderName, "a thread is alive, so the newest word is its state")
-	require.Equal(t, `{"text":"1234"}`, got["omt_1"].ContentRaw)
+	require.Equal(t, []string{"李四", "王五"}, senders(got["omt_1"].Tail),
+		"the tail runs oldest first, the way the chat itself does")
+	require.Equal(t, `{"text":"1234"}`, got["omt_1"].Tail[1].ContentRaw)
 	require.NotContains(t, got, "omt_2", "a thread with nothing in it has no line to draw from here")
+}
+
+func TestThreadGists_TakesTheNewestRepliesUpToTheTail(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	var rows []Message
+	for i := range 7 {
+		rows = append(rows, Message{MessageID: fmt.Sprintf("om_r%d", i), ChatID: "oc_a",
+			MsgType: "text", CreateMs: int64(100 + i), MessagePosition: int64(-1 - i),
+			ThreadID: "omt_1", SenderName: fmt.Sprintf("p%d", i), RawJSON: "{}"})
+	}
+	_, err := s.UpsertMessages(ctx, rows, 1)
+	require.NoError(t, err)
+
+	got, err := s.ThreadGists(ctx, []string{"omt_1"}, "ou_me", 5)
+	require.NoError(t, err)
+	require.Equal(t, 7, got["omt_1"].Replies, "the count is the whole thread, not what the tail holds")
+	require.Equal(t, []string{"p2", "p3", "p4", "p5", "p6"}, senders(got["omt_1"].Tail),
+		"the newest five, oldest first")
+}
+
+func TestThreadGists_TailStopsAtWhatTheThreadHolds(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	_, err := s.UpsertMessages(ctx, []Message{
+		{MessageID: "om_r1", ChatID: "oc_a", MsgType: "text", CreateMs: 110, MessagePosition: -1,
+			ThreadID: "omt_1", SenderName: "李四", RawJSON: "{}"},
+		{MessageID: "om_r2", ChatID: "oc_a", MsgType: "text", CreateMs: 120, MessagePosition: -3,
+			ThreadID: "omt_1", SenderName: "王五", RawJSON: "{}"},
+	}, 1)
+	require.NoError(t, err)
+
+	got, err := s.ThreadGists(ctx, []string{"omt_1"}, "ou_me", 5)
+	require.NoError(t, err)
+	require.Equal(t, []string{"李四", "王五"}, senders(got["omt_1"].Tail),
+		"a thread shorter than the tail hides nothing")
+}
+
+// senders names a tail's repliers in the order it holds them.
+func senders(tail []Message) []string {
+	out := make([]string, 0, len(tail))
+	for _, r := range tail {
+		out = append(out, r.SenderName)
+	}
+	return out
 }
 
 func TestThreadGists_WaitingOnlyForAThreadIAmIn(t *testing.T) {
@@ -174,8 +221,9 @@ func TestThreadGists_WaitingOnlyForAThreadIAmIn(t *testing.T) {
 		markUnreadMsg(t, s, r.MessageID)
 	}
 
-	got, err := s.ThreadGists(ctx, []string{"omt_1", "omt_2", "omt_3"}, "ou_me")
+	got, err := s.ThreadGists(ctx, []string{"omt_1", "omt_2", "omt_3"}, "ou_me", 5)
 	require.NoError(t, err)
+	require.Len(t, got["omt_1"].Tail, 2, "a thread of two hands both back")
 	require.True(t, got["omt_1"].Waiting, "I took a turn in it")
 	require.True(t, got["omt_2"].Waiting, "it called my name")
 	require.False(t, got["omt_3"].Waiting,
@@ -190,19 +238,19 @@ func TestThreadGists_ASilencedOrReadReplyIsNotWaiting(t *testing.T) {
 	_, err := s.UpsertMessages(ctx, []Message{quiet}, 1)
 	require.NoError(t, err)
 	markUnreadMsg(t, s, "om_quiet")
-	got, err := s.ThreadGists(ctx, []string{"omt_1"}, "ou_me")
+	got, err := s.ThreadGists(ctx, []string{"omt_1"}, "ou_me", 5)
 	require.NoError(t, err)
 	require.True(t, got["omt_1"].Waiting)
 
 	_, err = s.db.ExecContext(ctx, `UPDATE messages SET silenced = 1 WHERE message_id = 'om_quiet'`)
 	require.NoError(t, err)
-	got, _ = s.ThreadGists(ctx, []string{"omt_1"}, "ou_me")
+	got, _ = s.ThreadGists(ctx, []string{"omt_1"}, "ou_me", 5)
 	require.False(t, got["omt_1"].Waiting, "silence is what unreadCounted already says")
 
 	require.NoError(t, s.MarkThreadRead(ctx, "omt_1", 5000))
 	_, err = s.db.ExecContext(ctx, `UPDATE messages SET silenced = 0 WHERE message_id = 'om_quiet'`)
 	require.NoError(t, err)
-	got, _ = s.ThreadGists(ctx, []string{"omt_1"}, "ou_me")
+	got, _ = s.ThreadGists(ctx, []string{"omt_1"}, "ou_me", 5)
 	require.False(t, got["omt_1"].Waiting, "and a settled reply is settled whether it was silenced or not")
 }
 

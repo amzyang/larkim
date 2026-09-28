@@ -43,8 +43,11 @@ func (m Model) openPicker() (tea.Model, tea.Cmd) {
 		return m.notify("a forwarded message belongs to its own chat", true), nil
 	}
 	x, ok := m.selected()
-	if !ok || x.Deleted {
+	if !ok {
 		return m.notify("select a message to react to", true), nil
+	}
+	if x.Deleted {
+		return m.notify("that message was recalled", true), nil
 	}
 	// A send still on its way carries a local id Feishu has never seen. Its
 	// body may not be rendered yet either, but that is no reason to refuse:

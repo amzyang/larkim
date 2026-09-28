@@ -2253,6 +2253,10 @@ func (m Model) startInsert(replyTo *store.Message, inThread bool) (tea.Model, te
 	if replyTo != nil && m.onForwardedChild() {
 		return m.notify("a forwarded message belongs to its own chat", true), nil
 	}
+	// A recall leaves a notice, not a message: there is nothing left to quote.
+	if replyTo != nil && replyTo.Deleted {
+		return m.notify("that message was recalled", true), nil
+	}
 	m.mode = modeInsert
 	m.focus = paneInput
 	side := m.feedAnswer(replyTo)
@@ -2470,6 +2474,9 @@ func (m Model) runReact(arg string) (tea.Model, tea.Cmd) {
 	x, ok := m.selected()
 	if !ok {
 		return m.notify("select a message to react to", true), nil
+	}
+	if x.Deleted {
+		return m.notify("that message was recalled", true), nil
 	}
 	// A key first, because that is what the : line writes when the reader
 	// completes an emoji, and it is the one spelling no search can answer.

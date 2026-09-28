@@ -89,6 +89,10 @@ const (
 	messagePageSize  = 200
 	anchoredPageSize = 2000 // from a search hit onwards
 	threadPageSize   = 500
+	// threadTailSize is how many of a thread's newest replies stand under its
+	// root in the flow, the client's own count. What is left over is named on
+	// the line heading them rather than drawn.
+	threadTailSize = 5
 	// watchEvery is a fallback: an embedded syncer nudges the watch as soon
 	// as a tick ends, and against a daemon this interval is the only signal
 	// there is.
@@ -258,16 +262,18 @@ func loadMeta(ctx context.Context, st *store.Store, self string, msgs []store.Me
 	if err != nil {
 		return msgMeta{}, err
 	}
-	gists, err := st.ThreadGists(ctx, threads, self)
+	gists, err := st.ThreadGists(ctx, threads, self, threadTailSize)
 	if err != nil {
 		return msgMeta{}, err
 	}
 	// A summary line names somebody the page itself may never have heard from:
-	// the last reply of a collapsed thread, and every child a forward previews.
+	// the tail of a collapsed thread, and every child a forward previews.
 	// Both are gathered before the lookup, because the lookup is what gives
 	// them a suffix and a picture.
 	for _, g := range gists {
-		addPerson(g.SenderID)
+		for _, r := range g.Tail {
+			addPerson(r.SenderID)
+		}
 	}
 	for _, f := range forwards {
 		for _, c := range f.Preview {
@@ -417,13 +423,15 @@ func loadChats(d Deps) tea.Cmd {
 // included. Scrolling to the top raises limit — see growMessages.
 func messageQuery(chatID string, sinceMs int64, limit int) store.MessageQuery {
 	// Replies are folded into their root's own line, so the page neither
-	// draws them nor spends its limit on them.
+	// draws them nor spends its limit on them. A recall is not folded: the
+	// client leaves a notice where the message stood, so the row comes along
+	// and renderRows turns it into one.
 	if sinceMs > 0 {
 		return store.MessageQuery{ChatID: chatID, SinceMs: sinceMs, Limit: limit,
-			ExcludeThreadReplies: true}
+			ExcludeThreadReplies: true, IncludeDeleted: true}
 	}
 	return store.MessageQuery{ChatID: chatID, Desc: true, Limit: limit,
-		ExcludeThreadReplies: true}
+		ExcludeThreadReplies: true, IncludeDeleted: true}
 }
 
 func loadMessages(d Deps, chatID string, sinceMs int64, limit int) tea.Cmd {
@@ -459,10 +467,16 @@ func loadMessages(d Deps, chatID string, sinceMs int64, limit int) tea.Cmd {
 	}
 }
 
+// threadQuery is a thread's whole reply list, root included. A recalled reply
+// keeps its slot so the rows and the thread's reply count agree.
+func threadQuery(threadID string) store.MessageQuery {
+	return store.MessageQuery{ThreadID: threadID, Limit: threadPageSize, IncludeDeleted: true}
+}
+
 func loadThread(d Deps, threadID string) tea.Cmd {
 	return func() tea.Msg {
 		ctx := context.Background()
-		rows, err := d.Store.ListMessages(ctx, store.MessageQuery{ThreadID: threadID, Limit: threadPageSize})
+		rows, err := d.Store.ListMessages(ctx, threadQuery(threadID))
 		if err != nil {
 			return errMsg{err}
 		}

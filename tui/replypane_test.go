@@ -68,8 +68,8 @@ func TestRenderRows_AThreadRootDrawsItsThreadRatherThanItsReplies(t *testing.T) 
 	x := theAnswered()
 	x.ThreadID = "omt_1"
 	st := replyStyle(5)
-	st.threads = map[string]store.ThreadGist{"omt_1": {Replies: 2, SenderName: "李四",
-		MsgType: "text", ContentRaw: `{"text":"收到"}`}}
+	st.threads = map[string]store.ThreadGist{"omt_1": aThread(2,
+		aReply("ou_b", "李四", "先"), aReply("ou_b", "李四", "收到"))}
 
 	out := rowText(renderRows([]store.Message{x}, st))
 

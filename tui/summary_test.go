@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -287,25 +288,51 @@ func theRoot() store.Message {
 // threadStyle renders a page holding one thread root.
 func threadStyle(g store.ThreadGist) msgStyle {
 	st := baseStyle()
-	if g.Replies > 0 || g.SenderName != "" {
+	if g.Replies > 0 || len(g.Tail) > 0 {
 		st.threads = map[string]store.ThreadGist{"omt_1": g}
 	}
 	return st
 }
 
-func TestRenderRows_AThreadRootShowsItsLastReply(t *testing.T) {
-	// A thread is alive, so the newest word is where it stands — the
-	// opposite of a forward, which is frozen and opens with its first.
-	out := rowText(renderRows([]store.Message{theRoot()}, threadStyle(store.ThreadGist{
-		Replies: 23, SenderName: "李四", MsgType: "text", ContentRaw: `{"text":"1234"}`})))
+// aThread is a gist of n replies showing the tail given, which is how the
+// store hands one over: the count is the whole thread, the tail its end.
+func aThread(n int, tail ...store.Message) store.ThreadGist {
+	return store.ThreadGist{Replies: n, Tail: tail}
+}
 
-	require.Contains(t, out, "⤷ 23 replies")
-	require.Contains(t, out, "李四: 1234")
+// aReply is one line of a tail.
+func aReply(id, name, text string) store.Message {
+	return store.Message{SenderID: id, SenderName: name, MsgType: "text",
+		ContentRaw: `{"text":"` + text + `"}`}
+}
+
+func TestRenderRows_AThreadRootShowsItsRepliesOldestFirst(t *testing.T) {
+	// The tail runs the way the chat itself does, so the newest word is the
+	// line nearest whatever comes next.
+	out := rowText(renderRows([]store.Message{theRoot()}, threadStyle(aThread(3,
+		aReply("ou_b", "李四", "先"), aReply("ou_c", "王五", "再"), aReply("ou_b", "李四", "1234")))))
+
+	require.Contains(t, out, "⤷ 3 replies")
+	require.Less(t, strings.Index(out, "李四: 先"), strings.Index(out, "王五: 再"))
+	require.Less(t, strings.Index(out, "王五: 再"), strings.Index(out, "李四: 1234"))
+}
+
+func TestRenderRows_AThreadHeadNamesTheRepliesItIsNotShowing(t *testing.T) {
+	// The client's own wording: the head says what is folded away, and the
+	// five lines under it say the rest.
+	tail := make([]store.Message, 0, threadTailSize)
+	for i := range threadTailSize {
+		tail = append(tail, aReply("ou_b", "李四", fmt.Sprintf("第%d条", i)))
+	}
+	out := rowText(renderRows([]store.Message{theRoot()}, threadStyle(aThread(13, tail...))))
+
+	require.Contains(t, out, "⤷ View earlier 8 replies")
+	require.NotContains(t, out, "13 replies", "the count of what is shown says nothing")
+	require.Contains(t, out, "李四: 第4条")
 }
 
 func TestRenderRows_AThreadSummaryNamesTheReplierWithTheirSuffix(t *testing.T) {
-	st := threadStyle(store.ThreadGist{Replies: 2, SenderID: "ou_b", SenderName: "张三",
-		MsgType: "text", ContentRaw: `{"text":"收到"}`})
+	st := threadStyle(aThread(2, aReply("ou_b", "张三", "收到")))
 	st.suffix = map[string]string{"ou_b": "02"}
 
 	require.Contains(t, rowText(renderRows([]store.Message{theRoot()}, st)), "张三02: 收到",
@@ -317,20 +344,18 @@ func TestRenderRows_AThreadSummaryNamesTheReplierWithTheirSuffix(t *testing.T) {
 // the root, and standing there the face parts the count from the name, so the
 // line needs no dot of its own.
 func TestRenderRows_AThreadSummaryWearsTheRepliersFaceBesideTheirName(t *testing.T) {
-	rows := renderRows([]store.Message{theRoot()}, threadStyle(store.ThreadGist{Replies: 2,
-		SenderID: "ou_b", SenderName: "李四", MsgType: "text", ContentRaw: `{"text":"收到"}`}))
+	rows := renderRows([]store.Message{theRoot()}, threadStyle(aThread(1, aReply("ou_b", "李四", "收到"))))
 
 	last := rows[len(rows)-1]
 	require.Empty(t, last.text, "a picture in the line puts the whole of it in pieces")
-	require.Equal(t, "⤷ 2 replies "+ansi.Strip(avatarBlock("ou_b", "李四", gistCols))+" 李四: 收到",
-		ansi.Strip(segText(last)))
+	require.Equal(t, ansi.Strip(avatarBlock("ou_b", "李四", gistCols))+" 李四: 收到",
+		ansi.Strip(segText(last)), "a reply line opens where the head does, with no step of its own")
 	require.NotEqual(t, avatarBlock("ou_b", "李四", avatarWidth), last.lead.box,
 		"the lead column stays the root's")
 }
 
 func TestRenderRows_AThreadSummaryPlacesTheRepliersPictureInTheLine(t *testing.T) {
-	st := threadStyle(store.ThreadGist{Replies: 2, SenderID: "ou_b", SenderName: "李四",
-		MsgType: "text", ContentRaw: `{"text":"收到"}`})
+	st := threadStyle(aThread(1, aReply("ou_b", "李四", "收到")))
 	st.avatars = map[string]string{"ou_b": "users/ou_b.png"}
 	// The root's own disc comes through here too; only the replier's is read.
 	st.disc = func(file, id, name string, cols, rows int) picture {
@@ -352,18 +377,18 @@ func TestRenderRows_AThreadSummaryPlacesTheRepliersPictureInTheLine(t *testing.T
 			require.True(t, x.pic.disc, "clipped to the circle the client draws")
 		}
 	}
-	require.Equal(t, 1, faces, "one face, the newest replier's")
+	require.Equal(t, 1, faces, "one face per reply, the replier's own")
 }
 
-func TestRenderRows_TheThreadCountSitsUnderTheBody(t *testing.T) {
+func TestRenderRows_TheThreadFoldSitsUnderTheBody(t *testing.T) {
 	// The root's own words come first, the way the client stacks a topic:
-	// the line folds the replies away, not the message it hangs under.
+	// the fold hangs the replies under the message, not over it.
 	lines := strings.Split(strings.TrimRight(rowText(renderRows([]store.Message{theRoot()},
-		threadStyle(store.ThreadGist{Replies: 23, SenderName: "李四", MsgType: "text",
-			ContentRaw: `{"text":"1234"}`}))), "\n"), "\n")
+		threadStyle(aThread(23, aReply("ou_b", "李四", "1234"))))), "\n"), "\n")
 
-	require.Equal(t, "hello", strings.TrimSpace(lines[len(lines)-2]))
-	require.Contains(t, lines[len(lines)-1], "⤷ 23 replies")
+	require.Equal(t, "hello", strings.TrimSpace(lines[len(lines)-3]))
+	require.Contains(t, lines[len(lines)-2], "⤷ View earlier 22 replies")
+	require.Contains(t, lines[len(lines)-1], "李四: 1234")
 }
 
 func TestRenderRows_AThreadRootWithNoReplyStillGetsItsLine(t *testing.T) {
@@ -375,8 +400,7 @@ func TestRenderRows_AThreadRootWithNoReplyStillGetsItsLine(t *testing.T) {
 }
 
 func TestRenderRows_AThreadSummaryIsNotDrawnInsideItsOwnPane(t *testing.T) {
-	st := threadStyle(store.ThreadGist{Replies: 23, SenderName: "李四", MsgType: "text",
-		ContentRaw: `{"text":"1234"}`})
+	st := threadStyle(aThread(23, aReply("ou_b", "李四", "1234")))
 	st.inFrame = true
 
 	out := rowText(renderRows([]store.Message{theRoot()}, st))
@@ -391,11 +415,10 @@ func TestRenderRows_AForwardedThreadRootShowsTheThreadInTheChatAndTheForwardInTh
 	x := theBundle()
 	x.ThreadID, x.MessagePosition = "omt_1", 3
 	st := bundleStyle(fromGroup(kids("张三", "预算定了")...))
-	st.threads = map[string]store.ThreadGist{"omt_1": {Replies: 18, SenderName: "李四",
-		MsgType: "text", ContentRaw: `{"text":"收到"}`}}
+	st.threads = map[string]store.ThreadGist{"omt_1": aThread(18, aReply("ou_b", "李四", "收到"))}
 
 	inChat := rowText(renderRows([]store.Message{x}, st))
-	require.Contains(t, inChat, "⤷ 18 replies")
+	require.Contains(t, inChat, "⤷ View earlier 17 replies")
 	require.NotContains(t, inChat, "Chat History")
 
 	st.inFrame = true
@@ -404,9 +427,11 @@ func TestRenderRows_AForwardedThreadRootShowsTheThreadInTheChatAndTheForwardInTh
 	require.NotContains(t, inFrame, "replies")
 }
 
-func TestRenderRows_AThreadSummaryCarriesAnOpenZone(t *testing.T) {
-	rows := renderRows([]store.Message{theRoot()}, threadStyle(store.ThreadGist{Replies: 2,
-		SenderName: "李四", MsgType: "text", ContentRaw: `{"text":"1234"}`}))
+func TestRenderRows_EveryLineOfAThreadFoldCarriesAnOpenZone(t *testing.T) {
+	// The head no differently from the reply under it: whichever line the
+	// reader presses, the pane that opens is the thread's.
+	rows := renderRows([]store.Message{theRoot()},
+		threadStyle(aThread(2, aReply("ou_b", "李四", "先"), aReply("ou_c", "王五", "1234"))))
 
 	zoned := 0
 	for _, r := range rows {
@@ -417,9 +442,10 @@ func TestRenderRows_AThreadSummaryCarriesAnOpenZone(t *testing.T) {
 			zoned++
 			require.Equal(t, rightThread, z.openKind)
 			require.Equal(t, "omt_1", z.open)
+			require.Equal(t, 0, r.idx, "a reply line is the root's, so the cursor still reaches it")
 		}
 	}
-	require.Equal(t, 1, zoned)
+	require.Equal(t, 3, zoned, "the head and both replies")
 }
 
 func TestMessageQuery_FoldsThreadRepliesOutOfTheChatFlow(t *testing.T) {
@@ -430,10 +456,11 @@ func TestMessageQuery_FoldsThreadRepliesOutOfTheChatFlow(t *testing.T) {
 }
 
 func TestRenderRows_AThreadSummaryCarriesTheUnreadDot(t *testing.T) {
-	waiting := store.ThreadGist{Replies: 3, Waiting: true, SenderName: "李四",
-		MsgType: "text", ContentRaw: `{"text":"1234"}`}
+	waiting := aThread(3, aReply("ou_b", "李四", "先"), aReply("ou_c", "王五", "1234"))
+	waiting.Waiting = true
 	rows := renderRows([]store.Message{theRoot()}, threadStyle(waiting))
-	require.Contains(t, marks(rows), "●", "the replies are off the page, so this line speaks for them")
+	require.Equal(t, 1, strings.Count(marks(rows), "●"), "the fold speaks once, not once per reply")
+	require.Equal(t, "●", markOf(summaryLine(t, rows, "⤷")), "and it is the head that speaks")
 
 	quiet := waiting
 	quiet.Waiting = false
@@ -447,8 +474,9 @@ func TestClearBlockDots_LeavesAThreadSummaryLit(t *testing.T) {
 	// nobody has seen.
 	m := sized(140, 36)
 	m.msgsBase = []store.Message{theRoot()}
-	m.meta.threads = map[string]store.ThreadGist{"omt_1": {Replies: 3, Waiting: true,
-		SenderName: "李四", MsgType: "text", ContentRaw: `{"text":"1234"}`}}
+	waiting := aThread(3, aReply("ou_b", "李四", "1234"))
+	waiting.Waiting = true
+	m.meta.threads = map[string]store.ThreadGist{"omt_1": waiting}
 	m.applyOutbox()
 	m.msgIdx = 0
 	m.clearDotsAtCursor()
