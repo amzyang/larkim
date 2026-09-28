@@ -2,7 +2,6 @@ package tui
 
 import (
 	"encoding/json"
-	"time"
 
 	"github.com/amzyang/larkim/store"
 	"github.com/amzyang/larkim/sync"
@@ -16,6 +15,11 @@ import (
 // too; an event carries the same fields larkim will render it from; anything
 // else is named by its type until the rendering lands and replaces this.
 func pendingText(msgType, contentRaw, mentionsJSON string) string {
+	// An event is read by the renderer that will write this message's content,
+	// so the stand-in and the rendering that replaces it say the same thing.
+	if sync.LocalCalendar(msgType) {
+		return sync.CalendarText(msgType, contentRaw)
+	}
 	switch msgType {
 	case "text":
 		var v struct {
@@ -27,10 +31,6 @@ func pendingText(msgType, contentRaw, mentionsJSON string) string {
 	case "post":
 		if text := postText(contentRaw); text != "" {
 			return text
-		}
-	case "calendar", "share_calendar_event", "general_calendar":
-		if c, ok := sync.ParseCalendar(contentRaw); ok {
-			return c.Text(msgType, time.Local)
 		}
 	}
 	return msgTypeLabel(msgType)

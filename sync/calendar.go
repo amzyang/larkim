@@ -133,8 +133,10 @@ func calendarPlaceholder(msgType string) string {
 	return "[Event]"
 }
 
-// calendarText renders a calendar message from the body on disk.
-func calendarText(msgType, contentRaw string) string {
+// CalendarText renders a calendar message from the body on disk. It is what
+// the message's content will hold, so a reader standing in for a rendering
+// that has not landed yet says the same thing this will.
+func CalendarText(msgType, contentRaw string) string {
 	c, ok := ParseCalendar(contentRaw)
 	if !ok {
 		return calendarPlaceholder(msgType)

@@ -72,7 +72,7 @@ func TestCalendarText_NamesTheEventTheWayTheChatListDoes(t *testing.T) {
 
 func TestCalendarText_IsTheBareLabelWithNothingToSay(t *testing.T) {
 	require.Equal(t, "[Shared Event]", Calendar{}.Text("share_calendar_event", cst))
-	require.Equal(t, "[Event]", calendarText("calendar", "not json"))
+	require.Equal(t, "[Event]", CalendarText("calendar", "not json"))
 }
 
 func TestCalendarText_LeavesTheShareTokenOut(t *testing.T) {
@@ -80,7 +80,7 @@ func TestCalendarText_LeavesTheShareTokenOut(t *testing.T) {
 	// content, the search index or the screen.
 	const raw = `{"summary":"项目对齐","start_time":"1788143400000","end_time":"1788145200000",` +
 		`"open_calendar_id":"cal_peer","open_event_id":"evt_b_0","share_token":"cse_secret"}`
-	assert.NotContains(t, calendarText("share_calendar_event", raw), "cse_secret")
+	assert.NotContains(t, CalendarText("share_calendar_event", raw), "cse_secret")
 	c, ok := ParseCalendar(raw)
 	require.True(t, ok)
 	assert.NotContains(t, c.Text("share_calendar_event", cst), "cse_secret")

@@ -42,7 +42,7 @@ func localText(m store.PendingLocalMessage) string {
 	case m.MsgType == "video_chat":
 		return videoChatText(m.ContentRaw)
 	case LocalCalendar(m.MsgType):
-		return calendarText(m.MsgType, m.ContentRaw)
+		return CalendarText(m.MsgType, m.ContentRaw)
 	}
 	return systemText(m)
 }
