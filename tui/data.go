@@ -48,6 +48,11 @@ type Deps struct {
 	// it when nil; tests replace it to keep the real `open` out of the run.
 	// Several targets are opened together rather than one by one.
 	OpenURL func(targets []string, background bool) error
+	// Pace is the gap the applink queue leaves between two navigations, from
+	// config's applink_pace_ms. New fills a zero with applink.DefaultPace;
+	// tests set it small so a queue-walking case does not pay the real gap
+	// per chat. :set retunes it for the session.
+	Pace time.Duration
 	// Env reads the environment the external editor is named in. New fills it
 	// when nil; tests replace it to keep a real editor out of the run.
 	Env func(string) string
@@ -249,6 +254,26 @@ func loadMeta(ctx context.Context, st *store.Store, self string, msgs []store.Me
 	for _, p := range parents {
 		addPerson(p.SenderID)
 	}
+	forwards, err := st.ForwardGists(ctx, bundles)
+	if err != nil {
+		return msgMeta{}, err
+	}
+	gists, err := st.ThreadGists(ctx, threads, self)
+	if err != nil {
+		return msgMeta{}, err
+	}
+	// A summary line names somebody the page itself may never have heard from:
+	// the last reply of a collapsed thread, and every child a forward previews.
+	// Both are gathered before the lookup, because the lookup is what gives
+	// them a suffix and a picture.
+	for _, g := range gists {
+		addPerson(g.SenderID)
+	}
+	for _, f := range forwards {
+		for _, c := range f.Preview {
+			addPerson(c.SenderID)
+		}
+	}
 	contacts, err := st.ContactsByIDs(ctx, ids)
 	if err != nil {
 		return msgMeta{}, err
@@ -275,22 +300,9 @@ func loadMeta(ctx context.Context, st *store.Store, self string, msgs []store.Me
 	if err != nil {
 		return msgMeta{}, err
 	}
-	forwards, err := st.ForwardGists(ctx, bundles)
-	if err != nil {
-		return msgMeta{}, err
-	}
-	gists, err := st.ThreadGists(ctx, threads, self)
-	if err != nil {
-		return msgMeta{}, err
-	}
 	replies, err := st.ReplyGists(ctx, msgIDs)
 	if err != nil {
 		return msgMeta{}, err
-	}
-	// A reply's own author is named on the root's summary line, and they may
-	// never have spoken on the page itself.
-	for _, g := range gists {
-		addPerson(g.SenderID)
 	}
 	return msgMeta{suffix: suffix, people: people, avatars: avatars, res: res, docs: docs,
 		parents: parents, forwards: forwards, threads: gists, replies: replies}, nil

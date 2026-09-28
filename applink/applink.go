@@ -19,10 +19,17 @@ import (
 	"github.com/amzyang/larkim/larkcli"
 )
 
-// Pace is the gap between two applinks. The client renders the chat it was
-// walked onto before it sends a receipt, so firing faster than it draws loses
-// the chats it was hurried through.
-const Pace = 250 * time.Millisecond
+// DefaultPaceMS is the gap in milliseconds between two applinks. The client
+// renders the chat it was walked onto before it sends a receipt, so firing
+// faster than it draws loses the chats it was hurried through. A client that
+// has been sitting in the background draws slower than the active app and
+// nothing on macOS reports the difference without cgo, so the default has to
+// cover the slow case; config's applink_pace_ms is how a reader narrows it.
+const DefaultPaceMS = 1000
+
+// DefaultPace is DefaultPaceMS as a duration, for the callers that have no
+// configuration to read.
+const DefaultPace = DefaultPaceMS * time.Millisecond
 
 // openTimeout bounds one invocation of the launcher.
 const openTimeout = 20 * time.Second

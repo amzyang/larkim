@@ -29,7 +29,7 @@
 
 ## applink 队列
 
-所有 applink 经 `applinkQueue`（`tui/applinkq.go`）排队，一条自续的 `tea.Tick` 链按 `applink.Pace` 逐条投出。read gate 一次压一个，批量清理一次压一批，两者共用这一条队列。
+所有 applink 经 `applinkQueue`（`tui/applinkq.go`）排队，一条自续的 `tea.Tick` 链按 `Model.pace` 逐条投出。read gate 一次压一个，批量清理一次压一批，两者共用这一条队列。
 
 理由是写者收敛：客户端只能停在一个会话里，两个写者同时投会把还在飞的那次导航顶掉。队列因此是节奏的唯一 owner。
 
@@ -39,6 +39,10 @@
 - **失败**：逐条计数，批量清理收尾时报一次；单条不报——那是导航的副产物，不是读者请求打开的东西。
 
 `tea.Tick` 的计时从构造时起，所以 tick 与 `open` 同批挂出时，间隔量的是两次 `open` 开始之间，`applink.Open` 同步等 `open` 返回的那段也算在内。
+
+间隔取 `config.ApplinkPaceMS`（毫秒整数，默认 `applink.DefaultPaceMS`），经 `Deps.Pace` 进 `Model.pace`；`larkim read-all` 直接读同一个配置项。单位写在键名里而不用 duration 串，因为这是唯一一个要按机器手调的值，`:set applink_pace_ms=1500` 比 `1500ms` 少一层。值挂在 `Model` 而不是队列上，所以 `:set` 的改动落到正在跑的那条链上而不是下一次。
+
+**没有前台/后台自适应。** 客户端在前台时画得快、后台时画得慢，但 `open -g` 从不把它抬到前台，三个入口又都在终端持有焦点时触发，所以任何 frontmost 探测都只会答「后台」；`lsappinfo` 不报遮挡与隐藏（`isHidden`、`visible` 皆为空），`CGWindowList` 要 cgo，与 `CGO_ENABLED=0` 冲突。默认值因此按慢的那一侧取。
 
 ## 批量的两个谓词
 

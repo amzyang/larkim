@@ -152,6 +152,15 @@ func TestReactionChip_NamesUpToThreeReactors(t *testing.T) {
 	require.Equal(t, chipped("👍⋮张三, 李四, 王五"), ansi.Strip(segs[0].text))
 }
 
+func TestReactionChip_TellsSameNamedReactorsApart(t *testing.T) {
+	st := namedStyle()
+	st.people["ou_z"] = "张三"
+	st.suffix = map[string]string{"ou_a": "01", "ou_z": "02"}
+	segs := reactionChip(reacted("THUMBSUP", 2, "ou_a", "ou_z"), st)
+	require.Equal(t, chipped("👍⋮张三01, 张三02"), ansi.Strip(segs[0].text),
+		"two 张三 on one chip read as two people")
+}
+
 func TestReactionChip_CountsTheRestAsPlusN(t *testing.T) {
 	segs := reactionChip(reacted("THUMBSUP", 9, "ou_a", "ou_b", "ou_c", "ou_d"), namedStyle())
 	require.Equal(t, chipped("👍⋮张三, 李四, 王五 +6"), ansi.Strip(segs[0].text),

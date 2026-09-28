@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/amzyang/larkim/ai"
 	"github.com/amzyang/larkim/config"
@@ -39,7 +40,8 @@ func (a *App) runTUI(_ *cobra.Command, _ []string) error {
 	// with a working directory of its own, so the config it names is
 	// the absolute path this process actually loaded.
 	deps := tui.Deps{Store: st, Client: client, Version: a.Version, AIContext: a.cfg.AI.Context,
-		DataDir: a.cfg.DataDir, ConfigPath: config.Resolve(a.configPath), Log: a.logger()}
+		DataDir: a.cfg.DataDir, ConfigPath: config.Resolve(a.configPath), Log: a.logger(),
+		Pace: time.Duration(a.cfg.ApplinkPaceMS) * time.Millisecond}
 	if key := os.Getenv(a.cfg.AI.APIKeyEnv); key != "" {
 		deps.AI = ai.New(key, a.cfg.AI.Model)
 	}

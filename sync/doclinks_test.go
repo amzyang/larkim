@@ -1,6 +1,7 @@
 package sync
 
 import (
+	"encoding/json"
 	"strconv"
 	"testing"
 	"time"
@@ -96,6 +97,30 @@ func TestResolveDocLinks_ReadsLinksFromBodiesStoredBeforeTitlesWere(t *testing.T
 
 	v, _, _ = s.Store.GetState(ctx, KeyDocScanID)
 	require.NotEmpty(t, v, "the cursor moves so later ticks cost an empty query")
+}
+
+// A card's rendering keeps a link's label and drops its target, and this one
+// was never rendered at all, so the URL exists only in the json it arrived
+// with.
+func TestResolveDocLinks_ReadsALinkThatOnlyTheCardBodyCarries(t *testing.T) {
+	s, f, clk := newSyncer(t)
+	ctx := t.Context()
+	f.Docs["docx/AbC123"] = larkcli.DocTitle{Type: "docx", Title: "排期"}
+	body := `{"schema":"2.0","body":{"tag":"body","property":{"elements":[` +
+		`{"tag":"markdown","property":{"elements":[{"tag":"link","property":{"content":"排期",` +
+		`"url":{"url":"https://example.feishu.cn/docx/AbC123"}}}]}}]}}}`
+	raw, err := json.Marshal(map[string]any{"json_card": body, "card_schema": 2})
+	require.NoError(t, err)
+	_, err = s.Store.UpsertMessages(ctx, []store.Message{{MessageID: "om_card", ChatID: "oc_team",
+		MsgType: "interactive", CreateMs: 10, ContentRaw: string(raw), RawJSON: "{}"}}, 1)
+	require.NoError(t, err)
+
+	_, err = s.resolveDocLinks(ctx, clk.t)
+	require.NoError(t, err)
+
+	labels, _ := s.Store.DocLabels(ctx)
+	require.Equal(t, "排期", labels["docx/AbC123"].Title,
+		"the card was never rendered, and its link still reached the titles")
 }
 
 func TestResolveDocLinks_WaitsBeforeAskingAgainAboutADocumentLeftUnanswered(t *testing.T) {

@@ -44,6 +44,27 @@ func TestListChats_LeavesAChatWhereAThreadReplyLandsIt(t *testing.T) {
 		"a thread reply does not pull its chat past a newer main-flow message")
 }
 
+func TestListChats_CarriesTheLastSendersAccount(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	require.NoError(t, s.EnsureChat(ctx, "oc_group", 1))
+	_, err := s.UpsertMessages(ctx, []Message{msgAt("om_1", "oc_group", 800, 1, "排期定了")}, 1)
+	require.NoError(t, err)
+	require.NoError(t, s.UpsertContacts(ctx, []Contact{{OpenID: "ou_a"}}, 1))
+	require.NoError(t, s.SetContactDetails(ctx, []string{"ou_a"},
+		[]ContactDetail{{OpenID: "ou_a", Name: "张三", EnterpriseEmail: "zhangsan01@example.com"}}, 1))
+
+	chats, err := s.ListChats(ctx, ChatQuery{})
+	require.NoError(t, err)
+	require.Len(t, chats, 1)
+	require.Equal(t, "01", chats[0].LastSenderSuffix(),
+		"the summary line names the sender, so it disambiguates them like the title does")
+
+	one, err := s.GetChat(ctx, "oc_group")
+	require.NoError(t, err)
+	require.Equal(t, "01", one.LastSenderSuffix(), "one chat reads the same as the listing")
+}
+
 func TestListChats_ThreadRootCountsAsMainFlow(t *testing.T) {
 	s := openTest(t)
 	ctx := t.Context()

@@ -74,6 +74,17 @@ func TestReplyGist_NamesWhatHasNoText(t *testing.T) {
 	require.Equal(t, "设备版本周报 「兜底」", replyGist(card), "a card quotes what it is called")
 }
 
+func TestReplyGist_ReadsACardLarkCliNeverRendered(t *testing.T) {
+	pending := weeklyCard
+	pending.Content, pending.RenderedAt = "", 0
+	require.Equal(t, "设备版本周报 「兜底」", replyGist(pending),
+		"a card carries its own words, so waiting on a rendering says nothing")
+
+	shapeless := pending
+	shapeless.ContentRaw = `{"json_card":"{}"}`
+	require.Equal(t, "[Card]", replyGist(shapeless), "a card with nothing in it is named by its type")
+}
+
 func TestOnInsertKey_CtrlRDropsTheQuoteAndKeepsTheDraft(t *testing.T) {
 	m := replying(120, 30, store.Message{MessageID: "om_x", SenderName: "林岚", Content: "hey", RenderedAt: 1}, true)
 	m.input.SetValue("half a sentence")

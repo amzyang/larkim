@@ -303,6 +303,58 @@ func TestRenderRows_AThreadRootShowsItsLastReply(t *testing.T) {
 	require.Contains(t, out, "李四: 1234")
 }
 
+func TestRenderRows_AThreadSummaryNamesTheReplierWithTheirSuffix(t *testing.T) {
+	st := threadStyle(store.ThreadGist{Replies: 2, SenderID: "ou_b", SenderName: "张三",
+		MsgType: "text", ContentRaw: `{"text":"收到"}`})
+	st.suffix = map[string]string{"ou_b": "02"}
+
+	require.Contains(t, rowText(renderRows([]store.Message{theRoot()}, st)), "张三02: 收到",
+		"the line names one of two 张三, so it says which")
+}
+
+// The client marks who is talking in a thread with their face. It stands
+// against the name rather than out in the lead column: the column belongs to
+// the root, and standing there the face parts the count from the name, so the
+// line needs no dot of its own.
+func TestRenderRows_AThreadSummaryWearsTheRepliersFaceBesideTheirName(t *testing.T) {
+	rows := renderRows([]store.Message{theRoot()}, threadStyle(store.ThreadGist{Replies: 2,
+		SenderID: "ou_b", SenderName: "李四", MsgType: "text", ContentRaw: `{"text":"收到"}`}))
+
+	last := rows[len(rows)-1]
+	require.Empty(t, last.text, "a picture in the line puts the whole of it in pieces")
+	require.Equal(t, "⤷ 2 replies "+ansi.Strip(avatarBlock("ou_b", "李四", gistCols))+" 李四: 收到",
+		ansi.Strip(segText(last)))
+	require.NotEqual(t, avatarBlock("ou_b", "李四", avatarWidth), last.lead.box,
+		"the lead column stays the root's")
+}
+
+func TestRenderRows_AThreadSummaryPlacesTheRepliersPictureInTheLine(t *testing.T) {
+	st := threadStyle(store.ThreadGist{Replies: 2, SenderID: "ou_b", SenderName: "李四",
+		MsgType: "text", ContentRaw: `{"text":"收到"}`})
+	st.avatars = map[string]string{"ou_b": "users/ou_b.png"}
+	// The root's own disc comes through here too; only the replier's is read.
+	st.disc = func(file, id, name string, cols, rows int) picture {
+		if id == "ou_b" {
+			require.Equal(t, "users/ou_b.png", file)
+			require.Equal(t, gistCols, cols, "a face on a summary line is drawn narrow, like an emoji")
+			require.Equal(t, 1, rows, "the line is one row, so the face is one row")
+		}
+		return picture{path: file, cols: cols, rows: rows, disc: true}
+	}
+
+	last := renderRows([]store.Message{theRoot()}, st)
+	seg := last[len(last)-1]
+	require.Zero(t, seg.lead.pic.cols, "the picture is in the line, not in the lead column")
+	var faces int
+	for _, x := range seg.segs {
+		if x.pic.cols > 0 {
+			faces++
+			require.True(t, x.pic.disc, "clipped to the circle the client draws")
+		}
+	}
+	require.Equal(t, 1, faces, "one face, the newest replier's")
+}
+
 func TestRenderRows_TheThreadCountSitsUnderTheBody(t *testing.T) {
 	// The root's own words come first, the way the client stacks a topic:
 	// the line folds the replies away, not the message it hangs under.

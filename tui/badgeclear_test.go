@@ -3,6 +3,7 @@ package tui
 import (
 	"path/filepath"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/amzyang/larkim/larkcli"
@@ -23,14 +24,14 @@ func opened(url string, background bool) openCall {
 	return openCall{[]string{url}, background}
 }
 
+// testPace is the gap a queue-walking case ticks on. drain waits the real
+// thing out, so the configured default would cost a second per chat.
+const testPace = time.Millisecond
+
 // drain runs a command tree and feeds every message it yields back through
 // Update, until nothing is left. It is what walks the applink queue to its
 // end: the chain advances on a tick, so a test that only ran the first
 // command would see the write and none of the applinks behind it.
-//
-// Each step costs one applink.Pace of real time, the way the chat poll's
-// tests pay for their own tick. The package has no clock to fake and the
-// alternative is a seam that exists for nothing but this.
 func drain(t *testing.T, m Model, cmd tea.Cmd) Model {
 	t.Helper()
 	queue := []tea.Cmd{cmd}
@@ -70,7 +71,7 @@ func badgeModel(t *testing.T) (Model, *store.Store, *[]openCall) {
 	require.NoError(t, st.SetReadStatus(ctx, "om_a", &unread, 100, 0))
 
 	var calls []openCall
-	m := New(Deps{Store: st, Self: "ou_me", Client: larkcli.NewFake(), OpenURL: func(targets []string, background bool) error {
+	m := New(Deps{Store: st, Self: "ou_me", Client: larkcli.NewFake(), Pace: testPace, OpenURL: func(targets []string, background bool) error {
 		calls = append(calls, openCall{targets, background})
 		return nil
 	}})

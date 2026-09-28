@@ -47,6 +47,17 @@ func plainRow(c store.Chat, unread int64, w int) (string, string) {
 	return ansi.Strip(r.top), ansi.Strip(r.bottom)
 }
 
+func TestChatSummary_TellsSameNamedSendersApart(t *testing.T) {
+	c := store.Chat{ChatID: "oc_a", ChatMode: "group", LastMessageID: "om_1",
+		LastSenderID: "ou_a", LastSenderName: "张三", LastSenderAccount: "zhangsan01@example.com",
+		LastMsgType: "text", LastContent: "排期定了", LastRenderedAt: 1}
+	require.Equal(t, "张三01: 排期定了", ansi.Strip(summaryText(c)),
+		"the line names the sender, so it disambiguates them like the title does")
+
+	c.LastDeleted = true
+	require.Equal(t, "张三01 recalled a message", ansi.Strip(summaryText(c)))
+}
+
 func TestChatTime_BucketsByCalendarDay(t *testing.T) {
 	for _, tc := range []struct {
 		name string

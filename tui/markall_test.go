@@ -37,7 +37,7 @@ func sweepModel(t *testing.T, n int) (Model, *store.Store, *[]openCall, *error) 
 
 	var calls []openCall
 	var openErr error
-	m := New(Deps{Store: st, Self: "ou_me", Client: larkcli.NewFake(), OpenURL: func(targets []string, background bool) error {
+	m := New(Deps{Store: st, Self: "ou_me", Client: larkcli.NewFake(), Pace: testPace, OpenURL: func(targets []string, background bool) error {
 		calls = append(calls, openCall{targets, background})
 		return openErr
 	}})
@@ -209,7 +209,7 @@ func TestMarkAllRead_EscapeStopsTheWalk(t *testing.T) {
 
 	// A chain already armed cannot be recalled, only ignored: its tick
 	// arrives carrying the generation esc left behind.
-	drain(t, m, applinkTick(m.applinks.gen-1))
+	drain(t, m, m.applinkTick(m.applinks.gen-1))
 	require.Len(t, *calls, 1, "a tick from the abandoned chain opens nothing")
 }
 

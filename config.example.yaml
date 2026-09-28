@@ -30,6 +30,13 @@ slow_path_every: 10m
 # Re-list the chats active in the last week so edits and recalls land.
 repair_every: 6h
 
+# Gap in milliseconds between two lark:// navigations of the Feishu desktop
+# client. The client sends its read receipt once it has drawn the chat it was
+# walked onto, so too small a gap loses the chats a sweep hurried it through —
+# a client sitting in the background draws slower than the active app.
+# `:set applink_pace_ms=<n>` retunes it for one TUI session.
+applink_pace_ms: 1000
+
 # Messages matching any rule keep their place in the chat but carry no unread
 # badge and never move their chat up the list. A rule's fields are an AND, an
 # omitted field matches anything, and a rule with no field set is refused.

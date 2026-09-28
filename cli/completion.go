@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/amzyang/larkim/config"
 	"github.com/amzyang/larkim/store"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -81,6 +82,27 @@ func completeNoFileDefault(cmd *cobra.Command) {
 // would be dropped by the shell before it was ever shown.
 func hasPrefixFold(s, prefix string) bool {
 	return s != "" && strings.HasPrefix(strings.ToLower(s), strings.ToLower(prefix))
+}
+
+// completeConfigKey offers what --set takes, each candidate already carrying
+// its = so the next keystroke is the value. NoSpace keeps the cursor there:
+// the shell would otherwise end the word and the value would land as a
+// separate argument.
+//
+// The candidates come from the config struct's own yaml tags, so a key added
+// to the file is offered here without a second list to remember.
+func completeConfigKey(_ *cobra.Command, _ []string, prefix string) ([]cobra.Completion, cobra.ShellCompDirective) {
+	// A value already typed is the reader's, not ours to narrow.
+	if _, _, typed := strings.Cut(prefix, "="); typed {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+	var out []cobra.Completion
+	for _, key := range config.Keys() {
+		if hasPrefixFold(key, prefix) {
+			out = append(out, key+"=")
+		}
+	}
+	return out, cobra.ShellCompDirectiveNoFileComp | cobra.ShellCompDirectiveNoSpace
 }
 
 // completeFromStore answers a completion out of the database, or answers

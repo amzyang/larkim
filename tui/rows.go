@@ -857,7 +857,7 @@ func reactors(c emoji.Chip, st msgStyle) string {
 		case id == st.self:
 			names = append(names, "You")
 		case st.people[id] != "":
-			names = append(names, st.people[id])
+			names = append(names, personName(st.people[id], st.suffix[id]))
 		}
 	}
 	rest := max(0, c.Count-len(names))

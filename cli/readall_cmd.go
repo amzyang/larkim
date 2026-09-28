@@ -56,7 +56,7 @@ func (a *App) readAllCmd() *cobra.Command {
 					// The client renders the chat it was walked onto before
 					// it sends a receipt, so a walk faster than it draws
 					// loses the chats it was hurried through.
-					time.Sleep(applink.Pace)
+					time.Sleep(time.Duration(a.cfg.ApplinkPaceMS) * time.Millisecond)
 				}
 				if err := a.open([]string{applink.ChatLink(c.ChatID, c.Position)}, true); err != nil {
 					// Best effort behind a durable write: a refusal costs one

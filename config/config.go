@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"time"
 
+	"github.com/amzyang/larkim/applink"
 	"github.com/amzyang/larkim/store"
 	"gopkg.in/yaml.v3"
 )
@@ -34,8 +36,13 @@ type Config struct {
 	SlowPathEvery time.Duration `yaml:"slow_path_every"`
 	// RepairEvery is the interval of the 7-day edit/recall repair pass.
 	RepairEvery time.Duration `yaml:"repair_every"`
-	Resources   Resources     `yaml:"resources"`
-	AI          AI            `yaml:"ai"`
+	// ApplinkPaceMS is the gap in milliseconds the applink queue leaves
+	// between two lark:// navigations. Milliseconds rather than a duration
+	// string because this is the one key a reader retunes by hand, from the
+	// TUI's :set and from --set, where 1500 beats "1500ms".
+	ApplinkPaceMS int       `yaml:"applink_pace_ms"`
+	Resources     Resources `yaml:"resources"`
+	AI            AI        `yaml:"ai"`
 	// Silence keeps matching messages out of the unread badge and out of the
 	// chat list's ordering; see docs/silence/PRD.md.
 	Silence store.SilenceRules `yaml:"silence"`
@@ -68,6 +75,7 @@ func Default() Config {
 		ChatsRefreshEvery: 10 * time.Minute,
 		SlowPathEvery:     10 * time.Minute,
 		RepairEvery:       6 * time.Hour,
+		ApplinkPaceMS:     applink.DefaultPaceMS,
 		Resources:         Resources{MaxBytes: 50 << 20},
 		AI:                AI{Model: "claude-opus-5", APIKeyEnv: "ANTHROPIC_API_KEY", Context: 80},
 	}
@@ -91,18 +99,32 @@ func Resolve(path string) string {
 }
 
 // Load reads path over the defaults; a missing file yields the defaults.
-func Load(path string) (Config, error) {
+func Load(path string) (Config, error) { return LoadWith(path, nil) }
+
+// LoadWith reads path over the defaults and then the sets over that. Each set
+// is a key=value in the file's own vocabulary, so a key keeps whatever type
+// and spelling it has there.
+//
+// The sets land before normalisation rather than on the returned Config, so
+// the PollInterval floor and the silence rules judge the value that will
+// actually be used.
+func LoadWith(path string, sets []string) (Config, error) {
 	cfg := Default()
 	path = Resolve(path)
 	b, err := os.ReadFile(path)
-	if errors.Is(err, os.ErrNotExist) {
-		return cfg, nil
-	}
-	if err != nil {
+	switch {
+	case errors.Is(err, os.ErrNotExist):
+		// A missing file is the default configuration, and --set still applies
+		// to it: the flag is the way to run without writing one.
+	case err != nil:
 		return cfg, err
+	default:
+		if err := yaml.Unmarshal(b, &cfg); err != nil {
+			return cfg, fmt.Errorf("%s: %w", path, err)
+		}
 	}
-	if err := yaml.Unmarshal(b, &cfg); err != nil {
-		return cfg, fmt.Errorf("%s: %w", path, err)
+	if err := applySets(&cfg, sets); err != nil {
+		return cfg, err
 	}
 	cfg.DataDir = expandHome(cfg.DataDir)
 	cfg.LarkCLIPath = expandHome(cfg.LarkCLIPath)
@@ -113,6 +135,70 @@ func Load(path string) (Config, error) {
 		return cfg, fmt.Errorf("%s: %w", path, err)
 	}
 	return cfg, nil
+}
+
+// applySets decodes each key=value as a one-key YAML document over cfg, so a
+// value is parsed by the same decoder the file goes through — 3s is a
+// duration, ~/x expands, 1000 is a number — rather than by a second
+// hand-written parser that would drift from it.
+//
+// KnownFields is on here and off for the file: a mistyped flag is a mistake
+// the reader is making right now and wants named, while a file may carry keys
+// a past version knew.
+func applySets(cfg *Config, sets []string) error {
+	for _, set := range sets {
+		key, value, ok := strings.Cut(set, "=")
+		if !ok {
+			return fmt.Errorf("--set %s: want key=value", set)
+		}
+		key = strings.TrimSpace(key)
+		if key == "" {
+			return fmt.Errorf("--set %s: want key=value", set)
+		}
+		dec := yaml.NewDecoder(strings.NewReader(setDoc(key, value)))
+		dec.KnownFields(true)
+		if err := dec.Decode(cfg); err != nil {
+			return fmt.Errorf("--set %s: %w", key, err)
+		}
+	}
+	return nil
+}
+
+// setDoc nests a dotted key into the document shape the file uses, so
+// resources.max_bytes reaches the same field the file's two lines do.
+func setDoc(key, value string) string {
+	parts := strings.Split(key, ".")
+	var b strings.Builder
+	for i, p := range parts[:len(parts)-1] {
+		fmt.Fprintf(&b, "%s%s:\n", strings.Repeat("  ", i), p)
+	}
+	// The value goes in verbatim; quoting it here would turn every number and
+	// duration into a string.
+	fmt.Fprintf(&b, "%s%s: %s\n", strings.Repeat("  ", len(parts)-1), parts[len(parts)-1], value)
+	return b.String()
+}
+
+// Keys names every key a file or a --set may carry, dotted through the nested
+// sections, in declaration order. Completion offers this list.
+func Keys() []string { return keysOf(reflect.TypeFor[Config](), "") }
+
+func keysOf(t reflect.Type, prefix string) []string {
+	var out []string
+	for f := range t.NumField() {
+		tag, _, _ := strings.Cut(t.Field(f).Tag.Get("yaml"), ",")
+		if tag == "" || tag == "-" {
+			continue
+		}
+		key := prefix + tag
+		// Only a struct has keys under it; a slice of them, like silence, is
+		// one value written whole.
+		if ft := t.Field(f).Type; ft.Kind() == reflect.Struct && ft != reflect.TypeFor[time.Time]() {
+			out = append(out, keysOf(ft, key+".")...)
+			continue
+		}
+		out = append(out, key)
+	}
+	return out
 }
 
 // DBPath is the SQLite file inside DataDir.

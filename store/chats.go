@@ -88,10 +88,17 @@ type Chat struct {
 	// PeerAvatarPath is the p2p peer's downloaded avatar; the chat's own
 	// avatar columns stay empty for p2p.
 	PeerAvatarPath string `json:"peer_avatar_path,omitempty"`
+	// LastSenderAccount is the tenant account address of whoever sent the
+	// newest message, for the same disambiguation the title gets. Empty for a
+	// bot and for anyone whose identity lookup has not run.
+	LastSenderAccount string `json:"last_sender_account,omitempty"`
 }
 
 // PeerSuffix disambiguates same-named colleagues in a p2p chat's title.
 func (c Chat) PeerSuffix() string { return AccountSuffix(c.PeerAccount) }
+
+// LastSenderSuffix does the same for the name on the chat's summary line.
+func (c Chat) LastSenderSuffix() string { return AccountSuffix(c.LastSenderAccount) }
 
 // AvatarFile is the chat's picture relative to the data dir: its own for a
 // group, the peer's for p2p. Empty when there is none to draw, including the
@@ -121,7 +128,14 @@ const chatColumns = `c.chat_id, c.name, c.description, c.chat_mode, c.chat_statu
  c.last_message_id, c.last_message_ms, c.last_sender_id, c.last_sender_name, c.last_sender_type, c.last_msg_type, c.last_content, c.last_content_raw, c.last_mentions_json, c.last_reactions_json, c.last_rendered_at, c.last_deleted, c.last_unsilenced_ms,
  c.muted, c.mute_checked_at,
  COALESCE(NULLIF(ct.enterprise_email, ''), ct.email, '') AS peer_account,
- COALESCE(ct.avatar_path, '') AS peer_avatar_path`
+ COALESCE(ct.avatar_path, '') AS peer_avatar_path,
+ COALESCE(NULLIF(lct.enterprise_email, ''), lct.email, '') AS last_sender_account`
+
+// chatFrom is what chatColumns selects from: the chat, the peer it names for
+// a p2p title, and whoever spoke last, who is named on the summary line.
+const chatFrom = ` FROM chats c
+ LEFT JOIN contacts ct ON ct.open_id = c.p2p_target_id
+ LEFT JOIN contacts lct ON lct.open_id = c.last_sender_id `
 
 // chatDest are the scan targets for chatColumns, in order.
 func chatDest(c *Chat) []any {
@@ -129,7 +143,7 @@ func chatDest(c *Chat) []any {
 		&c.AvatarURL, &c.AvatarPath, &c.CursorMs, &c.BackfillDoneAt, &c.HistoryFloorMs, &c.MembersSyncedAt, &c.MembersTruncated, &c.FirstSeenAt, &c.LastSeenAt, &c.LeftAt, &c.SyncError, &c.RepairedAt, &c.RawJSON,
 		&c.LastMessageID, &c.LastMessageMs, &c.LastSenderID, &c.LastSenderName, &c.LastSenderType, &c.LastMsgType, &c.LastContent, &c.LastContentRaw, &c.LastMentionsJSON, &c.LastReactionsJSON, &c.LastRenderedAt, &c.LastDeleted, &c.LastUnsilencedMs,
 		&c.Muted, &c.MuteCheckedAt,
-		&c.PeerAccount, &c.PeerAvatarPath}
+		&c.PeerAccount, &c.PeerAvatarPath, &c.LastSenderAccount}
 }
 
 func scanChat(sc scanner) (Chat, error) {
@@ -256,7 +270,7 @@ func (s *Store) SetMuteStatus(ctx context.Context, muted map[string]bool, unknow
 
 // GetChat loads one chat.
 func (s *Store) GetChat(ctx context.Context, chatID string) (Chat, error) {
-	row := s.db.QueryRowContext(ctx, `SELECT `+chatColumns+` FROM chats c LEFT JOIN contacts ct ON ct.open_id = c.p2p_target_id WHERE c.chat_id = ?`, chatID)
+	row := s.db.QueryRowContext(ctx, `SELECT `+chatColumns+chatFrom+`WHERE c.chat_id = ?`, chatID)
 	c, err := scanChat(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return c, ErrNotFound
@@ -366,8 +380,8 @@ func (s *Store) ListChats(ctx context.Context, q ChatQuery) ([]Chat, error) {
 	tail += "ORDER BY c.last_unsilenced_ms DESC, c.last_message_ms DESC, c.name, c.chat_id LIMIT ?"
 	args = append(args, limit)
 	return queryAll(ctx, s.db, scanListChat,
-		`SELECT `+chatColumns+`, COALESCE(u.n, 0) AS unread_count, COALESCE(u.at_me, 0) AS at_me
- FROM chats c LEFT JOIN contacts ct ON ct.open_id = c.p2p_target_id `+tail, args...)
+		`SELECT `+chatColumns+`, COALESCE(u.n, 0) AS unread_count, COALESCE(u.at_me, 0) AS at_me`+
+			chatFrom+tail, args...)
 }
 
 // MessageCountsByChat counts the stored messages of every chat that has one,
@@ -377,7 +391,7 @@ func (s *Store) MessageCountsByChat(ctx context.Context) (map[string]int64, erro
 }
 
 func (s *Store) queryChats(ctx context.Context, tail string, args ...any) ([]Chat, error) {
-	return queryAll(ctx, s.db, scanChat, `SELECT `+chatColumns+` FROM chats c LEFT JOIN contacts ct ON ct.open_id = c.p2p_target_id `+tail, args...)
+	return queryAll(ctx, s.db, scanChat, `SELECT `+chatColumns+chatFrom+tail, args...)
 }
 
 // FindChatsByName returns chats whose name equals ref ignoring whitespace and case.

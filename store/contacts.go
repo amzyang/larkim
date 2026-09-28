@@ -23,7 +23,6 @@ type Contact struct {
 	AvatarPath      string `json:"avatar_path,omitempty"`
 	DetailCheckedAt int64  `json:"detail_checked_at,omitempty"`
 	UpdatedAt       int64  `json:"updated_at"`
-	RawJSON         string `json:"-"`
 }
 
 // AvatarFile is the contact's picture relative to the data dir. Empty when
@@ -31,16 +30,16 @@ type Contact struct {
 // "download gave up".
 func (c Contact) AvatarFile() string { return avatarFile(c.AvatarPath) }
 
-const contactColumns = `open_id, name, email, enterprise_email, department, is_cross_tenant, is_bot, p2p_chat_id, avatar_url, avatar_path, detail_checked_at, updated_at, raw_json`
+const contactColumns = `open_id, name, email, enterprise_email, department, is_cross_tenant, is_bot, p2p_chat_id, avatar_url, avatar_path, detail_checked_at, updated_at`
 
 // contactUpsertColumns is contactColumns without the ones only the detail
 // backfill writes.
-const contactUpsertColumns = `open_id, name, email, is_bot, p2p_chat_id, avatar_url, avatar_path, updated_at, raw_json`
+const contactUpsertColumns = `open_id, name, email, is_bot, p2p_chat_id, avatar_url, avatar_path, updated_at`
 
 func scanContact(sc scanner) (Contact, error) {
 	var c Contact
 	err := sc.Scan(&c.OpenID, &c.Name, &c.Email, &c.EnterpriseEmail, &c.Department, &c.IsCrossTenant,
-		&c.IsBot, &c.P2PChatID, &c.AvatarURL, &c.AvatarPath, &c.DetailCheckedAt, &c.UpdatedAt, &c.RawJSON)
+		&c.IsBot, &c.P2PChatID, &c.AvatarURL, &c.AvatarPath, &c.DetailCheckedAt, &c.UpdatedAt)
 	return c, err
 }
 
@@ -75,21 +74,20 @@ func (s *Store) UpsertContacts(ctx context.Context, contacts []Contact, now int6
 		return err
 	}
 	defer tx.Rollback()
-	stmt, err := tx.PrepareContext(ctx, `INSERT INTO contacts (`+contactUpsertColumns+`) VALUES (?,?,?,?,?,?,?,?,?)
+	stmt, err := tx.PrepareContext(ctx, `INSERT INTO contacts (`+contactUpsertColumns+`) VALUES (?,?,?,?,?,?,?,?)
  ON CONFLICT(open_id) DO UPDATE SET
    name = CASE WHEN excluded.name <> '' THEN excluded.name ELSE contacts.name END,
    email = CASE WHEN excluded.email <> '' THEN excluded.email ELSE contacts.email END,
    is_bot = excluded.is_bot,
    p2p_chat_id = CASE WHEN excluded.p2p_chat_id <> '' THEN excluded.p2p_chat_id ELSE contacts.p2p_chat_id END,
    avatar_url = CASE WHEN excluded.avatar_url <> '' THEN excluded.avatar_url ELSE contacts.avatar_url END,
-   updated_at = excluded.updated_at,
-   raw_json = CASE WHEN excluded.raw_json <> '' THEN excluded.raw_json ELSE contacts.raw_json END`)
+   updated_at = excluded.updated_at`)
 	if err != nil {
 		return err
 	}
 	defer stmt.Close()
 	for _, c := range contacts {
-		if _, err := stmt.ExecContext(ctx, c.OpenID, c.Name, c.Email, c.IsBot, c.P2PChatID, c.AvatarURL, c.AvatarPath, now, c.RawJSON); err != nil {
+		if _, err := stmt.ExecContext(ctx, c.OpenID, c.Name, c.Email, c.IsBot, c.P2PChatID, c.AvatarURL, c.AvatarPath, now); err != nil {
 			return err
 		}
 	}
@@ -209,7 +207,7 @@ func (s *Store) ChatMembers(ctx context.Context, chatID string) ([]Contact, erro
 		        COALESCE(c.name, ''), COALESCE(c.email, ''), COALESCE(c.enterprise_email, ''),
 		        COALESCE(c.department, ''), COALESCE(c.is_cross_tenant, 0), COALESCE(c.is_bot, 0),
 		        COALESCE(c.p2p_chat_id, ''), COALESCE(c.avatar_url, ''), COALESCE(c.avatar_path, ''),
-		        COALESCE(c.detail_checked_at, 0), COALESCE(c.updated_at, 0), COALESCE(c.raw_json, '')
+		        COALESCE(c.detail_checked_at, 0), COALESCE(c.updated_at, 0)
 		 FROM chat_members m LEFT JOIN contacts c ON c.open_id = m.member_id
 		 WHERE m.chat_id = ?
 		 ORDER BY CASE WHEN COALESCE(c.name, '') = '' THEN 1 ELSE 0 END, c.name, m.member_id`, chatID)

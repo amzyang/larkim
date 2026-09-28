@@ -99,6 +99,22 @@ func gistSegs(head, gist string, w int, style lipgloss.Style, pic func(key strin
 	return append([]rowSeg{{text: head}}, segs...)
 }
 
+// faceSegs is gistSegs with a picture wedged between the head and the gist,
+// and with the gist always in pieces: the picture is there whether or not the
+// words spell an emoji, so there is no string path left to fall back to.
+func faceSegs(head string, face rowSeg, gist string, w int, style lipgloss.Style, pic func(key string) picture) []rowSeg {
+	segs := emojiSegs(gist, pic, func(t string) string { return style.Render(t) })
+	if segs == nil {
+		segs = []rowSeg{{text: style.Render(gist)}}
+	}
+	segs = truncateSegs(segs, w-lipgloss.Width(head)-segsWidth([]rowSeg{face}))
+	out := make([]rowSeg, 0, len(segs)+2)
+	if head != "" {
+		out = append(out, rowSeg{text: head})
+	}
+	return append(append(out, face), segs...)
+}
+
 // padSegs is padBetween for a line in pieces: the line cut to what the mark at
 // the far edge leaves it, then the spaces that push that mark to the edge.
 func padSegs(segs []rowSeg, right string, w int) []rowSeg {

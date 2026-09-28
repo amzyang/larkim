@@ -12,11 +12,12 @@ import (
 type argKind int
 
 const (
-	argNone   argKind = iota // no argument, or free text nothing narrows
-	argChat                  // a chat in the list
-	argTarget                // a chat or a person, the pair :send takes
-	argEmoji                 // the reaction set
-	argEnum                  // the fixed words in command.enum
+	argNone    argKind = iota // no argument, or free text nothing narrows
+	argChat                   // a chat in the list
+	argTarget                 // a chat or a person, the pair :send takes
+	argEmoji                  // the reaction set
+	argEnum                   // the fixed words in command.enum
+	argSetting                // an option in the :set registry
 )
 
 // command is one : command. This table is what runCommand dispatches on, what
@@ -55,6 +56,7 @@ var commands = []command{
 	{name: "mentions", aliases: []string{"at"}, help: "every message that named you"},
 	{name: "unread", aliases: []string{"u"}, help: "every chat still waiting, parted by chat — the Unread row of the list"},
 	{name: "read-all", help: "take every chat as read and clear the Feishu client's red dots"},
+	{name: "set", arg: argSetting, usage: "[<option>[=<value>]]", help: "read or retune a runtime option for this session"},
 	{name: "preview", help: "toggle the composer's preview"},
 	{name: "sync", help: "sync now"},
 	{name: "q", aliases: []string{"quit"}, help: "quit"},

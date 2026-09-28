@@ -42,6 +42,18 @@ func TestRenderThreadRow_TitledByTheRootAndAnsweredByTheNewest(t *testing.T) {
 	assert.Contains(t, bottom, "李四: 收到")
 }
 
+func TestRenderThreadRow_TellsSameNamedSendersApart(t *testing.T) {
+	feed := threadFeed("group",
+		spoke("om_root", "ou_a", "张三", "发版流程", 100),
+		spoke("om_last", "ou_b", "张三", "收到", 200))
+	feed.RootAccount, feed.LastAccount = "zhangsan01@example.com", "zhangsan02@example.com"
+
+	_, top, bottom := threadLines(feed, 38)
+
+	assert.Contains(t, top, "张三01: 发版流程")
+	assert.Contains(t, bottom, "张三02: 收到")
+}
+
 // The clock is the newest reply's: where the thread stands is when it was
 // last answered, not when it was opened.
 func TestRenderThreadRow_CountsTheUnreadRepliesAndClocksTheLastOne(t *testing.T) {

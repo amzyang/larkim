@@ -104,3 +104,11 @@ func names(cs []command) []string {
 	}
 	return out
 }
+
+func TestResolveCommand_SeReachesSearchSendAndSet(t *testing.T) {
+	// Three commands share it, so it stands for none of them; :s is still
+	// :search, because an exact alias beats every longer name.
+	_, ok := resolveCommand("se")
+	require.False(t, ok)
+	require.Equal(t, "send, search, set", commandNames(commandsWithPrefix("se")))
+}

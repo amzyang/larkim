@@ -529,8 +529,13 @@ type ReplyGist struct {
 // replyRoots walks up from each id to the topmost message the store holds:
 // the one answering nothing, or the one whose parent was never synced, which
 // is as far as anything here can see.
+//
+// A thread reply is not a seed. Feishu sets parent_id on it as well, so it
+// answers a message of the flow by the same column an ordinary reply does —
+// but it is read in its thread's own frame, and the tree it would name is one
+// it is not drawn in.
 const replyRoots = `WITH RECURSIVE up(seed, id, parent) AS (
- SELECT message_id, message_id, reply_to FROM messages WHERE message_id IN %s
+ SELECT message_id, message_id, reply_to FROM messages WHERE message_id IN %s AND message_position >= 0
  UNION ALL
  SELECT u.seed, m.message_id, m.reply_to FROM messages m JOIN up u ON m.message_id = u.parent
 ) SELECT u.seed, u.id FROM up u
@@ -541,6 +546,10 @@ const replyRoots = `WITH RECURSIVE up(seed, id, parent) AS (
 // answers to the conversation, and a recall in the middle must not orphan
 // them.
 //
+// The descent stops at a thread: a reply inside one carries parent_id like any
+// other, so without the sign of the position the walk crosses into the thread
+// and counts what the thread's own collapsed line already counts.
+//
 // The recursive step repeats what its join already implies — a message id is
 // never empty — because messages_reply_to is a partial index and SQLite will
 // only reach for it where the query proves the row is in it. Without the
@@ -550,6 +559,7 @@ const replyTree = `WITH RECURSIVE down(root, id) AS (
  SELECT message_id, message_id FROM messages WHERE message_id IN %s
  UNION
  SELECT d.root, m.message_id FROM messages m JOIN down d ON m.reply_to = d.id AND m.reply_to <> ''
+  AND m.message_position >= 0
 )`
 
 // ReplyGists answers, for each message named, the tree it sits in: the root

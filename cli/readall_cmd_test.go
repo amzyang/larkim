@@ -37,7 +37,9 @@ func readAllApp(t *testing.T, n int, openErr error) (*App, *bytes.Buffer, *[][]s
 
 	var out bytes.Buffer
 	var walked [][]string
-	a := &App{Out: &out, Err: &out, jsonOut: true, cfg: config.Config{DataDir: dir},
+	// A pace of 1ms rather than the configured second: what these cases are
+	// about is which chats get walked, not how far apart.
+	a := &App{Out: &out, Err: &out, jsonOut: true, cfg: config.Config{DataDir: dir, ApplinkPaceMS: 1},
 		openURL: func(targets []string, background bool) error {
 			require.True(t, background, "the walk must leave the screen to whatever the reader is in")
 			walked = append(walked, targets)

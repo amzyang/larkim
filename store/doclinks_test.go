@@ -135,3 +135,29 @@ func mustRev(t *testing.T, s *Store) int64 {
 	require.NoError(t, err)
 	return rev
 }
+
+// A card's link targets survive only in the json it arrived with, so it is
+// scanned whether or not it was ever rendered — and an unrendered card the
+// cursor stepped over would never be scanned again.
+func TestMessagesAfterIDForDocScan_TakesACardBeforeItIsRendered(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	_, err := s.UpsertMessages(ctx, []Message{
+		{MessageID: "om_card", ChatID: "oc_team", MsgType: "interactive", CreateMs: 10,
+			ContentRaw: `{"json_card":"{}"}`, RawJSON: "{}"},
+		{MessageID: "om_pending", ChatID: "oc_team", MsgType: "text", CreateMs: 20,
+			ContentRaw: `{"text":"排期"}`, RawJSON: "{}"},
+		{MessageID: "om_said", ChatID: "oc_team", MsgType: "text", CreateMs: 30,
+			ContentRaw: `{"text":"收到"}`, RawJSON: "{}"},
+	}, 1)
+	require.NoError(t, err)
+	require.NoError(t, s.UpdateRendered(ctx, "om_said", "收到", "", "", 1))
+
+	rows, err := s.MessagesAfterIDForDocScan(ctx, 0, 10)
+	require.NoError(t, err)
+	require.Len(t, rows, 2, "the card and the rendered message; the one still awaiting a rendering waits")
+	require.Equal(t, `{"json_card":"{}"}`, rows[0].CardRaw, "a card carries its own body")
+	require.Empty(t, rows[0].Content, "which is all this one has: its rendering never landed")
+	require.Equal(t, "收到", rows[1].Content)
+	require.Empty(t, rows[1].CardRaw, "everything else is read from its rendering alone")
+}

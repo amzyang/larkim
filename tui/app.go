@@ -64,6 +64,11 @@ type Model struct {
 	// rather than by shading.
 	dark bool
 
+	// pace is the gap the applink queue ticks on, seeded from Deps and
+	// retuned by :set. It lives on the Model rather than on the queue so a
+	// change reaches the chain already running.
+	pace time.Duration
+
 	chats []store.Chat
 	// threads are the reader's own conversations inside those chats. They
 	// stand in the list beside the chats rather than marking them: a reply
@@ -340,8 +345,12 @@ func New(d Deps) Model {
 			return applink.Open(log, targets, background)
 		}
 	}
+	if d.Pace <= 0 {
+		d.Pace = applink.DefaultPace
+	}
 	prunePasted(d.DataDir, time.Now())
 	m := Model{deps: d, input: ta, cmdline: ti, focus: paneChats, focused: true, previewOpen: true,
+		pace:       d.Pace,
 		msgLimit:   messagePageSize,
 		emoji:      emoji.NewReactionIndex().WithCustom(d.DataDir),
 		emojiWrite: emoji.NewComposerIndex(),
@@ -2412,6 +2421,8 @@ func (m Model) runCommand(line string) (tea.Model, tea.Cmd) {
 			note = "preview on"
 		}
 		return m.notify(note, false), nil
+	case "set":
+		return m.runSet(rest), nil
 	case "read-all":
 		return m.startMarkAll()
 	case "mentions":

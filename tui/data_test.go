@@ -38,6 +38,31 @@ func TestLoadMeta_NamesTheReactorsTheBlockOnlyHoldsIDsFor(t *testing.T) {
 	require.Equal(t, "李四", meta.people["ou_b"], "the block holds an id alone; the name comes from the contacts")
 }
 
+func TestLoadMeta_NamesTheThreadReplierThePageNeverHeardFrom(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "t.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { st.Close() })
+	ctx := t.Context()
+	require.NoError(t, st.UpsertContacts(ctx, []store.Contact{
+		{OpenID: "ou_b", Name: "李四", AvatarPath: "avatars/ou_b.png"},
+	}, 1))
+	require.NoError(t, st.SetContactDetails(ctx, []string{"ou_b"},
+		[]store.ContactDetail{{OpenID: "ou_b", Name: "李四", EnterpriseEmail: "lisi02@example.com"}}, 1))
+	root := store.Message{MessageID: "om_root", ChatID: "oc_a", MsgType: "text", CreateMs: 100,
+		MessagePosition: 100, SenderID: "ou_a", SenderName: "张三", ThreadID: "omt_1",
+		ContentRaw: `{"text":"排期"}`, RawJSON: "{}"}
+	reply := store.Message{MessageID: "om_reply", ChatID: "oc_a", MsgType: "text", CreateMs: 110,
+		MessagePosition: -3, SenderID: "ou_b", SenderName: "李四", ThreadID: "omt_1",
+		ContentRaw: `{"text":"收到"}`, RawJSON: "{}"}
+	_, err = st.UpsertMessages(ctx, []store.Message{root, reply}, 1)
+	require.NoError(t, err)
+
+	meta, err := loadMeta(ctx, st, "ou_me", []store.Message{root})
+	require.NoError(t, err)
+	require.Equal(t, "02", meta.suffix["ou_b"], "the collapsed thread line names them, so they need a suffix")
+	require.Equal(t, "avatars/ou_b.png", meta.avatars["ou_b"], "and a picture for the line's own lead")
+}
+
 // A send is a keypress waiting on a subprocess, so it must not queue behind
 // the syncer's sweeps.
 func TestWaited_TakesTheInteractiveLane(t *testing.T) {

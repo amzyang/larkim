@@ -28,9 +28,9 @@ func completionFixture(t *testing.T) *App {
 		{ChatID: "oc_elsewhere", Name: "项目协作群", ChatMode: "group", RawJSON: "{}"},
 	}, 1))
 	require.NoError(t, st.UpsertContacts(ctx, []store.Contact{
-		{OpenID: "ou_a", Name: "张三", Email: "zhangsan@example.com", RawJSON: "{}"},
-		{OpenID: "ou_b", Name: "李四", Email: "lisi@example.com", RawJSON: "{}"},
-		{OpenID: "ou_c", Name: "构建机器人", IsBot: true, RawJSON: "{}"},
+		{OpenID: "ou_a", Name: "张三", Email: "zhangsan@example.com"},
+		{OpenID: "ou_b", Name: "李四", Email: "lisi@example.com"},
+		{OpenID: "ou_c", Name: "构建机器人", IsBot: true},
 	}, 1))
 	_, err = st.UpsertMessages(ctx, []store.Message{
 		{MessageID: "om_one", ChatID: "oc_quiet", CreateMs: 10, MessagePosition: 1, RawJSON: "{}"},
@@ -209,4 +209,28 @@ func TestCompletionGenerator_WritesNothing(t *testing.T) {
 	left, err := os.ReadDir(home)
 	require.NoError(t, err)
 	require.Empty(t, left, "generating a completion script must leave no data dir behind")
+}
+
+func TestCompleteConfigKey_OffersTheKeysWithTheirEquals(t *testing.T) {
+	lines := completeArgs(t, "--set", "a")
+	// NoSpace keeps the caret after the =, so the next keystroke is the
+	// value rather than a second argument.
+	require.Equal(t, directiveLine(cobra.ShellCompDirectiveNoFileComp|cobra.ShellCompDirectiveNoSpace),
+		lines[len(lines)-1])
+	require.Equal(t, []string{"active_top_k=", "applink_pace_ms=", "ai.model=", "ai.api_key_env=", "ai.context="},
+		lines[:len(lines)-1])
+}
+
+func TestCompleteConfigKey_LeavesAValueAlone(t *testing.T) {
+	lines := completeArgs(t, "--set", "applink_pace_ms=15")
+	require.Equal(t, directiveLine(cobra.ShellCompDirectiveNoFileComp), lines[len(lines)-1])
+	require.Len(t, lines, 1, "what the value should be is the reader's business, not a list")
+}
+
+func TestCompleteConfigKey_NeedsNoDatabase(t *testing.T) {
+	// The keys come out of the config struct, so Tab answers before the
+	// first sync the way --config does.
+	t.Setenv("HOME", t.TempDir())
+	lines := completeArgs(t, "--set", "applink")
+	require.Equal(t, []string{"applink_pace_ms="}, lines[:len(lines)-1])
 }

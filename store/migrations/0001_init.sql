@@ -40,7 +40,7 @@ CREATE TABLE messages (
     content          TEXT NOT NULL DEFAULT '',   -- human-readable rendering (lark-cli convert_lib); empty until rendered
     create_ms        INTEGER NOT NULL,
     update_ms        INTEGER NOT NULL DEFAULT 0,
-    message_position INTEGER NOT NULL DEFAULT 0, -- per-chat monotonic position; -1 for thread replies
+    message_position INTEGER NOT NULL DEFAULT 0, -- per-chat monotonic position; negative for thread replies
     updated          INTEGER NOT NULL DEFAULT 0,
     deleted          INTEGER NOT NULL DEFAULT 0, -- recalled
     deleted_seen_at  INTEGER NOT NULL DEFAULT 0,

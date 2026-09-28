@@ -164,6 +164,24 @@ func TestListThreadFeed_TakesTheRootAndTheNewestReply(t *testing.T) {
 	assert.Equal(t, int64(300), feed[0].Last.CreateMs)
 }
 
+func TestListThreadFeed_CarriesBothSendersAccounts(t *testing.T) {
+	s, ctx := stakeStore(t, "oc_group", []threadRow{
+		{id: "om_root", thread: "omt_x", sender: "ou_a", position: 10, createMs: 100, text: "排期"},
+		{id: "om_r1", thread: "omt_x", sender: "ou_me", position: -3, createMs: 200, text: "在跟"},
+		{id: "om_r2", thread: "omt_x", sender: "ou_b", position: -3, createMs: 300, text: "收到"},
+	})
+	require.NoError(t, s.UpsertContacts(ctx, []Contact{{OpenID: "ou_a"}, {OpenID: "ou_b"}}, 1))
+	require.NoError(t, s.SetContactDetails(ctx, []string{"ou_a", "ou_b"}, []ContactDetail{
+		{OpenID: "ou_a", Name: "张三", EnterpriseEmail: "zhangsan01@example.com"},
+		{OpenID: "ou_b", Name: "张三", EnterpriseEmail: "zhangsan02@example.com"},
+	}, 1))
+
+	feed := feedOf(t, s, ctx, "ou_me")
+	require.Len(t, feed, 1)
+	assert.Equal(t, "01", feed[0].RootSuffix(), "two 张三 are told apart by their account")
+	assert.Equal(t, "02", feed[0].LastSuffix())
+}
+
 func TestListThreadFeed_LeavesOutAThreadWithoutAStake(t *testing.T) {
 	s, ctx := stakeStore(t, "oc_group", []threadRow{
 		{id: "om_root", thread: "omt_x", sender: "ou_a", position: 10, createMs: 100},

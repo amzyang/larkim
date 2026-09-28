@@ -191,6 +191,47 @@ func TestParse_ReadsTextSentInSeveralLanguages(t *testing.T) {
 		markdown(t, `{"tag":"plain_text","property":{"i18nContent":{"en_us":"Please fill in the form","zh_cn":"请先填写表单"}}}`))
 }
 
+// A multilingual card ships one whole tree per locale and no plain one, so an
+// element reading only `elements` comes back with an empty body rather than an
+// untranslated one.
+func TestParse_ReadsABodySentOncePerLanguage(t *testing.T) {
+	i18n := `"i18nElements":{` +
+		`"en_us":[{"tag":"plain_text","property":{"content":"Deploy finished"}},` +
+		`{"tag":"link","property":{"content":"the run","url":{"url":"https://example.com/en"}}}],` +
+		`"zh_cn":[{"tag":"plain_text","property":{"content":"发布完成"}},` +
+		`{"tag":"link","property":{"content":"本次构建","url":{"url":"https://example.com/zh"}}}]}`
+	body := `{"schema":"2.0","body":{"tag":"body","property":{"elements":[` +
+		`{"tag":"markdown","property":{` + i18n + `}}]}}}`
+
+	c, ok := Parse(envelopeJSON(body, nil))
+	require.True(t, ok)
+	require.Equal(t, []Block{{Markdown: "发布完成[本次构建](https://example.com/zh)"}}, c.Blocks,
+		"Chinese first, and the link keeps its target")
+}
+
+// Whatever the sender wrote beats an empty body, even when none of the
+// preferred languages is among them.
+func TestParse_FallsBackToWhicheverLanguageACardCarries(t *testing.T) {
+	body := `{"schema":"2.0","body":{"tag":"body","property":{"elements":[` +
+		`{"tag":"markdown","property":{"i18nElements":{"fr_fr":[{"tag":"plain_text","property":{"content":"Terminé"}}]}}}]}}}`
+
+	c, ok := Parse(envelopeJSON(body, nil))
+	require.True(t, ok)
+	require.Equal(t, []Block{{Markdown: "Terminé"}}, c.Blocks)
+}
+
+// A plain tree is what the card meant; the locale copies stand in only for a
+// card that ships none.
+func TestParse_PrefersThePlainTreeOverTheLocaleCopies(t *testing.T) {
+	body := `{"schema":"2.0","body":{"tag":"body","property":{"elements":[` +
+		`{"tag":"markdown","property":{"elements":[{"tag":"plain_text","property":{"content":"正文"}}],` +
+		`"i18nElements":{"zh_cn":[{"tag":"plain_text","property":{"content":"翻译"}}]}}}]}}}`
+
+	c, ok := Parse(envelopeJSON(body, nil))
+	require.True(t, ok)
+	require.Equal(t, []Block{{Markdown: "正文"}}, c.Blocks)
+}
+
 func TestParse_TakesOnlyACard(t *testing.T) {
 	_, ok := Parse(`{"text":"只是正文"}`)
 	require.False(t, ok, "a body that is not a card is left to whoever asked")

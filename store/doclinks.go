@@ -217,22 +217,33 @@ func (s *Store) DocLabels(ctx context.Context) (map[string]DocLabel, error) {
 	return out, nil
 }
 
-// DocScanRow is a rendered body for the document-link back-scan.
+// DocScanRow is one body for the document-link back-scan: the rendering for
+// an ordinary message, and the card json for a card, whose own links are in
+// the body it arrived with.
 type DocScanRow struct {
 	ID      int64
 	Content string
+	// CardRaw is the card's content_raw, and empty for everything else: a
+	// post's body runs to thousands of characters the rendering already
+	// carries, and reading it per row would be the whole archive twice.
+	CardRaw string
 }
 
-// MessagesAfterIDForDocScan returns rendered live messages ingested after
-// rowID, oldest first, so links in messages stored before titles were read
-// can be registered. Unlike the resource scan this cannot filter by type: a
-// document link is almost always someone pasting a URL into a plain text
-// message.
+// MessagesAfterIDForDocScan returns live messages ingested after rowID, oldest
+// first, so links in messages stored before titles were read can be
+// registered. Unlike the resource scan this cannot filter by type: a document
+// link is almost always someone pasting a URL into a plain text message.
+//
+// A card comes back whether or not it has been rendered, because its rendering
+// is not where its links are: that text keeps a link's label and drops its
+// target. There is nothing to wait for either — a card whose rendering never
+// lands would otherwise be stepped over for good, the cursor moving past it on
+// the tick that found it unrendered.
 func (s *Store) MessagesAfterIDForDocScan(ctx context.Context, rowID int64, limit int) ([]DocScanRow, error) {
 	return queryAll(ctx, s.db, func(sc scanner) (DocScanRow, error) {
 		var r DocScanRow
-		err := sc.Scan(&r.ID, &r.Content)
+		err := sc.Scan(&r.ID, &r.Content, &r.CardRaw)
 		return r, err
-	}, `SELECT id, content FROM messages
- WHERE id > ? AND deleted = 0 AND rendered_at > 0 ORDER BY id LIMIT ?`, rowID, limit)
+	}, `SELECT id, content, CASE WHEN msg_type = 'interactive' THEN content_raw ELSE '' END FROM messages
+ WHERE id > ? AND deleted = 0 AND (rendered_at > 0 OR msg_type = 'interactive') ORDER BY id LIMIT ?`, rowID, limit)
 }

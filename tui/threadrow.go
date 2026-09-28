@@ -34,7 +34,7 @@ func renderThreadRow(av avatars, r listRow, self string, g rowGist, now time.Tim
 	}
 	right := strings.TrimSpace(badge + " " + stDim.Render(chatTime(t.Last.CreateMs, now)))
 
-	title := displaySender(t.Root, self, "") + ": " + replyGist(t.Root)
+	title := displaySender(t.Root, self, t.RootSuffix()) + ": " + replyGist(t.Root)
 	room := textWidth - lipgloss.Width(right) - 1
 	top := padBetween(stBold.Render(truncate(title, max(minTitleWidth, room))), right, textWidth)
 
@@ -74,7 +74,7 @@ func threadRowLine(r listRow, g rowGist, w int) (string, []rowSeg) {
 // the title above already names whoever started the thread.
 func threadRowGist(r listRow, self string, pics emojiPics) (string, []rowSeg) {
 	x := r.thread.Last
-	sender := senderLabel(x, "")
+	sender := senderLabel(x, r.thread.LastSuffix())
 	if x.Deleted {
 		return stDim.Render(sender + " recalled a message"), nil
 	}

@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/amzyang/larkim/card"
 	"github.com/amzyang/larkim/larkcli"
 	"github.com/amzyang/larkim/store"
 )
@@ -47,6 +48,12 @@ func (s *Syncer) registerExistingDocLinks(ctx context.Context) error {
 	var refs []store.DocRef
 	for _, r := range rows {
 		refs = append(refs, store.FindDocRefs(r.Content)...)
+		// A card's rendering keeps a link's label and drops its target, and
+		// some cards are never rendered at all; either way the URL survives
+		// only in the json the card arrived with.
+		if c, ok := card.Parse(r.CardRaw); ok {
+			refs = append(refs, store.FindDocRefs(c.Markdown())...)
+		}
 		after = max(after, r.ID)
 	}
 	if err := s.Store.AddPendingDocLinks(ctx, refs); err != nil {

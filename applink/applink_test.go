@@ -3,6 +3,7 @@ package applink
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -24,9 +25,11 @@ func TestLinks_UseTheSchemeThatReachesTheClientDirectly(t *testing.T) {
 	require.Equal(t, "lark://vc.feishu.cn/j/123456789", MeetingLink("123456789"))
 }
 
-func TestPace_LeavesTheClientTimeToDraw(t *testing.T) {
+func TestDefaultPace_LeavesTheClientTimeToDraw(t *testing.T) {
 	// The client sends a receipt once it has rendered the chat it was walked
 	// onto, so a gap shorter than a frame loses the chats it was hurried
-	// through. Nothing here fixes the exact value; what it must not be is 0.
-	require.Positive(t, Pace)
+	// through. Nothing here fixes the exact value — config's applink_pace_ms
+	// is where it is retuned; what it must not be is 0.
+	require.Positive(t, DefaultPaceMS)
+	require.Equal(t, time.Duration(DefaultPaceMS)*time.Millisecond, DefaultPace)
 }

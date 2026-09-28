@@ -395,13 +395,12 @@ func plain(e *elem) string {
 }
 
 // content is the text an element holds. A sender who wrote in several
-// languages sends them all, and Chinese comes first: that is the client larkim
-// sits beside.
+// languages sends them all, read in preferredLocales order.
 func content(p prop) string {
 	if p.Content != "" {
 		return p.Content
 	}
-	for _, lang := range []string{"zh_cn", "en_us", "ja_jp"} {
+	for _, lang := range preferredLocales {
 		if s := p.I18nContent[lang]; s != "" {
 			return s
 		}

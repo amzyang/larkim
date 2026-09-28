@@ -125,3 +125,20 @@ func TestContactAvatarFile_HoldsBackTheSentinels(t *testing.T) {
 	require.Empty(t, Contact{AvatarPath: AvatarFailed}.AvatarFile(), "a download that gave up")
 	require.Empty(t, Contact{}.AvatarFile())
 }
+
+// The column held ” on every row: a contact is assembled from several API
+// shapes and the biggest source, a message's sender block, has no item behind
+// it at all.
+func TestMigrate_ContactsKeepNoRawItem(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	cols, err := queryAll(ctx, s.db, scanOne[string], `SELECT name FROM pragma_table_info('contacts')`)
+	require.NoError(t, err)
+	require.NotContains(t, cols, "raw_json")
+	require.Contains(t, cols, "enterprise_email", "the rest of the table is untouched")
+
+	require.NoError(t, s.UpsertContacts(ctx, []Contact{{OpenID: "ou_a", Name: "张三"}}, 1))
+	got, err := s.ContactsByIDs(ctx, []string{"ou_a"})
+	require.NoError(t, err)
+	require.Equal(t, "张三", got["ou_a"].Name)
+}

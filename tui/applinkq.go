@@ -69,7 +69,7 @@ func (m Model) pushApplinks(chats []store.ChatUnread) (Model, tea.Cmd) {
 		return m, nil
 	}
 	m.applinks.armed = true
-	return m, applinkTick(m.applinks.gen)
+	return m, m.applinkTick(m.applinks.gen)
 }
 
 // clearApplinks drops whatever is still queued. The write that matters has
@@ -80,8 +80,8 @@ func (m Model) clearApplinks() Model {
 	return m
 }
 
-func applinkTick(gen int) tea.Cmd {
-	return tea.Tick(applink.Pace, func(time.Time) tea.Msg { return applinkDueMsg{gen} })
+func (m Model) applinkTick(gen int) tea.Cmd {
+	return tea.Tick(m.pace, func(time.Time) tea.Msg { return applinkDueMsg{gen} })
 }
 
 // onApplinkDue fires the chat at the head and arms the next slot. The open
@@ -94,14 +94,14 @@ func (m Model) onApplinkDue(msg applinkDueMsg) (Model, tea.Cmd) {
 	}
 	if len(m.applinks.left) == 0 {
 		if m.applinks.inflight > 0 {
-			return m, applinkTick(msg.gen)
+			return m, m.applinkTick(msg.gen)
 		}
 		return m.closeSweep(), nil
 	}
 	next := m.applinks.left[0]
 	m.applinks.left = m.applinks.left[1:]
 	m.applinks.inflight++
-	return m, tea.Batch(fireApplink(m.deps, next, msg.gen), applinkTick(msg.gen))
+	return m, tea.Batch(fireApplink(m.deps, next, msg.gen), m.applinkTick(msg.gen))
 }
 
 // onApplinkFired counts one hand-over. The chain does not stop on a failure:

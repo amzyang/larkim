@@ -24,6 +24,7 @@ type App struct {
 	Out          io.Writer
 	Err          io.Writer
 	configPath   string
+	sets         []string
 	jsonOut      bool
 	debug        bool
 	log          *slog.Logger
@@ -75,7 +76,7 @@ func New(version, buildDSN string) *cobra.Command {
 					os.Getenv("DO_NOT_TRACK"), envValue, envSet, app.buildDSN)
 				initSentry(app.sentryDSN, version)
 			}
-			cfg, err := config.Load(app.configPath)
+			cfg, err := config.LoadWith(app.configPath, app.sets)
 			if err != nil {
 				return err
 			}
@@ -87,6 +88,8 @@ func New(version, buildDSN string) *cobra.Command {
 		},
 	}
 	root.PersistentFlags().StringVar(&app.configPath, "config", "", "config file (default ~/.larkim/config.yaml)")
+	root.PersistentFlags().StringArrayVar(&app.sets, "set", nil,
+		"override one config key for this run, repeatable (--set applink_pace_ms=1500)")
 	root.PersistentFlags().BoolVar(&app.jsonOut, "json", false, "JSON output (default when stdout is not a terminal)")
 	root.PersistentFlags().BoolVar(&app.debug, "debug", false,
 		"log every lark-cli request and response (always-on logging lives in <data_dir>/larkim.log)")
@@ -96,6 +99,7 @@ func New(version, buildDSN string) *cobra.Command {
 		app.sendCmd(), app.replyCmd(), app.reactCmd(), app.watchCmd(), app.readAllCmd(), app.silenceCmd(), app.tuiCmd(), app.dbCmd(),
 		app.schemaCmd(), app.emojiCmd(), app.sentryCmd(), app.unreadCmd())
 	mustWire(root.MarkPersistentFlagFilename("config", "yaml", "yml"))
+	mustWire(root.RegisterFlagCompletionFunc("set", completeConfigKey))
 	completeNoFileDefault(root)
 	return root
 }

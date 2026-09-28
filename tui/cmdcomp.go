@@ -140,6 +140,14 @@ func (m Model) argHits(cmd command, stem string) []cmdHit {
 				out = append(out, cmdHit{insert: w, label: markName(w, prefixMark(stem), stBold)})
 			}
 		}
+	case argSetting:
+		// The = comes along, because an option only ever reads as a pair and
+		// the reader's next keystroke is the value.
+		for _, st := range settings {
+			if strings.HasPrefix(st.name, stem) {
+				out = append(out, cmdHit{insert: st.name + "=", label: markName(st.name, prefixMark(stem), stBold)})
+			}
+		}
 	case argChat, argTarget:
 		for _, t := range m.fwdSearch(stem) {
 			if cmd.arg == argChat && t.chatID == "" {

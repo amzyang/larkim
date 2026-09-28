@@ -199,20 +199,25 @@ func (m Model) replyBarParts(w int) (head, gist string, room int) {
 
 // replyGist is the quoted message on one line, styles stripped so it can be
 // cut to the width left over beside the hint.
+//
+// A card is read before the rendering is waited on, the way the body and the
+// chat list read one: its words are in the body it arrived with, and lark-cli
+// renders a card to nothing, so waiting means never naming it at all.
 func replyGist(x store.Message) string {
 	switch {
 	case x.Deleted:
 		return "(Recalled)"
 	case x.MsgType == "merge_forward":
 		return msgTypeLabel(x.MsgType)
-	case x.RenderedAt == 0:
+	}
+	if c, ok := card.Parse(x.ContentRaw); ok {
+		return flatten(expandEmoji(cardGist(c)))
+	}
+	if x.RenderedAt == 0 {
 		return flatten(expandEmoji(pendingText(x.MsgType, x.ContentRaw)))
 	}
 	if a, ok := attachmentOf(x.MsgType, x.ContentRaw); ok {
 		return attachGist(a)
-	}
-	if c, ok := card.Parse(x.ContentRaw); ok {
-		return flatten(expandEmoji(cardGist(c)))
 	}
 	keys, rest := splitImages(x.Content)
 	if text := flatten(expandEmoji(plainInline(rest))); text != "" {

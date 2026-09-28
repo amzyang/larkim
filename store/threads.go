@@ -59,6 +59,11 @@ type ThreadFeed struct {
 	// Last is the newest reply, which is where the thread stands: a thread is
 	// alive, unlike a forward, so the last word is the state of it.
 	Last Message
+	// RootAccount and LastAccount are those two senders' tenant account
+	// addresses, which is what tells same-named colleagues apart on the row.
+	// Empty for a bot and for anyone whose identity lookup has not run.
+	RootAccount string
+	LastAccount string
 	// Unread counts the replies still owed an answer, on the badge's own rule
 	// except for the sign of the position: these are the replies the chat's
 	// own badge leaves out.
@@ -71,6 +76,10 @@ type ThreadFeed struct {
 // name and the peer shade the avatar column, the mute mark rides the summary,
 // and a chat of two names nobody on it. Everything here comes from the same
 // chats row as the thread itself, so no second lookup can disagree with it.
+// RootSuffix and LastSuffix disambiguate the two names the row draws.
+func (t ThreadFeed) RootSuffix() string { return AccountSuffix(t.RootAccount) }
+func (t ThreadFeed) LastSuffix() string { return AccountSuffix(t.LastAccount) }
+
 func (t ThreadFeed) Chat() Chat {
 	return Chat{ChatID: t.ChatID, Name: t.ChatName, ChatMode: t.ChatMode,
 		P2PTargetID: t.P2PTargetID, Muted: t.Muted}
@@ -136,8 +145,13 @@ SELECT x.thread_id, x.chat_id, c.name, c.chat_mode, c.p2p_target_id, c.muted,
  ro.message_id, ro.sender_id, ro.sender_type, ro.sender_name, ro.msg_type, ro.content,
  ro.content_raw, ro.rendered_at, ro.deleted, ro.create_ms,
  x.message_id, x.sender_id, x.sender_type, x.sender_name, x.msg_type, x.content,
- x.content_raw, x.mentions_json, x.rendered_at, x.deleted, x.create_ms, x.unread, x.at_me
+ x.content_raw, x.mentions_json, x.rendered_at, x.deleted, x.create_ms,
+ COALESCE(NULLIF(rct.enterprise_email, ''), rct.email, '') AS root_account,
+ COALESCE(NULLIF(lct.enterprise_email, ''), lct.email, '') AS last_account,
+ x.unread, x.at_me
  FROM reps x JOIN chats c ON c.chat_id = x.chat_id JOIN roots ro ON ro.thread_id = x.thread_id AND ro.rn = 1
+ LEFT JOIN contacts rct ON rct.open_id = ro.sender_id
+ LEFT JOIN contacts lct ON lct.open_id = x.sender_id
  WHERE x.rn = 1 AND c.left_at = 0 AND ` + threadStakeOn("x") + `
  ORDER BY x.create_ms DESC, x.thread_id LIMIT ?`
 
@@ -148,7 +162,7 @@ func scanThreadFeed(sc scanner) (ThreadFeed, error) {
 		&t.Root.Content, &t.Root.ContentRaw, &t.Root.RenderedAt, &t.Root.Deleted, &t.Root.CreateMs,
 		&t.Last.MessageID, &t.Last.SenderID, &t.Last.SenderType, &t.Last.SenderName, &t.Last.MsgType,
 		&t.Last.Content, &t.Last.ContentRaw, &t.Last.MentionsJSON, &t.Last.RenderedAt, &t.Last.Deleted, &t.Last.CreateMs,
-		&t.Unread, &t.NamesSelf)
+		&t.RootAccount, &t.LastAccount, &t.Unread, &t.NamesSelf)
 	t.Root.ThreadID, t.Root.ChatID = t.ThreadID, t.ChatID
 	t.Last.ThreadID, t.Last.ChatID = t.ThreadID, t.ChatID
 	return t, err

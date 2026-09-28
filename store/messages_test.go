@@ -334,3 +334,48 @@ func TestReplyTree_LeavesOutARecalledReplyAndKeepsWhatAnsweredIt(t *testing.T) {
 	}
 	require.Equal(t, []string{"om_1", "om_3", "om_4", "om_21", "om_22"}, ids)
 }
+
+// threadInTreeRows are a reply tree with a thread hanging off one of its
+// members: om_2 answers om_1 in the main flow and is a thread root, and
+// om_t answers om_2 inside that thread. Feishu sets parent_id on a thread
+// reply too, so om_t carries reply_to as well as a negative position.
+func threadInTreeRows() []Message {
+	return []Message{
+		{MessageID: "om_1", ChatID: "oc_a", MsgType: "text", CreateMs: 100, MessagePosition: 100,
+			SenderID: "ou_a", SenderName: "张三", ContentRaw: `{"text":"播报"}`, RawJSON: "{}"},
+		{MessageID: "om_2", ChatID: "oc_a", MsgType: "text", CreateMs: 110, MessagePosition: 110,
+			SenderID: "ou_b", SenderName: "李四", ReplyTo: "om_1", ThreadID: "omt_1",
+			ContentRaw: `{"text":"已处理"}`, RawJSON: "{}"},
+		{MessageID: "om_t", ChatID: "oc_a", MsgType: "text", CreateMs: 120, MessagePosition: -3,
+			SenderID: "ou_a", SenderName: "张三", ReplyTo: "om_2", ThreadID: "omt_1",
+			ContentRaw: `{"text":"收到"}`, RawJSON: "{}"},
+	}
+}
+
+func TestReplyGists_LeavesAThreadReplyOutOfTheTreeItHangsUnder(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	_, err := s.UpsertMessages(ctx, threadInTreeRows(), 1)
+	require.NoError(t, err)
+
+	got, err := s.ReplyGists(ctx, []string{"om_1", "om_2", "om_t"})
+	require.NoError(t, err)
+	require.Equal(t, 1, got["om_1"].Replies,
+		"the thread's own reply is folded under its root, not counted again in the flow")
+	require.NotContains(t, got, "om_t", "a thread reply belongs to its thread, not to a reply tree")
+}
+
+func TestReplyTree_OmitsThreadReplies(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	_, err := s.UpsertMessages(ctx, threadInTreeRows(), 1)
+	require.NoError(t, err)
+
+	got, err := s.ReplyTree(ctx, "om_1")
+	require.NoError(t, err)
+	var ids []string
+	for _, m := range got {
+		ids = append(ids, m.MessageID)
+	}
+	require.Equal(t, []string{"om_1", "om_2"}, ids, "the thread is read in its own frame")
+}

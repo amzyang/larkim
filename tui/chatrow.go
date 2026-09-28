@@ -250,6 +250,7 @@ func chatSummary(c store.Chat, self string, pics emojiPics) (string, []rowSeg) {
 	if sender == "" {
 		sender = c.LastSenderID
 	}
+	sender = personName(sender, c.LastSenderSuffix())
 	if c.LastDeleted {
 		return stDim.Render(sender + " recalled a message"), nil
 	}

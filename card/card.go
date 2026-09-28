@@ -6,6 +6,8 @@ package card
 
 import (
 	"encoding/json"
+	"maps"
+	"slices"
 	"strings"
 )
 
@@ -131,41 +133,70 @@ type elem struct {
 	Elements []elem `json:"elements"`
 }
 
-// children is what an element holds, whichever of the two shapes it arrived
-// in.
+// children is what an element holds, whichever of the three shapes it arrived
+// in. A sender who wrote in several languages ships one tree per locale and no
+// plain one, so the locale list is not a fallback for a missing translation —
+// it is the whole body, and an element reading only Elements comes back empty.
 func (e elem) children() []elem {
 	if len(e.Property.Elements) > 0 {
 		return e.Property.Elements
 	}
-	return e.Elements
+	if len(e.Elements) > 0 {
+		return e.Elements
+	}
+	return e.Property.localised()
+}
+
+// preferredLocales is the order a card written in several languages is read
+// in. Chinese comes first: that is the client larkim sits beside.
+var preferredLocales = []string{"zh_cn", "en_us", "ja_jp"}
+
+// localised picks one language's tree, in the order content picks one
+// language's text. Any other locale beats nothing at all, and the map is
+// walked in sorted order so the same card always reads the same way.
+func (p prop) localised() []elem {
+	for _, lang := range preferredLocales {
+		if els := p.I18nElements[lang]; len(els) > 0 {
+			return els
+		}
+	}
+	for _, lang := range slices.Sorted(maps.Keys(p.I18nElements)) {
+		if els := p.I18nElements[lang]; len(els) > 0 {
+			return els
+		}
+	}
+	return nil
 }
 
 // prop is that bag. A tag reads the few fields it uses and leaves the rest
 // zero; columns and actions stay raw because Feishu gives each of them two
 // shapes, and only the tag says which one arrived.
 type prop struct {
-	Content     string                 `json:"content"`
-	I18nContent map[string]string      `json:"i18nContent"`
-	Elements    []elem                 `json:"elements"`
-	Text        *elem                  `json:"text"`
-	Title       *elem                  `json:"title"`
-	Subtitle    *elem                  `json:"subtitle"`
-	TextTagList []elem                 `json:"textTagList"`
-	Header      *elem                  `json:"header"`
-	Extra       *elem                  `json:"extra"`
-	Fields      []field                `json:"fields"`
-	Items       []listItem             `json:"items"`
-	Level       int                    `json:"level"`
-	Language    string                 `json:"language"`
-	Contents    []codeLine             `json:"contents"`
-	Columns     json.RawMessage        `json:"columns"`
-	Rows        []map[string]tableCell `json:"rows"`
-	Actions     json.RawMessage        `json:"actions"`
-	URL         urlRef                 `json:"url"`
-	ImageID     string                 `json:"imageID"`
-	UserID      string                 `json:"userID"`
-	Key         string                 `json:"key"`
-	TextStyle   textStyle              `json:"textStyle"`
+	Content     string            `json:"content"`
+	I18nContent map[string]string `json:"i18nContent"`
+	Elements    []elem            `json:"elements"`
+	// I18nElements is the same body written once per locale, which is how a
+	// multilingual card carries its whole content: Elements is then empty.
+	I18nElements map[string][]elem      `json:"i18nElements"`
+	Text         *elem                  `json:"text"`
+	Title        *elem                  `json:"title"`
+	Subtitle     *elem                  `json:"subtitle"`
+	TextTagList  []elem                 `json:"textTagList"`
+	Header       *elem                  `json:"header"`
+	Extra        *elem                  `json:"extra"`
+	Fields       []field                `json:"fields"`
+	Items        []listItem             `json:"items"`
+	Level        int                    `json:"level"`
+	Language     string                 `json:"language"`
+	Contents     []codeLine             `json:"contents"`
+	Columns      json.RawMessage        `json:"columns"`
+	Rows         []map[string]tableCell `json:"rows"`
+	Actions      json.RawMessage        `json:"actions"`
+	URL          urlRef                 `json:"url"`
+	ImageID      string                 `json:"imageID"`
+	UserID       string                 `json:"userID"`
+	Key          string                 `json:"key"`
+	TextStyle    textStyle              `json:"textStyle"`
 }
 
 type (

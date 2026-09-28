@@ -16,7 +16,7 @@ TUI 是单个 Bubble Tea `Model`，四个 pane、四个 mode，按键全部经 `
 
 两处与 PRD 表述不符的既有事实，方案按事实做：
 
-1. **话题回复就混在 chat 消息流里。** 它们以所属 `chat_id` 入库、`message_position` 为负，`ListMessages` 不过滤，`renderRows` 也照显示——TUI 并没有「折叠」它们。所以排除是本次新增的规则，不是对现状的对齐。哨兵值由 API 决定：`docs/SCHEMA.md` 长期写作 `-1`，而线上数据全是 `-3`，`larkcli.Fake` 用的又是 `-1`——判据只能是符号。
+1. **话题回复就混在 chat 消息流里。** 它们以所属 `chat_id` 入库、`message_position` 为负，`ListMessages` 不过滤，`renderRows` 也照显示——TUI 并没有「折叠」它们。所以排除是本次新增的规则，不是对现状的对齐。哨兵值由 API 决定，线上数据是 `-3`，`larkcli.Fake` 用的是 `-1`——判据只能是符号。
 2. **reactions 里没有 emoji 字符。** `reactions_json` 原样来自 lark-cli 的 `{counts, details}` 块，`counts[].reaction_type` 是 `THUMBSUP` 这类枚举名，仓库里从未解析过它。PRD 示例中的 `👍×3` 需要一张自维护的映射表才能得到。
 
 ## Proposed changes

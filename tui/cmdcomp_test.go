@@ -179,3 +179,13 @@ func TestRunCommand_RunsWhatTheListWroteIntoTheLine(t *testing.T) {
 	require.False(t, strings.Contains(m.notice, "unknown"), "notice: %s", m.notice)
 	require.False(t, strings.Contains(m.notice, "ambiguous"), "notice: %s", m.notice)
 }
+
+func TestCmdComp_CompletesASettingWithItsEqualsAlready(t *testing.T) {
+	// An option only ever reads as a pair, so the = comes along and the
+	// reader's next keystroke is the value.
+	m := press(t, cmdModel(t), "s", "e", "t", " ")
+	require.Equal(t, []string{"applink_pace_ms"}, offers(m))
+
+	m = press(t, m, "tab")
+	require.Equal(t, "set applink_pace_ms=", typed(m))
+}

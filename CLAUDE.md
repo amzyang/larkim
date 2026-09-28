@@ -74,7 +74,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 - Migrations 为 `store/migrations/NNNN_name.sql`，只增不减，无 down migration
 - `docs/SCHEMA.md` 是对外契约（直连 SQLite 的消费者依赖它），改列必须同步更新
-- 时间戳一律 Unix 毫秒 UTC；消息顺序 `ORDER BY create_ms, message_position, id`；`message_position = -1` 表示 thread 回复
+- 时间戳一律 Unix 毫秒 UTC；消息顺序 `ORDER BY create_ms, message_position, id`；`message_position` 为负表示 thread 回复（哨兵值由 API 定，当前数据是 -3，判据只能是符号）
 - FTS5 用 trigram 分词（unicode61 把整段 CJK 当一个 token），MATCH 仅对 ≥3 字符词有效，短词走 `instr` 回退
 - JSON 列（`mentions_json`、`reactions_json`、`chats.last_*_json`）一律存最小化形式，由 store 的 `compactJSON` 在写入时保证；`namesSelf` 按文本匹配 id 就靠这条。lark-cli 的输出是缩进的，绕过 `UpdateRendered`/`UpdateReactions` 直接写这几列会让 @我 标记和 `:mentions` 面板静默失效
 - `daemon.lock` 只圈定 sweep 的所有者（discovery、backfill、`sync_state` 全局游标）；读者按键触发的拉取（发送、reaction、展开转发、回溯历史、冷搜索命中）每个进程都能做，它们是对飞书刚答复过的 id 的幂等 upsert。`read_state.local_read_at` 与 `drafts` 归 TUI；外部消费者的处理进度由消费者自持，库里不记
