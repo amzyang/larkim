@@ -1650,13 +1650,19 @@ func (m Model) onInsertKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "esc":
 		m.mode = modeNormal
 		m.areap().Blur()
+		// The band is back at its resting height, so the textareas have to be
+		// resized to it: they keep whatever sized last wrote, and the box would
+		// go on drawing rows the panes above it have taken back — which fitBlock
+		// makes room for by dropping the quote off the top.
 		if m.side == sideRight {
 			// The box belongs to the right column, so that is the pane behind
 			// it to step back into.
 			m.focus = paneThread
+			m.layout()
 			return m, nil
 		}
 		next, keep := m.focusMessages()
+		next.layout()
 		return next, keep
 	case "ctrl+r":
 		m.setQuote(nil, false)

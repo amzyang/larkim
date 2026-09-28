@@ -36,7 +36,7 @@ func TestForward_BracketedPasteGrowsTheComposer(t *testing.T) {
 	m = mm.(Model)
 
 	require.Equal(t, 6, m.composerRows().input)
-	require.Equal(t, 6, m.input.Height(), "the textarea was laid out again")
+	require.Equal(t, m.textHeight(sideMain, m.composerRows()), m.input.Height(), "the textarea was laid out again")
 }
 
 func TestForward_LeavesOtherModesAlone(t *testing.T) {

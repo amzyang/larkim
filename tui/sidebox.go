@@ -25,6 +25,12 @@ const (
 // it — the quote takes the row otherwise.
 const threadPrompt = "Reply to thread"
 
+// replyPrompt heads the same placeholder in a reply tree, which the client has
+// no input for at all. The sender's name follows: an answer written here lands
+// in the chat's flow beside the message the tree grew under, and unlike a
+// thread there is no one word for where that is.
+const replyPrompt = "Reply to "
+
 // newComposer is the writing area both boxes are built from.
 func newComposer() textarea.Model {
 	ta := textarea.New()
@@ -87,25 +93,21 @@ func (m Model) frameRoot() (store.Message, bool) {
 	return store.Message{}, false
 }
 
-// quotedOn is the message a box draws a quote for. The right box answering
-// nothing means it answers its frame — for a thread that is the thread itself,
-// which the client quotes nothing for, and for a reply tree it is the message
-// the conversation started from, which an answer landing in the chat's flow
-// has to name.
+// quotedOn is the message a box draws a quote for: the one the reader aimed it
+// at, and none until they do. Where an unaimed box sends is its frame's
+// business, which rightTarget answers and the placeholder says out loud; a bar
+// the reader never asked for would be one ^r cannot take back.
 func (m Model) quotedOn(s composerSide) (store.Message, bool) {
-	if s != sideRight {
-		if m.replyTo == nil {
+	if s == sideRight {
+		if m.rightReply == nil {
 			return store.Message{}, false
 		}
-		return *m.replyTo, true
-	}
-	if m.rightReply != nil {
 		return *m.rightReply, true
 	}
-	if m.rightKind == rightReply {
-		return m.frameRoot()
+	if m.replyTo == nil {
+		return store.Message{}, false
 	}
-	return store.Message{}, false
+	return *m.replyTo, true
 }
 
 // rightTarget is the message an answer written in the right box replies to.

@@ -11,8 +11,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// fwdModel is a model holding one message, two chats and a colleague larkim
-// has no chat with.
+// fwdModel is a model holding one message, two chats and the colleagues larkim
+// has no chat with. There are enough of the latter to fill the chooser's
+// window, which is what lets the cursor be walked off the bottom of it.
 func fwdModel(t *testing.T) (Model, *larkcli.Fake) {
 	t.Helper()
 	st, err := store.Open(filepath.Join(t.TempDir(), "t.db"))
@@ -39,6 +40,7 @@ func fwdModel(t *testing.T) (Model, *larkcli.Fake) {
 	m.contacts = []store.Contact{
 		{OpenID: "ou_a", Name: "张三"},
 		{OpenID: "ou_b", Name: "李四"},
+		{OpenID: "ou_c", Name: "王五"},
 		{OpenID: "ou_me", Name: "林岚"},
 	}
 	msgs, err := st.ListMessages(ctx, store.MessageQuery{ChatID: "oc_group"})
@@ -59,7 +61,7 @@ func fwdNames(hits []fwdTarget) []string {
 func TestFwdSearch_OffersChatsThenPeople(t *testing.T) {
 	m, _ := fwdModel(t)
 
-	assert.Equal(t, []string{"平台组", "张三", "李四"}, fwdNames(m.fwdSearch("")))
+	assert.Equal(t, []string{"平台组", "张三", "李四", "王五"}, fwdNames(m.fwdSearch("")))
 }
 
 // Somebody already reachable as a chat is not offered twice.

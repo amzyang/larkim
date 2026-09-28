@@ -126,21 +126,6 @@ func TestSubmit_DetailsBoxQuotesIntoTheChatFlow(t *testing.T) {
 	require.Empty(t, it.threadID)
 }
 
-func TestQuotedOn_DetailsFrameNamesItsRootWithoutBeingAsked(t *testing.T) {
-	m := threadFrame(130, 30)
-	m.rightKind, m.threadID = rightReply, "om_root"
-	m.layout()
-
-	x, ok := m.quotedOn(sideRight)
-	require.True(t, ok, "a reply into the chat's flow has to name what it answers")
-	require.Equal(t, "om_root", x.MessageID)
-
-	m.rightKind, m.threadID = rightThread, "omt_1"
-	m.layout()
-	_, ok = m.quotedOn(sideRight)
-	require.False(t, ok, "a thread is answered without quoting anything, the way the client does")
-}
-
 func TestLayout_ForcesTheMainBoxWhenTheFrameHasNoComposer(t *testing.T) {
 	m := threadFrame(130, 30)
 	m.side = sideRight
@@ -250,4 +235,77 @@ func TestRenderInput_TheBoxWithoutTheKeysDrawsItsOwnDraft(t *testing.T) {
 	require.NotContains(t, right, composerHint, "the send hint belongs to the box being typed in")
 	require.Equal(t, m.composerHeight()+2, lipgloss.Height(right), "both boxes are one height")
 	require.Equal(t, m.rightWidth(), lipgloss.Width(right))
+}
+
+func TestComposerHeight_HoldsStillWhenTheKeysCrossSides(t *testing.T) {
+	m := threadFrame(130, 30)
+	m.focus, m.msgIdx = paneMessages, 0
+	sel, ok := m.selected()
+	require.True(t, ok)
+	mm, _ := m.startInsert(&sel, false)
+	m = mm.(Model)
+	require.Equal(t, sideMain, m.side)
+	quoted, body := m.composerHeight(), m.bodyHeight()
+
+	// The Thread frame answers without quoting anything, so before the quote
+	// row was claimed in every state this handoff shortened the band.
+	m.focus = paneThread
+	mm, _ = m.startInsert(nil, false)
+	m = mm.(Model)
+	require.Equal(t, sideRight, m.side)
+	require.Equal(t, quoted, m.composerHeight(), "the band holds its height across the handoff")
+	require.Equal(t, body, m.bodyHeight(), "so the panes above it do not move")
+}
+
+func TestComposerHeight_IsTheRestingOneWhicheverBoxHasTheKeys(t *testing.T) {
+	m := threadFrame(130, 30)
+	require.Equal(t, restingComposer, m.composerHeight())
+
+	m.focus = paneThread
+	mm, _ := m.startInsert(nil, false)
+	m = mm.(Model)
+	require.Equal(t, restingComposer, m.composerHeight())
+
+	m.rightKind, m.threadID = rightReply, "om_root"
+	m.layout()
+	require.Equal(t, restingComposer, m.composerHeight(), "a Details frame claims the same rows")
+}
+
+func TestOnInsertKey_CtrlRDropsTheQuoteInADetailsFrame(t *testing.T) {
+	m := threadFrame(130, 30)
+	m.rightKind, m.threadID = rightReply, "om_root"
+	m.layout()
+	m.focus, m.threadIdx = paneThread, 1
+	sel, ok := m.selected()
+	require.True(t, ok)
+	mm, _ := m.startInsert(&sel, false)
+	m = mm.(Model)
+	m.areap().SetValue("写到一半")
+	require.NotNil(t, m.rightReply)
+
+	out, _ := m.onInsertKey(tea.KeyPressMsg{Code: 'r', Mod: tea.ModCtrl})
+	m = out.(Model)
+	require.Nil(t, m.rightReply)
+	_, ok = m.quotedOn(sideRight)
+	require.False(t, ok, "the bar the key names is gone")
+	require.NotContains(t, ansi.Strip(m.renderInput(sideRight)), replyBarHint)
+	require.Equal(t, "写到一半", m.rightInput.Value(), "dropping the quote leaves the draft alone")
+
+	x, ok := m.rightTarget()
+	require.True(t, ok)
+	require.Equal(t, "om_root", x.MessageID, "the answer still lands where the frame grew from")
+}
+
+func TestQuotedOn_ADetailsFrameQuotesNothingUntilAsked(t *testing.T) {
+	m := threadFrame(130, 30)
+	m.rightKind, m.threadID = rightReply, "om_root"
+	m.layout()
+
+	_, ok := m.quotedOn(sideRight)
+	require.False(t, ok, "nothing has been aimed at yet")
+	require.Contains(t, m.rightInput.Placeholder, "张三", "the box names where an answer would land")
+
+	x, ok := m.rightTarget()
+	require.True(t, ok)
+	require.Equal(t, "om_root", x.MessageID)
 }

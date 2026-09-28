@@ -21,12 +21,19 @@ const (
 	threadWidth      = 44
 	minMessagesWidth = 40 // narrower than this, the right pane takes the messages pane's place
 	minWidth         = chatsWidth + minMessagesWidth
-	minHeight        = 12
-	inputHeight      = 3
+	// minHeight is the shortest terminal the layout still fits in: the status
+	// bar, the composer box at rest, and a messages pane holding its head and
+	// one row of message. Derived rather than written down, because the panes
+	// have a floor of their own and a box that claims one more row than the
+	// screen can spare overflows past the bottom edge.
+	minHeight   = statusHeight + restingComposer + 2 + msgHeaderHeight + 1 + 2 // box border + pane border
+	inputHeight = 3
 	// restingComposer is the composer's inner height with nothing claimed
-	// beyond the writing area and the badge row under it. Every mode draws the
-	// box at least this tall, so switching mode never moves the panes.
-	restingComposer = inputHeight + 1
+	// beyond the writing area, the quote row and the badge row around it. Every
+	// mode draws the box at least this tall, and so does either box of a split
+	// band, so neither switching mode nor handing the keys across moves the
+	// panes.
+	restingComposer = inputHeight + 2
 	statusHeight    = 1
 	headerHeight    = 1 // title row of every list pane
 	// msgHeaderHeight is what the messages pane spends on its own head: the
@@ -188,11 +195,20 @@ func (m *Model) layout() {
 	m.holdSide()
 	m.input.SetWidth(max(10, m.bandWidth(sideMain)-2))
 	m.rightInput.SetWidth(max(10, m.bandWidth(sideRight)-2))
-	// Only a Thread frame is answered without naming a message, so only it has
-	// a prompt to stand where a quote would.
+	// A prompt stands where a quote would, so it is there only while the box
+	// is answering its frame rather than a message in it. A Thread is answered
+	// without naming anything; a reply tree's answer lands in the chat's flow,
+	// so the prompt says whose message it will land beside.
 	m.rightInput.Placeholder = ""
-	if m.rightKind == rightThread {
-		m.rightInput.Placeholder = threadPrompt
+	if m.rightReply == nil {
+		switch m.rightKind {
+		case rightThread:
+			m.rightInput.Placeholder = threadPrompt
+		case rightReply:
+			if x, ok := m.frameRoot(); ok {
+				m.rightInput.Placeholder = replyPrompt + displaySender(x, m.deps.Self, m.suffixOf(x.SenderID))
+			}
+		}
 	}
 	rows := m.composerRows()
 	m.sized(sideMain, rows)
@@ -216,23 +232,30 @@ func (m *Model) layout() {
 	}
 }
 
-// sized gives a box its share of the band. The box with the keys splits its
-// rows between the preview, the popup and the badge; the other one spends
-// everything the band has on its quote and its text.
+// sized gives a box's writing area its share of the band.
 func (m *Model) sized(s composerSide, rows composerRows) {
 	ta := &m.input
 	if s == sideRight {
 		ta = &m.rightInput
 	}
-	if s == m.side {
-		ta.SetHeight(rows.input)
-		return
+	ta.SetHeight(m.textHeight(s, rows))
+}
+
+// textHeight is the writing area's height inside the box for s. The box with
+// the keys keeps the rows claimed for it; the other one spends the preview's,
+// the popup's and the badge's rows on text as well, since all three belong to
+// the draft being typed. Either way the quote row the band claims in every
+// state goes to the text when there is no quote to draw in it, rather than
+// being left blank under the badge, which is where fitBlock would pad it.
+func (m Model) textHeight(s composerSide, rows composerRows) int {
+	h := rows.input + rows.quote
+	if s != m.side {
+		h = rows.total()
 	}
-	h := m.composerHeight()
 	if _, ok := m.quotedOn(s); ok {
-		h--
+		h -= rows.quote
 	}
-	ta.SetHeight(max(1, h))
+	return max(1, h)
 }
 
 // bodyHeight is the inner height of the message panes, the ones the composer

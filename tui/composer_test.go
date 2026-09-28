@@ -145,7 +145,7 @@ func TestOnInsertKey_GrowingTheDraftRelaysOutThePanes(t *testing.T) {
 	require.Equal(t, kindPost, m.draft.kind)
 	require.NotZero(t, m.composerRows().preview)
 	require.Less(t, m.bodyHeight(), before)
-	require.Equal(t, m.composerRows().input, m.input.Height(), "the textarea was laid out again")
+	require.Equal(t, m.textHeight(sideMain, m.composerRows()), m.input.Height(), "the textarea was laid out again")
 }
 
 // typeInto drives the real key path a rune at a time, the way the reader does.

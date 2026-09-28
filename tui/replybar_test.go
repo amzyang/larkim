@@ -131,3 +131,17 @@ func TestRenderMessages_MarksTheQuotedMessage(t *testing.T) {
 		"the lead says which message the open draft answers")
 	require.Equal(t, before, len(m.msgRows), "aiming the draft adds no row, so the list stays where it was")
 }
+
+func TestOnInsertKey_EscLeavesTheBoxAtItsRestingHeight(t *testing.T) {
+	m := replying(120, 30, store.Message{MessageID: "om_x", SenderName: "林岚", Content: "hey", RenderedAt: 1}, false)
+	m.input.SetValue(strings.Repeat("一行\n", 5))
+	m.tookDraft(composerRows{})
+	require.Greater(t, m.composerHeight(), restingComposer, "the box grew with the draft")
+
+	out, _ := m.onInsertKey(keyMsg("esc"))
+	m = out.(Model)
+	require.Equal(t, restingComposer, m.composerHeight(), "insert is over, so the box is back at rest")
+	box := m.renderInput(sideMain)
+	require.Equal(t, m.composerHeight()+2, lipgloss.Height(box), "the box is exactly as tall as it claims")
+	require.Contains(t, ansi.Strip(box), replyBarHint, "the quote row was not clipped off the top")
+}

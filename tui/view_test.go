@@ -75,6 +75,7 @@ func TestChatsPane_RunsPastTheComposerBand(t *testing.T) {
 	m.replan()
 	m.layout()
 	require.Greater(t, m.composerHeight(), restingComposer, "the box grew with the draft")
+	require.Equal(t, composerMaxRows, m.composerRows().input, "and stopped where the panes need the rows more")
 	require.Equal(t, tall, m.chatsBodyHeight(), "and the chats pane did not move")
 	require.Equal(t, m.height-statusHeight, lipgloss.Height(m.renderChats(m.chatsBodyHeight())))
 }
@@ -395,9 +396,11 @@ func TestModelPicHeight_DoesNotMoveWithTheReplyBar(t *testing.T) {
 	require.Equal(t, m.msgListHeight(), was, "a picture may fill the pane it is drawn in")
 
 	m.replyTo = &store.Message{MessageID: "om_1"}
+	m.layout()
 	require.Equal(t, was, m.picHeight(),
 		"opening the reply bar must not resize every picture on screen")
-	require.Equal(t, m.msgListHeight()+1, m.picHeight(), "at the cost of one row while it is open")
+	require.Equal(t, m.msgListHeight(), m.picHeight(),
+		"and costs no row either, since the band claims one for the quote in every state")
 }
 
 func TestHighlightChat_FocusedRowTakesTheFixedTint(t *testing.T) {

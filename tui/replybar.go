@@ -44,14 +44,16 @@ func (r composerRows) total() int {
 // The preview band is measured against previewRows, so a caller that changes
 // the draft rebuilds the preview before reading the split back.
 //
-// The badge row is claimed in every mode, including the ones that never draw a
-// badge. A box that changed height with the mode would jump the panes above it
-// every time the reader pressed i or e, which costs more than the row.
+// The quote row and the badge row are claimed in every state, including the
+// ones that draw neither. A box that changed height with the mode would jump
+// the panes above it every time the reader pressed i or e, and one that changed
+// height with the quote would jump them every time the keys crossed from the
+// chat's box to the column's — the two hold different quotes and different
+// drafts. Both cost more than the row. The claimed row a box does not draw goes
+// to its writing area, which sized works out.
 func (m Model) composerRows() composerRows {
 	var r composerRows
-	if _, ok := m.quotedOn(m.side); ok {
-		r.quote = 1
-	}
+	r.quote = 1
 	r.badge = 1
 	r.input = inputHeight
 	// Growing the composer and previewing the draft are both extras, so they
