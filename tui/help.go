@@ -182,10 +182,7 @@ type helpPanel struct {
 }
 
 func (m Model) openHelp() Model {
-	in := textinput.New()
-	in.Prompt = ""
-	in.SetStyles(textinput.DefaultStyles(m.dark))
-	in.SetVirtualCursor(false)
+	in := m.newQueryInput()
 	m.help = helpPanel{open: true, input: in, hits: helpSearch("")}
 	return m
 }

@@ -60,10 +60,7 @@ func (m Model) openForward() (tea.Model, tea.Cmd) {
 	if m.outboxAt(x.MessageID) != nil {
 		return m.notify("that message has not reached Feishu yet", true), nil
 	}
-	in := textinput.New()
-	in.Prompt = ""
-	in.SetStyles(textinput.DefaultStyles(m.dark))
-	in.SetVirtualCursor(false)
+	in := m.newQueryInput()
 	m.mode = modeForward
 	m.fwd = forwarder{msg: x, input: in}
 	m.fwd.hits = m.fwdSearch("")

@@ -63,10 +63,7 @@ func (m Model) openPicker() (tea.Model, tea.Cmd) {
 			mine[emoji.Fold(c.Key)] = true
 		}
 	}
-	in := textinput.New()
-	in.Prompt = ""
-	in.SetStyles(textinput.DefaultStyles(m.dark))
-	in.SetVirtualCursor(false)
+	in := m.newQueryInput()
 	m.mode = modeEmoji
 	m.picker = picker{target: x, mine: mine, input: in, hits: m.emoji.Search("")}
 	m.layout()

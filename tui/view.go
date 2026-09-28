@@ -168,6 +168,20 @@ func composerStyles(dark bool) textarea.Styles {
 	return st
 }
 
+// newQueryInput is the one-line field every chooser and filter is built on —
+// the emoji picker, the forward chooser, the help panel, the config panel's
+// query and the value it edits — so they all take the same readline keys and
+// wear the same colours.
+func (m Model) newQueryInput() textinput.Model {
+	in := textinput.New()
+	in.Prompt = ""
+	in.SetStyles(textinput.DefaultStyles(m.dark))
+	// The terminal's own cursor carries the mode, so bubbles must stop drawing
+	// its reverse-video stand-in: a virtual cursor has no shape to change.
+	in.SetVirtualCursor(false)
+	return in
+}
+
 func (m *Model) layout() {
 	// A box that is not on screen cannot be the one being written in, so the
 	// keys are sent back before anything is measured against the side.

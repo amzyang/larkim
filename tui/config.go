@@ -46,10 +46,7 @@ type configPanel struct {
 
 // openConfig opens the panel, on the row key names when it names one.
 func (m Model) openConfig(key string) Model {
-	in := textinput.New()
-	in.Prompt = ""
-	in.SetStyles(textinput.DefaultStyles(m.dark))
-	in.SetVirtualCursor(false)
+	in := m.newQueryInput()
 	hits := configSearch("")
 	at := 0
 	if key = strings.TrimSpace(key); key != "" {
@@ -209,10 +206,7 @@ func (m Model) editConfig() (tea.Model, tea.Cmd) {
 	if s.readOnly {
 		return m.notify(s.key+": a list; edit the config file", true), nil
 	}
-	in := textinput.New()
-	in.Prompt = ""
-	in.SetStyles(textinput.DefaultStyles(m.dark))
-	in.SetVirtualCursor(false)
+	in := m.newQueryInput()
 	in.SetValue(m.settingValue(s))
 	in.SetWidth(m.configValueWidth())
 	m.config.editing, m.config.editor, m.config.err = true, in, ""
