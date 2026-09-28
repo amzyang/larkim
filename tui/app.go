@@ -3,6 +3,7 @@
 package tui
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"image/color"
@@ -1035,7 +1036,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.notify(fmt.Sprintf("copied %s · %s · %s", plural(msg.n, "msg", "msgs"), humanBytes(int64(len(msg.text))), msg.chat), false),
 			tea.SetClipboard(msg.text)
 	case tea.MouseClickMsg:
-		if m.help.open {
+		if m.help.open || m.floatAt(msg.X, msg.Y) {
 			// Nothing under the overlay is clickable, and a click is not a
 			// key the reader meant as "done reading".
 			return m, nil
@@ -1694,7 +1695,6 @@ func (m Model) onInsertKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) onCommandKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
-	before := m.composerRows()
 	// The list answers first, because the keys it owns are ones the line
 	// otherwise has: Tab and the arrows would reach the text input, and Esc
 	// would leave the mode outright.
@@ -1713,7 +1713,6 @@ func (m Model) onCommandKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	m.cmdline, cmd = m.cmdline.Update(k)
 	m.takeCmdComp()
-	m.tookCmdComp(before)
 	return m, cmd
 }
 
@@ -2851,6 +2850,12 @@ func (m Model) onWheel(ms tea.Mouse) (tea.Model, tea.Cmd) {
 	if m.help.open {
 		m.helpScroll(step)
 		return m, nil
+	}
+	if m.floatAt(ms.X, ms.Y) {
+		// A notch is three rows everywhere else, which over a list of eight
+		// offers walks past most of them; the popup moves by one, the way the
+		// keys that own it do.
+		return m.walkFloat(cmp.Compare(step, 0)), nil
 	}
 	switch p {
 	case paneChats:

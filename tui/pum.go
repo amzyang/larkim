@@ -306,50 +306,41 @@ func (m Model) acceptPum() Model {
 	return m
 }
 
-// pumRows is how many offers the popup has room for.
-func (m Model) pumRows() int { return m.composerRows().pum }
+// pumRows is how many offers the popup has room for. The popup is not cleared
+// on the way out of insert mode, so the mode is what keeps a run left over from
+// it off the pane.
+func (m Model) pumRows() int {
+	if m.mode != modeInsert {
+		return 0
+	}
+	return m.floatRoom(len(m.pum.hits))
+}
 
 // pumVisible is the offers the popup has room for. The renderer draws exactly
 // these and the picture pass claims exactly their pictures, so the two cannot
 // drift into preparing one emoji and drawing another.
 func (m Model) pumVisible() []pumHit { return window(m.pum.hits, m.pum.top, m.pumRows()) }
 
-// pumLines draws the popup, top row first, to sit directly over the writing
-// area — which at the bottom of the screen is where a popup menu opens.
-func (m Model) pumLines(w int) []string {
-	var out []string
-	for i, h := range m.pumVisible() {
-		out = append(out, m.pumLine(h, m.pum.top+i == m.pum.idx, w))
-	}
-	return out
-}
-
-// pumLine draws one offer: the mark, the emoji where there is one, and the
-// words emojiHits already assembled.
-func (m Model) pumLine(h pumHit, selected bool, w int) string {
-	return m.offerLine(h.emoji, h.label, selected, w)
-}
-
-// offerLine draws one row of a completion list, for the composer's popup and
-// for the : line alike. It comes back as a string rather than pieces because
-// only an emoji carries a picture, and that one case is joined here.
-func (m Model) offerLine(e emoji.Emoji, label string, selected bool, w int) string {
+// offerSegs is one row of a completion list — the composer's popup and the :
+// line alike — in the pieces it is drawn from: the cursor mark, the emoji where
+// there is one, and the words the hit was assembled with. It comes back in
+// pieces because the popup sizes itself to its widest row, and a row carrying a
+// picture has to be measured as the cells that picture fills rather than as the
+// characters standing in for them.
+func (m Model) offerSegs(e emoji.Emoji, label string, selected bool) []rowSeg {
 	mark := "  "
 	if selected {
 		mark = stAccent.Render("▸ ")
 	}
 	if e.Key == "" {
-		return fit(mark+label, w)
+		return []rowSeg{{text: mark + label}}
 	}
 	icon, pic := m.pickerIcon(e)
 	tail := " " + label
 	if pic.cols > 0 {
-		// A line carrying a picture is padded rather than fitted: fit measures
-		// a placeholder as the characters it is and would cut one out of its
-		// cluster.
-		return m.joinSegs([]rowSeg{{text: mark}, {pic: pic}, {text: icon + tail}}, w)
+		return []rowSeg{{text: mark}, {pic: pic}, {text: icon + tail}}
 	}
-	return fit(mark+icon+tail, w)
+	return []rowSeg{{text: mark + icon + tail}}
 }
 
 // pumHint names the keys the popup owns while it is open, since it takes two

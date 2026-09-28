@@ -26,13 +26,12 @@ type composerRows struct {
 	quote   int // the message a reply will attach to
 	preview int // the draft as the message list will draw it
 	rule    int // the line parting the preview from the writing area
-	pum     int // the completion popup, which sits closest to what it completes
 	input   int // the writing area
 	badge   int // the row naming the message type the draft will be sent as
 }
 
 func (r composerRows) total() int {
-	return r.quote + r.preview + r.rule + r.pum + r.input + r.badge
+	return r.quote + r.preview + r.rule + r.input + r.badge
 }
 
 // composerRows claims rows in the order the reader needs them: the quote and
@@ -68,25 +67,17 @@ func (m Model) composerRows() composerRows {
 	case modeInsert:
 		grow := room(draftRows(m.area().Value(), m.area().Width()))
 		r.input += grow
-		// The popup outranks the preview: it is what the reader is choosing
-		// from, where the preview only shows what they have already written.
-		r.pum = clamp(len(m.pum.hits), 0, min(pumMaxRows, extra-grow))
 		if m.previewOpen && m.draft.kind != kindText {
 			// Held to the rows the preview has as well as the rows there is
 			// room for, and one row short of them for the rule the band is
 			// drawn over. Every row the box draws has to be claimed: the box
 			// pads an under-filled one below the badge, which is drawn last,
 			// and drops the top off an over-filled one.
-			r.preview = clamp(extra-grow-r.pum-1, 0, min(previewMaxRows, len(m.previewRows)))
+			r.preview = clamp(extra-grow-1, 0, min(previewMaxRows, len(m.previewRows)))
 			if r.preview > 0 {
 				r.rule = 1
 			}
 		}
-	case modeCommand:
-		// The : line claims its offers the way the writing area claims the
-		// popup's, out of the same budget, so the box cannot be told to draw
-		// rows the panes above it never gave up.
-		r.pum = clamp(len(m.cmdcomp.hits), 0, min(pumMaxRows, extra))
 	case modeTarget:
 		// The chooser grows to its list the way the writing area grows to a
 		// draft. Three rows at rest would put a card's links behind a scroll
@@ -124,8 +115,8 @@ func (m Model) previewBottom() int {
 
 // composerBand names the part of the composer a row inside the box belongs to,
 // so the wheel scrolls what the pointer is over. Only the two scrollable parts
-// are named; the quote, the rule under the preview, the popup and the badge
-// are all bandOther, and so is a row outside the box.
+// are named; the quote, the rule under the preview and the badge are all
+// bandOther, and so is a row outside the box.
 type composerBand int
 
 const (
@@ -152,6 +143,9 @@ func (m Model) composerBand(row int) composerBand {
 // not disagree about which row the writing area starts on. It draws exactly
 // the rows composerRows claimed above the writing area, so the box neither
 // pads nor clips.
+//
+// The box without the keys draws only its quote: the preview and the badge
+// describe the draft being typed, which is the other box's.
 func (m Model) composerAbove(s composerSide, w int) []string {
 	var lines []string
 	if r := m.composerRows(); s == m.side && r.preview > 0 {
@@ -164,15 +158,7 @@ func (m Model) composerAbove(s composerSide, w int) []string {
 	if x, ok := m.quotedOn(s); ok {
 		lines = append(lines, m.renderReplyBar(s, x, w))
 	}
-	if s != m.side {
-		// The box without the keys shows what it holds and nothing about what
-		// is being done to it: the preview, the popup and the badge all belong
-		// to the draft being typed.
-		return lines
-	}
-	// Last, so the offers sit directly over the run being completed — which at
-	// the bottom of the screen is where a popup menu opens.
-	return append(lines, m.pumLines(w)...)
+	return lines
 }
 
 // renderReplyBar quotes the reply's target above the composer the way the

@@ -204,12 +204,12 @@ func TestPum_AcceptingAnEmoticonWritesTheTextItself(t *testing.T) {
 	require.Equal(t, "(╯°□°)╯︵ ┻━┻ ", mm.(Model).input.Value())
 }
 
-func TestPumLine_ShowsAnEmoticonBeforeItIsAccepted(t *testing.T) {
+func TestOfferSegs_ShowAnEmoticonBeforeItIsAccepted(t *testing.T) {
 	// The icon column cannot hold it, so the row itself has to say what Enter
 	// will write — a name alone does not tell one face from another.
 	m := typeInto(newPumModel(t), ":xianzhuo")
 	require.True(t, m.pum.open())
-	line := ansi.Strip(m.pumLine(m.pum.hits[0], true, 60))
+	line := offerText(m, m.pum.hits[0], true)
 	require.Contains(t, line, "(╯°□°)╯︵ ┻━┻")
 	require.Contains(t, line, "tableflip")
 }
@@ -289,21 +289,21 @@ func TestPum_MovingKeepsItsPlaceWhileTheRunStands(t *testing.T) {
 	require.Equal(t, "@林岚 ", mm.(Model).input.Value())
 }
 
-func TestComposerHeight_GrowsByThePopupAndKeepsThePanesFloor(t *testing.T) {
+func TestPumRows_HoldThePopupToThePaneItCovers(t *testing.T) {
 	m := typeInto(newPumModel(t), "@")
-	require.Equal(t, len(m.pum.hits), m.composerRows().pum)
-	require.Equal(t, len(m.pum.hits), len(m.pumLines(m.width-2)))
+	require.Equal(t, len(m.pum.hits), m.pumRows())
+	require.Len(t, m.floatSegs(), m.pumRows())
 
-	// The offers outrun the cap; the band does not.
+	// The offers outrun the cap; the popup does not.
 	m = typeInto(newPumModel(t), ":ha")
 	require.Greater(t, len(m.pum.hits), pumMaxRows)
-	require.Equal(t, pumMaxRows, m.composerRows().pum)
+	require.Equal(t, pumMaxRows, m.pumRows())
 
 	// A terminal with nothing to spare keeps the message panes their floor and
 	// draws no popup at all.
 	m.height = minHeight
 	m.layout()
-	require.Zero(t, m.composerRows().pum)
+	require.Zero(t, m.pumRows())
 	require.GreaterOrEqual(t, m.listHeight(), 1)
 }
 
@@ -313,7 +313,7 @@ func TestPum_TakesNoKeysOnATerminalWithNoRoomToDrawIt(t *testing.T) {
 
 	m.height = minHeight
 	m.layout()
-	require.Zero(t, m.composerRows().pum)
+	require.Zero(t, m.pumRows())
 	require.False(t, m.pumShowing(), "nothing is drawn, so nothing may be chosen from")
 
 	// Enter sends, the way it does whenever no popup is on screen.
@@ -323,8 +323,13 @@ func TestPum_TakesNoKeysOnATerminalWithNoRoomToDrawIt(t *testing.T) {
 	require.NotContains(t, m.renderBadge(m.width-2), pumHint)
 }
 
-func TestRenderInput_BoxIsAsTallAsItClaimsWithThePopupOpen(t *testing.T) {
-	m := typeInto(newPumModel(t), "@")
+func TestRenderInput_BoxStandsStillWhenThePopupOpens(t *testing.T) {
+	m := newPumModel(t)
+	before, body := m.composerRows(), m.bodyHeight()
+	m = typeInto(m, "@")
+	require.True(t, m.pum.open())
+	require.Equal(t, before, m.composerRows(), "the popup buys no rows off the box")
+	require.Equal(t, body, m.bodyHeight(), "so the panes above it do not move")
 	require.Equal(t, m.composerHeight()+2, strings.Count(m.renderInput(sideMain), "\n")+1)
 }
 
@@ -335,6 +340,13 @@ func TestModelPicturePrepare_ClaimsWhatTheOpenPopupOffers(t *testing.T) {
 	for i, h := range m.pumVisible() {
 		require.Equal(t, m.pum.hits[m.pum.top+i], h, "the renderer and the picture pass see the same offers")
 	}
+}
+
+// offerText is one of the popup's rows as the reader sees it, drawn the width
+// the popup would give it.
+func offerText(m Model, h pumHit, selected bool) string {
+	segs := m.offerSegs(h.emoji, h.label, selected)
+	return ansi.Strip(m.joinSegs(segs, segsWidth(segs)))
 }
 
 // pumNames is what the popup is offering, in order.
@@ -355,11 +367,11 @@ func emojiByBracket(draft string) (string, bool) {
 	return g[1], true
 }
 
-func TestPumLine_SaysALetteringEmojisNameOnce(t *testing.T) {
+func TestOfferSegs_SayALetteringEmojisNameOnce(t *testing.T) {
 	m := newPumModel(t)
 	m = typeInto(m, ":yes")
 	i := slices.IndexFunc(m.pum.hits, func(h pumHit) bool { return h.emoji.Key == "Yes" })
 	require.GreaterOrEqual(t, i, 0)
-	line := ansi.Strip(m.pumLine(m.pum.hits[i], false, 60))
+	line := offerText(m, m.pum.hits[i], false)
 	require.Equal(t, 1, strings.Count(strings.ToLower(line), "yes"), "line=%q", line)
 }

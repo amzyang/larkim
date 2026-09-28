@@ -211,9 +211,7 @@ func (m Model) onCmdCompKey(k tea.KeyPressMsg) (Model, bool) {
 	case "esc":
 		// The list goes, command mode stays: a second Esc leaves it, the way
 		// dismissing a menu and leaving the buffer are two presses in vim.
-		before := m.composerRows()
 		m.closeCmdComp()
-		m.tookCmdComp(before)
 		return m, true
 	}
 	return m, false
@@ -238,36 +236,19 @@ func (m Model) walkCmdComp(d int) Model {
 	return m
 }
 
-// tookCmdComp relays out a change in how many rows the list claims, the way
-// tookDraft does for the composer.
-func (m *Model) tookCmdComp(before composerRows) {
-	if before != m.composerRows() {
-		m.layout()
+// cmdCompRows is how many offers the list has room for. Only command mode has
+// one; the filter and the search share the box and complete against nothing.
+func (m Model) cmdCompRows() int {
+	if m.mode != modeCommand {
+		return 0
 	}
+	return m.floatRoom(len(m.cmdcomp.hits))
 }
-
-// cmdCompRows is how many offers the list has room for.
-func (m Model) cmdCompRows() int { return m.composerRows().pum }
 
 // cmdCompVisible is the offers the list has room for. The renderer draws
 // exactly these and the picture pass claims exactly their pictures.
 func (m Model) cmdCompVisible() []cmdHit {
 	return window(m.cmdcomp.hits, m.cmdcomp.top, m.cmdCompRows())
-}
-
-// cmdCompLines draws the list, top row first, to sit above the : line — so the
-// line the reader is typing on stands still as the list grows under their
-// hands. Only command mode has one; the filter and the search share the box
-// and complete against nothing.
-func (m Model) cmdCompLines(w int) []string {
-	if m.mode != modeCommand {
-		return nil
-	}
-	var out []string
-	for i, h := range m.cmdCompVisible() {
-		out = append(out, m.offerLine(h.emoji, h.label, m.cmdcomp.top+i == m.cmdcomp.idx, w))
-	}
-	return out
 }
 
 // cmdCompHint names the keys the list owns while it is open, since it takes

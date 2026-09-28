@@ -163,13 +163,15 @@ func TestCmdComp_EscClosesTheListThenLeavesCommandMode(t *testing.T) {
 
 func TestCmdComp_TheColonLineStandsStillAsTheListGrows(t *testing.T) {
 	m := press(t, cmdModel(t), "c")
-	one := m.composerRows().pum
+	one := m.cmdCompRows()
 	require.Positive(t, one)
 	at := m.View().Cursor
+	box := m.composerRows()
 
 	m = press(t, m, "backspace", "r", "e", "a", "c", "t", " ")
-	require.Greater(t, m.composerRows().pum, one, "an emoji list is longer than two commands")
+	require.Greater(t, m.cmdCompRows(), one, "an emoji list is longer than two commands")
 	require.Equal(t, at.Y, m.View().Cursor.Y, "the line the reader types on does not move")
+	require.Equal(t, box, m.composerRows(), "and the list buys no rows off the box")
 	require.Equal(t, m.composerHeight()+2, lipgloss.Height(m.renderInput(sideMain)), "the box is exactly as tall as it claims")
 }
 
@@ -200,4 +202,40 @@ func TestCmdComp_CompletesAConfigKeyBare(t *testing.T) {
 
 	m = press(t, m, "tab")
 	require.Equal(t, "config data_dir", typed(m))
+}
+
+func TestFloater_StandsUnderTheFieldOnTheCommandLine(t *testing.T) {
+	m := press(t, cmdModel(t), "c")
+	f, ok := m.floater()
+	require.True(t, ok)
+	// The command being completed is the line's first field, one column past
+	// the : the line opens with, and the box's border sits left of that.
+	require.Equal(t, m.bandLeft(m.cmdSide())+1+lipgloss.Width(m.cmdline.Prompt)-1, f.x)
+
+	// An argument stands further along, and the box follows the field rather
+	// than the caret the list keeps moving.
+	m = press(t, cmdModel(t), "r", "e", "a", "c", "t", " ")
+	g, ok := m.floater()
+	require.True(t, ok)
+	require.Greater(t, g.x, f.x)
+	require.Equal(t, len("react "), g.x-f.x)
+}
+
+func TestFloater_FollowsTheFieldNotTheLineTheListWrites(t *testing.T) {
+	m := press(t, cmdModel(t), "c")
+	f, _ := m.floater()
+
+	m = press(t, m, "tab")
+	require.GreaterOrEqual(t, m.cmdcomp.idx, 0, "the list has written into the line")
+	g, ok := m.floater()
+	require.True(t, ok)
+	require.Equal(t, f.x, g.x, "the box stands where the field does, not where the caret went")
+}
+
+func TestCursorAt_StaysOnTheCommandLinesOwnRow(t *testing.T) {
+	m := press(t, cmdModel(t), "c")
+	require.True(t, m.cmdcomp.open())
+	// The first inner row of the box: the panes with their border, then the
+	// box's own top border.
+	require.Equal(t, m.bodyHeight()+3, m.View().Cursor.Y)
 }

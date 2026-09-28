@@ -795,7 +795,7 @@ func (m Model) View() tea.View {
 		v.Cursor = m.helpCursor()
 		return v
 	}
-	v.Content = out.String()
+	v.Content = m.floatOver(out.String())
 	v.Cursor = m.cursorAt()
 	return v
 }
@@ -836,8 +836,7 @@ func (m Model) cursorAt() *tea.Cursor {
 	}
 	switch m.mode {
 	case modeCommand, modeFilter, modeSearch:
-		cs := m.cmdSide()
-		return place(cs, textinputCursor(m.cmdline), 1, top+len(m.cmdCompLines(m.bandWidth(cs)-2)))
+		return place(m.cmdSide(), textinputCursor(m.cmdline), 1, top)
 	case modeEmoji:
 		return place(m.side, textinputCursor(m.picker.input), 1+lipgloss.Width(pickerPrompt()), top)
 	case modeForward:
@@ -1099,16 +1098,13 @@ func (m Model) rightTitle(w int) string {
 }
 
 // renderInput draws one box. The box without the keys shows its quote and its
-// text and nothing else — the preview, the popup and the badge all describe
-// the draft being typed, and the command line is the whole program's, so it
-// stands in the box the reader is in.
+// text and nothing else — the preview and the badge both describe the draft
+// being typed, and the command line is the whole program's, so it stands in the
+// box the reader is in.
 func (m Model) renderInput(s composerSide) string {
 	w, h := m.bandWidth(s)-2, m.composerHeight()
 	if s == m.cmdSide() && (m.mode == modeCommand || m.mode == modeFilter || m.mode == modeSearch) {
-		// The offers go above the line rather than below it, so the line the
-		// reader is typing on stands still while the box grows upward under
-		// the panes.
-		rows := append(m.cmdCompLines(w), m.cmdline.View())
+		rows := []string{m.cmdline.View()}
 		// The row the badge has in every other mode carries the list's hint
 		// here, so the box pads between the line and the hint rather than
 		// below it and the hint keeps the bottom edge.
