@@ -1786,6 +1786,14 @@ func (m Model) onNormalKey(s string) (tea.Model, tea.Cmd) {
 		m.focus = m.nextPane(-1)
 		return m, nil
 	case "h", "left":
+		// Inside the column h steps out of the frame before it steps out of
+		// the pane: the stack is a containment path, so the frame beneath is
+		// the one the reader came through. Esc keeps this rung and closes the
+		// column on the last frame; h leaves it standing, because a column
+		// beside the chat is still being read.
+		if m.focus == paneThread && len(m.rightStack) > 0 {
+			return m.popRight()
+		}
 		m.focus = m.stepPane(-1)
 		return m, nil
 	case "l", "right":

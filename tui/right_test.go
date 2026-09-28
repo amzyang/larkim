@@ -100,6 +100,41 @@ func TestPopRight_EscOnTheLastFrameClosesTheColumn(t *testing.T) {
 	require.Equal(t, paneMessages, m.focus, "the reader is put back where the column stood")
 }
 
+func TestPopRight_HUncoversTheFrameBeneath(t *testing.T) {
+	m := onThread(t)
+	m, _ = m.pushRight(rightFrame{kind: rightForward, id: "om_fwd", root: "om_fwd"})
+
+	next, cmd := m.onNormalKey("h")
+	m = next.(Model)
+
+	require.Equal(t, rightThread, m.rightKind)
+	require.Equal(t, "omt_1", m.threadID)
+	require.Empty(t, m.rightStack)
+	require.Equal(t, paneThread, m.focus, "h steps out of the frame, not out of the column")
+	require.NotNil(t, cmd, "an uncovered frame reloads: a sync tick may have moved it")
+}
+
+func TestH_OnTheLastFrameLeavesTheColumnStanding(t *testing.T) {
+	m := onThread(t)
+
+	next, _ := m.onNormalKey("h")
+	m = next.(Model)
+
+	require.True(t, m.threadOpen(), "closing the column is Esc's rung, not h's")
+	require.Equal(t, paneMessages, m.focus)
+}
+
+func TestH_OutsideTheRightPaneLeavesTheStackAlone(t *testing.T) {
+	m := onThread(t)
+	m, _ = m.pushRight(rightFrame{kind: rightForward, id: "om_fwd", root: "om_fwd"})
+	m.focus = paneMessages
+
+	next, _ := m.onNormalKey("h")
+
+	require.Len(t, next.(Model).rightStack, 1, "h outside the column is the pane key it has always been")
+	require.Equal(t, paneChats, next.(Model).focus)
+}
+
 func TestEsc_OutsideTheRightPaneLeavesTheStackAlone(t *testing.T) {
 	m := onThread(t)
 	m, _ = m.pushRight(rightFrame{kind: rightForward, id: "om_fwd", root: "om_fwd"})

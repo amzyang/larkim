@@ -434,6 +434,7 @@ type pendingJump struct{ id, thread string }
 | `Enter` | `activate`（tui/app.go:1856）保持 `ThreadID` 先判——一条被开了话题的转发，光标下更活的那个是话题；`ThreadID` 为空时加一臂 `MsgType == "merge_forward"` |
 | `t` | `toggleThread` 改为 `toggleRight`，三种容器都认：话题、转发，再落到光标所在的回复树 |
 | `Esc` | 焦点在右栏时弹一帧 |
+| `h` | 焦点在右栏且栈非空时弹一帧；栈空时照旧左移焦点，不关右栏 |
 
 `r` / `R` / `e` / `f` / `y` 系列不动：容器是本会话的一条真实消息。
 

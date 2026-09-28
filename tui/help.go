@@ -38,6 +38,7 @@ func buildHelpEntries() []helpEntry {
 		{"NORMAL", "Ctrl+d/Ctrl+u", "page"},
 		{"NORMAL", "Tab/Shift+Tab", "focus the next/previous pane"},
 		{"NORMAL", "h/l", "move between panes"},
+		{"NORMAL", "", "in the right column h backs out of a stacked frame first, leaving the column open"},
 		{"NORMAL", "Enter", "open the chat, the container, or the reply under the cursor"},
 		{"NORMAL", "i", "write in the focused column's composer"},
 		{"NORMAL", "", "the right column carries its own, so a chat draft and an answer inside a thread both keep their place"},
