@@ -45,15 +45,9 @@ var settings = []setting{{
 	key:  "lark_cli_path",
 	help: "the lark-cli binary; empty tries /opt/homebrew/bin, then $PATH",
 }, {
-	key:  "poll_interval_ms",
-	help: "pause between daemon ticks, in milliseconds; under 100 is raised to 100",
-	check: func(raw string) error {
-		// The unit is in the key's name, so 3s is the reader writing it twice.
-		if ms, err := strconv.Atoi(raw); err != nil || ms <= 0 {
-			return fmt.Errorf("want a positive count of milliseconds, not %q", raw)
-		}
-		return nil
-	},
+	key:   "poll_interval_ms",
+	help:  "pause between daemon ticks, in milliseconds; under 100 is raised to 100",
+	check: positiveMS,
 }, {
 	key:  "overlap",
 	help: "how far each search window reaches behind the watermark",
@@ -73,17 +67,10 @@ var settings = []setting{{
 	key:  "repair_every",
 	help: "interval of the re-listing that lands edits and recalls",
 }, {
-	key:  "applink_pace_ms",
-	help: "gap between two Feishu navigations, in milliseconds",
-	live: true,
-	check: func(raw string) error {
-		// The unit is in the key's name, so 1500ms is the reader writing it
-		// twice, and a gap of nothing is the bug the pacing exists to fix.
-		if ms, err := strconv.Atoi(raw); err != nil || ms <= 0 {
-			return fmt.Errorf("want a positive count of milliseconds, not %q", raw)
-		}
-		return nil
-	},
+	key:   "applink_pace_ms",
+	help:  "gap between two Feishu navigations, in milliseconds",
+	live:  true,
+	check: positiveMS,
 }, {
 	key:  "resources.max_bytes",
 	help: "skip attachments larger than this; 0 means unlimited",
@@ -106,6 +93,15 @@ var settings = []setting{{
 	help:     "rules whose messages carry no unread badge, written as a list",
 	readOnly: true,
 }}
+
+// positiveMS judges a key whose unit is in its own name, so 3s is the reader
+// writing it twice. A gap of nothing is the bug the pacing exists to fix.
+func positiveMS(raw string) error {
+	if ms, err := strconv.Atoi(raw); err != nil || ms <= 0 {
+		return fmt.Errorf("want a positive count of milliseconds, not %q", raw)
+	}
+	return nil
+}
 
 // rebuildAI builds the assistant again from the model and the key variable now
 // in m.cfg, which is what makes a change to either reach the next question.
