@@ -92,6 +92,8 @@ func keyCode(name string) rune {
 		return tea.KeyDown
 	case "backspace":
 		return tea.KeyBackspace
+	case "tab":
+		return tea.KeyTab
 	case "left":
 		return tea.KeyLeft
 	case "right":

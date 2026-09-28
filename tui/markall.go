@@ -68,12 +68,19 @@ func markAllRead(d Deps, chats []store.ChatUnread) tea.Cmd {
 	}
 }
 
-// onMarkAllDone hands the written-off chats to the queue that paces them.
+// onMarkAllDone hands the written-off chats to the queue that paces them, and
+// brings the panes to where the write left the store. Waiting for the watch
+// would leave the press unanswered for a beat, and the reader pressed it.
 func (m Model) onMarkAllDone(msg markAllDoneMsg) (Model, tea.Cmd) {
 	if msg.err != nil {
 		return m.notify(msg.err.Error(), true), nil
 	}
+	// The markers are what this visit found waiting. A mark-all is the reader
+	// saying none of it is, so they go with the counts rather than outliving
+	// them: no page reloaded after this one can light them again.
+	clear(m.dots)
 	m.applinks.swept = len(msg.chats)
 	m, cmd := m.pushApplinks(msg.chats)
-	return m.notify(sweepNote(len(msg.chats)), false), cmd
+	reload := m.reloadCurrent()
+	return m.notify(sweepNote(len(msg.chats)), false), tea.Batch(cmd, reload)
 }

@@ -79,6 +79,18 @@ func newIndex(file string, items []Emoji, keep func(Emoji) bool) *Index {
 // shows beside the hit count.
 func (ix *Index) Len() int { return len(ix.items) }
 
+// ByKey is the emoji this index holds under a key. The key is the spelling the
+// picker shows and the one a caller already holding an emoji names it by, and
+// it is not something Search can answer: the terms are folded, so fzf's smart
+// case turns a key's capitals into a query that matches nothing.
+func (ix *Index) ByKey(key string) (Emoji, bool) {
+	i := slices.IndexFunc(ix.items, func(e Emoji) bool { return e.Key == key })
+	if i < 0 {
+		return Emoji{}, false
+	}
+	return ix.items[i], true
+}
+
 // Use records that an emoji was just chosen and moves it to the head of the
 // emoji reached for as often as it now has been.
 //

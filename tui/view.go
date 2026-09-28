@@ -726,7 +726,7 @@ func (m Model) cursorAt() *tea.Cursor {
 	}
 	switch m.mode {
 	case modeCommand, modeFilter, modeSearch:
-		return place(textinputCursor(m.cmdline), 1, top)
+		return place(textinputCursor(m.cmdline), 1, top+len(m.cmdCompLines(m.width-2)))
 	case modeEmoji:
 		return place(textinputCursor(m.picker.input), 1+lipgloss.Width(pickerPrompt()), top)
 	case modeForward:
@@ -989,7 +989,18 @@ func (m Model) rightTitle(w int) string {
 func (m Model) renderInput() string {
 	w, h := m.width-2, m.composerHeight()
 	if m.mode == modeCommand || m.mode == modeFilter || m.mode == modeSearch {
-		return paneStyle(true, w).Height(h).Render(fitBlock(m.cmdline.View(), w, h))
+		// The offers go above the line rather than below it, so the line the
+		// reader is typing on stands still while the box grows upward under
+		// the panes.
+		rows := append(m.cmdCompLines(w), m.cmdline.View())
+		// The row the badge has in every other mode carries the list's hint
+		// here, so the box pads between the line and the hint rather than
+		// below it and the hint keeps the bottom edge.
+		for len(rows) < h-1 {
+			rows = append(rows, "")
+		}
+		rows = append(rows, m.renderCmdCompHint(w))
+		return paneStyle(true, w).Height(h).Render(fitBlock(strings.Join(rows, "\n"), w, h))
 	}
 	content := strings.Join(append(m.composerAbove(w), m.input.View()), "\n")
 	if m.composerRows().badge > 0 {

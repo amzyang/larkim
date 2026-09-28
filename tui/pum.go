@@ -324,19 +324,24 @@ func (m Model) pumLines(w int) []string {
 }
 
 // pumLine draws one offer: the mark, the emoji where there is one, and the
-// words emojiHits already assembled. It comes back as a string rather than
-// pieces because only an emoji carries a picture, and that one case is joined
-// here.
+// words emojiHits already assembled.
 func (m Model) pumLine(h pumHit, selected bool, w int) string {
+	return m.offerLine(h.emoji, h.label, selected, w)
+}
+
+// offerLine draws one row of a completion list, for the composer's popup and
+// for the : line alike. It comes back as a string rather than pieces because
+// only an emoji carries a picture, and that one case is joined here.
+func (m Model) offerLine(e emoji.Emoji, label string, selected bool, w int) string {
 	mark := "  "
 	if selected {
 		mark = stAccent.Render("▸ ")
 	}
-	if h.emoji.Key == "" {
-		return fit(mark+h.label, w)
+	if e.Key == "" {
+		return fit(mark+label, w)
 	}
-	icon, pic := m.pickerIcon(h.emoji)
-	tail := " " + h.label
+	icon, pic := m.pickerIcon(e)
+	tail := " " + label
 	if pic.cols > 0 {
 		// A line carrying a picture is padded rather than fitted: fit measures
 		// a placeholder as the characters it is and would cut one out of its

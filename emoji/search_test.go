@@ -166,3 +166,18 @@ func TestSearch_ACharacterAnswersWithOneEmoji(t *testing.T) {
 	require.True(t, ok)
 	require.Empty(t, glance.Glyph, "the picker draws Feishu's own picture for it")
 }
+
+func TestIndexByKey_AnswersTheSpellingThePickerShows(t *testing.T) {
+	ix := NewReactionIndex()
+
+	e, ok := ix.ByKey("THUMBSUP")
+	require.True(t, ok)
+	require.Equal(t, "THUMBSUP", e.Key)
+
+	// Search cannot stand in for it: the terms are folded, so a key's capitals
+	// make a case-sensitive query that reaches nothing.
+	require.Empty(t, ix.Search("THUMBSUP"))
+
+	_, ok = ix.ByKey("NOSUCHEMOJI")
+	require.False(t, ok)
+}

@@ -243,3 +243,22 @@ func TestRunCommand_ReadAllTakesTheSamePathAsTheButton(t *testing.T) {
 // errFailedOpen stands for macOS refusing an applink, which is all the caller
 // ever learns.
 var errFailedOpen = errors.New("no application knows how to open URL")
+
+// The markers are one visit's record of what was waiting. A mark-all is the
+// reader saying none of it is, so they go with the counts, and the panel drawn
+// beside the list answers the press rather than the watch's next beat.
+func TestOnMarkAllDone_DropsTheMarkersAndReanchorsThePanel(t *testing.T) {
+	m, st, _, _ := sweepModel(t, 2)
+	m = drain(t, m, m.startUnread(false))
+	require.Len(t, m.feed.sections, 2)
+	require.NotEmpty(t, m.dots)
+
+	swept := waiting(t, st)
+	_, err := st.MarkAllRead(t.Context(), 900)
+	require.NoError(t, err)
+	next, cmd := m.onMarkAllDone(markAllDoneMsg{chats: swept})
+	m = drain(t, next, cmd)
+
+	require.Empty(t, m.dots, "no marker outlives the press that settled it")
+	require.Empty(t, m.feed.sections, "and no section holds the anchor it was drawn on")
+}

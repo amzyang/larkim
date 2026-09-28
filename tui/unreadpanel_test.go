@@ -168,16 +168,16 @@ func TestFeed_ASendWaitsUnderItsOwnSection(t *testing.T) {
 		"under 平台组, not at the foot of the page")
 }
 
-func TestFeed_ADataRevReloadHoldsTheAnchorsItWentUpWith(t *testing.T) {
+func TestFeed_ADataRevReloadDropsAChatReadElsewhere(t *testing.T) {
 	m := feedModel(t)
 	require.NoError(t, m.deps.Store.MarkChatRead(t.Context(), "oc_platform", 900))
 
 	m = applyAll(t, m, m.reloadCurrent())
 
-	require.Equal(t, []string{"oc_platform", "oc_project"},
-		[]string{m.feed.sections[0].chatID, m.feed.sections[1].chatID},
-		"a chat read elsewhere keeps its place until the panel comes down")
-	require.Equal(t, []string{"om_p1", "om_p2", "om_j1"}, idsOf(m.msgs))
+	require.Equal(t, []string{"oc_project"}, []string{m.feed.sections[0].chatID},
+		"the panel writes nothing, so it follows where the store settled")
+	require.Len(t, m.feed.sections, 1)
+	require.Equal(t, []string{"om_j1"}, idsOf(m.msgs))
 }
 
 func TestFeed_GrowingIsOffInThePanel(t *testing.T) {

@@ -34,10 +34,11 @@ const (
 )
 
 // unreadFeed is one visit to the panel. A section's anchor is taken once and
-// held: reading settles messages behind the reader's cursor, and one that
-// re-anchored on each reload would shrink under the page they are reading. A
-// chat that starts waiting later joins at the end, where there is nothing
-// above it to renumber. Leaving drops the feed, which is what re-orders it.
+// held for as long as the chat is still waiting: one that re-anchored on every
+// reload would shrink under the page the reader is on. A chat whose backlog is
+// settled leaves instead, taking its anchor with it. A chat that starts waiting
+// later joins at the end, where there is nothing above it to renumber. Leaving
+// drops the feed, which is what re-orders it.
 type unreadFeed struct {
 	sections []unreadSection
 	// from is the chat that was open when the panel went up, so Esc puts the
@@ -120,8 +121,11 @@ type chatSideMsg struct {
 	roster []store.Contact
 }
 
-// unreadAnchors is the shape of a page taken afresh: every chat the list
-// badges, oldest backlog first, so the whole page reads as one timeline.
+// unreadAnchors is every chat the list badges, oldest backlog first, so the
+// whole page reads as one timeline. The set comes back whole rather than cut to
+// unreadFeedChats: joinUnread reads it as what is still waiting, and a cut one
+// cannot tell a chat that has been read from one pushed past the cap by a
+// newcomer with an older backlog.
 //
 // Silenced chats come in. What silencing refuses is being pulled at — the
 // badge, the dot, the n key walking the reader onto the chat — and opening the
@@ -144,17 +148,28 @@ func unreadAnchors(rows []store.UnreadAnchor, chats []store.Chat) []unreadSectio
 	slices.SortFunc(out, func(a, b unreadSection) int {
 		return cmp.Or(cmp.Compare(a.anchorMs, b.anchorMs), cmp.Compare(a.chatID, b.chatID))
 	})
-	return out[:min(len(out), unreadFeedChats)]
+	return out
 }
 
-// joinUnread is the page's sections after a reload: the ones already held, in
+// joinUnread is the page's sections after a reload: the ones still waiting, in
 // the order they are already drawn in, and then whatever has started waiting
-// since. A newcomer joins at the end however old its backlog — the only part
-// of the page free to grow is the part below the rows the reader has seen.
+// since. A chat whose backlog has been settled leaves with it, so the anchor it
+// held cannot re-open that stretch when the chat next says something. A
+// newcomer joins at the end however old its backlog — the only part of the page
+// free to grow is the part below the rows the reader has seen.
 func joinUnread(held, fresh []unreadSection) []unreadSection {
-	// Clipped so the append cannot reach into the caller's spare capacity:
-	// held is the page the model is still drawing.
-	out := slices.Clip(held)
+	stillWaiting := make(map[string]bool, len(fresh))
+	for _, s := range fresh {
+		stillWaiting[s.chatID] = true
+	}
+	// Built fresh rather than appended to: held is the page the model is still
+	// drawing, and its spare capacity is not this function's to write into.
+	out := make([]unreadSection, 0, len(held)+len(fresh))
+	for _, s := range held {
+		if stillWaiting[s.chatID] {
+			out = append(out, s)
+		}
+	}
 	for _, s := range fresh {
 		if slices.ContainsFunc(out, func(x unreadSection) bool { return x.chatID == s.chatID }) {
 			continue

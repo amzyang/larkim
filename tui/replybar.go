@@ -80,6 +80,11 @@ func (m Model) composerRows() composerRows {
 				r.rule = 1
 			}
 		}
+	case modeCommand:
+		// The : line claims its offers the way the writing area claims the
+		// popup's, out of the same budget, so the box cannot be told to draw
+		// rows the panes above it never gave up.
+		r.pum = clamp(len(m.cmdcomp.hits), 0, min(pumMaxRows, extra))
 	case modeTarget:
 		// The chooser grows to its list the way the writing area grows to a
 		// draft. Three rows at rest would put a card's links behind a scroll

@@ -2,6 +2,7 @@ package tui
 
 import (
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/charmbracelet/x/ansi"
@@ -104,20 +105,38 @@ func TestUnreadAnchors_AChatTheListingDoesNotHoldIsLeftOut(t *testing.T) {
 	require.Empty(t, unreadAnchors(rows, nil))
 }
 
-func TestUnreadAnchors_ReachNoFurtherThanTheChatCap(t *testing.T) {
+// manyWaiting is n chats each owing one message, the oldest backlog first.
+func manyWaiting(n int) ([]store.UnreadAnchor, []store.Chat) {
 	var rows []store.UnreadAnchor
 	var chats []store.Chat
-	for i := range unreadFeedChats + 5 {
+	for i := range n {
 		id := "oc_" + string(rune('a'+i))
 		rows = append(rows, store.UnreadAnchor{ChatID: id, FirstMs: int64(i + 1)})
 		chats = append(chats, store.Chat{ChatID: id, Name: id, UnreadCount: 1})
 	}
+	return rows, chats
+}
+
+// The anchor set comes back whole. joinUnread reads a chat missing from it as
+// one that has been settled, which a set already cut to the cap would say of a
+// chat that is only crowded out.
+func TestUnreadAnchors_AnswerWithEveryChatStillWaiting(t *testing.T) {
+	rows, chats := manyWaiting(unreadFeedChats + 5)
 
 	secs := unreadAnchors(rows, chats)
 
-	require.Len(t, secs, unreadFeedChats)
-	require.Equal(t, int64(1), secs[0].anchorMs, "the longest-waiting chats are the ones kept")
-	require.Equal(t, 5, unreadMore(chats, secs), "and the rest are counted, not dropped silently")
+	require.Len(t, secs, unreadFeedChats+5)
+	require.Equal(t, int64(1), secs[0].anchorMs, "the longest-waiting chat opens the page")
+}
+
+func TestJoinUnread_ReachesNoFurtherThanTheChatCap(t *testing.T) {
+	rows, chats := manyWaiting(unreadFeedChats + 5)
+
+	page := joinUnread(nil, unreadAnchors(rows, chats))
+
+	require.Len(t, page, unreadFeedChats)
+	require.Equal(t, int64(1), page[0].anchorMs, "the longest-waiting chats are the ones kept")
+	require.Equal(t, 5, unreadMore(chats, page), "and the rest are counted, not dropped silently")
 }
 
 // A chat holding exactly the cap has nothing below it, so the section is whole.
@@ -159,29 +178,69 @@ func TestGatherUnread_CutsAFirehoseSectionAndSaysSo(t *testing.T) {
 	require.Equal(t, ids[0], msgs[0].MessageID, "cut at the newest end, so the backlog still starts where it starts")
 }
 
-// The anchors are what hold a section still. Handing them back is the reload
-// path: the same stretch comes again even though the messages in it have been
-// settled in the meantime.
-func TestGatherUnread_TheAnchorsHandedBackHoldTheSectionStill(t *testing.T) {
+// A chat still waiting keeps the anchor it was drawn on, so the rows above the
+// reader's cursor stay where they are however much of its backlog settles.
+func TestGatherUnread_AChatStillWaitingKeepsTheAnchorItWasDrawnOn(t *testing.T) {
+	st, chats := backlog(t)
+	secs, _, _, err := gatherUnread(t.Context(), st, "ou_me", chats, nil)
+	require.NoError(t, err)
+
+	read := true
+	require.NoError(t, st.SetReadStatus(t.Context(), "om_p1", &read, 900, 0))
+	fresh, err := st.UnreadAnchors(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, int64(200), fresh[0].FirstMs, "the store has moved on")
+
+	held, msgs, _, err := gatherUnread(t.Context(), st, "ou_me", chats, secs)
+	require.NoError(t, err)
+	require.Equal(t, int64(100), held[0].anchorMs, "the section has not")
+	require.Equal(t, []string{"om_p1", "om_p2", "om_j1"}, idsOf(msgs))
+}
+
+// The panel writes nothing, so a chat's backlog only ever settles from outside
+// it. A chat with none left leaves the page, taking the anchor it held: that
+// anchor is what would re-open the read stretch when the chat next speaks.
+func TestGatherUnread_AChatReadElsewhereLeavesThePage(t *testing.T) {
 	st, chats := backlog(t)
 	secs, _, _, err := gatherUnread(t.Context(), st, "ou_me", chats, nil)
 	require.NoError(t, err)
 
 	require.NoError(t, st.MarkChatRead(t.Context(), "oc_platform", 900))
-	fresh, err := st.UnreadAnchors(t.Context())
-	require.NoError(t, err)
-	require.Equal(t, []string{"oc_project"}, []string{fresh[0].ChatID}, "the store has moved on")
 
 	held, msgs, _, err := gatherUnread(t.Context(), st, "ou_me", chats, secs)
 	require.NoError(t, err)
-	require.Equal(t, []string{"oc_platform", "oc_project"}, []string{held[0].chatID, held[1].chatID},
-		"the panel has not")
-	require.Equal(t, []string{"om_p1", "om_p2", "om_j1"}, idsOf(msgs))
+	require.Equal(t, []string{"oc_project"}, []string{held[0].chatID})
+	require.Len(t, held, 1)
+	require.Equal(t, []string{"om_j1"}, idsOf(msgs))
 }
 
-// A section whose every message has been recalled is no section; an empty rule
-// names nothing.
-func TestGatherUnread_ASectionLeftWithNoMessagesDropsOut(t *testing.T) {
+// The stretch a chat opens after its whole backlog is written off starts at
+// what it says next, not at the history that was just read.
+func TestGatherUnread_ReanchorsAChatAfterItsBacklogIsRead(t *testing.T) {
+	st, chats := backlog(t)
+	first, _, _, err := gatherUnread(t.Context(), st, "ou_me", chats, nil)
+	require.NoError(t, err)
+	require.Equal(t, int64(100), first[0].anchorMs)
+
+	_, err = st.MarkAllRead(t.Context(), 900)
+	require.NoError(t, err)
+	settled, _, _, err := gatherUnread(t.Context(), st, "ou_me", chats, first)
+	require.NoError(t, err)
+	require.Empty(t, settled, "nothing is waiting, so nothing holds a stretch")
+
+	say(t, st, "om_p9", "oc_platform", 500, "接口好了")
+	owing(t, st, "om_p9")
+
+	again, msgs, _, err := gatherUnread(t.Context(), st, "ou_me", chats, settled)
+	require.NoError(t, err)
+	require.Equal(t, []string{"oc_platform"}, []string{again[0].chatID})
+	require.Equal(t, int64(500), again[0].anchorMs)
+	require.Equal(t, []string{"om_p9"}, idsOf(msgs))
+}
+
+// A chat with nothing waiting is no section, however it got onto the page; an
+// empty rule names nothing.
+func TestGatherUnread_AChatWithNothingWaitingIsNoSection(t *testing.T) {
 	st, chats := backlog(t)
 	keep := []unreadSection{
 		{chatID: "oc_platform", name: "平台组", anchorMs: 100},
@@ -255,14 +314,41 @@ func TestGatherUnread_AnEmptyPageTakesTheFirstChatToStartWaiting(t *testing.T) {
 	require.Equal(t, []string{"om_l1"}, idsOf(msgs))
 }
 
+func TestJoinUnread_AChatThatStoppedWaitingLeavesThePage(t *testing.T) {
+	held := []unreadSection{{chatID: "oc_platform", anchorMs: 100}, {chatID: "oc_project", anchorMs: 300}}
+
+	out := joinUnread(held, []unreadSection{{chatID: "oc_project", anchorMs: 300}})
+
+	require.Equal(t, []string{"oc_project"}, []string{out[0].chatID})
+	require.Len(t, out, 1)
+}
+
+// The cap belongs to the joined page rather than to the anchor set: a chat the
+// reader is already looking at keeps its place however old a newcomer's
+// backlog is.
+func TestJoinUnread_AHeldChatIsNotEvictedByAnOlderNewcomer(t *testing.T) {
+	var held, fresh []unreadSection
+	for i := range unreadFeedChats {
+		held = append(held, unreadSection{chatID: "oc_held_" + string(rune('a'+i)), anchorMs: int64(100 + i)})
+	}
+	for i := range 5 {
+		fresh = append(fresh, unreadSection{chatID: "oc_new_" + string(rune('a'+i)), anchorMs: int64(i + 1)})
+	}
+
+	out := joinUnread(held, append(fresh, held...))
+
+	require.Equal(t, held, out, "the page the reader is on keeps every row of it")
+}
+
 // The page reaches no further than the cap however many chats join it.
 func TestJoinUnread_ANewcomerPastTheCapIsLeftOut(t *testing.T) {
 	held := make([]unreadSection, 0, unreadFeedChats)
 	for i := range unreadFeedChats {
 		held = append(held, unreadSection{chatID: "oc_" + string(rune('a'+i)), anchorMs: int64(i + 1)})
 	}
+	fresh := append(slices.Clone(held), unreadSection{chatID: "oc_late", anchorMs: 1})
 
-	out := joinUnread(held, []unreadSection{{chatID: "oc_late", anchorMs: 1}})
+	out := joinUnread(held, fresh)
 
 	require.Len(t, out, unreadFeedChats)
 	require.Equal(t, "oc_a", out[0].chatID)
@@ -274,7 +360,7 @@ func TestJoinUnread_TheHeldPageIsNotWrittenThrough(t *testing.T) {
 	held := make([]unreadSection, 1, 4)
 	held[0] = unreadSection{chatID: "oc_platform", anchorMs: 100}
 
-	out := joinUnread(held, []unreadSection{{chatID: "oc_late", anchorMs: 10}})
+	out := joinUnread(held, []unreadSection{{chatID: "oc_platform", anchorMs: 100}, {chatID: "oc_late", anchorMs: 10}})
 
 	require.Equal(t, []string{"oc_platform", "oc_late"}, []string{out[0].chatID, out[1].chatID})
 	require.Empty(t, held[:cap(held)][1].chatID, "the newcomer went into a slice of its own")

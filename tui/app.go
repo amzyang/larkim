@@ -93,6 +93,9 @@ type Model struct {
 	// pum is the completion popup over the writing area, open only while
 	// something is being written.
 	pum pum
+	// cmdcomp is the completion list over the : line, open only in
+	// modeCommand.
+	cmdcomp cmdComp
 	// confirm is the action waiting on y or n, if any. A zero value leaves
 	// every key on its ordinary path.
 	confirm confirmation
@@ -1613,22 +1616,38 @@ func (m Model) onInsertKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) onCommandKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	before := m.composerRows()
+	// The list answers first, because the keys it owns are ones the line
+	// otherwise has: Tab and the arrows would reach the text input, and Esc
+	// would leave the mode outright.
+	if m.cmdcomp.open() {
+		if next, took := m.onCmdCompKey(k); took {
+			return next, nil
+		}
+	}
 	switch k.String() {
 	case "esc":
-		m.mode = modeNormal
-		m.cmdline.Blur()
-		m.cmdline.Reset()
-		return m, nil
+		return m.leaveCommand(), nil
 	case "enter":
 		line := strings.TrimSpace(m.cmdline.Value())
-		m.mode = modeNormal
-		m.cmdline.Blur()
-		m.cmdline.Reset()
-		return m.runCommand(line)
+		return m.leaveCommand().runCommand(line)
 	}
 	var cmd tea.Cmd
 	m.cmdline, cmd = m.cmdline.Update(k)
+	m.takeCmdComp()
+	m.tookCmdComp(before)
 	return m, cmd
+}
+
+// leaveCommand puts the : line away. It is the one way out, so no caller can
+// leave the list standing over a box that is no longer showing it.
+func (m Model) leaveCommand() Model {
+	m.mode = modeNormal
+	m.cmdline.Blur()
+	m.cmdline.Reset()
+	m.cmdcomp = cmdComp{}
+	m.layout()
+	return m
 }
 
 // filterPin holds a filter session's borrowings: the pane the reader was in,
@@ -1789,12 +1808,16 @@ func (m Model) onNormalKey(s string) (tea.Model, tea.Cmd) {
 		m.mode = modeCommand
 		m.cmdline.Prompt = ":"
 		m.cmdline.Reset()
+		m.cmdcomp = cmdComp{}
 		return m, m.cmdline.Focus()
 	case "a":
 		m.mode = modeCommand
 		m.cmdline.Prompt = ":"
 		m.cmdline.SetValue("ai ")
 		m.cmdline.CursorEnd()
+		m.cmdcomp = cmdComp{}
+		m.takeCmdComp()
+		m.layout()
 		return m, m.cmdline.Focus()
 	case "esc":
 		switch {
@@ -2341,10 +2364,17 @@ func (m Model) runCommand(line string) (tea.Model, tea.Cmd) {
 	}
 	name, rest, _ := strings.Cut(line, " ")
 	rest = strings.TrimSpace(rest)
-	switch name {
-	case "q", "quit":
+	run, ok := resolveCommand(name)
+	if !ok {
+		if near := commandsWithPrefix(name); len(near) > 1 {
+			return m.notify("ambiguous :"+name+" — "+commandNames(near), true), nil
+		}
+		return m.notify("unknown command :"+name, true), nil
+	}
+	switch run.name {
+	case "q":
 		return m, m.quit()
-	case "goto", "chat":
+	case "goto":
 		want := store.FoldName(rest)
 		for _, c := range m.chats {
 			if c.ChatID == rest || store.FoldName(c.Name) == want {
@@ -2384,11 +2414,11 @@ func (m Model) runCommand(line string) (tea.Model, tea.Cmd) {
 		return m.notify(note, false), nil
 	case "read-all":
 		return m.startMarkAll()
-	case "mentions", "at":
+	case "mentions":
 		return m.openMentions()
-	case "unread", "u":
+	case "unread":
 		return m.openUnread()
-	case "search", "s":
+	case "search":
 		// The same panel ctrl+f opens, with the argument already in it: one
 		// implementation, two ways in.
 		return m.openSearch(strings.TrimSpace(rest))
@@ -2429,6 +2459,11 @@ func (m Model) runReact(arg string) (tea.Model, tea.Cmd) {
 	x, ok := m.selected()
 	if !ok {
 		return m.notify("select a message to react to", true), nil
+	}
+	// A key first, because that is what the : line writes when the reader
+	// completes an emoji, and it is the one spelling no search can answer.
+	if e, ok := m.emoji.ByKey(arg); ok {
+		return m.toggleReaction(x, e.Key)
 	}
 	hits := m.emoji.Search(arg)
 	if len(hits) == 0 {
