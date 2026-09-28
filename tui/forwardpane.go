@@ -166,7 +166,7 @@ func (m Model) onForwardLoaded(msg forwardLoadedMsg) (tea.Model, tea.Cmd) {
 	if m.rightKind != rightForward || msg.level != m.threadID {
 		return m, nil
 	}
-	wasOn, anchor, tailed := m.rightLanded(msg.msgs)
+	land := m.rightLanded(msg.msgs)
 	m.threadBase, m.threadMeta = msg.msgs, msg.meta
 	m.thread = msg.msgs
 	m.rightName, m.rightNote = forwardTitle(msg.gist, m.deps.Self, m.selfName), ""
@@ -179,12 +179,9 @@ func (m Model) onForwardLoaded(msg forwardLoadedMsg) (tea.Model, tea.Cmd) {
 	default:
 		m.rightNote = noteExpanding
 	}
-	if i := indexOfID(m.thread, wasOn); i >= 0 {
-		m.threadIdx = i
-	}
-	m.threadIdx = clamp(m.threadIdx, 0, max(0, len(m.thread)-1))
+	m.placeRightCursor(land)
 	m.rebuildThread()
-	m.threadTop = holdTop(m.threadRows, m.thread, anchor, tailed, m.threadTop, m.listHeight())
+	m.settleRight(land)
 	if m.rightNote == noteExpanding {
 		return m, expandForward(m.deps, msg.bundleID, msg.level)
 	}

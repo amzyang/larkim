@@ -607,6 +607,10 @@ func (m *Model) scrollThreadToSelection() {
 	m.threadTop = scrollTo(m.threadRows, m.threadIdx, m.threadTop, m.listHeight())
 }
 
+func (m *Model) centerThreadOnSelection() {
+	m.threadTop = centerTo(m.threadRows, m.threadIdx, m.listHeight())
+}
+
 // lineAnchor is the line a pane's top row sits on, held as the message that
 // owns it plus the offset inside that message's rows. A reload renumbers every
 // line and a resize rewraps them, so a raw line index would slide the view.
@@ -637,6 +641,15 @@ func (a lineAnchor) line(rows []msgRow, msgs []store.Message, h, fall int) int {
 // arriving message scroll the view. It is the viewport's own question: a
 // cursor the wheel left parked on the newest message must not answer it.
 func atTail(rows []msgRow, top, h int) bool { return top >= max(0, len(rows)-h) }
+
+// centerTo puts a message's block in the middle of the viewport, which is
+// where a pane opened on a message the reader named starts. Such a pane has
+// nothing on screen yet, so revealing the message would put it against an edge
+// — at the bottom with its answers below the fold, which is the half the
+// reader opened the pane for.
+func centerTo(rows []msgRow, idx, h int) int {
+	return clamp(firstRow(rows, idx)-h/2, 0, max(0, len(rows)-h))
+}
 
 func scrollTo(rows []msgRow, idx, top, h int) int {
 	if len(rows) == 0 {

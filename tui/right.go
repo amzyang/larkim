@@ -40,11 +40,37 @@ type rightFrame struct {
 	// whoever opened the frame had already drawn it on the summary, so the
 	// header is right from the first paint instead of after the list lands.
 	name string
-	// sel is the message the cursor was on and top the line the viewport
-	// started at, so a pop lands where the reader left rather than at the
-	// tail.
+	// sel is the message the frame should stand on and top the line the
+	// viewport should start at, so a pop lands where the reader left rather
+	// than at the tail. A frame opened on a message the reader named carries
+	// sel alone: it says where to stand, not which lines were on screen under
+	// a width and a list it never saw.
 	sel string
 	top lineAnchor
+}
+
+// rightLanding is where a list that has just arrived puts the cursor and the
+// viewport. It is decided before the list is assigned, from the state of the
+// frame being replaced, and applied after — the outbox is spliced in between,
+// so the newest row is not known until then.
+type rightLanding struct {
+	// cursor is the message to stand on, "" when the landing names none.
+	cursor string
+	// anchor is the line the viewport held and tail whether it was at the
+	// bottom, which together are what keeps a reload under the reader's hand
+	// from moving.
+	anchor lineAnchor
+	tail   bool
+	// atEnd asks for the newest row rather than a named one. It cannot be
+	// expressed as a cursor id: m.thread is the loaded list plus whatever the
+	// outbox still holds, so the newest row may be a send the landing never
+	// saw.
+	atEnd bool
+	// reveal centres the pane on the cursor. A frame that named a message but
+	// no line has a viewport still at 0, where minimal scrolling would leave
+	// the message against the bottom edge with the answers under it off
+	// screen.
+	reveal bool
 }
 
 // threadOpen reports that the right column is showing a message-list frame,
@@ -210,13 +236,12 @@ func (m *Model) showRight(f rightFrame) tea.Cmd {
 	m.thread, m.threadBase, m.threadRows, m.threadMeta = nil, nil, nil, msgMeta{}
 	m.threadIdx, m.threadTop, m.rightNote, m.rightName = 0, 0, "", f.name
 	m.emptyRightBox()
-	// A frame that names where it wants to land — one being uncovered, or one
-	// a search hit opened — says so through sel; the pin is spent on the
-	// first list to arrive under it.
-	m.rightPin = rightFrame{}
-	if f.sel != "" {
-		m.rightPin = f
-	}
+	// The pin marks a frame that has not landed yet, which is what lets the
+	// first list to arrive decide where to sit — on the message the frame
+	// names through sel, and on the place its kind is read from otherwise.
+	// Without it the frame would inherit the zeroed cursor above, which is the
+	// root of a conversation the reader opened to see the end of.
+	m.rightPin = f
 	m.layout()
 	return tea.Batch(keep, m.loadRight())
 }
@@ -237,17 +262,76 @@ func (m Model) loadRight() tea.Cmd {
 // rightLanded says where a list that has just arrived should sit. Ordinarily
 // that is where the frame already is — the cursor's message and the line the
 // viewport starts at, so a reload under the reader's hand moves nothing. A
-// frame just uncovered has no such place yet, so its pin supplies one, spent
-// on the first list to land under it.
-func (m *Model) rightLanded(msgs []store.Message) (cursor string, anchor lineAnchor, tailed bool) {
-	if m.rightPin.kind == m.rightKind && m.rightPin.id == m.threadID {
-		pin := m.rightPin
-		m.rightPin = rightFrame{}
-		m.threadIdx = max(0, indexOfID(msgs, pin.sel))
-		return pin.sel, pin.top, false
+// frame that has not landed yet has no such place, so its pin supplies one.
+//
+// The pin is spent on the first list with rows in it. An empty one is not an
+// answer: a forward's level arrives empty while Feishu is still being asked
+// for its children, and the reload that follows is the list the frame was
+// opened to show.
+func (m *Model) rightLanded(msgs []store.Message) rightLanding {
+	if m.rightPin.kind != m.rightKind || m.rightPin.id != m.threadID || len(msgs) == 0 {
+		return rightLanding{
+			cursor: idAt(m.thread, m.threadIdx),
+			anchor: topAnchor(m.threadRows, m.thread, m.threadTop),
+			tail:   atTail(m.threadRows, m.threadTop, m.listHeight()),
+		}
 	}
-	return idAt(m.thread, m.threadIdx), topAnchor(m.threadRows, m.thread, m.threadTop),
-		atTail(m.threadRows, m.threadTop, m.listHeight())
+	pin := m.rightPin
+	m.rightPin = rightFrame{}
+	if indexOfID(msgs, pin.sel) >= 0 {
+		return rightLanding{cursor: pin.sel, anchor: pin.top, reveal: pin.top == lineAnchor{}}
+	}
+	// A bundle is a record of somebody else's conversation, read from its
+	// start; a thread and a reply tree are conversations of this chat, opened
+	// to see what has been said since.
+	if m.rightKind == rightForward {
+		return rightLanding{}
+	}
+	return rightLanding{atEnd: true, tail: true}
+}
+
+// placeRightCursor stands the cursor where the landing asked. It runs after
+// the outbox has been spliced in, so the newest row counts a send still on its
+// way and the cursor is re-found by id rather than kept as an index a reload
+// may have renumbered.
+func (m *Model) placeRightCursor(l rightLanding) {
+	if l.atEnd {
+		m.threadIdx = max(0, len(m.thread)-1)
+		return
+	}
+	m.threadIdx = clamp(m.threadIdx, 0, max(0, len(m.thread)-1))
+	if i := indexOfID(m.thread, l.cursor); i >= 0 {
+		m.threadIdx = i
+	}
+}
+
+// settleRight puts the viewport where the landing asked, once the rows are
+// built.
+func (m *Model) settleRight(l rightLanding) {
+	if l.reveal {
+		m.centerThreadOnSelection()
+		return
+	}
+	m.threadTop = holdTop(m.threadRows, m.thread, l.anchor, l.tail, m.threadTop, m.listHeight())
+}
+
+// openerSel is the message a frame opened from x should stand on, and "" when
+// x names no row inside it. A container opened from its own root is opened
+// whole — the reader is asking for the conversation, not for the message they
+// are already looking at — so it lands where its kind says instead.
+func openerSel(kind rightKind, id string, x store.Message) string {
+	switch kind {
+	case rightThread:
+		// Only the sign says a message is a reply; the sentinel is Feishu's.
+		if x.MessagePosition < 0 {
+			return x.MessageID
+		}
+	case rightReply:
+		if x.MessageID != id {
+			return x.MessageID
+		}
+	}
+	return ""
 }
 
 // toggleRight is the t key: open the container under the cursor, or close the
@@ -287,7 +371,7 @@ func (m Model) detailsAtCursor() (rightFrame, bool) {
 	if !ok {
 		return rightFrame{}, false
 	}
-	f := rightFrame{kind: rightReply, id: g.Root}
+	f := rightFrame{kind: rightReply, id: g.Root, sel: openerSel(rightReply, g.Root, sel)}
 	// The title is the root's own gist, which the cursor only has when it is
 	// standing on the root. From anywhere else the frame opens untitled and
 	// the list fills it in, the way a forward's card does.
@@ -308,7 +392,7 @@ func (m Model) containerAtCursor() (rightFrame, bool) {
 		root = m.rightRoot
 	}
 	kind, id, bundle := containerOf(sel, root)
-	f := rightFrame{kind: kind, id: id, root: bundle}
+	f := rightFrame{kind: kind, id: id, root: bundle, sel: openerSel(kind, id, sel)}
 	if kind == rightForward {
 		f.name = forwardTitle(m.gistOf(id), m.deps.Self, m.selfName)
 	}

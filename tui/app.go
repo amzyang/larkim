@@ -884,7 +884,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.rightKind != rightThread || msg.threadID != m.threadID {
 			return m, nil
 		}
-		wasOn, anchor, tailed := m.rightLanded(msg.msgs)
+		land := m.rightLanded(msg.msgs)
 		// The chat page carries no replies, so this pane is the only place
 		// their markers can be lit — and it runs before the settle below,
 		// which reads the flags this has just copied.
@@ -892,12 +892,10 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.threadBase, m.threadMeta = msg.msgs, msg.meta
 		m.applyOutbox()
 		m.takeRightDraft(msg.draft, m.thread)
-		if m.threadIdx >= len(m.thread) {
-			m.threadIdx = max(0, len(m.thread)-1)
-		}
-		m.repinSelection(wasOn)
+		m.placeRightCursor(land)
+		m.repinSelection(land.cursor)
 		m.rebuildThread()
-		m.threadTop = holdTop(m.threadRows, m.thread, anchor, tailed, m.threadTop, m.listHeight())
+		m.settleRight(land)
 		// The chat's own page no longer shows these, so opening the thread is
 		// the only thing that can settle them. A thread is one screenful, so
 		// having it on top is having read it — there is no tail to reach.

@@ -15,7 +15,7 @@ func (m Model) onReplyLoaded(msg replyLoadedMsg) (tea.Model, tea.Cmd) {
 	if m.rightKind != rightReply || msg.root != m.threadID {
 		return m, nil
 	}
-	wasOn, anchor, tailed := m.rightLanded(msg.msgs)
+	land := m.rightLanded(msg.msgs)
 	m.threadBase, m.threadMeta = msg.msgs, msg.meta
 	m.applyOutbox()
 	m.takeRightDraft(msg.draft, m.thread)
@@ -24,9 +24,9 @@ func (m Model) onReplyLoaded(msg replyLoadedMsg) (tea.Model, tea.Cmd) {
 	if i := indexOfID(m.thread, msg.root); i >= 0 {
 		m.rightName = replyGist(m.thread[i])
 	}
-	m.threadIdx = clamp(m.threadIdx, 0, max(0, len(m.thread)-1))
-	m.repinSelection(wasOn)
+	m.placeRightCursor(land)
+	m.repinSelection(land.cursor)
 	m.rebuildThread()
-	m.threadTop = holdTop(m.threadRows, m.thread, anchor, tailed, m.threadTop, m.listHeight())
+	m.settleRight(land)
 	return m, nil
 }

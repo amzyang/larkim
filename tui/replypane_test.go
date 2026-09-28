@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -201,4 +202,37 @@ func TestRightTitle_NamesTheDetailsPane(t *testing.T) {
 	m = got.(Model)
 
 	require.Contains(t, ansi.Strip(m.rightTitle(60)), "Details 1")
+}
+
+// treeOf is a reply tree's list: a root and n answers, each one row tall.
+func treeOf(n int) []store.Message {
+	msgs := []store.Message{{MessageID: "om_root", SenderName: "张三", Content: "问", RenderedAt: 1, CreateMs: 1}}
+	for i := range n {
+		msgs = append(msgs, store.Message{MessageID: fmt.Sprintf("om_a%d", i), SenderName: "李四",
+			Content: fmt.Sprintf("答 %d", i), RenderedAt: 1, CreateMs: int64(2 + i), ReplyTo: "om_root"})
+	}
+	return msgs
+}
+
+func TestReplyLoaded_TheMemberTheTreeWasOpenedOnIsCentred(t *testing.T) {
+	m := sized(140, 36)
+	m, _ = m.openRight(rightFrame{kind: rightReply, id: "om_root", sel: "om_a20"})
+
+	next, _ := m.Update(replyLoadedMsg{root: "om_root", msgs: treeOf(40)})
+	m = next.(Model)
+
+	require.Equal(t, "om_a20", idAt(m.thread, m.threadIdx))
+	require.Equal(t, centerTo(m.threadRows, m.threadIdx, m.listHeight()), m.threadTop)
+}
+
+func TestReplyLoaded_ATreeOpenedFromItsRootLandsOnTheNewestAnswer(t *testing.T) {
+	m := sized(140, 36)
+	m, _ = m.openRight(rightFrame{kind: rightReply, id: "om_root"})
+	msgs := treeOf(40)
+
+	next, _ := m.Update(replyLoadedMsg{root: "om_root", msgs: msgs})
+	m = next.(Model)
+
+	require.Equal(t, len(msgs)-1, m.threadIdx)
+	require.True(t, atTail(m.threadRows, m.threadTop, m.listHeight()))
 }
