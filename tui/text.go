@@ -12,8 +12,10 @@ import (
 // bold and italic runs, strikethrough, inline code, and the underline
 // Feishu's rich text carries over. Italics require a non-space immediately
 // inside the asterisks so ordinary prose ("3 * 4 * 5") is left alone, and the
-// bold branch comes first so it claims a doubled asterisk.
+// wider asterisk runs come first so a tripled one is not read as an italic
+// wrapping an asterisk, nor a doubled one as an empty italic.
 var inlineMD = regexp.MustCompile(`\[([^\]\n]*)\]\(([^)\s]*)\)` +
+	`|\*\*\*([^*\n]+)\*\*\*` +
 	`|\*\*([^*\n]+)\*\*` +
 	`|<u>([^<]*)</u>` +
 	`|~~([^~\n]+)~~` +
@@ -21,11 +23,9 @@ var inlineMD = regexp.MustCompile(`\[([^\]\n]*)\]\(([^)\s]*)\)` +
 	`|\*(\S[^*\n]*)\*`)
 
 var (
-	stLink   = lipgloss.NewStyle().Foreground(colAccent).Underline(true)
-	stUnder  = lipgloss.NewStyle().Underline(true)
-	stItalic = lipgloss.NewStyle().Italic(true)
-	stStrike = lipgloss.NewStyle().Strikethrough(true)
-	stCode   = lipgloss.NewStyle().Foreground(colAccent)
+	stLink  = lipgloss.NewStyle().Foreground(colAccent).Underline(true)
+	stUnder = lipgloss.NewStyle().Underline(true)
+	stCode  = lipgloss.NewStyle().Foreground(colAccent)
 )
 
 // hitPositions reports the runes of s that a search term stands on, in the
@@ -65,9 +65,20 @@ func personName(name, suffix string) string { return name + suffix }
 // renderInline styles one line of message text against the message's own
 // mentions. A link keeps only its label, which is what the Feishu client
 // shows; the target stays in the raw content that `y` copies and `o` opens.
+//
+// An emphasis run is drawn by reading what it wraps in the style it adds,
+// rather than by rendering its content as it stands: a rich-text element
+// carries every style it was given at once and the markup spelling it back
+// nests, so a layer that stopped at the markup below it would draw that
+// markup instead of the words.
 func renderInline(s string, ms mentions) string {
 	var b strings.Builder
 	last := 0
+	// in draws what one emphasis run wraps, with the style it adds standing
+	// over whatever the runs around it already gave the words.
+	in := func(inner string, add func(lipgloss.Style) lipgloss.Style) string {
+		return renderInline(inner, ms.styled(add(ms.base)))
+	}
 	for _, m := range inlineMD.FindAllStringSubmatchIndex(s, -1) {
 		b.WriteString(ms.render(s[last:m[0]]))
 		switch {
@@ -78,15 +89,21 @@ func renderInline(s string, ms mentions) string {
 			}
 			b.WriteString(stLink.Render(expandEmoji(label)))
 		case m[6] >= 0:
-			b.WriteString(stBold.Render(expandEmoji(s[m[6]:m[7]])))
+			b.WriteString(in(s[m[6]:m[7]], func(st lipgloss.Style) lipgloss.Style {
+				return st.Bold(true).Italic(true)
+			}))
 		case m[8] >= 0:
-			b.WriteString(stUnder.Render(expandEmoji(s[m[8]:m[9]])))
+			b.WriteString(in(s[m[8]:m[9]], func(st lipgloss.Style) lipgloss.Style { return st.Bold(true) }))
 		case m[10] >= 0:
-			b.WriteString(stStrike.Render(expandEmoji(s[m[10]:m[11]])))
+			b.WriteString(in(s[m[10]:m[11]], func(st lipgloss.Style) lipgloss.Style { return st.Underline(true) }))
 		case m[12] >= 0:
-			b.WriteString(stCode.Render(s[m[12]:m[13]]))
+			b.WriteString(in(s[m[12]:m[13]], func(st lipgloss.Style) lipgloss.Style { return st.Strikethrough(true) }))
 		case m[14] >= 0:
-			b.WriteString(stItalic.Render(expandEmoji(s[m[14]:m[15]])))
+			// Code is the one run that is literal by definition: whatever
+			// asterisks are inside it are the code's own.
+			b.WriteString(stCode.Render(s[m[14]:m[15]]))
+		case m[16] >= 0:
+			b.WriteString(in(s[m[16]:m[17]], func(st lipgloss.Style) lipgloss.Style { return st.Italic(true) }))
 		}
 		last = m[1]
 	}

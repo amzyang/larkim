@@ -80,3 +80,24 @@ func TestMarkName_UsesTheDottedUnderline(t *testing.T) {
 		"a mark larkim put on the text is dotted, so it is not read as the text's own underline")
 	require.Equal(t, "发布计划", ansi.Strip(out))
 }
+
+func TestRenderInline_NestedRunsCompose(t *testing.T) {
+	// A rich-text element carries every style it was given at once, and the
+	// markup that spells it back nests. Each layer has to reach the words
+	// rather than stopping at the markup of the layer below.
+	ms := mentionsIn("", "")
+	for _, in := range []string{
+		"~~<u>***abcd***</u>~~", "**<u>abcd</u>**", "~~**abcd**~~", "<u>**abcd**</u>", "***abcd***",
+	} {
+		require.Equal(t, "abcd", ansi.Strip(renderInline(in, ms)), "in %q", in)
+	}
+
+	all := renderInline("~~<u>***abcd***</u>~~", ms)
+	want := lipgloss.NewStyle().Bold(true).Italic(true).Underline(true).Strikethrough(true).Render("abcd")
+	require.Equal(t, want, all, "every style the nesting names reaches the words")
+}
+
+func TestRenderInline_ATripleAsteriskIsBoldAndItalic(t *testing.T) {
+	require.Equal(t, lipgloss.NewStyle().Bold(true).Italic(true).Render("abcd"),
+		renderInline("***abcd***", mentionsIn("", "")))
+}
