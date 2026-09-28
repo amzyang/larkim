@@ -9,7 +9,8 @@ import (
 
 func TestResolveCommand_AUniquePrefixReachesTheWholeName(t *testing.T) {
 	for typed, want := range map[string]string{
-		"co":       "copy",
+		"cop":      "copy",
+		"cf":       "config",
 		"g":        "goto",
 		"got":      "goto",
 		"pr":       "preview",
@@ -43,7 +44,7 @@ func TestResolveCommand_AnExactSpellingBeatsALongerName(t *testing.T) {
 }
 
 func TestResolveCommand_RefusesAPrefixSeveralCommandsAnswerTo(t *testing.T) {
-	for _, typed := range []string{"", "re", "se", "zz"} {
+	for _, typed := range []string{"", "co", "re", "se", "zz"} {
 		_, ok := resolveCommand(typed)
 		require.False(t, ok, ":%s resolved to something", typed)
 	}
@@ -52,7 +53,7 @@ func TestResolveCommand_RefusesAPrefixSeveralCommandsAnswerTo(t *testing.T) {
 func TestCommandsWithPrefix_OffersACommandOnceHoweverManySpellingsMatched(t *testing.T) {
 	// goto answers to both "goto" and the alias "chat", and c reaches it
 	// through the second — but it is one command and so one offer.
-	require.Equal(t, []string{"copy", "goto"}, names(commandsWithPrefix("c")))
+	require.Equal(t, []string{"copy", "goto", "config"}, names(commandsWithPrefix("c")))
 	require.Equal(t, []string{"react", "read-all"}, names(commandsWithPrefix("re")))
 	require.Empty(t, commandsWithPrefix("zz"))
 }

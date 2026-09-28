@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"time"
 
@@ -137,31 +138,110 @@ func LoadWith(path string, sets []string) (Config, error) {
 	return cfg, nil
 }
 
-// applySets decodes each key=value as a one-key YAML document over cfg, so a
-// value is parsed by the same decoder the file goes through — 3s is a
-// duration, ~/x expands, 1000 is a number — rather than by a second
-// hand-written parser that would drift from it.
-//
-// KnownFields is on here and off for the file: a mistyped flag is a mistake
-// the reader is making right now and wants named, while a file may carry keys
-// a past version knew.
 func applySets(cfg *Config, sets []string) error {
 	for _, set := range sets {
 		key, value, ok := strings.Cut(set, "=")
 		if !ok {
 			return fmt.Errorf("--set %s: want key=value", set)
 		}
-		key = strings.TrimSpace(key)
-		if key == "" {
-			return fmt.Errorf("--set %s: want key=value", set)
-		}
-		dec := yaml.NewDecoder(strings.NewReader(setDoc(key, value)))
-		dec.KnownFields(true)
-		if err := dec.Decode(cfg); err != nil {
-			return fmt.Errorf("--set %s: %w", key, err)
+		if err := cfg.Set(key, value); err != nil {
+			return fmt.Errorf("--set %s: %w", strings.TrimSpace(key), err)
 		}
 	}
 	return nil
+}
+
+// Set decodes one key=value as a one-key YAML document over c, so a value is
+// parsed by the same decoder the file goes through — 3s is a duration, ~/x
+// expands, 1000 is a number — rather than by a second hand-written parser that
+// would drift from it.
+//
+// KnownFields is on here and off for the file: a key named right now is a
+// mistake the reader wants named, while a file may carry keys a past version
+// knew.
+func (c *Config) Set(key, value string) error {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return errors.New("want key=value")
+	}
+	dec := yaml.NewDecoder(strings.NewReader(setDoc(key, value)))
+	dec.KnownFields(true)
+	return dec.Decode(c)
+}
+
+// Get renders one key the way the file spells it, so what Get returns goes
+// back through Set unchanged. The second result is false for a key Keys() does
+// not name.
+func (c Config) Get(key string) (string, bool) {
+	v := reflect.ValueOf(c)
+	for part := range strings.SplitSeq(key, ".") {
+		f, ok := fieldByYAML(v, part)
+		if !ok {
+			return "", false
+		}
+		v = f
+	}
+	return formatValue(v)
+}
+
+// shortDuration spells a whole number of hours, minutes or seconds the way a
+// reader writes it — 6h, not Go's 6h0m0s — so a value read out of the
+// configuration and written back reads like one a hand put there.
+func shortDuration(d time.Duration) string {
+	switch {
+	case d == 0:
+		return "0s"
+	case d%time.Hour == 0:
+		return strconv.FormatInt(int64(d/time.Hour), 10) + "h"
+	case d%time.Minute == 0:
+		return strconv.FormatInt(int64(d/time.Minute), 10) + "m"
+	case d%time.Second == 0:
+		return strconv.FormatInt(int64(d/time.Second), 10) + "s"
+	}
+	return d.String()
+}
+
+func fieldByYAML(v reflect.Value, tag string) (reflect.Value, bool) {
+	if v.Kind() != reflect.Struct {
+		return reflect.Value{}, false
+	}
+	t := v.Type()
+	for f := range t.NumField() {
+		if name, _, _ := strings.Cut(t.Field(f).Tag.Get("yaml"), ","); name == tag {
+			return v.Field(f), true
+		}
+	}
+	return reflect.Value{}, false
+}
+
+func formatValue(v reflect.Value) (string, bool) {
+	if v.Type() == reflect.TypeFor[time.Duration]() {
+		return shortDuration(time.Duration(v.Int())), true
+	}
+	switch v.Kind() {
+	case reflect.String:
+		return v.String(), true
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return strconv.FormatInt(v.Int(), 10), true
+	case reflect.Bool:
+		return strconv.FormatBool(v.Bool()), true
+	}
+	if v.Kind() == reflect.Struct {
+		// A section holds keys, not a value; Keys() does not name one either.
+		return "", false
+	}
+	// Anything else — silence's list of rules — is spelled inline, which is the
+	// one spelling a value both survives a single line and reads back.
+	var n yaml.Node
+	if err := n.Encode(v.Interface()); err != nil {
+		return "", false
+	}
+	n.Style = yaml.FlowStyle
+	b, err := yaml.Marshal(&n)
+	if err != nil {
+		return "", false
+	}
+	return strings.TrimSpace(string(b)), true
 }
 
 // setDoc nests a dotted key into the document shape the file uses, so

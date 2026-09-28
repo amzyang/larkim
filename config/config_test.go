@@ -111,3 +111,40 @@ func TestKeys_NamesEveryFieldAndDotsTheNestedOnes(t *testing.T) {
 		require.NoError(t, applySets(new(Config), []string{k + "="}), k)
 	}
 }
+
+func TestGet_RoundTripsEveryKey(t *testing.T) {
+	cfg := Default()
+	cfg.Silence = store.SilenceRules{{Chat: "oc_quiet"}, {Contains: "nightly build"}}
+	for _, k := range Keys() {
+		v, ok := cfg.Get(k)
+		require.True(t, ok, k)
+		back := Default()
+		back.Silence = cfg.Silence
+		require.NoError(t, back.Set(k, v), "%s=%s", k, v)
+		require.Equal(t, cfg, back, k)
+	}
+}
+
+func TestGet_SpellsValuesTheWayTheFileDoes(t *testing.T) {
+	cfg := Default()
+	for key, want := range map[string]string{
+		"poll_interval":       "3s",
+		"repair_every":        "6h",
+		"overlap":             "2m",
+		"backfill_days":       "30",
+		"resources.max_bytes": "52428800",
+		"ai.model":            "claude-opus-5",
+		"silence":             "[]",
+	} {
+		v, ok := cfg.Get(key)
+		require.True(t, ok, key)
+		require.Equal(t, want, v, key)
+	}
+}
+
+func TestGet_RefusesAKeyThatIsNotOne(t *testing.T) {
+	_, ok := Default().Get("resources")
+	require.False(t, ok, "a section holds no value")
+	_, ok = Default().Get("nope")
+	require.False(t, ok)
+}

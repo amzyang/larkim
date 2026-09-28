@@ -18,6 +18,7 @@ import (
 	"github.com/amzyang/larkim/agentctx"
 	"github.com/amzyang/larkim/ai"
 	"github.com/amzyang/larkim/applink"
+	"github.com/amzyang/larkim/config"
 	"github.com/amzyang/larkim/emoji"
 	"github.com/amzyang/larkim/larkcli"
 	"github.com/amzyang/larkim/store"
@@ -64,10 +65,11 @@ type Model struct {
 	// rather than by shading.
 	dark bool
 
-	// pace is the gap the applink queue ticks on, seeded from Deps and
-	// retuned by :set. It lives on the Model rather than on the queue so a
-	// change reaches the chain already running.
-	pace time.Duration
+	// cfg is the configuration this session is running, seeded from Deps and
+	// rewritten by :set and :config. It lives on the Model rather than on the
+	// pieces seeded from it so a change reaches a chain already running — the
+	// applink queue re-arms its tick from it per chat.
+	cfg config.Config
 
 	chats []store.Chat
 	// threads are the reader's own conversations inside those chats. They
@@ -108,6 +110,13 @@ type Model struct {
 	fwd forwarder
 	// help is the ? overlay, which takes every key while it is open.
 	help helpPanel
+	// config is the :config overlay, the editor of the configuration file.
+	// It takes every key too, and stands over the help panel's own.
+	config configPanel
+	// ai is the assistant, seeded from Deps and built again when :config
+	// changes the model or the variable the key is read from. It lives on the
+	// Model rather than on Deps so that change reaches the next question.
+	ai AIStreamer
 	// infoOpen draws the open chat's own card in the right-hand pane; info is
 	// its roster and infoTop the row it is scrolled to.
 	infoOpen bool
@@ -345,12 +354,15 @@ func New(d Deps) Model {
 			return applink.Open(log, targets, background)
 		}
 	}
-	if d.Pace <= 0 {
-		d.Pace = applink.DefaultPace
+	if d.Config.ApplinkPaceMS <= 0 {
+		// A Deps built by hand carries no configuration, and a gap of nothing
+		// is the bug the pacing exists to fix.
+		d.Config.ApplinkPaceMS = applink.DefaultPaceMS
 	}
 	prunePasted(d.DataDir, time.Now())
 	m := Model{deps: d, input: ta, cmdline: ti, focus: paneChats, focused: true, previewOpen: true,
-		pace:       d.Pace,
+		cfg:        d.Config,
+		ai:         d.AI,
 		msgLimit:   messagePageSize,
 		emoji:      emoji.NewReactionIndex().WithCustom(d.DataDir),
 		emojiWrite: emoji.NewComposerIndex(),
@@ -1557,6 +1569,9 @@ func (m Model) onKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if s == "ctrl+c" {
 		return m, m.quit()
 	}
+	if m.config.open {
+		return m.onConfigKey(k)
+	}
 	if m.help.open {
 		return m.onHelpKey(k)
 	}
@@ -2427,6 +2442,8 @@ func (m Model) runCommand(line string) (tea.Model, tea.Cmd) {
 		return m.notify(note, false), nil
 	case "set":
 		return m.runSet(rest), nil
+	case "config":
+		return m.openConfig(rest), nil
 	case "read-all":
 		return m.startMarkAll()
 	case "mentions":
@@ -2493,8 +2510,8 @@ func (m Model) runReact(arg string) (tea.Model, tea.Cmd) {
 // --- assistant ------------------------------------------------------------
 
 func (m Model) startAI(input string) (tea.Model, tea.Cmd) {
-	if m.deps.AI == nil {
-		return m.notify("assistant off: set ANTHROPIC_API_KEY (config ai.api_key_env)", true), nil
+	if m.ai == nil {
+		return m.notify("assistant off: set "+m.cfg.AI.APIKeyEnv+" (config ai.api_key_env)", true), nil
 	}
 	if m.chatID == "" || len(m.msgs) == 0 {
 		return m.notify("open a chat with messages first", true), nil
@@ -2507,7 +2524,7 @@ func (m Model) startAI(input string) (tea.Model, tea.Cmd) {
 	if c, ok := m.currentChat(); ok && c.Name != "" {
 		name = c.Name
 	}
-	n := m.deps.AIContext
+	n := m.cfg.AI.Context
 	if n <= 0 || n > len(m.msgs) {
 		n = len(m.msgs)
 	}
@@ -2524,7 +2541,7 @@ func (m Model) startAI(input string) (tea.Model, tea.Cmd) {
 	m.layout()
 	ctx, cancel := context.WithCancel(context.Background())
 	m.aiCancel = cancel
-	m.aiChan = m.deps.AI.Stream(ctx, transcript, prompt)
+	m.aiChan = m.ai.Stream(ctx, transcript, prompt)
 	return m.notify("asking Claude…", false), waitForAI(m.aiGen, m.aiChan)
 }
 
@@ -2721,8 +2738,12 @@ func (m Model) onWheel(ms tea.Mouse) (tea.Model, tea.Cmd) {
 	} else if ms.Button != tea.MouseWheelDown {
 		return m, nil
 	}
-	// The help overlay covers the panes, so the wheel scrolls what is on
-	// screen rather than what the pointer would have been over.
+	// An overlay covers the panes, so the wheel scrolls what is on screen
+	// rather than what the pointer would have been over.
+	if m.config.open {
+		m.configMove(step)
+		return m, nil
+	}
 	if m.help.open {
 		m.helpScroll(step)
 		return m, nil

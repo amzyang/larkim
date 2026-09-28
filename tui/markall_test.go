@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/amzyang/larkim/config"
 	"github.com/amzyang/larkim/larkcli"
 	"github.com/amzyang/larkim/store"
 	"github.com/stretchr/testify/require"
@@ -37,7 +38,7 @@ func sweepModel(t *testing.T, n int) (Model, *store.Store, *[]openCall, *error) 
 
 	var calls []openCall
 	var openErr error
-	m := New(Deps{Store: st, Self: "ou_me", Client: larkcli.NewFake(), Pace: testPace, OpenURL: func(targets []string, background bool) error {
+	m := New(Deps{Store: st, Self: "ou_me", Client: larkcli.NewFake(), Config: config.Config{ApplinkPaceMS: testPace}, OpenURL: func(targets []string, background bool) error {
 		calls = append(calls, openCall{targets, background})
 		return openErr
 	}})

@@ -49,6 +49,6 @@ func (m Model) readKey(tailed bool) string {
 // tailed belongs to the caller. markDots asks about the viewport a message
 // arrived into, readKey about the one the update left behind.
 func (m Model) pageShown(tailed bool) bool {
-	return m.chatID != "" && m.focused && !m.searching && m.feed == nil && !m.help.open && !m.foldRight() &&
+	return m.chatID != "" && m.focused && !m.searching && m.feed == nil && !m.help.open && !m.config.open && !m.foldRight() &&
 		m.width >= minWidth && m.height >= minHeight && tailed
 }

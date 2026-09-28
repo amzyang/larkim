@@ -3,9 +3,9 @@ package tui
 import (
 	"path/filepath"
 	"testing"
-	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/amzyang/larkim/config"
 	"github.com/amzyang/larkim/larkcli"
 	"github.com/amzyang/larkim/store"
 	"github.com/stretchr/testify/require"
@@ -24,9 +24,10 @@ func opened(url string, background bool) openCall {
 	return openCall{[]string{url}, background}
 }
 
-// testPace is the gap a queue-walking case ticks on. drain waits the real
-// thing out, so the configured default would cost a second per chat.
-const testPace = time.Millisecond
+// testPace is the gap a queue-walking case ticks on, in the milliseconds
+// applink_pace_ms counts. drain waits the real thing out, so the configured
+// default would cost a second per chat.
+const testPace = 1
 
 // drain runs a command tree and feeds every message it yields back through
 // Update, until nothing is left. It is what walks the applink queue to its
@@ -71,7 +72,7 @@ func badgeModel(t *testing.T) (Model, *store.Store, *[]openCall) {
 	require.NoError(t, st.SetReadStatus(ctx, "om_a", &unread, 100, 0))
 
 	var calls []openCall
-	m := New(Deps{Store: st, Self: "ou_me", Client: larkcli.NewFake(), Pace: testPace, OpenURL: func(targets []string, background bool) error {
+	m := New(Deps{Store: st, Self: "ou_me", Client: larkcli.NewFake(), Config: config.Config{ApplinkPaceMS: testPace}, OpenURL: func(targets []string, background bool) error {
 		calls = append(calls, openCall{targets, background})
 		return nil
 	}})

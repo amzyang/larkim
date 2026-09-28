@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"charm.land/lipgloss/v2"
+	"github.com/amzyang/larkim/config"
 	"github.com/amzyang/larkim/store"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/stretchr/testify/require"
@@ -52,7 +53,7 @@ func TestCmdComp_OffersEveryCommandAPrefixReaches(t *testing.T) {
 
 	// goto is reached through its alias chat, and is offered under the name
 	// the line will carry.
-	require.Equal(t, []string{"copy <200|7d|all>", "goto <chat>"}, offers(m))
+	require.Equal(t, []string{"copy <200|7d|all>", "goto <chat>", "config [<key>]"}, offers(m))
 }
 
 func TestCmdComp_WalkingWritesTheOfferIntoTheLine(t *testing.T) {
@@ -184,8 +185,19 @@ func TestCmdComp_CompletesASettingWithItsEqualsAlready(t *testing.T) {
 	// An option only ever reads as a pair, so the = comes along and the
 	// reader's next keystroke is the value.
 	m := press(t, cmdModel(t), "s", "e", "t", " ")
-	require.Equal(t, []string{"applink_pace_ms"}, offers(m))
+	require.Equal(t, []string{"applink_pace_ms", "ai.model", "ai.api_key_env", "ai.context"}, offers(m),
+		":set reaches only the keys a change takes effect on")
 
 	m = press(t, m, "tab")
 	require.Equal(t, "set applink_pace_ms=", typed(m))
+}
+
+func TestCmdComp_CompletesAConfigKeyBare(t *testing.T) {
+	// :config opens the panel on the row; the value is typed into the row
+	// rather than into the line, so no = comes along.
+	m := press(t, cmdModel(t), "c", "o", "n", "f", "i", "g", " ")
+	require.Equal(t, config.Keys(), offers(m), "every key of the file, not just the live ones")
+
+	m = press(t, m, "tab")
+	require.Equal(t, "config data_dir", typed(m))
 }

@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	"github.com/amzyang/larkim/ai"
 	"github.com/amzyang/larkim/config"
@@ -39,12 +38,19 @@ func (a *App) runTUI(_ *cobra.Command, _ []string) error {
 	// The follow-up command a copy ends with is pasted into an agent
 	// with a working directory of its own, so the config it names is
 	// the absolute path this process actually loaded.
-	deps := tui.Deps{Store: st, Client: client, Version: a.Version, AIContext: a.cfg.AI.Context,
+	deps := tui.Deps{Store: st, Client: client, Version: a.Version,
 		DataDir: a.cfg.DataDir, ConfigPath: config.Resolve(a.configPath), Log: a.logger(),
-		Pace: time.Duration(a.cfg.ApplinkPaceMS) * time.Millisecond}
-	if key := os.Getenv(a.cfg.AI.APIKeyEnv); key != "" {
-		deps.AI = ai.New(key, a.cfg.AI.Model)
+		Config: a.cfg}
+	// The key is read at the moment the assistant is built, so :config
+	// changing ai.api_key_env reaches an environment this process already has.
+	deps.NewAI = func(model, keyEnv string) tui.AIStreamer {
+		key := os.Getenv(keyEnv)
+		if key == "" {
+			return nil
+		}
+		return ai.New(key, model)
 	}
+	deps.AI = deps.NewAI(a.cfg.AI.Model, a.cfg.AI.APIKeyEnv)
 	deps.Self = selfOpenID(ctx, st)
 	// Every process pulls what the reader asks for: each of those
 	// calls names ids Feishu just answered for and upserts them, so

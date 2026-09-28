@@ -9,18 +9,18 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// setModel is a model on the : line, with the pace at something other than
-// the default so a restore has a change to show.
+// setModel is a model with the pace at something other than the default, so a
+// report has a value to report and a restore has a change to show.
 func setModel(t *testing.T) Model {
 	t.Helper()
 	m := pickerModel(t)
-	m.pace = 40 * time.Millisecond
+	m.cfg.ApplinkPaceMS = 40
 	return m
 }
 
 func TestRunSet_RetunesTheGapTheQueueTicksOn(t *testing.T) {
 	m := setModel(t).runSet("applink_pace_ms=1500")
-	require.Equal(t, 1500*time.Millisecond, m.pace)
+	require.Equal(t, 1500*time.Millisecond, m.applinkPace())
 	require.Equal(t, "applink_pace_ms=1500", m.notice)
 	require.False(t, m.noticeErr)
 }
@@ -29,18 +29,31 @@ func TestRunSet_ReportsWhatItWasAskedWithoutWriting(t *testing.T) {
 	for _, line := range []string{"applink_pace_ms?", "applink_pace_ms"} {
 		m := setModel(t).runSet(line)
 		require.Equal(t, "applink_pace_ms=40", m.notice, ":set %s", line)
-		require.Equal(t, 40*time.Millisecond, m.pace, ":set %s wrote something", line)
+		require.Equal(t, 40*time.Millisecond, m.applinkPace(), ":set %s wrote something", line)
 	}
 }
 
 func TestRunSet_RestoresTheDefault(t *testing.T) {
 	m := setModel(t).runSet("applink_pace_ms&")
-	require.Equal(t, applink.DefaultPace, m.pace)
+	require.Equal(t, applink.DefaultPace, m.applinkPace())
 }
 
 func TestRunSet_ListsEveryOptionWhenGivenNothing(t *testing.T) {
 	m := setModel(t).runSet("")
-	require.Equal(t, "applink_pace_ms=40", m.notice)
+	require.Equal(t, "applink_pace_ms=40  ai.model=claude-opus-5  ai.api_key_env=ANTHROPIC_API_KEY  ai.context=80", m.notice)
+	require.NotContains(t, m.notice, "poll_interval", "a key read once at startup is not listed here")
+}
+
+func TestRunSet_RebuildsTheAssistantOnANewModel(t *testing.T) {
+	m := setModel(t)
+	var asked []string
+	m.deps.NewAI = func(model, keyEnv string) AIStreamer {
+		asked = append(asked, model+" "+keyEnv)
+		return nil
+	}
+	m = m.runSet("ai.model=claude-sonnet-5")
+	require.Equal(t, []string{"claude-sonnet-5 ANTHROPIC_API_KEY"}, asked)
+	require.Equal(t, "claude-sonnet-5", m.cfg.AI.Model)
 }
 
 func TestRunSet_RefusesADurationSpelling(t *testing.T) {
@@ -48,14 +61,14 @@ func TestRunSet_RefusesADurationSpelling(t *testing.T) {
 	m := setModel(t).runSet("applink_pace_ms=1500ms")
 	require.True(t, m.noticeErr)
 	require.Contains(t, m.notice, "milliseconds")
-	require.Equal(t, 40*time.Millisecond, m.pace)
+	require.Equal(t, 40*time.Millisecond, m.applinkPace())
 }
 
 func TestRunSet_RefusesAGapOfNothing(t *testing.T) {
 	// Zero is not pacing; it is the bug this setting exists to fix.
 	m := setModel(t).runSet("applink_pace_ms=0")
 	require.True(t, m.noticeErr)
-	require.Equal(t, 40*time.Millisecond, m.pace)
+	require.Equal(t, 40*time.Millisecond, m.applinkPace())
 }
 
 func TestRunSet_NamesAnOptionItHasNot(t *testing.T) {
@@ -64,10 +77,15 @@ func TestRunSet_NamesAnOptionItHasNot(t *testing.T) {
 	require.Contains(t, m.notice, "poll_interval", "a config key that takes effect only at startup is not an option here")
 }
 
-func TestSettings_NameTheirConfigKeys(t *testing.T) {
-	// A value found worth keeping is moved into the config file under the
-	// spelling it was tried with, so the two vocabularies are one.
+func TestSettings_NameEveryConfigKeyInOrder(t *testing.T) {
+	// The panel walks the registry rather than config.Keys(), so a key added
+	// to the file without a line of prose here would go unnamed there.
+	var keys []string
 	for _, s := range settings {
-		require.Contains(t, config.Keys(), s.name, "option %s names no config key", s.name)
+		keys = append(keys, s.key)
+	}
+	require.Equal(t, config.Keys(), keys)
+	for _, s := range settings {
+		require.NotEmpty(t, s.help, s.key)
 	}
 }

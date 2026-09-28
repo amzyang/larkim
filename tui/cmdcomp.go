@@ -140,12 +140,21 @@ func (m Model) argHits(cmd command, stem string) []cmdHit {
 				out = append(out, cmdHit{insert: w, label: markName(w, prefixMark(stem), stBold)})
 			}
 		}
-	case argSetting:
-		// The = comes along, because an option only ever reads as a pair and
-		// the reader's next keystroke is the value.
+	case argSetting, argConfigKey:
+		// :set takes the = along, because an option only ever reads as a pair
+		// there and the reader's next keystroke is the value. :config takes
+		// the bare key: it opens the panel on that row and the value is
+		// typed into the row, not into the line.
+		eq := ""
+		if cmd.arg == argSetting {
+			eq = "="
+		}
 		for _, st := range settings {
-			if strings.HasPrefix(st.name, stem) {
-				out = append(out, cmdHit{insert: st.name + "=", label: markName(st.name, prefixMark(stem), stBold)})
+			if cmd.arg == argSetting && !st.live {
+				continue
+			}
+			if strings.HasPrefix(st.key, stem) {
+				out = append(out, cmdHit{insert: st.key + eq, label: markName(st.key, prefixMark(stem), stBold)})
 			}
 		}
 	case argChat, argTarget:

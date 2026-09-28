@@ -14,6 +14,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/amzyang/larkim/ai"
 	"github.com/amzyang/larkim/applink"
+	"github.com/amzyang/larkim/config"
 	"github.com/amzyang/larkim/emoji"
 	"github.com/amzyang/larkim/fuzzy"
 	"github.com/amzyang/larkim/larkcli"
@@ -37,9 +38,13 @@ type Deps struct {
 	// optional: without them a copy keeps relative paths and omits --config.
 	DataDir    string
 	ConfigPath string
-	// AI is the assistant; nil when no API key is configured.
-	AI        AIStreamer
-	AIContext int // recent messages handed to the assistant
+	// AI is the assistant this run starts with; nil when no API key is
+	// configured. NewAI builds it again when :config changes ai.model or
+	// ai.api_key_env, and returns nil when the new pair names no key. A nil
+	// NewAI leaves the assistant as it was, which is what a test that injects
+	// one wants.
+	AI    AIStreamer
+	NewAI func(model, keyEnv string) AIStreamer
 	// Nudge signals that the store changed, so the watch checks without
 	// waiting out its interval. It carries this process's own writes, the
 	// sweep's too when the sweep runs here; a daemon's land on the interval.
@@ -48,11 +53,11 @@ type Deps struct {
 	// it when nil; tests replace it to keep the real `open` out of the run.
 	// Several targets are opened together rather than one by one.
 	OpenURL func(targets []string, background bool) error
-	// Pace is the gap the applink queue leaves between two navigations, from
-	// config's applink_pace_ms. New fills a zero with applink.DefaultPace;
-	// tests set it small so a queue-walking case does not pay the real gap
-	// per chat. :set retunes it for the session.
-	Pace time.Duration
+	// Config is the configuration this run loaded. :set retunes a key of it
+	// for the session and :config writes one back to the file. New fills a
+	// zero applink_pace_ms with the default; tests set it small so a
+	// queue-walking case does not pay the real gap per chat.
+	Config config.Config
 	// Env reads the environment the external editor is named in. New fills it
 	// when nil; tests replace it to keep a real editor out of the run.
 	Env func(string) string

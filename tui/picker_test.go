@@ -10,6 +10,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/amzyang/larkim/config"
 	"github.com/amzyang/larkim/emoji"
 	"github.com/amzyang/larkim/larkcli"
 	"github.com/amzyang/larkim/store"
@@ -34,7 +35,8 @@ func pickerModel(t *testing.T) Model {
 	require.NoError(t, st.UpdateReactions(ctx, "om_a",
 		`{"counts":[{"reaction_type":"THUMBSUP","count":"1"}],"details":[{"emoji_type":"THUMBSUP","operator":{"operator_id":"ou_me"}}]}`))
 
-	m := New(Deps{Store: st, Self: "ou_me", DataDir: t.TempDir(), Syncer: &sync.Syncer{Store: st}})
+	m := New(Deps{Store: st, Self: "ou_me", DataDir: t.TempDir(), Syncer: &sync.Syncer{Store: st},
+		Config: config.Default()})
 	m.width, m.height = 120, 36
 	m.layout()
 	m.chats, _ = st.ListChats(ctx, store.ChatQuery{Limit: 10})

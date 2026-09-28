@@ -81,7 +81,7 @@ func (m Model) clearApplinks() Model {
 }
 
 func (m Model) applinkTick(gen int) tea.Cmd {
-	return tea.Tick(m.pace, func(time.Time) tea.Msg { return applinkDueMsg{gen} })
+	return tea.Tick(m.applinkPace(), func(time.Time) tea.Msg { return applinkDueMsg{gen} })
 }
 
 // onApplinkDue fires the chat at the head and arms the next slot. The open

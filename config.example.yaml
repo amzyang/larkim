@@ -34,7 +34,8 @@ repair_every: 6h
 # client. The client sends its read receipt once it has drawn the chat it was
 # walked onto, so too small a gap loses the chats a sweep hurried it through —
 # a client sitting in the background draws slower than the active app.
-# `:set applink_pace_ms=<n>` retunes it for one TUI session.
+# `:set applink_pace_ms=<n>` retunes it for one TUI session; `:config` writes
+# the value that stays.
 applink_pace_ms: 1000
 
 # Messages matching any rule keep their place in the chat but carry no unread

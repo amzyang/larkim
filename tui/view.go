@@ -682,6 +682,11 @@ func (m Model) View() tea.View {
 	}
 	out.WriteString("\n")
 	out.WriteString(m.renderStatus())
+	if m.config.open {
+		v.Content = lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, m.renderConfig())
+		v.Cursor = m.configCursor()
+		return v
+	}
 	if m.help.open {
 		v.Content = lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, m.renderHelp())
 		v.Cursor = m.helpCursor()
