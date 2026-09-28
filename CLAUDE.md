@@ -37,6 +37,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - 把 lark-cli 响应、SQL 结果、TUI scrollback 贴进 docs 或 issue 前逐项替换：message/chat/user/file key、人名、群名、邮箱、手机号、消息正文；不含身份的聚合数字（行数、分组计数）可原样保留
 - 复现用最小构造用例，不整段粘真实会话；不新增追踪真实导出或 db dump 的文件
 
+## Write targets
+
+@CLAUDE.local.md
+
+- 对飞书的写操作（send / reply / forward / recall / reaction / upload）只发往 `CLAUDE.local.md`「安全写入会话」里的会话；清单外的一切会话——同事私聊、sync 下来的真实群——只读
+- 清单按 p2p / group / group(topics) 分类，按要验的形态挑：thread 行为只能在 topics 群验，p2p 验不出来
+- 清单存 `CLAUDE.local.md` 而不是这里，因为它是真实 chat id，入库违反 Privacy
+- 需要清单外的写入目标时先问，不要自己从库里挑一个看起来不活跃的会话
+
 ## Commands
 
 - Build: `just build`（输出 `./larkim`）；Test: `just test`；Vet: `just vet`
