@@ -6,6 +6,7 @@ import (
 
 	"github.com/amzyang/larkim/store"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/charmbracelet/x/ansi/kitty"
 	"github.com/stretchr/testify/require"
 )
 
@@ -191,4 +192,48 @@ func TestMdRows_NoBlankLineOpensOrClosesABody(t *testing.T) {
 	// lark-cli trims the body, and a block that opens a level has nothing
 	// above it to count.
 	require.Equal(t, []string{"甲", "乙"}, mdLines(t, "甲\n乙"))
+}
+
+func TestMdRows_APictureInAListItemStandsUnderTheItem(t *testing.T) {
+	// The words of an item are charged the columns its marker took; a picture
+	// beside them is part of the same item and is charged them too.
+	require.Equal(t, []string{"• 图", "  [Image]"}, mdLines(t, "- 图 ![Image](img_a)"))
+	require.Equal(t, []string{"• 甲", "  ◦ 图", "    [Image]"}, mdLines(t, "- 甲\n  - 图 ![Image](img_a)"))
+	require.Equal(t, []string{"│ 图", "│ [Image]"}, mdLines(t, "> 图 ![Image](img_a)"))
+}
+
+func TestMdRows_APicturesCellsAndTargetMoveWithItsIndent(t *testing.T) {
+	msgs := []store.Message{{MessageID: "om_1", MsgType: "post", SenderName: "张三",
+		Content: "- 图 ![Image](img_v3_abc)", CreateMs: msgAt(23, 9, 0), RenderedAt: 1}}
+	st := baseStyle()
+	st.dataDir = t.TempDir()
+	st.res = map[string][]store.Resource{"om_1": {{FileKey: "img_v3_abc", Type: "image", LocalPath: "a.png", Status: "done"}}}
+	st.place = func(path string, _, _ int) picture { return picture{path: path, cols: 8, rows: 3} }
+
+	var pics []msgRow
+	for _, r := range renderRows(msgs, st) {
+		if r.pic.cols > 0 {
+			pics = append(pics, r)
+		}
+	}
+	require.Len(t, pics, 3)
+	for _, r := range pics {
+		require.Equal(t, "  ", r.text, "the item's indent rides on the picture row")
+		require.Len(t, r.zones, 1)
+		require.Equal(t, leadWidth+2, r.zones[0].x0, "and the target over its cells moves with them")
+		require.Equal(t, leadWidth+2+r.pic.cols, r.zones[0].x1)
+	}
+}
+
+func TestRowLine_APictureRowDrawsTheIndentItCarries(t *testing.T) {
+	m := sized(106, 40)
+	p := testPictures(t)
+	m.pics = p
+	pic := p.place(writePNG(t, p.dataDir, "a.png", 300, 200), 30, 20)
+	require.NotEmpty(t, p.prepare([]picture{pic}))
+
+	row := msgRow{pic: pic, text: "  ", lead: lead{box: strings.Repeat(" ", avatarWidth), mark: " "}}
+	line, _ := m.rowLine(row, 60)
+	require.Equal(t, avatarWidth+1+2, strings.Index(ansi.Strip(line), string(kitty.Placeholder)),
+		"the cells open past the lead and the indent")
 }

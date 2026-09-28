@@ -483,11 +483,13 @@ func (m Model) rowLine(r msgRow, w int) (string, bool) {
 	}
 	cells := m.pics.cells(r.pic, r.picRow)
 	if cells == "" {
-		return lead + fit("", w), true // still on its way to the terminal
+		return lead + fit(r.text, w), true // still on its way to the terminal
 	}
 	// Padded rather than fitted: fit measures a placeholder as the characters
-	// it is and would cut one out of its cluster.
-	return lead + cells + strings.Repeat(" ", max(0, w-r.pic.cols)), true
+	// it is and would cut one out of its cluster. What text a picture row
+	// carries is the indent its block charged it, which opens the row.
+	indent := lipgloss.Width(r.text)
+	return lead + r.text + cells + strings.Repeat(" ", max(0, w-r.pic.cols-indent)), true
 }
 
 // leadCells draws the columns a row opens with. A disc is a picture the

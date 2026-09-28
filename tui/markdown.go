@@ -211,7 +211,10 @@ func (d mdDoc) paragraph(n ast.Node, pad string, room int) []msgRow {
 			}
 		}
 		for _, key := range keys {
-			rows = append(rows, pictureRows(key, d.x, d.idx, d.st, d.g)...)
+			for _, r := range pictureRows(key, d.x, d.idx, d.st, d.g) {
+				r.shift(pad)
+				rows = append(rows, r)
+			}
 		}
 	}
 	return rows

@@ -153,6 +153,22 @@ func (r *msgRow) reindent(indent, s string) {
 	r.placeZones()
 }
 
+// shift charges a picture row the indent its block owes. The blanks ride in
+// text, which a picture row otherwise leaves unset, because the cells are the
+// terminal's to fill and nothing can be written in front of them but the
+// columns they start at; the target over them moves the same distance.
+func (r *msgRow) shift(pad string) {
+	if pad == "" {
+		return
+	}
+	r.text = pad + r.text
+	w := lipgloss.Width(pad)
+	for i := range r.zones {
+		r.zones[i].x0 += w
+		r.zones[i].x1 += w
+	}
+}
+
 // rowSeg is one piece of a row: text, or a picture the terminal fills in. A
 // piece that leads somewhere carries the target, which placeZones turns into
 // the row's click ranges once the pieces are laid out.
