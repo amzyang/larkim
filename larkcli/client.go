@@ -180,6 +180,16 @@ type Error struct {
 	APICode    int
 	APIMessage string
 	Stderr     string
+	// Argv is the lark-cli call this came back from. It is what a crash
+	// report is reproduced from, so it is kept whole, message body included.
+	Argv []string
+}
+
+// withArgv records the call an error came back from, so a report carries the
+// command that produced it rather than only its verdict.
+func (e *Error) withArgv(argv []string) *Error {
+	e.Argv = argv
+	return e
 }
 
 func (e *Error) Error() string {
@@ -189,7 +199,7 @@ func (e *Error) Error() string {
 	case e.Message != "":
 		return fmt.Sprintf("lark-cli %s/%s (exit %d): %s", e.Type, e.Subtype, e.ExitCode, e.Message)
 	}
-	return fmt.Sprintf("lark-cli exit %d: %s", e.ExitCode, truncate(e.Stderr, 300))
+	return fmt.Sprintf("lark-cli exit %d: %s", e.ExitCode, e.Stderr)
 }
 
 // Exit codes documented in lark-cli internal/output/exitcode.go.
@@ -228,11 +238,4 @@ var permanentStatus = map[int]bool{
 	http.StatusBadRequest: true,
 	http.StatusNotFound:   true,
 	http.StatusGone:       true,
-}
-
-func truncate(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	return s[:n] + "…"
 }

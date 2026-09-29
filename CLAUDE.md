@@ -91,7 +91,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Telemetry
 
-- Sentry 只上报缺陷：`reportable()` 过滤用户错误、`ErrNotFound`、认证/网络/限流类 lark 错误、`AmbiguousError`、context 取消
+- 上报什么由 `reportable()` 决定，只放缺陷过去：用户错误、`ErrNotFound`、认证/网络/限流类
+  lark 错误、`AmbiguousError`、context 取消都不是缺陷
+- 一个事件里带什么，唯一判据是「能不能让我更快诊断、定位、复现」：单人自用工具，Sentry
+  收到的是我自己机器上我自己的数据，不存在第三方 PII，也就没有要权衡的隐私或合规因素。
+  主机名、用户身份、完整的 argv 与错误文本、消息/会话/用户 id、相关配置——能带的全带上，
+  照原样带，不脱敏、不截断、不做「以防万一」的过滤。不确定某个字段有没有用时，带上
 - panic 捕获后必须 re-panic，保留退出码
 
 ## Style

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -43,13 +44,6 @@ func resolveSentryDSN(flagValue string, flagChanged bool, doNotTrack, envValue s
 	return "", dsnSourceNone
 }
 
-// scrubSentryEvent keeps host name and user identity out of every event.
-func scrubSentryEvent(event *sentry.Event, _ *sentry.EventHint) *sentry.Event {
-	event.ServerName = ""
-	event.User = sentry.User{}
-	return event
-}
-
 func initSentry(dsn, release string) {
 	if dsn == "" {
 		return
@@ -58,8 +52,10 @@ func initSentry(dsn, release string) {
 		Dsn:              dsn,
 		Release:          release,
 		AttachStacktrace: true,
-		SendDefaultPII:   false,
-		BeforeSend:       scrubSentryEvent,
+		// The only reader of these events is the person the data belongs to,
+		// so host name, user and request context are all kept: they are what
+		// a report is diagnosed from.
+		SendDefaultPII: true,
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "warning: sentry init failed: %v\n", err)
@@ -91,13 +87,54 @@ func reportable(err error) bool {
 	return !ambiguous && !misused
 }
 
-// captureError sends a reportable error and waits briefly for delivery.
+// captureError sends a reportable error and waits briefly for delivery, with
+// everything that could shorten a diagnosis attached. Nothing is redacted or
+// clipped: see CLAUDE.md's Telemetry section.
 func captureError(err error) {
 	if !reportable(err) || sentry.CurrentHub().Client() == nil {
 		return
 	}
-	sentry.CaptureException(err)
+	sentry.WithScope(func(scope *sentry.Scope) {
+		describeInvocation(scope)
+		if le, ok := errors.AsType[*larkcli.Error](err); ok {
+			describeLarkError(scope, le)
+		}
+		sentry.CaptureException(err)
+	})
 	sentry.Flush(2 * time.Second)
+}
+
+// describeInvocation records how larkim itself was called, which is the half
+// of a repro that the error text never carries.
+func describeInvocation(scope *sentry.Scope) {
+	wd, _ := os.Getwd()
+	scope.SetContext("larkim", sentry.Context{"argv": os.Args, "cwd": wd})
+	if len(os.Args) > 1 {
+		scope.SetTag("larkim.cmd", os.Args[1])
+	}
+}
+
+// describeLarkError spreads a lark-cli refusal across the scope: the verdict
+// as tags so events group and filter by it, the call and its whole output as
+// a context so the failure can be replayed by hand.
+func describeLarkError(scope *sentry.Scope, e *larkcli.Error) {
+	scope.SetTag("lark.exit", strconv.Itoa(e.ExitCode))
+	for name, value := range map[string]string{
+		"lark.type": e.Type, "lark.subtype": e.Subtype, "lark.log_id": e.LogID,
+	} {
+		if value != "" {
+			scope.SetTag(name, value)
+		}
+	}
+	for name, value := range map[string]int{"lark.code": e.Code, "lark.api_code": e.APICode} {
+		if value != 0 {
+			scope.SetTag(name, strconv.Itoa(value))
+		}
+	}
+	scope.SetContext("lark-cli", sentry.Context{
+		"argv": larkcli.ArgvLine(e.Argv), "stderr": e.Stderr, "message": e.Message,
+		"hint": e.Hint, "api_message": e.APIMessage, "retry_after": e.RetryAfter.String(),
+	})
 }
 
 // usageError marks input the user can fix (flags, arguments); never reported.

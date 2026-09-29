@@ -2,6 +2,7 @@ package larkcli
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -618,6 +619,22 @@ func TestOutgoingFlags_SendsTextLarkCLIWouldReinterpret(t *testing.T) {
 		Text("@张三 看一下").flags())
 	require.Equal(t, []string{"--msg-type", "text", "--content", `{"text":"-"}`},
 		Text("-").flags())
+}
+
+func TestError_CarriesTheCallAndItsWholeOutput(t *testing.T) {
+	long := strings.Repeat("lark-cli said so. ", 40)
+	c := fakeBinary(t, `echo '`+long+`' >&2; exit 1`)
+
+	_, err := c.Send(t.Context(), Target{ChatID: "oc_quiet"}, Text("@张三 看一下"), "key-1")
+
+	e, ok := errors.AsType[*Error](err)
+	require.True(t, ok)
+	require.Contains(t, e.Stderr, long, "the whole refusal is kept; nothing is clipped")
+	require.Contains(t, e.Error(), long)
+	require.Equal(t, []string{
+		"im", "+messages-send", "--msg-type", "text", "--content", `{"text":"@张三 看一下"}`,
+		"--chat-id", "oc_quiet", "--idempotency-key", "key-1", "--as", "user", "--json",
+	}, e.Argv, "the call is what the failure is replayed from, message body included")
 }
 
 // lark-cli rates the recall high-risk and refuses it without --yes; the flag

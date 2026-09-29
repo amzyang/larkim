@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -167,22 +168,23 @@ func (c *ExecClient) run(ctx context.Context, args ...string) (json.RawMessage, 
 // directory scope is the tenant-wide one; the user identity sees only what
 // the signed-in person sees.
 func (c *ExecClient) runAs(ctx context.Context, identity string, args ...string) (json.RawMessage, error) {
-	stdout, stderr, exitCode, err := c.exec(ctx, append(args, "--as", identity, "--json")...)
+	argv := append(slices.Clone(args), "--as", identity, "--json")
+	stdout, stderr, exitCode, err := c.exec(ctx, argv...)
 	if err != nil {
 		return nil, err
 	}
 	if exitCode != 0 {
-		return nil, decodeError(exitCode, stderr)
+		return nil, decodeError(exitCode, stderr).withArgv(argv)
 	}
 	var env envelope
 	if err := json.Unmarshal(stdout, &env); err != nil {
-		return nil, fmt.Errorf("lark-cli: decode stdout: %w (%s)", err, truncate(string(stdout), 200))
+		return nil, fmt.Errorf("lark-cli: decode stdout: %w (%s)", err, stdout)
 	}
 	if !env.OK {
 		// A refusal that lark-cli reported on stdout with a zero exit is the
 		// one failure exec cannot see, so it is logged here instead.
-		e := decodeError(exitCode, stdout)
-		c.logger().WarnContext(ctx, "lark-cli refused", "argv", ArgvLine(args), "code", e.Code, "error", e.Message, "log_id", e.LogID)
+		e := decodeError(exitCode, stdout).withArgv(argv)
+		c.logger().WarnContext(ctx, "lark-cli refused", "argv", ArgvLine(argv), "code", e.Code, "error", e.Message, "log_id", e.LogID)
 		return nil, e
 	}
 	return env.Data, nil
@@ -1244,12 +1246,13 @@ func (c *ExecClient) sent(ctx context.Context, args ...string) (SentMessage, err
 
 // Whoami parses `lark-cli whoami --json`, which is not enveloped.
 func (c *ExecClient) Whoami(ctx context.Context) (Identity, error) {
-	stdout, stderr, exitCode, err := c.exec(ctx, "whoami", "--json")
+	argv := []string{"whoami", "--json"}
+	stdout, stderr, exitCode, err := c.exec(ctx, argv...)
 	if err != nil {
 		return Identity{}, err
 	}
 	if exitCode != 0 {
-		return Identity{}, decodeError(exitCode, stderr)
+		return Identity{}, decodeError(exitCode, stderr).withArgv(argv)
 	}
 	var resp struct {
 		AppID      string `json:"appId"`
