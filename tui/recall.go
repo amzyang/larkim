@@ -54,6 +54,7 @@ type confirmKind int
 const (
 	confirmNone confirmKind = iota
 	confirmRecall
+	confirmReEdit
 )
 
 // confirmation is an action waiting on y or n. A zero value is nothing
@@ -74,10 +75,13 @@ func (m Model) answerConfirm(key string) (tea.Model, tea.Cmd, bool) {
 	if key != "y" {
 		// Anything but y cancels, rather than only n: these are the answers
 		// where a slip costs something no undo reaches.
+		m.reEdit = nil
 		return m.notify("", false), nil, true
 	}
 	switch pending.kind {
-	case confirmRecall:
+	case confirmRecall, confirmReEdit:
+		// One call for both: a re-edit is a recall whose answer also refills
+		// the composer, which the recall's own reply is what triggers.
 		return m.notify("recalling…", false), recallCmd(m.deps, pending.messageID), true
 	}
 	return m, nil, true

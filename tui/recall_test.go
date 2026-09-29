@@ -27,6 +27,8 @@ func recallModel(t *testing.T) (Model, *larkcli.Fake) {
 			SenderName: "张三", ContentRaw: `{"text":"收到"}`, CreateMs: 200, UpdateMs: 200},
 	}, 1)
 	require.NoError(t, err)
+	require.NoError(t, st.UpdateRendered(ctx, "om_mine", "发错了", "", 1))
+	require.NoError(t, st.UpdateRendered(ctx, "om_theirs", "收到", "", 1))
 
 	f := larkcli.NewFake()
 	f.Messages["om_mine"] = larkcli.RawMessage{MessageID: "om_mine", ChatID: "oc_group"}

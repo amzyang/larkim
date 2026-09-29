@@ -109,6 +109,10 @@ type Model struct {
 	// confirm is the action waiting on y or n, if any. A zero value leaves
 	// every key on its ordinary path.
 	confirm confirmation
+	// reEdit is the text a recall now under way owes the composer, nil for a
+	// plain recall. It is captured at the confirmation because the recall is
+	// what destroys it.
+	reEdit *reEditPending
 	// fwd is the forward chooser, open only in modeForward.
 	fwd forwarder
 	// help is the ? overlay, which takes every key while it is open.
@@ -827,7 +831,12 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.notify("forwarded", false), m.reloadCurrent()
 	case recalledMsg:
 		if msg.err != nil {
+			m.reEdit = nil
 			return m.notify("recall: "+msg.err.Error(), true), nil
+		}
+		if p := m.reEdit; p != nil && p.messageID == msg.messageID {
+			m.reEdit = nil
+			return m.fillReEdit(*p)
 		}
 		return m.notify("recalled", false), m.reloadCurrent()
 	case markAllSetMsg:
@@ -1855,6 +1864,8 @@ func (m Model) onNormalKey(s string) (tea.Model, tea.Cmd) {
 		return m.discardFailed()
 	case "D":
 		return m.askRecall()
+	case "E":
+		return m.askReEdit()
 	case "f":
 		return m.openForward()
 	case "I":

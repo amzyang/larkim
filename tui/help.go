@@ -52,6 +52,7 @@ func buildHelpEntries() []helpEntry {
 		{"NORMAL", "e", "react to the selected message"},
 		{"NORMAL", "f", "forward it: type to filter chats and people, Enter sends"},
 		{"NORMAL", "D", "recall your own message, after a y/n it asks for"},
+		{"NORMAL", "E", "recall it and take its text back into the composer, after the same y/n"},
 		{"NORMAL", "n/N", "the next/previous row with something waiting, muted ones skipped"},
 		{"NORMAL", "", "inside Unread, the next/previous chat's stretch of the page"},
 		{"NORMAL", "Y", "copy agent context"},
