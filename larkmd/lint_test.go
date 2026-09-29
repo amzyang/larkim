@@ -215,3 +215,11 @@ func TestLint_TableWithoutAlignmentIsQuiet(t *testing.T) {
 	require.Empty(t, Lint("| n | v |\n| - | - |\n| 1 | a |\n| 2 | b |\n| 3 | c |\n| 4 | d |\n| 5 | e |\n| 6 | f |\n| 7 | g |\n"),
 		"seven body rows arrive; the card documentation's five-row cap is not this renderer's")
 }
+
+func TestLint_ReadsAMentionOutOfBytesThatAreNotUTF8(t *testing.T) {
+	// A body written on a GBK machine arrives as the bytes it was saved in,
+	// and one that runs out mid-name must not take the process with it.
+	var out []Finding
+	require.NotPanics(t, func() { out = Lint("@\xd5\xc5") })
+	require.Equal(t, []string{"mention_unresolved"}, rules(out))
+}

@@ -1,6 +1,9 @@
 package larkmd
 
-import "unicode"
+import (
+	"strings"
+	"unicode"
+)
 
 // AtBoundary reports whether the @ at i opens a mention rather than sitting
 // inside a word, which is what keeps an email address from being read as one.
@@ -25,14 +28,15 @@ func lastRune(s string) rune {
 // when the @ names nobody, a lone @ or one in front of punctuation being a
 // character the sender typed rather than somebody to reach.
 func mentionName(rest string) string {
-	end := 0
-	for i, r := range rest {
-		if unicode.IsSpace(r) || isNamePunct(r) {
-			break
-		}
-		end = i + len(string(r))
+	// The cut is taken at the byte the stopping rune opens on. A body read
+	// off disk need not be UTF-8 at all, and measuring the run by the runes
+	// already walked would count three bytes for every invalid one.
+	if i := strings.IndexFunc(rest, func(r rune) bool {
+		return unicode.IsSpace(r) || isNamePunct(r)
+	}); i >= 0 {
+		return rest[:i]
 	}
-	return rest[:end]
+	return rest
 }
 
 // isNamePunct reports punctuation no name carries. The three it lets through
