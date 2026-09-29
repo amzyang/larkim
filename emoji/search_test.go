@@ -181,3 +181,20 @@ func TestIndexByKey_AnswersTheSpellingThePickerShows(t *testing.T) {
 	_, ok = ix.ByKey("NOSUCHEMOJI")
 	require.False(t, ok)
 }
+
+func TestSearch_BreaksATieOnTheShorterSpelling(t *testing.T) {
+	// fzf scores a match the same wherever a longer name carries it, so the
+	// name the query all but spells has to be told from the name that merely
+	// starts with it here.
+	ix := NewReactionIndex()
+	require.Equal(t, "No", first(t, ix.Search("no")).Key, "not NOSEPICK, and not 音符 by its English note")
+	require.Equal(t, "OK", first(t, ix.Search("ok")).Key, "not OKR")
+	require.Equal(t, "Yes", first(t, ix.Search("yes")).Key, "not RollEyes by the run inside it")
+}
+
+func TestSearch_KeepsAUsedEmojiAheadOfAShorterSpelling(t *testing.T) {
+	ix := NewReactionIndex()
+	ix.Use("NOSEPICK")
+	require.Equal(t, "NOSEPICK", first(t, ix.Search("no")).Key,
+		"what this reader reaches for outranks what the query spells more exactly")
+}

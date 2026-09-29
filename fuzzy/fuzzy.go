@@ -12,6 +12,13 @@ import (
 	"github.com/mozillazg/go-pinyin"
 )
 
+// fzf keeps its character classes and bonus table in package state that only
+// algo.Init fills; unfilled, every character reads as whitespace, which costs
+// the position bonuses that tell a whole word from the same run buried inside
+// a longer one and leaves an uppercase term unmatchable by a lowercase query.
+// "default" is the scheme for matching names rather than paths or history.
+func init() { algo.Init("default") }
+
 // Sound spells a name the way it is typed on a latin keyboard. Runes the
 // dictionary has no reading for — the digits in 18禁, the V in V5 — are kept
 // as they are, so the term stays the whole name rather than the Chinese part

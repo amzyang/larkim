@@ -1,11 +1,13 @@
 package emoji
 
 import (
+	"cmp"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/amzyang/larkim/fuzzy"
 	"github.com/junegunn/fzf/src/util"
@@ -152,9 +154,15 @@ func (ix *Index) trim() {
 // stops being something a person can hold in their head anyway.
 const MaxUsed = 30
 
-// Search ranks the emoji against a query, best first. An empty query answers
-// with the ones this reader uses most and then the client's own panel order,
-// which is the frequently used band Feishu's own panel opens with.
+// Search ranks the emoji against a query, best first. Equal scores go to the
+// emoji this reader uses, then to the shorter spelling, then to the client's
+// panel order: fzf scores a run the same wherever it sits, so `no` scores
+// alike on No, NosePick and the note of a music emoji, and only the length
+// tells the name the query all but spells from the ones that merely carry it.
+//
+// An empty query answers with the ones this reader uses most and then the
+// client's own panel order, which is the frequently used band Feishu's own
+// panel opens with.
 func (ix *Index) Search(query string) []Hit {
 	query = strings.TrimSpace(query)
 	if query == "" {
@@ -169,10 +177,17 @@ func (ix *Index) Search(query string) []Hit {
 		hits = append(hits, Hit{Emoji: e, Term: e.Terms[j], Positions: pos, score: score})
 	}
 	slices.SortStableFunc(hits, func(a, b Hit) int {
+		// Score on its own before the rest: cmp.Or evaluates every argument it
+		// is handed, and the tie-breaks below cost a Fold and a walk of the
+		// remembered list per operand, which pairs of unequal score never need.
 		if a.score != b.score {
 			return b.score - a.score
 		}
-		return ix.rank(a.Emoji) - ix.rank(b.Emoji)
+		return cmp.Or(
+			ix.usedRank(a.Emoji)-ix.usedRank(b.Emoji),
+			utf8.RuneCountInString(a.Term)-utf8.RuneCountInString(b.Term),
+			a.Emoji.Order-b.Emoji.Order,
+		)
 	})
 	return hits
 }
@@ -183,18 +198,20 @@ func (ix *Index) unqueried() []Hit {
 	for _, e := range ix.items {
 		hits = append(hits, Hit{Emoji: e})
 	}
-	slices.SortStableFunc(hits, func(a, b Hit) int { return ix.rank(a.Emoji) - ix.rank(b.Emoji) })
+	slices.SortStableFunc(hits, func(a, b Hit) int {
+		return cmp.Or(ix.usedRank(a.Emoji)-ix.usedRank(b.Emoji), a.Emoji.Order-b.Emoji.Order)
+	})
 	return hits
 }
 
-// rank orders two emoji that a query cannot tell apart: the ones this reader
-// uses first, most used before the rest, then the client's own panel order.
-func (ix *Index) rank(e Emoji) int {
+// usedRank puts the emoji this reader reaches for ahead of the rest, most used
+// first. Everything else scores 0 and is left to the orderings that follow.
+func (ix *Index) usedRank(e Emoji) int {
 	key := Fold(e.Key)
 	if i := slices.IndexFunc(ix.used, func(u usage) bool { return u.Key == key }); i >= 0 {
 		return i - len(ix.used)
 	}
-	return e.Order
+	return 0
 }
 
 // The remembered lists are derived data: deleting one costs the ordering of an

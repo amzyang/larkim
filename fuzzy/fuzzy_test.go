@@ -96,3 +96,17 @@ func TestHasCJK(t *testing.T) {
 	require.False(t, HasCJK("ptz"))
 	require.False(t, HasCJK(""))
 }
+
+func TestMatcher_BestPrefersAWholeTermOverTheSameRunInsideAnother(t *testing.T) {
+	mt := NewMatcher()
+	_, whole, _ := mt.Best(Chars([]string{"yes"}), "yes")
+	_, buried, _ := mt.Best(Chars([]string{"rolleyes"}), "yes")
+	require.Greater(t, whole, buried, "the term the query spells outright is the better hit")
+}
+
+func TestMatcher_BestReadsALowercaseQueryWithoutCase(t *testing.T) {
+	mt := NewMatcher()
+	_, score, pos := mt.Best(Chars([]string{"Yes"}), "yes")
+	require.Positive(t, score)
+	require.Equal(t, []int{0, 1, 2}, pos)
+}
