@@ -65,14 +65,17 @@ type Emoji struct {
 // it stays termless and the character keeps answering with one emoji.
 var index = sync.OnceValue(func() []Emoji {
 	out := make([]Emoji, 0, len(table)+len(glyphs))
+	owned := make(map[string]bool, len(table))
 	for _, e := range table {
-		if e.Glyph = glyphs[Fold(e.Key)]; e.Glyph != "" {
+		key := Fold(e.Key)
+		owned[key] = true
+		if e.Glyph = glyphs[key]; e.Glyph != "" {
 			e.Terms = append(slices.Clip(e.Terms), e.Glyph)
 		}
 		out = append(out, e)
 	}
 	for key, glyph := range glyphs {
-		if !slices.ContainsFunc(out, func(e Emoji) bool { return Fold(e.Key) == key }) {
+		if !owned[key] {
 			out = append(out, Emoji{Key: key, Glyph: glyph, Order: len(table) + 1})
 		}
 	}

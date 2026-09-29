@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/junegunn/fzf/src/algo"
 	"github.com/junegunn/fzf/src/util"
@@ -167,16 +168,15 @@ func HasCJK(s string) bool {
 // substring matches a run of runes, case-insensitively, and reports where it
 // landed so the caller can underline it.
 func substring(name, query string) (pos []int, ok bool) {
-	hay, needle := []rune(strings.ToLower(name)), []rune(strings.ToLower(query))
-	for i := 0; i+len(needle) <= len(hay); i++ {
-		if string(hay[i:i+len(needle)]) != string(needle) {
-			continue
-		}
-		pos = make([]int, len(needle))
-		for j := range needle {
-			pos[j] = i + j
-		}
-		return pos, true
+	hay, needle := strings.ToLower(name), strings.ToLower(query)
+	before, _, ok := strings.Cut(hay, needle)
+	if !ok {
+		return nil, false
 	}
-	return nil, false
+	start := utf8.RuneCountInString(before)
+	pos = make([]int, utf8.RuneCountInString(needle))
+	for j := range pos {
+		pos[j] = start + j
+	}
+	return pos, true
 }

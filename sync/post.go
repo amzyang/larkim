@@ -204,6 +204,6 @@ func StyleMarkdown(text string, styles []string) string {
 	return text
 }
 
-func escapeMDLinkText(s string) string {
-	return strings.NewReplacer(`[`, `\[`, `]`, `\]`).Replace(s)
-}
+var mdLinkTextEscaper = strings.NewReplacer(`[`, `\[`, `]`, `\]`)
+
+func escapeMDLinkText(s string) string { return mdLinkTextEscaper.Replace(s) }
