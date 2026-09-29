@@ -170,8 +170,13 @@ func (s *Store) ReadStatusCandidates(ctx context.Context, q ReadCheckQuery) ([]s
 	return queryAll(ctx, s.db, scanOne[string], sql, append(args, q.Limit)...)
 }
 
-// ReadProbe is one chat's newest unread message.
-type ReadProbe struct{ MessageID, ChatID string }
+// ReadProbe is one chat's newest unread message. Unchecked says Feishu has
+// never answered for it, stored unread on arrival or not, which makes the
+// probe's answer its first check.
+type ReadProbe struct {
+	MessageID, ChatID string
+	Unchecked         bool
+}
 
 // ReadStatusProbes returns one message id per chat that still has unread
 // messages: the newest of them, newest chats first. Reading a chat in the
@@ -195,12 +200,12 @@ type ReadProbe struct{ MessageID, ChatID string }
 func (s *Store) ReadStatusProbes(ctx context.Context, q ReadCheckQuery) ([]ReadProbe, error) {
 	scan := func(sc scanner) (ReadProbe, error) {
 		var p ReadProbe
-		return p, sc.Scan(&p.MessageID, &p.ChatID)
+		return p, sc.Scan(&p.MessageID, &p.ChatID, &p.Unchecked)
 	}
 	// The bare columns belong to the max(m.create_ms) row: SQLite takes them
 	// from the row its single min/max aggregate selected.
-	return queryAll(ctx, s.db, scan, `SELECT message_id, chat_id FROM
- (SELECT m.message_id AS message_id, m.chat_id AS chat_id, max(m.create_ms) AS newest `+messageFrom+`
+	return queryAll(ctx, s.db, scan, `SELECT message_id, chat_id, unchecked FROM
+ (SELECT m.message_id AS message_id, m.chat_id AS chat_id, COALESCE(r.remote_checked_at, 0) = 0 AS unchecked, max(m.create_ms) AS newest `+messageFrom+`
   WHERE m.sender_id <> ? AND m.deleted = 0 AND m.create_ms > ?
    AND (r.message_id IS NULL OR r.is_read_remote = 0)
   GROUP BY m.chat_id)

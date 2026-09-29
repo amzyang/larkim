@@ -3,6 +3,7 @@ package sync
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -338,6 +339,118 @@ func TestTick_ReadProbeOvertakesTheBackoff(t *testing.T) {
 	m, err := s.Store.GetMessage(ctx, "om_b")
 	require.NoError(t, err)
 	require.False(t, *m.IsReadRemote, "a chat whose probe came back unread keeps its schedule")
+}
+
+func TestTick_AMessageArrivesUnreadWithItsRow(t *testing.T) {
+	s, f, clk := newSyncer(t)
+	ctx := t.Context()
+	f.Chats = []larkcli.RawChat{{ChatID: "oc_a", Name: "平台组", ChatMode: "group"}}
+	raw := msg("om_arrived", "oc_a", clk.t.Add(-time.Second), "hi")
+	raw.Sender = larkcli.RawSender{ID: "ou_them", SenderType: "user"}
+	f.AddMessage(raw)
+	_, err := s.EnsureIdentity(ctx)
+	require.NoError(t, err)
+	// The first nudge that finds the message is the first page a reader could
+	// draw it on, and it has to carry the flag: a page that has the message
+	// without it draws it read, outside the unread block it then joins.
+	var first *store.Message
+	s.OnChange = func() {
+		if m, err := s.Store.GetMessage(ctx, "om_arrived"); err == nil && first == nil {
+			first = &m
+		}
+	}
+
+	_, err = s.Tick(ctx)
+	require.NoError(t, err)
+	require.NotNil(t, first)
+	require.NotNil(t, first.IsReadRemote, "the row and its flag land in one write")
+	require.False(t, *first.IsReadRemote)
+	require.Equal(t, 1, countCalls(f.Calls, "read-status"), "Feishu is still asked, once")
+	n, err := s.Store.ReadCheckCount(ctx, "om_arrived")
+	require.NoError(t, err)
+	require.Equal(t, 1, n, "the answer is recorded as the first check")
+}
+
+func TestTick_AnArrivalReadElsewhereIsSettledBeforeTheSweeps(t *testing.T) {
+	s, f, clk := newSyncer(t)
+	ctx := t.Context()
+	s.Opt.RepairEvery = 0
+	f.Chats = []larkcli.RawChat{{ChatID: "oc_a", Name: "平台组", ChatMode: "group"}}
+	f.AddMessage(msg("om_seed", "oc_a", clk.t.Add(-time.Hour), "seed"))
+	_, err := s.EnsureIdentity(ctx)
+	require.NoError(t, err)
+	for range 2 {
+		_, err := s.Tick(ctx)
+		require.NoError(t, err)
+		clk.t = clk.t.Add(5 * time.Second)
+	}
+
+	// Read in the client as it landed: stored unread on arrival, which only
+	// Feishu's answer can take back.
+	raw := msg("om_seen", "oc_a", clk.t.Add(-time.Second), "hi")
+	raw.Sender = larkcli.RawSender{ID: "ou_them", SenderType: "user"}
+	f.AddMessage(raw)
+	f.Read["om_seen"] = true
+	f.SearchHidden = []string{"om_seen"}
+	clk.t = clk.t.Add(s.Opt.ChatsRefreshEvery) // a round with the full listing in it
+	f.Calls = nil
+
+	_, err = s.Tick(ctx)
+	require.NoError(t, err)
+	m, err := s.Store.GetMessage(ctx, "om_seen")
+	require.NoError(t, err)
+	require.True(t, *m.IsReadRemote)
+	asked, listed := slices.Index(f.Calls, "read-status"), slices.Index(f.Calls, "chats:false")
+	require.GreaterOrEqual(t, listed, 0, "the round is one that lists every chat")
+	require.Less(t, asked, listed,
+		"the answer is fetched before the round's sweeps, which is as long as the false unread lasts")
+}
+
+func TestTick_ReadProbeRecordsAnUncheckedMessageInOneCall(t *testing.T) {
+	s, f, clk := newSyncer(t)
+	ctx := t.Context()
+	f.Chats = []larkcli.RawChat{{ChatID: "oc_a", Name: "平台组", ChatMode: "group"}}
+	// Too old to count as arriving, so nothing stores it unread before the
+	// probe answers for it.
+	raw := msg("om_fresh", "oc_a", clk.t.Add(-arrivalWindow-time.Minute), "hi")
+	raw.Sender = larkcli.RawSender{ID: "ou_them", SenderType: "user"}
+	f.AddMessage(raw)
+	_, err := s.EnsureIdentity(ctx)
+	require.NoError(t, err)
+	// The first nudge that could put the message on the badge, and whether
+	// the tick had already finished by then: Tick nudges once more at its end,
+	// which is a whole round of later steps after the flag was written.
+	var flagged, afterTick bool
+	s.OnChange = func() {
+		m, err := s.Store.GetMessage(ctx, "om_fresh")
+		if err != nil || flagged || m.IsReadRemote == nil {
+			return
+		}
+		flagged = true
+		last, err := s.stateTime(ctx, KeyLastTickAt)
+		require.NoError(t, err)
+		afterTick = !last.IsZero()
+	}
+
+	rep, err := s.Tick(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1, countCalls(f.Calls, "read-status"),
+		"the probe's answer is the first check; asking the ladder again is a second round trip for the same fact")
+	require.Equal(t, 1, rep.ReadChecks)
+	m, err := s.Store.GetMessage(ctx, "om_fresh")
+	require.NoError(t, err)
+	require.False(t, *m.IsReadRemote)
+	require.True(t, flagged)
+	require.False(t, afterTick, "the flag's write is announced as it lands, not with the end of the tick")
+
+	// The probe recorded a first check, so the ladder's schedule holds.
+	clk.t = clk.t.Add(30 * time.Second)
+	rep, err = s.Tick(ctx)
+	require.NoError(t, err)
+	require.Zero(t, rep.ReadChecks, "a checked message's still-unread answer is dropped; the next step is 1m out")
+	n, err := s.Store.ReadCheckCount(ctx, "om_fresh")
+	require.NoError(t, err)
+	require.Equal(t, 1, n)
 }
 
 func TestTick_ADownloadNeverRendersItsMessage(t *testing.T) {

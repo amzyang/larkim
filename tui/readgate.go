@@ -9,12 +9,13 @@ import "slices"
 // screen beat for as long as the reader sat still.
 //
 // Keyed on the newest unread rather than the newest message, because unread
-// arrives two ways and only this covers both. A new message brings its own id.
-// A read flag lands on a message that is already on the page: read_state rows
-// are written by a pass of their own (sync.checkReadStatus, riding along every
-// other chat beat), so the page that carried the message in had nothing to
-// settle, and the page that lights the badge carries no new id. The same holds
-// for a flag landing on a message older than the newest.
+// arrives two ways and only this covers both. A new message brings its own id,
+// and its flag with it when it lands as an arrival. Any other flag lands on a
+// message that is already on the page: those read_state rows are written by a
+// pass of their own (sync.checkReadStatus, riding along every other chat
+// beat), so the page that carried the message in had nothing to settle, and
+// the page that lights the badge carries no new id. The same holds for a flag
+// landing on a message older than the newest.
 //
 // The predicate mirrors the set markChatRead settles, which is the chat
 // badge's own. It used to have to be wider: the page listed thread replies

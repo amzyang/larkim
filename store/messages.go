@@ -40,7 +40,8 @@ type Message struct {
 	EditedAt      int64  `json:"edited_at,omitempty"`
 	FirstSeenAt   int64  `json:"first_seen_at"`
 	LastSeenAt    int64  `json:"last_seen_at"`
-	// From read_state; IsReadRemote is nil when never checked.
+	// From read_state; IsReadRemote is nil when nothing is known, neither an
+	// answer from Feishu nor an arrival stored unread.
 	IsReadRemote *bool `json:"is_read_remote"`
 	LocalReadAt  int64 `json:"local_read_at"`
 }
@@ -72,6 +73,25 @@ func scanMessage(sc scanner) (Message, error) {
 // list is not one of them: it rides on the raw message, which is what lets a
 // body be rendered from disk before lark-cli has said anything about it.
 func (s *Store) UpsertMessages(ctx context.Context, msgs []Message, now int64) (int, error) {
+	return s.UpsertMessagesArriving(ctx, msgs, now, Arrival{})
+}
+
+// Arrival picks out, among the rows an upsert stores for the first time, the
+// messages that have just been sent to the user: somebody else's, no older
+// than SinceMs, and neither a notice nor recalled. The zero value picks none.
+type Arrival struct {
+	Self    string
+	SinceMs int64
+}
+
+// UpsertMessagesArriving is UpsertMessages, storing the messages a picks out
+// as unread in the same transaction. A message sent to the user is unread
+// until they see it, which is what the client shows the moment it lands;
+// waiting for Feishu's receipt instead puts the message on screen a round
+// trip before its badge, and its unread dot with it. The receipt still comes:
+// remote_checked_at stays 0, so the next read-status pass asks as it would
+// for any message never asked about.
+func (s *Store) UpsertMessagesArriving(ctx context.Context, msgs []Message, now int64, a Arrival) (int, error) {
 	if len(msgs) == 0 {
 		return 0, nil
 	}
@@ -122,6 +142,11 @@ func (s *Store) UpsertMessages(ctx context.Context, msgs []Message, now int64) (
 		ids = append(ids, m.MessageID)
 		n++
 	}
+	if a.Self != "" {
+		if err := markArrivals(ctx, tx, ids, now, a); err != nil {
+			return n, err
+		}
+	}
 	// Before the summaries: the sort key they compute reads the flag.
 	if err := s.applySilence(ctx, tx, ids); err != nil {
 		return n, err
@@ -132,6 +157,23 @@ func (s *Store) UpsertMessages(ctx context.Context, msgs []Message, now int64) (
 		}
 	}
 	return n, tx.Commit()
+}
+
+// markArrivals stores as unread the rows of ids that this transaction
+// inserted and a picks out. first_seen_at is only ever written by the insert,
+// so it is what tells a message that has just arrived from one listed again.
+// Feishu never answers for a system notice, so one stored unread would hold a
+// badge up until the pass that asks gave up on it.
+func markArrivals(ctx context.Context, tx *sql.Tx, ids []string, now int64, a Arrival) error {
+	for chunk := range slices.Chunk(ids, 500) {
+		args := append(anySlice(chunk), now, a.Self, a.SinceMs)
+		if _, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO read_state (message_id, is_read_remote)
+ SELECT message_id, 0 FROM messages WHERE message_id IN `+inClause(len(chunk))+`
+   AND first_seen_at = ? AND sender_id <> ? AND create_ms >= ? AND msg_type <> 'system' AND deleted = 0`, args...); err != nil {
+			return fmt.Errorf("mark arrivals: %w", err)
+		}
+	}
+	return nil
 }
 
 // compactJSON is the stored form of every JSON column: one canonical spelling,

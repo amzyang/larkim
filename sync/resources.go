@@ -30,6 +30,13 @@ func ReadCheckDelay(n int) time.Duration {
 // readStatusHorizon bounds how far back read status is polled.
 const readStatusHorizon = 7 * 24 * time.Hour
 
+// arrivalWindow is how old a message stored for the first time can be and
+// still count as just sent to the user, which stores it unread. Discovery
+// reaches a message within about half a minute at worst — the search runs
+// every thirty seconds — so twice that covers a slow tick. Anything older is
+// history a sweep has turned up, which the reader may long have read.
+const arrivalWindow = 2 * time.Minute
+
 const maxResourceAttempts = 5
 
 // ResourceRetryDelay returns the wait before retrying a failed download after
@@ -315,14 +322,19 @@ func permanentFailure(err error) bool {
 
 // pollReadStatus asks Feishu whether the user has read recent messages from
 // others, on a widening schedule per message, and drops the unread flag of
-// messages that have aged out of the horizon it polls.
-func (s *Syncer) pollReadStatus(ctx context.Context, now time.Time) (int, error) {
+// messages that have aged out of the horizon it polls. probe is false in a
+// round that has already probed, straight after discovery: a second probe
+// seconds later spends a call on the answer the first one got.
+func (s *Syncer) pollReadStatus(ctx context.Context, now time.Time, probe bool) (int, error) {
 	if _, err := s.Store.ExpireReadStatus(ctx, now.Add(-readStatusHorizon).UnixMilli()); err != nil {
 		return 0, err
 	}
-	n, err := s.probeReadStatus(ctx, now)
-	if err != nil {
-		return n, err
+	var n int
+	if probe {
+		var err error
+		if n, err = s.probeReadStatus(ctx, now); err != nil {
+			return n, err
+		}
 	}
 	m, err := s.checkReadStatus(ctx, now, store.ReadCheckQuery{DueAt: now.UnixMilli(), Limit: s.Opt.ReadStatusPerTick * readStatusBatch})
 	return n + m, err
@@ -340,6 +352,9 @@ const readStatusBatch = 50
 // An answer of "still unread" is dropped rather than recorded: the probe runs
 // every tick, and writing it would run the ladder's per-message schedule out
 // to its longest step on the very messages the ladder is the fallback for.
+// A message never asked about has no schedule to run out, so its answer is
+// recorded as the ladder's first check rather than asked for again by the
+// ladder a moment later.
 // A flip to read is recorded and pulls the rest of that chat behind it — the
 // flag is a per-message receipt, not a chat-level badge, so the chat's other
 // messages have to be asked about in their own right.
@@ -353,10 +368,10 @@ func (s *Syncer) probeReadStatus(ctx context.Context, now time.Time) (int, error
 	if err != nil || len(probes) == 0 {
 		return 0, err
 	}
-	byMessage := make(map[string]string, len(probes))
+	byMessage := make(map[string]store.ReadProbe, len(probes))
 	ids := make([]string, 0, len(probes))
 	for _, p := range probes {
-		byMessage[p.MessageID] = p.ChatID
+		byMessage[p.MessageID] = p
 		ids = append(ids, p.MessageID)
 	}
 	items, _, err := s.Client.ReadStatus(ctx, ids)
@@ -365,14 +380,20 @@ func (s *Syncer) probeReadStatus(ctx context.Context, now time.Time) (int, error
 	}
 	checked := 0
 	for _, it := range items {
-		if !it.IsRead {
-			continue
+		p := byMessage[it.MessageID]
+		switch {
+		case it.IsRead:
+			n, err := s.RefreshReadStatus(ctx, p.ChatID)
+			if err != nil {
+				return checked, err
+			}
+			checked += n
+		case p.Unchecked:
+			if err := s.recordReadStatus(ctx, it, now); err != nil {
+				return checked, err
+			}
+			checked++
 		}
-		n, err := s.RefreshReadStatus(ctx, byMessage[it.MessageID])
-		if err != nil {
-			return checked, err
-		}
-		checked += n
 	}
 	return checked, nil
 }
@@ -499,6 +520,20 @@ func (s *Syncer) refreshReaction(ctx context.Context, messageID string) error {
 	return err
 }
 
+// recordReadStatus stores one answer and, for a message still unread, the
+// ladder's next step.
+func (s *Syncer) recordReadStatus(ctx context.Context, it larkcli.ReadStatus, now time.Time) error {
+	n, err := s.Store.ReadCheckCount(ctx, it.MessageID)
+	if err != nil {
+		return err
+	}
+	next := int64(0)
+	if !it.IsRead {
+		next = now.Add(ReadCheckDelay(n + 1)).UnixMilli()
+	}
+	return s.Store.SetReadStatus(ctx, it.MessageID, new(it.IsRead), now.UnixMilli(), next)
+}
+
 // checkReadStatus asks Feishu about the messages q selects, records each
 // answer and schedules the next check of the ones still unread. It fills in
 // the parts of q that every caller shares: the user's own open_id, whose
@@ -520,15 +555,7 @@ func (s *Syncer) checkReadStatus(ctx context.Context, now time.Time, q store.Rea
 			return checked, err
 		}
 		for _, it := range items {
-			n, err := s.Store.ReadCheckCount(ctx, it.MessageID)
-			if err != nil {
-				return checked, err
-			}
-			next := int64(0)
-			if !it.IsRead {
-				next = now.Add(ReadCheckDelay(n + 1)).UnixMilli()
-			}
-			if err := s.Store.SetReadStatus(ctx, it.MessageID, new(it.IsRead), now.UnixMilli(), next); err != nil {
+			if err := s.recordReadStatus(ctx, it, now); err != nil {
 				return checked, err
 			}
 			checked++

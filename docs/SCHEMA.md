@@ -128,12 +128,12 @@ WHERE root_message_id = 'om_xxx' AND upper_message_id = 'om_xxx' ORDER BY seq;
 
 ## read_state
 
-Per-message read state, joined on `message_id`. Rows exist only for messages whose remote flag has been checked; `local_read_at` updates rows that already exist and never creates one.
+Per-message read state, joined on `message_id`. A row exists for a message whose remote flag has been checked, and for one stored unread on arrival: somebody else's message, other than a system notice, first stored within two minutes of being sent, which the client would show unread from the moment it landed. `local_read_at` updates rows that already exist and never creates one.
 
 | column | meaning |
 |---|---|
-| `is_read_remote` | NULL unknown, 0 unread, 1 read, as reported by Feishu for the current user. The flag is a per-message read receipt, which flips only on messages the user actually viewed; it is not the client's chat-level badge. Messages older than the 7-day polling horizon go back to NULL, since nothing can refresh them |
-| `remote_checked_at`, `check_count`, `next_check_at` | polling schedule for the remote flag |
+| `is_read_remote` | NULL unknown, 0 unread, 1 read, as reported by Feishu for the current user; a row stored unread on arrival holds 0 until Feishu first reports. The flag is a per-message read receipt, which flips only on messages the user actually viewed; it is not the client's chat-level badge. Messages older than the 7-day polling horizon go back to NULL, since nothing can refresh them |
+| `remote_checked_at`, `check_count`, `next_check_at` | polling schedule for the remote flag; `remote_checked_at` is 0 on a row stored unread on arrival until Feishu first answers for it |
 | `local_read_at` | local: the reader had the message in front of them in larkim, which is set for a whole chat at once when it is opened. Feishu offers no way to write a read receipt, so this is what lets a badge fall without leaving larkim; the Feishu client's own red dot is unaffected |
 
 `is_read_remote` is also read on its own, without `local_read_at`: on a live message with a non-negative `message_position` that combination means the Feishu desktop client still shows a red dot for the chat, which reading the chat in larkim never takes down. That is the set `larkim read-all` walks the client over, and it is bounded only by the 7-day horizon, so it is wider than any badge — a chat whose badge is 0 can still be in it.

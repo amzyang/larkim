@@ -335,7 +335,7 @@ func TestRefreshReadStatus_OvertakesTheBackoff(t *testing.T) {
 	require.NoError(t, s.Store.SetReadStatus(ctx, "om_here", &unread, now.UnixMilli(), now.Add(6*time.Hour).UnixMilli()))
 	require.NoError(t, s.Store.SetReadStatus(ctx, "om_elsewhere", &unread, now.UnixMilli(), now.Add(6*time.Hour).UnixMilli()))
 
-	n, err := s.pollReadStatus(ctx, now)
+	n, err := s.pollReadStatus(ctx, now, true)
 	require.NoError(t, err)
 	require.Zero(t, n, "both wait out the backoff")
 
@@ -377,7 +377,7 @@ func TestPollReadStatus_DropsUnreadPastTheHorizon(t *testing.T) {
 	count, _ := s.Store.UnreadCount(ctx)
 	require.Equal(t, int64(1), count)
 
-	_, err = s.pollReadStatus(ctx, now)
+	_, err = s.pollReadStatus(ctx, now, true)
 	require.NoError(t, err)
 
 	count, _ = s.Store.UnreadCount(ctx)
@@ -794,7 +794,7 @@ func TestPollReadStatus_TakesAChatOutOfTheSweepOnceTheClientAnswers(t *testing.T
 	require.Len(t, chats, 1, "the local write says nothing about the client's dot")
 
 	f.Read["om_walked"] = true
-	_, err = s.pollReadStatus(ctx, now)
+	_, err = s.pollReadStatus(ctx, now, true)
 	require.NoError(t, err)
 
 	m, _ := s.Store.GetMessage(ctx, "om_walked")

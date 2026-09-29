@@ -471,21 +471,22 @@ func TestReadStatusProbes_OneNewestMessagePerUnreadChat(t *testing.T) {
 	q := ReadCheckQuery{Self: "ou_me", SinceMs: 100, Limit: 10}
 	ids, err := s.ReadStatusProbes(ctx, q)
 	require.NoError(t, err)
-	require.Equal(t, []ReadProbe{{"om_b", "oc_b"}, {"om_a_new", "oc_a"}}, ids,
-		"one probe per chat, its newest unread, newest chat first; own and out-of-horizon messages excluded")
+	require.Equal(t, []ReadProbe{{"om_b", "oc_b", true}, {"om_a_new", "oc_a", true}}, ids,
+		"one probe per chat, its newest unread, newest chat first; own and out-of-horizon messages excluded; none asked about yet")
 
 	// A far-out backoff is exactly what the probe is meant to overtake.
 	unread := false
 	require.NoError(t, s.SetReadStatus(ctx, "om_b", &unread, 1000, 9e12))
 	ids, err = s.ReadStatusProbes(ctx, q)
 	require.NoError(t, err)
-	require.Equal(t, []ReadProbe{{"om_b", "oc_b"}, {"om_a_new", "oc_a"}}, ids)
+	require.Equal(t, []ReadProbe{{"om_b", "oc_b", false}, {"om_a_new", "oc_a", true}}, ids,
+		"checked once, om_b no longer counts as unchecked")
 
 	read := true
 	require.NoError(t, s.SetReadStatus(ctx, "om_b", &read, 2000, 0))
 	ids, err = s.ReadStatusProbes(ctx, q)
 	require.NoError(t, err)
-	require.Equal(t, []ReadProbe{{"om_a_new", "oc_a"}}, ids, "a chat with nothing unread left drops out")
+	require.Equal(t, []ReadProbe{{"om_a_new", "oc_a", true}}, ids, "a chat with nothing unread left drops out")
 }
 
 func TestReadStatusProbes_SkipsMessagesNoAnswerCanReach(t *testing.T) {
@@ -508,7 +509,7 @@ func TestReadStatusProbes_SkipsMessagesNoAnswerCanReach(t *testing.T) {
 
 	probes, err := s.ReadStatusProbes(ctx, ReadCheckQuery{Self: "ou_me", SinceMs: 100, Limit: 10})
 	require.NoError(t, err)
-	require.Equal(t, []ReadProbe{{"om_ctl", "oc_ctl"}, {"om_seen_here", "oc_seen_here"}, {"om_answerable", "oc_refused"}}, probes,
+	require.Equal(t, []ReadProbe{{"om_ctl", "oc_ctl", true}, {"om_seen_here", "oc_seen_here", false}, {"om_answerable", "oc_refused", false}}, probes,
 		"a refused id spends the chat's one slot on a question with no answer")
 }
 
@@ -524,7 +525,7 @@ func TestReadStatusProbes_KeepsAskingAboutAChatReadHere(t *testing.T) {
 
 	probes, err := s.ReadStatusProbes(ctx, ReadCheckQuery{Self: "ou_me", SinceMs: 100, Limit: 10})
 	require.NoError(t, err)
-	require.Equal(t, []ReadProbe{{"om_walked", "oc_walked"}}, probes,
+	require.Equal(t, []ReadProbe{{"om_walked", "oc_walked", false}}, probes,
 		"the receipt is what takes the chat out of ChatsWithUnread, so this is the question the sweep converges on")
 }
 
@@ -739,4 +740,53 @@ func TestUnreadAnchors_AnEmptyStoreAnswersWithNothing(t *testing.T) {
 	got, err := openTest(t).UnreadAnchors(t.Context())
 	require.NoError(t, err)
 	require.Empty(t, got)
+}
+
+func TestUpsertMessagesArriving_StoresWhatArrivesUnread(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	_, err := s.UpsertMessages(ctx, []Message{msgAt("om_known", "oc_a", 5000, 1, "listed before")}, 1)
+	require.NoError(t, err)
+
+	mine := msgAt("om_mine", "oc_a", 5000, 3, "mine")
+	mine.SenderID = "ou_me"
+	sys := msgAt("om_sys", "oc_a", 5000, 4, "")
+	sys.MsgType, sys.SenderID = "system", ""
+	gone := msgAt("om_gone", "oc_a", 5000, 5, "")
+	gone.Deleted = true
+	reply := msgAt("om_reply", "oc_a", 5000, -3, "in a thread")
+	_, err = s.UpsertMessagesArriving(ctx, []Message{
+		msgAt("om_known", "oc_a", 5000, 1, "listed before"),
+		msgAt("om_new", "oc_a", 6000, 2, "new"),
+		mine, sys, gone, reply,
+		msgAt("om_old", "oc_a", 999, 6, "backfilled"),
+	}, 2, Arrival{Self: "ou_me", SinceMs: 1000})
+	require.NoError(t, err)
+
+	for id, unread := range map[string]bool{"om_new": true, "om_reply": true,
+		"om_known": false, "om_mine": false, "om_sys": false, "om_gone": false, "om_old": false} {
+		m, err := s.GetMessage(ctx, id)
+		require.NoError(t, err)
+		if unread {
+			require.NotNil(t, m.IsReadRemote, id)
+			require.False(t, *m.IsReadRemote, id)
+		} else {
+			require.Nil(t, m.IsReadRemote, "%s: stored before, own, a notice, recalled, or older than the arrival", id)
+		}
+	}
+	n, err := s.ReadCheckCount(ctx, "om_new")
+	require.NoError(t, err)
+	require.Zero(t, n, "stored unread is not an answer from Feishu")
+
+	probes, err := s.ReadStatusProbes(ctx, ReadCheckQuery{Self: "ou_me", SinceMs: 100, Limit: 10})
+	require.NoError(t, err)
+	require.Equal(t, []ReadProbe{{"om_new", "oc_a", true}}, probes, "the probe's answer is still the first check")
+
+	// Re-listing an arrival that has been answered for leaves the answer alone.
+	require.NoError(t, s.SetReadStatus(ctx, "om_new", new(true), 3, 0))
+	_, err = s.UpsertMessagesArriving(ctx, []Message{msgAt("om_new", "oc_a", 6000, 2, "new")}, 3, Arrival{Self: "ou_me", SinceMs: 1000})
+	require.NoError(t, err)
+	m, err := s.GetMessage(ctx, "om_new")
+	require.NoError(t, err)
+	require.True(t, *m.IsReadRemote)
 }

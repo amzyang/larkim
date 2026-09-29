@@ -328,20 +328,28 @@ func (s *Syncer) tick(ctx context.Context, now time.Time) (Report, error) {
 		s.changed(rep.New)
 	}
 
-	// 3. Render and fetch what discovery just found, ahead of the sweeps
-	// below. A body lands unrendered, so a reader watching the chat sees the
-	// message named by its type until a rendering replaces it; doing it here
-	// rather than after the sweeps is the difference between a flicker and
-	// half a minute of placeholder. A tick that found nothing skips it, which
-	// is most of them.
-	if rep.New+rep.Probed > 0 {
+	// 3. Render, ask about and fetch what discovery just found, ahead of the
+	// sweeps below. A body lands unrendered, so a reader watching the chat
+	// sees the message named by its type until a rendering replaces it; doing
+	// it here rather than after the sweeps is the difference between a
+	// flicker and half a minute of placeholder. A message that arrived is
+	// stored unread, and one already read in the client stays wrongly so until
+	// Feishu's answer comes, which is why the answer is fetched before the
+	// downloads too. A tick that found nothing skips it, which is most of them.
+	found := rep.New+rep.Probed > 0
+	if found {
 		if rep.Rendered, err = s.renderPending(ctx, "", s.Opt.RenderPerTick*50, now); err != nil {
 			return rep, fmt.Errorf("render: %w", err)
 		}
+		s.changed(rep.Rendered)
+		if rep.ReadChecks, err = s.probeReadStatus(ctx, now); err != nil {
+			return rep, fmt.Errorf("read probe: %w", err)
+		}
+		s.changed(rep.ReadChecks)
 		if rep.Downloaded, err = s.downloadPending(ctx, now); err != nil {
 			return rep, fmt.Errorf("resources: %w", err)
 		}
-		s.changed(rep.Rendered + rep.Downloaded)
+		s.changed(rep.Downloaded)
 	}
 
 	// 4. Historical discovery: one day-slice of cross-chat search per tick,
@@ -431,12 +439,14 @@ func (s *Syncer) tick(ctx context.Context, now time.Time) (Report, error) {
 	rep.DocLinks = n
 	s.changed(n)
 
-	// 13. Poll whether the user has read recent messages from others.
-	n, err = s.pollReadStatus(ctx, now)
+	// 13. Poll whether the user has read recent messages from others. A round
+	// that found messages probed already, in step 3, so only the ladder runs.
+	n, err = s.pollReadStatus(ctx, now, !found)
 	if err != nil {
 		return rep, fmt.Errorf("read status: %w", err)
 	}
-	rep.ReadChecks = n
+	rep.ReadChecks += n
+	s.changed(n)
 
 	// 14. Keep the chat list's reactions current for the liveliest p2p chats.
 	reactionsAt, err := s.stateTime(ctx, KeyReactionsAt)
@@ -634,7 +644,14 @@ func (s *Syncer) upsertRaw(ctx context.Context, msgs []larkcli.RawMessage, now t
 			return 0, 0, err
 		}
 	}
-	n, err = s.Store.UpsertMessages(ctx, rows, now.UnixMilli())
+	// Without the user's own id there is no telling their messages apart, so
+	// nothing is stored unread until identity is known.
+	self, _, err := s.Store.GetState(ctx, KeySelfOpenID)
+	if err != nil {
+		return 0, fresh, err
+	}
+	n, err = s.Store.UpsertMessagesArriving(ctx, rows, now.UnixMilli(),
+		store.Arrival{Self: self, SinceMs: now.Add(-arrivalWindow).UnixMilli()})
 	if err != nil {
 		return n, fresh, err
 	}
