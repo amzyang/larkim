@@ -78,6 +78,15 @@ func (m Model) composerRows() composerRows {
 				r.rule = 1
 			}
 		}
+	case modeEmoji:
+		// The rows the answer is laid over cost the grid three of its own, so
+		// the box grows by them the way the target chooser grows to its list.
+		// It grows from the moment the picker opens and whatever the answer
+		// turns out to be, because a box that resized when the answer landed
+		// would move the grid under a reader already reading it.
+		if m.picker.suggest != suggestOff {
+			r.input += room(inputHeight + suggestRows)
+		}
 	case modeTarget:
 		// The chooser grows to its list the way the writing area grows to a
 		// draft. Three rows at rest would put a card's links behind a scroll

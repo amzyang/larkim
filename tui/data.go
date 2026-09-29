@@ -17,6 +17,7 @@ import (
 	"github.com/amzyang/larkim/config"
 	"github.com/amzyang/larkim/emoji"
 	"github.com/amzyang/larkim/fuzzy"
+	"github.com/amzyang/larkim/jev"
 	"github.com/amzyang/larkim/larkcli"
 	"github.com/amzyang/larkim/store"
 	"github.com/amzyang/larkim/sync"
@@ -45,6 +46,13 @@ type Deps struct {
 	// one wants.
 	AI    AIStreamer
 	NewAI func(model, keyEnv string) AIStreamer
+	// Suggest ranks emoji against the message the reaction picker is open on;
+	// nil when no API key is configured, which leaves the picker without its
+	// contextual row. NewSuggest builds it again when :config changes
+	// ai.jev_key_env or ai.jev_endpoint, and returns nil when the new pair
+	// names no key.
+	Suggest    ReactSuggester
+	NewSuggest func(keyEnv, endpoint string) ReactSuggester
 	// Nudge signals that the store changed, so the watch checks without
 	// waiting out its interval. It carries this process's own writes, the
 	// sweep's too when the sweep runs here; a daemon's land on the interval.
@@ -80,6 +88,13 @@ type Deps struct {
 // network, and a pane nobody can drive is a pane nobody can test.
 type AIStreamer interface {
 	Stream(ctx context.Context, transcript, prompt string) <-chan ai.Chunk
+}
+
+// ReactSuggester is the one call the picker's contextual row makes. It is
+// named here rather than taken as *jev.Client for the same reason: the call
+// crosses the network, and a row nobody can drive is a row nobody can test.
+type ReactSuggester interface {
+	Rank(ctx context.Context, ask jev.Ask) (jev.Rank, error)
 }
 
 // discardLog stands in for a Deps built by hand — in a test — which has no

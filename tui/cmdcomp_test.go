@@ -187,7 +187,8 @@ func TestCmdComp_CompletesASettingWithItsEqualsAlready(t *testing.T) {
 	// An option only ever reads as a pair, so the = comes along and the
 	// reader's next keystroke is the value.
 	m := press(t, cmdModel(t), "s", "e", "t", " ")
-	require.Equal(t, []string{"applink_pace_ms", "ai.model", "ai.api_key_env", "ai.context"}, offers(m),
+	require.Equal(t, []string{"applink_pace_ms", "ai.model", "ai.api_key_env", "ai.context",
+		"ai.jev_key_env", "ai.jev_endpoint"}, offers(m),
 		":set reaches only the keys a change takes effect on")
 
 	m = press(t, m, "tab")

@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"cmp"
 	"os"
 	"strconv"
 	"strings"
@@ -9,6 +10,7 @@ import (
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"github.com/amzyang/larkim/emoji"
+	"github.com/amzyang/larkim/jev"
 	"github.com/amzyang/larkim/larkcli"
 	"github.com/amzyang/larkim/store"
 	"github.com/google/uuid"
@@ -35,6 +37,20 @@ type picker struct {
 	// mine is the emoji the reader has already put on the target, so choosing
 	// one of them takes it back instead of adding it twice.
 	mine map[string]bool
+	// suggest is what the contextual row over the grid is drawing, and keys
+	// the emoji an answer named, best first. See suggest.go.
+	suggest suggestState
+	// picks is what the answer chose, best first, and marked how many of the
+	// rows' cells came from it rather than from the reader's own order.
+	picks  []jev.Option
+	marked int
+	// found is how many emoji the query itself answered with, which laying
+	// the rows neither adds to nor takes from.
+	found int
+	// moved says the reader has walked the cursor off the cell the picker
+	// opened on, which is what decides where the cursor stands once an answer
+	// rearranges the head of the grid.
+	moved bool
 }
 
 // openPicker arms the chooser against the selected message.
@@ -65,9 +81,11 @@ func (m Model) openPicker() (tea.Model, tea.Cmd) {
 	}
 	in := m.newQueryInput()
 	m.mode = modeEmoji
-	m.picker = picker{target: x, mine: mine, input: in, hits: m.emoji.Search("")}
+	m.picker = picker{target: x, mine: mine, input: in}
+	ask := m.armSuggest(x)
+	m.pickerGrid()
 	m.layout()
-	return m, m.picker.input.Focus()
+	return m, tea.Batch(m.picker.input.Focus(), ask)
 }
 
 // pickerRows is how many rows of emoji the grid has: the composer's box less
@@ -94,9 +112,7 @@ const minListRows = 6
 func (m Model) onEmojiKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch k.String() {
 	case "esc":
-		m.mode = modeNormal
-		m.picker = picker{}
-		m.layout()
+		m.closePicker()
 		return m, nil
 	case "enter":
 		return m.choose()
@@ -122,10 +138,11 @@ func (m Model) typeIntoFilter(msg tea.Msg) (tea.Model, tea.Cmd) {
 	before := m.picker.input.Value()
 	var cmd tea.Cmd
 	m.picker.input, cmd = m.picker.input.Update(msg)
-	if q := m.picker.input.Value(); q != before {
+	if m.picker.input.Value() != before {
 		// The cursor goes back to the best hit, which is where a reader who
-		// just typed is looking.
-		m.picker.hits = m.emoji.Search(q)
+		// just typed is looking — and which is also what spares the row
+		// appearing and disappearing from having to move the cursor with it.
+		m.pickerGrid()
 		m.picker.idx, m.picker.top = 0, 0
 	}
 	return m, cmd
@@ -137,6 +154,7 @@ func (p *picker) move(d, rows int) {
 	if len(p.hits) == 0 {
 		return
 	}
+	p.moved = true
 	p.idx = clamp(p.idx+d, 0, len(p.hits)-1)
 	row := p.idx / pickerCols
 	p.top = clamp(p.top, max(0, row-rows+1), row)
@@ -150,10 +168,17 @@ func (m Model) choose() (tea.Model, tea.Cmd) {
 	}
 	target := m.picker.target
 	key := m.picker.hits[m.picker.idx].Emoji.Key
+	m.closePicker()
+	return m.toggleReaction(target, key)
+}
+
+// closePicker shuts the chooser and retires the contextual answer on its way,
+// so one that lands late cannot fill the row of the picker opened after it.
+func (m *Model) closePicker() {
 	m.mode = modeNormal
 	m.picker = picker{}
+	m.suggestGen++
 	m.layout()
-	return m.toggleReaction(target, key)
 }
 
 // toggleReaction puts the emoji on the message, or takes it back when it is
@@ -260,10 +285,14 @@ func (m Model) renderPicker() string {
 	// An unnarrowed query answers with the emoji this reader reaches for, the
 	// way the client's own panel opens on its frequently used band, so the
 	// line says that rather than counting the whole table against itself.
-	count := stDim.Render(strconv.Itoa(len(m.picker.hits)) + "/" + strconv.Itoa(m.emoji.Len()))
+	label := strconv.Itoa(m.picker.found) + "/" + strconv.Itoa(m.emoji.Len())
 	if strings.TrimSpace(m.picker.input.Value()) == "" && m.emoji.UsedLen() > 0 {
-		count = stDim.Render("frequently used")
+		label = "frequently used"
 	}
+	// The row speaks for itself once it is filled; the note is for the states
+	// that need a word, and it takes the line because it is the one thing on
+	// it that changed.
+	count := stDim.Render(cmp.Or(m.picker.suggestNote(), label))
 	lines := []string{padBetween(pickerPrompt()+m.picker.input.View(), count, w)}
 	if len(m.picker.hits) == 0 {
 		lines = append(lines, fit(stDim.Render("  no emoji matches "+m.picker.input.Value()), w))
@@ -273,7 +302,8 @@ func (m Model) renderPicker() string {
 	for i := 0; i < len(vis); i += pickerCols {
 		var segs []rowSeg
 		for j := i; j < min(i+pickerCols, len(vis)); j++ {
-			segs = append(segs, m.pickerCell(vis[j], m.picker.top*pickerCols+j == m.picker.idx, cell)...)
+			abs := m.picker.top*pickerCols + j
+			segs = append(segs, m.pickerCell(vis[j], abs, cell)...)
 		}
 		lines = append(lines, m.joinSegs(segs, w))
 	}
@@ -306,7 +336,8 @@ func (m Model) pickerIcon(e emoji.Emoji) (string, picture) {
 // the words emojiWords leaves of the key Feishu speaks, the name, and the term
 // the query landed on. It comes back in pieces because the emoji may be a
 // picture, which only the renderer can place.
-func (m Model) pickerCell(h emoji.Hit, selected bool, cell int) []rowSeg {
+func (m Model) pickerCell(h emoji.Hit, abs, cell int) []rowSeg {
+	selected := abs == m.picker.idx
 	mark := " "
 	if selected {
 		mark = stAccent.Render("▸")
@@ -325,6 +356,11 @@ func (m Model) pickerCell(h emoji.Hit, selected bool, cell int) []rowSeg {
 		// Already the reader's: choosing it takes it back, and the cell has to
 		// say so before they press enter.
 		drawn += stAccent.Render(" ✓")
+	case m.picker.suggested(abs):
+		// The conversation chose this one, and the cells beside it were only
+		// filled out of the reader's own order, so without the mark the two
+		// kinds of cell read alike.
+		drawn += stAccent.Render(" ✦")
 	case !h.Emoji.Reactable():
 		// Feishu will not take this one as a reaction, so choosing it sends a
 		// picture instead. That is a message in the chat rather than a mark on

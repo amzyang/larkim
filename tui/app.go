@@ -124,6 +124,16 @@ type Model struct {
 	// changes the model or the variable the key is read from. It lives on the
 	// Model rather than on Deps so that change reaches the next question.
 	ai AIStreamer
+	// suggester fills the reaction picker's contextual row, seeded from Deps
+	// and built again when :config changes the key variable or the endpoint.
+	// It lives beside ai for the same reason: so a change reaches the next
+	// press of e.
+	suggester ReactSuggester
+	// suggestGen numbers the questions asked of it, so an answer that arrives
+	// after its picker closed is dropped rather than drawn over the next one.
+	suggestGen int64
+	// suggestCache is the answers already had, by message id. See suggest.go.
+	suggestCache map[string]suggestion
 	// infoOpen draws the open chat's own card in the right-hand pane; info is
 	// its roster and infoTop the row it is scrolled to.
 	infoOpen bool
@@ -381,6 +391,7 @@ func New(d Deps) Model {
 		focus: paneChats, focused: true, previewOpen: true,
 		cfg:        d.Config,
 		ai:         d.AI,
+		suggester:  d.Suggest,
 		msgLimit:   messagePageSize,
 		emoji:      emoji.NewReactionIndex().WithCustom(d.DataDir),
 		emojiWrite: emoji.NewComposerIndex(),
@@ -894,6 +905,8 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.notice = ""
 		cmd := m.openChatFrom(msg.chatID, msg.sinceMs)
 		return m, cmd
+	case suggestedMsg:
+		return m.onSuggested(msg)
 	case aiChunkMsg:
 		return m.onAIChunk(msg)
 	case threadLoadedMsg:

@@ -58,3 +58,9 @@ ai:
   api_key_env: ANTHROPIC_API_KEY
   # Recent messages handed to the assistant.
   context: 80
+  # Environment variable holding the TypeSafe API key. The reaction picker
+  # asks Jev which emoji fits the message under the cursor and offers the
+  # three best in its first row; with no key there the row is not drawn.
+  jev_key_env: TYPESAFE_API_KEY
+  # The evaluation endpoint that answers it.
+  jev_endpoint: https://api.typesafe.ai/v1/systemone

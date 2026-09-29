@@ -158,7 +158,7 @@ func TestConfig_RefusesToEditTheSilenceList(t *testing.T) {
 func TestConfig_FilterNarrowsOnKeyAndOnProse(t *testing.T) {
 	m := configModel(t)
 	m = press(t, m, "/", "a", "i", ".")
-	require.Len(t, m.config.hits, 3)
+	require.Len(t, m.config.hits, 5)
 
 	m = configModel(t)
 	m = press(t, m, "/", "u", "n", "l", "i", "m", "i", "t", "e", "d")

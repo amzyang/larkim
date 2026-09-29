@@ -6,6 +6,7 @@ import (
 
 	"github.com/amzyang/larkim/applink"
 	"github.com/amzyang/larkim/config"
+	"github.com/amzyang/larkim/jev"
 	"github.com/stretchr/testify/require"
 )
 
@@ -40,7 +41,8 @@ func TestRunSet_RestoresTheDefault(t *testing.T) {
 
 func TestRunSet_ListsEveryOptionWhenGivenNothing(t *testing.T) {
 	m := setModel(t).runSet("")
-	require.Equal(t, "applink_pace_ms=40  ai.model=claude-opus-5  ai.api_key_env=ANTHROPIC_API_KEY  ai.context=80", m.notice)
+	require.Equal(t, "applink_pace_ms=40  ai.model=claude-opus-5  ai.api_key_env=ANTHROPIC_API_KEY  ai.context=80"+
+		"  ai.jev_key_env=TYPESAFE_API_KEY  ai.jev_endpoint=https://api.typesafe.ai/v1/systemone", m.notice)
 	require.NotContains(t, m.notice, "poll_interval_ms", "a key read once at startup is not listed here")
 }
 
@@ -54,6 +56,18 @@ func TestRunSet_RebuildsTheAssistantOnANewModel(t *testing.T) {
 	m = m.runSet("ai.model=claude-sonnet-5")
 	require.Equal(t, []string{"claude-sonnet-5 ANTHROPIC_API_KEY"}, asked)
 	require.Equal(t, "claude-sonnet-5", m.cfg.AI.Model)
+}
+
+func TestRunSet_RebuildsTheSuggesterOnANewKeyVariable(t *testing.T) {
+	m := setModel(t)
+	var asked []string
+	m.deps.NewSuggest = func(keyEnv, endpoint string) ReactSuggester {
+		asked = append(asked, keyEnv+" "+endpoint)
+		return nil
+	}
+	m = m.runSet("ai.jev_key_env=OTHER_KEY")
+	require.Equal(t, []string{"OTHER_KEY " + jev.DefaultEndpoint}, asked)
+	require.Equal(t, "OTHER_KEY", m.cfg.AI.JevKeyEnv)
 }
 
 func TestRunSet_RefusesADurationSpelling(t *testing.T) {

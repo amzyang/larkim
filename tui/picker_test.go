@@ -141,7 +141,7 @@ func TestPicker_DrawsTheCharacterOnceInACell(t *testing.T) {
 
 	// The character is already in the icon column, so the cell does not name
 	// it a second time as the term that answered.
-	cell := ansi.Strip(m.joinSegs(m.pickerCell(m.picker.hits[0], true, 40), 40))
+	cell := ansi.Strip(m.joinSegs(m.pickerCell(m.picker.hits[0], m.picker.idx, 40), 40))
 	require.Equal(t, 1, strings.Count(cell, "🌹"), cell)
 }
 
@@ -248,7 +248,7 @@ func pickerKeyCol(t *testing.T, m Model, key string) int {
 	t.Helper()
 	e, ok := emoji.ByKey(key)
 	require.True(t, ok)
-	line := ansi.Strip(m.joinSegs(m.pickerCell(emoji.Hit{Emoji: e}, false, 60), 60))
+	line := ansi.Strip(m.joinSegs(m.pickerCell(emoji.Hit{Emoji: e}, plainCell, 60), 60))
 	at := strings.Index(line, e.Key)
 	require.GreaterOrEqual(t, at, 0, "%s names its key", key)
 	return lipgloss.Width(line[:at])
@@ -270,7 +270,7 @@ func TestPickerCell_DrawsTheClientsPictureWhereNoCharacterCarriesTheEmoji(t *tes
 
 	e, ok := emoji.ByKey("OK")
 	require.True(t, ok)
-	segs := m.pickerCell(emoji.Hit{Emoji: e}, false, 60)
+	segs := m.pickerCell(emoji.Hit{Emoji: e}, plainCell, 60)
 	require.Len(t, segs, 3, "the mark, the picture and the rest of the line")
 	require.Positive(t, segs[1].pic.cols)
 	require.Equal(t, 1, segs[1].pic.rows, "a picture on a line of text is one row tall")
@@ -291,7 +291,7 @@ func TestModelPicturePrepare_ClaimsWhatTheOpenPickerOffers(t *testing.T) {
 
 func TestPicker_MarksAnEmojiTheReaderAlreadyChose(t *testing.T) {
 	m := press(t, pickerModel(t), "e", "z", "a", "n")
-	line := ansi.Strip(m.joinSegs(m.pickerCell(m.picker.hits[0], true, 60), 60))
+	line := ansi.Strip(m.joinSegs(m.pickerCell(m.picker.hits[0], m.picker.idx, 60), 60))
 	require.Contains(t, line, "✓", "choosing it again takes the reaction back, and the line says so")
 }
 
@@ -484,7 +484,7 @@ func TestPickerCell_SaysALetteringEmojisNameOnce(t *testing.T) {
 	m := press(t, pickerModel(t), "e", "y", "e", "s")
 	i := slices.IndexFunc(m.picker.hits, func(h emoji.Hit) bool { return h.Emoji.Key == "Yes" })
 	require.GreaterOrEqual(t, i, 0)
-	line := ansi.Strip(m.joinSegs(m.pickerCell(m.picker.hits[i], false, 60), 60))
+	line := ansi.Strip(m.joinSegs(m.pickerCell(m.picker.hits[i], plainCell, 60), 60))
 	require.Equal(t, 1, strings.Count(strings.ToLower(line), "yes"), "line=%q", line)
 }
 
@@ -492,7 +492,7 @@ func TestPickerCell_StillNamesTheKeyAndThePinyinThatReachedIt(t *testing.T) {
 	m := press(t, pickerModel(t), "e", "d", "z")
 	h := m.picker.hits[0]
 	require.Equal(t, "THUMBSUP", h.Emoji.Key)
-	line := ansi.Strip(m.joinSegs(m.pickerCell(h, false, 60), 60))
+	line := ansi.Strip(m.joinSegs(m.pickerCell(h, plainCell, 60), 60))
 	require.Contains(t, line, "THUMBSUP", "the key is what :react takes")
 	require.Contains(t, line, "Like", "the client's own English name")
 	require.Contains(t, line, "dz", "and the initials say why this hit came back")
@@ -576,7 +576,7 @@ func TestPickerCell_SaysWhichEmojiGoInAsAPicture(t *testing.T) {
 	hits := m.emoji.Search("给力")
 	require.NotEmpty(t, hits)
 	require.Equal(t, withdrawnKey, hits[0].Emoji.Key, "the picker still finds it")
-	line := ansi.Strip(m.joinSegs(m.pickerCell(hits[0], true, 60), 60))
+	line := ansi.Strip(m.joinSegs(m.pickerCell(hits[0], m.picker.idx, 60), 60))
 	require.Contains(t, line, "pic", "pressing enter sends a message, not a reaction, and the cell says so")
 }
 
@@ -584,8 +584,8 @@ func TestPickerCell_MarksTheCellTheCursorStandsOn(t *testing.T) {
 	m := press(t, pickerModel(t), "e")
 	e, ok := emoji.ByKey("THUMBSUP")
 	require.True(t, ok)
-	on := m.joinSegs(m.pickerCell(emoji.Hit{Emoji: e}, true, 60), 60)
-	off := m.joinSegs(m.pickerCell(emoji.Hit{Emoji: e}, false, 60), 60)
+	on := m.joinSegs(m.pickerCell(emoji.Hit{Emoji: e}, m.picker.idx, 60), 60)
+	off := m.joinSegs(m.pickerCell(emoji.Hit{Emoji: e}, plainCell, 60), 60)
 	require.Contains(t, on, stPickerOn.Render(e.Name()), "the cursor colours the name, not the mark alone")
 	require.NotContains(t, off, stPickerOn.Render(e.Name()))
 	// Past the mark the two cells are the same text: the colour is what the
@@ -600,8 +600,12 @@ func TestPickerCell_MarksTheCursorOnAnEmojiDrawnAsAPicture(t *testing.T) {
 	m.pics = picturesIn(m.deps.DataDir)
 	e, ok := emoji.ByKey("OK")
 	require.True(t, ok)
-	segs := m.pickerCell(emoji.Hit{Emoji: e}, true, 60)
+	segs := m.pickerCell(emoji.Hit{Emoji: e}, m.picker.idx, 60)
 	require.Len(t, segs, 3, "the mark, the picture and the rest of the line")
 	require.Contains(t, segs[2].text, stPickerOn.Render(e.Name()),
 		"the words carry the cursor where the icon is a placement the renderer fills")
 }
+
+// plainCell is a grid position that is neither under the cursor nor one of the
+// contextual row's, which is what the cases about a cell's own dressing want.
+const plainCell = pickerCols

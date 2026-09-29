@@ -89,6 +89,16 @@ var settings = []setting{{
 	help: "recent messages handed to the assistant, 0 for all of them",
 	live: true,
 }, {
+	key:   "ai.jev_key_env",
+	help:  "environment variable holding the TypeSafe API key",
+	live:  true,
+	apply: rebuildSuggest,
+}, {
+	key:   "ai.jev_endpoint",
+	help:  "the evaluation endpoint the reaction suggestions are asked of",
+	live:  true,
+	apply: rebuildSuggest,
+}, {
 	key:      "silence",
 	help:     "rules whose messages carry no unread badge, written as a list",
 	readOnly: true,
@@ -112,6 +122,16 @@ func rebuildAI(m *Model) {
 		return
 	}
 	m.ai = m.deps.NewAI(m.cfg.AI.Model, m.cfg.AI.APIKeyEnv)
+}
+
+// rebuildSuggest builds the reaction suggester again from the key variable and
+// the endpoint now in m.cfg. Deps without a builder — a test that injected a
+// fake — keeps what it was given.
+func rebuildSuggest(m *Model) {
+	if m.deps.NewSuggest == nil {
+		return
+	}
+	m.suggester = m.deps.NewSuggest(m.cfg.AI.JevKeyEnv, m.cfg.AI.JevEndpoint)
 }
 
 func lookupSetting(key string) (setting, bool) {

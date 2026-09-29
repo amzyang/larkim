@@ -217,8 +217,8 @@ func TestCompleteConfigKey_OffersTheKeysWithTheirEquals(t *testing.T) {
 	// value rather than a second argument.
 	require.Equal(t, directiveLine(cobra.ShellCompDirectiveNoFileComp|cobra.ShellCompDirectiveNoSpace),
 		lines[len(lines)-1])
-	require.Equal(t, []string{"active_top_k=", "applink_pace_ms=", "ai.model=", "ai.api_key_env=", "ai.context="},
-		lines[:len(lines)-1])
+	require.Equal(t, []string{"active_top_k=", "applink_pace_ms=", "ai.model=", "ai.api_key_env=",
+		"ai.context=", "ai.jev_key_env=", "ai.jev_endpoint="}, lines[:len(lines)-1])
 }
 
 func TestCompleteConfigKey_LeavesAValueAlone(t *testing.T) {

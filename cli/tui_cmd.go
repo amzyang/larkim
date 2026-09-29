@@ -10,6 +10,7 @@ import (
 	"github.com/amzyang/larkim/ai"
 	"github.com/amzyang/larkim/config"
 	"github.com/amzyang/larkim/emoji"
+	"github.com/amzyang/larkim/jev"
 	"github.com/amzyang/larkim/sync"
 	"github.com/amzyang/larkim/tui"
 	"github.com/spf13/cobra"
@@ -51,6 +52,14 @@ func (a *App) runTUI(_ *cobra.Command, _ []string) error {
 		return ai.New(key, model)
 	}
 	deps.AI = deps.NewAI(a.cfg.AI.Model, a.cfg.AI.APIKeyEnv)
+	deps.NewSuggest = func(keyEnv, endpoint string) tui.ReactSuggester {
+		key := os.Getenv(keyEnv)
+		if key == "" {
+			return nil
+		}
+		return jev.New(key, endpoint)
+	}
+	deps.Suggest = deps.NewSuggest(a.cfg.AI.JevKeyEnv, a.cfg.AI.JevEndpoint)
 	deps.Self = selfOpenID(ctx, st)
 	// Every process pulls what the reader asks for: each of those
 	// calls names ids Feishu just answered for and upserts them, so

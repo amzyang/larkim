@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/amzyang/larkim/applink"
+	"github.com/amzyang/larkim/jev"
 	"github.com/amzyang/larkim/store"
 	"gopkg.in/yaml.v3"
 )
@@ -60,6 +61,12 @@ type AI struct {
 	APIKeyEnv string `yaml:"api_key_env"`
 	// Context is how many recent messages are given to the assistant.
 	Context int `yaml:"context"`
+	// JevKeyEnv names the environment variable holding the TypeSafe API key,
+	// which the reaction picker's contextual row is asked through. No key
+	// there leaves the picker without the row.
+	JevKeyEnv string `yaml:"jev_key_env"`
+	// JevEndpoint is the evaluation endpoint that answers it.
+	JevEndpoint string `yaml:"jev_endpoint"`
 }
 
 // Resources configures attachment downloads.
@@ -84,7 +91,8 @@ func Default() Config {
 		RepairEvery:       6 * time.Hour,
 		ApplinkPaceMS:     applink.DefaultPaceMS,
 		Resources:         Resources{MaxBytes: 50 << 20},
-		AI:                AI{Model: "claude-opus-5", APIKeyEnv: "ANTHROPIC_API_KEY", Context: 80},
+		AI: AI{Model: "claude-opus-5", APIKeyEnv: "ANTHROPIC_API_KEY", Context: 80,
+			JevKeyEnv: "TYPESAFE_API_KEY", JevEndpoint: jev.DefaultEndpoint},
 	}
 }
 
