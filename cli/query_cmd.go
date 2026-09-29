@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/amzyang/larkim/card"
 	"github.com/amzyang/larkim/store"
 	"github.com/spf13/cobra"
 )
@@ -214,8 +215,8 @@ func (a *App) printMessageTable(rows []store.Message, withChat bool) {
 	}
 	out := make([][]string, 0, len(rows))
 	for _, m := range rows {
-		content := contentLabel(m)
-		if m.RenderedAt == 0 {
+		content, raw := card.MessageText(m.ContentRaw, m.Content, m.RenderedAt > 0)
+		if raw {
 			content = "(unrendered) " + content
 		}
 		if m.Deleted {

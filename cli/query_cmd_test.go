@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/amzyang/larkim/store"
@@ -91,4 +92,17 @@ func TestMessagesList_AroundIsSizedByContextNotLimit(t *testing.T) {
 	dir := t.TempDir()
 	_, err := run(t, dir, "messages", "list", "--around", "om_1", "--limit", "5")
 	require.ErrorContains(t, err, "none of the others can be", "--limit would be silently ignored")
+}
+
+func TestPrintMessageTable_OnlyAPayloadIsMarkedUnrendered(t *testing.T) {
+	var out bytes.Buffer
+	a := &App{Out: &out}
+	a.printMessageTable([]store.Message{
+		{MessageID: "om_text", MsgType: "text", ContentRaw: `{"text":"hi"}`},
+		{MessageID: "om_card", MsgType: "interactive", ContentRaw: cardRaw},
+	}, false)
+	lines := strings.Split(out.String(), "\n")
+	require.Contains(t, lines[1], `(unrendered) {"text":"hi"}`)
+	require.Contains(t, lines[2], "发布报告")
+	require.NotContains(t, lines[2], "(unrendered)", "a card reads as its document before any rendering lands")
 }

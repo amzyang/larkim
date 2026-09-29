@@ -60,11 +60,6 @@ func (a *App) watchCmd() *cobra.Command {
 func senderLabel(m store.Message) string { return cmp.Or(m.SenderName, m.SenderID) }
 
 func contentLabel(m store.Message) string {
-	if c, ok := card.Parse(m.ContentRaw); ok {
-		return c.Markdown()
-	}
-	if m.RenderedAt == 0 {
-		return m.ContentRaw
-	}
-	return m.Content
+	text, _ := card.MessageText(m.ContentRaw, m.Content, m.RenderedAt > 0)
+	return text
 }

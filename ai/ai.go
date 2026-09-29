@@ -109,12 +109,7 @@ func Line(m store.Message, self string, imgText map[string][]string) string {
 	if m.SenderID == self {
 		who += " (me)"
 	}
-	text := m.Content
-	if c, ok := card.Parse(m.ContentRaw); ok {
-		text = c.Markdown()
-	} else if text == "" {
-		text = m.ContentRaw
-	}
+	text, _ := card.MessageText(m.ContentRaw, m.Content, m.RenderedAt > 0)
 	line := fmt.Sprintf("[%s] %s: %s", time.UnixMilli(m.CreateMs).Local().Format("01-02 15:04"), who, strings.TrimSpace(text))
 	// Appended rather than substituted into the placeholder: a picture inside
 	// a post, a card or a forwarded bundle is named nowhere the rendering

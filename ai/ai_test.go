@@ -10,7 +10,7 @@ import (
 
 func TestTranscriptAndPrompt(t *testing.T) {
 	tr := Transcript("项目协作群", []store.Message{
-		{SenderID: "ou_me", SenderName: "林岚", Content: "上线了", CreateMs: 0},
+		{SenderID: "ou_me", SenderName: "林岚", Content: "上线了", RenderedAt: 5, CreateMs: 0},
 		{SenderID: "ou_x", SenderName: "张三", ContentRaw: `{"text":"raw"}`, CreateMs: 60000},
 		{SenderID: "ou_y", SenderName: "gone", Content: "x", Deleted: true},
 	}, "ou_me", nil)
@@ -43,7 +43,7 @@ func TestTranscript_ACardReadsAsItsOwnDocument(t *testing.T) {
 
 func TestLine_APictureBringsItsWritingWithIt(t *testing.T) {
 	m := store.Message{MessageID: "om_a", SenderID: "ou_x", SenderName: "张三",
-		Content: "[Image: img_a]", CreateMs: 0}
+		Content: "[Image: img_a]", RenderedAt: 5, CreateMs: 0}
 	texts := map[string][]string{"om_a": {"NullPointerException\n  at Foo.java:42", "", "  "}}
 
 	line := Line(m, "ou_me", texts)
@@ -55,10 +55,18 @@ func TestLine_APictureBringsItsWritingWithIt(t *testing.T) {
 }
 
 func TestLine_ALongPictureIsCutToLength(t *testing.T) {
-	m := store.Message{MessageID: "om_a", SenderID: "ou_x", Content: "[Image: img_a]"}
+	m := store.Message{MessageID: "om_a", SenderID: "ou_x", Content: "[Image: img_a]", RenderedAt: 5}
 	line := Line(m, "ou_me", map[string][]string{"om_a": {strings.Repeat("字", imageTextMax+50)}})
 	body, ok := strings.CutPrefix(strings.Split(line, "\n")[1], imageMark+" ")
 	require.True(t, ok)
 	require.Equal(t, imageTextMax+1, len([]rune(body)), "the ellipsis is the one rune past the cut")
 	require.True(t, strings.HasSuffix(body, "…"))
+}
+
+func TestLine_AnEditAwaitingItsRenderingReadsAsThePayload(t *testing.T) {
+	m := store.Message{SenderID: "ou_x", SenderName: "张三", EditedAt: 9,
+		Content: "三点开会", ContentRaw: `{"text":"四点开会"}`}
+	line := Line(m, "ou_me", nil)
+	require.Contains(t, line, `张三: {"text":"四点开会"}`)
+	require.NotContains(t, line, "三点开会", "the rendering an edit replaced is no longer what the message says")
 }

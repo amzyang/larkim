@@ -271,3 +271,30 @@ func TestParse_TakesACardThatIsOnlyItsSummary(t *testing.T) {
 	require.Equal(t, "构建完成", c.Summary)
 	require.Empty(t, c.Blocks)
 }
+
+// An edit leaves the rendering it replaced standing until the new one lands,
+// so a body still waiting on its rendering is read as the payload it is.
+func TestMessageText_ABodyAwaitingItsRenderingIsItsPayload(t *testing.T) {
+	text, raw := MessageText(`{"text":"四点开会"}`, "三点开会", false)
+	require.Equal(t, `{"text":"四点开会"}`, text)
+	require.True(t, raw)
+}
+
+func TestMessageText_ACurrentRenderingIsTheText(t *testing.T) {
+	text, raw := MessageText(`{"text":"四点开会"}`, "四点开会", true)
+	require.Equal(t, "四点开会", text)
+	require.False(t, raw)
+
+	text, raw = MessageText(`{"text":""}`, "", true)
+	require.Empty(t, text, "a rendering that says nothing is the renderer's answer, not a gap for the payload")
+	require.False(t, raw)
+}
+
+func TestMessageText_ACardIsTheDocumentItDrawsRenderedOrNot(t *testing.T) {
+	body := cardJSON(elHeading, nil)
+	for _, rendered := range []bool{true, false} {
+		text, raw := MessageText(body, "<card>\n报表\n</card>", rendered)
+		require.Equal(t, "# 报表", text)
+		require.False(t, raw, "a card's own JSON is the document, never a payload in its place")
+	}
+}

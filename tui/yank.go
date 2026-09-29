@@ -113,15 +113,8 @@ func renderContent(src []yankSource) (string, string) {
 	var parts []string
 	unrendered := false
 	for _, s := range src {
-		body := s.content
-		switch c, ok := card.Parse(s.contentRaw); {
-		case ok:
-			// A card is its own document: the body is built from the card
-			// rather than from the text it renders to.
-			body = c.Markdown()
-		case !s.rendered:
-			body, unrendered = s.contentRaw, true
-		}
+		body, raw := card.MessageText(s.contentRaw, s.content, s.rendered)
+		unrendered = unrendered || raw
 		if s.deleted || body == "" {
 			continue
 		}

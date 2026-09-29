@@ -104,6 +104,22 @@ func (c Card) Markdown() string {
 	return strings.Join(parts, "\n\n")
 }
 
+// MessageText is what a message says wherever it is copied out as text: a
+// card is the document it draws, anything else its rendering while that is
+// current, and until then the API payload itself, which raw reports so a
+// reader can be told it is not prose anyone wrote. Only rendered can say the
+// rendering is current: an edit leaves the one it replaced standing until
+// the new one lands.
+func MessageText(contentRaw, content string, rendered bool) (text string, raw bool) {
+	if c, ok := Parse(contentRaw); ok {
+		return c.Markdown(), false
+	}
+	if !rendered {
+		return contentRaw, true
+	}
+	return content, false
+}
+
 // envelope is what an interactive message's content is: the card itself as
 // embedded JSON, and the table its pictures and mentions live in.
 type envelope struct {

@@ -255,3 +255,20 @@ func TestRender_ACardBodyIsTheDocumentTheCardIs(t *testing.T) {
 	require.Contains(t, out, "发布报告\n\n# 报表\n\n- 甲", "the card is read from its own JSON, block by block")
 	require.NotContains(t, out, "<card")
 }
+
+func TestRender_AnEditAwaitingItsRenderingIsThePayloadNotTheOldText(t *testing.T) {
+	in := group()
+	in.Messages = []store.Message{{MessageID: "om_a", CreateMs: at(10, 0), SenderID: "ou_a", EditedAt: 9,
+		Content: "三点开会", ContentRaw: `{"text":"四点开会"}`}}
+	out := Render(in)
+	require.Contains(t, out, `uid=ou_a edited unrendered>`+"\n"+`{"text":"四点开会"}`+"\n")
+	require.NotContains(t, out, "三点开会", "the rendering an edit replaced is no longer what the message says")
+}
+
+func TestRender_ACardAwaitingItsRenderingIsNotMarkedUnrendered(t *testing.T) {
+	in := group()
+	in.Messages = []store.Message{{MessageID: "om_a", CreateMs: at(10, 0), SenderID: "ou_a", ContentRaw: cardRaw}}
+	out := Render(in)
+	require.Contains(t, out, "发布报告\n\n# 报表\n\n- 甲")
+	require.NotContains(t, out, "unrendered", "the body is the card's document, not the API payload")
+}

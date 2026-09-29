@@ -104,7 +104,7 @@ larkim --config ~/.larkim/config.yaml messages list \
 | `thread` | 该条有话题回复时，如 `thread="3 replies"` |
 | `edited` | 同步期间观察到正文被改写，无值属性；飞书自身的发送后 patch 不算 |
 | `recalled` | 已撤回；正文为空，保留该条以维持时间线 |
-| `unrendered` | `rendered_at = 0`，正文回落成 API 原始载荷，标出来免得 agent 当成人写的话 |
+| `unrendered` | `rendered_at = 0` 且不是卡片，正文回落成 API 原始载荷，标出来免得 agent 当成人写的话；卡片正文恒取自卡片 JSON，不带此属性 |
 | `reactions` | 有表情回复时，如 `reactions="THUMBSUP×3 LOL×1"`，不列人名；解码失败则整个属性省略 |
 
 话题回复（`message_position` 为负）不并入 chat 上下文，只在根消息上以 `thread` 属性计数。排除发生在查询里，所以 `:copy 200` 是 200 条正文，不是 200 行里剩下的零头。

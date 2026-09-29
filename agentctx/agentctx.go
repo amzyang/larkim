@@ -78,8 +78,9 @@ func Render(in Input) string {
 	}
 
 	for _, m := range in.Messages {
-		fmt.Fprintf(&b, "\n<%s %s>\n", tag, attrs(in, m))
-		if body := body(in, m); body != "" {
+		text, raw := card.MessageText(m.ContentRaw, m.Content, m.RenderedAt > 0)
+		fmt.Fprintf(&b, "\n<%s %s>\n", tag, attrs(in, m, raw))
+		if body := body(in, m, text); body != "" {
 			b.WriteString(body + "\n")
 		}
 		fmt.Fprintf(&b, "</%s>\n", tag)
@@ -92,7 +93,7 @@ func Render(in Input) string {
 
 // attrs lays every piece of metadata out as tag attributes, so the tag body
 // is nothing but the message text.
-func attrs(in Input, m store.Message) string {
+func attrs(in Input, m store.Message, raw bool) string {
 	from := cmp.Or(m.SenderName, m.SenderID)
 	out := []string{
 		"id=" + m.MessageID,
@@ -117,7 +118,7 @@ func attrs(in Input, m store.Message) string {
 	if m.Deleted {
 		out = append(out, "recalled")
 	}
-	if m.RenderedAt == 0 && !m.Deleted {
+	if raw && !m.Deleted {
 		// The body below is the API's own payload, not prose anyone wrote;
 		// say so rather than let it read as the message.
 		out = append(out, "unrendered")
@@ -131,19 +132,11 @@ func attrs(in Input, m store.Message) string {
 // body is the message text followed by one line per attachment. It is copied
 // verbatim: escaping prose that colleagues wrote would corrupt code blocks,
 // which is why the boundary tag carries a random suffix instead.
-func body(in Input, m store.Message) string {
+func body(in Input, m store.Message, text string) string {
 	if m.Deleted {
 		return "" // a recall leaves a placeholder, so the timeline keeps its shape
 	}
 	var lines []string
-	text := m.Content
-	if c, ok := card.Parse(m.ContentRaw); ok {
-		// A card is its own document: the text it renders to runs its blocks
-		// together, which a reader downstream cannot take apart again.
-		text = c.Markdown()
-	} else if text == "" {
-		text = m.ContentRaw
-	}
 	if text = strings.Trim(text, "\n"); text != "" {
 		lines = append(lines, text)
 	}
