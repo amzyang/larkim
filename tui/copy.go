@@ -6,11 +6,11 @@ import (
 	"math/rand/v2"
 	"path/filepath"
 	"slices"
-	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/amzyang/larkim/agentctx"
+	"github.com/amzyang/larkim/larkcli"
 	"github.com/amzyang/larkim/store"
 )
 
@@ -180,19 +180,12 @@ func followUp(d Deps, chatID string, msgs []store.Message) string {
 	}
 	cmd := "larkim"
 	if d.ConfigPath != "" {
-		cmd += " --config " + shellQuote(d.ConfigPath)
+		// Quoted where it needs to be, so a path with a space in it pastes
+		// back as one argument.
+		cmd += " --config " + larkcli.ArgvLine([]string{d.ConfigPath})
 	}
 	return fmt.Sprintf("%s messages list \\\n  --chat %s --before %s --limit %d --json",
 		cmd, chatID, msgs[0].MessageID, followUpLimit)
-}
-
-// shellQuote makes a path safe to paste into a shell; a data dir with a
-// space in it would otherwise split the follow-up command in two.
-func shellQuote(s string) string {
-	if !strings.ContainsAny(s, " \t'\"\\$`") {
-		return s
-	}
-	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
 // humanBytes sizes a copy or an attachment the way a person judges it at a
