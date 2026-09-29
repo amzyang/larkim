@@ -38,17 +38,24 @@ func TestTick_DownloadsThePicturesInsideAForwardedBundle(t *testing.T) {
 	require.NoError(t, os.WriteFile(shot, []byte("shot"), 0o644))
 
 	f.Chats = []larkcli.RawChat{{ChatID: "oc_a", Name: "A", ChatMode: "group"}}
-	fwd := msg("om_fwd", "oc_a", clk.t.Add(-time.Minute), "")
-	fwd.MsgType = "merge_forward"
-	// The bundle's own body is this literal whatever it carries, so nothing
-	// before the rendering can name the picture inside it.
-	fwd.Body.Content = `{"text":"Merged and Forwarded Message"}`
-	f.AddMessage(fwd)
-	f.Rendered["om_fwd"] = larkcli.RenderedMessage{MessageID: "om_fwd", ChatID: "oc_a",
-		MsgType: "merge_forward", Content: "<p>张三: 看这个</p>\n![Image](img_fwd)"}
+	// The bundle's own body names nothing inside it; the picture is a child's,
+	// and it downloads under the bundle's id because the resource endpoint
+	// refuses a child's.
+	f.AddMessage(bundleMsg("om_fwd", "oc_a", clk.t.Add(-time.Minute)))
+	f.Bundles["om_fwd"] = []larkcli.RawForwarded{
+		child("om_shot", "om_fwd", "oc_src", "image", `{"image_key":"img_fwd"}`, clk.t.Add(-time.Minute)),
+	}
 	f.Resources["om_fwd/img_fwd"] = larkcli.Resource{LocalPath: shot, SizeBytes: 4}
 
+	// The expansion that finds the picture runs after the tick's downloads, so
+	// it is the next one that fetches it.
 	rep, err := s.Tick(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1, rep.Forwards)
+	require.Zero(t, rep.Downloaded)
+
+	clk.t = clk.t.Add(time.Second)
+	rep, err = s.Tick(ctx)
 	require.NoError(t, err)
 	require.Equal(t, 1, rep.Downloaded)
 
@@ -348,4 +355,101 @@ func TestExpandForwards_AChildFeishuWontShowReactionsForStillLands(t *testing.T)
 	root, err := s.Store.GetForwardRoot(ctx, "om_fwd")
 	require.NoError(t, err)
 	require.NotZero(t, root.FetchedAt, "the bundle is settled, not left owed")
+}
+
+func TestRenderLocal_LeavesABundleUnrenderedUntilItsChildrenLand(t *testing.T) {
+	s, f, clk := newSyncer(t)
+	ctx := t.Context()
+	storeBundle(t, s, "om_fwd", "oc_a", clk.t.Add(-time.Minute))
+
+	n, err := s.renderLocal(ctx, nil, 50, clk.t)
+	require.NoError(t, err)
+	require.Zero(t, n, "a bundle's text is its children's, and they are not here yet")
+
+	m, err := s.Store.GetMessage(ctx, "om_fwd")
+	require.NoError(t, err)
+	require.Zero(t, m.RenderedAt)
+	require.Empty(t, m.Content)
+
+	// It must not fall through to lark-cli either: the whole point is that
+	// larkim renders this type itself.
+	ids, err := s.Store.UnrenderedMessageIDs(ctx, "", 50)
+	require.NoError(t, err)
+	require.Empty(t, ids)
+	require.Zero(t, countCalls(f.Calls, "render"))
+}
+
+func TestExpandForwards_RendersTheBundleFromItsChildren(t *testing.T) {
+	s, f, clk := newSyncer(t)
+	ctx := t.Context()
+	at := clk.t.Add(-time.Minute)
+	storeBundle(t, s, "om_fwd", "oc_a", at)
+	f.Bundles["om_fwd"] = []larkcli.RawForwarded{
+		child("om_a", "om_fwd", "oc_src", "text", `{"text":"你好"}`, at),
+	}
+
+	_, err := s.expandForwards(ctx, clk.t)
+	require.NoError(t, err)
+
+	// The expansion prompts the render, so the text is there in the same call
+	// rather than a tick later.
+	m, err := s.Store.GetMessage(ctx, "om_fwd")
+	require.NoError(t, err)
+	require.Equal(t, clk.t.UnixMilli(), m.RenderedAt)
+	require.Equal(t, ForwardText("om_fwd", []store.Forwarded{{
+		RootMessageID: "om_fwd", UpperMessageID: "om_fwd", MessageID: "om_a",
+		MsgType: "text", SenderName: "张三", CreateMs: int64(msAt(at)), ContentRaw: `{"text":"你好"}`,
+	}}, time.Local), m.Content)
+	require.Zero(t, countCalls(f.Calls, "render"), "no round trip rendered it")
+}
+
+func TestRenderLocal_ARefusedBundleRendersEmptyAndSettles(t *testing.T) {
+	s, f, clk := newSyncer(t)
+	ctx := t.Context()
+	storeBundle(t, s, "om_gone", "oc_a", clk.t.Add(-time.Minute))
+	f.BundleErr["om_gone"] = &larkcli.Error{ExitCode: larkcli.ExitAPI, APICode: 230002, APIMessage: "permission denied"}
+
+	_, err := s.expandForwards(ctx, clk.t)
+	require.NoError(t, err)
+	// A refusal stamps fetched_at too, so the bundle is settled: it renders to
+	// the empty envelope once rather than waiting on children that never come.
+	_, err = s.renderLocal(ctx, nil, 50, clk.t)
+	require.NoError(t, err)
+
+	m, err := s.Store.GetMessage(ctx, "om_gone")
+	require.NoError(t, err)
+	require.Equal(t, "<forwarded_messages/>", m.Content)
+	require.NotZero(t, m.RenderedAt)
+
+	later := clk.t.Add(24 * time.Hour)
+	n, err := s.renderLocal(ctx, nil, 50, later)
+	require.NoError(t, err)
+	require.Zero(t, n, "a settled bundle is not rendered again")
+}
+
+func TestRenderLocal_ABundleStillOwedAnotherTryIsNotRendered(t *testing.T) {
+	s, f, clk := newSyncer(t)
+	ctx := t.Context()
+	at := clk.t.Add(-time.Minute)
+	storeBundle(t, s, "om_fwd", "oc_a", at)
+	f.BundleErr["om_fwd"] = &larkcli.Error{ExitCode: larkcli.ExitNetwork, Message: "timeout"}
+
+	_, err := s.expandForwards(ctx, clk.t)
+	require.NoError(t, err)
+	n, err := s.renderLocal(ctx, nil, 50, clk.t)
+	require.NoError(t, err)
+	require.Zero(t, n, "a failure worth retrying leaves fetched_at alone")
+
+	// Once the retry lands, the bundle renders like any other.
+	delete(f.BundleErr, "om_fwd")
+	f.Bundles["om_fwd"] = []larkcli.RawForwarded{
+		child("om_a", "om_fwd", "oc_src", "text", `{"text":"你好"}`, at),
+	}
+	later := clk.t.Add(time.Hour)
+	_, err = s.expandForwards(ctx, later)
+	require.NoError(t, err)
+
+	m, err := s.Store.GetMessage(ctx, "om_fwd")
+	require.NoError(t, err)
+	require.Contains(t, m.Content, "你好")
 }

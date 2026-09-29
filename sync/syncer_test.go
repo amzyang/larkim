@@ -461,10 +461,10 @@ func TestTick_RendersNewMessagesBeforeSweeps(t *testing.T) {
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	f.Chats = []larkcli.RawChat{{ChatID: "oc_a", Name: "平台组", ChatMode: "group"}}
-	// A shared chat: larkim has no renderer for that type, and this test is
-	// about where the call that asks lark-cli sits among the sweeps.
+	// A msg_type larkim has no renderer for, which is what still reaches
+	// lark-cli; this test is about where that call sits among the sweeps.
 	shared := msg("om_new", "oc_a", clk.t.Add(-30*time.Second), "")
-	shared.MsgType, shared.Body.Content = "share_chat", `{"chat_id":"oc_b"}`
+	shared.MsgType, shared.Body.Content = "brand_new", `{}`
 	f.AddMessage(shared)
 
 	rep, err := s.Tick(ctx)
@@ -621,7 +621,7 @@ func TestActiveProbe_ReachesAMessageBeforeTheSearchDoes(t *testing.T) {
 	// A message in oc_b puts it at position 1. The search index has not caught
 	// up, which the fake stands in for by holding the hit back.
 	fresh := msg("om_fresh", "oc_b", clk.t.Add(-time.Second), "")
-	fresh.MsgType, fresh.Body.Content = "share_chat", `{"chat_id":"oc_c"}`
+	fresh.MsgType, fresh.Body.Content = "brand_new", `{}`
 	f.AddMessage(fresh)
 	f.SearchHidden = []string{"om_fresh"}
 	f.Chats = []larkcli.RawChat{f.Chats[1], f.Chats[0]}

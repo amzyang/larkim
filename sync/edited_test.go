@@ -19,9 +19,6 @@ func TestRenderedText_UnwrapsAnHTMLTextBody(t *testing.T) {
 		{"a blank line survives", larkcli.RenderedMessage{MsgType: "text", Content: "<p>abc</p><p></p><p>def</p>"}, "abc\n\ndef"},
 		{"an ampersand stays itself", larkcli.RenderedMessage{MsgType: "text", Content: "<p>x?a=1&current=2</p>"}, "x?a=1&current=2"},
 		{"text outside a paragraph is literal", larkcli.RenderedMessage{MsgType: "text", Content: "see <p>abc</p>"}, "see <p>abc</p>"},
-		{"a forwarded bundle unwraps each message it carries",
-			larkcli.RenderedMessage{MsgType: "merge_forward", Content: "<forwarded_messages>\n[t] 张三:\n    <p>abc</p><p>def</p>\n[t] 李四:\n    plain"},
-			"<forwarded_messages>\n[t] 张三:\n    abc\n    def\n[t] 李四:\n    plain"},
 		{"a post keeps its rendering", larkcli.RenderedMessage{MsgType: "post", Content: "<p>abc</p>"}, "<p>abc</p>"},
 		{"a plain body with no markup", larkcli.RenderedMessage{MsgType: "text", Content: "abc"}, "abc"},
 	}

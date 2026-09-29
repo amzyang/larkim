@@ -5,7 +5,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/amzyang/larkim/larkcli"
@@ -71,6 +73,12 @@ func (s *Syncer) expandForward(ctx context.Context, root store.ForwardRoot, now 
 	kids := toForwarded(root.RootMessageID, items)
 	s.fillForwardReactions(ctx, kids)
 	if err := s.Store.SaveForwarded(ctx, root.RootMessageID, kids, now.UnixMilli()); err != nil {
+		return false, err
+	}
+	// The bundle's text is its children's, so it can be rendered the moment
+	// they land rather than a tick later. This is a prompt, not the mechanism:
+	// the queue reaches the same bundle on its own once fetched_at is set.
+	if _, err := s.renderLocal(ctx, []string{root.RootMessageID}, 1, now); err != nil {
 		return false, err
 	}
 	if s.Opt.DataDir == "" {
@@ -161,4 +169,80 @@ func toForwarded(rootMessageID string, items []larkcli.RawForwarded) []store.For
 		seq++
 	}
 	return kids
+}
+
+// forwardIndent is what one level of nesting costs every line of a child's
+// body, so a bundle inside a bundle steps in with the message carrying it.
+const forwardIndent = "    "
+
+// ForwardText renders a bundle from the children already on disk, which is
+// every bundle whose expansion has settled. The shape is lark-cli's, to the
+// character: the resource back-scan reads the pictures inside a bundle out of
+// this text and nowhere else.
+func ForwardText(rootMessageID string, kids []store.Forwarded, loc *time.Location) string {
+	byUpper := map[string][]store.Forwarded{}
+	for _, k := range kids {
+		byUpper[k.UpperMessageID] = append(byUpper[k.UpperMessageID], k)
+	}
+	return forwardLevel(rootMessageID, byUpper, map[string]bool{}, loc)
+}
+
+// forwardLevel renders the children of one message. open holds the bundles
+// being expanded above this one: upper_message_id comes off the wire, so a
+// row naming an ancestor is a walk that would not end.
+func forwardLevel(upperID string, byUpper map[string][]store.Forwarded, open map[string]bool, loc *time.Location) string {
+	kids := byUpper[upperID]
+	if len(kids) == 0 || open[upperID] {
+		return "<forwarded_messages/>"
+	}
+	open[upperID] = true
+	defer delete(open, upperID)
+	parts := make([]string, 0, len(kids))
+	for _, k := range kids {
+		body := indentForward(forwardChildText(k, byUpper, open, loc))
+		parts = append(parts, fmt.Sprintf("[%s] %s:\n%s", forwardStamp(k.CreateMs, loc), forwardSender(k), body))
+	}
+	return "<forwarded_messages>\n" + strings.Join(parts, "\n") + "\n</forwarded_messages>"
+}
+
+// forwardChildText is one child's own rendering: a bundle nested inside this
+// one opens in place, and everything else reads the way that type reads in a
+// chat. A child carries no preceding call, so a system marker closing one can
+// only say that it ended.
+func forwardChildText(k store.Forwarded, byUpper map[string][]store.Forwarded, open map[string]bool, loc *time.Location) string {
+	if k.MsgType == "merge_forward" {
+		return forwardLevel(k.MessageID, byUpper, open, loc)
+	}
+	if k.ContentRaw == "" {
+		return ""
+	}
+	return localText(store.PendingLocalMessage{
+		MessageID: k.MessageID, MsgType: cmp.Or(k.MsgType, "text"),
+		ContentRaw: k.ContentRaw, CreateMs: k.CreateMs, MentionsJSON: k.MentionsJSON,
+	})
+}
+
+// forwardStamp dates a child. A bundle is the one rendering that carries times
+// of its own, because the messages in it came from chats the reader may never
+// have opened, where nothing else says when they were said.
+func forwardStamp(ms int64, loc *time.Location) string {
+	if ms == 0 {
+		return "unknown"
+	}
+	return time.UnixMilli(ms).In(loc).Format(time.RFC3339)
+}
+
+// forwardSender names who spoke, falling back to the id and then to the word
+// lark-cli uses when the expansion carried neither.
+func forwardSender(k store.Forwarded) string { return cmp.Or(k.SenderName, k.SenderID, "unknown") }
+
+// indentForward steps a child's whole body in, every line of it: a body of
+// several paragraphs keeps the offset on each, and a nested bundle keeps it on
+// its envelope too.
+func indentForward(s string) string {
+	lines := strings.Split(s, "\n")
+	for i, l := range lines {
+		lines[i] = forwardIndent + l
+	}
+	return strings.Join(lines, "\n")
 }

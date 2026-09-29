@@ -57,7 +57,7 @@ One row per message id, from the raw message API (`create_ms` is millisecond pre
 | `sender_type` | `user` or `app` |
 | `sender_name` | server-provided display name; may be empty for system messages |
 | `content_raw` | `body.content` JSON string, shape depends on `msg_type` (`{"text":"…"}`, post blocks, `{"image_key":…}`, card JSON) |
-| `content` | human-readable rendering; empty until `rendered_at` is set. every type larkim can read off the body it stores is rendered in process — `text`, `post`, `interactive`, `image`, `file`, `audio`, `media`, `video`, `sticker`, `system`, `video_chat`, `calendar`, `share_calendar_event`, `general_calendar` — in the shapes lark-cli renders them to, except a card, which is rendered from its own JSON and so keeps the block structure lark-cli's flattening runs together. `merge_forward`, whose expansion needs the API, and any type larkim has no renderer for go to lark-cli (`+messages-mget`) |
+| `content` | human-readable rendering; empty until `rendered_at` is set. every msg_type larkim knows is rendered in process — `text`, `post`, `interactive`, `image`, `file`, `audio`, `media`, `video`, `sticker`, `system`, `video_chat`, `calendar`, `share_calendar_event`, `general_calendar`, `share_chat`, `share_user`, `location`, `folder`, `vote`, `hongbao`, `todo`, `merge_forward` — in the shapes lark-cli renders them to, with three deliberate exceptions: a card is rendered from its own JSON and so keeps the block structure lark-cli's flattening runs together, a call names its meeting and how long it ran, and a calendar event names its summary and span. A `folder` renders to the single line lark-cli falls back to when it cannot expand one; larkim never expands. Only a msg_type with no renderer here goes to lark-cli (`+messages-mget`) |
 | `create_ms`, `update_ms` | creation, and the last time the API's copy of the message changed for any reason |
 | `message_position` | per-chat monotonic position; negative for thread replies (the API picks the sentinel, `-3` in current data) |
 | `updated`, `deleted` | the API's own flags; `updated` also covers Feishu's post-send patches (mention resolution, link and time-phrase enrichment), so it is not an edit badge |
@@ -103,7 +103,9 @@ A `merge_forward` message is a container: its body is the literal string `Merged
 
 The primary key is `(root_message_id, upper_message_id, message_id)`. One message can sit at two depths of the same bundle — forwarded alone, and again inside a stretch of history that was forwarded whole — and both belong.
 
-There is no `content` column: a child is never rendered by lark-cli, so its text comes from `content_raw`. Its attachments are registered against the **bundle's** id in `message_resources`, because the resource endpoint refuses a child message's id.
+There is no `content` column: a child's text comes from `content_raw`, rendered by the same per-type renderers a message in a chat gets. The bundle's own `messages.content` is that text, laid out one child per `[timestamp] sender:` header with its body indented four spaces and wrapped in `<forwarded_messages>` — a nested bundle opens in place, indented with the message carrying it. Its attachments are registered against the **bundle's** id in `message_resources`, because the resource endpoint refuses a child message's id.
+
+A bundle is rendered only once `forwarded_roots.fetched_at` is set, which happens both when the children land and when Feishu refuses to hand them over; a refused bundle renders to `<forwarded_messages/>` and settles.
 
 `reactions_json` is a snapshot taken when the bundle expanded. The messages inside a forward are frozen, but reactions on the originals are not, and nothing comes back for them: re-expanding the bundle is what refreshes them.
 

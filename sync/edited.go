@@ -15,27 +15,10 @@ var paragraphRe = regexp.MustCompile(`(?s)<p>(.*?)</p>`)
 // way — so the renderer hands back one <p> per line where the body is
 // otherwise plain.
 func renderedText(r larkcli.RenderedMessage) string {
-	switch r.MsgType {
-	case "text":
+	if r.MsgType == "text" {
 		return UnwrapParagraphs(r.Content)
-	case "merge_forward":
-		return unwrapForwarded(r.Content)
 	}
 	return r.Content
-}
-
-// unwrapForwarded flattens the paragraphs of the text messages inside a
-// forwarded bundle, which the renderer lays out one indented line each. A
-// message of several paragraphs keeps the indentation on every line it opens.
-func unwrapForwarded(s string) string {
-	lines := strings.Split(s, "\n")
-	for i, line := range lines {
-		text := strings.TrimLeft(line, " \t")
-		indent := line[:len(line)-len(text)]
-		body := UnwrapParagraphs(text)
-		lines[i] = indent + strings.ReplaceAll(body, "\n", "\n"+indent)
-	}
-	return strings.Join(lines, "\n")
 }
 
 // UnwrapParagraphs joins the paragraphs of an HTML text body with newlines. A

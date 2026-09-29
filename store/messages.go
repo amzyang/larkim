@@ -217,8 +217,10 @@ func (s *Store) UpdateReactions(ctx context.Context, messageID, reactionsJSON st
 // holds. UnrenderedMessageIDs and UnrenderedLocalMessages split the render
 // queue on exactly this list, so it is written once: a type missing from both
 // would never be rendered at all, and a type in both would be rendered twice.
+// merge_forward is a member with a wait attached — see UnrenderedLocalMessages.
 var localRenderTypes = []string{"text", "post", "interactive", "image", "file", "audio", "media",
-	"video", "sticker", "system", "video_chat", "calendar", "share_calendar_event", "general_calendar"}
+	"video", "sticker", "system", "video_chat", "calendar", "share_calendar_event", "general_calendar",
+	"share_chat", "share_user", "location", "folder", "vote", "hongbao", "todo", "merge_forward"}
 
 // LocallyRendered reports whether larkim renders this msg_type itself, which
 // is what tells a caller holding fresh message ids which of them are worth a
@@ -264,6 +266,15 @@ type PendingLocalMessage struct {
 // plain text, stickers, system messages, the calls they close, and calendar
 // events. A non-empty ids narrows it to those messages, which is what an
 // ingest somebody is waiting on asks for rather than taking the queue's head.
+//
+// A forwarded bundle is the one member whose body is not enough — it reads
+// "Merged and Forwarded Message" and the text is in its children — so it waits
+// here until its expansion settles. fetched_at is what settles one, for a
+// refusal as much as for an answer, so a bundle Feishu will not hand over
+// renders empty once and stops asking. EXISTS, rather than the absence of an
+// unsettled row: a message ingested in the transaction before its queue row
+// would otherwise render empty and stamp itself before the expansion is even
+// owed.
 func (s *Store) UnrenderedLocalMessages(ctx context.Context, ids []string, limit int) ([]PendingLocalMessage, error) {
 	scan := func(sc scanner) (PendingLocalMessage, error) {
 		var m PendingLocalMessage
@@ -275,7 +286,10 @@ func (s *Store) UnrenderedLocalMessages(ctx context.Context, ids []string, limit
     WHERE v.chat_id = m.chat_id AND v.msg_type = 'video_chat' AND v.create_ms <= m.create_ms
     ORDER BY v.create_ms DESC LIMIT 1), ''), m.mentions_json
  FROM messages m
- WHERE m.rendered_at = 0 AND m.deleted = 0 AND m.msg_type IN (` + localRenderList + `)`
+ WHERE m.rendered_at = 0 AND m.deleted = 0 AND m.msg_type IN (` + localRenderList + `)
+   AND (m.msg_type <> 'merge_forward' OR EXISTS (
+         SELECT 1 FROM forwarded_roots r
+          WHERE r.root_message_id = m.message_id AND r.fetched_at <> 0))`
 	args := []any{}
 	if len(ids) > 0 {
 		q += ` AND m.message_id IN ` + inClause(len(ids))

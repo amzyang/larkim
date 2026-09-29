@@ -172,6 +172,15 @@ func (s *Store) ForwardChildren(ctx context.Context, rootMessageID, upperMessage
  WHERE root_message_id = ? AND upper_message_id = ? ORDER BY seq`, rootMessageID, upperMessageID)
 }
 
+// ForwardTree lists a whole bundle at once, every level of it, so a renderer
+// walking it holds one consistent view: a bundle is frozen, and reading it a
+// level at a time could interleave with the daemon replacing the children
+// under a TUI that is part way down.
+func (s *Store) ForwardTree(ctx context.Context, rootMessageID string) ([]Forwarded, error) {
+	return queryAll(ctx, s.db, scanForwarded, `SELECT `+forwardedColumns+` FROM forwarded_messages
+ WHERE root_message_id = ? ORDER BY upper_message_id, seq`, rootMessageID)
+}
+
 // ForwardPreview is how many children a collapsed bundle shows. It is the
 // client's figure: the card lists four of them and says no more.
 const ForwardPreview = 4

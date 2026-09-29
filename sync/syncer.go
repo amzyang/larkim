@@ -1008,36 +1008,48 @@ func (s *Syncer) renderPending(ctx context.Context, chatID string, limit int, no
 	return total, nil
 }
 
-// renderLocal renders the messages larkim can read off the API body already on
-// disk: a plain text message, which is its own words once its mention
-// placeholders are resolved, a system message Feishu templates out of values
-// the body carries, a call, whose body names the meeting, and a calendar
-// event. They cost no call and stay correct whatever lark-cli does with them.
 // renderLocal renders the local queue's head, or, with ids, exactly those
-// messages.
+// messages: everything larkim can read off bodies already on disk. They cost
+// no call and stay correct whatever lark-cli does with them.
 func (s *Syncer) renderLocal(ctx context.Context, ids []string, limit int, now time.Time) (int, error) {
 	pending, err := s.Store.UnrenderedLocalMessages(ctx, ids, limit)
 	if err != nil {
 		return 0, err
 	}
 	for i, m := range pending {
-		if err := s.Store.UpdateRendered(ctx, m.MessageID, localText(m), "", now.UnixMilli()); err != nil {
+		text, err := s.localBody(ctx, m)
+		if err != nil {
+			return i, err
+		}
+		if err := s.Store.UpdateRendered(ctx, m.MessageID, text, "", now.UnixMilli()); err != nil {
 			return i, err
 		}
 	}
 	return len(pending), nil
 }
 
-// storeRendered saves a rendered message's text and reactions, and registers
-// the pictures that exist nowhere but that text. The mentions that came back
-// with it are dropped: they are the ones the body already carried, which
-// UpsertMessages stored before anything was rendered.
+// localBody is a pending message's rendering. Every type but a forwarded
+// bundle follows from the body on the row; a bundle's text is in its children,
+// which the queue guarantees are here by the time it is handed over.
+func (s *Syncer) localBody(ctx context.Context, m store.PendingLocalMessage) (string, error) {
+	if m.MsgType != "merge_forward" {
+		return localText(m), nil
+	}
+	kids, err := s.Store.ForwardTree(ctx, m.MessageID)
+	if err != nil {
+		return "", err
+	}
+	return ForwardText(m.MessageID, kids, time.Local), nil
+}
+
+// storeRendered saves a rendered message's text and reactions. The mentions
+// that came back with it are dropped: they are the ones the body already
+// carried, which UpsertMessages stored before anything was rendered. No
+// pictures are registered here — a bundle was the only rendering that named
+// any, and larkim renders those itself now.
 func (s *Syncer) storeRendered(ctx context.Context, r larkcli.RenderedMessage, now time.Time) error {
 	text := renderedText(r)
 	if err := s.Store.UpdateRendered(ctx, r.MessageID, text, rawString(r.Reactions), now.UnixMilli()); err != nil {
-		return err
-	}
-	if err := s.Store.AddPendingResources(ctx, ExtractRendered(r.MessageID, r.MsgType, text)); err != nil {
 		return err
 	}
 	return s.Store.AddPendingDocLinks(ctx, store.FindDocRefs(text))

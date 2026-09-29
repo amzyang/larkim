@@ -499,11 +499,11 @@ func TestMigrate_RerendersBodiesThatKeptTheirParagraphMarkup(t *testing.T) {
 
 	ids, err := s.UnrenderedMessageIDs(ctx, "", 10)
 	require.NoError(t, err)
-	require.ElementsMatch(t, []string{"om_bundle"}, ids,
-		"a post is never unwrapped, and a body that never held markup has nothing to redo")
+	require.Empty(t, ids, "every type here is one larkim renders itself")
 
 	local, err := s.UnrenderedLocalMessages(ctx, nil, 10)
 	require.NoError(t, err)
 	require.Len(t, local, 1)
-	require.Equal(t, "om_edited", local[0].MessageID, "a text body is unwrapped in process")
+	require.Equal(t, "om_edited", local[0].MessageID,
+		"a text body is unwrapped in process; a post never held markup, and the bundle waits for its children")
 }

@@ -194,8 +194,16 @@ func msgTypeLabel(msgType string) string {
 		return "[Folder]"
 	case "audio":
 		return "[Audio]"
-	case "media":
+	case "media", "video":
 		return "[Video]"
+	case "location":
+		return "[Location]"
+	case "todo":
+		return "[Todo]"
+	case "vote":
+		return "[Vote]"
+	case "hongbao":
+		return "[Red Packet]"
 	case "sticker":
 		return "[Sticker]"
 	case "interactive":

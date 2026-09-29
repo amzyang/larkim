@@ -43,8 +43,15 @@ func localText(m store.PendingLocalMessage) string {
 		return videoChatText(m.ContentRaw)
 	case LocalCalendar(m.MsgType):
 		return CalendarText(m.MsgType, m.ContentRaw)
+	case LocalMisc(m.MsgType):
+		return miscText(m.MsgType, m.ContentRaw)
+	case m.MsgType == "system":
+		return systemText(m)
 	}
-	return systemText(m)
+	// A type larkim has no renderer for names itself, which is lark-cli's own
+	// answer for one. Reaching here means the render queue was split on a type
+	// nothing below renders, so saying which type that was is the whole point.
+	return "[" + m.MsgType + "]"
 }
 
 // systemText renders a system message from the bodies larkim already stores,

@@ -13,7 +13,7 @@ func TestUnrenderedLocalMessages_TakeTheirOwnQueue(t *testing.T) {
 	call := `{"topic":"站会的视频会议","meet_number":"100000000","start_time":"1000"}`
 	event := `{"summary":"平台组周会","start_time":"1788143400000"}`
 	_, err := s.UpsertMessages(ctx, []Message{
-		{MessageID: "om_share", ChatID: "oc", MsgType: "share_chat", CreateMs: 40, ContentRaw: `{"chat_id":"oc_b"}`, RawJSON: "{}"},
+		{MessageID: "om_new_kind", ChatID: "oc", MsgType: "brand_new", CreateMs: 40, ContentRaw: `{}`, RawJSON: "{}"},
 		{MessageID: "om_text", ChatID: "oc", MsgType: "text", CreateMs: 30, ContentRaw: `{"text":"hi"}`,
 			MentionsJSON: `[{"id":"ou_me","key":"@_user_1","name":"林岚"}]`, RawJSON: "{}"},
 		{MessageID: "om_sys", ChatID: "oc", MsgType: "system", CreateMs: 20, ContentRaw: `{"template":"{from_user} left"}`, RawJSON: "{}"},
@@ -26,7 +26,8 @@ func TestUnrenderedLocalMessages_TakeTheirOwnQueue(t *testing.T) {
 
 	ids, err := s.UnrenderedMessageIDs(ctx, "", 10)
 	require.NoError(t, err)
-	require.Equal(t, []string{"om_share"}, ids, "the messages larkim renders itself never reach lark-cli")
+	require.Equal(t, []string{"om_new_kind"}, ids,
+		"larkim renders every type it knows itself; lark-cli is left the ones it does not")
 
 	pending, err := s.UnrenderedLocalMessages(ctx, nil, 10)
 	require.NoError(t, err)
