@@ -85,7 +85,8 @@ func (m Model) openPicker() (tea.Model, tea.Cmd) {
 	ask := m.armSuggest(x)
 	m.pickerGrid()
 	m.layout()
-	return m, tea.Batch(m.picker.input.Focus(), ask)
+	focus := m.picker.input.Focus()
+	return m, tea.Batch(focus, ask)
 }
 
 // pickerRows is how many rows of emoji the grid has: the composer's box less
