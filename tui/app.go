@@ -1922,7 +1922,8 @@ func (m Model) onNormalKey(s string) (tea.Model, tea.Cmd) {
 		m.focus = paneChats
 		m.cmdline.Prompt = "/"
 		m.cmdline.SetValue(m.chatFilter)
-		return m, m.cmdline.Focus()
+		focus := m.cmdline.Focus()
+		return m, focus
 	case "ctrl+f":
 		return m.openSearch("")
 	case ":", ";":
@@ -1930,7 +1931,8 @@ func (m Model) onNormalKey(s string) (tea.Model, tea.Cmd) {
 		m.cmdline.Prompt = ":"
 		m.cmdline.Reset()
 		m.cmdcomp = cmdComp{}
-		return m, m.cmdline.Focus()
+		focus := m.cmdline.Focus()
+		return m, focus
 	case "a":
 		m.mode = modeCommand
 		m.cmdline.Prompt = ":"
@@ -1939,7 +1941,8 @@ func (m Model) onNormalKey(s string) (tea.Model, tea.Cmd) {
 		m.cmdcomp = cmdComp{}
 		m.takeCmdComp()
 		m.layout()
-		return m, m.cmdline.Focus()
+		focus := m.cmdline.Focus()
+		return m, focus
 	case "esc":
 		switch {
 		// A mark-all sweep is the one thing here that keeps acting after the

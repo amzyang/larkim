@@ -67,7 +67,8 @@ func (m Model) openForward() (tea.Model, tea.Cmd) {
 	m.layout()
 	// The chats are already in hand, so the chooser opens on them and the
 	// people drop in behind once the table has been read.
-	return m, tea.Batch(m.fwd.input.Focus(), loadContacts(m.deps))
+	focus := m.fwd.input.Focus()
+	return m, tea.Batch(focus, loadContacts(m.deps))
 }
 
 // fwdSearch narrows the places a message can go. Chats come before people, in

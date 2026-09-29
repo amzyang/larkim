@@ -57,7 +57,8 @@ func (m Model) openSearch(seed string) (tea.Model, tea.Cmd) {
 	m.searchQuery = seed
 	m.rebuildMessages()
 	arm := m.armSearch()
-	return m, tea.Batch(m.cmdline.Focus(), arm)
+	focus := m.cmdline.Focus()
+	return m, tea.Batch(focus, arm)
 }
 
 // armSearch starts the rest timers for the query in hand and drops whatever
@@ -228,5 +229,6 @@ func (m Model) openPerson(u larkcli.User) (tea.Model, tea.Cmd) {
 	m.mode = modeCommand
 	m.cmdline.Prompt = ":"
 	m.cmdline.SetValue("send " + u.OpenID + " ")
-	return m, m.cmdline.Focus()
+	focus := m.cmdline.Focus()
+	return m, focus
 }

@@ -277,7 +277,8 @@ func (m Model) onHelpKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch s {
 	case "/":
 		m.help.filtering = true
-		return m, m.help.input.Focus()
+		focus := m.help.input.Focus()
+		return m, focus
 	case "j", "down":
 		m.helpScroll(1)
 	case "k", "up":
