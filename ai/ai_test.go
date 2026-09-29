@@ -1,6 +1,7 @@
 package ai
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/amzyang/larkim/store"
@@ -12,7 +13,7 @@ func TestTranscriptAndPrompt(t *testing.T) {
 		{SenderID: "ou_me", SenderName: "林岚", Content: "上线了", CreateMs: 0},
 		{SenderID: "ou_x", SenderName: "张三", ContentRaw: `{"text":"raw"}`, CreateMs: 60000},
 		{SenderID: "ou_y", SenderName: "gone", Content: "x", Deleted: true},
-	}, "ou_me")
+	}, "ou_me", nil)
 	require.Contains(t, tr, "chat: 项目协作群")
 	require.Contains(t, tr, "林岚 (me): 上线了")
 	require.Contains(t, tr, `张三: {"text":"raw"}`, "unrendered messages fall back to the raw body")
@@ -35,7 +36,29 @@ const cardRaw = `{"json_card":"{\"schema\":\"2.0\",\"header\":{\"tag\":\"card_he
 
 func TestTranscript_ACardReadsAsItsOwnDocument(t *testing.T) {
 	tr := Transcript("平台组", []store.Message{{SenderID: "ou_x", SenderName: "构建机器人", RenderedAt: 5,
-		ContentRaw: cardRaw, Content: "<card title=\"发布报告\">\n# 报表- 甲\n</card>"}}, "ou_me")
+		ContentRaw: cardRaw, Content: "<card title=\"发布报告\">\n# 报表- 甲\n</card>"}}, "ou_me", nil)
 	require.Contains(t, tr, "发布报告\n\n# 报表\n\n- 甲")
 	require.NotContains(t, tr, "<card")
+}
+
+func TestLine_APictureBringsItsWritingWithIt(t *testing.T) {
+	m := store.Message{MessageID: "om_a", SenderID: "ou_x", SenderName: "张三",
+		Content: "[Image: img_a]", CreateMs: 0}
+	texts := map[string][]string{"om_a": {"NullPointerException\n  at Foo.java:42", "", "  "}}
+
+	line := Line(m, "ou_me", texts)
+	require.Contains(t, line, "[Image: img_a]")
+	require.Contains(t, line, "\n    [image] NullPointerException at Foo.java:42")
+	require.Equal(t, 1, strings.Count(line, imageMark), "a picture with nothing written in it adds no line")
+
+	require.NotContains(t, Line(m, "ou_me", nil), "[image]")
+}
+
+func TestLine_ALongPictureIsCutToLength(t *testing.T) {
+	m := store.Message{MessageID: "om_a", SenderID: "ou_x", Content: "[Image: img_a]"}
+	line := Line(m, "ou_me", map[string][]string{"om_a": {strings.Repeat("字", imageTextMax+50)}})
+	body, ok := strings.CutPrefix(strings.Split(line, "\n")[1], imageMark+" ")
+	require.True(t, ok)
+	require.Equal(t, imageTextMax+1, len([]rune(body)), "the ellipsis is the one rune past the cut")
+	require.True(t, strings.HasSuffix(body, "…"))
 }

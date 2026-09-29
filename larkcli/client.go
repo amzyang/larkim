@@ -41,6 +41,10 @@ type Client interface {
 	MGetRendered(ctx context.Context, ids []string) ([]RenderedMessage, error)
 	// DownloadResource fetches one attachment by key. typ is "image" or "file".
 	DownloadResource(ctx context.Context, messageID, fileKey, typ string) (Resource, error)
+	// RecognizeText reads the writing in a picture already on disk, one
+	// string per region the recognizer found. A picture with nothing written
+	// in it comes back empty rather than failing.
+	RecognizeText(ctx context.Context, path string) ([]string, error)
 	// ReactionCounts reads who reacted to each message. Every requested id gets
 	// an entry; a nil one means Feishu holds no reaction for that message.
 	ReactionCounts(ctx context.Context, messageIDs []string) (map[string]json.RawMessage, error)

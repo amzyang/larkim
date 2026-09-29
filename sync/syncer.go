@@ -43,10 +43,13 @@ type Options struct {
 	// DocLinksPerTick bounds one tick's document-title reads, in batches of
 	// larkcli.MaxDocTokensPerBatch.
 	DocLinksPerTick int
-	RepairEvery     time.Duration
-	RepairPerTick   int
-	MembersPerTick  int
-	AvatarsPerTick  int
+	// ImageTextPerTick bounds one tick's picture readings. The recognizer
+	// takes one picture per call, so this is a count of calls.
+	ImageTextPerTick int
+	RepairEvery      time.Duration
+	RepairPerTick    int
+	MembersPerTick   int
+	AvatarsPerTick   int
 	// ContactDetailsPerTick bounds one tick's identity backfill; SearchUsers
 	// splits it into as many `+search-user` calls as it needs.
 	ContactDetailsPerTick int
@@ -75,6 +78,7 @@ func OptionsFrom(cfg config.Config) Options {
 		ForwardsPerTick:       3,
 		ReadStatusPerTick:     1,
 		DocLinksPerTick:       1,
+		ImageTextPerTick:      4,
 		RepairEvery:           cfg.RepairEvery,
 		RepairPerTick:         3,
 		MembersPerTick:        2,
@@ -172,6 +176,7 @@ type Report struct {
 	Avatars    int // avatar files stored
 	Stickers   int // sticker pictures copied out of the Lark client
 	DocLinks   int // document links named or settled as out of reach
+	ImageText  int // pictures whose writing was read
 	Contacts   int // contacts whose identity fields were resolved
 }
 
@@ -458,6 +463,13 @@ func (s *Syncer) tick(ctx context.Context, now time.Time) (Report, error) {
 	}
 	if rep.Contacts, err = s.contactDetailsSlice(ctx, now); err != nil {
 		return rep, fmt.Errorf("contact details: %w", err)
+	}
+
+	// 16. Read the writing in pictures already on disk. Last because nothing
+	// on screen waits for it: it feeds the assistant and the reaction
+	// suggester, which are asked for by hand.
+	if rep.ImageText, err = s.readImageText(ctx, now); err != nil {
+		return rep, fmt.Errorf("image text: %w", err)
 	}
 	return rep, nil
 }

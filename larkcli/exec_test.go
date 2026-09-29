@@ -1,6 +1,7 @@
 package larkcli
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -647,4 +648,51 @@ echo '{"ok":true,"identity":"user","data":{}}'`)
 	args, err := os.ReadFile(filepath.Join(c.Dir, "args"))
 	require.NoError(t, err)
 	require.Equal(t, "im messages delete --message-id om_mine --yes --as user --json", strings.TrimSpace(string(args)))
+}
+
+func TestRecognizeText_SendsThePictureOnStdinAsTheAppIdentity(t *testing.T) {
+	c := fakeBinary(t, `
+cat > "$TMPDIR/body.json"
+echo "$*" > "$TMPDIR/argv.txt"
+cat <<'JSON'
+{"ok":true,"identity":"bot","data":{"text_list":["NullPointerException","at Foo.java:42"]}}
+JSON`)
+	img := filepath.Join(t.TempDir(), "shot.png")
+	require.NoError(t, os.WriteFile(img, []byte("\x89PNG\r\n\x1a\n"), 0o644))
+	t.Setenv("TMPDIR", c.Dir)
+
+	text, err := c.RecognizeText(t.Context(), img)
+	require.NoError(t, err)
+	require.Equal(t, []string{"NullPointerException", "at Foo.java:42"}, text)
+
+	argv, err := os.ReadFile(filepath.Join(c.Dir, "argv.txt"))
+	require.NoError(t, err)
+	require.Contains(t, string(argv), "api POST "+ocrPath+" --data - --as bot --json")
+	require.NotContains(t, string(argv), base64.StdEncoding.EncodeToString([]byte("\x89PNG\r\n\x1a\n")),
+		"the picture never rides on argv, which ArgvLine renders into every log line and crash report")
+
+	body, err := os.ReadFile(filepath.Join(c.Dir, "body.json"))
+	require.NoError(t, err)
+	var sent struct {
+		Image []byte `json:"image"`
+	}
+	require.NoError(t, json.Unmarshal(body, &sent))
+	require.Equal(t, []byte("\x89PNG\r\n\x1a\n"), sent.Image, "the bytes arrive base64 under image")
+}
+
+func TestRecognizeText_APictureWithNothingInItIsNotAFailure(t *testing.T) {
+	c := fakeBinary(t, `cat > /dev/null
+echo '{"ok":true,"identity":"bot","data":{"text_list":[]}}'`)
+	img := filepath.Join(t.TempDir(), "photo.jpg")
+	require.NoError(t, os.WriteFile(img, []byte("jpg"), 0o644))
+
+	text, err := c.RecognizeText(t.Context(), img)
+	require.NoError(t, err)
+	require.Empty(t, text)
+}
+
+func TestRecognizeText_AMissingFileNeverSpendsACall(t *testing.T) {
+	c := fakeBinary(t, `echo "called" >&2; exit 5`)
+	_, err := c.RecognizeText(t.Context(), filepath.Join(t.TempDir(), "gone.png"))
+	require.ErrorIs(t, err, os.ErrNotExist)
 }

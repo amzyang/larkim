@@ -203,6 +203,10 @@ type msgMeta struct {
 	// the data dir. A contact with none is absent rather than empty.
 	avatars map[string]string
 	res     map[string][]store.Resource
+	// imgText is the writing read out of each message's pictures, by message
+	// id. Only the assistant and the reaction suggester read it; nothing on
+	// screen is drawn from it.
+	imgText map[string][]string
 	// docs names the Feishu documents linked to from any message, by
 	// store.DocRef.Key. It is not scoped to this page: a personal archive
 	// holds these in the thousands at most, and working out which links the
@@ -313,6 +317,10 @@ func loadMeta(ctx context.Context, st *store.Store, self string, msgs []store.Me
 	if err != nil {
 		return msgMeta{}, err
 	}
+	imgText, err := st.ImageTextsFor(ctx, msgIDs)
+	if err != nil {
+		return msgMeta{}, err
+	}
 	docs, err := st.DocLabels(ctx)
 	if err != nil {
 		return msgMeta{}, err
@@ -321,7 +329,7 @@ func loadMeta(ctx context.Context, st *store.Store, self string, msgs []store.Me
 	if err != nil {
 		return msgMeta{}, err
 	}
-	return msgMeta{suffix: suffix, people: people, avatars: avatars, res: res, docs: docs,
+	return msgMeta{suffix: suffix, people: people, avatars: avatars, res: res, imgText: imgText, docs: docs,
 		parents: parents, forwards: forwards, threads: gists, replies: replies}, nil
 }
 

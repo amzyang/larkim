@@ -22,7 +22,13 @@ type Fake struct {
 	// listed nowhere is refused the way Feishu refuses one the message does
 	// not carry.
 	Resources map[string]Resource
-	Read      map[string]bool
+	// Recognized answers RecognizeText, keyed by the path it is asked for. A
+	// path listed nowhere reads as a picture with nothing written in it.
+	Recognized map[string][]string
+	// RecognizeErr fails RecognizeText alone, so a test can starve the text
+	// sweep while the rest of the client keeps working.
+	RecognizeErr error
+	Read         map[string]bool
 	// Reactions answers ReactionCounts; a message absent from it holds none.
 	Reactions map[string]json.RawMessage
 	// Reacted is what AddReaction and DeleteReaction write, keyed by message
@@ -322,6 +328,18 @@ func (f *Fake) MGetRendered(_ context.Context, ids []string) ([]RenderedMessage,
 		out = append(out, r)
 	}
 	return out, nil
+}
+
+func (f *Fake) RecognizeText(_ context.Context, path string) ([]string, error) {
+	if err := f.record("recognize:" + path); err != nil {
+		return nil, err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.RecognizeErr != nil {
+		return nil, f.RecognizeErr
+	}
+	return f.Recognized[path], nil
 }
 
 func (f *Fake) DownloadResource(_ context.Context, messageID, fileKey, typ string) (Resource, error) {

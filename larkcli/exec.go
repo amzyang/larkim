@@ -3,6 +3,7 @@ package larkcli
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -38,6 +39,13 @@ const larkTimeLayout = "2006-01-02T15:04:05-07:00"
 // It is lark-cli's own name for it, which is what the paths stored before
 // larkim fetched resources one at a time still point into.
 const resourceSubdir = "lark-im-resources"
+
+// ocrPath is the recognizer's endpoint, and MaxOCRBytes the largest picture
+// it accepts.
+const ocrPath = "/open-apis/optical_char_recognition/v1/image/basic_recognize"
+
+// MaxOCRBytes is the recognizer's own limit; a larger picture is refused.
+const MaxOCRBytes = 5 << 20
 
 const (
 	searchPageSize  = 50
@@ -168,8 +176,16 @@ func (c *ExecClient) run(ctx context.Context, args ...string) (json.RawMessage, 
 // directory scope is the tenant-wide one; the user identity sees only what
 // the signed-in person sees.
 func (c *ExecClient) runAs(ctx context.Context, identity string, args ...string) (json.RawMessage, error) {
+	return c.runInput(ctx, identity, nil, args...)
+}
+
+// runInput is runAs with the request body handed over on stdin. A payload
+// belongs there once it is large: ArgvLine renders argv with nothing elided,
+// so an argument rides into every debug line and every crash report, and a
+// base64 picture is past ARG_MAX besides.
+func (c *ExecClient) runInput(ctx context.Context, identity string, stdin []byte, args ...string) (json.RawMessage, error) {
 	argv := append(slices.Clone(args), "--as", identity, "--json")
-	stdout, stderr, exitCode, err := c.exec(ctx, argv...)
+	stdout, stderr, exitCode, err := c.exec(ctx, stdin, argv...)
 	if err != nil {
 		return nil, err
 	}
@@ -190,7 +206,7 @@ func (c *ExecClient) runAs(ctx context.Context, identity string, args ...string)
 	return env.Data, nil
 }
 
-func (c *ExecClient) exec(ctx context.Context, args ...string) (stdout, stderr []byte, exitCode int, err error) {
+func (c *ExecClient) exec(ctx context.Context, stdin []byte, args ...string) (stdout, stderr []byte, exitCode int, err error) {
 	call := c.calls.Add(1)
 	path, err := c.ResolvePath()
 	if err != nil {
@@ -221,6 +237,9 @@ func (c *ExecClient) exec(ctx context.Context, args ...string) (stdout, stderr [
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
 	cmd.WaitDelay = 2 * time.Second
+	if stdin != nil {
+		cmd.Stdin = bytes.NewReader(stdin)
+	}
 	var out, errBuf bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &errBuf
@@ -564,6 +583,41 @@ func (c *ExecClient) DownloadResource(ctx context.Context, messageID, fileKey, t
 		return Resource{}, fmt.Errorf("decode download: %w", err)
 	}
 	return Resource{MessageID: messageID, Key: fileKey, Type: typ, LocalPath: saved.Path, SizeBytes: saved.Size}, nil
+}
+
+// RecognizeText reads the writing in a picture, one string per region the
+// recognizer found. lark-cli has no typed command for it, so it goes through
+// the raw API passthrough, and it goes as the app: the endpoint takes a
+// tenant token and refuses a user one.
+func (c *ExecClient) RecognizeText(ctx context.Context, path string) ([]string, error) {
+	img, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	data, err := c.runInput(ctx, "bot", ocrBody(img), "api", "POST", ocrPath, "--data", "-")
+	if err != nil {
+		return nil, err
+	}
+	var resp struct {
+		TextList []string `json:"text_list"`
+	}
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return nil, fmt.Errorf("decode recognized text: %w", err)
+	}
+	return resp.TextList, nil
+}
+
+// ocrBody wraps a picture in the request the recognizer takes. The JSON is
+// written out rather than marshalled: base64 has nothing in it that needs
+// escaping, and a marshaller would hold a second copy of a payload that runs
+// to megabytes.
+func ocrBody(img []byte) []byte {
+	const prefix, suffix = `{"image":"`, `"}`
+	enc := base64.StdEncoding
+	out := make([]byte, 0, len(prefix)+enc.EncodedLen(len(img))+len(suffix))
+	out = append(out, prefix...)
+	out = enc.AppendEncode(out, img)
+	return append(out, suffix...)
 }
 
 func (c *ExecClient) ReadStatus(ctx context.Context, ids []string) ([]ReadStatus, []string, error) {
@@ -1250,7 +1304,7 @@ func (c *ExecClient) sent(ctx context.Context, args ...string) (SentMessage, err
 // Whoami parses `lark-cli whoami --json`, which is not enveloped.
 func (c *ExecClient) Whoami(ctx context.Context) (Identity, error) {
 	argv := []string{"whoami", "--json"}
-	stdout, stderr, exitCode, err := c.exec(ctx, argv...)
+	stdout, stderr, exitCode, err := c.exec(ctx, nil, argv...)
 	if err != nil {
 		return Identity{}, err
 	}

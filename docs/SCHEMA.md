@@ -195,6 +195,27 @@ WHERE mr.message_id = 'om_xxx' ORDER BY r.file_key;
 
 Feishu's resource API refuses a sticker's `file_key` (`234002 Unauthorized`) under every identity, so a sticker picture is copied out of the Lark client's own storage on this machine instead; a sticker the client has never drawn stays `failed`.
 
+## resource_text
+
+The writing in a picture, one row per key, read once through `/open-apis/optical_char_recognition/v1/image/basic_recognize` from the bytes `resources` already put on disk. A file key names fixed bytes, so a settled row is final: unlike a document title there is nothing to re-read.
+
+| column | meaning |
+|---|---|
+| `file_key` | the picture's key, and the primary key; it joins `resources` and `message_resources` |
+| `text` | the regions the recognizer returned, one per line, and empty when it found no writing |
+| `status` | `done` (read, `text` may be empty), `failed`, `skipped` (past the recognizer's 5 MB limit) |
+| `attempts`, `next_attempt_at`, `last_error` | retry bookkeeping; `next_attempt_at = 0` on a `failed` row means nothing will try again |
+
+There is no queue and no scan cursor: what is owed is `resources` left-joined onto this table, so a row appears only once an attempt has been made. Only pictures are read — `type IN ('image','cover')` with `status = 'done'`.
+
+Nothing on screen is drawn from this table. It is read into the transcript the assistant and the reaction suggester are given, where a picture's writing follows its message on a line of its own.
+
+```sql
+SELECT mr.message_id, t.text FROM resource_text t
+JOIN message_resources mr ON mr.file_key = t.file_key
+WHERE t.text <> '' AND mr.message_id = 'om_xxx' ORDER BY t.file_key;
+```
+
 ## doc_titles
 
 A Feishu document link arrives in a message as a bare URL and nothing else: the preview the client draws beside it is rendered there and then, out of a callback the owning app answers, and no API hands it to anyone else. `doc_titles` is what larkim reads instead, one row per document, so a link shared around a dozen chats is named once.

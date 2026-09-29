@@ -2660,7 +2660,7 @@ func (m Model) startAI(input string) (tea.Model, tea.Cmd) {
 	if n <= 0 || n > len(m.msgs) {
 		n = len(m.msgs)
 	}
-	transcript := ai.Transcript(name, m.msgs[len(m.msgs)-n:], m.deps.Self)
+	transcript := ai.Transcript(name, m.msgs[len(m.msgs)-n:], m.deps.Self, m.meta.imgText)
 	keep := m.closeRight()
 	m.stopAI()
 	m.aiOpen, m.aiBusy, m.aiDraft = true, true, draft

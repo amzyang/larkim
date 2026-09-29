@@ -125,3 +125,22 @@ func TestThreadQuery_KeepsARecalledReply(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, rows, 2, "a recalled reply keeps its slot, so the pane and the reply count agree")
 }
+
+func TestLoadMeta_CarriesTheWritingReadOutOfAPicture(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "t.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { st.Close() })
+	ctx := t.Context()
+	_, err = st.UpsertMessages(ctx, []store.Message{
+		{MessageID: "om_shot", ChatID: "oc_a", MsgType: "image", CreateMs: 10, RawJSON: "{}"},
+	}, 1)
+	require.NoError(t, err)
+	require.NoError(t, st.AddPendingResources(ctx, []store.ResourceRef{
+		{MessageID: "om_shot", FileKey: "img_a", Type: "image"}}))
+	require.NoError(t, st.MarkResourceDone(ctx, "img_a", "resources/lark-im-resources/img_a.png", 10))
+	require.NoError(t, st.MarkResourceText(ctx, "img_a", "回归用例全绿"))
+
+	meta, err := loadMeta(ctx, st, "ou_me", []store.Message{{MessageID: "om_shot", ChatID: "oc_a"}})
+	require.NoError(t, err)
+	require.Equal(t, map[string][]string{"om_shot": {"回归用例全绿"}}, meta.imgText)
+}
