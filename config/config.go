@@ -23,8 +23,9 @@ type Config struct {
 	DataDir string `yaml:"data_dir"`
 	// LarkCLIPath is the lark-cli binary; empty tries /opt/homebrew/bin then $PATH.
 	LarkCLIPath string `yaml:"lark_cli_path"`
-	// PollIntervalMS is the pause in milliseconds between daemon ticks.
-	// Milliseconds rather than a duration string for the same reason as
+	// PollIntervalMS is the pause in milliseconds between sweep ticks, and
+	// discovery's pace while no larkim window has focus; with focus,
+	// discovery runs back to back. Milliseconds rather than a duration string for the same reason as
 	// ApplinkPaceMS: the unit belongs in the key's name once a reader retunes
 	// the value by hand.
 	PollIntervalMS int `yaml:"poll_interval_ms"`

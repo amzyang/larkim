@@ -297,13 +297,24 @@ func (f *Fake) OlderMessagesRaw(_ context.Context, chatID string, before time.Ti
 	return out[:min(len(out), size)], len(out) > size, nil
 }
 
-func (f *Fake) ListChats(_ context.Context, activeFirstPage bool) ([]RawChat, error) {
-	if err := f.record(fmt.Sprintf("chats:%v", activeFirstPage)); err != nil {
+func (f *Fake) ListChats(_ context.Context) ([]RawChat, error) {
+	if err := f.record("chats"); err != nil {
 		return nil, err
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return slices.Clone(f.Chats), nil
+}
+
+// ActiveChats takes f.Chats to be in active-time order already, which is what
+// a test arranging them means.
+func (f *Fake) ActiveChats(_ context.Context, n int) ([]RawChat, error) {
+	if err := f.record(fmt.Sprintf("active:%d", n)); err != nil {
+		return nil, err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return slices.Clone(f.Chats[:min(len(f.Chats), n)]), nil
 }
 
 func (f *Fake) MGetRendered(_ context.Context, ids []string) ([]RenderedMessage, error) {

@@ -10,6 +10,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/amzyang/larkim/config"
+	"github.com/amzyang/larkim/store"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/stretchr/testify/require"
 )
@@ -146,13 +147,49 @@ func TestConfig_RestoresTheDefault(t *testing.T) {
 	require.Equal(t, "backfill_days=30 · next start", m.notice)
 }
 
-func TestConfig_RefusesToEditTheSilenceList(t *testing.T) {
+func TestConfig_ResetRefusesTheSilenceList(t *testing.T) {
 	m := configModel(t)
-	m = m.openConfig("silence")
-	m = press(t, m, "enter")
-	require.False(t, m.config.editing)
+	m.cfg.Silence = store.SilenceRules{{Chat: "oc_quiet"}}
+	m = press(t, m, "G", "&")
 	require.True(t, m.noticeErr)
-	require.Contains(t, m.notice, "edit the config file")
+	require.Contains(t, m.notice, "Silence tab")
+	require.Equal(t, store.SilenceRules{{Chat: "oc_quiet"}}, m.cfg.Silence, "the rules stay")
+}
+
+func TestConfig_SilenceKeyOpensTheSilenceTab(t *testing.T) {
+	m := configModel(t)
+	m = m.closeConfig().openConfig("silence")
+	require.Equal(t, tabSilence, m.config.tab, ":config silence")
+
+	m = configModel(t)
+	m = press(t, m, "G")
+	require.Equal(t, "❯ silence 0 rules", configRow(m), "the list is summed up, not spelled inline")
+	m = press(t, m, "enter")
+	require.Equal(t, tabSilence, m.config.tab, "enter on the row")
+	require.False(t, m.config.editing)
+}
+
+func TestConfig_TabSwitchesBetweenGeneralAndSilence(t *testing.T) {
+	m := configModel(t)
+	m = press(t, m, "j", "tab")
+	require.Equal(t, tabSilence, m.config.tab)
+	require.Contains(t, ansi.Strip(m.renderConfig()), "no silence rules")
+	m = press(t, m, "tab")
+	require.Equal(t, tabGeneral, m.config.tab)
+	require.Equal(t, 1, m.config.idx, "General keeps where it was")
+	m = press(t, m, "shift+tab")
+	require.Equal(t, tabSilence, m.config.tab, "and back the other way")
+}
+
+func TestConfig_TabIsTypedIntoAnOpenEditor(t *testing.T) {
+	m := configModel(t)
+	m = press(t, m, "/", "tab")
+	require.Equal(t, tabGeneral, m.config.tab, "the filter keeps the key")
+	m = configModel(t)
+	m = m.openConfig("backfill_days")
+	m = press(t, m, "enter", "tab")
+	require.Equal(t, tabGeneral, m.config.tab, "and so does the editor")
+	require.True(t, m.config.editing)
 }
 
 func TestConfig_FilterNarrowsOnKeyAndOnProse(t *testing.T) {
@@ -207,15 +244,19 @@ func TestConfig_TakesEveryKeyAheadOfTheHelpPanel(t *testing.T) {
 }
 
 func TestConfig_RenderFillsTheBoxAtEveryWidth(t *testing.T) {
-	for _, w := range []int{minWidth, 100, 160} {
-		m := configModel(t)
-		m.width, m.height = w, 24
-		m.layout()
-		out := ansi.Strip(m.renderConfig())
-		lines := strings.Split(out, "\n")
-		require.Len(t, lines, m.configRows()+7, "width %d", w)
-		for i, line := range lines {
-			require.Equal(t, w-4, len([]rune(line)), "width %d line %d: %q", w, i, line)
+	for _, tab := range []configTab{tabGeneral, tabSilence} {
+		for _, w := range []int{minWidth, 100, 160} {
+			m := configModel(t)
+			m.width, m.height = w, 24
+			m.layout()
+			m.cfg.Silence = store.SilenceRules{{Chat: "oc_team", Sender: "cli_c", Contains: strings.Repeat("nightly build ", 10)}}
+			m.config.tab = tab
+			out := ansi.Strip(m.renderConfig())
+			lines := strings.Split(out, "\n")
+			require.Len(t, lines, m.configRows()+7, "tab %d width %d", tab, w)
+			for i, line := range lines {
+				require.Equal(t, w-4, lipgloss.Width(line), "tab %d width %d line %d: %q", tab, w, i, line)
+			}
 		}
 	}
 }

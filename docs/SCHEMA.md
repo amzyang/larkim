@@ -128,7 +128,7 @@ WHERE root_message_id = 'om_xxx' AND upper_message_id = 'om_xxx' ORDER BY seq;
 
 ## read_state
 
-Per-message read state, joined on `message_id`. A row exists for a message whose remote flag has been checked, and for one stored unread on arrival: somebody else's message, other than a system notice, first stored within two minutes of being sent, which the client would show unread from the moment it landed. `local_read_at` updates rows that already exist and never creates one.
+Per-message read state, joined on `message_id`. A row exists for a message whose remote flag has been checked, and for one stored unread on arrival: somebody else's message, neither a system notice nor recalled, first stored within two minutes of being sent, which the client would show unread from the moment it landed. `local_read_at` updates rows that already exist and never creates one.
 
 | column | meaning |
 |---|---|

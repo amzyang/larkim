@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strconv"
 	stdsync "sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/amzyang/larkim/config"
@@ -143,6 +144,19 @@ type Syncer struct {
 	OnChange func()
 	// Fetch downloads avatars; nil disables avatar files.
 	Fetch Fetcher
+	// Recover, when set, is deferred at the top of the goroutine Run starts for
+	// discovery, so a panic there is reported the way one in Run's own
+	// goroutine is. It must call recover itself and re-panic.
+	Recover func()
+
+	// attended is whether somebody is looking at what discovery finds; see
+	// SetAttended.
+	attended atomic.Bool
+	// signalOnce makes wake and attend; see signals.
+	signalOnce stdsync.Once
+	// wake ends the sweep's pause when discovery has landed something; attend
+	// ends discovery's pause when somebody comes back to look.
+	wake, attend chan struct{}
 }
 
 // Report summarizes one tick.
@@ -213,11 +227,16 @@ func (s *Syncer) EnsureIdentity(ctx context.Context) (larkcli.Identity, error) {
 	return id, s.Store.SetState(ctx, KeySelfOpenID, id.UserOpenID)
 }
 
-// Tick performs one synchronization pass: fast path, chat refresh, slow path,
-// backfill slice and rendering. It records a sync_runs row either way.
-func (s *Syncer) Tick(ctx context.Context) (Report, error) {
+// Tick performs one full synchronization pass: discovery, then the sweep —
+// search, chat refresh, slow path, backfill, rendering and the rest. It is
+// what a one-shot sync runs; Run keeps discovery on a loop of its own. It
+// records a sync_runs row either way.
+func (s *Syncer) Tick(ctx context.Context) (Report, error) { return s.pass(ctx, true) }
+
+// pass is one tick, with discovery at its head when discover is set.
+func (s *Syncer) pass(ctx context.Context, discover bool) (Report, error) {
 	start := s.now()
-	rep, err := s.tick(ctx, start)
+	rep, err := s.tick(ctx, start, discover)
 	end := s.now()
 	run := store.Run{Kind: "tick", StartedAt: start.UnixMilli(), FinishedAt: end.UnixMilli(), OK: err == nil,
 		Fetched: rep.Hits, Upserted: rep.Upserted + rep.Backfilled + rep.SlowPath}
@@ -246,13 +265,13 @@ func (s *Syncer) changed(n int) {
 	}
 }
 
-func (s *Syncer) tick(ctx context.Context, now time.Time) (Report, error) {
+func (s *Syncer) tick(ctx context.Context, now time.Time, discover bool) (Report, error) {
 	var rep Report
-	status, _, err := s.Store.GetState(ctx, KeyStatus)
+	loggedOut, err := s.loggedOut(ctx)
 	if err != nil {
 		return rep, err
 	}
-	if status == StatusNeedsLogin {
+	if loggedOut {
 		if _, err := s.EnsureIdentity(ctx); err != nil {
 			return rep, err
 		}
@@ -267,32 +286,19 @@ func (s *Syncer) tick(ctx context.Context, now time.Time) (Report, error) {
 		s.log().Info("silence rules changed", "messages", silenced)
 	}
 
-	// 1. Activity probe: the chat list sorted by active time puts a chat that
-	// has just seen a message at position 1, and it reads chat state rather
-	// than the search index the fast path below waits on, so it names a chat
-	// seconds before that search can find the message. Listing the chats it
-	// names has no such lag either, which is why this runs first: what it
-	// reaches is already stored by the time the search asks.
-	active, moved, err := s.activeProbe(ctx)
-	if err != nil {
-		return rep, fmt.Errorf("active probe: %w", err)
+	// 1. Discovery, when this pass carries it: a one-shot tick has nobody else
+	// to find new messages, and runs it first so the search below has less
+	// left to find. Run keeps it on a loop of its own instead, so that no
+	// sweep below is ever in front of a message somebody is waiting to read.
+	if discover {
+		if rep.Moved, rep.Probed, err = s.discover(ctx, now); err != nil {
+			return rep, err
+		}
+		rep.Upserted += rep.Probed
 	}
-	rep.Moved = len(moved)
-	if _, rep.Probed, err = s.pullFromCursor(ctx, moved, "active probe", now); err != nil {
-		return rep, fmt.Errorf("active probe pull: %w", err)
-	}
-	// Recording the ordering is what consumes the delta: once written, the
-	// chats it named are no longer named. So it waits for the pull, and a
-	// failed pull leaves them named next tick rather than dropping them on
-	// the safety net half a minute out.
-	if err := s.setActiveOrder(ctx, active); err != nil {
-		return rep, fmt.Errorf("active order: %w", err)
-	}
-	rep.Upserted += rep.Probed
-	s.changed(rep.Probed)
 
 	// 2. Safety net: a cross-chat search over everything since the last one.
-	// The probe above reaches a message a good ten seconds earlier — measured
+	// Discovery reaches a message a good ten seconds earlier — measured
 	// against this very search — but it only sees the chat list's first page
 	// and only says that a chat has moved, so this still has to run for what
 	// the ordering cannot show: edits, recalls, and a chat the page missed.
@@ -328,29 +334,29 @@ func (s *Syncer) tick(ctx context.Context, now time.Time) (Report, error) {
 		s.changed(rep.New)
 	}
 
-	// 3. Render, ask about and fetch what discovery just found, ahead of the
-	// sweeps below. A body lands unrendered, so a reader watching the chat
-	// sees the message named by its type until a rendering replaces it; doing
-	// it here rather than after the sweeps is the difference between a
-	// flicker and half a minute of placeholder. A message that arrived is
+	// 3. Render, ask about and fetch what discovery and the search landed,
+	// ahead of the sweeps below. A body lands unrendered, so a reader watching
+	// the chat sees the message named by its type until a rendering replaces
+	// it; doing it here rather than after the sweeps is the difference between
+	// a flicker and half a minute of placeholder. A message that arrived is
 	// stored unread, and one already read in the client stays wrongly so until
 	// Feishu's answer comes, which is why the answer is fetched before the
-	// downloads too. A tick that found nothing skips it, which is most of them.
-	found := rep.New+rep.Probed > 0
-	if found {
-		if rep.Rendered, err = s.renderPending(ctx, "", s.Opt.RenderPerTick*50, now); err != nil {
-			return rep, fmt.Errorf("render: %w", err)
-		}
-		s.changed(rep.Rendered)
-		if rep.ReadChecks, err = s.probeReadStatus(ctx, now); err != nil {
-			return rep, fmt.Errorf("read probe: %w", err)
-		}
-		s.changed(rep.ReadChecks)
-		if rep.Downloaded, err = s.downloadPending(ctx, now); err != nil {
-			return rep, fmt.Errorf("resources: %w", err)
-		}
-		s.changed(rep.Downloaded)
+	// downloads too. Discovery lands messages between sweeps and wakes this
+	// one when it does, so the step runs on every sweep rather than on the
+	// sweep's own finds: the renders and downloads cost nothing when nothing
+	// is pending, and the read probe is the one every sweep asks anyway.
+	if rep.Rendered, err = s.renderPending(ctx, "", s.Opt.RenderPerTick*50, now); err != nil {
+		return rep, fmt.Errorf("render: %w", err)
 	}
+	s.changed(rep.Rendered)
+	if rep.ReadChecks, err = s.probeReadStatus(ctx, now); err != nil {
+		return rep, fmt.Errorf("read probe: %w", err)
+	}
+	s.changed(rep.ReadChecks)
+	if rep.Downloaded, err = s.downloadPending(ctx, now); err != nil {
+		return rep, fmt.Errorf("resources: %w", err)
+	}
+	s.changed(rep.Downloaded)
 
 	// 4. Historical discovery: one day-slice of cross-chat search per tick,
 	// from now-BackfillDays up to the live window. Far cheaper than listing
@@ -384,7 +390,7 @@ func (s *Syncer) tick(ctx context.Context, now time.Time) (Report, error) {
 		return rep, err
 	}
 	if Due(slowPathAt, s.Opt.SlowPathEvery, now) {
-		n, err := s.slowPath(ctx, active, now)
+		n, err := s.slowPath(ctx, now)
 		if err != nil {
 			return rep, fmt.Errorf("slow path: %w", err)
 		}
@@ -439,9 +445,9 @@ func (s *Syncer) tick(ctx context.Context, now time.Time) (Report, error) {
 	rep.DocLinks = n
 	s.changed(n)
 
-	// 13. Poll whether the user has read recent messages from others. A round
-	// that found messages probed already, in step 3, so only the ladder runs.
-	n, err = s.pollReadStatus(ctx, now, !found)
+	// 13. Walk the read-status ladder over recent messages from others; the
+	// probe ran in step 3.
+	n, err = s.pollReadStatus(ctx, now)
 	if err != nil {
 		return rep, fmt.Errorf("read status: %w", err)
 	}
@@ -717,7 +723,7 @@ func (s *Syncer) muteSlice(ctx context.Context, now time.Time) (int, error) {
 }
 
 func (s *Syncer) refreshChats(ctx context.Context, now time.Time) (int, error) {
-	chats, err := s.Client.ListChats(ctx, false)
+	chats, err := s.Client.ListChats(ctx)
 	if err != nil {
 		return 0, err
 	}
@@ -737,58 +743,30 @@ func (s *Syncer) refreshChats(ctx context.Context, now time.Time) (int, error) {
 	return len(rows), s.setStateTime(ctx, KeyChatsRefreshed, now)
 }
 
-// activeProbe reads the active-time ordering of the chat list's first page and
-// names the chats that have moved up in it since the last tick. Feishu puts a
-// chat that just received a message at position 1, so the first page is
-// complete for this purpose however many chats there are. It answers with the
-// ordering as well, which is the listing every other step of the tick reads
-// the active chats from, and which setActiveOrder stores once the caller has
-// acted on the delta.
-func (s *Syncer) activeProbe(ctx context.Context) (order, moved []string, err error) {
-	chats, err := s.Client.ListChats(ctx, true)
-	if err != nil {
-		return nil, nil, err
-	}
-	order = make([]string, 0, len(chats))
-	for _, c := range chats {
-		order = append(order, c.ChatID)
-	}
-	var prev []string
-	if raw, ok, err := s.Store.GetState(ctx, KeyActiveOrder); err != nil {
-		return nil, nil, err
-	} else if ok && raw != "" {
-		// A hand-edited or half-written value would otherwise fail every tick;
-		// treating it as a first run costs one cycle of blindness.
-		if err := json.Unmarshal([]byte(raw), &prev); err != nil {
-			s.log().WarnContext(ctx, "active order unreadable", "err", err)
-			prev = nil
-		}
-	}
-	return order, ActiveDelta(prev, order), nil
-}
+// maxActivePage is the largest page the chat list answers.
+const maxActivePage = 100
 
-// setActiveOrder records the ordering the next tick compares against.
-func (s *Syncer) setActiveOrder(ctx context.Context, order []string) error {
-	enc, err := json.Marshal(order)
+// slowPath reconciles the most active chats from their cursors. It reads the
+// ordering itself rather than taking discovery's: discovery keeps its page
+// short for speed, and active_top_k may ask for more than that.
+func (s *Syncer) slowPath(ctx context.Context, now time.Time) (int, error) {
+	chats, err := s.Client.ActiveChats(ctx, min(s.Opt.ActiveTopK, maxActivePage))
 	if err != nil {
-		return err
+		return 0, err
 	}
-	return s.Store.SetState(ctx, KeyActiveOrder, string(enc))
-}
-
-// slowPath reconciles the chats at the head of active, the ordering the
-// probe already listed this tick.
-func (s *Syncer) slowPath(ctx context.Context, active []string, now time.Time) (int, error) {
-	total, _, err := s.pullFromCursor(ctx, active[:min(len(active), s.Opt.ActiveTopK)], "slow path", now)
+	total, _, err := s.pullFromCursor(ctx, chatIDs(chats), "slow path", now)
 	if err != nil {
 		return total, err
 	}
 	return total, s.setStateTime(ctx, KeySlowPathAt, now)
 }
 
-// pullFromCursor re-lists each chat from its own cursor, less one overlap.
-// why names the caller in the log lines a skipped chat produces. A chat the
-// gateway refuses is recorded and stepped over; everything else stops the run.
+// pullFromCursor re-lists each chat from its own cursor, less one overlap,
+// and puts what a chat brings on screen as soon as that chat has it: the
+// reader is told, with every body larkim renders itself already rendered,
+// without waiting on a slower chat. why names the caller in the log lines a
+// skipped chat produces. A chat the gateway refuses is recorded and stepped
+// over; everything else stops the run.
 func (s *Syncer) pullFromCursor(ctx context.Context, chatIDs []string, why string, now time.Time) (total, fresh int, err error) {
 	ids := make([]string, 0, len(chatIDs))
 	since := make(map[string]time.Time, len(chatIDs))
@@ -809,7 +787,15 @@ func (s *Syncer) pullFromCursor(ctx context.Context, chatIDs []string, why strin
 		since[id] = time.UnixMilli(local.CursorMs).Add(-s.Opt.Overlap)
 	}
 	return s.pullChats(ctx, ids, now, func(ctx context.Context, id string) (int, int, error) {
-		return s.pullChat(ctx, id, since[id], time.Time{}, now)
+		n, fresh, err := s.pullChat(ctx, id, since[id], time.Time{}, now)
+		if err != nil || fresh == 0 {
+			return n, fresh, err
+		}
+		// Local only: nothing it can fail with is a refusal pullChats would
+		// pin on the chat.
+		_, err = s.renderLocal(ctx, nil, s.Opt.RenderPerTick*50, now)
+		s.changed(fresh)
+		return n, fresh, err
 	})
 }
 
@@ -1115,19 +1101,33 @@ func (s *Syncer) setStateTime(ctx context.Context, key string, t time.Time) erro
 	return s.Store.SetState(ctx, key, strconv.FormatInt(t.UnixMilli(), 10))
 }
 
-// Run ticks until ctx is cancelled, pacing by PollInterval and backing off on
-// failures according to lark-cli's error classification.
+// Run syncs until ctx is cancelled: discovery on a loop of its own, and the
+// sweep paced by PollInterval, each backing off on failures according to
+// lark-cli's error classification. Discovery landing something ends the
+// sweep's pause.
 func (s *Syncer) Run(ctx context.Context) error {
 	if _, err := s.EnsureIdentity(ctx); err != nil {
 		s.SetStatus(ctx, err)
 	}
+	s.signals()
+	var wg stdsync.WaitGroup
+	defer wg.Wait()
+	wg.Go(func() {
+		if s.Recover != nil {
+			defer s.Recover()
+		}
+		s.runDiscovery(ctx)
+	})
 	failures := 0
 	for {
-		rep, err := s.Tick(ctx)
+		rep, err := s.pass(ctx, false)
 		delay := s.Opt.PollInterval
+		wake := s.wake
 		if err != nil {
 			failures++
 			delay = s.delayFor(err, failures)
+			// A find is no reason to retry an API that just failed.
+			wake = nil
 			s.log().Warn("tick failed", "err", err, "class", errClass(err), "failures", failures, "retry_in", delay)
 			if s.OnError != nil {
 				s.OnError(err)
@@ -1141,12 +1141,13 @@ func (s *Syncer) Run(ctx context.Context) error {
 			s.log().Log(ctx, level, "tick", "hits", rep.Hits, "new", rep.New, "rendered", rep.Rendered,
 				"backfilled", rep.Backfilled, "slow_path", rep.SlowPath, "history", rep.History,
 				"downloaded", rep.Downloaded, "repaired", rep.Repaired, "chats", rep.Chats,
-				"moved", rep.Moved, "probed", rep.Probed, "searched", rep.Searched, "complete", rep.Complete)
+				"searched", rep.Searched, "complete", rep.Complete)
 		}
 		s.SetStatus(ctx, err)
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
+		case <-wake:
 		case <-time.After(delay):
 		}
 	}

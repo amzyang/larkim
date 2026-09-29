@@ -400,7 +400,7 @@ func TestTick_AnArrivalReadElsewhereIsSettledBeforeTheSweeps(t *testing.T) {
 	m, err := s.Store.GetMessage(ctx, "om_seen")
 	require.NoError(t, err)
 	require.True(t, *m.IsReadRemote)
-	asked, listed := slices.Index(f.Calls, "read-status"), slices.Index(f.Calls, "chats:false")
+	asked, listed := slices.Index(f.Calls, "read-status"), slices.Index(f.Calls, "chats")
 	require.GreaterOrEqual(t, listed, 0, "the round is one that lists every chat")
 	require.Less(t, asked, listed,
 		"the answer is fetched before the round's sweeps, which is as long as the false unread lasts")

@@ -56,9 +56,10 @@ const (
 	mgetBatch       = 50
 )
 
-// ExecClient runs the lark-cli binary as a subprocess. Calls run in three
-// lanes — the syncer's sweeps, the open chat's beat, and what a person pressed
-// a key for — so neither a sweep nor a beat is ever in front of a keystroke.
+// ExecClient runs the lark-cli binary as a subprocess. Calls run in four
+// lanes — the syncer's sweeps, its watch for new messages, the open chat's
+// beat, and what a person pressed a key for — so a sweep is never in front of
+// a new message, and neither a sweep nor a beat is in front of a keystroke.
 // The widths are also the only throttle in front of the gateway: lark-cli
 // carries no limiter of its own.
 type ExecClient struct {
@@ -74,8 +75,8 @@ type ExecClient struct {
 	// pair at debug level. Nil discards.
 	Log *slog.Logger
 
-	once         sync.Once
-	bg, beat, fg lane
+	once                    sync.Once
+	bg, beat, fg, discovery lane
 	// calls numbers the invocations so a request line and its response line
 	// can be paired, which the lanes make necessary: several calls are in
 	// flight at once and their lines interleave.
@@ -98,6 +99,7 @@ func (c *ExecClient) lanes() {
 		c.bg = make(lane, backgroundLane)
 		c.beat = make(lane, beatLane)
 		c.fg = make(lane, interactiveLane)
+		c.discovery = make(lane, discoveryLane)
 	})
 }
 
@@ -109,6 +111,8 @@ func (c *ExecClient) lane(ctx context.Context) lane {
 		return c.fg
 	case LaneBeat:
 		return c.beat
+	case LaneDiscovery:
+		return c.discovery
 	default:
 		return c.bg
 	}
@@ -204,7 +208,48 @@ func (c *ExecClient) runInput(ctx context.Context, identity string, stdin []byte
 		c.logger().WarnContext(ctx, "lark-cli refused", "argv", ArgvLine(argv), "code", e.Code, "error", e.Message, "log_id", e.LogID)
 		return nil, e
 	}
+	if e := pageStop(stderr); e != nil {
+		e = e.withArgv(argv)
+		c.logger().WarnContext(ctx, "lark-cli stopped paginating", "argv", ArgvLine(argv), "code", e.Code, "error", e.Message)
+		return nil, e
+	}
 	return env.Data, nil
+}
+
+// rateLimitCode is the gateway's code for a rate limit, which lark-cli names
+// rate_limit when it is the whole call's answer.
+const rateLimitCode = 99991400
+
+var pageStopLine = regexp.MustCompile(`^\[page \d+\] (?:API error \(code=(\d+)\)|error), stopping pagination`)
+
+// pageStop reads the line --page-all prints when a page after the first
+// fails, which is all that is left of the failure: lark-cli still exits 0 and
+// prints the pages it had as the whole answer, and a caller given them
+// advances a cursor, a watermark or a chat's membership past everything the
+// failed page held. A transport failure comes back as a network error; an API
+// error keeps its code, and a rate limit its name, so the caller backs off as
+// it would for a first page. Neither is permanent: the same request may well
+// succeed, and nothing about the chat is recorded against it.
+func pageStop(stderr []byte) *Error {
+	for line := range bytes.SplitSeq(stderr, []byte("\n")) {
+		line = bytes.TrimSpace(line)
+		m := pageStopLine.FindSubmatch(line)
+		if m == nil {
+			continue
+		}
+		e := &Error{Message: string(line), Stderr: string(stderr)}
+		if len(m[1]) == 0 {
+			e.ExitCode = ExitNetwork
+			return e
+		}
+		e.Type = "api"
+		e.Code, _ = strconv.Atoi(string(m[1]))
+		if e.Code == rateLimitCode {
+			e.Subtype = "rate_limit"
+		}
+		return e
+	}
+	return nil
 }
 
 func (c *ExecClient) exec(ctx context.Context, stdin []byte, args ...string) (stdout, stderr []byte, exitCode int, err error) {
@@ -526,19 +571,24 @@ func decodeItems[T any, PT interface {
 	return out, nil
 }
 
-func (c *ExecClient) ListChats(ctx context.Context, activeFirstPage bool) ([]RawChat, error) {
-	params := map[string]any{
-		"types":        "p2p,group",
-		"page_size":    chatsPageSize,
-		"user_id_type": "open_id",
-	}
-	if activeFirstPage {
-		params["sort_type"] = "ByActiveTimeDesc"
-	}
-	args := []string{"api", "GET", "/open-apis/im/v1/chats", "--params", jsonArg(params)}
-	if !activeFirstPage {
-		args = append(args, "--page-all", "--page-limit", "0")
-	}
+func (c *ExecClient) ListChats(ctx context.Context) ([]RawChat, error) {
+	return c.listChats(ctx, chatParams(chatsPageSize), "--page-all", "--page-limit", "0")
+}
+
+// ActiveChats is one page: the gateway's time grows with the page size, and
+// the chats a probe is after are at the top of it however many there are.
+func (c *ExecClient) ActiveChats(ctx context.Context, n int) ([]RawChat, error) {
+	params := chatParams(n)
+	params["sort_type"] = "ByActiveTimeDesc"
+	return c.listChats(ctx, params)
+}
+
+func chatParams(pageSize int) map[string]any {
+	return map[string]any{"types": "p2p,group", "page_size": pageSize, "user_id_type": "open_id"}
+}
+
+func (c *ExecClient) listChats(ctx context.Context, params map[string]any, flags ...string) ([]RawChat, error) {
+	args := append([]string{"api", "GET", "/open-apis/im/v1/chats", "--params", jsonArg(params)}, flags...)
 	data, err := c.run(ctx, args...)
 	if err != nil {
 		return nil, err

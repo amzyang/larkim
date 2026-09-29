@@ -94,7 +94,7 @@ func TestTick_FirstRunDiscoversRendersAndBackfills(t *testing.T) {
 	rep, err = s.Tick(ctx)
 	require.NoError(t, err)
 	require.Zero(t, rep.New)
-	require.Equal(t, []string{"chats:true", "list:chat:oc_a", "search", "search"}, f.Calls,
+	require.Equal(t, []string{"active:30", "list:chat:oc_a", "search", "search"}, f.Calls,
 		"the probe lists the head whether or not the ordering moved")
 }
 
@@ -219,6 +219,7 @@ func TestSlowPath_ReconcilesActiveChatsFromCursor(t *testing.T) {
 	f.AddMessage(msg("om_hidden", "oc_a", now.Add(-30*time.Minute), "hidden"))
 
 	f.Calls = nil
+	s.Opt.ActiveTopK = 20
 	clk.t = now.Add(11 * time.Minute) // slow path due; fast window [wm-2m, now] misses -30m
 	rep, err := s.Tick(ctx)
 	require.NoError(t, err)
@@ -226,8 +227,8 @@ func TestSlowPath_ReconcilesActiveChatsFromCursor(t *testing.T) {
 	_, err = s.Store.GetMessage(ctx, "om_hidden")
 	require.NoError(t, err)
 
-	require.Equal(t, 1, callsTo(f, "chats:true"),
-		"the slow path reconciles the ordering the probe already listed")
+	require.Equal(t, 1, callsTo(f, "active:20"),
+		"the slow path reads the ordering at its own length, not discovery's")
 }
 
 func mustInt(s string) int64 {
@@ -335,7 +336,7 @@ func TestRefreshReadStatus_OvertakesTheBackoff(t *testing.T) {
 	require.NoError(t, s.Store.SetReadStatus(ctx, "om_here", &unread, now.UnixMilli(), now.Add(6*time.Hour).UnixMilli()))
 	require.NoError(t, s.Store.SetReadStatus(ctx, "om_elsewhere", &unread, now.UnixMilli(), now.Add(6*time.Hour).UnixMilli()))
 
-	n, err := s.pollReadStatus(ctx, now, true)
+	n, err := s.pollReadStatus(ctx, now)
 	require.NoError(t, err)
 	require.Zero(t, n, "both wait out the backoff")
 
@@ -377,7 +378,7 @@ func TestPollReadStatus_DropsUnreadPastTheHorizon(t *testing.T) {
 	count, _ := s.Store.UnreadCount(ctx)
 	require.Equal(t, int64(1), count)
 
-	_, err = s.pollReadStatus(ctx, now, true)
+	_, err = s.pollReadStatus(ctx, now)
 	require.NoError(t, err)
 
 	count, _ = s.Store.UnreadCount(ctx)
@@ -476,9 +477,9 @@ func TestTick_RendersNewMessagesBeforeSweeps(t *testing.T) {
 	render := slices.Index(f.Calls, "render")
 	require.GreaterOrEqual(t, render, 0, "the new message was rendered")
 	sweep := slices.IndexFunc(f.Calls, func(c string) bool {
-		// The activity probe ("chats:true") is discovery, not a sweep: it runs
+		// The activity probe ("active:30") is discovery, not a sweep: it runs
 		// before the fast path so the fast path has something to render.
-		return strings.HasPrefix(c, "list:") || c == "chats:false"
+		return strings.HasPrefix(c, "list:") || c == "chats"
 	})
 	require.GreaterOrEqual(t, sweep, 0, "a sweep ran in the same tick")
 	require.Less(t, render, sweep, "a reader waits on the rendering; nobody waits on the sweeps")
@@ -518,7 +519,7 @@ func TestHistorySlice_StopsSearchingOnceCaughtUp(t *testing.T) {
 		require.NoError(t, err)
 		clk.t = clk.t.Add(searchEvery)
 	}
-	require.Equal(t, []string{"chats:true", "search", "chats:true", "search", "chats:true", "search"}, f.Calls,
+	require.Equal(t, []string{"active:30", "search", "active:30", "search", "active:30", "search"}, f.Calls,
 		"one live search per interval; history is caught up and must not re-search behind it")
 }
 
@@ -636,10 +637,10 @@ func TestActiveProbe_ReachesAMessageBeforeTheSearchDoes(t *testing.T) {
 	require.Equal(t, 2, rep.Moved, "both chats sit in the head window")
 	require.Equal(t, 1, rep.Probed, "only the new message counts; the cursor overlap re-lists the chat's older one")
 	require.Zero(t, rep.New, "the search had nothing left to find")
-	require.Equal(t, "chats:true", f.Calls[0])
+	require.Equal(t, "active:30", f.Calls[0])
 	require.ElementsMatch(t, []string{"list:chat:oc_a", "list:chat:oc_b"}, f.Calls[1:3], "the window is listed side by side")
-	require.Equal(t, []string{"search", "render"},
-		f.Calls[3:5], "the probe pulls before the search asks, and what it found is rendered with the rest")
+	require.Equal(t, []string{"render", "search"},
+		f.Calls[3:5], "what the probe found is rendered before the search asks")
 
 	m, err := s.Store.GetMessage(ctx, "om_fresh")
 	require.NoError(t, err)
@@ -725,7 +726,7 @@ func TestTick_SearchIsASafetyNetOnItsOwnInterval(t *testing.T) {
 	rep, err := s.Tick(ctx)
 	require.NoError(t, err)
 	require.Zero(t, callsTo(f, "search"), "inside the interval the probe carries discovery alone")
-	require.Contains(t, f.Calls, "chats:true", "the probe still runs every tick")
+	require.Contains(t, f.Calls, "active:30", "the probe still runs every tick")
 	require.False(t, rep.Searched)
 	require.False(t, rep.Complete, "a tick that searched nothing covered nothing")
 
@@ -776,7 +777,7 @@ func TestActiveProbe_AFailedPullLeavesTheMovedChatsNamedNextTick(t *testing.T) {
 	require.Equal(t, 1, rep.Probed, "the retained ordering names oc_c again")
 }
 
-func TestPollReadStatus_TakesAChatOutOfTheSweepOnceTheClientAnswers(t *testing.T) {
+func TestProbeReadStatus_TakesAChatOutOfTheSweepOnceTheClientAnswers(t *testing.T) {
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	now := clk.t
@@ -794,7 +795,7 @@ func TestPollReadStatus_TakesAChatOutOfTheSweepOnceTheClientAnswers(t *testing.T
 	require.Len(t, chats, 1, "the local write says nothing about the client's dot")
 
 	f.Read["om_walked"] = true
-	_, err = s.pollReadStatus(ctx, now, true)
+	_, err = s.probeReadStatus(ctx, now)
 	require.NoError(t, err)
 
 	m, _ := s.Store.GetMessage(ctx, "om_walked")

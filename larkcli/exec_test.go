@@ -24,6 +24,58 @@ func fakeBinary(t *testing.T, script string) *ExecClient {
 	return &ExecClient{Path: path, Dir: dir, Timeout: 10 * time.Second}
 }
 
+func TestActiveChats_AsksForOnePageOfThatSize(t *testing.T) {
+	c := fakeBinary(t, `echo "$*" > "$(dirname "$0")/argv"; echo '{"ok":true,"data":{"items":[]}}'`)
+	_, err := c.ActiveChats(t.Context(), 30)
+	require.NoError(t, err)
+	argv, err := os.ReadFile(filepath.Join(filepath.Dir(c.Path), "argv"))
+	require.NoError(t, err)
+	require.Contains(t, string(argv), `"page_size":30`)
+	require.Contains(t, string(argv), `"sort_type":"ByActiveTimeDesc"`)
+	require.NotContains(t, string(argv), "--page-all", "the first page by activity is the whole answer")
+}
+
+func TestListChats_ListsEveryChat(t *testing.T) {
+	c := fakeBinary(t, `echo "$*" > "$(dirname "$0")/argv"; echo '{"ok":true,"data":{"items":[]}}'`)
+	_, err := c.ListChats(t.Context())
+	require.NoError(t, err)
+	argv, err := os.ReadFile(filepath.Join(filepath.Dir(c.Path), "argv"))
+	require.NoError(t, err)
+	require.Contains(t, string(argv), `"page_size":100`)
+	require.Contains(t, string(argv), "--page-all")
+	require.NotContains(t, string(argv), "sort_type")
+}
+
+func TestExec_AnAPIErrorOnALaterPageFailsTheCall(t *testing.T) {
+	c := fakeBinary(t, `
+echo "[page 1] fetching..." >&2
+echo "[page 2] fetching..." >&2
+echo "[page 2] API error (code=99991400), stopping pagination" >&2
+echo '{"ok":true,"identity":"user","data":{"items":[{"message_id":"om_1"}],"has_more":false}}'`)
+	msgs, err := c.ListMessagesRaw(t.Context(), "chat", "oc_a", time.Now().Add(-time.Hour), time.Time{})
+	le, ok := errors.AsType[*Error](err)
+	require.True(t, ok, "the pages before the failure are not the listing")
+	require.Nil(t, msgs)
+	require.Equal(t, 99991400, le.Code)
+	require.True(t, le.IsRateLimit(), "a later page's rate limit backs the caller off like a first page's")
+	require.False(t, le.IsPermanent(), "the same request may well succeed, so no chat is retired over it")
+	require.Contains(t, le.Argv, "--page-all")
+}
+
+func TestExec_ATransportErrorOnALaterPageIsANetworkError(t *testing.T) {
+	c := fakeBinary(t, `
+echo "[page 1] fetching..." >&2
+echo "[page 2] fetching..." >&2
+echo "[page 2] error, stopping pagination" >&2
+echo '{"ok":true,"identity":"user","data":{"items":[{"chat_id":"oc_a"}],"has_more":true}}'`)
+	chats, err := c.ListChats(t.Context())
+	le, ok := errors.AsType[*Error](err)
+	require.True(t, ok, "a chat list cut short would mark every chat past the cut as left")
+	require.Nil(t, chats)
+	require.True(t, le.IsNetwork())
+	require.False(t, le.IsPermanent())
+}
+
 func TestSearchMessageIDs_DecodesMetaAndTruncation(t *testing.T) {
 	c := fakeBinary(t, `
 case "$1 $2" in

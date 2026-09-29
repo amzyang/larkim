@@ -47,6 +47,7 @@ func TestLaneOf_DefaultsToBackground(t *testing.T) {
 	require.Equal(t, LaneBackground, LaneOf(t.Context()))
 	require.Equal(t, LaneInteractive, LaneOf(WithLane(t.Context(), LaneInteractive)))
 	require.Equal(t, LaneBeat, LaneOf(WithLane(t.Context(), LaneBeat)))
+	require.Equal(t, LaneDiscovery, LaneOf(WithLane(t.Context(), LaneDiscovery)))
 	require.Equal(t, LaneBackground, LaneOf(WithLane(t.Context(), LaneBackground)))
 }
 
@@ -70,6 +71,17 @@ func TestExec_BeatDoesNotQueueBehindBackground(t *testing.T) {
 	require.NoError(t, err)
 	require.Less(t, time.Since(start), time.Second,
 		"the open chat's beat waited out a background sweep")
+}
+
+func TestExec_DiscoveryDoesNotQueueBehindBackground(t *testing.T) {
+	c := slowBinary(t, "2")
+	occupy(t, c, LaneBackground)
+
+	start := time.Now()
+	_, err := c.run(WithLane(t.Context(), LaneDiscovery), "api", "GET", "/quick")
+	require.NoError(t, err)
+	require.Less(t, time.Since(start), time.Second,
+		"discovery waited out a background sweep")
 }
 
 func TestExec_InteractiveDoesNotQueueBehindTheBeat(t *testing.T) {

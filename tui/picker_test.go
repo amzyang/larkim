@@ -64,16 +64,18 @@ func press(t *testing.T, m Model, keys ...string) Model {
 func keyMsg(name string) tea.KeyPressMsg {
 	k := tea.KeyPressMsg{}
 	for {
-		rest, ok := strings.CutPrefix(name, "ctrl+")
-		if !ok {
-			if rest, ok = strings.CutPrefix(name, "alt+"); !ok {
-				break
-			}
-			k.Mod |= tea.ModAlt
-		} else {
+		if rest, ok := strings.CutPrefix(name, "ctrl+"); ok {
 			k.Mod |= tea.ModCtrl
+			name = rest
+		} else if rest, ok := strings.CutPrefix(name, "alt+"); ok {
+			k.Mod |= tea.ModAlt
+			name = rest
+		} else if rest, ok := strings.CutPrefix(name, "shift+"); ok {
+			k.Mod |= tea.ModShift
+			name = rest
+		} else {
+			break
 		}
-		name = rest
 	}
 	k.Code = keyCode(name)
 	if k.Mod == 0 && len([]rune(name)) == 1 {

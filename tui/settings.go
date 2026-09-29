@@ -31,9 +31,12 @@ type setting struct {
 	// apply carries a change past m.cfg, for what something outside it holds.
 	// Nil where reading m.cfg is enough.
 	apply func(*Model)
-	// readOnly marks a value no single line can carry. The panel shows it and
-	// refuses to edit it; the file is where it is written.
+	// readOnly marks a value no single line can carry. The General tab shows
+	// it and hands it to the tab that edits it whole; no single-line edit or
+	// reset reaches it.
 	readOnly bool
+	// summary draws a value too long for its cell. Nil draws the value.
+	summary func(config.Config) string
 }
 
 // settings names every key of the configuration, in config.Keys() order, which
@@ -46,7 +49,7 @@ var settings = []setting{{
 	help: "the lark-cli binary; empty tries /opt/homebrew/bin, then $PATH",
 }, {
 	key:   "poll_interval_ms",
-	help:  "pause between daemon ticks, in milliseconds; under 100 is raised to 100",
+	help:  "pause between sweep ticks, and between discovery cycles while larkim is unfocused, in milliseconds; under 100 is raised to 100",
 	check: positiveMS,
 }, {
 	key:  "overlap",
@@ -100,8 +103,9 @@ var settings = []setting{{
 	apply: rebuildSuggest,
 }, {
 	key:      "silence",
-	help:     "rules whose messages carry no unread badge, written as a list",
+	help:     "rules whose messages carry no unread badge; enter edits them in the Silence tab",
 	readOnly: true,
+	summary:  func(c config.Config) string { return ruleCount(len(c.Silence)) },
 }}
 
 // positiveMS judges a key whose unit is in its own name, so 3s is the reader
@@ -155,12 +159,21 @@ func (m Model) settingValue(s setting) string {
 	return v
 }
 
+// settingCell is what the General tab draws for a key under cfg.
+func settingCell(cfg config.Config, s setting) string {
+	if s.summary != nil {
+		return s.summary(cfg)
+	}
+	v, _ := cfg.Get(s.key)
+	return v
+}
+
 // nextValue judges a value and returns the configuration it would make. cfg
 // is taken by value, so a refused value leaves the caller's own untouched and
 // :config can ask what a value means before it writes the file.
 func nextValue(cfg config.Config, s setting, value string) (config.Config, error) {
 	if s.readOnly {
-		return cfg, errors.New("a list; edit the config file")
+		return cfg, errors.New("edit it in the Silence tab")
 	}
 	if s.check != nil {
 		if err := s.check(value); err != nil {

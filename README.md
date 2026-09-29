@@ -10,8 +10,11 @@ larkim drives the official [lark-cli](https://github.com/larksuite/cli) for auth
 brew install amzyang/tap/larkim
 npm install -g @larksuite/cli
 lark-cli auth login --domain im,contact
+lark-cli config keychain-downgrade
 brew services start larkim
 ```
+
+`keychain-downgrade` moves lark-cli's master key out of the macOS keychain into a file under `~/Library/Application Support/lark-cli/`, readable only by you. Without it every lark-cli call runs `/usr/bin/security` about four times, which costs 60–80 ms and about half the CPU of each of the several calls a second larkim makes while you are looking at it.
 
 The formula installs the bash, zsh and fish completions; reached any other way, `larkim completion <shell>` prints them.
 
@@ -114,7 +117,7 @@ What `Y` covers depends on the focus: the message under the cursor, the whole `v
 
 ## How it syncs
 
-Every tick (default 3s) a cross-chat message search over a sliding window discovers new message ids; unknown ids are fetched in batches of 50 with millisecond timestamps and raw bodies, then rendered to readable text through lark-cli. Every 10 minutes the full chat list is refreshed and the 30 most active chats are reconciled from their cursors, which catches anything the search index misses. History is backfilled a few chats per tick (default 30 days); scrolling past the oldest message a chat holds pulls the page behind it, so a conversation can be walked back to its start. Edits and recalls update in place; recalled messages keep their last known body.
+New messages are found by watching the chat list's order by activity: a chat that has just seen a message moves to the top, so each cycle reads the first 30 chats and lists the ones that moved, and the top three whether they moved or not, each on its own so that a slow chat holds up no other. While a larkim window has focus the cycles run back to back, which puts a message in a chat near the top on screen within about a second; otherwise one runs every `poll_interval_ms` (default 3s). A chat that has been quiet for a while takes Feishu itself several seconds to move up the ordering (about 8s measured), however often it is read. The sweep runs beside it at its own pace, `poll_interval_ms` between passes: every 30 seconds a cross-chat message search over a sliding window catches edits, recalls and anything the ordering missed, and every 10 minutes the full chat list is refreshed and the 30 most active chats are reconciled from their cursors. Messages are fetched with millisecond timestamps and raw bodies, then rendered to readable text, by larkim where it can and through lark-cli where it cannot. History is backfilled a few chats per tick (default 30 days); scrolling past the oldest message a chat holds pulls the page behind it, so a conversation can be walked back to its start. Edits and recalls update in place; recalled messages keep their last known body.
 
 Attachments (images, files, audio, video, post-embedded media) are downloaded under `~/.larkim/resources/` up to `resources.max_bytes`, with retries. The writing in a downloaded picture is read once through Feishu's recognizer into `resource_text`, keyed by the picture rather than by the message, so a screenshot shared around several chats is read once; it needs the app scope `optical_char_recognition:image`. For messages from others in the last 7 days the daemon asks Feishu whether you have read them (`is_read_remote`), rechecking on a widening schedule until they are read; that is the only read signal Feishu exposes and it cannot be written. Opening a chat in the TUI takes its waiting messages as read locally, which is what drops the badge drawn here, and walks the Feishu desktop client onto that chat in the background so its own red dot falls too. A message landing in the chat you are reading relights that dot and drops it again; a chat with nothing waiting is never touched.
 
@@ -136,7 +139,7 @@ The reaction picker asks a second model, at a second vendor. `e` sends the open 
 
 ## Diagnostics
 
-Every process writes to `~/.larkim/larkim.log` — the daemon, the TUI and one-off commands alike, so each line carries the pid and the command that wrote it. It keeps the ticks that landed something, the lark-cli calls that failed with Feishu's own error code and `log_id`, and the failures the TUI has no room to show. The file is rolled aside once at 8 MB.
+Every process writes to `~/.larkim/larkim.log` — the daemon, the TUI and one-off commands alike, so each line carries the pid and the command that wrote it. It keeps the ticks and discovery cycles that landed something, the lark-cli calls that failed with Feishu's own error code and `log_id`, and the failures the TUI has no room to show. The file is rolled aside once at 64 MB.
 
 `--debug` adds the call detail: one line for every lark-cli request and one for its response, paired by a call number, carrying the full argument vector, the lane the call waited in and how long it waited, then its duration, the bytes it returned and the pages it fetched. On an ordinary command the log also goes to stderr; the TUI owns the screen, so there it goes to the file alone.
 

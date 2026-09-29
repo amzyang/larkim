@@ -21,6 +21,18 @@ type configHit struct {
 	mark []int
 }
 
+// configTab is one page of the :config overlay. The Lark client's Settings
+// window opens on General too; it has no page for local silence rules, which
+// are larkim's own, so Silence has no client counterpart to follow.
+type configTab int
+
+const (
+	tabGeneral configTab = iota
+	tabSilence
+)
+
+var configTabs = []string{"General", "Silence"}
+
 // configPanel is the :config overlay. A zero value is closed.
 //
 // It edits the configuration file: a value committed here is written before it
@@ -42,9 +54,13 @@ type configPanel struct {
 	// err is a value the row refused, kept on screen beside the typed text
 	// rather than thrown away with it.
 	err string
+	// tab is the page on screen; silence is the Silence page's own state.
+	tab     configTab
+	silence silenceTab
 }
 
-// openConfig opens the panel, on the row key names when it names one.
+// openConfig opens the panel, on the row key names when it names one. A key
+// that has a tab of its own opens that tab; configLoads is what it then needs.
 func (m Model) openConfig(key string) Model {
 	in := m.newQueryInput()
 	hits := configSearch("")
@@ -57,7 +73,35 @@ func (m Model) openConfig(key string) Model {
 	}
 	m.config = configPanel{open: true, input: in, hits: hits}
 	moveCursor(&m.config.idx, &m.config.top, at, len(hits), m.configRows())
+	if key == "silence" {
+		m.config.tab = tabSilence
+	}
 	return m
+}
+
+// configLoads fetches what the tab on screen draws from outside the model.
+func (m Model) configLoads() tea.Cmd {
+	if m.config.tab != tabSilence {
+		return nil
+	}
+	return tea.Batch(loadContacts(m.deps), loadSilenceMatches(m.deps, m.cfg.Silence))
+}
+
+// switchConfigTab steps to the neighbouring tab, wrapping round.
+func (m Model) switchConfigTab(d int) (Model, tea.Cmd) {
+	n := configTab(len(configTabs))
+	m.config.tab = (m.config.tab + configTab(d) + n) % n
+	m.config.err, m.config.silence.confirmDelete = "", false
+	return m, m.configLoads()
+}
+
+// configScroll moves the cursor of whichever tab is on screen.
+func (m *Model) configScroll(d int) {
+	if m.config.tab == tabSilence {
+		m.silenceMove(d)
+		return
+	}
+	m.configMove(d)
 }
 
 func (m Model) closeConfig() Model {
@@ -120,6 +164,9 @@ func (m Model) configFocus() (setting, bool) {
 // editor takes everything it can edit with, the filter likewise, and only the
 // browsing state reads bare letters as commands.
 func (m Model) onConfigKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	if m.config.tab == tabSilence {
+		return m.onSilenceKey(k)
+	}
 	s := k.String()
 	if m.config.editing {
 		switch s {
@@ -169,6 +216,10 @@ func (m Model) onConfigKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch s {
 	case "esc", "q":
 		return m.closeConfig(), nil
+	case "tab":
+		return m.switchConfigTab(1)
+	case "shift+tab":
+		return m.switchConfigTab(-1)
 	case "/":
 		m.config.filtering = true
 		cmd := m.config.input.Focus()
@@ -204,7 +255,8 @@ func (m Model) editConfig() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if s.readOnly {
-		return m.notify(s.key+": a list; edit the config file", true), nil
+		m.config.tab = tabSilence
+		return m, m.configLoads()
 	}
 	in := m.newQueryInput()
 	in.SetValue(m.settingValue(s))
@@ -222,8 +274,14 @@ func (m Model) editConfig() (tea.Model, tea.Cmd) {
 // The text is windowed on the caret, so a value longer than the column is
 // typed at rather than scrolled past.
 func (m Model) configEditorCell(valw int) (string, int) {
-	v := []rune(m.config.editor.Value())
-	pos := clamp(m.config.editor.Position(), 0, len(v))
+	return m.inputCell(m.config.editor, valw)
+}
+
+// inputCell draws in as a shaded field valw wide, windowed on its caret, and
+// returns how far into the field the caret sits.
+func (m Model) inputCell(in textinput.Model, valw int) (string, int) {
+	v := []rune(in.Value())
+	pos := clamp(in.Position(), 0, len(v))
 	// One column past the last rune is where the caret rests after typing.
 	start := max(0, pos-valw+1)
 	end := min(len(v), start+valw)
@@ -234,6 +292,9 @@ func (m Model) resetConfig() Model {
 	s, ok := m.configFocus()
 	if !ok {
 		return m
+	}
+	if s.readOnly {
+		return m.notify(s.key+": edit it in the Silence tab", true)
 	}
 	v, _ := config.Default().Get(s.key)
 	return m.commitConfig(v)
@@ -320,9 +381,9 @@ func (m Model) configLines() []string {
 		case row == m.config.idx && m.config.editing:
 			cell, _ = m.configEditorCell(valw)
 		default:
-			value := m.settingValue(h.s)
+			value := settingCell(m.cfg, h.s)
 			style := lipgloss.NewStyle()
-			if d, _ := def.Get(h.s.key); d == value {
+			if settingCell(def, h.s) == value {
 				style = stDim
 			}
 			cell = style.Render(truncate(value, valw))
@@ -346,7 +407,7 @@ func (m Model) configDetail() string {
 	reach := "next start"
 	switch {
 	case s.readOnly:
-		reach = "file only"
+		reach = "Silence tab"
 	case s.live:
 		reach = "takes effect now"
 	}
@@ -355,25 +416,45 @@ func (m Model) configDetail() string {
 
 func (m Model) renderConfig() string {
 	w, rows := m.configWidth(), m.configRows()
-	title := stHelpSection.Render("config")
-	where := strconv.Itoa(min(m.config.idx+1, len(m.config.hits))) + "/" + strconv.Itoa(len(m.config.hits))
-	path := shortPath(underHome(m.deps.ConfigPath), max(8, w-lipgloss.Width(title)-len(where)-4))
-	head := padBetween(title, stDim.Render(where+" · "+path), w)
-	if m.config.filtering || strings.TrimSpace(m.config.input.Value()) != "" {
-		head = padBetween(configPrompt()+m.config.input.View(),
-			stDim.Render(strconv.Itoa(len(m.config.hits))+"/"+strconv.Itoa(len(settings))), w)
-	}
-	body := m.configLines()
-	for len(body) < rows {
-		body = append(body, fit("", w))
-	}
-	hint := "enter edit · & default · / filter · esc close"
+	title := configTabStrip(m.config.tab)
+	idx, n := m.config.idx, len(m.config.hits)
+	body, detail := m.configLines, m.configDetail
+	hint := "enter edit · & default · / filter · tab Silence · esc close"
 	if m.config.editing {
 		hint = "enter save · esc cancel"
 	}
-	lines := append([]string{head, fit("", w)}, body...)
-	lines = append(lines, fit("", w), m.configDetail(), fit(stDim.Render(hint), w))
+	if m.config.tab == tabSilence {
+		idx, n = m.config.silence.idx, len(m.cfg.Silence)
+		body, detail, hint = m.silenceLines, m.silenceDetail, m.silenceHint()
+	}
+	where := strconv.Itoa(min(idx+1, n)) + "/" + strconv.Itoa(n)
+	path := shortPath(underHome(m.deps.ConfigPath), max(8, w-lipgloss.Width(title)-len(where)-4))
+	head := padBetween(title, stDim.Render(where+" · "+path), w)
+	if m.config.tab == tabGeneral && (m.config.filtering || strings.TrimSpace(m.config.input.Value()) != "") {
+		head = padBetween(configPrompt()+m.config.input.View(),
+			stDim.Render(strconv.Itoa(len(m.config.hits))+"/"+strconv.Itoa(len(settings))), w)
+	}
+	lines := body()
+	for len(lines) < rows {
+		lines = append(lines, fit("", w))
+	}
+	lines = append([]string{head, fit("", w)}, lines...)
+	lines = append(lines, fit("", w), detail(), fit(stDim.Render(hint), w))
 	return paneStyle(true).Padding(0, 1).Render(strings.Join(lines, "\n"))
+}
+
+// configTabStrip names the panel and its tabs, the one on screen drawn the way
+// a section title is and the rest dimmed.
+func configTabStrip(on configTab) string {
+	parts := []string{stHelpSection.Render("config")}
+	for i, name := range configTabs {
+		style := stDim
+		if configTab(i) == on {
+			style = stHelpSection.Foreground(colAccent)
+		}
+		parts = append(parts, style.Render(name))
+	}
+	return strings.Join(parts, "  ")
 }
 
 // underHome spells a path the way a reader writes it, so the file the panel
@@ -406,6 +487,9 @@ func shortPath(path string, w int) string {
 // The overlay is drawn as one block rather than into the pane grid, so its
 // coordinates are counted from the screen rather than taken from the layout.
 func (m Model) configCursor() *tea.Cursor {
+	if m.config.tab == tabSilence {
+		return m.silenceCursor()
+	}
 	switch {
 	case m.config.editing:
 		_, at := m.configEditorCell(m.configValueWidth())

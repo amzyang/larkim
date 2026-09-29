@@ -20,9 +20,9 @@ const KeySilenceRev = "silence_rev"
 // AND and an unset field matches anything, so a rule with nothing set would
 // silence the whole account — Validate refuses that one.
 type SilenceRule struct {
-	Chat     string `yaml:"chat" json:"chat,omitempty"`
-	Sender   string `yaml:"sender" json:"sender,omitempty"`
-	Contains string `yaml:"contains" json:"contains,omitempty"`
+	Chat     string `yaml:"chat,omitempty" json:"chat,omitempty"`
+	Sender   string `yaml:"sender,omitempty" json:"sender,omitempty"`
+	Contains string `yaml:"contains,omitempty" json:"contains,omitempty"`
 }
 
 // SilenceRules is the configured set; a message matching any rule is silenced.

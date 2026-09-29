@@ -11,9 +11,10 @@ import (
 )
 
 // maxLogBytes caps the log before it is rolled over once. A --debug session
-// writes a few lines a second, so the cap is what keeps a forgotten flag from
-// filling the disk.
-const maxLogBytes = 8 << 20
+// writes several lines a second, most of them discovery's while somebody is
+// looking (~16 MB an hour), so the cap is what keeps a forgotten flag from
+// filling the disk, and is sized to keep a few hours of it.
+const maxLogBytes = 64 << 20
 
 // altScreen marks commands that own the terminal: their logs go to the file
 // only, because stderr is the alternate screen.

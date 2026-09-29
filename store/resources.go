@@ -322,9 +322,10 @@ func (s *Store) ChatsWithUnread(ctx context.Context) ([]ChatUnread, error) {
 type UnreadAnchor struct {
 	ChatID string
 	// FirstMs is the oldest message the badge still counts. read_state rows
-	// exist only for messages the poller has checked, so this is the oldest
-	// the badge knows about rather than the oldest never read — the two have
-	// to agree for the list's count and the feed's to match.
+	// exist only for messages the poller has checked and ones stored unread on
+	// arrival, so this is the oldest the badge knows about rather than the
+	// oldest never read — the two have to agree for the list's count and the
+	// feed's to match.
 	FirstMs int64
 }
 

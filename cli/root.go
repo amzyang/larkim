@@ -174,7 +174,7 @@ func (a *App) client() larkcli.Client {
 
 func (a *App) syncer(st *store.Store) *sync.Syncer {
 	return &sync.Syncer{Client: a.client(), Store: st, Clock: sync.RealClock{}, Opt: sync.OptionsFrom(a.cfg),
-		Log: a.logger(), OnError: captureError, Fetch: sync.HTTPFetch}
+		Log: a.logger(), OnError: captureError, Fetch: sync.HTTPFetch, Recover: sentryRecoverRepanic}
 }
 
 // parseTime accepts YYYY-MM-DD, RFC 3339, or a duration such as 24h (relative to now).

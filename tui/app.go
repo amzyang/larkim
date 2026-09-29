@@ -604,6 +604,8 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case tea.FocusMsg:
 		m.focused = true
+		// Discovery runs flat out while somebody is looking, starting now.
+		m.deps.Syncer.SetAttended(true)
 		// Beats taken while blurred polled nothing, so the chat on screen may
 		// be a minute stale; catch it up now rather than on the next beat.
 		if id := m.claimChatPoll(time.Now()); id != "" {
@@ -615,6 +617,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// The reader has gone to another window; what is in the composer has
 		// to survive the trip, since larkim may be quit from over there.
 		m.focused = false
+		m.deps.Syncer.SetAttended(false)
 		return m, m.saveComposer()
 	case chatsLoadedMsg:
 		vis := m.visibleRows()
@@ -652,7 +655,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// the view keeps the message on its top row. Only a view already
 		// showing the last line follows the message that arrives, and only a
 		// cursor already on the newest message goes with it.
-		wasOn, atEnd := idAt(m.msgs, m.msgIdx), m.msgIdx >= len(m.msgs)-1
+		wasOn, atEnd := idAt(m.msgs, m.msgIdx), m.msgIdx >= newestSelectable(m.msgs)
 		anchor := topAnchor(m.msgRows, m.msgs, m.msgTop)
 		tailed := atTail(m.msgRows, m.msgTop, m.msgListHeight())
 		entering := msg.chatID == m.pendingChat
@@ -698,7 +701,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// The cursor and viewport index m.searchResults, not m.msgs.
 			return m, infoCmd
 		}
-		m.msgIdx = len(m.msgs) - 1
+		m.msgIdx = newestSelectable(m.msgs)
 		if i := indexOfID(m.msgs, wasOn); !atEnd && i >= 0 {
 			m.msgIdx = i
 		}
@@ -824,7 +827,13 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.fwd.hits = m.fwdSearch(m.fwd.input.Value())
 			m.fwd.move(0, m.fwdRows())
 		}
+		if f := &m.config.silence.form; f.pick.open && f.field == fieldSender {
+			f.pick.hits = m.silenceSearch(f.field, f.pick.input.Value())
+			moveCursor(&f.pick.idx, &f.pick.top, 0, len(f.pick.hits), m.silencePickRows())
+		}
 		return m, nil
+	case silenceMatchesMsg:
+		return m.onSilenceMatches(msg), nil
 	case forwardedMsg:
 		if msg.err != nil {
 			return m.notify("forward: "+msg.err.Error(), true), nil
@@ -2249,7 +2258,11 @@ func (m Model) move(n int) (tea.Model, tea.Cmd) {
 		if m.searching {
 			count = len(m.searchHits)
 		}
-		m.msgIdx = clamp(m.msgIdx+n, 0, count-1)
+		if m.searching {
+			m.msgIdx = clamp(m.msgIdx+n, 0, count-1)
+		} else {
+			m.msgIdx = stepCursor(m.msgs, m.msgIdx, n)
+		}
 		// The rows carry no cursor — the selection is tinted where they are
 		// drawn — so the only thing a move can change about them is a marker
 		// it just dropped. Rebuilding regardless re-renders the whole page on
@@ -2258,6 +2271,11 @@ func (m Model) move(n int) (tea.Model, tea.Cmd) {
 			m.rebuildMessages()
 		}
 		m.scrollMessagesToSelection()
+		// A cursor held under notices it cannot stop on would keep the view
+		// off the top, and the top is what loads older history.
+		if !m.searching && n < 0 && !slices.ContainsFunc(m.msgs[:m.msgIdx], selectable) {
+			m.msgTop = 0
+		}
 		if m.inFeed() {
 			cmd := m.feedRetarget()
 			return m, cmd
@@ -2268,13 +2286,49 @@ func (m Model) move(n int) (tea.Model, tea.Cmd) {
 		if m.scrollRight(n) {
 			return m, nil
 		}
-		m.threadIdx = clamp(m.threadIdx+n, 0, len(m.thread)-1)
+		m.threadIdx = stepCursor(m.thread, m.threadIdx, n)
 		if m.clearDotsAtCursor() {
 			m.rebuildThread()
 		}
 		m.scrollThreadToSelection()
 	}
 	return m, nil
+}
+
+// selectable reports whether the cursor keys stop on a message. A system
+// notice or a recall carries none of the actions a message does, and the
+// client offers neither a toolbar.
+func selectable(x store.Message) bool { return !standsAlone(x) }
+
+// stepCursor is where a cursor on from, sent n rows along list, comes to
+// rest: the first selectable message at or beyond the target, or, when only
+// notices lie that way, the nearest one back towards from. Failing both it
+// stays put.
+func stepCursor(list []store.Message, from, n int) int {
+	to := clamp(from+n, 0, len(list)-1)
+	dir := cmp.Compare(n, 0)
+	for i := to; i >= 0 && i < len(list); i += dir {
+		if selectable(list[i]) {
+			return i
+		}
+	}
+	for i := to - dir; (i-from)*dir > 0; i -= dir {
+		if selectable(list[i]) {
+			return i
+		}
+	}
+	return from
+}
+
+// newestSelectable is where a cursor sent to the end of list lands. A list of
+// notices alone keeps its last row, so the cursor still has somewhere to be.
+func newestSelectable(list []store.Message) int {
+	for i := len(list) - 1; i >= 0; i-- {
+		if selectable(list[i]) {
+			return i
+		}
+	}
+	return max(0, len(list)-1)
 }
 
 func (m Model) activate() (tea.Model, tea.Cmd) {
@@ -2570,7 +2624,8 @@ func (m Model) runCommand(line string) (tea.Model, tea.Cmd) {
 	case "set":
 		return m.runSet(rest), nil
 	case "config":
-		return m.openConfig(rest), nil
+		m = m.openConfig(rest)
+		return m, m.configLoads()
 	case "read-all":
 		return m.startMarkAll()
 	case "mentions":
@@ -2882,7 +2937,7 @@ func (m Model) onWheel(ms tea.Mouse) (tea.Model, tea.Cmd) {
 	// An overlay covers the panes, so the wheel scrolls what is on screen
 	// rather than what the pointer would have been over.
 	if m.config.open {
-		m.configMove(step)
+		m.configScroll(step)
 		return m, nil
 	}
 	if m.help.open {

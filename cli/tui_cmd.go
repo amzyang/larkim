@@ -76,6 +76,9 @@ func (a *App) runTUI(_ *cobra.Command, _ []string) error {
 		}
 	}
 	deps.Syncer, deps.Nudge = s, nudge
+	// The model starts focused (tui.New), and the terminal reports only
+	// changes, so discovery starts out attended with it.
+	s.SetAttended(true)
 	if lock, err := sync.TryLock(a.cfg.DataDir); err == nil {
 		defer lock.Unlock()
 		a.logger().Info("tui", "sync", "embedded")

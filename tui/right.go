@@ -294,7 +294,7 @@ func (m *Model) rightLanded(msgs []store.Message) rightLanding {
 // may have renumbered.
 func (m *Model) placeRightCursor(l rightLanding) {
 	if l.atEnd {
-		m.threadIdx = max(0, len(m.thread)-1)
+		m.threadIdx = newestSelectable(m.thread)
 		return
 	}
 	m.threadIdx = clamp(m.threadIdx, 0, max(0, len(m.thread)-1))

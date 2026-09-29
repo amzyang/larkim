@@ -27,6 +27,25 @@ const fileMode = 0o644
 // The value is not validated here. Config.Set is what judges it, and a caller
 // that skips it writes whatever it was handed.
 func SetFile(path, key, value string) error {
+	node, err := valueNode(value)
+	if err != nil {
+		return fmt.Errorf("%s: %w", key, err)
+	}
+	return setNode(path, key, node)
+}
+
+// SetFileValue writes one key from a Go value rather than from its spelling.
+// It is how a list like silence reaches the file: Get spells it inline so it
+// fits one line, while the file wants the block form a reader writes by hand.
+func SetFileValue(path, key string, v any) error {
+	var node yaml.Node
+	if err := node.Encode(v); err != nil {
+		return fmt.Errorf("%s: %w", key, err)
+	}
+	return setNode(path, key, &node)
+}
+
+func setNode(path, key string, node *yaml.Node) error {
 	path = Resolve(path)
 	doc, err := readDoc(path)
 	if err != nil {
@@ -36,10 +55,6 @@ func SetFile(path, key, value string) error {
 	parts := strings.Split(key, ".")
 	for _, p := range parts[:len(parts)-1] {
 		m = section(m, p)
-	}
-	node, err := valueNode(value)
-	if err != nil {
-		return fmt.Errorf("%s: %w", key, err)
 	}
 	putChild(m, parts[len(parts)-1], node)
 	return writeDoc(path, doc)

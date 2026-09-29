@@ -718,8 +718,8 @@ func TestUnreadAnchors_CountTheBadgesOwnSet(t *testing.T) {
 	require.Equal(t, map[string]int64{"oc_a": 1}, unreadCounts(t, s), "which is the badge's own count")
 }
 
-// read_state rows exist only for messages the poller has reached, so a message
-// it has never asked about is not waiting — the badge does not count it either.
+// A message with no read_state row, neither stored unread on arrival nor asked
+// about yet, is not waiting — the badge does not count it either.
 func TestUnreadAnchors_SkipsMessagesTheStoreHasNeverCheckedOn(t *testing.T) {
 	s := openTest(t)
 	ctx := t.Context()

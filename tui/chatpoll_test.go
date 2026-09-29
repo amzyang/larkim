@@ -73,6 +73,16 @@ func TestChatPollDue_ReArmsEvenWhenItPollsNothing(t *testing.T) {
 		"the chain must survive a blurred beat or focus never resumes it")
 }
 
+func TestFocus_TellsDiscoveryWhetherSomebodyIsLooking(t *testing.T) {
+	m := newChatPollModel(t)
+	s := m.deps.Syncer
+
+	next, _ := m.Update(tea.BlurMsg{})
+	require.False(t, s.Attended(), "nobody is looking, so discovery keeps the sweep's pace")
+	next, _ = next.(Model).Update(tea.FocusMsg{})
+	require.True(t, s.Attended(), "the reader is back, so discovery runs flat out")
+}
+
 func TestFocusMsg_PollsAtOnceRatherThanWaitingOutABeat(t *testing.T) {
 	m := newChatPollModel(t)
 	m.focused = false

@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/amzyang/larkim/store"
 	"github.com/stretchr/testify/require"
 )
 
@@ -129,6 +130,49 @@ func TestSetFile_EveryKeySurvivesARoundTrip(t *testing.T) {
 	text, err := os.ReadFile(p)
 	require.NoError(t, err)
 	require.Equal(t, commentLines(string(before)), commentLines(string(text)), "every comment survives")
+}
+
+func TestSetFileValue_WritesSilenceAsABlockList(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "c.yaml")
+	rules := store.SilenceRules{{Chat: "oc_quiet", Sender: "cli_c"}, {Contains: "nightly build"}}
+	require.NoError(t, SetFileValue(p, "silence", rules))
+
+	text, err := os.ReadFile(p)
+	require.NoError(t, err)
+	require.Equal(t, "silence:\n  - chat: oc_quiet\n    sender: cli_c\n  - contains: nightly build\n", string(text),
+		"the form a reader writes by hand, with no empty field")
+	cfg, err := Load(p)
+	require.NoError(t, err)
+	require.Equal(t, rules, cfg.Silence)
+}
+
+func TestSetFileValue_KeepsCommentsAndSiblings(t *testing.T) {
+	p := example(t)
+	before, err := Load(p)
+	require.NoError(t, err)
+
+	require.NoError(t, SetFileValue(p, "silence", store.SilenceRules{{Chat: "oc_quiet"}}))
+
+	after, err := Load(p)
+	require.NoError(t, err)
+	require.Equal(t, store.SilenceRules{{Chat: "oc_quiet"}}, after.Silence)
+	after.Silence = before.Silence
+	require.Equal(t, before, after, "no other key moved")
+	text, err := os.ReadFile(p)
+	require.NoError(t, err)
+	require.Contains(t, string(text), "# `larkim silence` says how many messages each rule currently matches.")
+}
+
+func TestSetFileValue_WritesNoRulesAsAnEmptyList(t *testing.T) {
+	p := example(t)
+	require.NoError(t, SetFileValue(p, "silence", store.SilenceRules{{Chat: "oc_quiet"}}))
+	require.NoError(t, SetFileValue(p, "silence", store.SilenceRules{}))
+	cfg, err := Load(p)
+	require.NoError(t, err)
+	require.Empty(t, cfg.Silence)
+	text, err := os.ReadFile(p)
+	require.NoError(t, err)
+	require.Contains(t, string(text), "silence: []")
 }
 
 func commentLines(s string) []string {

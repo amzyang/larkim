@@ -1,9 +1,11 @@
 // Package sync pulls the user's IM data from Feishu into the local store.
 //
-// Discovery is polling: a cross-chat message search over a sliding window
-// (fast path) plus a periodic reconciliation of the most active chats (slow
-// path). The pure functions in this file decide what to fetch; Syncer does the
-// IO.
+// Discovery is polling, since Feishu pushes nothing about the user's own
+// chats: the chat list's active-time ordering names the chats that have just
+// seen a message, a cross-chat message search over a sliding window is the
+// safety net behind it, and the most active chats are reconciled on a slower
+// period. The pure functions in this file decide what to fetch; Syncer does
+// the IO.
 package sync
 
 import (
@@ -73,9 +75,9 @@ func UniqueStrings(xs []string) []string {
 }
 
 // activeHead is how many chats at the top of the active-time ordering are
-// listed every tick whether or not they moved. They are pulled side by side on
-// the background lane, so the window costs calls rather than time, and three
-// leaves a slot of the lane's four for a chat that moved up from below it.
+// listed every cycle whether or not they moved. Each is listed on its own on
+// the discovery lane, so the window costs calls rather than time, and the lane
+// has room beside the three for the probe and a chat that moved up from below.
 const activeHead = 3
 
 // ActiveDelta names the chats worth listing after an active-time ordering

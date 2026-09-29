@@ -34,9 +34,11 @@ type Client interface {
 	// One call answers the whole tree: the items are flat, linked by
 	// UpperMessageID, and one of them is the bundle itself.
 	ForwardedMessages(ctx context.Context, rootMessageID string) ([]RawForwarded, error)
-	// ListChats lists p2p and group chats the user is in. With activeFirstPage
-	// only the first page sorted by activity (most recent first) is returned.
-	ListChats(ctx context.Context, activeFirstPage bool) ([]RawChat, error)
+	// ListChats lists every p2p and group chat the user is in.
+	ListChats(ctx context.Context) ([]RawChat, error)
+	// ActiveChats lists the first n of those chats by activity, most recent
+	// first: a chat that has just seen a message comes first.
+	ActiveChats(ctx context.Context, n int) ([]RawChat, error)
 	// MGetRendered fetches up to 50 messages rendered to human-readable text.
 	MGetRendered(ctx context.Context, ids []string) ([]RenderedMessage, error)
 	// DownloadResource fetches one attachment by key. typ is "image" or "file".

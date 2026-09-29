@@ -322,22 +322,13 @@ func permanentFailure(err error) bool {
 
 // pollReadStatus asks Feishu whether the user has read recent messages from
 // others, on a widening schedule per message, and drops the unread flag of
-// messages that have aged out of the horizon it polls. probe is false in a
-// round that has already probed, straight after discovery: a second probe
-// seconds later spends a call on the answer the first one got.
-func (s *Syncer) pollReadStatus(ctx context.Context, now time.Time, probe bool) (int, error) {
+// messages that have aged out of the horizon it polls. The probe that watches
+// for a chat opened in the client runs apart from it, earlier in the sweep.
+func (s *Syncer) pollReadStatus(ctx context.Context, now time.Time) (int, error) {
 	if _, err := s.Store.ExpireReadStatus(ctx, now.Add(-readStatusHorizon).UnixMilli()); err != nil {
 		return 0, err
 	}
-	var n int
-	if probe {
-		var err error
-		if n, err = s.probeReadStatus(ctx, now); err != nil {
-			return n, err
-		}
-	}
-	m, err := s.checkReadStatus(ctx, now, store.ReadCheckQuery{DueAt: now.UnixMilli(), Limit: s.Opt.ReadStatusPerTick * readStatusBatch})
-	return n + m, err
+	return s.checkReadStatus(ctx, now, store.ReadCheckQuery{DueAt: now.UnixMilli(), Limit: s.Opt.ReadStatusPerTick * readStatusBatch})
 }
 
 // readStatusBatch is how many message ids one read_status call carries, which

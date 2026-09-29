@@ -32,7 +32,7 @@ func TestExec_LogsARequestAndAResponseForEveryCall(t *testing.T) {
 	c := fakeBinary(t, `echo '{"ok":true,"identity":"user","data":{"items":[]}}'`)
 	buf := logged(c, slog.LevelDebug)
 
-	_, err := c.ListChats(t.Context(), false)
+	_, err := c.ListChats(t.Context())
 	require.NoError(t, err)
 
 	req := lines(buf, "lark-cli request")
@@ -56,7 +56,7 @@ JSON
 exit 1`)
 	buf := logged(c, slog.LevelInfo)
 
-	_, err := c.ListChats(t.Context(), false)
+	_, err := c.ListChats(t.Context())
 	require.Error(t, err)
 
 	require.Empty(t, lines(buf, "lark-cli request"), "the request detail is debug-only")
@@ -78,7 +78,7 @@ cat >&2 <<'JSON'
 {"ok":false,"identity":"user","error":{"type":"api","subtype":"unknown","code":231203,"message":"nope","log_id":"lg_2"}}
 JSON
 exit 1`)
-	_, err := c.ListChats(t.Context(), false)
+	_, err := c.ListChats(t.Context())
 	var lerr *Error
 	require.ErrorAs(t, err, &lerr)
 	require.Equal(t, "lg_2", lerr.LogID)
@@ -91,7 +91,7 @@ echo "[page 2] fetching..." >&2
 echo '{"ok":true,"identity":"user","data":{"items":[]}}'`)
 	buf := logged(c, slog.LevelDebug)
 
-	_, err := c.ListChats(t.Context(), false)
+	_, err := c.ListChats(t.Context())
 	require.NoError(t, err)
 	require.Contains(t, lines(buf, "lark-cli response")[0], "pages=2",
 		"one invocation is as many requests as it paginated")
@@ -101,7 +101,7 @@ func TestExec_LogsAMissingBinaryWithoutTakingALane(t *testing.T) {
 	c := &ExecClient{Path: "/nonexistent/lark-cli"}
 	buf := logged(c, slog.LevelInfo)
 
-	_, err := c.ListChats(t.Context(), false)
+	_, err := c.ListChats(t.Context())
 	require.Error(t, err)
 	failed := lines(buf, "lark-cli failed")
 	require.Len(t, failed, 1)
@@ -119,14 +119,14 @@ func TestExec_KeepsACancelledCallOutOfTheWarnings(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	_, err := c.ListChats(ctx, false)
+	_, err := c.ListChats(ctx)
 	require.Error(t, err)
 	require.Empty(t, lines(buf, "lark-cli failed"), "leaving is not a fault")
 }
 
 func TestExec_NilLoggerDiscards(t *testing.T) {
 	c := fakeBinary(t, `echo '{"ok":true,"identity":"user","data":{"items":[]}}'`)
-	_, err := c.ListChats(t.Context(), false)
+	_, err := c.ListChats(t.Context())
 	require.NoError(t, err)
 }
 
