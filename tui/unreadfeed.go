@@ -6,7 +6,8 @@ package tui
 // parted into a section each, because the round trip a terminal pays to open a
 // chat is a whole page rebuild and the client pays nothing for it. The
 // semantics stay the client's: Enter goes to the chat, r answers it, and
-// nothing seen here is taken as read.
+// nothing is taken as read by being seen here — the check on a section's rule,
+// or m, is the reader saying so.
 
 import (
 	"cmp"
@@ -33,12 +34,12 @@ const (
 	unreadFeedChats = 20
 )
 
-// unreadFeed is one visit to the panel. A section's anchor is taken once and
-// held for as long as the chat is still waiting: one that re-anchored on every
-// reload would shrink under the page the reader is on. A chat whose backlog is
-// settled leaves instead, taking its anchor with it. A chat that starts waiting
-// later joins at the end, where there is nothing above it to renumber. Leaving
-// drops the feed, which is what re-orders it.
+// unreadFeed is one visit to the panel. A section's anchor is the one thing
+// taken once and held for as long as the chat is still waiting: one that
+// re-anchored on every reload would shrink under the page the reader is on. A
+// chat whose backlog is settled leaves instead, taking its anchor with it. A
+// chat that starts waiting later joins at the end, where there is nothing
+// above it to renumber. Leaving drops the feed, which is what re-orders it.
 type unreadFeed struct {
 	sections []unreadSection
 	// from is the chat that was open when the panel went up, so Esc puts the
@@ -62,10 +63,10 @@ type unreadSection struct {
 	// cut says the stretch hit unreadSectionLimit and there is more below it.
 	cut bool
 	// count, atMe and muted are what the chat's own row in the list says
-	// about it, taken once when the section is anchored. The page runs across
-	// chats with that list out of sight, so the rule has to answer what the
-	// row would have: how much is waiting here, whether any of it names the
-	// reader, and whether this chat asked not to be pulled at.
+	// about it, re-read on every reload. The page runs across chats with that
+	// list out of sight, so the rule has to answer what the row would have:
+	// how much is waiting here, whether any of it names the reader, and
+	// whether this chat asked not to be pulled at.
 	count int64
 	atMe  bool
 	muted bool
@@ -158,17 +159,24 @@ func unreadAnchors(rows []store.UnreadAnchor, chats []store.Chat) []unreadSectio
 // newcomer joins at the end however old its backlog — the only part of the page
 // free to grow is the part below the rows the reader has seen.
 func joinUnread(held, fresh []unreadSection) []unreadSection {
-	stillWaiting := make(map[string]bool, len(fresh))
+	stillWaiting := make(map[string]unreadSection, len(fresh))
 	for _, s := range fresh {
-		stillWaiting[s.chatID] = true
+		stillWaiting[s.chatID] = s
 	}
 	// Built fresh rather than appended to: held is the page the model is still
 	// drawing, and its spare capacity is not this function's to write into.
 	out := make([]unreadSection, 0, len(held)+len(fresh))
 	for _, s := range held {
-		if stillWaiting[s.chatID] {
-			out = append(out, s)
+		cur, ok := stillWaiting[s.chatID]
+		if !ok {
+			continue
 		}
+		// Only the anchor is the page's to hold. Everything else the section
+		// carries is what the chat's own row says, and the rule stands in for
+		// that row while the list is out of sight, so it has to say what the
+		// row says now rather than what it said when the section joined.
+		cur.anchorMs = s.anchorMs
+		out = append(out, cur)
 	}
 	for _, s := range fresh {
 		if slices.ContainsFunc(out, func(x unreadSection) bool { return x.chatID == s.chatID }) {

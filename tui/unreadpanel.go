@@ -160,6 +160,15 @@ func (m Model) openFeedHit() (tea.Model, tea.Cmd) {
 	return m.notify("", false), cmd
 }
 
+// feedTopChat is the chat the viewport's top row belongs to, which is the
+// section the pinned rule names and the one its button marks.
+func (m Model) feedTopChat() string {
+	if m.msgTop < 0 || m.msgTop >= len(m.msgRows) {
+		return ""
+	}
+	return m.feedChatAt(m.msgRows[m.msgTop].idx)
+}
+
 // feedRuleLine is the rule pinned under the pane's title: the section the
 // viewport's top row belongs to. The pane already spends this line on a plain
 // rule, so the section stays named however far into it the reader has scrolled
@@ -168,15 +177,36 @@ func (m Model) openFeedHit() (tea.Model, tea.Cmd) {
 // pinned says that top row is the section's own rule, which the pane then
 // holds open rather than drawing a second time.
 func (m Model) feedRuleLine(w int) (line string, pinned bool) {
-	if m.msgTop < 0 || m.msgTop >= len(m.msgRows) {
-		return paneRule(w), false
-	}
-	top := m.msgRows[m.msgTop]
-	chat := m.feedChatAt(top.idx)
+	chat := m.feedTopChat()
 	if chat == "" {
 		return paneRule(w), false
 	}
-	return feedRule(m.feed.section(chat).rule(), 0, w).text, top.rule
+	return feedRule(m.feed.section(chat).rule(), 0, w).text, m.msgRows[m.msgTop].rule
+}
+
+// markSectionRead takes one chat of the page as read: the deliberate act the
+// panel's own reading gate refuses to make for the reader, reached by the check
+// on the section's rule or by m.
+//
+// The messages go over as the page holds them, before the write lands, because
+// that is the state unreadWaiting has to be read against. joinUnread drops the
+// settled section on the reload that follows.
+func (m Model) markSectionRead(chatID string) (tea.Model, tea.Cmd) {
+	if !m.inFeed() || chatID == "" {
+		return m, nil
+	}
+	var owed []store.Message
+	for _, x := range m.msgs {
+		if x.ChatID == chatID {
+			owed = append(owed, x)
+		}
+	}
+	label := m.feed.section(chatID).label()
+	m, cmd := m.takeRead(chatID, owed)
+	// The reload answers the press rather than waiting on the store's own
+	// revision, the way onMarkAllDone does.
+	cmds := tea.Batch(cmd, m.reloadCurrent())
+	return m.notify(label+" taken as read", false), cmds
 }
 
 // feedTitle names the panel and the chat a reply would go to.

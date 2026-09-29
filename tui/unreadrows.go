@@ -37,25 +37,46 @@ func nextSection(starts []int, idx, step int) int {
 	return starts[((at+step)%len(starts)+len(starts))%len(starts)]
 }
 
+// markChatGlyph is the button that takes one chat as read: the single check to
+// the double the chats header draws for the whole list, so the two read as one
+// act at two scales. It comes from the Codicons block markAllGlyph is from, one
+// glyph over from the check_all that header uses, which is what keeps the pair
+// drawn by the same hand.
+const markChatGlyph = "" + enSpace
+
+// markChatWidth is what the rule spends on the button: the glyph's two cells,
+// and the space holding it off the arm running into it.
+const markChatWidth = 3
+
+// markChatCol is the content column the button opens at in a w-wide rule.
+func markChatCol(w int) int { return w - markChatWidth }
+
+// inMarkChat answers whether a content column presses the button. The whole
+// strip answers rather than the glyph's own cells, for the reason inMarkAll
+// gives: the column beside it carries nothing of its own, and a target that
+// narrow is missed more often than it is hit.
+func inMarkChat(col, w int) bool { return col >= markChatCol(w) && col < w }
+
 // feedRule parts one chat's stretch from the next. The heading is centred, as
 // the title of the stretch under it rather than a label hung off the left
 // edge, and arrives already drawn — out of the dim its arms are in, the day
 // rule inside the stretch being centred too, so brightness is what tells the
-// two apart.
+// two apart. The button closing it is dim for the reason the arms are: it is
+// something the reader reaches for, not something the section says.
 //
-// The odd column goes to the right arm rather than being dropped, for the
-// reason daySeparator splits it that way: fit would pad the shortfall with a
-// space, and UnreadPage trims trailing spaces off, so the rule would stop a
-// column short of the edge.
+// The odd column goes to the right arm rather than being dropped, the way
+// daySeparator splits it: the arm has to run into the button, and a rule
+// stopping a column short would leave the check floating off the end.
 //
 // It carries the index of the section's first message even though nothing can
 // select it: every row answering which chat it belongs to is what lets the
-// pinned rule be read straight off the viewport's top line.
+// pinned rule be read straight off the viewport's top line, and what the button
+// on either copy marks.
 func feedRule(label string, idx, w int) msgRow {
-	room := max(0, w-lipgloss.Width(label)-2)
+	room := max(0, w-lipgloss.Width(label)-2-markChatWidth)
 	left := room / 2
 	line := stDim.Render(strings.Repeat("─", left)) + " " + label + " " +
-		stDim.Render(strings.Repeat("─", room-left))
+		stDim.Render(strings.Repeat("─", room-left)) + " " + stDim.Render(markChatGlyph)
 	return msgRow{text: fit(line, w), idx: idx, plain: true, rule: true}
 }
 

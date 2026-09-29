@@ -44,7 +44,9 @@ func (m Model) readKey(tailed bool) string {
 //
 // The Unread panel is out although m.chatID names a real chat throughout it:
 // what is in front of the reader is a page of many chats, and the one the
-// cursor rests in is not being read there — Enter goes to it for that.
+// cursor rests in is not being read there. Settling one is the reader's own
+// act on that page — Enter goes to the chat, the check on its rule or m takes
+// it as read where it stands.
 //
 // tailed belongs to the caller. markDots asks about the viewport a message
 // arrived into, readKey about the one the update left behind.

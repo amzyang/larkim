@@ -55,6 +55,7 @@ func buildHelpEntries() []helpEntry {
 		{"NORMAL", "E", "recall it and take its text back into the composer, after the same y/n"},
 		{"NORMAL", "n/N", "the next/previous row with something waiting, muted ones skipped"},
 		{"NORMAL", "", "inside Unread, the next/previous chat's stretch of the page"},
+		{"NORMAL", "m", "inside Unread, take as read the chat the cursor is standing in"},
 		{"NORMAL", "Y", "copy agent context"},
 		{"NORMAL", "yy", "copy the message id"},
 		{"NORMAL", "yr", "copy the raw json"},
@@ -136,6 +137,7 @@ func buildHelpEntries() []helpEntry {
 		{"MOUSE", "", "one opened from inside that pane stacks over it; Esc peels one off"},
 		{"MOUSE", "", "click a reaction to add yours or take it back"},
 		{"MOUSE", "", "click the double check in the chats header to take every chat as read"},
+		{"MOUSE", "", "click the single check on a rule in Unread to take that one chat as read"},
 		{"MOUSE", "wheel", "scrolls"},
 		{"MOUSE", "", "over the preview it scrolls the band; over the writing area the caret follows"},
 

@@ -340,23 +340,57 @@ func TestFeed_AChatThatStartsWaitingLandsOnThePage(t *testing.T) {
 	require.NotContains(t, out, "more chat waiting")
 }
 
-func TestFeedRule_CentresTheChatNameBetweenBothEdges(t *testing.T) {
+func TestFeedRule_CentresTheChatNameBetweenTheEdgeAndTheButton(t *testing.T) {
 	for w := 40; w < 48; w++ { // both remainders of the odd-column split
 		plain := ansi.Strip(feedRule("平台组", 0, w).text)
 
 		require.Equal(t, w, ansi.StringWidth(plain), "width %d", w)
 		require.True(t, strings.HasPrefix(plain, "─"), "width %d: %q", w, plain)
-		require.True(t, strings.HasSuffix(plain, "─"), "width %d: %q", w, plain)
-		arms := strings.Split(plain, " 平台组 ")
-		require.Len(t, arms, 2, "width %d: %q", w, plain)
-		left, right := ansi.StringWidth(arms[0]), ansi.StringWidth(arms[1])
+		arms, ok := strings.CutSuffix(plain, " "+markChatGlyph)
+		require.True(t, ok, "width %d: %q", w, plain)
+		require.True(t, strings.HasSuffix(arms, "─"), "width %d: %q", w, plain)
+		split := strings.Split(arms, " 平台组 ")
+		require.Len(t, split, 2, "width %d: %q", w, plain)
+		left, right := ansi.StringWidth(split[0]), ansi.StringWidth(split[1])
 		require.LessOrEqual(t, left, right, "width %d: the odd column goes to the right arm", w)
 		require.LessOrEqual(t, right-left, 1, "width %d: %q", w, plain)
 	}
+}
+
+// The button is the last thing on the line, so the strip the click lands in has
+// to be the last columns of it.
+func TestInMarkChat_AnswersForTheStripTheButtonCloses(t *testing.T) {
+	const w = 40
+	plain := ansi.Strip(feedRule("平台组", 0, w).text)
+
+	require.True(t, strings.HasSuffix(plain, markChatGlyph), "%q", plain)
+
+	for col := range w {
+		require.Equal(t, col >= w-markChatWidth, inMarkChat(col, w), "column %d", col)
+	}
+	require.False(t, inMarkChat(w, w), "past the pane's own edge")
 }
 
 // The two rules the page alternates between are the same shape, so the chat
 // name is what has to be told from the day under it.
 func TestFeedRule_DrawsTheChatNameBrighterThanTheDayRule(t *testing.T) {
 	require.NotEqual(t, daySeparator("平台组", 40), feedRule("平台组", 0, 40).text)
+}
+
+// The rule names a chat whose row in the list is out of sight, so the number on
+// it has to keep up with the badge the reader would have seen there.
+func TestFeed_ASectionsRuleFollowsTheChatsBadge(t *testing.T) {
+	m := feedModel(t)
+	require.Contains(t, paneText(m), "平台组 · 2")
+
+	st := m.deps.Store
+	say(t, st, "om_p3", "oc_platform", 400, "又来一条")
+	owing(t, st, "om_p3")
+
+	m = applyAll(t, m, m.reloadCurrent())
+
+	out := paneText(m)
+	require.Contains(t, out, "平台组 · 3")
+	require.NotContains(t, out, "平台组 · 2")
+	require.Contains(t, out, "4 in 2 chats", "and the title counts the same messages")
 }

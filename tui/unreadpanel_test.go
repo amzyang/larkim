@@ -475,3 +475,105 @@ func TestCloseUnread_WithNoChatsLeavesThePaneEmpty(t *testing.T) {
 	require.Empty(t, m.pendingChat)
 	require.Empty(t, m.msgs)
 }
+
+// waitingChats is the chats the badge still counts, which is what a mark-read
+// has to take one of away from.
+func waitingChats(t *testing.T, m Model) []string {
+	t.Helper()
+	got, err := m.deps.Store.UnreadAnchors(t.Context())
+	require.NoError(t, err)
+	out := make([]string, 0, len(got))
+	for _, a := range got {
+		out = append(out, a.ChatID)
+	}
+	return out
+}
+
+// ruleLineOf is the pane line the named chat's rule is drawn on, and the row it
+// stands at in the page.
+func ruleLineOf(t *testing.T, m Model, chatID string) (row int) {
+	t.Helper()
+	for i, r := range m.msgRows {
+		if r.rule && m.feedChatAt(r.idx) == chatID {
+			return i
+		}
+	}
+	t.Fatalf("no rule for %s", chatID)
+	return 0
+}
+
+// clickPane presses a content column of the messages pane on the row a page
+// line is drawn at.
+func clickPane(m Model, col, line int) (tea.Model, tea.Cmd) {
+	return m.onClick(tea.Mouse{Button: tea.MouseLeft,
+		X: chatsWidth + 1 + col, Y: line - m.msgTop + 1 + msgHeaderHeight})
+}
+
+// markChatPress is a column inside the button closing a rule.
+func markChatPress(m Model) int { return m.messagesWidth() - 2 - 1 }
+
+func TestFeed_MTakesTheChatUnderTheCursorAsRead(t *testing.T) {
+	m := feedModel(t)
+	m = onSection(t, m, "oc_platform")
+	require.ElementsMatch(t, []string{"oc_platform", "oc_project"}, waitingChats(t, m))
+
+	next, cmd := m.Update(tea.KeyPressMsg{Code: 'm', Text: "m"})
+	m = applyAll(t, next.(Model), cmd)
+
+	require.Equal(t, []string{"oc_project"}, waitingChats(t, m))
+	out := paneText(m)
+	require.NotContains(t, out, "平台组", "the settled section leaves the page")
+	require.Contains(t, out, "项目协作群", "and the one still waiting stays")
+	require.Equal(t, []store.ChatUnread{{ChatID: "oc_platform", Position: 200}}, m.applinks.left,
+		"the client is walked onto the newest it owed, so its own dot falls")
+}
+
+// Everywhere else a chat is read by being gone into, so m carries no meaning
+// there and the act refuses to run off the page it belongs to.
+func TestMarkSectionRead_RefusesOffThePage(t *testing.T) {
+	m := feedModel(t)
+	m.feed = nil
+
+	next, cmd := m.markSectionRead("oc_platform")
+	m = applyAll(t, next.(Model), cmd)
+
+	require.ElementsMatch(t, []string{"oc_platform", "oc_project"}, waitingChats(t, m))
+}
+
+func TestFeed_ClickingTheCheckOnARuleTakesThatChatAsRead(t *testing.T) {
+	m := feedModel(t)
+	line := ruleLineOf(t, m, "oc_project")
+	require.NotEqual(t, m.msgTop, line, "the second section's rule is not the pinned one")
+
+	next, cmd := clickPane(m, markChatPress(m), line)
+	m = applyAll(t, next.(Model), cmd)
+
+	require.Equal(t, []string{"oc_platform"}, waitingChats(t, m))
+}
+
+// The pinned rule is the only copy drawn while the reader is at the top of a
+// section, so its own check has to answer.
+func TestFeed_ClickingTheCheckOnThePinnedRuleTakesTheTopChatAsRead(t *testing.T) {
+	m := feedModel(t)
+	_, pinned := m.feedRuleLine(m.messagesWidth() - 2)
+	require.True(t, pinned, "the page opens on a section's rule")
+	require.Equal(t, "oc_platform", m.feedTopChat())
+
+	next, cmd := m.onClick(tea.Mouse{Button: tea.MouseLeft,
+		X: chatsWidth + 1 + markChatPress(m), Y: 1 + headerHeight})
+	m = applyAll(t, next.(Model), cmd)
+
+	require.Equal(t, []string{"oc_project"}, waitingChats(t, m))
+}
+
+// The row under the pin is held blank, so the columns the button would have
+// occupied there draw nothing and press nothing.
+func TestFeed_ClickingTheHeldOpenLineUnderThePinTakesNothing(t *testing.T) {
+	m := feedModel(t)
+	require.True(t, m.msgRows[m.msgTop].rule)
+
+	next, cmd := clickPane(m, markChatPress(m), m.msgTop)
+	m = applyAll(t, next.(Model), cmd)
+
+	require.ElementsMatch(t, []string{"oc_platform", "oc_project"}, waitingChats(t, m))
+}

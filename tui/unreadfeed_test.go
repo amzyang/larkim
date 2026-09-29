@@ -394,3 +394,19 @@ func TestUnreadSection_ARuleWithNothingToAddIsJustTheName(t *testing.T) {
 	require.Equal(t, "oc_nameless", ansi.Strip(unreadSection{chatID: "oc_nameless"}.rule()),
 		"an unnamed chat falls back to its id, the way label does")
 }
+
+// The rule stands in for a chat row the reader cannot see while the page is up,
+// so what it says has to be what that row says now — only the anchor is held.
+func TestJoinUnread_AHeldChatTakesTheMarksItsRowNowHas(t *testing.T) {
+	held := []unreadSection{{chatID: "oc_platform", name: "平台组", anchorMs: 100, count: 1}}
+	fresh := []unreadSection{{chatID: "oc_platform", name: "平台组改名了", anchorMs: 400, count: 3, atMe: true, muted: true}}
+
+	out := joinUnread(held, fresh)
+
+	require.Len(t, out, 1)
+	require.Equal(t, int64(100), out[0].anchorMs, "the anchor is what holds the section still")
+	require.Equal(t, int64(3), out[0].count)
+	require.True(t, out[0].atMe)
+	require.True(t, out[0].muted)
+	require.Equal(t, "平台组改名了", out[0].name)
+}

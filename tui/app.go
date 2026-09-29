@@ -1843,6 +1843,12 @@ func (m Model) onNormalKey(s string) (tea.Model, tea.Cmd) {
 			return m.jumpSection(-1)
 		}
 		return m.jumpUnread(-1)
+	case "m":
+		// The page's own act, and only the page's: a chat is read by being
+		// gone into everywhere else, so the key is left free there.
+		if m.inFeed() {
+			return m.markSectionRead(m.feedChatAt(m.msgIdx))
+		}
 	case "enter":
 		return m.activate()
 	case "e":
@@ -2763,6 +2769,14 @@ func (m Model) onClick(ms tea.Mouse) (tea.Model, tea.Cmd) {
 			if p == paneChats && inMarkAll(ms.X-1, chatsWidth-2) {
 				return m.startMarkAll()
 			}
+			// The pinned rule is part of the head, so its button is pressed
+			// here rather than through a row: it is drawn on the line under
+			// the title, which is the one hit collapses into the same -1.
+			if p == paneMessages && m.inFeed() && ms.Y == 1+headerHeight {
+				if w := m.messagesWidth() - 2; inMarkChat(ms.X-chatsWidth-1, w) {
+					return m.markSectionRead(m.feedTopChat())
+				}
+			}
 			return m, nil
 		}
 	}
@@ -2797,10 +2811,19 @@ func (m Model) onClick(ms tea.Mouse) (tea.Model, tea.Cmd) {
 		// A button the row draws answers first: the click asked for the
 		// button, not for the message it sits on. Pane content starts one
 		// column inside the border the pane is drawn with.
-		if z, ok := zoneAt(m.msgRows, m.msgTop+row, ms.X-chatsWidth-1); ok {
-			return m.pressZone(paneMessages, m.msgRows, m.msgTop+row, z)
+		line := m.msgTop + row
+		// The rule's own button, which no zone carries because the pinned copy
+		// is not a row to hang one on. A rule sitting at the top of the
+		// viewport is that pinned copy, and renderMessages holds its line
+		// blank, so pressing it here would press a button nobody drew.
+		if m.inFeed() && line != m.msgTop && line < len(m.msgRows) && m.msgRows[line].rule &&
+			inMarkChat(ms.X-chatsWidth-1, m.messagesWidth()-2) {
+			return m.markSectionRead(m.feedChatAt(m.msgRows[line].idx))
 		}
-		if idx := rowAt(m.msgRows, m.msgTop+row); idx >= 0 {
+		if z, ok := zoneAt(m.msgRows, line, ms.X-chatsWidth-1); ok {
+			return m.pressZone(paneMessages, m.msgRows, line, z)
+		}
+		if idx := rowAt(m.msgRows, line); idx >= 0 {
 			m.msgIdx = idx
 			m.clearDotsAtCursor()
 			m.rebuildMessages()
