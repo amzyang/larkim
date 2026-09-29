@@ -72,8 +72,12 @@ func miscText(msgType, contentRaw string) string {
 		return cmp.Or(bad, redPacketText(b))
 	case "vote":
 		return voteText(contentRaw)
+	case "todo":
+		return todoText(contentRaw, time.Local)
 	}
-	return todoText(contentRaw, time.Local)
+	// LocalMisc and this switch are the same list read twice, so a type in one
+	// and not the other names itself rather than arriving as another's card.
+	return "[" + msgType + "]"
 }
 
 // oneLiner reads the body the single-field types share, handing back the

@@ -42,6 +42,9 @@ func TestMiscText_SpellsEachKindTheWayLarkCLIDoes(t *testing.T) {
 		{"a red packet that will not parse", "hongbao", `not json`, "[Invalid hongbao JSON]"},
 		{"a poll that will not parse", "vote", `not json`, "[Invalid vote JSON]"},
 		{"a task that will not parse", "todo", `not json`, "[Invalid todo JSON]"},
+		// LocalMisc and this switch are one list read twice, so a type added
+		// to the queue with no renderer here has to say so.
+		{"a type this switch has not learned", "brand_new", `{}`, "[brand_new]"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			require.Equal(t, tc.want, miscText(tc.msgType, tc.raw))
