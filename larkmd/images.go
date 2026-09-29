@@ -7,9 +7,9 @@ import (
 )
 
 // ImageRef is one image reference a body carries: where it points, where it
-// says so, and the bytes the destination occupies. A caller writing a key
-// over that span leaves the alt text and the angle-bracket form a path with
-// spaces needs exactly as they were.
+// says so, and the bytes to write a key over — the destination, together with
+// the angle brackets a path with spaces is written inside. A caller writing a
+// key over that span leaves the alt text exactly as it was.
 type ImageRef struct {
 	Dest         string
 	Line, Column int
@@ -41,9 +41,17 @@ func Images(src string) []ImageRef {
 		// The reference reads from its `!`, which is where a reader looking
 		// for it would start; the span to write over is the destination's.
 		line, col := lines.at(max(img.Pos(), 0))
+		start, stop := idx.Start, idx.Stop
+		// goldmark points at the path inside the brackets, but the brackets
+		// exist only to hold a space together and a key has none: leaving
+		// them behind hides the picture from every reader that scans a sent
+		// body for `](img_…)`.
+		if start > 0 && src[start-1] == '<' && stop < len(src) && src[stop] == '>' {
+			start, stop = start-1, stop+1
+		}
 		out = append(out, ImageRef{
 			Dest: img.Destination.Value(b), Line: line, Column: col,
-			Start: idx.Start, Stop: idx.Stop,
+			Start: start, Stop: stop,
 		})
 		return ast.WalkContinue, nil
 	})
@@ -51,7 +59,7 @@ func Images(src string) []ImageRef {
 }
 
 // ReplaceImages writes each destination repl answers with over the one that
-// was there. Only the destination moves, so everything the sender spelled
+// was there. Only the destination moves, so the alt text the sender spelled
 // around it survives.
 func ReplaceImages(src string, repl func(ImageRef) string) string {
 	refs := Images(src)

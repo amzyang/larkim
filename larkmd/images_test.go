@@ -56,9 +56,16 @@ func TestReplaceImages_WritesOnlyOverTheDestination(t *testing.T) {
 	require.Equal(t, "see ![the **shot**](img_1) here", got)
 }
 
-func TestReplaceImages_KeepsTheAngleBracketFormAPathWithSpacesNeeds(t *testing.T) {
+func TestReplaceImages_DropsTheBracketsAroundAPathWithSpaces(t *testing.T) {
+	// The brackets hold a path with a space together. A key has no space, and
+	// the readers that scan a sent body for `](img_…)` do not know the
+	// bracketed form, so the key goes in bare.
+	refs := Images("![](<my shot.png>)")
+	require.Len(t, refs, 1)
+	require.Equal(t, "my shot.png", refs[0].Dest)
+
 	got := ReplaceImages("![](<my shot.png>)", func(ImageRef) string { return "img_1" })
-	require.Equal(t, "![](<img_1>)", got)
+	require.Equal(t, "![](img_1)", got)
 }
 
 func TestReplaceImages_LeavesAFencedReferenceAlone(t *testing.T) {

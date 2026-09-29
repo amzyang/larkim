@@ -272,6 +272,23 @@ func TestResolveDraft_PassesAnImageKeyThrough(t *testing.T) {
 	require.Empty(t, p.uploads())
 }
 
+// macOS names every screenshot with spaces in it, so imageRef writes the
+// angle-bracket form; what reaches the wire has to be a shape
+// sync.ExtractResources reads back, or the picture is never registered and
+// the message list never draws it.
+func TestResolveDraft_PostImageWithSpacesInItsPathCarriesABareKey(t *testing.T) {
+	path := "/Users/linlan/Screenshot 2026-09-25 at 08.25.13.png"
+	f := fakeFiles(map[string]int64{path: 2048})
+
+	p, err := f.planDraft("看这个\n\n" + imageRef(path))
+
+	require.NoError(t, err)
+	require.Equal(t, kindPost, p.kind)
+	require.Equal(t, "看这个\n\n![](img_local_0)", p.body)
+	require.Equal(t, [][]string{{"![](img_local_0)", "img_local_0", ""}},
+		sync.ImageRef.FindAllStringSubmatch(p.body, -1))
+}
+
 func TestResolveDraft_PostKeepsTheDraftAroundItsImages(t *testing.T) {
 	f := fakeFiles(map[string]int64{"/Users/linlan/shot.png": 2048})
 	p, err := f.planDraft("## 周报\n\n![截图](~/shot.png)\n\n见图")
