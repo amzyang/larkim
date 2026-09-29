@@ -10,6 +10,8 @@ import (
 	"github.com/yuin/goldmark/v2/parser"
 )
 
-// mdParser is built the way the reader's is, so a body parses the same going
-// out as it does coming back.
-var mdParser = parser.New(parser.WithExtensions(extension.NewTableParser()))
+// Parser reads a body the way larkim draws one: CommonMark plus the pipe tables
+// Feishu renders. The send side and the message list share it, so a body parses
+// the same going out as it does coming back, and a parser is safe to share, so
+// one is built for the process rather than per message.
+var Parser = parser.New(parser.WithExtensions(extension.NewTableParser()))

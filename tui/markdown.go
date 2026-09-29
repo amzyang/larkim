@@ -6,17 +6,11 @@ import (
 
 	"charm.land/lipgloss/v2"
 	"charm.land/lipgloss/v2/table"
+	"github.com/amzyang/larkim/larkmd"
 	"github.com/amzyang/larkim/store"
 	"github.com/yuin/goldmark/v2/ast"
-	"github.com/yuin/goldmark/v2/extension"
 	gast "github.com/yuin/goldmark/v2/extension/ast"
-	"github.com/yuin/goldmark/v2/parser"
 )
-
-// mdParser reads the blocks a post body is built from. Only the table
-// extension is added: everything else larkim draws is CommonMark, and a parser
-// is safe to share, so one is built for the process rather than per message.
-var mdParser = parser.New(parser.WithExtensions(extension.NewTableParser()))
 
 // mdIndent is the width one level of nesting costs a list or a quote.
 const mdIndent = 2
@@ -29,7 +23,7 @@ const mdIndent = 2
 func mdRows(body string, x store.Message, idx int, st msgStyle, g *leads, ms mentions) []msgRow {
 	src := []byte(strings.ReplaceAll(body, "\r", ""))
 	d := mdDoc{src: src, x: x, idx: idx, st: st, g: g, ms: ms}
-	return d.blocks(mdParser.Parse(src), 0, 0)
+	return d.blocks(larkmd.Parser.Parse(src), 0, 0)
 }
 
 // mdDoc is what every block of one body is drawn against: the source it was

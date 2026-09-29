@@ -26,7 +26,7 @@ func Images(src string) []ImageRef {
 	b := []byte(src)
 	var lines lineTable
 	var out []ImageRef
-	_ = ast.Walk(mdParser.Parse(b), func(n ast.Node, entering bool) (ast.WalkStatus, error) {
+	_ = ast.Walk(Parser.Parse(b), func(n ast.Node, entering bool) (ast.WalkStatus, error) {
 		img, ok := n.(*ast.Image)
 		if !ok || !entering {
 			return ast.WalkContinue, nil
