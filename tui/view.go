@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"cmp"
 	"fmt"
 	"image/color"
 	"regexp"
@@ -471,10 +472,7 @@ func searchRowText(h searchHit) string {
 	if h.kind == hitChat {
 		return markName(flatten(h.chat.Name), h.mark, stBold)
 	}
-	tail := h.user.Department
-	if tail == "" {
-		tail = h.user.Email
-	}
+	tail := cmp.Or(h.user.Department, h.user.Email)
 	line := markName(h.user.Name, h.mark, stBold)
 	if tail != "" {
 		line += stDim.Render(" · " + tail)
@@ -1019,11 +1017,7 @@ func (m Model) renderHeader(w int) string {
 	if !ok {
 		return fit(stDim.Render("select a chat"), w)
 	}
-	name := flatten(c.Name)
-	if name == "" {
-		name = "(unnamed)"
-	}
-	title := stBold.Render(name)
+	title := stBold.Render(cmp.Or(flatten(c.Name), "(unnamed)"))
 	if g := chatModeGlyph(c.ChatMode); g != "" {
 		title = stDim.Render(g) + title
 	}
@@ -1205,11 +1199,7 @@ func (m Model) renderBadge(w int) string {
 
 func (m Model) renderStatus() string {
 	left := fmtStatus(m)
-	right := m.notice
-	if right == "" {
-		right = "? help"
-	}
-	right = truncate(right, max(0, m.width-lipgloss.Width(left)-3))
+	right := truncate(cmp.Or(m.notice, "? help"), max(0, m.width-lipgloss.Width(left)-3))
 	if m.noticeErr {
 		right = stErr.Render(right)
 	}

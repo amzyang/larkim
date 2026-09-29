@@ -1,6 +1,7 @@
 package sync
 
 import (
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"regexp"
@@ -89,10 +90,7 @@ func systemBody(contentRaw string) (string, map[string]any, bool) {
 // fillSlots fills the template's slots from the rest of the body.
 func fillSlots(tmpl string, body map[string]any) string {
 	return strings.TrimSpace(systemSlotRe.ReplaceAllStringFunc(tmpl, func(slot string) string {
-		if v := systemSlot(body[slot[1:len(slot)-1]]); v != "" {
-			return v
-		}
-		return unresolvedSlot
+		return cmp.Or(systemSlot(body[slot[1:len(slot)-1]]), unresolvedSlot)
 	}))
 }
 

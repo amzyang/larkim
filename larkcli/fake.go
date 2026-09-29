@@ -303,7 +303,7 @@ func (f *Fake) ListChats(_ context.Context, activeFirstPage bool) ([]RawChat, er
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return append([]RawChat(nil), f.Chats...), nil
+	return slices.Clone(f.Chats), nil
 }
 
 func (f *Fake) MGetRendered(_ context.Context, ids []string) ([]RenderedMessage, error) {
@@ -390,13 +390,7 @@ func (f *Fake) DeleteReaction(_ context.Context, messageID, reactionID string) e
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	kept := f.Reacted[messageID][:0]
-	for _, r := range f.Reacted[messageID] {
-		if r.ReactionID != reactionID {
-			kept = append(kept, r)
-		}
-	}
-	f.Reacted[messageID] = kept
+	f.Reacted[messageID] = slices.DeleteFunc(f.Reacted[messageID], func(r Reaction) bool { return r.ReactionID == reactionID })
 	return nil
 }
 
@@ -462,7 +456,7 @@ func (f *Fake) ChatMembers(_ context.Context, chatID string) ([]ChatMember, bool
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return append([]ChatMember(nil), f.Members[chatID]...), f.MembersTruncated[chatID], nil
+	return slices.Clone(f.Members[chatID]), f.MembersTruncated[chatID], nil
 }
 
 func (f *Fake) SearchUsers(_ context.Context, query string, ids []string) ([]User, error) {
@@ -638,10 +632,7 @@ func (f *Fake) Send(_ context.Context, target Target, msg Outgoing, idempotencyK
 	defer f.mu.Unlock()
 	f.sent++
 	id := fmt.Sprintf("om_sent_%d", f.sent)
-	chat := target.ChatID
-	if chat == "" {
-		chat = "oc_p2p_" + target.UserID
-	}
+	chat := cmp.Or(target.ChatID, "oc_p2p_"+target.UserID)
 	msgType, content, rendered := msg.body()
 	m := RawMessage{MessageID: id, ChatID: chat, MsgType: msgType, CreateTime: Millis(time.Now().UnixMilli()),
 		Sender: RawSender{ID: f.Self.UserOpenID, SenderType: "user"}, Body: RawBody{Content: content}}
@@ -670,10 +661,7 @@ func (f *Fake) Recall(_ context.Context, messageID string) error {
 }
 
 func (f *Fake) Forward(ctx context.Context, messageID string, target Target, key string) (SentMessage, error) {
-	to := target.ChatID
-	if to == "" {
-		to = target.UserID
-	}
+	to := cmp.Or(target.ChatID, target.UserID)
 	f.mu.Lock()
 	f.Forwarded = append(f.Forwarded, messageID+"->"+to)
 	f.mu.Unlock()

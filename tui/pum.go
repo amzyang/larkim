@@ -2,6 +2,7 @@ package tui
 
 import (
 	"cmp"
+	"slices"
 	"strings"
 	"unicode"
 
@@ -119,13 +120,13 @@ func pumEmojiRune(r rune) bool {
 // runes of a name stand behind it.
 func pumRunAt(line string) (pumRun, bool) {
 	rs := []rune(line)
-	for i := len(rs) - 1; i >= 0; i-- {
+	for i, r := range slices.Backward(rs) {
 		if len(rs)-1-i > pumQueryMax {
 			return pumRun{}, false
 		}
-		kind, trigger := pumKindOf(rs[i])
+		kind, trigger := pumKindOf(r)
 		if !trigger {
-			if unicode.IsSpace(rs[i]) {
+			if unicode.IsSpace(r) {
 				return pumRun{}, false
 			}
 			continue
@@ -243,12 +244,7 @@ func (m Model) emojiHits(query string) []pumHit {
 // puts on the wire. A bracketed name is resolved against the reading client's
 // own table, which holds both languages' names for every emoji, so it draws
 // there whichever language that client is set to.
-func emojiInsert(e emoji.Emoji) string {
-	if s := cmp.Or(e.Insert, e.Glyph); s != "" {
-		return s
-	}
-	return "[" + e.Name() + "]"
-}
+func emojiInsert(e emoji.Emoji) string { return cmp.Or(e.Insert, e.Glyph, "["+e.Name()+"]") }
 
 // onPumKey drives the popup. It is reached only while one is open, ahead of the
 // writing area, so every key here is one the composer would otherwise have.

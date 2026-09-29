@@ -48,7 +48,7 @@ func TestView_ReplyBarKeepsTheTerminalHeight(t *testing.T) {
 	m := replying(120, 30, store.Message{MessageID: "om_x", SenderName: "林岚", Content: "hey", RenderedAt: 1}, false)
 	v := m.View()
 	require.Equal(t, m.height, lipgloss.Height(v.Content))
-	for _, line := range strings.Split(v.Content, "\n") {
+	for line := range strings.SplitSeq(v.Content, "\n") {
 		require.LessOrEqual(t, lipgloss.Width(line), m.width, "no line wider than the terminal: %q", line)
 	}
 }

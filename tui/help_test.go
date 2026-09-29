@@ -105,7 +105,7 @@ func TestHelp_WheelScrollsThePanelAndClicksAreInert(t *testing.T) {
 func TestHelp_RenderFillsTheBoxAtEveryWidth(t *testing.T) {
 	for _, w := range []int{minWidth, 100, 160} {
 		m := helpModel(w, 24)
-		for _, line := range strings.Split(ansi.Strip(m.renderHelp()), "\n") {
+		for line := range strings.SplitSeq(ansi.Strip(m.renderHelp()), "\n") {
 			require.Equal(t, w-4, len([]rune(line)), "width %d", w)
 		}
 	}

@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"context"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -78,7 +77,7 @@ func unreadScreen() UnreadScreen {
 // The page is the TUI's pane: on a terminal that draws them, the pictures the
 // pane draws are on it, not the stand-ins a plain terminal falls back to.
 func TestUnreadPage_DrawsWhatTheTUIDraws(t *testing.T) {
-	page, err := UnreadPage(context.Background(), unreadPageDeps(t), unreadScreen())
+	page, err := UnreadPage(t.Context(), unreadPageDeps(t), unreadScreen())
 	require.NoError(t, err)
 
 	require.Contains(t, page, "\x1b_G", "the images reach the terminal")
@@ -96,7 +95,7 @@ func TestUnreadPage_KeepsThePagePlainOffATerminal(t *testing.T) {
 	sc := unreadScreen()
 	sc.TTY = false
 
-	page, err := UnreadPage(context.Background(), unreadPageDeps(t), sc)
+	page, err := UnreadPage(t.Context(), unreadPageDeps(t), sc)
 	require.NoError(t, err)
 
 	require.NotContains(t, page, "\x1b_G")
@@ -109,7 +108,7 @@ func TestUnreadPage_KeepsThePagePlainOffATerminal(t *testing.T) {
 // A bundle the reader forwarded is titled by their own name, which is not on
 // the message: it is read from contacts, the way the panes read it.
 func TestUnreadPage_NamesTheReaderOnTheirOwnForward(t *testing.T) {
-	page, err := UnreadPage(context.Background(), unreadPageDeps(t), unreadScreen())
+	page, err := UnreadPage(t.Context(), unreadPageDeps(t), unreadScreen())
 	require.NoError(t, err)
 
 	require.Contains(t, ansi.Strip(page), "林岚 and 张三's Chat History")
@@ -120,11 +119,11 @@ func TestUnreadPage_NamesTheReaderOnTheirOwnForward(t *testing.T) {
 func TestUnreadPage_SpansTheWholeTerminal(t *testing.T) {
 	sc := unreadScreen()
 
-	page, err := UnreadPage(context.Background(), unreadPageDeps(t), sc)
+	page, err := UnreadPage(t.Context(), unreadPageDeps(t), sc)
 	require.NoError(t, err)
 
 	var day string
-	for _, line := range strings.Split(page, "\n") {
+	for line := range strings.SplitSeq(page, "\n") {
 		if strings.Contains(line, "1970-01-01") {
 			day = line
 			break

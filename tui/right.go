@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"cmp"
 	"slices"
 
 	tea "charm.land/bubbletea/v2"
@@ -91,10 +92,7 @@ func containerOf(x store.Message, root string) (kind rightKind, id, bundle strin
 	case x.ThreadID != "":
 		return rightThread, x.ThreadID, ""
 	case x.MsgType == "merge_forward":
-		if root == "" {
-			root = x.MessageID
-		}
-		return rightForward, x.MessageID, root
+		return rightForward, x.MessageID, cmp.Or(root, x.MessageID)
 	}
 	return rightNone, "", ""
 }

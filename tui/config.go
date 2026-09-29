@@ -380,10 +380,13 @@ func (m Model) renderConfig() string {
 // names is the one they would open.
 func underHome(path string) string {
 	home, err := os.UserHomeDir()
-	if err != nil || home == "" || !strings.HasPrefix(path, home+string(filepath.Separator)) {
+	if err != nil || home == "" {
 		return path
 	}
-	return "~" + path[len(home):]
+	if rest, ok := strings.CutPrefix(path, home+string(filepath.Separator)); ok {
+		return "~" + string(filepath.Separator) + rest
+	}
+	return path
 }
 
 // shortPath keeps a path's tail, which is the part that names the file, for a

@@ -3,6 +3,7 @@ package larkmd
 import (
 	"strings"
 	"unicode"
+	"unicode/utf8"
 )
 
 // AtBoundary reports whether the @ at i opens a mention rather than sitting
@@ -11,16 +12,8 @@ func AtBoundary(s string, i int) bool {
 	if i == 0 {
 		return true
 	}
-	r := lastRune(s[:i])
+	r, _ := utf8.DecodeLastRuneInString(s[:i])
 	return !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '_' && r != '.' && r != '-'
-}
-
-func lastRune(s string) rune {
-	var last rune
-	for _, r := range s {
-		last = r
-	}
-	return last
 }
 
 // mentionName is the run a mention names, which ends where the sentence goes

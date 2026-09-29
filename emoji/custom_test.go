@@ -17,8 +17,8 @@ import (
 func picture(t *testing.T, path string, w, h int) string {
 	t.Helper()
 	img := image.NewRGBA(image.Rect(0, 0, w, h))
-	for x := 0; x < w; x++ {
-		for y := 0; y < h; y++ {
+	for x := range w {
+		for y := range h {
 			img.Set(x, y, color.RGBA{R: uint8(x), G: uint8(y), B: 200, A: 255})
 		}
 	}

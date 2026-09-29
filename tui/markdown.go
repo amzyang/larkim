@@ -193,7 +193,7 @@ func (d mdDoc) list(l *ast.List, depth, indent int) []msgRow {
 // pictures, the client's own emoji and per-message mention styling.
 func (d mdDoc) paragraph(n ast.Node, pad string, room int) []msgRow {
 	var rows []msgRow
-	for _, line := range strings.Split(mdSource(n, d.src), "\n") {
+	for line := range strings.SplitSeq(mdSource(n, d.src), "\n") {
 		keys, rest := splitImages(line)
 		if len(keys) == 0 || strings.TrimSpace(rest) != "" {
 			if segs := inlineSegs(rest, d.ms, d.st.emojiInline, d.st.docLabel); segs != nil {

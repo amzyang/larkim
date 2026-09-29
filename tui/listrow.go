@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"slices"
 	"strings"
 
 	"github.com/amzyang/larkim/store"
@@ -108,23 +109,13 @@ func rowKeyAt(rows []listRow, idx int) string {
 
 // indexOfRow finds a row by the key rowKeyAt hands out.
 func indexOfRow(rows []listRow, key string) int {
-	for i, r := range rows {
-		if r.key() == key {
-			return i
-		}
-	}
-	return -1
+	return slices.IndexFunc(rows, func(r listRow) bool { return r.key() == key })
 }
 
 // indexOfChatRow finds the chat's own row, walking past the threads that
 // happen in it: opening a chat pins the chat, not a conversation inside it.
 func indexOfChatRow(rows []listRow, chatID string) int {
-	for i, r := range rows {
-		if !r.isThread() && r.chat.ChatID == chatID {
-			return i
-		}
-	}
-	return -1
+	return slices.IndexFunc(rows, func(r listRow) bool { return !r.isThread() && r.chat.ChatID == chatID })
 }
 
 // containsFold is the plain substring a thread's own words answer with. The

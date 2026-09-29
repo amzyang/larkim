@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"cmp"
 	"strings"
 
 	"charm.land/lipgloss/v2"
@@ -107,7 +108,7 @@ func draftRows(value string, width int) int {
 		return 1
 	}
 	n := 0
-	for _, line := range strings.Split(value, "\n") {
+	for line := range strings.SplitSeq(value, "\n") {
 		n += max(1, (lipgloss.Width(line)+width-1)/width)
 	}
 	return max(1, n)
@@ -266,8 +267,5 @@ func inlineText(s string) string {
 // suffixOf reads the account suffix from whichever pane loaded the sender,
 // so the quote names a person exactly as the lists do.
 func (m Model) suffixOf(senderID string) string {
-	if s := m.meta.suffix[senderID]; s != "" {
-		return s
-	}
-	return m.threadMeta.suffix[senderID]
+	return cmp.Or(m.meta.suffix[senderID], m.threadMeta.suffix[senderID])
 }

@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"path/filepath"
@@ -116,10 +117,7 @@ func attachRows(a attachment, x store.Message, idx int, st msgStyle, g *leads) [
 		return append(rows, line(glyph+stDim.Render(" "+clipLength(a.durMs))))
 	}
 
-	name := a.name
-	if name == "" {
-		name = a.key
-	}
+	name := cmp.Or(a.name, a.key)
 	size := ""
 	if r.SizeBytes > 0 {
 		size = stDim.Render(humanBytes(r.SizeBytes))

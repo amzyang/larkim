@@ -20,7 +20,7 @@ func logged(c *ExecClient, level slog.Level) *bytes.Buffer {
 // lines returns the records whose message is msg.
 func lines(buf *bytes.Buffer, msg string) []string {
 	var out []string
-	for _, l := range strings.Split(buf.String(), "\n") {
+	for l := range strings.SplitSeq(buf.String(), "\n") {
 		if strings.Contains(l, `msg="`+msg+`"`) {
 			out = append(out, l)
 		}

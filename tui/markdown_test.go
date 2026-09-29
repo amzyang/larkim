@@ -86,7 +86,7 @@ func TestMdRows_TableRendersAsAGrid(t *testing.T) {
 	// and a column of it a column.
 	require.Regexp(t, `甲\s+│\s+1`, out)
 	require.Regexp(t, `乙\s+│\s+2`, out)
-	for _, line := range strings.Split(out, "\n") {
+	for line := range strings.SplitSeq(out, "\n") {
 		require.NotContains(t, line, "甲1")
 		if strings.Contains(line, "甲") {
 			require.NotContains(t, line, "乙", "each row is drawn on a line of its own: %q", line)

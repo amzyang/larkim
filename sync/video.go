@@ -41,13 +41,8 @@ func ParseVideoChat(contentRaw string) (VideoChat, bool) {
 // meetNumber closes a meeting number to digits: the value is handed to the
 // desktop client as a link, and anything else would send it somewhere else.
 func meetNumber(s string) string {
-	if s == "" {
+	if strings.ContainsFunc(s, func(r rune) bool { return r < '0' || r > '9' }) {
 		return ""
-	}
-	for _, r := range s {
-		if r < '0' || r > '9' {
-			return ""
-		}
 	}
 	return s
 }

@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"cmp"
 	"encoding/json"
 	"iter"
 	"slices"
@@ -628,11 +629,7 @@ func quoteRow(x store.Message, idx int, st msgStyle, g *leads) (msgRow, bool) {
 // open id when it sent none, and the account suffix that tells same-named
 // colleagues apart.
 func senderLabel(x store.Message, suffix string) string {
-	name := flatten(x.SenderName)
-	if name == "" {
-		name = x.SenderID
-	}
-	return personName(name, suffix)
+	return personName(cmp.Or(flatten(x.SenderName), x.SenderID), suffix)
 }
 
 // displaySender names a sender on a list: the reader reads as 你, the way the
@@ -663,10 +660,7 @@ func headLine(x store.Message, st msgStyle) string {
 		who := displaySender(x, st.self, st.suffix[x.SenderID])
 		name := markName(who, hitPositions(who, st.hits), stDim)
 		if st.names != nil {
-			chat := st.names[x.ChatID]
-			if chat == "" {
-				chat = x.ChatID
-			}
+			chat := cmp.Or(st.names[x.ChatID], x.ChatID)
 			name = stAccent.Render(truncate(flatten(chat), 18)) + " " + name
 		}
 		parts = append(parts, name)
@@ -773,7 +767,7 @@ func bodyRows(x store.Message, idx int, st msgStyle, g *leads) []msgRow {
 
 	var rows []msgRow
 	content := strings.ReplaceAll(strings.ReplaceAll(x.Content, "\r", ""), "\t", "    ")
-	for _, line := range strings.Split(content, "\n") {
+	for line := range strings.SplitSeq(content, "\n") {
 		keys, rest := splitImages(line)
 		if len(keys) == 0 || strings.TrimSpace(rest) != "" {
 			if segs := inlineSegs(rest, ms, st.emojiInline, st.docLabel); segs != nil {
@@ -796,7 +790,7 @@ func bodyRows(x store.Message, idx int, st msgStyle, g *leads) []msgRow {
 // renders none of them.
 func dimRows(body string, idx int, st msgStyle, g *leads) []msgRow {
 	var rows []msgRow
-	for _, line := range strings.Split(body, "\n") {
+	for line := range strings.SplitSeq(body, "\n") {
 		if segs := emojiSegs(line, st.emojiInline, func(t string) string { return stDim.Render(t) }); segs != nil {
 			rows = append(rows, segRows(segs, "", idx, st, g)...)
 			continue

@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -56,12 +57,7 @@ func (a *App) watchCmd() *cobra.Command {
 	return cmd
 }
 
-func senderLabel(m store.Message) string {
-	if m.SenderName != "" {
-		return m.SenderName
-	}
-	return m.SenderID
-}
+func senderLabel(m store.Message) string { return cmp.Or(m.SenderName, m.SenderID) }
 
 func contentLabel(m store.Message) string {
 	if c, ok := card.Parse(m.ContentRaw); ok {

@@ -2,6 +2,7 @@ package tui
 
 import (
 	"bytes"
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -46,10 +47,6 @@ func chatYank(c store.Chat) yankSource {
 }
 
 func messageYank(m store.Message) yankSource {
-	sender := m.SenderName
-	if sender == "" {
-		sender = m.SenderID
-	}
 	return yankSource{
 		id:         m.MessageID,
 		raw:        m.RawJSON,
@@ -57,7 +54,7 @@ func messageYank(m store.Message) yankSource {
 		contentRaw: m.ContentRaw,
 		rendered:   m.RenderedAt > 0,
 		deleted:    m.Deleted,
-		sender:     sender,
+		sender:     cmp.Or(m.SenderName, m.SenderID),
 	}
 }
 

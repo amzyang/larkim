@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"cmp"
+
 	"charm.land/lipgloss/v2"
 	"github.com/amzyang/larkim/store"
 )
@@ -48,9 +50,7 @@ func forwardSummary(x store.Message, root string, idx int, st msgStyle, g *leads
 		return nil, false
 	}
 	gist := st.forwards[x.MessageID]
-	if root == "" {
-		root = x.MessageID
-	}
+	root = cmp.Or(root, x.MessageID)
 	title := forwardTitle(gist, st.self, st.selfName)
 	if gist.Refused {
 		title += " · cannot be expanded"

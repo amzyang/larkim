@@ -24,13 +24,7 @@ var readCheckDelays = []time.Duration{time.Minute, 5 * time.Minute, 30 * time.Mi
 
 // ReadCheckDelay returns the wait before the n-th check (n >= 1).
 func ReadCheckDelay(n int) time.Duration {
-	if n < 1 {
-		n = 1
-	}
-	if n > len(readCheckDelays) {
-		n = len(readCheckDelays)
-	}
-	return readCheckDelays[n-1]
+	return readCheckDelays[min(max(n, 1), len(readCheckDelays))-1]
 }
 
 // readStatusHorizon bounds how far back read status is polled.
@@ -54,13 +48,8 @@ func ResourceRetryDelay(attempts int) time.Duration {
 func ExtractResources(messageID, msgType, contentRaw string) []store.ResourceRef {
 	var out []store.ResourceRef
 	add := func(key, typ string) {
-		if key == "" {
+		if key == "" || slices.ContainsFunc(out, func(r store.ResourceRef) bool { return r.FileKey == key }) {
 			return
-		}
-		for _, r := range out {
-			if r.FileKey == key {
-				return
-			}
 		}
 		out = append(out, store.ResourceRef{MessageID: messageID, FileKey: key, Type: typ})
 	}
@@ -539,8 +528,7 @@ func (s *Syncer) checkReadStatus(ctx context.Context, now time.Time, q store.Rea
 			if !it.IsRead {
 				next = now.Add(ReadCheckDelay(n + 1)).UnixMilli()
 			}
-			isRead := it.IsRead
-			if err := s.Store.SetReadStatus(ctx, it.MessageID, &isRead, now.UnixMilli(), next); err != nil {
+			if err := s.Store.SetReadStatus(ctx, it.MessageID, new(it.IsRead), now.UnixMilli(), next); err != nil {
 				return checked, err
 			}
 			checked++

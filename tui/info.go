@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"cmp"
 	"context"
 	"strconv"
 	"strings"
@@ -87,10 +88,7 @@ func (m Model) infoLines(w int) []string {
 		}
 		out = append(out, fit(stDim.Render(k+" ")+v, w))
 	}
-	name := flatten(c.Name)
-	if name == "" {
-		name = c.ChatID
-	}
+	name := cmp.Or(flatten(c.Name), c.ChatID)
 	out = append(out, fit(stBold.Render(truncate(name, w)), w))
 
 	tags := chatTags(c)
@@ -114,10 +112,7 @@ func (m Model) infoLines(w int) []string {
 	if c.ChatMode == "p2p" {
 		peer := m.infoPeer(c)
 		out = append(out, fit("", w))
-		label("email", peer.EnterpriseEmail)
-		if peer.EnterpriseEmail == "" {
-			label("email", peer.Email)
-		}
+		label("email", cmp.Or(peer.EnterpriseEmail, peer.Email))
 		label("dept", peer.Department)
 		if peer.IsCrossTenant {
 			out = append(out, fit(stDim.Render("outside this tenant"), w))
@@ -137,10 +132,7 @@ func (m Model) infoLines(w int) []string {
 		out = append(out, fit(stBold.Render("Members ")+stDim.Render(n), w))
 	}
 	for _, p := range m.info {
-		who := flatten(p.Name)
-		if who == "" {
-			who = p.OpenID
-		}
+		who := cmp.Or(flatten(p.Name), p.OpenID)
 		if p.OpenID == c.OwnerID {
 			who += stDim.Render(" owner")
 		}

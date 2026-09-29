@@ -58,7 +58,7 @@ func TestView_PanesShareHeight(t *testing.T) {
 		"chats pane = the screen less the status bar")
 	v := m.View()
 	require.Equal(t, m.height, lipgloss.Height(v.Content), "whole view fits the terminal exactly")
-	for _, line := range strings.Split(v.Content, "\n") {
+	for line := range strings.SplitSeq(v.Content, "\n") {
 		require.LessOrEqual(t, lipgloss.Width(line), m.width, "no line wider than the terminal: %q", line)
 	}
 }
@@ -240,7 +240,7 @@ func TestView_FoldsRightPaneOnNarrowTerminal(t *testing.T) {
 	m.focus = paneThread
 	require.True(t, m.foldRight())
 	v := m.View()
-	for _, line := range strings.Split(v.Content, "\n") {
+	for line := range strings.SplitSeq(v.Content, "\n") {
 		require.LessOrEqual(t, lipgloss.Width(line), m.width, "%q", line)
 	}
 	require.Contains(t, ansi.Strip(v.Content), "Thread omt_1")

@@ -318,7 +318,7 @@ func helpWrap(s string, mark []int, style lipgloss.Style, limit int) []string {
 	src := []rune(s)
 	var out []string
 	at := 0
-	for _, line := range strings.Split(ansi.Wordwrap(s, limit, ""), "\n") {
+	for line := range strings.SplitSeq(ansi.Wordwrap(s, limit, ""), "\n") {
 		for at < len(src) && src[at] == ' ' {
 			at++
 		}

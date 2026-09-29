@@ -41,7 +41,7 @@ func cardGist(c card.Card) string {
 		return head
 	}
 	for _, b := range c.Blocks {
-		for _, line := range strings.Split(b.Markdown, "\n") {
+		for line := range strings.SplitSeq(b.Markdown, "\n") {
 			if text := inlineText(strings.TrimLeft(line, "#>-* \t")); strings.TrimSpace(text) != "" {
 				return text
 			}

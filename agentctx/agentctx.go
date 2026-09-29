@@ -9,6 +9,7 @@
 package agentctx
 
 import (
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"math/rand/v2"
@@ -92,10 +93,7 @@ func Render(in Input) string {
 // attrs lays every piece of metadata out as tag attributes, so the tag body
 // is nothing but the message text.
 func attrs(in Input, m store.Message) string {
-	from := m.SenderName
-	if from == "" {
-		from = m.SenderID
-	}
+	from := cmp.Or(m.SenderName, m.SenderID)
 	out := []string{
 		"id=" + m.MessageID,
 		fmt.Sprintf("t=%q", time.UnixMilli(m.CreateMs).In(in.Now.Location()).Format(time.RFC3339)),
@@ -158,10 +156,7 @@ func body(in Input, m store.Message) string {
 // attachment describes one attachment; a file that never landed keeps its
 // key rather than getting a path invented for it.
 func attachment(r store.Resource) string {
-	kind := r.Type
-	if kind == "" {
-		kind = "file"
-	}
+	kind := cmp.Or(r.Type, "file")
 	if r.Status == "done" && r.LocalPath != "" {
 		return join("["+kind, r.LocalPath+"]")
 	}

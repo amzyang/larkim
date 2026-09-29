@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"math/rand/v2"
@@ -79,11 +80,7 @@ func copyContext(d Deps, spec copySpec) tea.Cmd {
 		if err != nil {
 			return errMsg{err}
 		}
-		name := in.Chat.Name
-		if name == "" {
-			name = spec.chatID
-		}
-		return contextMsg{text: agentctx.Render(in), n: len(msgs), chat: name}
+		return contextMsg{text: agentctx.Render(in), n: len(msgs), chat: cmp.Or(in.Chat.Name, spec.chatID)}
 	}
 }
 
@@ -161,15 +158,8 @@ func assemble(ctx context.Context, d Deps, chatID string, msgs []store.Message, 
 // person prefers the contact cache and falls back to the name the message
 // carried; an open id never seen as a contact still gets a line.
 func person(id string, c store.Contact, fallback string) agentctx.Person {
-	name := c.Name
-	if name == "" {
-		name = fallback
-	}
-	mail := c.EnterpriseEmail
-	if mail == "" {
-		mail = c.Email
-	}
-	return agentctx.Person{Name: name, OpenID: id, Email: mail, Bot: c.IsBot}
+	return agentctx.Person{Name: cmp.Or(c.Name, fallback), OpenID: id,
+		Email: cmp.Or(c.EnterpriseEmail, c.Email), Bot: c.IsBot}
 }
 
 // followUp is the command that resumes digging where this copy stopped. The

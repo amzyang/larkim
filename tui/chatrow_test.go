@@ -242,7 +242,7 @@ func TestRenderChats_HoldsTogetherAtTheNarrowestSupportedWidth(t *testing.T) {
 	require.Equal(t, chatsWidth+minMessagesWidth, minWidth, "minWidth is what the two left panes need")
 
 	out := m.renderChats(m.chatsBodyHeight())
-	for _, line := range strings.Split(ansi.Strip(out), "\n") {
+	for line := range strings.SplitSeq(ansi.Strip(out), "\n") {
 		require.Equal(t, chatsWidth, lipgloss.Width(line), "every pane line is exactly the pane's width: %q", line)
 	}
 	require.NotPanics(t, func() { m.View() })

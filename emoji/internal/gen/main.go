@@ -271,8 +271,8 @@ func spoken(i18n map[string]map[string]string, aliases map[string][]string, keys
 func Fold(s string) string {
 	s = strings.ToUpper(s)
 	s = strings.TrimPrefix(s, "LARK_EMOJI_")
-	if i := strings.LastIndex(s, "_"); i > 0 && strings.Trim(s[i+1:], "0123456789") == "" {
-		s = s[:i]
+	if base, suffix, ok := strings.CutLast(s, "_"); ok && base != "" && strings.Trim(suffix, "0123456789") == "" {
+		s = base
 	}
 	return s
 }

@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"cmp"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -97,9 +98,4 @@ func (m *Model) openRow(r listRow, take bool) tea.Cmd {
 
 // openingChat is the chat the cursor belongs to: the one whose page is on its
 // way while it is, and the one on screen otherwise.
-func (m Model) openingChat() string {
-	if m.pendingChat != "" {
-		return m.pendingChat
-	}
-	return m.chatID
-}
+func (m Model) openingChat() string { return cmp.Or(m.pendingChat, m.chatID) }

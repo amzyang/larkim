@@ -444,7 +444,7 @@ func refreshChatSummary(ctx context.Context, tx *sql.Tx, chatID string) error {
 	err := tx.QueryRowContext(ctx, chatSummaryQuery, chatID).Scan(
 		&c.LastMessageID, &c.LastMessageMs, &c.LastSenderID, &c.LastSenderName, &c.LastSenderType,
 		&c.LastMsgType, &c.LastContent, &c.LastContentRaw, &c.LastMentionsJSON, &c.LastReactionsJSON, &c.LastRenderedAt, &c.LastDeleted)
-	if err != nil && err != sql.ErrNoRows {
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return fmt.Errorf("chat summary %s: %w", chatID, err)
 	}
 	if err := tx.QueryRowContext(ctx, chatSummarySortKey, chatID).Scan(&c.LastUnsilencedMs); err != nil {

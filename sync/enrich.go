@@ -227,18 +227,12 @@ func (s *Syncer) resolveBotAvatarURLs(ctx context.Context, now time.Time) error 
 	for _, b := range bots {
 		url, name := store.AvatarNone, ""
 		app, err := s.Client.AppDetail(ctx, b.AppID)
-		switch {
-		case err == nil:
-			if app.AvatarURL != "" {
-				url = app.AvatarURL
-			}
-			name = app.Name
-		default:
+		if err == nil {
+			url, name = cmp.Or(app.AvatarURL, store.AvatarNone), app.Name
+		} else if le, ok := errors.AsType[*larkcli.Error](err); !ok || !le.IsPermanent() {
 			// Same bargain as the user lookup: an app this tenant will not
 			// show is settled, so it is asked for once rather than forever.
-			if le, ok := errors.AsType[*larkcli.Error](err); !ok || !le.IsPermanent() {
-				return err
-			}
+			return err
 		}
 		if err := s.Store.SetContactAvatar(ctx, b.OpenID, url, now.UnixMilli()); err != nil {
 			return err
@@ -328,11 +322,7 @@ func (s *Syncer) resolveAvatarURLs(ctx context.Context, now time.Time) error {
 	named := make([]store.Contact, 0, len(details))
 	for _, id := range ids {
 		d := byID[id]
-		url := store.AvatarNone
-		if d.AvatarURL != "" {
-			url = d.AvatarURL
-		}
-		if err := s.Store.SetContactAvatar(ctx, id, url, now.UnixMilli()); err != nil {
+		if err := s.Store.SetContactAvatar(ctx, id, cmp.Or(d.AvatarURL, store.AvatarNone), now.UnixMilli()); err != nil {
 			return err
 		}
 		if d.Name != "" {
@@ -358,7 +348,8 @@ func (s *Syncer) downloadAvatar(ctx context.Context, kind, id, url string) strin
 		return store.AvatarFailed
 	}
 	ext := ".img"
-	if exts, _ := mime.ExtensionsByType(strings.Split(ctype, ";")[0]); len(exts) > 0 {
+	mediaType, _, _ := strings.Cut(ctype, ";")
+	if exts, _ := mime.ExtensionsByType(mediaType); len(exts) > 0 {
 		ext = exts[len(exts)-1]
 		if ext == ".jpe" {
 			ext = ".jpg"

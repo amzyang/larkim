@@ -11,7 +11,7 @@ import (
 // fall back to a substring scan, so every query returns exact substring hits.
 func (s *Store) SearchMessages(ctx context.Context, query, chatID string, limit int) ([]Message, error) {
 	var ftsTerms, shortTerms []string
-	for _, t := range strings.Fields(query) {
+	for t := range strings.FieldsSeq(query) {
 		if len([]rune(t)) >= 3 {
 			ftsTerms = append(ftsTerms, `"`+strings.ReplaceAll(t, `"`, `""`)+`"`)
 		} else {

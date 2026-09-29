@@ -84,7 +84,7 @@ func shellQuote(s string) string {
 // many times as the result needs.
 func pages(stderr []byte) int {
 	n := 0
-	for _, line := range bytes.Split(stderr, []byte("\n")) {
+	for line := range bytes.SplitSeq(stderr, []byte("\n")) {
 		if bytes.HasPrefix(bytes.TrimSpace(line), []byte("[page ")) {
 			n++
 		}

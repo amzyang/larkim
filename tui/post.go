@@ -108,7 +108,7 @@ func postMDLine(para []sync.PostElem) (string, bool) {
 		case "a":
 			b.WriteString(postMDLink(el))
 		case "at":
-			b.WriteString(fmt.Sprintf(`<at user_id="%s">%s</at>`, el.UserID, el.UserName))
+			fmt.Fprintf(&b, `<at user_id="%s">%s</at>`, el.UserID, el.UserName)
 		case "emotion":
 			b.WriteString(":" + el.EmojiType + ":")
 		case "img":

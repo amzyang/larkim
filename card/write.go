@@ -120,11 +120,7 @@ func buttonURL(raw json.RawMessage) string {
 // key the attachment table pairs it with.
 func (w *writer) at(userID string) string {
 	who := w.people[userID]
-	key := userID
-	if who.MentionKey != "" {
-		key = who.MentionKey
-	}
-	return `<at user_id="` + key + `">` + who.Name + `</at>`
+	return `<at user_id="` + cmp.Or(who.MentionKey, userID) + `">` + who.Name + `</at>`
 }
 
 // capture renders elements as one run of inline markdown, for the constructs
@@ -412,9 +408,9 @@ func content(p prop) string {
 // rest of larkim speaks: Lark_Emoji_OK_0 is OK.
 func emojiKey(key string) string {
 	key = strings.TrimPrefix(key, "Lark_Emoji_")
-	if i := strings.LastIndex(key, "_"); i > 0 {
-		if _, err := strconv.Atoi(key[i+1:]); err == nil {
-			key = key[:i]
+	if base, suffix, ok := strings.CutLast(key, "_"); ok && base != "" {
+		if _, err := strconv.Atoi(suffix); err == nil {
+			key = base
 		}
 	}
 	return key

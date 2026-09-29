@@ -2,6 +2,7 @@ package larkcli
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -220,13 +221,9 @@ func (c *ExecClient) exec(ctx context.Context, stdin []byte, args ...string) (st
 	defer l.release()
 	c.logRequest(ctx, call, args, LaneOf(ctx), time.Since(queued))
 
-	timeout := c.Timeout
-	if timeout == 0 {
-		timeout = 5 * time.Minute
-	}
 	// The timeout bounds the run, not the wait: a call that sat behind a
 	// sweep still gets its whole budget once it reaches the front.
-	ctx, cancel := context.WithTimeout(ctx, timeout)
+	ctx, cancel := context.WithTimeout(ctx, cmp.Or(c.Timeout, 5*time.Minute))
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, path, args...)
@@ -268,8 +265,8 @@ func childEnv(env []string) []string {
 	out := make([]string, 0, len(env)+1)
 	found := false
 	for _, kv := range env {
-		if strings.HasPrefix(kv, "PATH=") {
-			out = append(out, "PATH="+extraPath+":"+strings.TrimPrefix(kv, "PATH="))
+		if after, ok := strings.CutPrefix(kv, "PATH="); ok {
+			out = append(out, "PATH="+extraPath+":"+after)
 			found = true
 			continue
 		}
@@ -286,16 +283,11 @@ func childEnv(env []string) []string {
 // the envelope over several lines.
 func decodeError(exitCode int, stderr []byte) *Error {
 	e := &Error{ExitCode: exitCode, Stderr: string(stderr)}
-	for off := 0; off < len(stderr); {
-		nl := bytes.IndexByte(stderr[off:], '\n')
-		lineEnd := len(stderr)
-		if nl >= 0 {
-			lineEnd = off + nl
-		}
-		line := bytes.TrimSpace(stderr[off:lineEnd])
-		if bytes.HasPrefix(line, []byte("{")) {
+	for rest := stderr; len(rest) > 0; {
+		line, next, _ := bytes.Cut(rest, []byte("\n"))
+		if bytes.HasPrefix(bytes.TrimSpace(line), []byte("{")) {
 			var env envelope
-			if json.NewDecoder(bytes.NewReader(stderr[off:])).Decode(&env) == nil && env.Error != nil {
+			if json.NewDecoder(bytes.NewReader(rest)).Decode(&env) == nil && env.Error != nil {
 				e.Type = env.Error.Type
 				e.Subtype = env.Error.Subtype
 				e.Code = env.Error.Code
@@ -305,7 +297,7 @@ func decodeError(exitCode int, stderr []byte) *Error {
 				e.RetryAfter = time.Duration(env.Error.RetryAfterSeconds) * time.Second
 			}
 		}
-		off = lineEnd + 1
+		rest = next
 	}
 	e.adoptAPIBody()
 	return e
@@ -675,8 +667,7 @@ const MaxChatIDsPerMuteCall = 100
 func (c *ExecClient) MuteStatus(ctx context.Context, chatIDs []string) (map[string]bool, []string, error) {
 	muted := map[string]bool{}
 	var unknown []string
-	for start := 0; start < len(chatIDs); start += MaxChatIDsPerMuteCall {
-		batch := chatIDs[start:min(start+MaxChatIDsPerMuteCall, len(chatIDs))]
+	for batch := range slices.Chunk(chatIDs, MaxChatIDsPerMuteCall) {
 		data, err := c.run(ctx, "api", "POST", "/open-apis/im/v1/chat_user_setting/batch_get_mute_status",
 			"--data", jsonArg(map[string]any{"chat_ids": batch}))
 		if err != nil {
@@ -727,8 +718,7 @@ func (c *ExecClient) ReactionCounts(ctx context.Context, messageIDs []string) (m
 	for _, id := range messageIDs {
 		out[id] = nil
 	}
-	for start := 0; start < len(messageIDs); start += MaxMessageIDsPerReactionCall {
-		batch := messageIDs[start:min(start+MaxMessageIDsPerReactionCall, len(messageIDs))]
+	for batch := range slices.Chunk(messageIDs, MaxMessageIDsPerReactionCall) {
 		queries := make([]map[string]string, 0, len(batch))
 		for _, id := range batch {
 			queries = append(queries, map[string]string{"message_id": id})
@@ -851,8 +841,7 @@ func (c *ExecClient) SearchUsers(ctx context.Context, query string, ids []string
 		return c.searchUsers(ctx, "--query", query)
 	}
 	var out []User
-	for start := 0; start < len(ids); start += MaxUserIDsPerSearch {
-		batch := ids[start:min(start+MaxUserIDsPerSearch, len(ids))]
+	for batch := range slices.Chunk(ids, MaxUserIDsPerSearch) {
 		users, err := c.searchUsers(ctx, "--user-ids", strings.Join(batch, ","))
 		if err != nil {
 			return nil, err
@@ -987,8 +976,7 @@ const MaxUserDetailsBatch = 50
 
 func (c *ExecClient) UserDetails(ctx context.Context, openIDs []string) ([]UserDetail, error) {
 	var out []UserDetail
-	for start := 0; start < len(openIDs); start += MaxUserDetailsBatch {
-		batch := openIDs[start:min(start+MaxUserDetailsBatch, len(openIDs))]
+	for batch := range slices.Chunk(openIDs, MaxUserDetailsBatch) {
 		// user_ids has to repeat as a query parameter; a comma-joined string
 		// reads as one malformed id and the whole call comes back empty.
 		// As the app, not the user: the app's directory scope covers the whole
@@ -1126,7 +1114,7 @@ func Paragraphs(markdown string) []string {
 			cur = nil
 		}
 	}
-	for _, line := range strings.Split(markdown, "\n") {
+	for line := range strings.SplitSeq(markdown, "\n") {
 		switch {
 		case fence != "":
 			cur = append(cur, line)

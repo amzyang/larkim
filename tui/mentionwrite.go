@@ -4,6 +4,7 @@ import (
 	"slices"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/amzyang/larkim/larkmd"
 	"github.com/amzyang/larkim/store"
@@ -88,16 +89,9 @@ func cutName(rest, name string) (string, bool) {
 	if after == "" {
 		return name, true
 	}
-	r := firstRune(after)
+	r, _ := utf8.DecodeRuneInString(after)
 	// A CJK name runs straight into the next word with no space, so a letter
 	// after it does not disqualify the match; only another name would, and the
 	// longest-first order has already settled that.
 	return name, !unicode.IsDigit(r) && r != '_'
-}
-
-func firstRune(s string) rune {
-	for _, r := range s {
-		return r
-	}
-	return 0
 }

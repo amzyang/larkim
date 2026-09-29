@@ -135,8 +135,8 @@ func (e Emoji) Name() string { return cmp.Or(e.EN, e.Key) }
 func Fold(s string) string {
 	s = strings.ToUpper(s)
 	s = strings.TrimPrefix(s, "LARK_EMOJI_")
-	if i := strings.LastIndex(s, "_"); i > 0 && strings.Trim(s[i+1:], "0123456789") == "" {
-		s = s[:i]
+	if base, suffix, ok := strings.CutLast(s, "_"); ok && base != "" && strings.Trim(suffix, "0123456789") == "" {
+		s = base
 	}
 	return s
 }

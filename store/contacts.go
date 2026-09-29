@@ -61,10 +61,7 @@ func AccountSuffix(addr string) string {
 // AccountSuffix reads the contact's own account name, preferring the
 // enterprise address.
 func (c Contact) AccountSuffix() string {
-	if s := AccountSuffix(c.EnterpriseEmail); s != "" {
-		return s
-	}
-	return AccountSuffix(c.Email)
+	return cmp.Or(AccountSuffix(c.EnterpriseEmail), AccountSuffix(c.Email))
 }
 
 // UpsertContacts inserts or refreshes contacts; empty incoming fields keep the stored value.

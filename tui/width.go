@@ -44,13 +44,13 @@ func cut(s string, w int) string {
 // cell drawn after it, to the end of the line and on into the next pane,
 // leads where that one link led.
 func closeLink(s string) string {
-	i := strings.LastIndex(s, "\x1b]8;")
-	if i < 0 {
+	_, last, ok := strings.CutLast(s, "\x1b]8;")
+	if !ok {
 		return s
 	}
 	// Both halves of a link start alike; what tells them apart is the target,
 	// which only the opening one names.
-	_, after, ok := strings.Cut(s[i+len("\x1b]8;"):], ";")
+	_, after, ok := strings.Cut(last, ";")
 	if !ok {
 		return s
 	}

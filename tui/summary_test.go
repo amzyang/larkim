@@ -152,7 +152,7 @@ func TestSummaryRow_CutsEveryCardLineToTheWidth(t *testing.T) {
 	out := rowText(renderRows([]store.Message{theBundle()}, st))
 
 	require.Contains(t, out, "Chat History")
-	for _, line := range strings.Split(strings.TrimRight(out, "\n"), "\n") {
+	for line := range strings.SplitSeq(strings.TrimRight(out, "\n"), "\n") {
 		require.LessOrEqual(t, lipgloss.Width(line), st.width)
 	}
 }

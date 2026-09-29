@@ -220,10 +220,9 @@ func fieldByYAML(v reflect.Value, tag string) (reflect.Value, bool) {
 	if v.Kind() != reflect.Struct {
 		return reflect.Value{}, false
 	}
-	t := v.Type()
-	for f := range t.NumField() {
-		if name, _, _ := strings.Cut(t.Field(f).Tag.Get("yaml"), ","); name == tag {
-			return v.Field(f), true
+	for f, fv := range v.Fields() {
+		if name, _, _ := strings.Cut(f.Tag.Get("yaml"), ","); name == tag {
+			return fv, true
 		}
 	}
 	return reflect.Value{}, false
@@ -278,16 +277,16 @@ func Keys() []string { return keysOf(reflect.TypeFor[Config](), "") }
 
 func keysOf(t reflect.Type, prefix string) []string {
 	var out []string
-	for f := range t.NumField() {
-		tag, _, _ := strings.Cut(t.Field(f).Tag.Get("yaml"), ",")
+	for f := range t.Fields() {
+		tag, _, _ := strings.Cut(f.Tag.Get("yaml"), ",")
 		if tag == "" || tag == "-" {
 			continue
 		}
 		key := prefix + tag
 		// Only a struct has keys under it; a slice of them, like silence, is
 		// one value written whole.
-		if ft := t.Field(f).Type; ft.Kind() == reflect.Struct {
-			out = append(out, keysOf(ft, key+".")...)
+		if f.Type.Kind() == reflect.Struct {
+			out = append(out, keysOf(f.Type, key+".")...)
 			continue
 		}
 		out = append(out, key)
@@ -313,8 +312,8 @@ func homeDir() string {
 }
 
 func expandHome(p string) string {
-	if strings.HasPrefix(p, "~/") {
-		return filepath.Join(homeDir(), p[2:])
+	if rest, ok := strings.CutPrefix(p, "~/"); ok {
+		return filepath.Join(homeDir(), rest)
 	}
 	return p
 }

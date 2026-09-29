@@ -291,10 +291,7 @@ func takeText(s string, avail int) (head, rest string) {
 	if ansi.StringWidth(s) <= avail {
 		return s, ""
 	}
-	head = ansi.Wordwrap(s, avail, "")
-	if i := strings.IndexByte(head, '\n'); i >= 0 {
-		head = head[:i]
-	}
+	head, _, _ = strings.Cut(ansi.Wordwrap(s, avail, ""), "\n")
 	if w := ansi.StringWidth(head); w == 0 || w > avail {
 		return "", s
 	}

@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"cmp"
 	"fmt"
 	"os"
 	"os/exec"
@@ -38,7 +39,7 @@ func editExternally(env func(string) string, draft string) tea.Cmd {
 	path := f.Name()
 	_, werr := f.WriteString(draft)
 	cerr := f.Close()
-	if err := firstErr(werr, cerr); err != nil {
+	if err := cmp.Or(werr, cerr); err != nil {
 		os.Remove(path)
 		return func() tea.Msg { return editedMsg{err: fmt.Errorf("editor: %w", err)} }
 	}
@@ -46,13 +47,4 @@ func editExternally(env func(string) string, draft string) tea.Cmd {
 	return tea.ExecProcess(exec.Command(argv[0], argv[1:]...), func(err error) tea.Msg {
 		return editedMsg{path: path, err: err}
 	})
-}
-
-func firstErr(errs ...error) error {
-	for _, err := range errs {
-		if err != nil {
-			return err
-		}
-	}
-	return nil
 }

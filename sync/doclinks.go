@@ -88,7 +88,7 @@ func (s *Syncer) resolveDocLinks(ctx context.Context, now time.Time) (int, error
 		}
 		answered := make(map[store.DocRef]bool, len(batch))
 		for _, t := range titles.Found {
-			ref := store.DocRef{Type: t.Ref.Type, Token: t.Ref.Token}
+			ref := store.DocRef(t.Ref)
 			if err := s.Store.MarkDocTitle(ctx, ref, t.Title, t.Type, refreshAt); err != nil {
 				return done, err
 			}
@@ -96,7 +96,7 @@ func (s *Syncer) resolveDocLinks(ctx context.Context, now time.Time) (int, error
 			done++
 		}
 		for _, r := range titles.Denied {
-			ref := store.DocRef{Type: r.Type, Token: r.Token}
+			ref := store.DocRef(r)
 			if err := s.Store.MarkDocDenied(ctx, ref); err != nil {
 				return done, err
 			}
@@ -173,7 +173,7 @@ func (s *Syncer) docTitle(ctx context.Context, r store.DocRef) (string, error) {
 func docRefs(refs []store.DocRef) []larkcli.DocRef {
 	out := make([]larkcli.DocRef, 0, len(refs))
 	for _, r := range refs {
-		out = append(out, larkcli.DocRef{Type: r.Type, Token: r.Token})
+		out = append(out, larkcli.DocRef(r))
 	}
 	return out
 }

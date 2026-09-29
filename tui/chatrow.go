@@ -236,11 +236,7 @@ func msgTypeLabel(msgType string) string {
 // chatTitle is the chat's name, plus the account suffix that tells same-named
 // colleagues apart.
 func chatTitle(c store.Chat) (name, suffix string) {
-	name = flatten(c.Name)
-	if name == "" {
-		name = c.ChatID
-	}
-	return name, c.PeerSuffix()
+	return cmp.Or(flatten(c.Name), c.ChatID), c.PeerSuffix()
 }
 
 // isBotChat reports whether the title carries the badge. Only a p2p peer is a
@@ -258,11 +254,7 @@ func chatSummary(c store.Chat, self string, pics emojiPics) (string, []rowSeg) {
 		}
 		return stDim.Render("New chat"), nil
 	}
-	sender := flatten(c.LastSenderName)
-	if sender == "" {
-		sender = c.LastSenderID
-	}
-	sender = personName(sender, c.LastSenderSuffix())
+	sender := personName(cmp.Or(flatten(c.LastSenderName), c.LastSenderID), c.LastSenderSuffix())
 	if c.LastDeleted {
 		return stDim.Render(sender + " recalled a message"), nil
 	}

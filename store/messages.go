@@ -61,8 +61,7 @@ func scanMessage(sc scanner) (Message, error) {
 		&m.ThreadID, &m.ReplyTo, &m.MentionsJSON, &m.ReactionsJSON, &m.RawJSON, &m.RenderedAt, &m.EditedAt, &m.FirstSeenAt, &m.LastSeenAt,
 		&isRead, &m.LocalReadAt)
 	if isRead.Valid {
-		v := isRead.Bool
-		m.IsReadRemote = &v
+		m.IsReadRemote = new(isRead.Bool)
 	}
 	return m, err
 }

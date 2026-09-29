@@ -110,7 +110,7 @@ func TestCardRows_BlocksDoNotRunTogether(t *testing.T) {
 	require.Contains(t, out, "─────", "the rule is drawn")
 
 	// Each block ends where the next begins: no line carries two of them.
-	for _, line := range strings.Split(out, "\n") {
+	for line := range strings.SplitSeq(out, "\n") {
 		for _, pair := range [][2]string{
 			{"报表", "甲"}, {"甲", "引文"}, {"引文", "go vet"}, {"go vet", "x := 1"}, {"值", "链接"},
 		} {

@@ -2655,10 +2655,7 @@ func (m Model) startAI(input string) (tea.Model, tea.Cmd) {
 	keep := m.closeRight()
 	m.stopAI()
 	m.aiOpen, m.aiBusy, m.aiDraft = true, true, draft
-	m.aiTitle = strings.TrimSpace(input)
-	if m.aiTitle == "" {
-		m.aiTitle = "summary"
-	}
+	m.aiTitle = cmp.Or(strings.TrimSpace(input), "summary")
 	m.aiText, m.aiTop = "", 0
 	m.focus = paneThread
 	m.layout()
@@ -2957,10 +2954,7 @@ func fmtStatus(m Model) string {
 	if m.deps.Embedded {
 		sync = "embedded"
 	}
-	st := m.syncStatus
-	if st == "" {
-		st = "never_synced"
-	}
+	st := cmp.Or(m.syncStatus, "never_synced")
 	label := modeLabel(m.mode)
 	if m.mode == modeVisual {
 		lo, hi := m.selectionRange()

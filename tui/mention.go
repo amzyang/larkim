@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"cmp"
 	"encoding/json"
 	"regexp"
 	"slices"
@@ -275,8 +276,5 @@ func (m mentions) tagRun(id, name string) mentionRun {
 			return r
 		}
 	}
-	if name == "" {
-		name = id
-	}
-	return mentionRun{id: id, text: "@" + name, kind: m.kindOf(id)}
+	return mentionRun{id: id, text: "@" + cmp.Or(name, id), kind: m.kindOf(id)}
 }
