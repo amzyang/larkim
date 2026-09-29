@@ -43,6 +43,16 @@ func (c *Client) Stream(ctx context.Context, transcript, prompt string) <-chan C
 		defer close(out)
 		ctx, cancel := context.WithTimeout(ctx, 3*time.Minute)
 		defer cancel()
+		// A reader that walked away leaves the buffer full, so every send has
+		// to be able to give up.
+		send := func(ch Chunk) bool {
+			select {
+			case out <- ch:
+				return true
+			case <-ctx.Done():
+				return false
+			}
+		}
 		user := "<transcript>\n" + transcript + "\n</transcript>\n\n" + prompt
 		stream := c.api.Beta.Messages.NewStreaming(ctx, anthropic.BetaMessageNewParams{
 			Model:        anthropic.Model(c.model),
@@ -57,27 +67,17 @@ func (c *Client) Stream(ctx context.Context, transcript, prompt string) <-chan C
 			ev := stream.Current()
 			if delta, ok := ev.AsAny().(anthropic.BetaRawContentBlockDeltaEvent); ok {
 				if td, ok := delta.Delta.AsAny().(anthropic.BetaTextDelta); ok && td.Text != "" {
-					select {
-					case out <- Chunk{Text: td.Text}:
-					case <-ctx.Done():
+					if !send(Chunk{Text: td.Text}) {
 						return
 					}
 				}
 			}
 		}
-		// A reader that walked away leaves the buffer full, so both of these
-		// have to be able to give up the way the deltas above do.
 		if err := stream.Err(); err != nil {
-			select {
-			case out <- Chunk{Err: fmt.Errorf("claude: %w", err), Done: true}:
-			case <-ctx.Done():
-			}
+			send(Chunk{Err: fmt.Errorf("claude: %w", err), Done: true})
 			return
 		}
-		select {
-		case out <- Chunk{Done: true}:
-		case <-ctx.Done():
-		}
+		send(Chunk{Done: true})
 	}()
 	return out
 }

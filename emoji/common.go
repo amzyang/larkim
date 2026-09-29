@@ -1,12 +1,6 @@
 package emoji
 
-import (
-	"slices"
-	"strings"
-	"sync"
-
-	"github.com/amzyang/larkim/fuzzy"
-)
+import "sync"
 
 // extra is one emoji Feishu's own set has nothing for, as a Unicode character
 // or, where no character says it, as the ASCII a keyboard draws it with. A
@@ -148,19 +142,9 @@ var Common = sync.OnceValue(func() []Emoji {
 func commonTerms(x extra) []string {
 	// The ASCII is not a term of its own: a query shaped like a face is one
 	// nobody types, and the punctuation would not survive fuzzy.Terms anyway.
-	var out []string
-	if x.glyph != "" {
-		out = append(out, x.glyph)
+	terms := termsOf(append([]string{x.zh, x.en, x.key}, x.alias...))
+	if x.glyph == "" {
+		return terms
 	}
-	add := func(s string) {
-		for _, t := range fuzzy.Terms(s) {
-			if t = strings.ToLower(t); t != "" && !slices.Contains(out, t) {
-				out = append(out, t)
-			}
-		}
-	}
-	for _, name := range append([]string{x.zh, x.en, x.key}, x.alias...) {
-		add(name)
-	}
-	return out
+	return append([]string{x.glyph}, terms...)
 }

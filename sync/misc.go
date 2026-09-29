@@ -120,10 +120,7 @@ func folderText(b miscBody) string {
 	if b.FileKey == "" {
 		return "[Folder]"
 	}
-	if b.FileName == "" {
-		return fmt.Sprintf(`<folder key="%s"/>`, attrEscape(b.FileKey))
-	}
-	return fmt.Sprintf(`<folder key="%s" name="%s"/>`, attrEscape(b.FileKey), attrEscape(b.FileName))
+	return keyTag("folder", b.FileKey, b.FileName)
 }
 
 func voteText(contentRaw string) string {

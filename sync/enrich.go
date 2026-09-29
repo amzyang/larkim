@@ -171,11 +171,8 @@ func senderContacts(msgs []larkcli.RawMessage) []store.Contact {
 	seen := map[string]bool{}
 	var out []store.Contact
 	for _, m := range msgs {
-		id := m.Sender.OpenBotID
-		if id == "" {
-			id = m.Sender.ID
-		}
-		if id == "" || !strings.HasPrefix(id, "ou_") || seen[id] {
+		id := senderIDOf(m)
+		if !strings.HasPrefix(id, "ou_") || seen[id] {
 			continue
 		}
 		seen[id] = true

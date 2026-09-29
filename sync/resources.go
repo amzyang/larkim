@@ -392,7 +392,7 @@ func (s *Syncer) probeReadStatus(ctx context.Context, now time.Time) (int, error
 // away, ignoring their backoff, so a chat read in the desktop client stops
 // showing a stale badge as soon as it is opened here.
 func (s *Syncer) RefreshReadStatus(ctx context.Context, chatID string) (int, error) {
-	return s.checkReadStatus(ctx, s.now(), store.ReadCheckQuery{ChatID: chatID, Limit: 50})
+	return s.checkReadStatus(ctx, s.now(), store.ReadCheckQuery{ChatID: chatID, Limit: readStatusBatch})
 }
 
 // reactionWindow is how many of a chat's newest messages have their reactions
@@ -420,6 +420,14 @@ func (s *Syncer) RefreshReactions(ctx context.Context, chatID string) (int, erro
 	for _, m := range msgs {
 		ids = append(ids, m.MessageID)
 	}
+	return s.storeReactions(ctx, ids)
+}
+
+// storeReactions asks Feishu who reacted to each of ids and stores every
+// answer, an empty one included: ReactionCounts names every id it was asked
+// about, and a message whose reactions were all taken back must lose the
+// summary it holds.
+func (s *Syncer) storeReactions(ctx context.Context, ids []string) (int, error) {
 	blocks, err := s.Client.ReactionCounts(ctx, ids)
 	if err != nil {
 		return 0, err
@@ -454,14 +462,8 @@ func (s *Syncer) reactionsSlice(ctx context.Context, now time.Time) (int, error)
 	if len(ids) == 0 {
 		return 0, nil
 	}
-	blocks, err := s.Client.ReactionCounts(ctx, ids)
-	if err != nil {
+	if _, err := s.storeReactions(ctx, ids); err != nil {
 		return 0, err
-	}
-	for id, block := range blocks {
-		if err := s.Store.UpdateReactions(ctx, id, rawString(block)); err != nil {
-			return 0, err
-		}
 	}
 	return len(ids), s.setStateTime(ctx, KeyReactionsAt, now)
 }
@@ -504,11 +506,8 @@ func (s *Syncer) React(ctx context.Context, messageID, emojiType string, on bool
 
 // refreshReaction re-reads one message's reactions.
 func (s *Syncer) refreshReaction(ctx context.Context, messageID string) error {
-	blocks, err := s.Client.ReactionCounts(ctx, []string{messageID})
-	if err != nil {
-		return err
-	}
-	return s.Store.UpdateReactions(ctx, messageID, rawString(blocks[messageID]))
+	_, err := s.storeReactions(ctx, []string{messageID})
+	return err
 }
 
 // checkReadStatus asks Feishu about the messages q selects, records each

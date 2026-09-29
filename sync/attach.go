@@ -34,7 +34,7 @@ func attachText(msgType, contentRaw string) string {
 		if b.FileKey == "" {
 			return "[File]"
 		}
-		return fmt.Sprintf(`<file key="%s" name="%s"/>`, attrEscape(b.FileKey), attrEscape(cmp.Or(b.FileName, b.FileKey)))
+		return keyTag("file", b.FileKey, cmp.Or(b.FileName, b.FileKey))
 	case "audio":
 		if b.FileKey == "" {
 			if b.Duration > 0 {
@@ -74,6 +74,15 @@ func durationAttr(ms float64) string {
 // seconds is the duration as the rendering spells it, rounded to the nearest
 // second: a 6961ms clip reads "7s".
 func seconds(ms float64) string { return fmt.Sprintf("%.0fs", ms/1000) }
+
+// keyTag spells an attachment as one self-closing tag: its key, and its name
+// when the body carries one.
+func keyTag(tag, key, name string) string {
+	if name == "" {
+		return fmt.Sprintf(`<%s key="%s"/>`, tag, attrEscape(key))
+	}
+	return fmt.Sprintf(`<%s key="%s" name="%s"/>`, tag, attrEscape(key), attrEscape(name))
+}
 
 // attrEscape is the inverse of the unescaping a reader of these tags does.
 var attrEscaper = strings.NewReplacer(`\`, `\\`, `"`, `\"`, "\n", `\n`, "\r", `\r`, "\t", `\t`)

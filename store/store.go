@@ -64,8 +64,14 @@ func scanOne[T any](sc scanner) (T, error) {
 	return v, err
 }
 
+// querier is what queryAll runs against: the database itself, or a
+// transaction open on it.
+type querier interface {
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+}
+
 // queryAll runs query and scans every row with scan.
-func queryAll[T any](ctx context.Context, db *sql.DB, scan func(scanner) (T, error), query string, args ...any) ([]T, error) {
+func queryAll[T any](ctx context.Context, db querier, scan func(scanner) (T, error), query string, args ...any) ([]T, error) {
 	rows, err := db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err

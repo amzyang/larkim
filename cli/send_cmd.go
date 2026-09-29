@@ -219,27 +219,13 @@ func (o outgoingFlags) outgoing(ctx context.Context, client larkcli.Client, fetc
 		}
 		return larkcli.Markdown(body), nil
 	case strings.TrimSpace(o.image) != "":
-		if larkcli.IsImageKey(o.image) {
-			return larkcli.Image(o.image), nil
-		}
-		path, err := expandPath(o.image)
-		if err != nil {
-			return larkcli.Outgoing{}, err
-		}
-		key, err := client.UploadImage(ctx, path)
+		key, err := keyOrUpload(ctx, o.image, larkcli.IsImageKey, client.UploadImage)
 		if err != nil {
 			return larkcli.Outgoing{}, err
 		}
 		return larkcli.Image(key), nil
 	case strings.TrimSpace(o.file) != "":
-		if larkcli.IsFileKey(o.file) {
-			return larkcli.File(o.file), nil
-		}
-		path, err := expandPath(o.file)
-		if err != nil {
-			return larkcli.Outgoing{}, err
-		}
-		key, err := client.UploadFile(ctx, path)
+		key, err := keyOrUpload(ctx, o.file, larkcli.IsFileKey, client.UploadFile)
 		if err != nil {
 			return larkcli.Outgoing{}, err
 		}
@@ -247,6 +233,20 @@ func (o outgoingFlags) outgoing(ctx context.Context, client larkcli.Client, fetc
 	default:
 		return larkcli.Text(o.text), nil
 	}
+}
+
+// keyOrUpload hands a key Feishu already holds through as it is, and uploads
+// anything else as the path it names.
+func keyOrUpload(ctx context.Context, ref string, isKey func(string) bool,
+	upload func(context.Context, string) (string, error)) (string, error) {
+	if isKey(ref) {
+		return ref, nil
+	}
+	path, err := expandPath(ref)
+	if err != nil {
+		return "", err
+	}
+	return upload(ctx, path)
 }
 
 // uploadMarkdownImages puts the pictures a markdown body names on Feishu and

@@ -100,7 +100,7 @@ func AddCustom(dataDir, name string, aliases []string, source string) (Custom, e
 	if err := os.MkdirAll(CustomDir(dataDir), 0o700); err != nil {
 		return Custom{}, err
 	}
-	c := Custom{Name: name, Aliases: aliases, Terms: customTerms(name, aliases), Picture: name + ".png"}
+	c := Custom{Name: name, Aliases: aliases, Terms: termsOf(append([]string{name}, aliases...)), Picture: name + ".png"}
 	if err := writePicture(source, c.Path(dataDir)); err != nil {
 		return Custom{}, err
 	}
@@ -139,11 +139,11 @@ func saveCustom(dataDir string, all []Custom) error {
 	return os.WriteFile(customIndex(dataDir), append(b, '\n'), 0o600)
 }
 
-// customTerms is what a query reaches this emoji by: every name it answers to,
-// each with its pinyin and pinyin initials.
-func customTerms(name string, aliases []string) []string {
+// termsOf is what a query reaches an emoji by: every name it answers to, each
+// with its pinyin and pinyin initials.
+func termsOf(names []string) []string {
 	var out []string
-	for _, n := range append([]string{name}, aliases...) {
+	for _, n := range names {
 		for _, t := range fuzzy.Terms(n) {
 			if t = strings.ToLower(t); t != "" && !slices.Contains(out, t) {
 				out = append(out, t)

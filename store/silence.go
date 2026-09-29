@@ -167,7 +167,7 @@ func (s *Store) ReapplySilence(ctx context.Context) (int64, error) {
 		n += set
 	}
 
-	chatIDs, err := txStrings(ctx, tx, `SELECT chat_id FROM chats`)
+	chatIDs, err := queryAll(ctx, tx, scanOne[string], `SELECT chat_id FROM chats`)
 	if err != nil {
 		return 0, err
 	}
@@ -194,22 +194,4 @@ func (s *Store) SilenceMatches(ctx context.Context, r SilenceRule) (count, lastM
 	err = s.db.QueryRowContext(ctx, `SELECT count(*), COALESCE(max(m.create_ms), 0) FROM messages m WHERE `+where, args...).
 		Scan(&count, &lastMs)
 	return count, lastMs, err
-}
-
-// txStrings reads a single-column query inside a transaction.
-func txStrings(ctx context.Context, tx *sql.Tx, query string, args ...any) ([]string, error) {
-	rows, err := tx.QueryContext(ctx, query, args...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []string
-	for rows.Next() {
-		var v string
-		if err := rows.Scan(&v); err != nil {
-			return nil, err
-		}
-		out = append(out, v)
-	}
-	return out, rows.Err()
 }

@@ -601,29 +601,26 @@ func (o Outgoing) body() (msgType, content, rendered string) {
 }
 
 func (f *Fake) UploadImage(_ context.Context, path string) (string, error) {
-	f.mu.Lock()
-	f.Uploads = append(f.Uploads, path)
-	f.mu.Unlock()
-	if err := f.record("image-upload"); err != nil {
-		return "", err
-	}
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.uploaded++
-	return fmt.Sprintf("img_fake_%d", f.uploaded), nil
+	return f.upload(path, "image-upload", "img")
 }
 
 func (f *Fake) UploadFile(_ context.Context, path string) (string, error) {
+	return f.upload(path, "file-upload", "file")
+}
+
+// upload records the path before the call can fail, so a test sees every
+// attempt, and answers with a key spelled the way Feishu spells kind's.
+func (f *Fake) upload(path, call, kind string) (string, error) {
 	f.mu.Lock()
 	f.Uploads = append(f.Uploads, path)
 	f.mu.Unlock()
-	if err := f.record("file-upload"); err != nil {
+	if err := f.record(call); err != nil {
 		return "", err
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.uploaded++
-	return fmt.Sprintf("file_fake_%d", f.uploaded), nil
+	return fmt.Sprintf("%s_fake_%d", kind, f.uploaded), nil
 }
 
 func (f *Fake) Send(_ context.Context, target Target, msg Outgoing, idempotencyKey string) (SentMessage, error) {

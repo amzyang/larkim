@@ -89,11 +89,7 @@ func postText(contentRaw, mentionsJSON string) string {
 		if f.IsFolder {
 			tag = "folder"
 		}
-		if f.FileName != "" {
-			files = append(files, fmt.Sprintf(`<%s key="%s" name="%s"/>`, tag, attrEscape(f.FileKey), attrEscape(f.FileName)))
-		} else {
-			files = append(files, fmt.Sprintf(`<%s key="%s"/>`, tag, attrEscape(f.FileKey)))
-		}
+		files = append(files, keyTag(tag, f.FileKey, f.FileName))
 	}
 	if len(files) > 0 {
 		out += "\n" + strings.Join(files, "\n")

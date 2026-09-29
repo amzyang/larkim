@@ -540,11 +540,10 @@ func (c *ExecClient) ListChats(ctx context.Context, activeFirstPage bool) ([]Raw
 		"page_size":    chatsPageSize,
 		"user_id_type": "open_id",
 	}
-	args := []string{"api", "GET", "/open-apis/im/v1/chats"}
 	if activeFirstPage {
 		params["sort_type"] = "ByActiveTimeDesc"
 	}
-	args = append(args, "--params", jsonArg(params))
+	args := []string{"api", "GET", "/open-apis/im/v1/chats", "--params", jsonArg(params)}
 	if !activeFirstPage {
 		args = append(args, "--page-all", "--page-limit", "0")
 	}
@@ -779,6 +778,22 @@ type Reaction struct {
 	OperatorID string `json:"operator_id"`
 }
 
+// wireReaction is a reaction as the reactions endpoints spell it, with the
+// emoji and the operator each wrapped in an object of its own.
+type wireReaction struct {
+	ReactionID   string `json:"reaction_id"`
+	ReactionType struct {
+		EmojiType string `json:"emoji_type"`
+	} `json:"reaction_type"`
+	Operator struct {
+		OperatorID string `json:"operator_id"`
+	} `json:"operator"`
+}
+
+func (r wireReaction) reaction() Reaction {
+	return Reaction{ReactionID: r.ReactionID, EmojiType: r.ReactionType.EmojiType, OperatorID: r.Operator.OperatorID}
+}
+
 // AddReaction puts one emoji on a message under the user's own name. Feishu
 // checks the emoji_type against its own list and answers 231001 for anything
 // else, and the check is case-sensitive: the key has to carry the spelling
@@ -789,20 +804,11 @@ func (c *ExecClient) AddReaction(ctx context.Context, messageID, emojiType strin
 	if err != nil {
 		return Reaction{}, err
 	}
-	var resp struct {
-		ReactionID   string `json:"reaction_id"`
-		ReactionType struct {
-			EmojiType string `json:"emoji_type"`
-		} `json:"reaction_type"`
-		Operator struct {
-			OperatorID string `json:"operator_id"`
-		} `json:"operator"`
-	}
+	var resp wireReaction
 	if err := json.Unmarshal(data, &resp); err != nil {
 		return Reaction{}, fmt.Errorf("decode reaction: %w", err)
 	}
-	return Reaction{ReactionID: resp.ReactionID, EmojiType: resp.ReactionType.EmojiType,
-		OperatorID: resp.Operator.OperatorID}, nil
+	return resp.reaction(), nil
 }
 
 // ListReactions lists who reacted to a message with one emoji. It exists for
@@ -815,23 +821,14 @@ func (c *ExecClient) ListReactions(ctx context.Context, messageID, emojiType str
 		return nil, err
 	}
 	var resp struct {
-		Items []struct {
-			ReactionID   string `json:"reaction_id"`
-			ReactionType struct {
-				EmojiType string `json:"emoji_type"`
-			} `json:"reaction_type"`
-			Operator struct {
-				OperatorID string `json:"operator_id"`
-			} `json:"operator"`
-		} `json:"items"`
+		Items []wireReaction `json:"items"`
 	}
 	if err := json.Unmarshal(data, &resp); err != nil {
 		return nil, fmt.Errorf("decode reactions: %w", err)
 	}
 	out := make([]Reaction, 0, len(resp.Items))
 	for _, it := range resp.Items {
-		out = append(out, Reaction{ReactionID: it.ReactionID, EmojiType: it.ReactionType.EmojiType,
-			OperatorID: it.Operator.OperatorID})
+		out = append(out, it.reaction())
 	}
 	return out, nil
 }
