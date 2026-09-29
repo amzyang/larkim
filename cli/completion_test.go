@@ -234,3 +234,29 @@ func TestCompleteConfigKey_NeedsNoDatabase(t *testing.T) {
 	lines := completeArgs(t, "--set", "applink")
 	require.Equal(t, []string{"applink_pace_ms="}, lines[:len(lines)-1])
 }
+
+func TestCompleteBodySource_OffersPathsOnlyOnceTheWordOpensWithAt(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "notes.md"), []byte("x"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "nope.txt"), []byte("x"), 0o644))
+	require.NoError(t, os.Mkdir(filepath.Join(dir, "notes.d"), 0o755))
+
+	// An inline body is the common case and must not be shadowed by a listing.
+	got, d := completeBodySource(nil, nil, "收到")
+	require.Empty(t, got)
+	require.Equal(t, cobra.ShellCompDirectiveNoFileComp, d)
+
+	got, d = completeBodySource(nil, nil, "@@张三")
+	require.Empty(t, got, "@@ escapes a literal @, so there is no path behind it")
+	require.Equal(t, cobra.ShellCompDirectiveNoFileComp, d)
+
+	got, d = completeBodySource(nil, nil, "@"+filepath.Join(dir, "not"))
+	require.ElementsMatch(t, []cobra.Completion{
+		"@" + filepath.Join(dir, "notes.md"),
+		"@" + filepath.Join(dir, "notes.d") + "/",
+	}, got, "the @ is carried back because the shell replaces the whole word")
+	require.Equal(t, cobra.ShellCompDirectiveNoFileComp|cobra.ShellCompDirectiveNoSpace, d)
+
+	got, _ = completeBodySource(nil, nil, "@"+dir+"/")
+	require.Len(t, got, 3, "a word ending in a separator lists that directory")
+}

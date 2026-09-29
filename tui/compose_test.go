@@ -12,6 +12,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/amzyang/larkim/larkcli"
 	"github.com/amzyang/larkim/store"
+	"github.com/amzyang/larkim/sync"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/stretchr/testify/require"
 )
@@ -493,7 +494,7 @@ func TestSubmit_RemoteImageAtTheFetchCeilingIsRefused(t *testing.T) {
 	m.deps.Fetch = func(context.Context, string) ([]byte, string, error) {
 		// The shared fetcher truncates at its ceiling rather than failing, so
 		// a body this size may be half a picture.
-		return make([]byte, remoteCeiling), "image/png", nil
+		return make([]byte, sync.RemoteCeiling), "image/png", nil
 	}
 	m.input.SetValue("![图](https://example.com/huge.png)")
 
@@ -515,14 +516,6 @@ func TestSubmit_RemoteImageRefusesAnEmptyBody(t *testing.T) {
 	m = mm.(Model)
 	require.ErrorContains(t, cmd().(sentMsg).err, "empty response")
 	require.Empty(t, fake.Uploads)
-}
-
-func TestRemoteExt_NamesTheFileAfterTheContentType(t *testing.T) {
-	require.Equal(t, ".jpg", remoteExt("image/jpeg"))
-	require.Equal(t, ".gif", remoteExt("image/gif"))
-	require.Equal(t, ".webp", remoteExt("image/webp"))
-	require.Equal(t, ".png", remoteExt("image/png"))
-	require.Equal(t, ".png", remoteExt(""), "an unhelpful server still gets a plausible name")
 }
 
 func TestRenderBadge_NamesARemoteImage(t *testing.T) {

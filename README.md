@@ -45,6 +45,8 @@ larkim send --to linlan@example.com --text "hi"     # email, name or ou_ id
 larkim send --chat "项目协作群" --text "hi"          # chat name or oc_ id
 larkim reply om_xxx --text "ok" --in-thread
 larkim send --chat "平台组" --markdown $'## 发布说明\n\n- 修复了 A'   # rich-text post
+larkim send --chat "平台组" --markdown @./notes.md                  # or -; the pictures it names go up too
+larkim lint ./notes.md                               # what that body loses on the way to Feishu
 larkim send --chat "平台组" --image ~/Desktop/shot.png              # uploaded, then sent
 larkim send --chat "平台组" --file ~/Desktop/发布说明.pdf            # any other file, same way
 larkim react om_xxx --emoji DONE                     # an emoji Feishu refuses is replied with instead

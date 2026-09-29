@@ -1,6 +1,7 @@
 package sync
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -33,8 +34,55 @@ func HTTPFetch(ctx context.Context, url string) ([]byte, string, error) {
 	if resp.StatusCode != http.StatusOK {
 		return nil, "", fmt.Errorf("GET %s: %s", url, resp.Status)
 	}
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
+	body, err := io.ReadAll(io.LimitReader(resp.Body, RemoteCeiling))
 	return body, resp.Header.Get("Content-Type"), err
+}
+
+// RemoteCeiling is what HTTPFetch reads at most. It truncates rather than
+// failing, so a body that comes back at exactly the ceiling is refused:
+// uploading a half-downloaded picture is worse than refusing to send.
+const RemoteCeiling = 8 << 20
+
+// FetchToTemp downloads what url names and writes it where an upload can take
+// it, since lark-cli uploads a path rather than bytes. The file is the
+// caller's to remove once the upload has answered.
+func FetchToTemp(ctx context.Context, fetch Fetcher, url string) (string, error) {
+	body, ctype, err := fetch(ctx, url)
+	if err != nil {
+		return "", fmt.Errorf("fetch %s: %w", url, err)
+	}
+	if len(body) == 0 {
+		return "", fmt.Errorf("fetch %s: empty response", url)
+	}
+	if len(body) >= RemoteCeiling {
+		return "", fmt.Errorf("fetch %s: at least %d MB, over the limit", url, RemoteCeiling>>20)
+	}
+	f, err := os.CreateTemp("", "larkim-remote-*"+remoteExt(ctype))
+	if err != nil {
+		return "", err
+	}
+	_, werr := f.Write(body)
+	cerr := f.Close()
+	if err := cmp.Or(werr, cerr); err != nil {
+		os.Remove(f.Name())
+		return "", err
+	}
+	return f.Name(), nil
+}
+
+// remoteExt names the temp file after what the server said it sent. Feishu
+// sniffs the bytes, so this only has to be plausible, never authoritative.
+func remoteExt(contentType string) string {
+	switch {
+	case strings.Contains(contentType, "jpeg"), strings.Contains(contentType, "jpg"):
+		return ".jpg"
+	case strings.Contains(contentType, "gif"):
+		return ".gif"
+	case strings.Contains(contentType, "webp"):
+		return ".webp"
+	default:
+		return ".png"
+	}
 }
 
 const (

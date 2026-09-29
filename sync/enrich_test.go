@@ -318,3 +318,36 @@ func TestTick_RecordsAServerCappedRoster(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, chat.MembersTruncated)
 }
+
+func TestRemoteExt_NamesTheFileAfterTheContentType(t *testing.T) {
+	require.Equal(t, ".jpg", remoteExt("image/jpeg"))
+	require.Equal(t, ".gif", remoteExt("image/gif"))
+	require.Equal(t, ".webp", remoteExt("image/webp"))
+	require.Equal(t, ".png", remoteExt("image/png"))
+	require.Equal(t, ".png", remoteExt(""), "an unhelpful server still gets a plausible name")
+}
+
+func TestFetchToTemp_WritesTheBodyWhereAnUploadCanTakeIt(t *testing.T) {
+	path, err := FetchToTemp(t.Context(), func(context.Context, string) ([]byte, string, error) {
+		return []byte("png bytes"), "image/png", nil
+	}, "https://example.com/a.png")
+	require.NoError(t, err)
+	defer os.Remove(path)
+	require.Equal(t, ".png", filepath.Ext(path))
+	body, err := os.ReadFile(path)
+	require.NoError(t, err)
+	require.Equal(t, "png bytes", string(body))
+}
+
+func TestFetchToTemp_RefusesAnEmptyOrTruncatedBody(t *testing.T) {
+	reply := func(body []byte) Fetcher {
+		return func(context.Context, string) ([]byte, string, error) { return body, "image/png", nil }
+	}
+	_, err := FetchToTemp(t.Context(), reply(nil), "https://example.com/a.png")
+	require.ErrorContains(t, err, "empty response")
+
+	// HTTPFetch truncates at the ceiling rather than failing, so a body that
+	// long may be half a picture.
+	_, err = FetchToTemp(t.Context(), reply(make([]byte, RemoteCeiling)), "https://example.com/a.png")
+	require.ErrorContains(t, err, "over the limit")
+}

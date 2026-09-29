@@ -20,9 +20,12 @@ import (
 
 // App carries process-wide dependencies into commands.
 type App struct {
-	Version      string
-	Out          io.Writer
-	Err          io.Writer
+	Version string
+	Out     io.Writer
+	Err     io.Writer
+	// In is where a body flag reads from when it is passed `-`. A test hands
+	// a reader in so the pipe is not the process's own.
+	In           io.Reader
 	configPath   string
 	sets         []string
 	jsonOut      bool
@@ -49,7 +52,7 @@ type App struct {
 // New builds the root command. buildDSN is the Sentry DSN baked in at build
 // time (empty in local builds, so telemetry is off unless configured).
 func New(version, buildDSN string) *cobra.Command {
-	app := &App{Version: version, Out: os.Stdout, Err: os.Stderr, buildDSN: buildDSN}
+	app := &App{Version: version, Out: os.Stdout, Err: os.Stderr, In: os.Stdin, buildDSN: buildDSN}
 	root := &cobra.Command{
 		Use:           "larkim",
 		Short:         "Feishu/Lark IM synced to local SQLite, with a CLI and TUI on top",
@@ -97,7 +100,7 @@ func New(version, buildDSN string) *cobra.Command {
 	root.SetFlagErrorFunc(func(_ *cobra.Command, err error) error { return &usageError{err} })
 	root.AddCommand(app.syncCmd(), app.statusCmd(), app.daemonCmd(), app.chatsCmd(), app.messagesCmd(), app.contactsCmd(),
 		app.sendCmd(), app.replyCmd(), app.reactCmd(), app.watchCmd(), app.readAllCmd(), app.silenceCmd(), app.tuiCmd(), app.dbCmd(),
-		app.schemaCmd(), app.emojiCmd(), app.sentryCmd(), app.unreadCmd())
+		app.schemaCmd(), app.emojiCmd(), app.sentryCmd(), app.unreadCmd(), app.lintCmd())
 	mustWire(root.MarkPersistentFlagFilename("config", "yaml", "yml"))
 	mustWire(root.RegisterFlagCompletionFunc("set", completeConfigKey))
 	completeNoFileDefault(root)

@@ -707,53 +707,13 @@ func uploadOne(d Deps, path string) (string, error) {
 	return key, nil
 }
 
-// remoteCeiling is what the shared fetcher reads at most. It truncates rather
-// than failing, so a body that comes back at exactly the ceiling is refused:
-// uploading a half-downloaded picture is worse than refusing to send.
-const remoteCeiling = 8 << 20
-
-// fetchRemote downloads an image a draft named by URL and writes it where
-// UploadImage can take it, since lark-cli uploads a path rather than bytes.
+// fetchRemote downloads an image a draft named by URL under a deadline of its
+// own, the way each upload beside it has one. The lane waited takes is
+// lark-cli's, and this call reaches a CDN rather than lark-cli.
 func fetchRemote(d Deps, url string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), sendTimeout)
 	defer cancel()
-	body, ctype, err := d.Fetch(ctx, url)
-	if err != nil {
-		return "", fmt.Errorf("fetch %s: %w", url, err)
-	}
-	if len(body) == 0 {
-		return "", fmt.Errorf("fetch %s: empty response", url)
-	}
-	if len(body) >= remoteCeiling {
-		return "", fmt.Errorf("%s is at least %s, over the %s limit",
-			url, humanBytes(int64(len(body))), humanBytes(remoteCeiling))
-	}
-	f, err := os.CreateTemp("", "larkim-remote-*"+remoteExt(ctype))
-	if err != nil {
-		return "", err
-	}
-	_, werr := f.Write(body)
-	cerr := f.Close()
-	if err := firstErr(werr, cerr); err != nil {
-		os.Remove(f.Name())
-		return "", err
-	}
-	return f.Name(), nil
-}
-
-// remoteExt names the temp file after what the server said it sent. Feishu
-// sniffs the bytes, so this only has to be plausible, never authoritative.
-func remoteExt(contentType string) string {
-	switch {
-	case strings.Contains(contentType, "jpeg"), strings.Contains(contentType, "jpg"):
-		return ".jpg"
-	case strings.Contains(contentType, "gif"):
-		return ".gif"
-	case strings.Contains(contentType, "webp"):
-		return ".webp"
-	default:
-		return ".png"
-	}
+	return sync.FetchToTemp(ctx, d.Fetch, url)
 }
 
 // pasteClipboard reads the clipboard off the Update loop: the osascript round

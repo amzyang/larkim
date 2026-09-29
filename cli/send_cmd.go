@@ -3,14 +3,17 @@ package cli
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/amzyang/larkim/larkcli"
+	"github.com/amzyang/larkim/larkmd"
 	"github.com/amzyang/larkim/resolve"
 	"github.com/amzyang/larkim/store"
+	"github.com/amzyang/larkim/sync"
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 )
@@ -27,7 +30,10 @@ func (a *App) sendCmd() *cobra.Command {
 				return fmt.Errorf("pass exactly one of --to or --chat")
 			}
 			if err := body.check(); err != nil {
-				return err
+				return &usageError{err}
+			}
+			if err := body.resolve(a.In); err != nil {
+				return &usageError{err}
 			}
 			st, err := a.openStore()
 			if err != nil {
@@ -54,10 +60,11 @@ func (a *App) sendCmd() *cobra.Command {
 				target.UserID = u.OpenID
 				label = u.Name
 			}
-			msg, err := body.outgoing(ctx, client)
+			msg, err := body.outgoing(ctx, client, sync.HTTPFetch)
 			if err != nil {
 				return err
 			}
+			a.warnMarkdown(msg)
 			sent, err := client.Send(ctx, target, msg, idempotencyKey(idemKey))
 			if err != nil {
 				return err
@@ -103,8 +110,10 @@ type outgoingFlags struct {
 }
 
 func (o *outgoingFlags) register(cmd *cobra.Command) {
-	cmd.Flags().StringVar(&o.text, "text", "", "plain text to send, verbatim")
-	cmd.Flags().StringVar(&o.markdown, "markdown", "", "markdown to send as a rich-text post")
+	cmd.Flags().StringVar(&o.text, "text", "", "plain text to send, verbatim; @file reads a file, - reads stdin")
+	cmd.Flags().StringVar(&o.markdown, "markdown", "", "markdown to send as a rich-text post; @file reads a file, - reads stdin")
+	mustWire(cmd.RegisterFlagCompletionFunc("text", completeBodySource))
+	mustWire(cmd.RegisterFlagCompletionFunc("markdown", completeBodySource))
 	cmd.Flags().StringVar(&o.image, "image", "", "image to send: a path, or an img_… key Feishu already holds")
 	cmd.Flags().StringVar(&o.file, "file", "", "file to send: a path, or a file_… key Feishu already holds")
 	// The two that really do take a path, which is what keeps
@@ -126,12 +135,89 @@ func (o outgoingFlags) check() error {
 	return nil
 }
 
+// resolve replaces a body that names a source with what that source holds.
+// It runs after check has reduced the bodies to one, so stdin can only ever
+// have a single claimant and needs no bookkeeping to keep them off each other.
+func (o *outgoingFlags) resolve(in io.Reader) error {
+	if err := resolveBody("--text", &o.text, in); err != nil {
+		return err
+	}
+	return resolveBody("--markdown", &o.markdown, in)
+}
+
+// resolveBody rewrites one body in place: @path is a file, @@ is a literal @,
+// and - is stdin. What a source holds is read once and never scanned again, so
+// a file opening with @ sends as written rather than being read as a path.
+// --image and --file are left out on purpose: they already take a path, and @
+// in front of one has no second reading to pick from.
+func resolveBody(flag string, v *string, in io.Reader) error {
+	raw := *v
+	if raw == "" {
+		return nil
+	}
+	if rest, ok := strings.CutPrefix(raw, "@@"); ok {
+		*v = "@" + rest
+		return nil
+	}
+	src := raw
+	if raw != "-" {
+		path, ok := strings.CutPrefix(raw, "@")
+		if !ok {
+			return nil
+		}
+		if src = strings.TrimSpace(path); src == "" {
+			return fmt.Errorf("%s: no file path after @", flag)
+		}
+	}
+	body, err := readSource(flag+" "+raw, src, in)
+	if err != nil {
+		return err
+	}
+	*v = body
+	return nil
+}
+
+// readSource reads a body out of the file src names, or out of stdin when it
+// is -. label is how the caller spelled it, so the sentence points at what
+// the reader typed rather than at the path it expanded to.
+func readSource(label, src string, in io.Reader) (string, error) {
+	var data []byte
+	var err error
+	if src == "-" {
+		data, err = io.ReadAll(in)
+	} else {
+		var abs string
+		if abs, err = expandPath(src); err == nil {
+			data, err = os.ReadFile(abs)
+		}
+	}
+	if err != nil {
+		return "", fmt.Errorf("%s: %w", label, err)
+	}
+	body := cleanBody(data)
+	if strings.TrimSpace(body) == "" {
+		return "", fmt.Errorf("%s holds no message", label)
+	}
+	return body, nil
+}
+
+// cleanBody makes a read fit to send. A BOM would ride along as the message's
+// invisible first character, and the newline a text file ends with would draw
+// as a trailing blank line nobody typed.
+func cleanBody(data []byte) string {
+	return strings.TrimRight(strings.TrimPrefix(string(data), "\ufeff"), "\r\n")
+}
+
 // outgoing resolves the flags into a body. An image path is uploaded here
 // because lark-cli's own --image refuses an absolute path.
-func (o outgoingFlags) outgoing(ctx context.Context, client larkcli.Client) (larkcli.Outgoing, error) {
+func (o outgoingFlags) outgoing(ctx context.Context, client larkcli.Client, fetch sync.Fetcher) (larkcli.Outgoing, error) {
 	switch {
 	case strings.TrimSpace(o.markdown) != "":
-		return larkcli.Markdown(o.markdown), nil
+		body, err := uploadMarkdownImages(ctx, client, fetch, o.markdown)
+		if err != nil {
+			return larkcli.Outgoing{}, err
+		}
+		return larkcli.Markdown(body), nil
 	case strings.TrimSpace(o.image) != "":
 		if larkcli.IsImageKey(o.image) {
 			return larkcli.Image(o.image), nil
@@ -163,6 +249,56 @@ func (o outgoingFlags) outgoing(ctx context.Context, client larkcli.Client) (lar
 	}
 }
 
+// uploadMarkdownImages puts the pictures a markdown body names on Feishu and
+// writes each reference to the key it came back as. The composer does this
+// for a draft, and a body arriving through --markdown has the same pictures
+// to send: without it the reference reaches Feishu naming a file only this
+// machine can open. A reference inside a code span or a fence is left alone,
+// because larkmd reads the body rather than matching it.
+func uploadMarkdownImages(ctx context.Context, client larkcli.Client, fetch sync.Fetcher, src string) (string, error) {
+	var err error
+	out := larkmd.ReplaceImages(src, func(ref larkmd.ImageRef) string {
+		if err != nil || larkcli.IsImageKey(ref.Dest) {
+			return ref.Dest
+		}
+		key, ferr := uploadMarkdownImage(ctx, client, fetch, ref.Dest)
+		if ferr != nil {
+			// The line is what turns this back into a place to look: a body
+			// read out of a file can name a great many pictures.
+			err = fmt.Errorf("line %d: %w", ref.Line, ferr)
+			return ref.Dest
+		}
+		return key
+	})
+	if err != nil {
+		return "", err
+	}
+	return out, nil
+}
+
+// uploadMarkdownImage sends one picture up, downloading it first when the
+// reference names a remote one: an upload takes a path, not an address.
+func uploadMarkdownImage(ctx context.Context, client larkcli.Client, fetch sync.Fetcher, ref string) (string, error) {
+	if strings.HasPrefix(ref, "http://") || strings.HasPrefix(ref, "https://") {
+		path, err := sync.FetchToTemp(ctx, fetch, ref)
+		if err != nil {
+			return "", err
+		}
+		defer os.Remove(path)
+		return client.UploadImage(ctx, path)
+	}
+	path, err := expandPath(ref)
+	if err != nil {
+		return "", err
+	}
+	// Answering here rather than letting the upload fail is what names the
+	// reference the sender mistyped instead of the path it expanded to.
+	if _, err := os.Stat(path); err != nil {
+		return "", fmt.Errorf("no such file: %s", ref)
+	}
+	return client.UploadImage(ctx, path)
+}
+
 // expandPath resolves ~ and relative paths the way a shell would, so a path
 // typed by hand reaches the same file the shell would have opened.
 func expandPath(p string) (string, error) {
@@ -187,7 +323,10 @@ func (a *App) replyCmd() *cobra.Command {
 		ValidArgsFunction: a.completeMessageID,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := body.check(); err != nil {
-				return err
+				return &usageError{err}
+			}
+			if err := body.resolve(a.In); err != nil {
+				return &usageError{err}
 			}
 			st, err := a.openStore()
 			if err != nil {
@@ -196,10 +335,11 @@ func (a *App) replyCmd() *cobra.Command {
 			defer st.Close()
 			ctx := context.Background()
 			client := a.client()
-			msg, err := body.outgoing(ctx, client)
+			msg, err := body.outgoing(ctx, client, sync.HTTPFetch)
 			if err != nil {
 				return err
 			}
+			a.warnMarkdown(msg)
 			sent, err := client.Reply(ctx, args[0], msg, inThread, idempotencyKey(idemKey))
 			if err != nil {
 				return err
@@ -212,6 +352,18 @@ func (a *App) replyCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&inThread, "in-thread", false, "reply in the message's thread instead of the main chat")
 	registerIdempotencyKey(cmd, &idemKey)
 	return cmd
+}
+
+// warnMarkdown says what a markdown body loses on the way to Feishu. It never
+// fails a send: what it names is content the sender chose, and it goes to
+// stderr so a script reading the JSON on stdout is untouched.
+func (a *App) warnMarkdown(msg larkcli.Outgoing) {
+	for _, f := range larkmd.Lint(msg.Markdown) {
+		fmt.Fprintf(a.Err, "larkim: %d:%d [%s] %s\n", f.Line, f.Column, f.Rule, f.Message)
+		if f.Hint != "" {
+			fmt.Fprintln(a.Err, "  hint:", f.Hint)
+		}
+	}
 }
 
 // ingestSent stores the message we just sent so it is visible before the next

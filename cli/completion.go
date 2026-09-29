@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"context"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/amzyang/larkim/config"
@@ -102,6 +103,45 @@ func completeConfigKey(_ *cobra.Command, _ []string, prefix string) ([]cobra.Com
 			out = append(out, key+"=")
 		}
 	}
+	return out, cobra.ShellCompDirectiveNoFileComp | cobra.ShellCompDirectiveNoSpace
+}
+
+// completeBodySource completes the path in a body flag, but only once the
+// word opens with @: an inline body is the common case and must not be
+// shadowed by a directory listing. The @ is carried back on every candidate
+// because the shell replaces the whole word with the one that is picked.
+func completeBodySource(_ *cobra.Command, _ []string, prefix string) ([]cobra.Completion, cobra.ShellCompDirective) {
+	pat, ok := strings.CutPrefix(prefix, "@")
+	// @@ escapes a literal @, so there is no path to complete behind it.
+	if !ok || strings.HasPrefix(pat, "@") {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+	expanded, err := expandPath(cmp.Or(pat, "."))
+	if err != nil {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+	// A word ending in a separator lists that directory; anything else is the
+	// stem the entries in its parent are narrowed by.
+	if strings.HasSuffix(pat, string(os.PathSeparator)) || pat == "" {
+		expanded += string(os.PathSeparator)
+	}
+	matches, err := filepath.Glob(expanded + "*")
+	if err != nil {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+	// The candidates are spelled the way the reader is typing — a relative
+	// word stays relative — so only the last segment comes from the glob.
+	dir, _ := filepath.Split(pat)
+	var out []cobra.Completion
+	for _, m := range matches {
+		name := filepath.Base(m)
+		if st, err := os.Stat(m); err == nil && st.IsDir() {
+			name += string(os.PathSeparator)
+		}
+		out = append(out, "@"+dir+name)
+	}
+	// Directories must stay open for the next segment, and cobra applies the
+	// directive to the whole answer, so no candidate gets a space.
 	return out, cobra.ShellCompDirectiveNoFileComp | cobra.ShellCompDirectiveNoSpace
 }
 
