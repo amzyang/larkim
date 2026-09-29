@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"uuid"
 
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
@@ -13,7 +14,6 @@ import (
 	"github.com/amzyang/larkim/jev"
 	"github.com/amzyang/larkim/larkcli"
 	"github.com/amzyang/larkim/store"
-	"github.com/google/uuid"
 )
 
 // pickerCols is how many emoji stand side by side. The picker is only as tall
@@ -241,7 +241,7 @@ func (m Model) sendEmojiPicture(x store.Message, e emoji.Emoji) (tea.Model, tea.
 		return m.notify(e.Name()+" has no picture cut out to send", true), nil
 	}
 	img := draftImage{ref: path, local: path, key: "img_local_1"}
-	it := outboxItem{localID: uuid.NewString(), chatID: x.ChatID, replyTo: x.MessageID,
+	it := outboxItem{localID: uuid.New().String(), chatID: x.ChatID, replyTo: x.MessageID,
 		msgType: "image", send: larkcli.Image(img.key), body: "[Image: " + img.key + "]",
 		images: []draftImage{img}, createMs: time.Now().UnixMilli()}
 	// A reply to a message inside a thread stays inside it, the way the

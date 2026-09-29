@@ -13,7 +13,6 @@ require (
 	github.com/charmbracelet/x/ansi v0.11.8
 	github.com/getsentry/sentry-go v0.49.0
 	github.com/gofrs/flock v0.13.1
-	github.com/google/uuid v1.6.0
 	github.com/junegunn/fzf v0.74.4
 	github.com/mozillazg/go-pinyin v0.21.0
 	github.com/spf13/cobra v1.10.2
@@ -41,6 +40,7 @@ require (
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
 	github.com/dlclark/regexp2/v2 v2.2.1 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
+	github.com/google/uuid v1.6.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/invopop/jsonschema v0.14.0 // indirect
 	github.com/junegunn/go-shellwords v0.0.0-20250127100254-2aa3b3277741 // indirect

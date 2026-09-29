@@ -4,11 +4,11 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"uuid"
 
 	"github.com/amzyang/larkim/emoji"
 	"github.com/amzyang/larkim/larkcli"
 	"github.com/amzyang/larkim/store"
-	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 )
 
@@ -128,7 +128,7 @@ func (a *App) react(ctx context.Context, st *store.Store, messageID, key string)
 	// by id alone — so a miss decides nothing but which flow the reply lands
 	// in, and the main flow is where a message without a thread belongs.
 	parent, miss := st.GetMessage(ctx, messageID)
-	sent, err := a.client().Reply(ctx, messageID, body, miss == nil && stayInThread(parent), uuid.NewString())
+	sent, err := a.client().Reply(ctx, messageID, body, miss == nil && stayInThread(parent), uuid.New().String())
 	if err != nil {
 		return res, err
 	}

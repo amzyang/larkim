@@ -4,6 +4,7 @@ import (
 	"context"
 	"strconv"
 	"strings"
+	"uuid"
 
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
@@ -11,7 +12,6 @@ import (
 	"github.com/amzyang/larkim/fuzzy"
 	"github.com/amzyang/larkim/larkcli"
 	"github.com/amzyang/larkim/store"
-	"github.com/google/uuid"
 )
 
 // fwdTarget is one place a message can be forwarded to: a chat, or a person
@@ -165,7 +165,7 @@ func forwardCmd(d Deps, messageID string, target larkcli.Target) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := waited(sendTimeout)
 		defer cancel()
-		sent, err := d.Client.Forward(ctx, messageID, target, uuid.NewString())
+		sent, err := d.Client.Forward(ctx, messageID, target, uuid.New().String())
 		if err != nil {
 			return forwardedMsg{messageID: messageID, err: err}
 		}

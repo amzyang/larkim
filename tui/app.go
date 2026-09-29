@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"uuid"
 
 	"charm.land/bubbles/v2/textarea"
 	"charm.land/bubbles/v2/textinput"
@@ -26,7 +27,6 @@ import (
 	"github.com/amzyang/larkim/sync"
 	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/ansi"
-	"github.com/google/uuid"
 )
 
 type pane int
@@ -2424,7 +2424,7 @@ func (m Model) submit() (tea.Model, tea.Cmd) {
 	// the reader typed, so it can go on being edited, and the bubble draws what
 	// they wrote until Feishu's own rendering comes back with the @ resolved.
 	p.send = m.tagMentions(p.send)
-	it := outboxItem{localID: uuid.NewString(), chatID: m.chatID, msgType: p.kind.msgType(),
+	it := outboxItem{localID: uuid.New().String(), chatID: m.chatID, msgType: p.kind.msgType(),
 		send: p.send, body: p.body, images: p.uploads(), file: p.file, createMs: time.Now().UnixMilli()}
 	switch {
 	case m.side == sideRight:

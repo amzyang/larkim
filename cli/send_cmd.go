@@ -8,13 +8,13 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"uuid"
 
 	"github.com/amzyang/larkim/larkcli"
 	"github.com/amzyang/larkim/larkmd"
 	"github.com/amzyang/larkim/resolve"
 	"github.com/amzyang/larkim/store"
 	"github.com/amzyang/larkim/sync"
-	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 )
 
@@ -96,7 +96,7 @@ func idempotencyKey(supplied string) string {
 	if s := strings.TrimSpace(supplied); s != "" {
 		return s
 	}
-	return uuid.NewString()
+	return uuid.New().String()
 }
 
 // outgoingFlags are the bodies a send can carry. They are exclusive the way
