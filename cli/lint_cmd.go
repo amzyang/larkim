@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"io"
 
 	"github.com/amzyang/larkim/larkmd"
 	"github.com/spf13/cobra"
@@ -40,16 +41,23 @@ func (a *App) printFindings(findings []larkmd.Finding) error {
 		}
 		return a.printJSON(findings)
 	}
-	for _, f := range findings {
-		fmt.Fprintf(a.Out, "%d:%d [%s] %s\n", f.Line, f.Column, f.Rule, f.Message)
-		if f.Hint != "" {
-			fmt.Fprintln(a.Out, "  hint:", f.Hint)
-		}
-	}
+	writeFindings(a.Out, "", findings)
 	if len(findings) == 0 {
 		fmt.Fprintln(a.Out, "nothing to report")
 	}
 	return nil
+}
+
+// writeFindings prints what a body loses, a finding to the line with its hint
+// under it. prefix names larkim on the lines a send writes to stderr beside
+// its own output; the lint command, whose whole output this is, passes none.
+func writeFindings(w io.Writer, prefix string, findings []larkmd.Finding) {
+	for _, f := range findings {
+		fmt.Fprintf(w, "%s%d:%d [%s] %s\n", prefix, f.Line, f.Column, f.Rule, f.Message)
+		if f.Hint != "" {
+			fmt.Fprintln(w, "  hint:", f.Hint)
+		}
+	}
 }
 
 // completeLintSource offers the one path the command takes. The default

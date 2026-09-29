@@ -2,6 +2,7 @@ package tui
 
 import (
 	tea "charm.land/bubbletea/v2"
+	"github.com/amzyang/larkim/store"
 )
 
 // recalledMsg closes a recall. id names the message so the row can be brought
@@ -24,25 +25,36 @@ func recallCmd(d Deps, messageID string) tea.Cmd {
 	}
 }
 
+// recallable is the message a recall would take back, or the sentence saying
+// why it cannot. A re-edit asks the same questions because a recall is what it
+// runs; verb and done name the action in the two answers that mention it.
+func (m Model) recallable(verb, done string) (store.Message, string) {
+	if m.onForwardedChild() {
+		return store.Message{}, "a forwarded message belongs to its own chat"
+	}
+	x, ok := m.selected()
+	if !ok {
+		return store.Message{}, "select a message to " + verb
+	}
+	if x.SenderID != m.deps.Self {
+		return store.Message{}, "only your own messages can be " + done
+	}
+	if x.Deleted {
+		return store.Message{}, "that message is already recalled"
+	}
+	if m.outboxAt(x.MessageID) != nil {
+		return store.Message{}, "that message has not reached Feishu yet"
+	}
+	return x, ""
+}
+
 // askRecall arms the confirmation. A recall is visible to everybody who was in
 // the chat and cannot be undone, so it is the one action here that asks first —
 // the client asks too.
 func (m Model) askRecall() (tea.Model, tea.Cmd) {
-	if m.onForwardedChild() {
-		return m.notify("a forwarded message belongs to its own chat", true), nil
-	}
-	x, ok := m.selected()
-	if !ok {
-		return m.notify("select a message to recall", true), nil
-	}
-	if x.SenderID != m.deps.Self {
-		return m.notify("only your own messages can be recalled", true), nil
-	}
-	if x.Deleted {
-		return m.notify("that message is already recalled", true), nil
-	}
-	if m.outboxAt(x.MessageID) != nil {
-		return m.notify("that message has not reached Feishu yet", true), nil
+	x, bad := m.recallable("recall", "recalled")
+	if bad != "" {
+		return m.notify(bad, true), nil
 	}
 	m.confirm = confirmation{kind: confirmRecall, messageID: x.MessageID}
 	return m.notify("recall this message? y/n", false), nil

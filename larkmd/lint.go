@@ -37,7 +37,7 @@ func Lint(src string) []Finding {
 	lines := newLineTable(src)
 	cuts := paragraphCuts(src)
 	var out []Finding
-	at := func(off int) (int, int) { return lines.at(off) }
+	at := lines.at
 	_ = ast.Walk(mdParser.Parse(b), func(n ast.Node, entering bool) (ast.WalkStatus, error) {
 		if !entering {
 			return ast.WalkContinue, nil
@@ -66,7 +66,8 @@ func Lint(src string) []Finding {
 		case *ast.HTMLBlock:
 			// An HTML block keeps no source segments in goldmark v2, so the
 			// tag is read off the body at the position it opens on.
-			out = append(out, scanHTML(src[max(c.Pos(), 0):min(max(c.Pos(), 0)+64, len(src))], c.Pos(), at)...)
+			open := max(c.Pos(), 0)
+			out = append(out, scanHTML(src[open:min(open+64, len(src))], c.Pos(), at)...)
 		}
 		return ast.WalkContinue, nil
 	})

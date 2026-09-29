@@ -240,9 +240,5 @@ func forwardSender(k store.Forwarded) string { return cmp.Or(k.SenderName, k.Sen
 // several paragraphs keeps the offset on each, and a nested bundle keeps it on
 // its envelope too.
 func indentForward(s string) string {
-	lines := strings.Split(s, "\n")
-	for i, l := range lines {
-		lines[i] = forwardIndent + l
-	}
-	return strings.Join(lines, "\n")
+	return forwardIndent + strings.ReplaceAll(s, "\n", "\n"+forwardIndent)
 }

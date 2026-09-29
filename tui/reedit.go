@@ -30,21 +30,9 @@ type reEditPending struct {
 // The guards are recall's, because the recall is what runs, plus the two the
 // refill needs.
 func (m Model) askReEdit() (tea.Model, tea.Cmd) {
-	if m.onForwardedChild() {
-		return m.notify("a forwarded message belongs to its own chat", true), nil
-	}
-	x, ok := m.selected()
-	if !ok {
-		return m.notify("select a message to re-edit", true), nil
-	}
-	if x.SenderID != m.deps.Self {
-		return m.notify("only your own messages can be re-edited", true), nil
-	}
-	if x.Deleted {
-		return m.notify("that message is already recalled", true), nil
-	}
-	if m.outboxAt(x.MessageID) != nil {
-		return m.notify("that message has not reached Feishu yet", true), nil
+	x, bad := m.recallable("re-edit", "re-edited")
+	if bad != "" {
+		return m.notify(bad, true), nil
 	}
 	if !slices.Contains(reEditTypes, x.MsgType) {
 		return m.notify("only text and post messages can be re-edited", true), nil

@@ -358,12 +358,7 @@ func (a *App) replyCmd() *cobra.Command {
 // fails a send: what it names is content the sender chose, and it goes to
 // stderr so a script reading the JSON on stdout is untouched.
 func (a *App) warnMarkdown(msg larkcli.Outgoing) {
-	for _, f := range larkmd.Lint(msg.Markdown) {
-		fmt.Fprintf(a.Err, "larkim: %d:%d [%s] %s\n", f.Line, f.Column, f.Rule, f.Message)
-		if f.Hint != "" {
-			fmt.Fprintln(a.Err, "  hint:", f.Hint)
-		}
-	}
+	writeFindings(a.Err, "larkim: ", larkmd.Lint(msg.Markdown))
 }
 
 // ingestSent stores the message we just sent so it is visible before the next
