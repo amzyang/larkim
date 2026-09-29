@@ -116,7 +116,7 @@ func buildHelpEntries() []helpEntry {
 		{"EMOJI", "Enter", "react"},
 		{"EMOJI", "Esc", "cancel"},
 		{"EMOJI", "", "the filter takes the readline keys: Ctrl+w a word, Ctrl+u to the start, Ctrl+a/Ctrl+e ends"},
-		{"EMOJI", "", "✦ marks the top row: what Jev makes of the chat, drawn once it answers"},
+		{"EMOJI", "", "✦ marks what Jev chose for this message, laid over the head of the grid once it answers"},
 		{"EMOJI", "", "an emoji already yours is marked ✓, and choosing it takes the reaction back"},
 		{"EMOJI", "", "one marked pic is no longer a reaction: choosing it replies with the picture instead"},
 
