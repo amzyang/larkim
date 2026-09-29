@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"cmp"
 	"time"
 
 	"charm.land/lipgloss/v2"
@@ -29,39 +30,44 @@ func calendarOf(x store.Message) (sync.Calendar, bool) {
 // the detail page cannot show to a reader who has not subscribed to it; the
 // one credential that would open it is share_token, and that has no applink.
 func calendarRows(c sync.Calendar, x store.Message, idx int, st msgStyle, g *leads) []msgRow {
-	inner := st.inner()
-	var rows []msgRow
-	// A row's click target, when it has one, is the whole of what the row
-	// draws, sitting past the lead.
-	line := func(s, url string) {
-		row := msgRow{lead: g.take(), text: s, idx: idx}
-		if url != "" {
-			x0 := row.lead.cols()
-			row.zones = []clickZone{{x0: x0, x1: x0 + lipgloss.Width(s),
-				urls: []string{url}, label: "the event", note: "opening the event"}}
-			// Measured before the link goes on: the escapes it adds draw
-			// nothing, and the zone is in columns.
-			row.text = hyperlink(url, s)
-		}
-		rows = append(rows, row)
-	}
-
-	title := c.Summary
-	if title == "" {
-		title = "Event"
-	}
-	for _, l := range wrap(calendarGlyph+" "+flatten(title), inner) {
-		line(stBold.Render(l), "")
+	lines := cardLines{g: g, idx: idx, label: "the event", note: "opening the event"}
+	for _, l := range wrap(calendarGlyph+" "+flatten(cmp.Or(c.Summary, "Event")), st.inner()) {
+		lines.add(stBold.Render(l), "")
 	}
 	// The span already spells the date out, so nothing relative is drawn
 	// beside it: a weekday or a "Today" would say the same thing twice.
 	if span := c.Span(time.Local); span != "" {
-		line(stDim.Render(span), "")
+		lines.add(stDim.Render(span), "")
 	}
 	if x.MsgType == "calendar" {
 		if url := applink.EventLink(c.CalendarID, c.EventID, c.StartMs); url != "" {
-			line(stBtn.Render("Open"), url)
+			lines.add(stBtn.Render("Open"), url)
 		}
 	}
-	return rows
+	return lines.rows
+}
+
+// cardLines builds a card whose lines may each lead somewhere: the event a
+// calendar card opens, the meeting a call card joins. label and note name that
+// target in the chooser and on the status line.
+type cardLines struct {
+	g           *leads
+	idx         int
+	label, note string
+	rows        []msgRow
+}
+
+// add appends one line. With a url, the whole of what the line draws, past the
+// lead, is its click target.
+func (c *cardLines) add(s, url string) {
+	row := msgRow{lead: c.g.take(), text: s, idx: c.idx}
+	if url != "" {
+		x0 := row.lead.cols()
+		row.zones = []clickZone{{x0: x0, x1: x0 + lipgloss.Width(s),
+			urls: []string{url}, label: c.label, note: c.note}}
+		// Measured before the link goes on: the escapes it adds draw
+		// nothing, and the zone is in columns.
+		row.text = hyperlink(url, s)
+	}
+	c.rows = append(c.rows, row)
 }

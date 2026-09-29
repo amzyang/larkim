@@ -373,7 +373,7 @@ func (m Model) renderConfig() string {
 	}
 	lines := append([]string{head, fit("", w)}, body...)
 	lines = append(lines, fit("", w), m.configDetail(), fit(stDim.Render(hint), w))
-	return paneStyle(true, w).Padding(0, 1).Render(strings.Join(lines, "\n"))
+	return paneStyle(true).Padding(0, 1).Render(strings.Join(lines, "\n"))
 }
 
 // underHome spells a path the way a reader writes it, so the file the panel

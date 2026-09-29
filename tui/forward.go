@@ -82,8 +82,9 @@ func (m Model) fwdSearch(query string) []fwdTarget {
 		if len(out) == fwdLimit {
 			return out
 		}
-		if mark, ok := ix.Match(c.ChatID, flatten(c.Name), query); ok {
-			out = append(out, fwdTarget{chatID: c.ChatID, name: flatten(c.Name), mark: mark})
+		name := flatten(c.Name)
+		if mark, ok := ix.Match(c.ChatID, name, query); ok {
+			out = append(out, fwdTarget{chatID: c.ChatID, name: name, mark: mark})
 		}
 	}
 	seen := make(map[string]bool, len(out))
@@ -205,7 +206,7 @@ func (m Model) renderForward() string {
 	for len(lines) < rows+1 {
 		lines = append(lines, fit("", w))
 	}
-	return paneStyle(true, w).Render(strings.Join(append(lines[:rows+1], gist), "\n"))
+	return paneStyle(true).Render(strings.Join(append(lines[:rows+1], gist), "\n"))
 }
 
 // fwdGist names the message being sent on, above the chooser. An official

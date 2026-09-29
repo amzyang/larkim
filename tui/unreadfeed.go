@@ -272,21 +272,10 @@ func loadUnreadFeed(d Deps, keep []unreadSection) tea.Cmd {
 }
 
 // loadChatSide fetches what the composer needs to answer a chat the panel is
-// only showing. A draft or a roster the store cannot answer for costs the
-// composer its text or its candidates, not the reader their page.
+// only showing.
 func loadChatSide(d Deps, chatID string) tea.Cmd {
 	return func() tea.Msg {
-		ctx := context.Background()
-		draft, err := d.Store.LoadDraft(ctx, chatID, "")
-		if err != nil {
-			d.log().Error("load draft", "chat_id", chatID, "err", err)
-			draft = store.Draft{ChatID: chatID}
-		}
-		roster, err := d.Store.ChatRoster(ctx, chatID, d.Self)
-		if err != nil {
-			d.log().Error("load roster", "chat_id", chatID, "err", err)
-			roster = nil
-		}
+		draft, roster := chatSide(context.Background(), d, chatID)
 		return chatSideMsg{chatID: chatID, draft: draft, roster: roster}
 	}
 }

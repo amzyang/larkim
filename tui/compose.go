@@ -234,20 +234,9 @@ func (f draftFiles) resolveImage(ref string, n int) (draftImage, error) {
 		img.url = ref
 		return img, nil
 	}
-	path := ref
-	switch {
-	case ref == "~" || strings.HasPrefix(ref, "~/"):
-		if f.Home == "" {
-			return img, fmt.Errorf("no home directory to expand %s against", ref)
-		}
-		path = filepath.Join(f.Home, strings.TrimPrefix(strings.TrimPrefix(ref, "~"), "/"))
-	case strings.HasPrefix(ref, "~"):
-		// Another person's home is not something a chat draft ever means.
-		return img, fmt.Errorf("cannot expand %s", ref)
-	}
-	abs, err := filepath.Abs(path)
+	abs, err := f.abs(ref)
 	if err != nil {
-		return img, fmt.Errorf("bad path: %s", ref)
+		return img, err
 	}
 	st, err := f.Stat(abs)
 	if err != nil {
@@ -262,6 +251,27 @@ func (f draftFiles) resolveImage(ref string, n int) (draftImage, error) {
 	}
 	img.local = abs
 	return img, nil
+}
+
+// abs resolves a path a draft names the way a shell would: ~ is the reader's
+// home, and anything relative is taken from the working directory.
+func (f draftFiles) abs(ref string) (string, error) {
+	path := ref
+	switch {
+	case ref == "~" || strings.HasPrefix(ref, "~/"):
+		if f.Home == "" {
+			return "", fmt.Errorf("no home directory to expand %s against", ref)
+		}
+		path = filepath.Join(f.Home, strings.TrimPrefix(ref, "~"))
+	case strings.HasPrefix(ref, "~"):
+		// Another person's home is not something a chat draft ever means.
+		return "", fmt.Errorf("cannot expand %s", ref)
+	}
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return "", fmt.Errorf("bad path: %s", ref)
+	}
+	return abs, nil
 }
 
 // maxFileBytes is Feishu's own cap on a message attachment.
@@ -282,17 +292,7 @@ func (f draftFiles) resolveFile(ref string) (draftFile, bool, error) {
 	if strings.HasPrefix(ref, "http://") || strings.HasPrefix(ref, "https://") {
 		return draftFile{}, false, nil
 	}
-	path := ref
-	switch {
-	case ref == "~" || strings.HasPrefix(ref, "~/"):
-		if f.Home == "" {
-			return draftFile{}, false, nil
-		}
-		path = filepath.Join(f.Home, strings.TrimPrefix(strings.TrimPrefix(ref, "~"), "/"))
-	case strings.HasPrefix(ref, "~"):
-		return draftFile{}, false, nil
-	}
-	abs, err := filepath.Abs(path)
+	abs, err := f.abs(ref)
 	if err != nil {
 		return draftFile{}, false, nil
 	}
@@ -342,20 +342,17 @@ func (p draftPlan) detail() string {
 // fileRef is a draft's reference to an attachment on disk, the ordinary
 // markdown link an image reference is the `!` form of. The label is the file's
 // own name, so the draft reads as what it will send.
-func fileRef(path string) string {
-	name := filepath.Base(path)
-	if strings.ContainsAny(path, " \t") {
-		return "[" + name + "](<" + path + ">)"
-	}
-	return "[" + name + "](" + path + ")"
-}
+func fileRef(path string) string { return "[" + filepath.Base(path) + "](" + mdTarget(path) + ")" }
 
-// imageRef is a draft's reference to a picture on disk. A path holding a space
-// takes markdown's angle-bracket form, which is the only one that survives
-// being read back: macOS names every screenshot with spaces in it.
-func imageRef(path string) string {
+// imageRef is a draft's reference to a picture on disk.
+func imageRef(path string) string { return "![](" + mdTarget(path) + ")" }
+
+// mdTarget spells a path as a link target. A path holding a space takes
+// markdown's angle-bracket form, which is the only one that survives being
+// read back: macOS names every screenshot with spaces in it.
+func mdTarget(path string) string {
 	if strings.ContainsAny(path, " \t") {
-		return "![](<" + path + ">)"
+		return "<" + path + ">"
 	}
-	return "![](" + path + ")"
+	return path
 }

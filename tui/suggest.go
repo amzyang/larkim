@@ -121,7 +121,7 @@ func (m Model) askSuggest(x store.Message) jev.Ask {
 			"sender": cmp.Or(x.SenderName, x.SenderID),
 			// The transcript is the chat page whatever pane the target came
 			// from, so its pictures are the chat page's too.
-			"transcript": ai.Transcript(m.suggestChatName(), m.beforeTarget(x), m.deps.Self, m.meta.imgText),
+			"transcript": ai.Transcript(m.transcriptName(), m.beforeTarget(x), m.deps.Self, m.meta.imgText),
 			"target":     ai.Line(x, m.deps.Self, m.metaFor(m.focus).imgText),
 			"reactions":  standing(m.drawnChips(x)),
 		},
@@ -215,15 +215,16 @@ func standing(chips []emoji.Chip) string {
 // open page does not carry — a thread reply read in the right column — leaves
 // the page's own tail, which is still the conversation it happens in.
 func (m Model) beforeTarget(x store.Message) []store.Message {
-	i := slices.IndexFunc(m.msgs, func(y store.Message) bool { return y.MessageID == x.MessageID })
+	i := indexOfID(m.msgs, x.MessageID)
 	if i < 0 {
 		i = len(m.msgs)
 	}
 	return m.msgs[max(0, i-suggestContext):i]
 }
 
-// suggestChatName names the chat the transcript opens with.
-func (m Model) suggestChatName() string {
+// transcriptName names the chat a transcript opens with: the open chat's name,
+// or its id where it has none.
+func (m Model) transcriptName() string {
 	if c, ok := m.currentChat(); ok && c.Name != "" {
 		return c.Name
 	}

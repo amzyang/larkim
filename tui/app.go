@@ -705,10 +705,8 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		want := m.pendingSelect
 		jumped := want.id != "" && want.thread == ""
 		if jumped {
-			for i, x := range m.msgs {
-				if x.MessageID == want.id {
-					m.msgIdx = i
-				}
+			if i := indexOfID(m.msgs, want.id); i >= 0 {
+				m.msgIdx = i
 			}
 		}
 		m.pendingSelect = pendingJump{}
@@ -811,15 +809,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if !m.claimSearch(msg.gen) {
 			return m, nil
 		}
-		for _, h := range msg.hits {
-			if h.kind == hitMessage {
-				m.markDots([]store.Message{h.msg})
-			}
-		}
-		m.searchLocal, m.searchMeta = msg.hits, msg.meta
-		m.rebuildHits()
-		m.msgIdx, m.msgTop = 0, 0
-		m.rebuildMessages()
+		m.landHits(msg.hits, msg.meta)
 		return m, nil
 	case infoLoadedMsg:
 		if msg.chatID == m.chatID {
@@ -877,13 +867,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if !m.mentions {
 			return m, nil
 		}
-		for _, h := range msg.hits {
-			m.markDots([]store.Message{h.msg})
-		}
-		m.searchLocal, m.searchMeta = msg.hits, msg.meta
-		m.rebuildHits()
-		m.msgIdx, m.msgTop = 0, 0
-		m.rebuildMessages()
+		m.landHits(msg.hits, msg.meta)
 		return m, nil
 	case remoteSearchMsg:
 		if !m.claimSearch(msg.gen) {
@@ -1569,10 +1553,8 @@ func (m Model) selectedZones() []clickZone {
 func (m Model) rightOpen() bool { return m.threadOpen() || m.aiOpen || m.infoOpen }
 
 func (m Model) currentChat() (store.Chat, bool) {
-	for _, c := range m.chats {
-		if c.ChatID == m.chatID {
-			return c, true
-		}
+	if i := indexOfChat(m.chats, m.chatID); i >= 0 {
+		return m.chats[i], true
 	}
 	return store.Chat{}, false
 }
@@ -2173,10 +2155,7 @@ func (m Model) copySelection() (Model, tea.Cmd) {
 		spec := copySpec{chatID: vis[m.chatIdx].chatID(), rng: agentctx.Range{Since: chatsCopyAge, Limit: chatsCopyLimit}}
 		return m.notify("copying…", false), copyContext(m.deps, spec)
 	case m.focus == paneMessages, m.focus == paneThread && !m.aiOpen:
-		list := m.msgs
-		if m.focus == paneThread {
-			list = m.thread
-		}
+		list := m.focusedList()
 		if len(list) == 0 {
 			return m.notify("nothing to copy", true), nil
 		}
@@ -2668,15 +2647,11 @@ func (m Model) startAI(input string) (tea.Model, tea.Cmd) {
 		return m.notify("assistant is still answering", true), nil
 	}
 	prompt, draft := ai.Prompt(input)
-	name := m.chatID
-	if c, ok := m.currentChat(); ok && c.Name != "" {
-		name = c.Name
-	}
 	n := m.cfg.AI.Context
 	if n <= 0 || n > len(m.msgs) {
 		n = len(m.msgs)
 	}
-	transcript := ai.Transcript(name, m.msgs[len(m.msgs)-n:], m.deps.Self, m.meta.imgText)
+	transcript := ai.Transcript(m.transcriptName(), m.msgs[len(m.msgs)-n:], m.deps.Self, m.meta.imgText)
 	keep := m.closeRight()
 	m.stopAI()
 	m.aiOpen, m.aiBusy, m.aiDraft = true, true, draft

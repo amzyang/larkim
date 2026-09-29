@@ -124,7 +124,7 @@ func (m Model) renderTargets() string {
 	for len(lines) < rows+1 {
 		lines = append(lines, fit("", w))
 	}
-	return paneStyle(true, w).Render(strings.Join(lines[:rows+1], "\n"))
+	return paneStyle(true).Render(strings.Join(lines[:rows+1], "\n"))
 }
 
 // targetLine names one target: the number that reaches it, what it is, and

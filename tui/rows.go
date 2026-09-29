@@ -142,6 +142,16 @@ func (r *msgRow) placeZones() {
 	}
 }
 
+// addZones hangs targets measured from where the row's content starts, which
+// puts them behind its lead.
+func (r *msgRow) addZones(zs []clickZone) {
+	dx := r.lead.cols()
+	for _, z := range zs {
+		z.x0, z.x1 = z.x0+dx, z.x1+dx
+		r.zones = append(r.zones, z)
+	}
+}
+
 // reindent swaps the indent a row opens with for s, whichever way the row
 // holds its text, and puts the targets back where the new width leaves them.
 func (r *msgRow) reindent(indent, s string) {
@@ -707,14 +717,6 @@ func noticeRows(text string, idx int, st msgStyle) []msgRow {
 // bodyRows render one message's content below its sender line: a card as a
 // framed block, a picture as the picture itself, everything else as text.
 func bodyRows(x store.Message, idx int, st msgStyle, g *leads) []msgRow {
-	inner := st.inner()
-	text := func(lines []string) []msgRow {
-		out := make([]msgRow, 0, len(lines))
-		for _, l := range lines {
-			out = append(out, msgRow{lead: g.take(), text: l, idx: idx})
-		}
-		return out
-	}
 	// A merged forward's summary line is its body. What lark-cli renders it
 	// into is the whole tree, tags and ISO timestamps included, which is
 	// exactly what the list must not print.
@@ -777,7 +779,7 @@ func bodyRows(x store.Message, idx int, st msgStyle, g *leads) []msgRow {
 			if segs := inlineSegs(rest, ms, st.emojiInline, st.docLabel); segs != nil {
 				rows = append(rows, segRows(segs, "", idx, st, g)...)
 			} else {
-				rows = append(rows, text(wrap(renderInline(rest, ms), inner))...)
+				rows = append(rows, textRows(wrap(renderInline(rest, ms), st.inner()), idx, g)...)
 			}
 		}
 		for _, key := range keys {
@@ -799,11 +801,19 @@ func dimRows(body string, idx int, st msgStyle, g *leads) []msgRow {
 			rows = append(rows, segRows(segs, "", idx, st, g)...)
 			continue
 		}
-		for _, l := range wrap(stDim.Render(expandEmoji(line)), st.inner()) {
-			rows = append(rows, msgRow{lead: g.take(), text: l, idx: idx})
-		}
+		rows = append(rows, textRows(wrap(stDim.Render(expandEmoji(line)), st.inner()), idx, g)...)
 	}
 	return rows
+}
+
+// textRows lays lines already fitted to the body out one row each, taking the
+// block's leads as they go.
+func textRows(lines []string, idx int, g *leads) []msgRow {
+	out := make([]msgRow, 0, len(lines))
+	for _, l := range lines {
+		out = append(out, msgRow{lead: g.take(), text: l, idx: idx})
+	}
+	return out
 }
 
 // segRows draw one body line as the pieces the client's own emoji pictures
@@ -980,10 +990,7 @@ func reactionRows(x store.Message, idx int, st msgStyle, g *leads) []msgRow {
 				row.text += s.text
 			}
 		}
-		for _, z := range zones {
-			z.x0, z.x1 = z.x0+row.lead.cols(), z.x1+row.lead.cols()
-			row.zones = append(row.zones, z)
-		}
+		row.addZones(zones)
 		rows = append(rows, row)
 		line, zones, width = nil, nil, 0
 	}
@@ -1011,13 +1018,8 @@ func reactionRows(x store.Message, idx int, st msgStyle, g *leads) []msgRow {
 // it.
 func cardRows(c card.Card, x store.Message, idx int, st msgStyle, g *leads, ms mentions) []msgRow {
 	var rows []msgRow
-	text := func(s string) {
-		for _, line := range wrap(s, st.inner()) {
-			rows = append(rows, msgRow{lead: g.take(), text: line, idx: idx})
-		}
-	}
 	if head := cardHead(c); head != "" {
-		text(head)
+		rows = textRows(wrap(head, st.inner()), idx, g)
 	}
 	for _, b := range c.Blocks {
 		switch {
@@ -1026,10 +1028,7 @@ func cardRows(c card.Card, x store.Message, idx int, st msgStyle, g *leads, ms m
 		case len(b.Buttons) > 0:
 			for _, l := range cardButtons(b.Buttons, st.inner(), applink.ChatLink(x.ChatID, x.MessagePosition)) {
 				row := msgRow{lead: g.take(), text: l.text, idx: idx}
-				for _, z := range l.zones {
-					z.x0, z.x1 = z.x0+row.lead.cols(), z.x1+row.lead.cols()
-					row.zones = append(row.zones, z)
-				}
+				row.addZones(l.zones)
 				rows = append(rows, row)
 			}
 		default:

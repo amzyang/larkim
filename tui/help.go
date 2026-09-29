@@ -423,7 +423,7 @@ func (m Model) renderHelp() string {
 	for len(body) < rows {
 		body = append(body, fit("", w))
 	}
-	return paneStyle(true, w).Padding(0, 1).
+	return paneStyle(true).Padding(0, 1).
 		Render(strings.Join(append([]string{head, fit("", w)}, body...), "\n"))
 }
 

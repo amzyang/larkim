@@ -98,8 +98,7 @@ func (m Model) pickerRows() int { return m.composerHeight() - 1 }
 // exactly these and the picture pass claims exactly their pictures, so the two
 // cannot drift into preparing one emoji and drawing another.
 func (m Model) pickerVisible() []emoji.Hit {
-	lo := min(m.picker.top*pickerCols, len(m.picker.hits))
-	return m.picker.hits[lo:min(len(m.picker.hits), lo+m.pickerRows()*pickerCols)]
+	return window(m.picker.hits, m.picker.top*pickerCols, m.pickerRows()*pickerCols)
 }
 
 // minListRows is the floor the composer leaves the message panes when a draft
@@ -311,7 +310,7 @@ func (m Model) renderPicker() string {
 	for len(lines) < rows+1 {
 		lines = append(lines, fit("", w))
 	}
-	return paneStyle(true, w).Render(strings.Join(lines[:rows+1], "\n"))
+	return paneStyle(true).Render(strings.Join(lines[:rows+1], "\n"))
 }
 
 // pickerIconCols is the column every emoji is drawn in, character or picture

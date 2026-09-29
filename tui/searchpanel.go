@@ -112,6 +112,20 @@ func (m *Model) rebuildHits() {
 	m.searchHits = slices.Concat(msgs, m.searchRemote, rest)
 }
 
+// landHits puts what the store answered in the panel: the messages it named
+// wear the marker a page's would, and the cursor starts over on the first row.
+func (m *Model) landHits(hits []searchHit, meta msgMeta) {
+	for _, h := range hits {
+		if h.kind == hitMessage {
+			m.markDots([]store.Message{h.msg})
+		}
+	}
+	m.searchLocal, m.searchMeta = hits, meta
+	m.rebuildHits()
+	m.msgIdx, m.msgTop = 0, 0
+	m.rebuildMessages()
+}
+
 // claimSearch reports whether a timer's generation is still the current one,
 // so a query typed over collapses into the one search it settles on.
 func (m Model) claimSearch(gen int) bool { return m.searching && gen == m.searchGen }
@@ -218,12 +232,10 @@ func (m Model) openColdHit(h searchHit) (tea.Model, tea.Cmd) {
 // exchanged a message with has no chat row of their own, so the composer is
 // primed with the send that starts one.
 func (m Model) openPerson(u larkcli.User) (tea.Model, tea.Cmd) {
-	for _, c := range m.chats {
-		if c.ChatID == u.P2PChatID && u.P2PChatID != "" {
-			m.closeSearch()
-			cmd := m.openChat(c.ChatID)
-			return m, cmd
-		}
+	if indexOfChat(m.chats, u.P2PChatID) >= 0 {
+		m.closeSearch()
+		cmd := m.openChat(u.P2PChatID)
+		return m, cmd
 	}
 	m.closeSearch()
 	m.mode = modeCommand

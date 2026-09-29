@@ -97,7 +97,7 @@ func (m Model) floater() (floater, bool) {
 		lines[i] = m.joinSegs(s, w)
 	}
 	f := floater{
-		block: paneStyle(true, w).Render(strings.Join(lines, "\n")),
+		block: paneStyle(true).Render(strings.Join(lines, "\n")),
 		w:     w + 2,
 		h:     len(lines) + 2,
 	}

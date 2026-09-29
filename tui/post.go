@@ -165,7 +165,7 @@ func (d postDoc) paragraph(para []sync.PostElem) []msgRow {
 		case "code_block":
 			flush()
 			code := strings.Split(strings.TrimRight(el.Text, "\n"), "\n")
-			rows = append(rows, d.lines(codeRows(code, el.Language, d.st.inner(), d.st.dark))...)
+			rows = append(rows, textRows(codeRows(code, el.Language, d.st.inner(), d.st.dark), d.idx, d.g)...)
 		case "md":
 			// The one element whose text is markdown by the client's own
 			// doing, so it is the one that goes to the markdown path.
@@ -173,7 +173,7 @@ func (d postDoc) paragraph(para []sync.PostElem) []msgRow {
 			rows = append(rows, mdRows(el.Text, d.x, d.idx, d.st, d.g, d.ms)...)
 		case "hr":
 			flush()
-			rows = append(rows, d.lines([]string{stDim.Render(strings.Repeat("─", d.st.inner()))})...)
+			rows = append(rows, textRows([]string{stDim.Render(strings.Repeat("─", d.st.inner()))}, d.idx, d.g)...)
 		case "at":
 			segs = append(segs, rowSeg{text: d.ms.draw(d.ms.tagRun(el.UserID, el.UserName))})
 			// The client sets a mention off as a chip; here the space is the
@@ -237,14 +237,6 @@ func (d postDoc) link(el sync.PostElem) []rowSeg {
 
 func (d postDoc) segRows(segs []rowSeg) []msgRow {
 	return segRows(segs, "", d.idx, d.st, d.g)
-}
-
-func (d postDoc) lines(ls []string) []msgRow {
-	out := make([]msgRow, 0, len(ls))
-	for _, l := range ls {
-		out = append(out, msgRow{lead: d.g.take(), text: l, idx: d.idx})
-	}
-	return out
 }
 
 // postStyle applies the emphasis a rich-text element carries. Feishu keeps it

@@ -213,14 +213,16 @@ func strokeDisc(m *image.RGBA, c color.RGBA, share float64) {
 			if cover <= 0 {
 				continue
 			}
-			i := m.PixOffset(x, y)
-			src := [4]uint8{c.R, c.G, c.B, c.A}
-			// color.RGBA is alpha-premultiplied, so every channel blends the
-			// same way.
-			for k := range 4 {
-				m.Pix[i+k] = uint8(float64(src[k])*cover + float64(m.Pix[i+k])*(1-cover))
-			}
+			blendAt(m, m.PixOffset(x, y), c, cover)
 		}
+	}
+}
+
+// blendAt lays c over the pixel at offset i with the coverage given. color.RGBA
+// is alpha-premultiplied, so every channel blends the same way.
+func blendAt(m *image.RGBA, i int, c color.RGBA, cover float64) {
+	for k, v := range [4]uint8{c.R, c.G, c.B, c.A} {
+		m.Pix[i+k] = uint8(float64(v)*cover + float64(m.Pix[i+k])*(1-cover))
 	}
 }
 
@@ -359,13 +361,7 @@ func fillRounded(m *image.RGBA, r image.Rectangle, radius float64, c color.RGBA)
 			if cover <= 0 {
 				continue
 			}
-			i := m.PixOffset(x, y)
-			src := [4]uint8{c.R, c.G, c.B, c.A}
-			// color.RGBA is alpha-premultiplied, so every channel blends the
-			// same way.
-			for k := range 4 {
-				m.Pix[i+k] = uint8(float64(src[k])*cover + float64(m.Pix[i+k])*(1-cover))
-			}
+			blendAt(m, m.PixOffset(x, y), c, cover)
 		}
 	}
 }

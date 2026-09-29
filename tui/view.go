@@ -867,7 +867,7 @@ func textinputCursor(in textinput.Model) *tea.Cursor {
 
 // paneStyle draws the border only; every content line is already fitted to
 // width, because lipgloss' Width() would word-wrap and break the row grid.
-func paneStyle(focused bool, _ int) lipgloss.Style {
+func paneStyle(focused bool) lipgloss.Style {
 	c := colDim
 	if focused {
 		c = colAccent
@@ -937,7 +937,7 @@ func (m Model) renderChats(h int) string {
 		lines = append(lines, fit("", w))
 	}
 	content := chatsHeader(all, m.unread, m.chatFilter, w) + "\n" + strings.Join(lines, "\n")
-	return paneStyle(m.focus == paneChats, w).Height(h).Render(content)
+	return paneStyle(m.focus == paneChats).Height(h).Render(content)
 }
 
 func (m Model) renderMessages(h int) string {
@@ -976,7 +976,7 @@ func (m Model) renderMessages(h int) string {
 		lines = append(lines, fit("", w))
 	}
 	content := header + "\n" + rule + "\n" + strings.Join(lines, "\n")
-	return paneStyle(m.focus == paneMessages, w).Height(h).Render(content)
+	return paneStyle(m.focus == paneMessages).Height(h).Render(content)
 }
 
 func (m Model) renderAI(h int) string {
@@ -994,7 +994,7 @@ func (m Model) renderAI(h int) string {
 	for len(lines) < h {
 		lines = append(lines, fit("", w))
 	}
-	return paneStyle(m.focus == paneThread, w).Height(h).Render(strings.Join(lines, "\n"))
+	return paneStyle(m.focus == paneThread).Height(h).Render(strings.Join(lines, "\n"))
 }
 
 func (m Model) renderHeader(w int) string {
@@ -1076,7 +1076,7 @@ func (m Model) renderThread(h int) string {
 	for len(lines) < h {
 		lines = append(lines, fit("", w))
 	}
-	return paneStyle(m.focus == paneThread, w).Height(h).Render(strings.Join(lines, "\n"))
+	return paneStyle(m.focus == paneThread).Height(h).Render(strings.Join(lines, "\n"))
 }
 
 // rightTitle names the frame and how deep it sits. The depth is what says
@@ -1116,7 +1116,7 @@ func (m Model) renderInput(s composerSide) string {
 			rows = append(rows, "")
 		}
 		rows = append(rows, m.renderCmdCompHint(w))
-		return paneStyle(true, w).Height(h).Render(fitBlock(strings.Join(rows, "\n"), w, h))
+		return paneStyle(true).Height(h).Render(fitBlock(strings.Join(rows, "\n"), w, h))
 	}
 	ta := m.input
 	if s == sideRight {
@@ -1126,7 +1126,7 @@ func (m Model) renderInput(s composerSide) string {
 	if s == m.side && m.composerRows().badge > 0 {
 		content += "\n" + m.renderBadge(w)
 	}
-	return paneStyle(m.focus == paneInput && s == m.side, w).Height(h).Render(fitBlock(content, w, h))
+	return paneStyle(m.focus == paneInput && s == m.side).Height(h).Render(fitBlock(content, w, h))
 }
 
 // renderBand is the box under one column, with whichever chooser has taken the

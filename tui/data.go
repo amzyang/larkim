@@ -427,7 +427,8 @@ func waitForAI(gen int, ch <-chan ai.Chunk) tea.Cmd {
 // rows of their own rather than a column of somebody else's.
 func loadChats(d Deps) tea.Cmd {
 	return func() tea.Msg {
-		chats, err := d.Store.ListChats(context.Background(), store.ChatQuery{Self: d.Self})
+		ctx := context.Background()
+		chats, err := d.Store.ListChats(ctx, store.ChatQuery{Self: d.Self})
 		if err != nil {
 			return errMsg{err}
 		}
@@ -437,18 +438,18 @@ func loadChats(d Deps) tea.Cmd {
 				unread[c.ChatID] = c.UnreadCount
 			}
 		}
-		threads, err := d.Store.ListThreadFeed(context.Background(), store.ThreadFeedQuery{Self: d.Self})
+		threads, err := d.Store.ListThreadFeed(ctx, store.ThreadFeedQuery{Self: d.Self})
 		if err != nil {
 			return errMsg{err}
 		}
 		// A draft the store cannot answer for costs the list its marker, not
 		// its rows: the chats are what the reader asked for.
-		drafts, err := d.Store.Drafts(context.Background())
+		drafts, err := d.Store.Drafts(ctx)
 		if err != nil {
 			d.log().Error("load drafts", "err", err)
 			drafts = nil
 		}
-		frameDrafts, err := d.Store.FrameDrafts(context.Background())
+		frameDrafts, err := d.Store.FrameDrafts(ctx)
 		if err != nil {
 			d.log().Error("load frame drafts", "err", err)
 			frameDrafts = nil
@@ -489,22 +490,26 @@ func loadMessages(d Deps, chatID string, sinceMs int64, limit int) tea.Cmd {
 		if err != nil {
 			return errMsg{err}
 		}
-		// A draft the store cannot answer for costs the composer its text, not
-		// the reader their page.
-		draft, err := d.Store.LoadDraft(ctx, chatID, "")
-		if err != nil {
-			d.log().Error("load draft", "chat_id", chatID, "err", err)
-			draft = store.Draft{ChatID: chatID}
-		}
-		// A roster the store cannot answer for costs @ completion its
-		// candidates, not the reader their page.
-		roster, err := d.Store.ChatRoster(ctx, chatID, d.Self)
-		if err != nil {
-			d.log().Error("load roster", "chat_id", chatID, "err", err)
-			roster = nil
-		}
+		draft, roster := chatSide(ctx, d, chatID)
 		return messagesLoadedMsg{chatID: chatID, msgs: rows, meta: meta, draft: draft, roster: roster}
 	}
+}
+
+// chatSide is what the composer needs to answer a chat: the draft written into
+// it and who it reaches. Either one the store cannot answer for costs the
+// composer its text or its candidates, not the reader their page.
+func chatSide(ctx context.Context, d Deps, chatID string) (store.Draft, []store.Contact) {
+	draft, err := d.Store.LoadDraft(ctx, chatID, "")
+	if err != nil {
+		d.log().Error("load draft", "chat_id", chatID, "err", err)
+		draft = store.Draft{ChatID: chatID}
+	}
+	roster, err := d.Store.ChatRoster(ctx, chatID, d.Self)
+	if err != nil {
+		d.log().Error("load roster", "chat_id", chatID, "err", err)
+		roster = nil
+	}
+	return draft, roster
 }
 
 // threadQuery is a thread's whole reply list, root included. A recalled reply

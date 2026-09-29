@@ -111,8 +111,9 @@ func linkCuts(line string) []inlineCut {
 		if strings.TrimSpace(label) == "" {
 			label = url
 		}
+		label = flatten(label)
 		cuts = append(cuts, inlineCut{lo: m[0], hi: m[1], seg: rowSeg{
-			urls: []string{url}, label: flatten(label), note: "opening " + flatten(label)}})
+			urls: []string{url}, label: label, note: "opening " + label}})
 	}
 	return cuts
 }

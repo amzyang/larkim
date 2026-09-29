@@ -363,12 +363,7 @@ func (p *pictures) take(key string) int {
 		p.id[key], p.used[key] = id, p.clock
 		return id
 	}
-	oldest, oldestAt := "", int64(0)
-	for k, at := range p.used {
-		if oldest == "" || at < oldestAt {
-			oldest, oldestAt = k, at
-		}
-	}
+	oldest := oldestKey(p.used)
 	id := p.id[oldest]
 	delete(p.id, oldest)
 	delete(p.used, oldest)

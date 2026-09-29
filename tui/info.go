@@ -187,12 +187,9 @@ func chatKindWord(mode string) string {
 func (m Model) renderInfo(h int) string {
 	w := m.rightWidth() - 2
 	all := m.infoLines(w)
-	lines := make([]string, 0, h)
-	for i := m.infoTop; i < len(all) && len(lines) < h; i++ {
-		lines = append(lines, all[i])
-	}
+	lines := append(make([]string, 0, h), window(all, m.infoTop, h)...)
 	for len(lines) < h {
 		lines = append(lines, fit("", w))
 	}
-	return paneStyle(m.focus == paneThread, w).Height(h).Render(strings.Join(lines, "\n"))
+	return paneStyle(m.focus == paneThread).Height(h).Render(strings.Join(lines, "\n"))
 }
