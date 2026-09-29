@@ -202,10 +202,12 @@ func TestSlowPath_ReconcilesActiveChatsFromCursor(t *testing.T) {
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	now := clk.t
-	// oc_head takes the head of the active-time ordering, which the probe
-	// lists on every tick; oc_a sits below it, so only the slow path reaches it.
+	// The head window of the active-time ordering is what the probe lists on
+	// every tick; oc_a sits below it, so only the slow path reaches it.
 	f.Chats = []larkcli.RawChat{
 		{ChatID: "oc_head", Name: "Head", ChatMode: "group"},
+		{ChatID: "oc_second", Name: "Second", ChatMode: "group"},
+		{ChatID: "oc_third", Name: "Third", ChatMode: "group"},
 		{ChatID: "oc_a", Name: "Alpha", ChatMode: "group"},
 	}
 	f.AddMessage(msg("om_head", "oc_head", now.Add(-time.Hour), "head"))
@@ -557,6 +559,7 @@ func TestActiveProbe_NamesChatsThatMovedUp(t *testing.T) {
 		{ChatID: "oc_a", Name: "平台组", ChatMode: "group"},
 		{ChatID: "oc_b", Name: "项目协作群", ChatMode: "group"},
 		{ChatID: "oc_c", Name: "张三", ChatMode: "p2p"},
+		{ChatID: "oc_d", Name: "李四", ChatMode: "p2p"},
 	}
 
 	rep, err := s.Tick(ctx)
@@ -566,20 +569,20 @@ func TestActiveProbe_NamesChatsThatMovedUp(t *testing.T) {
 	clk.t = clk.t.Add(5 * time.Second)
 	rep, err = s.Tick(ctx)
 	require.NoError(t, err)
-	require.Equal(t, 1, rep.Moved, "an unchanged ordering still names the head")
+	require.Equal(t, activeHead, rep.Moved, "an unchanged ordering still names the head window")
 
-	// A message in oc_c puts it at position 1, which is the whole signal.
-	f.Chats = []larkcli.RawChat{f.Chats[2], f.Chats[0], f.Chats[1]}
+	// A message in oc_d puts it at position 1, which is the whole signal.
+	f.Chats = []larkcli.RawChat{f.Chats[3], f.Chats[0], f.Chats[1], f.Chats[2]}
 	clk.t = clk.t.Add(5 * time.Second)
 	rep, err = s.Tick(ctx)
 	require.NoError(t, err)
-	require.Equal(t, 1, rep.Moved, "the promoted chat is the head, named once")
-	require.Zero(t, rep.Probed, "listing the head every tick must not report its old messages as news")
+	require.Equal(t, activeHead, rep.Moved, "the promoted chat heads the window, named once")
+	require.Zero(t, rep.Probed, "listing the head window every tick must not report its old messages as news")
 
 	order, ok, err := s.Store.GetState(ctx, KeyActiveOrder)
 	require.NoError(t, err)
 	require.True(t, ok)
-	require.JSONEq(t, `["oc_c","oc_a","oc_b"]`, order, "the probe records what it saw for the next tick")
+	require.JSONEq(t, `["oc_d","oc_a","oc_b","oc_c"]`, order, "the probe records what it saw for the next tick")
 }
 
 func TestActiveProbe_UnreadableOrderCountsAsAFirstRun(t *testing.T) {
@@ -598,7 +601,7 @@ func TestActiveProbe_UnreadableOrderCountsAsAFirstRun(t *testing.T) {
 	clk.t = clk.t.Add(5 * time.Second)
 	rep, err = s.Tick(ctx)
 	require.NoError(t, err)
-	require.Equal(t, 1, rep.Moved, "the tick that rewrote it sees the next move")
+	require.Equal(t, 2, rep.Moved, "the tick that rewrote it compares against it again")
 }
 
 func TestActiveProbe_ReachesAMessageBeforeTheSearchDoes(t *testing.T) {
@@ -630,11 +633,13 @@ func TestActiveProbe_ReachesAMessageBeforeTheSearchDoes(t *testing.T) {
 
 	rep, err := s.Tick(ctx)
 	require.NoError(t, err)
-	require.Equal(t, 1, rep.Moved)
+	require.Equal(t, 2, rep.Moved, "both chats sit in the head window")
 	require.Equal(t, 1, rep.Probed, "only the new message counts; the cursor overlap re-lists the chat's older one")
 	require.Zero(t, rep.New, "the search had nothing left to find")
-	require.Equal(t, []string{"chats:true", "list:chat:oc_b", "search", "render"},
-		f.Calls[:4], "the probe pulls before the search asks, and what it found is rendered with the rest")
+	require.Equal(t, "chats:true", f.Calls[0])
+	require.ElementsMatch(t, []string{"list:chat:oc_a", "list:chat:oc_b"}, f.Calls[1:3], "the window is listed side by side")
+	require.Equal(t, []string{"search", "render"},
+		f.Calls[3:5], "the probe pulls before the search asks, and what it found is rendered with the rest")
 
 	m, err := s.Store.GetMessage(ctx, "om_fresh")
 	require.NoError(t, err)
@@ -669,6 +674,38 @@ func TestActiveProbe_ReachesASecondMessageInTheChatAlreadyAtTheHead(t *testing.T
 	m, err := s.Store.GetMessage(ctx, "om_reply")
 	require.NoError(t, err)
 	require.Equal(t, "oc_a", m.ChatID)
+}
+
+func TestActiveProbe_ReachesAMessageInAChatThatKeptItsPlace(t *testing.T) {
+	s, f, clk := newSyncer(t)
+	ctx := t.Context()
+	s.Opt.RepairEvery = 0
+	f.Chats = []larkcli.RawChat{
+		{ChatID: "oc_a", Name: "平台组", ChatMode: "group"},
+		{ChatID: "oc_b", Name: "项目协作群", ChatMode: "group"},
+		{ChatID: "oc_c", Name: "构建机器人", ChatMode: "p2p"},
+		{ChatID: "oc_d", Name: "张三", ChatMode: "p2p"},
+	}
+	f.AddMessage(msg("om_seed", "oc_a", clk.t.Add(-time.Hour), "seed"))
+	for range 2 {
+		_, err := s.Tick(ctx)
+		require.NoError(t, err)
+		clk.t = clk.t.Add(5 * time.Second)
+	}
+
+	// oc_b is written in and then oc_a after it, so oc_b holds second place:
+	// the same ordering a stale page shows while it has yet to take in oc_b.
+	f.AddMessage(msg("om_second", "oc_b", clk.t.Add(-2*time.Second), "second"))
+	f.AddMessage(msg("om_head", "oc_a", clk.t.Add(-time.Second), "head"))
+	f.SearchHidden = []string{"om_second", "om_head"}
+
+	rep, err := s.Tick(ctx)
+	require.NoError(t, err)
+	require.Zero(t, rep.New, "the search index has not caught up")
+	require.Equal(t, 2, rep.Probed)
+	m, err := s.Store.GetMessage(ctx, "om_second")
+	require.NoError(t, err)
+	require.Equal(t, "oc_b", m.ChatID)
 }
 
 func TestTick_SearchIsASafetyNetOnItsOwnInterval(t *testing.T) {

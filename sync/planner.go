@@ -7,6 +7,7 @@
 package sync
 
 import (
+	"slices"
 	"time"
 )
 
@@ -71,16 +72,25 @@ func UniqueStrings(xs []string) []string {
 	return out
 }
 
+// activeHead is how many chats at the top of the active-time ordering are
+// listed every tick whether or not they moved. They are pulled side by side on
+// the background lane, so the window costs calls rather than time, and three
+// leaves a slot of the lane's four for a chat that moved up from below it.
+const activeHead = 3
+
 // ActiveDelta names the chats worth listing after an active-time ordering
 // moved from prev to now. A chat that moved up has just received a message:
 // Feishu puts one that did at position 1. A chat absent from prev counts as
 // moved, since it can only have entered the page from below.
 //
-// The chat at the head is always named, whether or not it moved. It is already
-// as high as the ordering goes, so a second message into it changes nothing
-// the comparison can see — and the chat somebody just wrote in is the likeliest
-// to be written in again, which makes this the blind spot that would show up
-// most: every reply after the first in a conversation.
+// The first activeHead chats are always named, whether or not they moved,
+// because a message there can leave the ordering exactly as it was. A second
+// message into the head changes nothing, since it is already as high as the
+// ordering goes. Nor does one into the chat just below it when the head is
+// written in right after, which is what two conversations at once look like,
+// or one the page has yet to take in: the ordering has been seen running
+// fifteen seconds behind the messages it sorts. Below the window a chat is
+// named only by moving up, and is otherwise left to the search.
 //
 // An empty prev names nothing: a first run has no ordering to compare against,
 // and backfill is what covers a cold store.
@@ -92,9 +102,10 @@ func ActiveDelta(prev, now []string) []string {
 	for i, id := range prev {
 		was[id] = i
 	}
-	out := []string{now[0]}
-	for i, id := range now[1:] {
-		if before, seen := was[id]; !seen || i+1 < before {
+	head := min(len(now), activeHead)
+	out := slices.Clone(now[:head])
+	for i, id := range now[head:] {
+		if before, seen := was[id]; !seen || head+i < before {
 			out = append(out, id)
 		}
 	}

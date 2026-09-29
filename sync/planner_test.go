@@ -54,21 +54,33 @@ func TestActiveDelta(t *testing.T) {
 	}{
 		{
 			name: "a message promotes its chat to the front",
-			prev: []string{"oc_a", "oc_b", "oc_c"},
-			now:  []string{"oc_c", "oc_a", "oc_b"},
-			want: []string{"oc_c"},
+			prev: []string{"oc_a", "oc_b", "oc_c", "oc_d", "oc_e"},
+			now:  []string{"oc_e", "oc_a", "oc_b", "oc_c", "oc_d"},
+			want: []string{"oc_e", "oc_a", "oc_b"},
+		},
+		{
+			name: "below the head window only a chat that moved up is named",
+			prev: []string{"oc_a", "oc_b", "oc_c", "oc_d", "oc_e", "oc_f"},
+			now:  []string{"oc_a", "oc_b", "oc_c", "oc_f", "oc_d", "oc_e"},
+			want: []string{"oc_a", "oc_b", "oc_c", "oc_f"},
 		},
 		{
 			name: "a chat entering the page counts as moved",
-			prev: []string{"oc_a", "oc_b"},
-			now:  []string{"oc_new", "oc_a", "oc_b"},
-			want: []string{"oc_new"},
+			prev: []string{"oc_a", "oc_b", "oc_c", "oc_d"},
+			now:  []string{"oc_a", "oc_b", "oc_c", "oc_new", "oc_d"},
+			want: []string{"oc_a", "oc_b", "oc_c", "oc_new"},
 		},
 		{
-			name: "an unchanged ordering still names the head",
-			prev: []string{"oc_a", "oc_b", "oc_c"},
-			now:  []string{"oc_a", "oc_b", "oc_c"},
-			want: []string{"oc_a"},
+			name: "an unchanged ordering still names the head window",
+			prev: []string{"oc_a", "oc_b", "oc_c", "oc_d"},
+			now:  []string{"oc_a", "oc_b", "oc_c", "oc_d"},
+			want: []string{"oc_a", "oc_b", "oc_c"},
+		},
+		{
+			name: "a page shorter than the window is named whole",
+			prev: []string{"oc_a", "oc_b"},
+			now:  []string{"oc_b", "oc_a"},
+			want: []string{"oc_b", "oc_a"},
 		},
 		{
 			name: "a first run names nothing",
@@ -84,21 +96,21 @@ func TestActiveDelta(t *testing.T) {
 		},
 		{
 			name: "a chat dropping off the page is not named",
-			prev: []string{"oc_a", "oc_b", "oc_c"},
-			now:  []string{"oc_a", "oc_b"},
-			want: []string{"oc_a"},
+			prev: []string{"oc_a", "oc_b", "oc_c", "oc_d", "oc_e"},
+			now:  []string{"oc_a", "oc_b", "oc_c", "oc_d"},
+			want: []string{"oc_a", "oc_b", "oc_c"},
 		},
 		{
-			name: "two chats promoted in one window",
+			name: "two chats promoted below the window",
+			prev: []string{"oc_a", "oc_b", "oc_c", "oc_d", "oc_e", "oc_f", "oc_g"},
+			now:  []string{"oc_a", "oc_b", "oc_c", "oc_g", "oc_f", "oc_d", "oc_e"},
+			want: []string{"oc_a", "oc_b", "oc_c", "oc_g", "oc_f"},
+		},
+		{
+			name: "a chat that moved into the window is named once",
 			prev: []string{"oc_a", "oc_b", "oc_c", "oc_d"},
-			now:  []string{"oc_d", "oc_c", "oc_a", "oc_b"},
-			want: []string{"oc_d", "oc_c"},
-		},
-		{
-			name: "the head is named once, not twice, when it also moved",
-			prev: []string{"oc_a", "oc_b"},
-			now:  []string{"oc_b", "oc_a"},
-			want: []string{"oc_b"},
+			now:  []string{"oc_d", "oc_a", "oc_b", "oc_c"},
+			want: []string{"oc_d", "oc_a", "oc_b"},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
