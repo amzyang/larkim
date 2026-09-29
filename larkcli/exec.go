@@ -988,8 +988,20 @@ func (o Outgoing) flags() []string {
 	case o.FileKey != "":
 		return []string{"--file", o.FileKey}
 	default:
-		return []string{"--text", o.Text}
+		// Not --text: lark-cli reads a value opening with @ as a file path and
+		// a lone - as stdin, so "@张三 看一下" would be looked up on disk. A
+		// content JSON always opens with {, which nothing reinterprets.
+		return []string{"--msg-type", "text", "--content", textContent(o.Text)}
 	}
+}
+
+// textContent is the body Feishu stores for a plain text message, the form
+// lark-cli's own docs give as the manual equivalent of --text.
+func textContent(text string) string {
+	body, _ := json.Marshal(struct {
+		Text string `json:"text"`
+	}{text})
+	return string(body)
 }
 
 func (c *ExecClient) Send(ctx context.Context, target Target, msg Outgoing, idempotencyKey string) (SentMessage, error) {
@@ -1191,8 +1203,11 @@ func (c *ExecClient) UploadFile(ctx context.Context, path string) (string, error
 // Recall takes a message back. Whether this identity may — it sent it, and the
 // window has not closed — is Feishu's to answer, so nothing is checked here:
 // a local guess at the limit would refuse sends the server would have taken.
+//
+// --yes is the confirmation lark-cli demands of a high-risk call, and the one
+// it stands for is the y/n the reader has already answered.
 func (c *ExecClient) Recall(ctx context.Context, messageID string) error {
-	_, err := c.run(ctx, "im", "messages", "delete", "--message-id", messageID)
+	_, err := c.run(ctx, "im", "messages", "delete", "--message-id", messageID, "--yes")
 	return err
 }
 

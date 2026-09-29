@@ -296,13 +296,13 @@ echo '{"ok":true,"identity":"user","data":{"items":[]}}'`)
 }
 
 func TestOutgoing_FlagsPickTheMessageType(t *testing.T) {
-	require.Equal(t, []string{"--text", "hi"}, Text("hi").flags())
+	require.Equal(t, []string{"--msg-type", "text", "--content", `{"text":"hi"}`}, Text("hi").flags())
 	require.Equal(t,
 		[]string{"--msg-type", "post", "--content", `{"zh_cn":{"content":[[{"tag":"md","text":"## hi"}]]}}`},
 		Markdown("## hi").flags())
 	require.Equal(t, []string{"--image", "img_a"}, Image("img_a").flags())
 	// An empty body is still a text send, which is what an empty draft would be.
-	require.Equal(t, []string{"--text", ""}, Outgoing{}.flags())
+	require.Equal(t, []string{"--msg-type", "text", "--content", `{"text":""}`}, Outgoing{}.flags())
 }
 
 func TestExecClient_SendMarkdownUsesContentNotTheMarkdownFlag(t *testing.T) {
@@ -608,4 +608,26 @@ esac`)
 	argv, err = os.ReadFile(filepath.Join(c.Dir, "argv.minutes"))
 	require.NoError(t, err)
 	require.Equal(t, "minutes minutes get --minute-token obcnMin1 --as user --json\n", string(argv))
+}
+
+// lark-cli 1.0.97 reads a flag value opening with @ as a file path and a lone
+// - as stdin, so a message that starts with a mention or is a single dash has
+// to travel as content JSON rather than as --text.
+func TestOutgoingFlags_SendsTextLarkCLIWouldReinterpret(t *testing.T) {
+	require.Equal(t, []string{"--msg-type", "text", "--content", `{"text":"@张三 看一下"}`},
+		Text("@张三 看一下").flags())
+	require.Equal(t, []string{"--msg-type", "text", "--content", `{"text":"-"}`},
+		Text("-").flags())
+}
+
+// lark-cli rates the recall high-risk and refuses it without --yes; the flag
+// has to be on the wire or every recall comes back as exit 10.
+func TestExecClient_RecallConfirmsTheHighRiskCall(t *testing.T) {
+	c := fakeBinary(t, `
+echo "$*" > "$(dirname "$0")/args"
+echo '{"ok":true,"identity":"user","data":{}}'`)
+	require.NoError(t, c.Recall(t.Context(), "om_mine"))
+	args, err := os.ReadFile(filepath.Join(c.Dir, "args"))
+	require.NoError(t, err)
+	require.Equal(t, "im messages delete --message-id om_mine --yes --as user --json", strings.TrimSpace(string(args)))
 }
