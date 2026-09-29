@@ -72,14 +72,14 @@ type ThreadFeed struct {
 	NamesSelf bool
 }
 
-// Chat is the little of the owning chat a row of this kind draws with: the
-// name and the peer shade the avatar column, the mute mark rides the summary,
-// and a chat of two names nobody on it. Everything here comes from the same
-// chats row as the thread itself, so no second lookup can disagree with it.
 // RootSuffix and LastSuffix disambiguate the two names the row draws.
 func (t ThreadFeed) RootSuffix() string { return AccountSuffix(t.RootAccount) }
 func (t ThreadFeed) LastSuffix() string { return AccountSuffix(t.LastAccount) }
 
+// Chat is the little of the owning chat a row of this kind draws with: the
+// name and the peer shade the avatar column, the mute mark rides the summary,
+// and a chat of two names nobody on it. Everything here comes from the same
+// chats row as the thread itself, so no second lookup can disagree with it.
 func (t ThreadFeed) Chat() Chat {
 	return Chat{ChatID: t.ChatID, Name: t.ChatName, ChatMode: t.ChatMode,
 		P2PTargetID: t.P2PTargetID, Muted: t.Muted}
