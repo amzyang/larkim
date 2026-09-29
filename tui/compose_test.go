@@ -246,7 +246,8 @@ func TestResolveDraft_MissingFileIsAUserError(t *testing.T) {
 func TestResolveDraft_RefusesAnOversizeImage(t *testing.T) {
 	f := fakeFiles(map[string]int64{"/Users/linlan/big.png": 14 << 20})
 	_, err := f.planDraft("![x](~/big.png)")
-	require.ErrorContains(t, err, "big.png is 14.0 MB, over the 10.0 MB limit")
+	require.ErrorIs(t, err, errOverLimit)
+	require.ErrorContains(t, err, "big.png is 14.0 MB", "the badge has to say which file and how big")
 }
 
 func TestResolveDraft_RefusesADirectoryAndAnotherPersonsHome(t *testing.T) {
@@ -554,4 +555,24 @@ func TestComposerRows_ShortPreviewLeavesNoRowUnderBadge(t *testing.T) {
 	last := lines[len(lines)-2] // the row above the box's bottom border
 	require.Contains(t, last, m.draft.kind.msgType(), "the badge is the composer's last row")
 	require.Equal(t, len(m.previewRows), m.composerRows().preview, "the band claims only the rows the preview has")
+}
+
+func TestResolveDraft_LeavesAnImageReferenceInsideAFenceAlone(t *testing.T) {
+	// Pasting a snippet that shows the markdown for an image must not send
+	// the composer looking for that file: the draft is about the syntax.
+	f := fakeFiles(nil)
+	draft := "写法是：\n\n```markdown\n![截图](./shot.png)\n```"
+	p, err := f.planDraft(draft)
+	require.NoError(t, err)
+	require.Equal(t, kindPost, p.kind)
+	require.Empty(t, p.images)
+	require.Equal(t, draft, p.body)
+	require.Equal(t, draft, p.send.Markdown)
+}
+
+func TestResolveDraft_LeavesAnImageReferenceInACodeSpanAlone(t *testing.T) {
+	f := fakeFiles(nil)
+	p, err := f.planDraft("用 `![x](./shot.png)` 插图，比如\n\n- 一行")
+	require.NoError(t, err)
+	require.Empty(t, p.images)
 }

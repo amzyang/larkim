@@ -21,6 +21,7 @@ import (
 	"github.com/amzyang/larkim/config"
 	"github.com/amzyang/larkim/emoji"
 	"github.com/amzyang/larkim/larkcli"
+	"github.com/amzyang/larkim/larkmd"
 	"github.com/amzyang/larkim/store"
 	"github.com/amzyang/larkim/sync"
 	uv "github.com/charmbracelet/ultraviolet"
@@ -300,7 +301,12 @@ type Model struct {
 	// commits to it. files resolves the paths a draft names.
 	draft    draftPlan
 	draftErr error
-	files    draftFiles
+	// draftLint is what the body loses on the way to Feishu — an @ that
+	// notifies nobody, an emoji that arrives as its own name. It rides beside
+	// draftErr rather than inside it: a refused path stops the send, while
+	// these are the reader's call.
+	draftLint []larkmd.Finding
+	files     draftFiles
 	// previewOpen shows the draft as the message list will draw it. It is on
 	// by default because the preview only appears for a post or an image,
 	// which is exactly when the draft does not read as what it will become.
@@ -2361,8 +2367,13 @@ func (m Model) resumeInsert() (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-// replan re-resolves the draft after anything that can change it.
-func (m *Model) replan() { m.draft, m.draftErr = m.files.planDraft(m.area().Value()) }
+// replan re-resolves the draft after anything that can change it. The lint
+// reads the body mentions have already been resolved in, so a name the
+// composer did place draws no warning about not placing it.
+func (m *Model) replan() {
+	m.draft, m.draftErr = m.files.planDraft(m.area().Value())
+	m.draftLint = larkmd.Lint(m.tagMentions(m.draft.send).Markdown)
+}
 
 // submit puts the draft on screen before it puts it on the wire: the bubble
 // is what says the message went, so nothing holds a second one back either.
@@ -2520,14 +2531,19 @@ func (m Model) runCommand(line string) (tea.Model, tea.Cmd) {
 		if err != nil {
 			return m.notify(err.Error(), true), nil
 		}
+		// :send has no badge to carry the lint, so the notice does.
+		sending := "sending…"
+		if found := larkmd.Lint(m.tagMentions(p.send).Markdown); len(found) > 0 {
+			sending += " · " + found[0].Message
+		}
 		// No outbox item: :send can fire at a chat no pane is showing, and
 		// at a user whose chat id only Feishu knows.
 		if strings.HasPrefix(ref, "ou_") {
-			return m.notify("sending…", false), sendMsg(m.deps, "", larkcli.Target{UserID: ref}, p.send, p.uploads(), p.file, nil)
+			return m.notify(sending, false), sendMsg(m.deps, "", larkcli.Target{UserID: ref}, p.send, p.uploads(), p.file, nil)
 		}
 		for _, c := range m.chats {
 			if c.ChatID == ref || c.Name == ref {
-				return m.notify("sending…", false), sendMsg(m.deps, "", larkcli.Target{ChatID: c.ChatID}, p.send, p.uploads(), p.file, nil)
+				return m.notify(sending, false), sendMsg(m.deps, "", larkcli.Target{ChatID: c.ChatID}, p.send, p.uploads(), p.file, nil)
 			}
 		}
 		return m.notify("unknown chat "+ref, true), nil

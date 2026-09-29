@@ -1039,7 +1039,7 @@ func (c *ExecClient) Reply(ctx context.Context, messageID string, msg Outgoing, 
 func postContent(markdown string) string {
 	var b strings.Builder
 	b.WriteString(`{"zh_cn":{"content":[`)
-	for i, para := range postParagraphs(markdown) {
+	for i, para := range Paragraphs(markdown) {
 		if i > 0 {
 			b.WriteByte(',')
 		}
@@ -1059,11 +1059,14 @@ func postContent(markdown string) string {
 // two answer different questions and neither is worth a package.
 var mdFenceLine = regexp.MustCompile("^ {0,3}(`{3,}|~{3,})")
 
-// postParagraphs cuts a markdown body at the blank lines between its blocks,
+// Paragraphs cuts a markdown body at the blank lines between its blocks,
 // which come back as empty strings. A blank line inside a fence is code, so
 // the fence stays whole, and the blank lines around the body are dropped:
-// nobody typed a gap there.
-func postParagraphs(markdown string) []string {
+// nobody typed a gap there. It is exported because the cuts are what the
+// lint reports on: a list with a blank line inside it arrives as several md
+// elements, and a rule that worked that out for itself could drift from the
+// wire it describes.
+func Paragraphs(markdown string) []string {
 	var out, cur []string
 	var fence string
 	flush := func() {

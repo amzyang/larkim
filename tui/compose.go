@@ -2,6 +2,7 @@ package tui
 
 import (
 	"cmp"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -9,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/amzyang/larkim/larkcli"
+	"github.com/amzyang/larkim/larkmd"
 )
 
 // draftKind is the Feishu message type a draft will be sent as. The composer
@@ -102,6 +104,10 @@ func classify(draft string) draftKind {
 	return kindText
 }
 
+// errOverLimit marks an attachment Feishu will not take, so a caller can tell
+// it from a disk failure without reading the sentence it is wrapped in.
+var errOverLimit = errors.New("over Feishu's size limit")
+
 // maxImageBytes is Feishu's own cap on a message image.
 const maxImageBytes = 10 << 20
 
@@ -170,33 +176,43 @@ func (f draftFiles) planDraft(draft string) (draftPlan, error) {
 		}
 	}
 
+	// Text goes verbatim, so nothing in it is a reference to anything.
+	if p.kind == kindText {
+		p.send = larkcli.Text(draft)
+		return p, nil
+	}
+
 	var err error
-	wire := mdImage.ReplaceAllStringFunc(draft, func(m string) string {
-		g := mdImage.FindStringSubmatch(m)
-		img, ferr := f.resolveImage(cmp.Or(g[2], g[3]), len(p.images))
+	// The bubble draws the placeholder the wire carries, so the two cannot
+	// describe different pictures; the send path swaps in the real key once
+	// the file is up.
+	p.body = larkmd.ReplaceImages(draft, func(ref larkmd.ImageRef) string {
+		img, ferr := f.resolveImage(ref.Dest, len(p.images))
 		if ferr != nil && err == nil {
 			err = ferr
 		}
 		p.images = append(p.images, img)
-		// The bubble draws the placeholder; the wire gets the real key, which
-		// the send path substitutes once the file is up.
-		p.body = strings.Replace(p.body, m, "!["+g[1]+"]("+img.key+")", 1)
-		return "![" + g[1] + "](" + img.key + ")"
+		return img.key
 	})
 	if err != nil {
 		return p, err
 	}
 
-	switch p.kind {
-	case kindImage:
+	switch {
+	case p.kind == kindImage && len(p.images) == 1:
 		// A lone image is an image message, which names its key and nothing
 		// else; the bubble draws what lark-cli renders that back into.
 		p.body = "[Image: " + p.images[0].key + "]"
 		p.send = larkcli.Image(p.images[0].key)
-	case kindPost:
-		p.send = larkcli.Markdown(wire)
-	default:
+	case p.kind == kindImage:
+		// loneImage is anchored, but it takes destinations CommonMark refuses
+		// — ![x](<a>b>) among them — so a draft can look like one picture and
+		// parse as none. It is not a picture then, and goes as what it reads
+		// as — which p.body already holds, no reference having been replaced.
+		p.kind = kindText
 		p.send = larkcli.Text(draft)
+	default:
+		p.send = larkcli.Markdown(p.body)
 	}
 	return p, nil
 }
@@ -241,8 +257,8 @@ func (f draftFiles) resolveImage(ref string, n int) (draftImage, error) {
 		return img, fmt.Errorf("%s is a directory", ref)
 	}
 	if st.Size() > maxImageBytes {
-		return img, fmt.Errorf("%s is %s, over the %s limit",
-			filepath.Base(abs), humanBytes(st.Size()), humanBytes(maxImageBytes))
+		return img, fmt.Errorf("%s is %s, %w (%s)",
+			filepath.Base(abs), humanBytes(st.Size()), errOverLimit, humanBytes(maxImageBytes))
 	}
 	img.local = abs
 	return img, nil
@@ -286,8 +302,8 @@ func (f draftFiles) resolveFile(ref string) (draftFile, bool, error) {
 	}
 	file := draftFile{ref: ref, local: abs, size: st.Size()}
 	if st.Size() > maxFileBytes {
-		return file, true, fmt.Errorf("%s is %s, over the %s limit",
-			filepath.Base(abs), humanBytes(st.Size()), humanBytes(maxFileBytes))
+		return file, true, fmt.Errorf("%s is %s, %w (%s)",
+			filepath.Base(abs), humanBytes(st.Size()), errOverLimit, humanBytes(maxFileBytes))
 	}
 	return file, true, nil
 }

@@ -64,6 +64,9 @@ var (
 	colAccent = lipgloss.Color("4")
 	colDim    = lipgloss.Color("8")
 	colErr    = lipgloss.Color("1")
+	// colWarn is what the badge paints a lint finding: the body still sends,
+	// so it cannot wear the colour a refused path does.
+	colWarn = lipgloss.Color("3")
 	// colPick marks the emoji the picker's cursor stands on. It is green
 	// rather than the accent because on that grid the accent already means
 	// "yours" — the tick a cell the reader has reacted with carries — and the
@@ -84,6 +87,7 @@ var (
 	stAccent = lipgloss.NewStyle().Foreground(colAccent)
 	stBold   = lipgloss.NewStyle().Bold(true)
 	stErr    = lipgloss.NewStyle().Foreground(colErr)
+	stWarn   = lipgloss.NewStyle().Foreground(colWarn)
 	// The reader's own mention wears the filled badge the client paints it as:
 	// the brand blue it owns, closed by the same caps a chip is, and white on
 	// it. The fill is fixed rather than the terminal's blue because a badge
@@ -1183,6 +1187,15 @@ func (m Model) renderBadge(w int) string {
 	room := max(0, w-lipgloss.Width(left)-lipgloss.Width(hint)-2)
 	if m.draftErr != nil {
 		return padBetween(left+" "+stErr.Render(truncate(m.draftErr.Error(), room)), hint, w)
+	}
+	// A path the draft cannot send beats what it merely loses, so the lint
+	// takes the row only once there is no error on it.
+	if n := len(m.draftLint); n > 0 {
+		warn := m.draftLint[0].Message
+		if n > 1 {
+			warn = strconv.Itoa(n) + " · " + warn
+		}
+		return padBetween(left+" "+stWarn.Render(truncate(warn, room)), hint, w)
 	}
 	if d := m.draft.detail(); d != "" {
 		left += " " + stDim.Render(truncate(d, room))

@@ -5,6 +5,7 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/amzyang/larkim/larkmd"
 	"github.com/amzyang/larkim/store"
 )
 
@@ -47,7 +48,7 @@ func resolveMentions(draft string, picked map[string]string, roster []store.Cont
 
 	var b strings.Builder
 	for i := 0; i < len(draft); {
-		if draft[i] != '@' || !atBoundary(draft, i) {
+		if draft[i] != '@' || !larkmd.AtBoundary(draft, i) {
 			b.WriteByte(draft[i])
 			i++
 			continue
@@ -77,16 +78,6 @@ func resolveMentions(draft string, picked map[string]string, roster []store.Cont
 	return b.String()
 }
 
-// atBoundary reports whether the @ at i opens a mention rather than sitting
-// inside a word, which is what keeps an email address from being read as one.
-func atBoundary(s string, i int) bool {
-	if i == 0 {
-		return true
-	}
-	r := lastRune(s[:i])
-	return !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '_' && r != '.' && r != '-'
-}
-
 // cutName reports whether rest opens with name followed by something that can
 // end a mention, so "@张三丰" is not answered by "张三".
 func cutName(rest, name string) (string, bool) {
@@ -109,12 +100,4 @@ func firstRune(s string) rune {
 		return r
 	}
 	return 0
-}
-
-func lastRune(s string) rune {
-	var last rune
-	for _, r := range s {
-		last = r
-	}
-	return last
 }

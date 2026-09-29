@@ -9,6 +9,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/amzyang/larkim/emoji"
 	"github.com/amzyang/larkim/fuzzy"
+	"github.com/amzyang/larkim/larkmd"
 )
 
 // pumKind is what a completion run completes.
@@ -111,8 +112,8 @@ func pumEmojiRune(r rune) bool {
 // text before the cursor on the cursor's own line — a run never spans a
 // newline, so that is the whole of what can be completed.
 //
-// A run opens only where atBoundary holds, the rule mentions already resolve
-// by. That one rule is what keeps `http://`, `12:30`, `note:` and an email
+// A run opens only where larkmd.AtBoundary holds, the rule mentions already
+// resolve by. That one rule is what keeps `http://`, `12:30`, `note:` and an email
 // address from opening a popup over what the reader is actually writing, and
 // pumEmojiQueryMin keeps the rest: a lone `:` or `[` is punctuation until two
 // runes of a name stand behind it.
@@ -137,7 +138,7 @@ func pumRunAt(line string) (pumRun, bool) {
 			}
 		}
 		head := string(rs[:i])
-		if !atBoundary(head, len(head)) {
+		if !larkmd.AtBoundary(head, len(head)) {
 			return pumRun{}, false
 		}
 		return pumRun{kind: kind, runes: len(rs) - i, query: query}, true

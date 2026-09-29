@@ -75,7 +75,7 @@ func TestPlanDraft_FileOverTheLimitIsRefusedAsAFile(t *testing.T) {
 
 	require.Error(t, err)
 	assert.Equal(t, kindFile, p.kind)
-	assert.Contains(t, err.Error(), "over the")
+	require.ErrorIs(t, err, errOverLimit)
 }
 
 // A picture keeps the image path: it draws in the message list, which a file
