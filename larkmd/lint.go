@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/amzyang/larkim/emoji"
-	"github.com/amzyang/larkim/larkcli"
 	"github.com/yuin/goldmark/v2/ast"
 	gast "github.com/yuin/goldmark/v2/extension/ast"
 )
@@ -35,7 +34,9 @@ func Lint(src string) []Finding {
 	}
 	b := []byte(src)
 	lines := newLineTable(src)
-	cuts := paragraphCuts(src)
+	parts := chunks(src)
+	cuts := paragraphCuts(parts)
+	sent := emojiLines(parts, lines)
 	var out []Finding
 	at := lines.at
 	_ = ast.Walk(Parser.Parse(b), func(n ast.Node, entering bool) (ast.WalkStatus, error) {
@@ -53,7 +54,7 @@ func Lint(src string) []Finding {
 			// The raw source is scanned rather than the decoded value, so an
 			// offset found here is an offset in what the sender wrote.
 			for _, idx := range c.Value.Indices() {
-				out = append(out, scanText(src, idx.Start, idx.Stop, label, at)...)
+				out = append(out, scanText(src, idx.Start, idx.Stop, label, sent, at)...)
 			}
 		case *ast.List:
 			out = append(out, scanList(c, cuts, at)...)
@@ -77,24 +78,32 @@ func Lint(src string) []Finding {
 // shortcode is how a message spells one of Feishu's emoji.
 var shortcode = regexp.MustCompile(`:([A-Za-z0-9_]{1,32}):`)
 
-// emojiFinding reports an emoji a post body cannot carry. Feishu draws an
-// emoji in a post from an emotion element, and a body sent as markdown is one
-// md element with no room for one, so every spelling arrives as the
-// characters it is written with — while an <at> tag on the same line becomes
-// a real mention. [Name] is the spelling a plain text message does draw, and
-// :KEY: draws nowhere: it is how larkim writes an emotion element back
-// (sync/post.go), not a spelling Feishu takes. See
-// docs/markdown-lint/DIALECT.md.
+// shortcodeFinding reports an emoji spelled :KEY:, which Feishu reads nowhere:
+// it is how larkim writes an emotion element back (sync/post.go), not a
+// spelling Feishu takes. See docs/markdown-lint/DIALECT.md.
 //
 // Only a spelling that names an emoji Feishu has is reported. :tada: names
 // none, and whether the sender meant an emoji or wrote prose between colons
 // is not decidable — saying Feishu has no such emoji would only imply that
 // having one would have helped.
-func emojiFinding(e emoji.Emoji, spelling string, line, col int) Finding {
+func shortcodeFinding(e emoji.Emoji, spelling string, line, col int) Finding {
+	return Finding{
+		Rule: "emoji_not_rendered", Line: line, Column: col,
+		Message: spelling + " arrives as those characters: Feishu reads no shortcode",
+		Hint:    "write " + cmp.Or(e.Insert, e.Glyph, "["+e.Name()+"]") + " instead",
+	}
+}
+
+// bracketFinding reports an emoji name on a line the wire keeps as markdown.
+// A line of words — emphasis, links and mentions included — sends the name as
+// the emotion it names; a heading, a quote, a list item, a table, code or a
+// picture keeps its line in an md element, which reads no emoji name, and an
+// emotion cannot sit beside one (PostContent).
+func bracketFinding(e emoji.Emoji, spelling string, line, col int) Finding {
 	f := Finding{
 		Rule: "emoji_not_rendered", Line: line, Column: col,
-		Message: spelling + " arrives as those characters: a post carries no emoji",
-		Hint:    "only a plain text message draws this one, spelled [" + e.Name() + "]",
+		Message: spelling + " arrives as those characters: this line goes as markdown, which reads no emoji name",
+		Hint:    "move it to a line of its own, clear of the markup around it",
 	}
 	if g := cmp.Or(e.Insert, e.Glyph); g != "" {
 		f.Hint = "write " + g + " instead"
@@ -102,7 +111,9 @@ func emojiFinding(e emoji.Emoji, spelling string, line, col int) Finding {
 	return f
 }
 
-func scanText(src string, start, stop int, label bool, at func(int) (int, int)) []Finding {
+// scanText reports what one text node loses. sent is the lines the wire
+// carries an emoji name on as the emotion it names.
+func scanText(src string, start, stop int, label bool, sent map[int]bool, at func(int) (int, int)) []Finding {
 	raw := src[start:stop]
 	var out []Finding
 	for i := range len(raw) {
@@ -129,16 +140,18 @@ func scanText(src string, start, stop int, label bool, at func(int) (int, int)) 
 		}
 		if e, ok := emoji.ByKey(key); ok {
 			line, col := at(start + m[0])
-			out = append(out, emojiFinding(e, ":"+key+":", line, col))
+			out = append(out, shortcodeFinding(e, ":"+key+":", line, col))
 		}
 	}
 	// [Name] is what the composer's own popup writes for an emoji no
-	// character carries: a text message resolves that spelling, a post does
-	// not. The brackets sit outside this node, so the source carries them.
+	// character carries. A line of words sends it as the emotion it names;
+	// on any other line it keeps its brackets. The brackets sit outside this
+	// node, so the source carries them.
 	if !label && start > 0 && stop < len(src) && src[start-1] == '[' && src[stop] == ']' {
-		if e, ok := emoji.ByName(raw); ok {
-			line, col := at(start - 1)
-			out = append(out, emojiFinding(e, "["+raw+"]", line, col))
+		if e, ok := emotionFor(raw); ok {
+			if line, col := at(start - 1); !sent[line] {
+				out = append(out, bracketFinding(e, "["+raw+"]", line, col))
+			}
 		}
 	}
 	return out
@@ -148,7 +161,7 @@ func isAlnum(c byte) bool {
 	return c >= '0' && c <= '9' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z'
 }
 
-// scanList reports a list the wire cuts up. postContent sends one md element
+// scanList reports a list the wire cuts up. PostContent sends one md element
 // per paragraph, so a blank line inside a list ends it: what follows the gap
 // arrives as a separate element with no list around it.
 func scanList(n *ast.List, cuts []int, at func(int) (int, int)) []Finding {
@@ -171,25 +184,35 @@ func scanList(n *ast.List, cuts []int, at func(int) (int, int)) []Finding {
 }
 
 // paragraphCuts is where the wire cuts a body: the offset of every blank line
-// larkcli.Paragraphs parts the md elements at. The cuts are read back off
-// that function rather than worked out again, so a rule about them cannot
-// describe a split the wire does not make.
-func paragraphCuts(src string) []int {
-	chunks := larkcli.Paragraphs(src)
-	if len(chunks) == 0 {
-		return nil
-	}
-	// Paragraphs drops the blank lines around a body, so the first chunk is
-	// where what it kept begins.
-	at := strings.Index(src, chunks[0])
+// PostContent parts the md elements at. The cuts are read off the chunks it
+// sends rather than worked out again, so a rule about them cannot describe a
+// split the wire does not make.
+func paragraphCuts(parts []chunk) []int {
 	var cuts []int
-	for _, c := range chunks {
-		if c == "" {
-			cuts = append(cuts, at)
+	for _, c := range parts {
+		if c.gap {
+			cuts = append(cuts, c.start)
 		}
-		at += len(c) + 1 // the newline the split consumed
 	}
 	return cuts
+}
+
+// emojiLines is the lines, counted from one, that PostContent sends as
+// elements because they name an emoji. Read off the same split the wire
+// makes, so a name is reported exactly where it keeps its brackets.
+func emojiLines(parts []chunk, lines lineTable) map[int]bool {
+	out := map[int]bool{}
+	for _, c := range parts {
+		if c.gap {
+			continue
+		}
+		_, native := splitChunk(c.text)
+		first, _ := lines.at(c.start)
+		for _, i := range native {
+			out[first+i] = true
+		}
+	}
+	return out
 }
 
 // blockEnd is where a block's last byte sits. goldmark hands out a start

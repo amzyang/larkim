@@ -132,7 +132,8 @@ type Outgoing struct {
 // Text is an Outgoing carrying plain text.
 func Text(s string) Outgoing { return Outgoing{Text: s} }
 
-// Markdown is an Outgoing lark-cli converts into a rich-text post.
+// Markdown is an Outgoing sent as the rich-text post larkmd.PostContent
+// spells it into.
 func Markdown(s string) Outgoing { return Outgoing{Markdown: s} }
 
 // Emotion is an Outgoing carrying one emoji and nothing else, as the post

@@ -6,6 +6,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/amzyang/larkim/emoji"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/stretchr/testify/require"
 )
@@ -102,17 +103,32 @@ func TestPreview_RendersThroughTheMessageBody(t *testing.T) {
 	require.Contains(t, ansi.Strip(line), "看 这里", "the preview draws the markup, not its delimiters")
 }
 
-func TestPreview_DrawsAnEmojiSpellingAsTheCharactersItWillArriveAs(t *testing.T) {
+func TestPreview_DrawsAnEmojiWhereTheSendCarriesOne(t *testing.T) {
 	m, _ := newOutboxModel(t)
 	mm, _ := m.startInsert(nil, false)
 	m = mm.(Model)
-	m.input.SetValue("**收到** [赞] :DONE:")
+	m.input.SetValue("**收到** [赞] :THUMBSUP:")
 	m.replan()
 	m.layout()
 
 	require.Len(t, m.previewRows, 1)
 	line, _ := m.rowLine(m.previewRows[0], m.width-2)
-	require.Contains(t, ansi.Strip(line), "收到 [赞] :DONE:", "Feishu keeps an md element's text verbatim")
+	e, _ := emoji.ByKey("THUMBSUP")
+	require.Contains(t, ansi.Strip(line), "收到 "+e.Glyph+" :THUMBSUP:",
+		"the name goes as an emotion, the shortcode as the characters it is")
+}
+
+func TestPreview_KeepsAnEmojiNameInsideMarkupAsTyped(t *testing.T) {
+	m, _ := newOutboxModel(t)
+	mm, _ := m.startInsert(nil, false)
+	m = mm.(Model)
+	m.input.SetValue("## 发布 [赞]")
+	m.replan()
+	m.layout()
+
+	require.NotEmpty(t, m.previewRows)
+	line, _ := m.rowLine(m.previewRows[0], m.width-2)
+	require.Contains(t, ansi.Strip(line), "发布 [赞]", "a heading goes as an md element, which reads no emoji name")
 }
 
 func TestRenderInput_BoxIsExactlyAsTallAsItClaims(t *testing.T) {

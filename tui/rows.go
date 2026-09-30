@@ -268,14 +268,6 @@ type msgStyle struct {
 	// peer is who the reader is talking to in such a chat, which is how far an
 	// @ in it carries: a name that is neither of theirs reaches nobody here.
 	peer string
-	// authored says the body being drawn is the reader's own markdown rather
-	// than anything Feishu sent back — the composer's preview, which goes
-	// through these rows so that what is previewed and what is sent cannot
-	// differ. It draws no emoji spelling at all: Feishu keeps an md element's
-	// text verbatim, so a "[赞]" in the draft arrives as those characters and
-	// a preview drawing a face there would promise what the client will not
-	// show.
-	authored bool
 }
 
 // emojiPics sizes the pictures cut out of the sprite sheet. The zero value
@@ -740,7 +732,7 @@ func bodyRows(x store.Message, idx int, st msgStyle, g *leads) []msgRow {
 	if a, ok := attachmentOf(x.MsgType, x.ContentRaw); ok {
 		return attachRows(a, x, idx, st, g)
 	}
-	ms := mentionsIn(x.MentionsJSON, st.self).facing(st.peer).marking(st.hits).spelling(st.spell(x.MsgType))
+	ms := mentionsIn(x.MentionsJSON, st.self).facing(st.peer).marking(st.hits).spelling(spellOf(x.MsgType))
 	// A card describes itself in full, so it is drawn as soon as it lands:
 	// waiting on a rendering would hold back the whole of what it says.
 	if x.MsgType == "interactive" {
@@ -764,7 +756,7 @@ func bodyRows(x store.Message, idx int, st msgStyle, g *leads) []msgRow {
 		return pictureRows(key, x, idx, st, g)
 	}
 	if x.RenderedAt == 0 {
-		return dimRows(pendingText(x.MsgType, x.ContentRaw, x.MentionsJSON), idx, st, g, st.spell(x.MsgType))
+		return dimRows(pendingText(x.MsgType, x.ContentRaw, x.MentionsJSON), idx, st, g, spellOf(x.MsgType))
 	}
 	// A post is markdown by construction, so it is drawn as the document it
 	// is. A text message is not: someone typing "3 * 4 * 5" means the

@@ -50,8 +50,7 @@ func TestLint_MentionInsideCodeIsQuoted(t *testing.T) {
 }
 
 func TestLint_ShortcodeArrivesAsCharacters(t *testing.T) {
-	// A post has no room for an emotion element, so no spelling of an emoji
-	// survives in one — not even the canonical key.
+	// Feishu reads no colon spelling of an emoji, the canonical key included.
 	for _, draft := range []string{"收到 :DONE:", "收到 :done:", "辛苦了 :SMILE:"} {
 		got := Lint(draft)
 		require.Equal(t, []string{"emoji_not_rendered"}, rules(got), "draft %q", draft)
@@ -63,23 +62,33 @@ func TestLint_ShortcodeHintOffersTheCharacterWhereOneExists(t *testing.T) {
 	require.Len(t, got, 1)
 	require.Contains(t, got[0].Hint, "🤷")
 
-	// DONE is Feishu's own art, which no character carries. The spelling a
-	// plain text message draws it by is the only thing left to say.
+	// DONE is Feishu's own art, which no character carries, so the spelling
+	// the send turns into its emotion is the one to offer.
 	got = Lint("收到 :DONE:")
 	require.Len(t, got, 1)
-	require.Contains(t, got[0].Hint, "plain text message")
 	require.Contains(t, got[0].Hint, "[Done]")
 }
 
-func TestLint_BracketNameTheComposerWritesIsReported(t *testing.T) {
-	// emojiInsert writes [Name] for an emoji with no character of its own. A
-	// text message resolves that spelling; a post leaves it as brackets.
-	got := Lint("收到 [Done] 了")
+func TestLint_BracketNameOnAPlainLineIsSentAsTheEmoji(t *testing.T) {
+	// emojiInsert writes [Name] for an emoji with no character of its own,
+	// and the send carries it as the emotion the client would have written.
+	require.Empty(t, Lint("收到 [Done] 了"))
+	require.Empty(t, Lint("**收到** [完成]"))
+	require.Empty(t, Lint("> abc\n[Done]"), "the line after the quote goes on its own")
+	require.Equal(t, []string{"emoji_not_rendered"}, rules(Lint("> abc [Done]")), "the quote's own line keeps its brackets")
+}
+
+func TestLint_BracketNameInsideMarkupIsReported(t *testing.T) {
+	// A line only markdown can say goes as an md element, which reads no
+	// emoji name.
+	got := Lint("## 发布 [Done]")
 	require.Equal(t, []string{"emoji_not_rendered"}, rules(got))
 	require.Contains(t, got[0].Message, "[Done]")
-	require.Equal(t, 1+len("收到 "), got[0].Column, "the finding points at the opening bracket")
+	require.Equal(t, 1+len("## 发布 "), got[0].Column, "the finding points at the opening bracket")
 
-	require.Equal(t, []string{"emoji_not_rendered"}, rules(Lint("收到 [完成] 了")))
+	for _, draft := range []string{"> 上线 [Done]", "- 修复 A [Done]", "跑 `go test` [完成]"} {
+		require.Equal(t, []string{"emoji_not_rendered"}, rules(Lint(draft)), "draft %q", draft)
+	}
 }
 
 func TestLint_ALinkLabelIsNotABracketedEmoji(t *testing.T) {

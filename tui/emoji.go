@@ -50,16 +50,6 @@ func spellOf(msgType string) emojiSpell {
 	return spellAll
 }
 
-// spell is spellOf for a body these rows are drawing. The composer's preview
-// overrides it: the draft is markdown nobody has sent yet, so none of the
-// spellings in it is one Feishu wrote.
-func (st msgStyle) spell(msgType string) emojiSpell {
-	if st.authored {
-		return spellNone
-	}
-	return spellOf(msgType)
-}
-
 // expandEmoji draws Feishu's official emoji, in the spellings sp allows. A key
 // the terminal has no glyph for stays as it came, since the Feishu client draws
 // it as a picture and has no bracketed spelling to fall back on either.

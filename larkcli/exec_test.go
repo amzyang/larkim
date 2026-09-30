@@ -376,59 +376,10 @@ echo '{"ok":true,"identity":"user","data":{"message_id":"om_new","chat_id":"oc_q
 		strings.TrimSpace(string(args)))
 }
 
-// postParas decodes a body back into the paragraphs it spells, each one named
-// by the tag it carries and the text under it.
-func postParas(t *testing.T, markdown string) [][]struct {
-	Tag  string `json:"tag"`
-	Text string `json:"text"`
-} {
-	t.Helper()
-	var body struct {
-		ZhCn struct {
-			Content [][]struct {
-				Tag  string `json:"tag"`
-				Text string `json:"text"`
-			} `json:"content"`
-		} `json:"zh_cn"`
-	}
-	require.NoError(t, json.Unmarshal([]byte(postContent(markdown)), &body))
-	return body.ZhCn.Content
-}
-
-func TestPostContent_EscapesTheMarkdown(t *testing.T) {
-	paras := postParas(t, "他说\"好\"\n| a |\n|---|")
-	require.Len(t, paras, 1)
-	require.Equal(t, "md", paras[0][0].Tag)
-	require.Equal(t, "他说\"好\"\n| a |\n|---|", paras[0][0].Text, "the draft survives the wrapper verbatim")
-}
-
-func TestPostContent_BlankLineBecomesAnEmptyTextParagraph(t *testing.T) {
-	// Feishu drops a blank line inside an md element and strips an empty
-	// paragraph sent as an empty array, so the gap is spelled this one way.
+func TestExecClient_SendMarkdownCarriesAnEmojiNameAsItsEmotion(t *testing.T) {
 	require.Equal(t,
-		`{"zh_cn":{"content":[[{"tag":"md","text":"## 发布说明"}],[{"tag":"text","text":""}],[{"tag":"md","text":"正文"}]]}}`,
-		postContent("## 发布说明\n\n正文"))
-}
-
-func TestPostContent_ConsecutiveBlankLinesEachBecomeAGap(t *testing.T) {
-	paras := postParas(t, "上\n\n\n下")
-	require.Len(t, paras, 4)
-	require.Equal(t, "", paras[1][0].Text)
-	require.Equal(t, "text", paras[1][0].Tag)
-	require.Equal(t, "text", paras[2][0].Tag)
-}
-
-func TestPostContent_KeepsAFenceWhole(t *testing.T) {
-	md := "看代码：\n\n```go\nfunc a() {\n\n}\n```\n\n就这些"
-	paras := postParas(t, md)
-	require.Len(t, paras, 5)
-	require.Equal(t, "```go\nfunc a() {\n\n}\n```", paras[2][0].Text, "a blank line inside a fence is code")
-}
-
-func TestPostContent_DropsTheBlankLinesAroundTheBody(t *testing.T) {
-	paras := postParas(t, "\n\n正文\n\n")
-	require.Len(t, paras, 1)
-	require.Equal(t, "正文", paras[0][0].Text)
+		[]string{"--msg-type", "post", "--content", `{"zh_cn":{"content":[[{"tag":"text","text":"收到 "},{"tag":"emotion","emoji_type":"DONE"}]]}}`},
+		Markdown("收到 [Done]").flags())
 }
 
 func TestExecClient_SendImageUsesTheImageFlag(t *testing.T) {

@@ -21,6 +21,8 @@ import (
 	"sync/atomic"
 	"syscall"
 	"time"
+
+	"github.com/amzyang/larkim/larkmd"
 )
 
 // DefaultPath is where the npm-installed lark-cli wrapper lands on Homebrew
@@ -1073,7 +1075,7 @@ func (o Outgoing) flags() []string {
 	case o.Markdown != "":
 		// Not --markdown: that flag rewrites H1-H3 into H4/H5 before sending,
 		// and the rewrite lands in what this client stores and draws.
-		return []string{"--msg-type", "post", "--content", postContent(o.Markdown)}
+		return []string{"--msg-type", "post", "--content", larkmd.PostContent(o.Markdown)}
 	case o.ImageKey != "":
 		return []string{"--image", o.ImageKey}
 	case o.FileKey != "":
@@ -1117,81 +1119,6 @@ func (c *ExecClient) Reply(ctx context.Context, messageID string, msg Outgoing, 
 		args = append(args, "--idempotency-key", idempotencyKey)
 	}
 	return c.sent(ctx, args...)
-}
-
-// postContent is the rich-text body Feishu stores for a markdown draft: one md
-// element per paragraph, with an empty text element standing in for every
-// blank line between them. Feishu expands an md element into paragraphs of its
-// own and drops the blank lines inside it, and an empty paragraph sent as an
-// empty array is stripped on the way in, so a line carrying an empty text
-// element is the only spelling of a gap that survives the round trip.
-func postContent(markdown string) string {
-	var b strings.Builder
-	b.WriteString(`{"zh_cn":{"content":[`)
-	for i, para := range Paragraphs(markdown) {
-		if i > 0 {
-			b.WriteByte(',')
-		}
-		if para == "" {
-			b.WriteString(`[{"tag":"text","text":""}]`)
-			continue
-		}
-		text, _ := json.Marshal(para)
-		b.WriteString(`[{"tag":"md","text":` + string(text) + `}]`)
-	}
-	b.WriteString(`]}}`)
-	return b.String()
-}
-
-// mdFenceLine opens or closes a fenced code block. The composer has a fence of
-// its own to classify drafts by; this one is not shared with it because the
-// two answer different questions and neither is worth a package.
-var mdFenceLine = regexp.MustCompile("^ {0,3}(`{3,}|~{3,})")
-
-// Paragraphs cuts a markdown body at the blank lines between its blocks,
-// which come back as empty strings. A blank line inside a fence is code, so
-// the fence stays whole, and the blank lines around the body are dropped:
-// nobody typed a gap there. It is exported because the cuts are what the
-// lint reports on: a list with a blank line inside it arrives as several md
-// elements, and a rule that worked that out for itself could drift from the
-// wire it describes.
-func Paragraphs(markdown string) []string {
-	var out, cur []string
-	var fence string
-	flush := func() {
-		if len(cur) > 0 {
-			out = append(out, strings.Join(cur, "\n"))
-			cur = nil
-		}
-	}
-	for line := range strings.SplitSeq(markdown, "\n") {
-		switch {
-		case fence != "":
-			cur = append(cur, line)
-			// A closing fence is at least as long as the one that opened the
-			// block, which is what the prefix test comes to.
-			if strings.HasPrefix(strings.TrimSpace(line), fence) {
-				fence = ""
-			}
-		case mdFenceLine.MatchString(line):
-			cur = append(cur, line)
-			fence = mdFenceLine.FindStringSubmatch(line)[1]
-		case strings.TrimSpace(line) == "":
-			flush()
-			out = append(out, "")
-		default:
-			cur = append(cur, line)
-		}
-	}
-	flush()
-	start, end := 0, len(out)
-	for start < end && out[start] == "" {
-		start++
-	}
-	for end > start && out[end-1] == "" {
-		end--
-	}
-	return out[start:end]
 }
 
 // uploadRoot is where a file lark-cli may not read is staged before it is

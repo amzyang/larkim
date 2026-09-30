@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/amzyang/larkim/emoji"
 	"github.com/amzyang/larkim/larkcli"
 	"github.com/amzyang/larkim/store"
 	"github.com/stretchr/testify/require"
@@ -195,6 +196,18 @@ func TestSubmit_HandsTheBubbleOverToTheStoredMessage(t *testing.T) {
 	require.Len(t, rows, 1)
 	require.Equal(t, "om_sent_1", rows[0].MessageID)
 	require.Len(t, f.SentKeys, 1)
+}
+
+func TestSubmit_TheBubbleDrawsTheEmojiThePostCarries(t *testing.T) {
+	m, _ := newOutboxModel(t)
+	m.input.SetValue("**收到** [赞]")
+	mm, _ := m.submit()
+	m = mm.(Model)
+
+	require.Len(t, m.msgs, 1)
+	e, _ := emoji.ByKey("THUMBSUP")
+	require.Contains(t, rowText(renderRows(m.msgs, baseStyle())), "收到 "+e.Glyph,
+		"the bubble reads the body on the wire, where the name is an emotion")
 }
 
 func TestEnterChat_DropsTheRowsTheOldChatOwned(t *testing.T) {

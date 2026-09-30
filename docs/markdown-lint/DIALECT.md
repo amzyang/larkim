@@ -1,9 +1,10 @@
 # What a post `md` element does with markdown
 
 `larkim send --markdown` puts a body inside `{"tag":"md","text":…}` post elements
-(`larkcli/exec.go`, `postContent`). This records what Feishu does with what is inside
-one, so a lint rule cites an observation rather than the interactive-card documentation,
-which describes a different renderer.
+(`larkmd/post.go`, `PostContent`), all but the lines that carry an emoji — see
+[Emoji](#emoji). This records what Feishu does with what is inside one, so a lint rule
+cites an observation rather than the interactive-card documentation, which describes a
+different renderer.
 
 ## How to read it again
 
@@ -88,10 +89,11 @@ speak of — that belongs to the interactive card.
 
 ## Emoji
 
-Feishu takes one written spelling of an emoji, `[Name]`, and it works in a plain text
-message only.
+A text message draws an emoji from its written name, `[Name]`. A post draws one from an
+`emotion` element only: the text inside an `md` element is kept as typed, brackets
+included.
 
-| Written | text message | post `--markdown` |
+| Written | text message | inside an `md` element |
 |---|---|---|
 | `[Done]`, `[完成]`, `[Shrug]` | drawn as the emoji | the characters, brackets included |
 | `:DONE:`, `:done:`, `:Shrug:` | the characters | the characters |
@@ -102,12 +104,28 @@ emoji. Case in the colon form makes no difference because no colon form works an
 `:KEY:` is how larkim writes an `emotion` element back out (`sync/post.go`), not a
 spelling Feishu reads.
 
-A post draws an emoji from an `emotion` element, which is what a client emits when one
-is picked from its panel. A body sent through `--markdown` is one `md` element with no
-room for an `emotion` beside it, so the only emoji such a body can carry is a character:
-🤷 for one Unicode has, nothing for Feishu's own art.
+The client's editor turns a typed name into an `emotion` among the line's other
+elements: `**abc** [Done] xyz` goes as
 
-This is what the composer's popup runs into. `emojiInsert` writes `[Name]` for an emoji
-no character carries (`tui/pum.go`), so the same keystrokes draw an emoji while the
-draft is text and a pair of brackets once something else in the draft turns it into a
-post. `emoji_not_rendered` in `larkmd` reports both spellings.
+```json
+[{"tag":"text","text":"abc","style":["bold"]},{"tag":"text","text":" ","style":[]},
+ {"tag":"emotion","emoji_type":"Done"},{"tag":"text","text":" xyz","style":[]}]
+```
+
+`emoji_type` is read without regard to case: `Done` and `DONE` are stored as sent and
+draw the same emoji. An `md` element always takes a line of its own, whatever shares its
+paragraph: `[md "> abc", emotion]` is stored as two paragraphs, and
+`[md "**abc** ", emotion, md " xyz"]` as three. A line that carries an emoji therefore
+has to be spelled in those elements rather than cut out of an `md` one.
+
+That is what the send does. A line of words — emphasis, strikethrough, `http(s)` links
+and `<at>` mentions included — goes as `text`, `a`, `at` and `emotion` elements, each
+`[Name]` in it becoming the emotion it names. Any other line — a heading, a quote, a list
+item, a table, code, a picture — stays in its `md` element with the brackets in it. A
+lazy line after a quote is a line of words, so `> abc` followed by `[Done]` sends the
+quote and then the emoji on a line of its own.
+
+`emojiInsert` writes `[Name]` for an emoji no character carries (`tui/pum.go`), so the
+composer's popup draws the emoji in a text message and on a post's lines of words alike.
+`emoji_not_rendered` in `larkmd` reports a name left inside an `md` line, and every
+`:KEY:`.

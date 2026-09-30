@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/amzyang/larkim/larkcli"
+	"github.com/amzyang/larkim/larkmd"
 	"github.com/amzyang/larkim/store"
 )
 
@@ -47,17 +48,23 @@ type outboxItem struct {
 
 // message is the row a pending send draws as. Content is filled and
 // RenderedAt is non-zero so the body takes the ordinary text path instead of
-// the stand-in a message still awaiting rendering gets.
+// the stand-in a message still awaiting rendering gets. A post carries the
+// body it goes on the wire as, so it draws the elements Feishu will store:
+// which of its lines send an emoji name as the emoji is the wire's decision.
 func (it outboxItem) message(selfID, selfName string) store.Message {
 	var position int64
 	if it.inThread {
 		position = -1
 	}
-	return store.Message{
+	x := store.Message{
 		MessageID: it.localID, ChatID: it.chatID, ThreadID: it.threadID, ReplyTo: it.replyTo,
 		MsgType: it.msgType, SenderID: selfID, SenderType: "user", SenderName: selfName,
 		Content: it.body, CreateMs: it.createMs, MessagePosition: position, RenderedAt: 1,
 	}
+	if it.msgType == "post" {
+		x.ContentRaw = larkmd.PostContent(it.body)
+	}
+	return x
 }
 
 func (m *Model) enqueue(it outboxItem) { m.outbox = append(m.outbox, it) }

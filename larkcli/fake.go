@@ -9,6 +9,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/amzyang/larkim/larkmd"
 )
 
 // Fake is an in-memory Client for tests. Messages are keyed by id; list and
@@ -592,7 +594,7 @@ func (o Outgoing) body() (msgType, content, rendered string) {
 	switch {
 	case o.Markdown != "":
 		// Built by the same function the wire uses, so the two cannot drift.
-		return "post", postContent(o.Markdown), o.Markdown
+		return "post", larkmd.PostContent(o.Markdown), o.Markdown
 	case o.ImageKey != "":
 		key, _ := json.Marshal(o.ImageKey)
 		return "image", `{"image_key":` + string(key) + `}`, "[Image: " + o.ImageKey + "]"
