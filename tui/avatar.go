@@ -375,15 +375,12 @@ func transmitPicture(w *strings.Builder, id int, img image.Image, cols, rows int
 	})
 }
 
-// newAvatars picks the renderer the terminal can actually show. Detection is
-// deliberately narrow: a wrong guess leaves placeholder glyphs on screen,
-// while the colour block always works.
-func newAvatars(dataDir string, env func(string) string) avatars {
-	if dataDir == "" {
+// newAvatars picks the renderer the terminal can actually show. graphics is
+// the terminal's own answer to GraphicsQuery: a wrong guess leaves placeholder
+// glyphs on screen, while the colour block always works.
+func newAvatars(dataDir string, graphics bool) avatars {
+	if dataDir == "" || !graphics {
 		return textAvatars{}
 	}
-	if env("KITTY_WINDOW_ID") != "" || strings.Contains(env("TERM"), "kitty") {
-		return newKittyAvatars(dataDir)
-	}
-	return textAvatars{}
+	return newKittyAvatars(dataDir)
 }

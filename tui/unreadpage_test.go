@@ -66,12 +66,11 @@ func unreadPageDeps(t *testing.T) Deps {
 	for _, id := range []string{"om_react", "om_pic", "om_fwd"} {
 		require.NoError(t, st.SetReadStatus(ctx, id, &unread, 100, 0))
 	}
-	return Deps{Store: st, DataDir: dir, Self: selfID,
-		Env: func(string) string { return "xterm-kitty" }}
+	return Deps{Store: st, DataDir: dir, Self: selfID}
 }
 
 func unreadScreen() UnreadScreen {
-	return UnreadScreen{Width: 100, Height: 40, CellW: 10, CellH: 20, Dark: true, TTY: true}
+	return UnreadScreen{Width: 100, Height: 40, CellW: 10, CellH: 20, Dark: true, TTY: true, Graphics: true}
 }
 
 // The page is the TUI's pane: on a terminal that draws them, the pictures the

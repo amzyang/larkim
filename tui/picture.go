@@ -78,13 +78,11 @@ type pictures struct {
 	drew map[string]bool
 }
 
-// newPictures picks the renderer the terminal can show, by the same narrow
-// detection the avatars use: a wrong guess leaves placeholder glyphs on screen.
-func newPictures(dataDir string, env func(string) string) *pictures {
-	if dataDir == "" {
-		return nil
-	}
-	if env("KITTY_WINDOW_ID") == "" && !strings.Contains(env("TERM"), "kitty") {
+// newPictures picks the renderer the terminal can show, on the same answer to
+// GraphicsQuery the avatars take: a wrong guess leaves placeholder glyphs on
+// screen.
+func newPictures(dataDir string, graphics bool) *pictures {
+	if dataDir == "" || !graphics {
 		return nil
 	}
 	return &pictures{dataDir: dataDir, size: map[string]image.Point{}, failed: map[string]bool{},

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"time"
 
 	"charm.land/lipgloss/v2"
 	"github.com/amzyang/larkim/tui"
@@ -68,6 +69,7 @@ func (a *App) unreadScreen() tui.UnreadScreen {
 	}
 	sc.TTY = true
 	sc.Dark = lipgloss.HasDarkBackground(os.Stdin, f)
+	sc.Graphics = probeGraphics(os.Stdin, f)
 	// One ioctl answers both questions. kitty fills the pixel fields, which is
 	// the cell size without a query the terminal has to answer; a terminal that
 	// leaves them zero falls back to the placer's own ratio.
@@ -78,4 +80,48 @@ func (a *App) unreadScreen() tui.UnreadScreen {
 	sc.Width, sc.Height = int(ws.Col), int(ws.Row)
 	sc.CellW, sc.CellH = int(ws.Xpixel)/int(ws.Col), int(ws.Ypixel)/int(ws.Row)
 	return sc
+}
+
+// graphicsProbeWait bounds how long the page waits on a terminal that swallows
+// the device attributes request too, which is the only way the probe hangs.
+const graphicsProbeWait = 500 * time.Millisecond
+
+// probeGraphics asks the terminal whether it draws kitty graphics. Any failure
+// — stdin not the terminal, no raw mode, no answer in time — is a no, which
+// leaves the page to the stand-ins every terminal shows.
+func probeGraphics(in, out *os.File) bool {
+	if !term.IsTerminal(int(in.Fd())) {
+		return false
+	}
+	old, err := term.MakeRaw(int(in.Fd()))
+	if err != nil {
+		return false
+	}
+	defer term.Restore(int(in.Fd()), old)
+	if _, err := out.WriteString(tui.GraphicsQuery); err != nil {
+		return false
+	}
+	answer := make(chan bool, 1)
+	go func() {
+		var got []byte
+		buf := make([]byte, 256)
+		for {
+			n, err := in.Read(buf)
+			got = append(got, buf[:n]...)
+			if ok, done := tui.GraphicsReply(got); done {
+				answer <- ok
+				return
+			}
+			if err != nil {
+				answer <- false
+				return
+			}
+		}
+	}()
+	select {
+	case ok := <-answer:
+		return ok
+	case <-time.After(graphicsProbeWait):
+		return false
+	}
 }

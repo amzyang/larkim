@@ -24,7 +24,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 - 单人自用工具，不分发：除持久化的数据与状态（SQLite 已落盘数据、`dev.yaml` 配置、`docs/SCHEMA.md` 对外契约）外，只要能重建就不考虑向后兼容，直接用最简单直接的策略
 - 派生物（FTS 索引、汇总/缓存表、TUI 状态、构建产物）坏了就重建或重新 sync，不写兼容层、不留迁移期 fallback
-- 运行环境只考虑本机（macOS + kitty + 已安装的 lark-cli），不为其他 OS、终端、Go 版本或未安装依赖做适配，除非需求明确要求
+- 运行环境只考虑本机（macOS + 支持 kitty 图形协议的终端（kitty，或 herdr 这类转发它的复用器）+ 已安装的 lark-cli；图形能力靠向终端查询判断，不看环境变量），不为其他 OS、终端、Go 版本或未安装依赖做适配，除非需求明确要求
 - 本机装的桌面客户端是白标包 `/Applications/sagtjy516.app`（显示名 Lingxi），不存在 `Lark.app`/`Feishu.app`：
   凡需写客户端路径（如 `emoji/internal/gen` 读 emoji 资源）一律用这个包名；包内目录结构、`Contents/Frameworks/Lark Framework.framework`
   与注册的 `lark://`、`feishu://` scheme 都与官方版一致，交互基准与 applink 写法不受影响

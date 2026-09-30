@@ -13,20 +13,16 @@ import (
 
 func testPictures(t *testing.T) *pictures {
 	t.Helper()
-	p := newPictures(t.TempDir(), func(string) string { return "xterm-kitty" })
+	p := newPictures(t.TempDir(), true)
 	require.NotNil(t, p)
 	p.setCellSize(10, 20)
 	return p
 }
 
 func TestNewPictures_OnlyOnATerminalThatDrawsThem(t *testing.T) {
-	env := func(m map[string]string) func(string) string {
-		return func(k string) string { return m[k] }
-	}
-	require.Nil(t, newPictures("/tmp", env(map[string]string{"TERM": "xterm-256color"})))
-	require.Nil(t, newPictures("", env(map[string]string{"TERM": "xterm-kitty"})), "no data dir, no files to draw")
-	require.NotNil(t, newPictures("/tmp", env(map[string]string{"KITTY_WINDOW_ID": "1"})))
-	require.NotNil(t, newPictures("/tmp", env(map[string]string{"TERM": "xterm-kitty"})))
+	require.Nil(t, newPictures("/tmp", false))
+	require.Nil(t, newPictures("", true), "no data dir, no files to draw")
+	require.NotNil(t, newPictures("/tmp", true))
 }
 
 func TestPictures_PlaceFillsWhicheverSideOfThePaneBindsFirst(t *testing.T) {

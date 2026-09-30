@@ -51,14 +51,9 @@ func writeFilledPNG(t *testing.T, dir, name string, w, h int) string {
 }
 
 func TestNewAvatars_FallsBackWhenTheTerminalCannotShowPictures(t *testing.T) {
-	env := func(m map[string]string) func(string) string {
-		return func(k string) string { return m[k] }
-	}
-	require.IsType(t, &kittyAvatars{}, newAvatars("/data", env(map[string]string{"KITTY_WINDOW_ID": "1"})))
-	require.IsType(t, &kittyAvatars{}, newAvatars("/data", env(map[string]string{"TERM": "xterm-kitty"})))
-	require.IsType(t, textAvatars{}, newAvatars("/data", env(map[string]string{"TERM": "xterm-256color"})))
-	require.IsType(t, textAvatars{}, newAvatars("", env(map[string]string{"KITTY_WINDOW_ID": "1"})),
-		"without a data dir there is no file to draw")
+	require.IsType(t, &kittyAvatars{}, newAvatars("/data", true))
+	require.IsType(t, textAvatars{}, newAvatars("/data", false))
+	require.IsType(t, textAvatars{}, newAvatars("", true), "without a data dir there is no file to draw")
 }
 
 func TestKittyAvatars_PlaceholderCellsSpanTheAvatarColumn(t *testing.T) {

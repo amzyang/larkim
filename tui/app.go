@@ -153,9 +153,15 @@ type Model struct {
 	avatars avatars
 	// gists memoises one frame of chat-list lines, so picturePrepare and the
 	// pane that draws them do not each summarise every visible row.
-	gists      *gistCache
-	pics       *pictures // message images; nil on a terminal without graphics
-	chatFilter string
+	gists *gistCache
+	pics  *pictures // message images; nil on a terminal without graphics
+	// graphics is the terminal's yes to GraphicsQuery; until it arrives the
+	// avatars are colour blocks and pics is nil.
+	graphics bool
+	// cellW, cellH are the last cell size the terminal reported, kept for the
+	// renderers graphics swaps in after the answer came.
+	cellW, cellH int
+	chatFilter   string
 	// filterPin is what a cancelled filter puts back. Opening the filter takes
 	// the chat pane and typing into it renumbers the list, so a session that
 	// ends in nothing has to restore what it borrowed rather than leave the
@@ -398,7 +404,7 @@ func New(d Deps) Model {
 		chatIx:     newChatIndex(),
 		gists:      newGistCache(),
 		rows:       newRowsCache(),
-		avatars:    newAvatars(d.DataDir, d.Env), pics: newPictures(d.DataDir, d.Env),
+		avatars:    newAvatars(d.DataDir, false), pics: newPictures(d.DataDir, false),
 		files: osDraftFiles()}
 	m.emoji.LoadUsed(d.DataDir)
 	m.emojiWrite.LoadUsed(d.DataDir)
@@ -430,6 +436,7 @@ func (m Model) Init() tea.Cmd {
 	// Asking for the cell size lets avatars be drawn at the exact pixels they
 	// will occupy; resampling is what makes small glyphs mushy.
 	cmds := tea.Batch(tea.RequestBackgroundColor, tea.Raw(ansi.WindowOp(ansi.RequestCellSizeWinOp)),
+		tea.Raw(GraphicsQuery),
 		loadChats(m.deps), readSyncStatus(m.deps.Store), pollSyncStatus(m.deps.Store), waitForRev(m.revs),
 		loadSelfName(m.deps))
 	return tea.Batch(cmds, scheduleChatPoll())
@@ -584,7 +591,21 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.BackgroundColorMsg:
 		m.setBackground(msg, msg.IsDark())
 		return m, nil
+	case uv.KittyGraphicsEvent:
+		if !graphicsOK(msg) || m.graphics || m.deps.DataDir == "" {
+			return m, nil
+		}
+		m.graphics = true
+		k := newKittyAvatars(m.deps.DataDir)
+		k.setCellSize(m.cellW, m.cellH)
+		m.avatars = k
+		m.pics = newPictures(m.deps.DataDir, true)
+		m.pics.setCellSize(m.cellW, m.cellH)
+		clear(m.gists.rows)
+		m.layout()
+		return m, nil
 	case uv.CellSizeEvent:
+		m.cellW, m.cellH = msg.Width, msg.Height
 		// Both renderers are told before either answer is read: a resize asks
 		// for the size again, and the usual answer repeats what they hold.
 		moved := false

@@ -153,10 +153,11 @@ type UnreadScreen struct {
 	// Dark says which way the terminal's background leans, which is what picks
 	// the palette a code block is coloured from.
 	Dark bool
-	// TTY says the page goes to the terminal itself rather than down a pipe,
-	// which is the one thing the environment cannot say: KITTY_WINDOW_ID is set
-	// for a redirect too, and pictures written into a file are noise.
+	// TTY says the page goes to the terminal itself rather than down a pipe:
+	// pictures written into a file are noise.
 	TTY bool
+	// Graphics says the terminal answered GraphicsQuery yes.
+	Graphics bool
 }
 
 // UnreadRows is the messages the Unread panel would show, in the order it
@@ -222,7 +223,7 @@ func unreadPictures(d Deps, sc UnreadScreen) *pictures {
 	if !sc.TTY {
 		return nil
 	}
-	p := newPictures(d.DataDir, d.env())
+	p := newPictures(d.DataDir, sc.Graphics)
 	p.setCellSize(sc.CellW, sc.CellH)
 	return p
 }
