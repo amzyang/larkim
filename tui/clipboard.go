@@ -100,7 +100,9 @@ func readClipboard(stageDir string) (clip, error) {
 
 // clipboardText resolves a text-bearing flavour to what goes into the draft.
 // The plain flavour is read either way: it is what a rich copy falls back to
-// when the markdown it converts to carries no formatting.
+// when the markdown it converts to carries no formatting. Lark's own HTML is
+// handled by a dedicated parser that reads the data attributes the client
+// writes; everything else goes through the generic html-to-markdown converter.
 func clipboardText(flavour clipKind) (string, error) {
 	text, err := pbpaste()
 	if err != nil {
@@ -113,7 +115,14 @@ func clipboardText(flavour clipKind) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	md, err := htmlMarkdown(raw)
+	data, err := osaData(raw)
+	if err != nil {
+		return "", err
+	}
+	if md, ok := larkPaste(data); ok {
+		return md, nil
+	}
+	md, err := htmlMarkdownBytes(data)
 	if err != nil {
 		return "", err
 	}

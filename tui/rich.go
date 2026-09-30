@@ -38,15 +38,11 @@ func osaData(out string) ([]byte, error) {
 	return hex.DecodeString(hexed)
 }
 
-// htmlMarkdown turns one clipboard HTML flavour into the markdown the composer
-// speaks. Decoding through charset is the library's own contract: it leaves
-// encoding to the caller, and what an app writes to the pasteboard is its own
-// business.
-func htmlMarkdown(raw string) (string, error) {
-	data, err := osaData(raw)
-	if err != nil {
-		return "", fmt.Errorf("clipboard html: %w", err)
-	}
+// htmlMarkdownBytes turns decoded clipboard HTML bytes into the markdown the
+// composer speaks. Decoding through charset is the library's own contract: it
+// leaves encoding to the caller, and what an app writes to the pasteboard is
+// its own business.
+func htmlMarkdownBytes(data []byte) (string, error) {
 	r, err := charset.NewReader(bytes.NewReader(data), "text/html")
 	if err != nil {
 		return "", fmt.Errorf("clipboard html charset: %w", err)
@@ -56,6 +52,15 @@ func htmlMarkdown(raw string) (string, error) {
 		return "", fmt.Errorf("clipboard html: %w", err)
 	}
 	return strings.TrimSpace(string(md)), nil
+}
+
+// htmlMarkdown decodes the «data HTML…» osascript literal and converts it.
+func htmlMarkdown(raw string) (string, error) {
+	data, err := osaData(raw)
+	if err != nil {
+		return "", fmt.Errorf("clipboard html: %w", err)
+	}
+	return htmlMarkdownBytes(data)
 }
 
 // pickPaste answers which flavour goes into the draft. The HTML one is only
