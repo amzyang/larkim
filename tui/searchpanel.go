@@ -138,7 +138,7 @@ func (m *Model) closeSearch() {
 	m.cmdline.Reset()
 	m.searching, m.searchQuery, m.mentions = false, "", false
 	m.searchLocal, m.searchRemote, m.searchHits = nil, nil, nil
-	m.msgIdx = len(m.msgs) - 1
+	m.msgIdx = newestSelectable(m.msgs)
 	m.rebuildMessages()
 	m.scrollMessagesToSelection()
 }

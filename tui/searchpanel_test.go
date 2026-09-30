@@ -456,3 +456,13 @@ func TestOnSearchKey_PageKeysWalkTheHitsAndEditingKeysDoNot(t *testing.T) {
 	m = mm.(Model)
 	require.Equal(t, before, m.msgIdx)
 }
+
+func TestCloseSearch_AnEmptyPaneLeavesACursorTheKeysCanMove(t *testing.T) {
+	m, _ := panelModel(t)
+	m.focus = paneMessages
+	mm, _ := m.openSearch("")
+	m = mm.(Model)
+	m = press(t, m, "esc")
+	require.Zero(t, m.msgIdx, "no messages is still somewhere for the cursor to be")
+	require.NotPanics(t, func() { press(t, m, "k", "ctrl+u", "g", "g") })
+}
