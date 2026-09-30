@@ -315,11 +315,33 @@ func (m Model) onSilencePickKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		moveCursor(&p.idx, &p.top, 1, len(p.hits), rows)
 		return m, nil
 	}
+	return m.typeIntoSilencePick(k)
+}
+
+// typeIntoSilencePick hands a message to the picker's query and re-runs the
+// search when it came back changed.
+func (m Model) typeIntoSilencePick(msg tea.Msg) (tea.Model, tea.Cmd) {
+	f := &m.config.silence.form
+	p := &f.pick
 	before := p.input.Value()
 	var cmd tea.Cmd
-	p.input, cmd = p.input.Update(k)
+	p.input, cmd = p.input.Update(msg)
 	if q := p.input.Value(); q != before {
 		p.hits, p.idx, p.top = m.silenceSearch(f.field, q), 0, 0
+	}
+	return m, cmd
+}
+
+// forwardSilence is forwardConfig for the Silence tab. The chat and sender
+// fields take no text of their own; only their picker and contains do.
+func (m Model) forwardSilence(msg tea.Msg) (tea.Model, tea.Cmd) {
+	f := &m.config.silence.form
+	var cmd tea.Cmd
+	switch {
+	case f.pick.open:
+		return m.typeIntoSilencePick(msg)
+	case f.open && f.field == fieldContains:
+		f.contains, cmd = f.contains.Update(msg)
 	}
 	return m, cmd
 }

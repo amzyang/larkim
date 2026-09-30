@@ -58,6 +58,13 @@ func press(t *testing.T, m Model, keys ...string) Model {
 	return m
 }
 
+// paste delivers s the way a bracketed paste from the terminal arrives.
+func paste(t *testing.T, m Model, s string) Model {
+	t.Helper()
+	next, _ := m.Update(tea.PasteMsg{Content: s})
+	return next.(Model)
+}
+
 // keyMsg spells a key the way the terminal delivers it under the kitty
 // protocol: modifiers ride on Mod rather than folding into another key, and
 // only an unmodified character carries text.

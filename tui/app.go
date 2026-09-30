@@ -1103,6 +1103,10 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // ctrl+v — and changes the draft as surely as a keystroke does, so the badge
 // and the panes are brought back in step here too.
 func (m Model) forward(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if m.config.open {
+		// The panel takes the keys whatever the mode, so it takes the paste too.
+		return m.forwardConfig(msg)
+	}
 	var cmd tea.Cmd
 	switch m.mode {
 	case modeInsert:

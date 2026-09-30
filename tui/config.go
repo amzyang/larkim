@@ -160,6 +160,34 @@ func (m Model) configFocus() (setting, bool) {
 	return m.config.hits[m.config.idx].s, true
 }
 
+// forwardConfig is forward for the panel: a paste, bracketed or the reply to
+// an input's own ctrl+v, reaches the input a keypress would.
+func (m Model) forwardConfig(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if m.config.tab == tabSilence {
+		return m.forwardSilence(msg)
+	}
+	var cmd tea.Cmd
+	switch {
+	case m.config.editing:
+		m.config.editor, cmd = m.config.editor.Update(msg)
+	case m.config.filtering:
+		return m.typeIntoConfigFilter(msg)
+	}
+	return m, cmd
+}
+
+// typeIntoConfigFilter hands a message to the filter and re-runs the search
+// when the query came back changed.
+func (m Model) typeIntoConfigFilter(msg tea.Msg) (tea.Model, tea.Cmd) {
+	before := m.config.input.Value()
+	var cmd tea.Cmd
+	m.config.input, cmd = m.config.input.Update(msg)
+	if q := m.config.input.Value(); q != before {
+		m.config.hits, m.config.idx, m.config.top = configSearch(q), 0, 0
+	}
+	return m, cmd
+}
+
 // onConfigKey drives the panel. Its three states own their keys whole: the
 // editor takes everything it can edit with, the filter likewise, and only the
 // browsing state reads bare letters as commands.
@@ -205,13 +233,7 @@ func (m Model) onConfigKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.configMove(1)
 			return m, nil
 		}
-		before := m.config.input.Value()
-		var cmd tea.Cmd
-		m.config.input, cmd = m.config.input.Update(k)
-		if q := m.config.input.Value(); q != before {
-			m.config.hits, m.config.idx, m.config.top = configSearch(q), 0, 0
-		}
-		return m, cmd
+		return m.typeIntoConfigFilter(k)
 	}
 	switch s {
 	case "esc", "q":
