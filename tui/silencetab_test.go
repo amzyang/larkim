@@ -261,13 +261,3 @@ func TestSilenceTab_TheCaretSitsInTheFieldBeingTyped(t *testing.T) {
 	line := strings.Split(ansi.Strip(v.Content), "\n")[v.Cursor.Position.Y]
 	require.Contains(t, line, "sender › 平台", "the picker's query line")
 }
-
-func TestSilenceTab_TakesAPasteIntoContainsAndThePicker(t *testing.T) {
-	m := silenceModel(t)
-	m = press(t, m, "a", "enter")
-	m = paste(t, m, "平台")
-	require.Equal(t, "oc_quiet", m.config.silence.form.pick.hits[0].id, "a pasted query searches the way a typed one does")
-	m = press(t, m, "enter", "tab", "tab")
-	m = paste(t, m, "nightly build")
-	require.Equal(t, "nightly build", m.config.silence.form.contains.Value())
-}

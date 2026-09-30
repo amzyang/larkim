@@ -237,6 +237,18 @@ func (m Model) helpBottom() int { return max(0, len(m.helpLines())-m.helpRows())
 
 func (m *Model) helpScroll(d int) { m.help.top = clamp(m.help.top+d, 0, m.helpBottom()) }
 
+// typeIntoHelpFilter hands a message to the filter and re-runs the search
+// when the query came back changed.
+func (m Model) typeIntoHelpFilter(msg tea.Msg) (tea.Model, tea.Cmd) {
+	before := m.help.input.Value()
+	var cmd tea.Cmd
+	m.help.input, cmd = m.help.input.Update(msg)
+	if q := m.help.input.Value(); q != before {
+		m.help.hits, m.help.top = helpSearch(q), 0
+	}
+	return m, cmd
+}
+
 // onHelpKey drives the panel. Once / has armed the filter it owns every key it
 // can edit with, so ^w cuts a word out of the query rather than scrolling the
 // table under it.
@@ -266,13 +278,7 @@ func (m Model) onHelpKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.helpScroll(1)
 			return m, nil
 		}
-		before := m.help.input.Value()
-		var cmd tea.Cmd
-		m.help.input, cmd = m.help.input.Update(k)
-		if q := m.help.input.Value(); q != before {
-			m.help.hits, m.help.top = helpSearch(q), 0
-		}
-		return m, cmd
+		return m.typeIntoHelpFilter(k)
 	}
 	switch s {
 	case "/":

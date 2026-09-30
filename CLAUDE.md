@@ -108,6 +108,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   `return m, m.openChat(id)` 里 `m` 与调用的求值顺序 Go 没有规定，另一个操作数也是调用时
   （`return m.notify(…), m.closeUnread()`）左到右的规定反而保证拷贝先发生、写入丢掉。
   一律先把 cmd 取出来：`cmd := m.openChat(id)` 再 `return m, cmd`
+- TUI 里每个 textinput/textarea 都必须收 bracketed paste：`tea.PasteMsg`（连同 textinput 自己 ctrl+v 回来的那条）不走 `onKey`，
+  走 `forward`。新增带输入框的 overlay 或 mode 时，`onKey` 与 `forward` 同步加分支、优先级一致（config → help → mode）；
+  按键与粘贴共用一个 `typeIntoX`（更新输入框 + 刷新它驱动的搜索/补全/列表收窄），粘贴不经过键位分派，不能把粘贴文本当命令键；
+  并在 `TestForward_EveryInputTakesAPaste` 的表里加一行
 - 错误用 `%w` 包装，`errors.AsType[T]` 分类；`*larkcli.Error` 提供 `IsAuth/IsNetwork/IsRateLimit/IsPermanent`
 - 写或改 Go 代码前先调用 skill `/modern-go-guidelines:use-modern-go`，用它的 `list` 取当前 Go 版本（go.mod 为 1.27）的惯用法清单并照做；与周边旧写法冲突时以清单为准，只有「编译不过 / 改变行为 / 明显不适用」才跳过（跳过前先 `explain` 该条）
 - 该清单里本仓库高频命中的：`errors.AsType[T]` 取代 `errors.As` 临时变量、`wg.Go`、`t.Context()`、`for i := range n`、`cmp.Or`、`slices`/`maps` 的迭代器版本（`SplitSeq`、`slices.Collect`、`slices.Sorted`、`maps.Keys`）、`min`/`max`/`clear`、typed atomics、`new(v)` 取代临时变量取址

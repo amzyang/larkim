@@ -349,16 +349,3 @@ func TestConfig_TheEditorWindowsAValueLongerThanItsColumn(t *testing.T) {
 	require.Less(t, at, m.configValueWidth(), "and the caret stays inside it")
 	require.Contains(t, ansi.Strip(cell), "deep", "showing the end being typed")
 }
-
-func TestConfig_TakesAPasteIntoTheFilterAndTheEditor(t *testing.T) {
-	m := configModel(t)
-	m = press(t, m, "/")
-	m = paste(t, m, "unlimited")
-	require.Len(t, m.config.hits, 1, "a pasted query filters the way a typed one does")
-
-	m = configModel(t)
-	m = m.openConfig("applink_pace_ms")
-	m = press(t, m, "enter", "ctrl+u")
-	m = paste(t, m, "1500")
-	require.Equal(t, "1500", m.config.editor.Value())
-}

@@ -129,9 +129,15 @@ func (m Model) onForwardKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.fwd.move(1, m.fwdRows())
 		return m, nil
 	}
+	return m.typeIntoForward(k)
+}
+
+// typeIntoForward hands a message to the query and re-runs the search when it
+// came back changed.
+func (m Model) typeIntoForward(msg tea.Msg) (tea.Model, tea.Cmd) {
 	before := m.fwd.input.Value()
 	var cmd tea.Cmd
-	m.fwd.input, cmd = m.fwd.input.Update(k)
+	m.fwd.input, cmd = m.fwd.input.Update(msg)
 	if q := m.fwd.input.Value(); q != before {
 		m.fwd.hits = m.fwdSearch(q)
 		m.fwd.idx, m.fwd.top = 0, 0

@@ -159,17 +159,23 @@ func (m Model) onSearchKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "pgup":
 		return m.moveSelection(-m.msgListHeight())
 	}
-	// The mentions list has no query to edit: it is the answer to a fixed
-	// question, so a keystroke that would narrow a search does nothing here
-	// rather than narrowing something the reader cannot see.
-	if m.mentions {
-		return m, nil
-	}
 	// Everything else edits the query, which is why the panel moves on
 	// ctrl+n/ctrl+p rather than ctrl+d/ctrl+u: those already mean something
 	// to the line editor the query is typed into.
+	return m.typeIntoSearch(k)
+}
+
+// typeIntoSearch hands a message to the query and re-arms the search when it
+// came back changed.
+func (m Model) typeIntoSearch(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// The mentions list has no query to edit: it is the answer to a fixed
+	// question, so what would narrow a search does nothing here rather than
+	// narrowing something the reader cannot see.
+	if m.mentions {
+		return m, nil
+	}
 	var cmd tea.Cmd
-	m.cmdline, cmd = m.cmdline.Update(k)
+	m.cmdline, cmd = m.cmdline.Update(msg)
 	if v := m.cmdline.Value(); v != m.searchQuery {
 		m.searchQuery = v
 		arm := m.armSearch()

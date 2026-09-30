@@ -1099,27 +1099,42 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 // forward passes a message to the focused text component. A paste arrives
-// this way — bracketed from the terminal, or as the textarea's own reply to
-// ctrl+v — and changes the draft as surely as a keystroke does, so the badge
-// and the panes are brought back in step here too.
+// this way — bracketed from the terminal, or as an input's own reply to
+// ctrl+v — so it picks the input in the order onKey picks the handler: the
+// overlays take the keys whatever the mode, and so the paste too. Each input
+// goes through the same typeInto step its keys do, so what its value drives
+// (the draft's badge and panes, a search, a completion list, a narrowed list)
+// moves with a paste as surely as with a keystroke.
 func (m Model) forward(msg tea.Msg) (tea.Model, tea.Cmd) {
-	if m.config.open {
-		// The panel takes the keys whatever the mode, so it takes the paste too.
+	switch {
+	case m.config.open:
 		return m.forwardConfig(msg)
+	case m.help.open:
+		if m.help.filtering {
+			return m.typeIntoHelpFilter(msg)
+		}
+		return m, nil
 	}
-	var cmd tea.Cmd
 	switch m.mode {
 	case modeInsert:
 		before := m.composerRows()
 		ta := m.areap()
+		var cmd tea.Cmd
 		*ta, cmd = ta.Update(msg)
 		m.tookDraft(before)
-	case modeCommand, modeFilter, modeSearch:
-		m.cmdline, cmd = m.cmdline.Update(msg)
+		return m, cmd
+	case modeCommand:
+		return m.typeIntoCommand(msg)
+	case modeFilter:
+		return m.typeIntoChatFilter(msg)
+	case modeSearch:
+		return m.typeIntoSearch(msg)
 	case modeEmoji:
 		return m.typeIntoFilter(msg)
+	case modeForward:
+		return m.typeIntoForward(msg)
 	}
-	return m, cmd
+	return m, nil
 }
 
 // tookDraft brings the badge, the preview and the panes back in step after
@@ -1760,8 +1775,14 @@ func (m Model) onCommandKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		line := strings.TrimSpace(m.cmdline.Value())
 		return m.leaveCommand().runCommand(line)
 	}
+	return m.typeIntoCommand(k)
+}
+
+// typeIntoCommand hands a message to the : line and brings the completion
+// list back in step with it.
+func (m Model) typeIntoCommand(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
-	m.cmdline, cmd = m.cmdline.Update(k)
+	m.cmdline, cmd = m.cmdline.Update(msg)
 	m.takeCmdComp()
 	return m, cmd
 }
@@ -1805,10 +1826,18 @@ func (m Model) onFilterKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		cmd := m.openHighlighted(false)
 		return m, cmd
 	}
+	return m.typeIntoChatFilter(k)
+}
+
+// typeIntoChatFilter hands a message to the / line and narrows the list to
+// it, the cursor going back to the top when the query came back changed.
+func (m Model) typeIntoChatFilter(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
-	m.cmdline, cmd = m.cmdline.Update(k)
-	m.chatFilter = m.cmdline.Value()
-	m.chatIdx, m.chatTop = 0, 0
+	m.cmdline, cmd = m.cmdline.Update(msg)
+	if v := m.cmdline.Value(); v != m.chatFilter {
+		m.chatFilter = v
+		m.chatIdx, m.chatTop = 0, 0
+	}
 	return m, cmd
 }
 

@@ -50,6 +50,75 @@ func TestForward_LeavesOtherModesAlone(t *testing.T) {
 	require.Equal(t, kindText, m.draft.kind)
 }
 
+// Every text input takes a paste the way it takes the keys typed into it:
+// forward has to reach the same input onKey does, and whatever the input's
+// value drives has to move with it.
+func TestForward_EveryInputTakesAPaste(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		open  func(t *testing.T) Model
+		check func(t *testing.T, m Model)
+	}{
+		{"composer", func(t *testing.T) Model { return press(t, pickerModel(t), "i") },
+			func(t *testing.T, m Model) { require.Equal(t, "平台", m.input.Value()) }},
+		{"thread composer", func(t *testing.T) Model {
+			m := threadFrame(130, 30)
+			m.focus = paneThread
+			mm, _ := m.startInsert(nil, false)
+			return mm.(Model)
+		}, func(t *testing.T, m Model) { require.Equal(t, "平台", m.rightInput.Value()) }},
+		{"command line", func(t *testing.T) Model { return cmdModel(t) },
+			func(t *testing.T, m Model) { require.Equal(t, "平台", m.cmdline.Value()) }},
+		{"chat filter", func(t *testing.T) Model { return press(t, cmdModel(t), "esc", "/") },
+			func(t *testing.T, m Model) {
+				require.Equal(t, "平台", m.chatFilter)
+				vis := m.visibleRows()
+				require.Equal(t, "oc_team", rowKeyAt(vis, 0))
+				require.Equal(t, "", rowKeyAt(vis, 1), "the list narrows to it")
+			}},
+		{"search", func(t *testing.T) Model {
+			m, _ := panelModel(t)
+			mm, _ := m.openSearch("")
+			return mm.(Model)
+		}, func(t *testing.T, m Model) { require.Equal(t, "平台", m.searchQuery) }},
+		{"emoji picker", func(t *testing.T) Model { return press(t, pickerModel(t), "e") },
+			func(t *testing.T, m Model) { require.Equal(t, "平台", m.picker.input.Value()) }},
+		{"forward", func(t *testing.T) Model {
+			m, _ := fwdModel(t)
+			mm, _ := m.openForward()
+			return mm.(Model)
+		}, func(t *testing.T, m Model) {
+			require.Equal(t, "平台", m.fwd.input.Value())
+			require.Equal(t, "oc_group", m.fwd.hits[0].chatID, "the destinations narrow to it")
+		}},
+		{"help filter", func(t *testing.T) Model { return press(t, helpModel(100, 30), "/") },
+			func(t *testing.T, m Model) {
+				require.Equal(t, "平台", m.help.input.Value())
+				require.Equal(t, helpSearch("平台"), m.help.hits)
+			}},
+		{"config filter", func(t *testing.T) Model { return press(t, configModel(t), "/") },
+			func(t *testing.T, m Model) { require.Equal(t, configSearch("平台"), m.config.hits) }},
+		{"config editor", func(t *testing.T) Model {
+			return press(t, configModel(t).openConfig("ai.model"), "enter", "ctrl+u")
+		}, func(t *testing.T, m Model) { require.Equal(t, "平台", m.config.editor.Value()) }},
+		{"silence picker", func(t *testing.T) Model { return press(t, silenceModel(t), "a", "enter") },
+			func(t *testing.T, m Model) {
+				require.Equal(t, "oc_quiet", m.config.silence.form.pick.hits[0].id, "the picker searches on it")
+			}},
+		{"silence contains", func(t *testing.T) Model { return press(t, silenceModel(t), "a", "tab", "tab") },
+			func(t *testing.T, m Model) { require.Equal(t, "平台", m.config.silence.form.contains.Value()) }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tc.check(t, paste(t, tc.open(t), "平台"))
+		})
+	}
+}
+
+func TestForward_APasteOnTheCommandLineOpensItsCompletions(t *testing.T) {
+	m := paste(t, cmdModel(t), "goto 平台")
+	require.Equal(t, []string{"平台组"}, offers(m))
+}
+
 // The flavour lists below are what `osascript -e 'clipboard info'` actually
 // printed on macOS for each case.
 func TestClipFlavour_DispatchesOnWhatTheClipboardNames(t *testing.T) {
