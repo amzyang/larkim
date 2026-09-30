@@ -237,6 +237,21 @@ func TestPum_OpensOnTheBracketedFormTheClientSends(t *testing.T) {
 	require.Equal(t, "👍", m.pum.hits[0].insert)
 }
 
+// The emoji terms and the pinyin of a name are all lowercase, so the smart case
+// a picker reads a query with would turn the capital of `[Do` into a query
+// nothing answers. The popup completes what is being typed mid-sentence, where
+// the capital is the shift still held from the bracket, not a request.
+func TestPum_MatchesWhateverCaseTheQueryIsTypedIn(t *testing.T) {
+	for _, run := range []string{"[Do", ":Do"} {
+		m := typeInto(newPumModel(t), run)
+		require.True(t, slices.ContainsFunc(m.pum.hits, func(h pumHit) bool { return h.insert == "[Done]" }), run)
+	}
+	m := typeInto(newPumModel(t), "[DONE")
+	require.Equal(t, "[Done]", m.pum.hits[0].insert)
+	m = typeInto(newPumModel(t), "@Zs")
+	require.Equal(t, []string{"张三"}, pumNames(m))
+}
+
 func TestPum_OffersTheUnicodeEmojiFeishuHasNoAnswerFor(t *testing.T) {
 	m := typeInto(newPumModel(t), ":rocket")
 	require.True(t, m.pum.open())

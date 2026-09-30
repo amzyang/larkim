@@ -186,11 +186,17 @@ func (m *Model) closePum() {
 }
 
 // pumHits is what a run offers, best first.
+//
+// The query is folded before it is matched: the matcher reads a capital as
+// smart case, and the emoji terms and the pinyin of a name are all lowercase,
+// so `[Do` would answer nothing. A capital typed mid-sentence is the shift
+// still held from the bracket, not a request to match that case.
 func (m Model) pumHits(run pumRun) []pumHit {
+	query := strings.ToLower(run.query)
 	if run.kind == pumMention {
-		return m.mentionHits(run.query)
+		return m.mentionHits(query)
 	}
-	return m.emojiHits(run.query)
+	return m.emojiHits(query)
 }
 
 // mentionHits narrows the chat's roster. The whole roster answers an empty
