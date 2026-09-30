@@ -115,7 +115,7 @@ func TestConfig_ANestedKeyReachesItsSectionAlone(t *testing.T) {
 
 	cfg := configFile(t, m)
 	require.Equal(t, 20, cfg.AI.Context)
-	require.Equal(t, "claude-opus-5", cfg.AI.Model, "its siblings stay")
+	require.Equal(t, "cursor/composer-2.5-fast", cfg.AI.Model, "its siblings stay")
 }
 
 func TestConfig_ARefusedValueKeepsWhatWasTyped(t *testing.T) {
@@ -287,20 +287,20 @@ const applinkDefaultPaceForTest = time.Second
 func TestConfig_ANewModelRebuildsTheAssistantAndIsWritten(t *testing.T) {
 	m := configModel(t)
 	var asked []string
-	m.deps.NewAI = func(model, keyEnv string) AIStreamer {
-		asked = append(asked, model+" "+keyEnv)
+	m.deps.NewAI = func(agent, model string) AIStreamer {
+		asked = append(asked, agent+" | "+model)
 		return nil
 	}
 	m = m.openConfig("ai.model")
 	m = press(t, m, "enter", "ctrl+u")
-	for _, r := range "claude-sonnet-5" {
+	for _, r := range "cursor/claude-opus-5-5" {
 		m = press(t, m, string(r))
 	}
 	m = press(t, m, "enter")
 
-	require.Equal(t, []string{"claude-sonnet-5 ANTHROPIC_API_KEY"}, asked)
-	require.Equal(t, "claude-sonnet-5", configFile(t, m).AI.Model)
-	require.Equal(t, "ai.model=claude-sonnet-5", m.notice, "no restart to wait for")
+	require.Equal(t, []string{"omp --mode acp | cursor/claude-opus-5-5"}, asked)
+	require.Equal(t, "cursor/claude-opus-5-5", configFile(t, m).AI.Model)
+	require.Equal(t, "ai.model=cursor/claude-opus-5-5", m.notice, "no restart to wait for")
 }
 
 func TestConfig_ANewContextReachesTheNextQuestion(t *testing.T) {

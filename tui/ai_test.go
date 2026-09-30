@@ -55,7 +55,7 @@ func TestOnAIChunk_ClearsBusyOnTheLastChunk(t *testing.T) {
 	require.False(t, got.(Model).aiBusy)
 }
 
-// fakeAI stands in for the Anthropic client: it hands out a channel the test
+// fakeAI stands in for the ACP client: it hands out a channel the test
 // owns and reports whether the request was cancelled.
 type fakeAI struct {
 	ch        chan ai.Chunk

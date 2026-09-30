@@ -40,13 +40,13 @@ type Deps struct {
 	// optional: without them a copy keeps relative paths and omits --config.
 	DataDir    string
 	ConfigPath string
-	// AI is the assistant this run starts with; nil when no API key is
-	// configured. NewAI builds it again when :config changes ai.model or
-	// ai.api_key_env, and returns nil when the new pair names no key. A nil
+	// AI is the assistant this run starts with; nil when the agent command is
+	// not installed. NewAI builds it again when :config changes ai.agent or
+	// ai.model, and returns nil when the new command is not found. A nil
 	// NewAI leaves the assistant as it was, which is what a test that injects
 	// one wants.
 	AI    AIStreamer
-	NewAI func(model, keyEnv string) AIStreamer
+	NewAI func(agent, model string) AIStreamer
 	// Suggest ranks emoji against the message the reaction picker is open on;
 	// nil when no API key is configured, which leaves the picker without its
 	// contextual row. NewSuggest builds it again when :config changes

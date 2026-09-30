@@ -8,10 +8,10 @@ require (
 	charm.land/lipgloss/v2 v2.0.6
 	github.com/JohannesKaufmann/html-to-markdown/v2 v2.5.2
 	github.com/alecthomas/chroma/v2 v2.27.0
-	github.com/anthropics/anthropic-sdk-go v1.75.0
 	github.com/browserutils/kooky v0.2.10
 	github.com/charmbracelet/ultraviolet v0.0.0-20260811164956-006e29f97886
 	github.com/charmbracelet/x/ansi v0.11.8
+	github.com/coder/acp-go-sdk v0.13.5
 	github.com/getsentry/sentry-go v0.49.0
 	github.com/gofrs/flock v0.13.1
 	github.com/junegunn/fzf v0.74.4
@@ -33,10 +33,8 @@ require (
 require (
 	github.com/JohannesKaufmann/dom v0.3.1 // indirect
 	github.com/atotto/clipboard v0.1.4 // indirect
-	github.com/bahlo/generic-list-go v0.2.0 // indirect
 	github.com/browserutils/ese v0.0.0-20260314233042-37b6a03a93ce // indirect
 	github.com/browserutils/sqlite3 v0.0.2 // indirect
-	github.com/buger/jsonparser v1.1.2 // indirect
 	github.com/charmbracelet/colorprofile v0.4.3 // indirect
 	github.com/charmbracelet/x/term v0.2.2 // indirect
 	github.com/charmbracelet/x/termios v0.1.1 // indirect
@@ -49,7 +47,6 @@ require (
 	github.com/gonuts/binary v0.2.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
-	github.com/invopop/jsonschema v0.14.0 // indirect
 	github.com/junegunn/go-shellwords v0.0.0-20250127100254-2aa3b3277741 // indirect
 	github.com/keybase/go-keychain v0.0.1 // indirect
 	github.com/kr/text v0.2.0 // indirect
@@ -58,17 +55,10 @@ require (
 	github.com/mattn/go-runewidth v0.0.27 // indirect
 	github.com/muesli/cancelreader v0.2.2 // indirect
 	github.com/ncruces/go-strftime v1.0.0 // indirect
-	github.com/pb33f/ordered-map/v2 v2.3.1 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
-	github.com/standard-webhooks/standard-webhooks/libraries v0.0.1 // indirect
-	github.com/tidwall/gjson v1.18.0 // indirect
-	github.com/tidwall/match v1.1.1 // indirect
-	github.com/tidwall/pretty v1.2.1 // indirect
-	github.com/tidwall/sjson v1.2.5 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	github.com/zalando/go-keyring v0.2.7 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
-	go.yaml.in/yaml/v4 v4.0.0-rc.2 // indirect
 	golang.org/x/crypto v0.57.0 // indirect
 	golang.org/x/sync v0.23.0 // indirect
 	golang.org/x/text v0.42.0 // indirect

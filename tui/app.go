@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"image/color"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -2761,7 +2762,7 @@ func (m Model) runReact(arg string) (tea.Model, tea.Cmd) {
 
 func (m Model) startAI(input string) (tea.Model, tea.Cmd) {
 	if m.ai == nil {
-		return m.notify("assistant off: set "+m.cfg.AI.APIKeyEnv+" (config ai.api_key_env)", true), nil
+		return m.notify("assistant off: "+m.agentName()+" not found (config ai.agent)", true), nil
 	}
 	if m.chatID == "" || len(m.msgs) == 0 {
 		return m.notify("open a chat with messages first", true), nil
@@ -2785,7 +2786,13 @@ func (m Model) startAI(input string) (tea.Model, tea.Cmd) {
 	ctx, cancel := context.WithCancel(context.Background())
 	m.aiCancel = cancel
 	m.aiChan = m.ai.Stream(ctx, transcript, prompt)
-	return m.notify("asking Claude…", false), tea.Batch(keep, waitForAI(m.aiGen, m.aiChan))
+	return m.notify("asking "+m.agentName()+"…", false), tea.Batch(keep, waitForAI(m.aiGen, m.aiChan))
+}
+
+// agentName is the program ai.agent starts, as the status line names it.
+func (m Model) agentName() string {
+	name, _, _ := strings.Cut(strings.TrimSpace(m.cfg.AI.Agent), " ")
+	return filepath.Base(name)
 }
 
 func (m Model) onAIChunk(msg aiChunkMsg) (tea.Model, tea.Cmd) {

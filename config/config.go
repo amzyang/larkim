@@ -128,10 +128,12 @@ func (m MarkRead) Validate() error {
 
 // AI configures the TUI assistant.
 type AI struct {
-	// Model is the Claude model id.
+	// Agent is the command that starts an ACP agent on stdio, split on
+	// whitespace.
+	Agent string `yaml:"agent"`
+	// Model is the value of the agent's model option the assistant asks for;
+	// empty keeps the agent's own default.
 	Model string `yaml:"model"`
-	// APIKeyEnv names the environment variable holding the Anthropic API key.
-	APIKeyEnv string `yaml:"api_key_env"`
 	// Context is how many recent messages are given to the assistant.
 	Context int `yaml:"context"`
 	// JevKeyEnv names the environment variable holding the TypeSafe API key,
@@ -167,7 +169,7 @@ func Default() Config {
 		// that switching modes is one key rather than two.
 		MarkRead:  MarkRead{Mode: MarkReadApplink, Browser: "chrome"},
 		Resources: Resources{MaxBytes: 50 << 20},
-		AI: AI{Model: "claude-opus-5", APIKeyEnv: "ANTHROPIC_API_KEY", Context: 80,
+		AI: AI{Agent: "omp --mode acp", Model: "cursor/composer-2.5-fast", Context: 80,
 			JevKeyEnv: "TYPESAFE_API_KEY", JevEndpoint: jev.DefaultEndpoint},
 	}
 }

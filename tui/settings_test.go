@@ -78,7 +78,7 @@ func TestRunSet_RestoresTheDefault(t *testing.T) {
 
 func TestRunSet_ListsEveryOptionWhenGivenNothing(t *testing.T) {
 	m := setModel(t).runSet("")
-	require.Equal(t, "applink_pace_ms=40  mark_read.mode=applink  mark_read.browser=chrome  ai.model=claude-opus-5  ai.api_key_env=ANTHROPIC_API_KEY  ai.context=80"+
+	require.Equal(t, "applink_pace_ms=40  mark_read.mode=applink  mark_read.browser=chrome  ai.agent=omp --mode acp  ai.model=cursor/composer-2.5-fast  ai.context=80"+
 		"  ai.jev_key_env=TYPESAFE_API_KEY  ai.jev_endpoint=https://api.typesafe.ai/v1/systemone", m.notice)
 	require.NotContains(t, m.notice, "poll_interval_ms", "a key read once at startup is not listed here")
 }
@@ -86,13 +86,23 @@ func TestRunSet_ListsEveryOptionWhenGivenNothing(t *testing.T) {
 func TestRunSet_RebuildsTheAssistantOnANewModel(t *testing.T) {
 	m := setModel(t)
 	var asked []string
-	m.deps.NewAI = func(model, keyEnv string) AIStreamer {
-		asked = append(asked, model+" "+keyEnv)
+	m.deps.NewAI = func(agent, model string) AIStreamer {
+		asked = append(asked, agent+" | "+model)
 		return nil
 	}
-	m = m.runSet("ai.model=claude-sonnet-5")
-	require.Equal(t, []string{"claude-sonnet-5 ANTHROPIC_API_KEY"}, asked)
-	require.Equal(t, "claude-sonnet-5", m.cfg.AI.Model)
+	m = m.runSet("ai.model=cursor/claude-opus-5-5")
+	require.Equal(t, []string{"omp --mode acp | cursor/claude-opus-5-5"}, asked)
+	require.Equal(t, "cursor/claude-opus-5-5", m.cfg.AI.Model)
+}
+
+func TestRunSet_AnEmptyAgentIsTurnedDown(t *testing.T) {
+	m := setModel(t)
+	m.deps.NewAI = func(string, string) AIStreamer {
+		t.Fatal("no assistant is built from an empty command")
+		return nil
+	}
+	m = m.runSet("ai.agent=")
+	require.Equal(t, "omp --mode acp", m.cfg.AI.Agent)
 }
 
 func TestRunSet_RebuildsTheSuggesterOnANewKeyVariable(t *testing.T) {

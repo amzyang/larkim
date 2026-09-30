@@ -38,7 +38,7 @@ func TestSetFile_KeepsCommentsAndSiblings(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, string(text), "# Database, attachments and the daemon lock live here.")
 	require.Contains(t, string(text), "# Skip attachments larger than this; 0 means unlimited.")
-	require.Contains(t, string(text), "# Environment variable holding the Anthropic API key.")
+	require.Contains(t, string(text), "# Command that starts an ACP agent on stdio; the agent holds its own login.")
 }
 
 func TestSetFile_KeepsTheCommentAboveTheKeyItRewrites(t *testing.T) {
@@ -51,11 +51,11 @@ func TestSetFile_KeepsTheCommentAboveTheKeyItRewrites(t *testing.T) {
 
 func TestSetFile_WritesANestedKey(t *testing.T) {
 	p := example(t)
-	require.NoError(t, SetFile(p, "ai.model", "claude-sonnet-5"))
+	require.NoError(t, SetFile(p, "ai.model", "cursor/claude-opus-5-5"))
 	cfg, err := Load(p)
 	require.NoError(t, err)
-	require.Equal(t, "claude-sonnet-5", cfg.AI.Model)
-	require.Equal(t, "ANTHROPIC_API_KEY", cfg.AI.APIKeyEnv, "its siblings stay")
+	require.Equal(t, "cursor/claude-opus-5-5", cfg.AI.Model)
+	require.Equal(t, "omp --mode acp", cfg.AI.Agent, "its siblings stay")
 }
 
 func TestSetFile_CreatesAMissingFileAndItsDirectory(t *testing.T) {

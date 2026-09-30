@@ -91,13 +91,14 @@ var settings = []setting{{
 	key:  "resources.max_bytes",
 	help: "skip attachments larger than this; 0 means unlimited",
 }, {
-	key:   "ai.model",
-	help:  "the Claude model the assistant talks to",
+	key:   "ai.agent",
+	help:  "the command that starts the ACP agent the assistant asks",
 	live:  true,
+	check: nonEmpty,
 	apply: rebuildAI,
 }, {
-	key:   "ai.api_key_env",
-	help:  "environment variable holding the Anthropic API key",
+	key:   "ai.model",
+	help:  "the model the agent is asked to use; empty for its default",
 	live:  true,
 	apply: rebuildAI,
 }, {
@@ -121,6 +122,15 @@ var settings = []setting{{
 	summary:  func(c config.Config) string { return plural(len(c.Silence), "rule", "rules") },
 }}
 
+// nonEmpty judges a key with no default to fall back on: an empty command
+// starts nothing.
+func nonEmpty(raw string) error {
+	if strings.TrimSpace(raw) == "" {
+		return errors.New("want a value")
+	}
+	return nil
+}
+
 // positiveMS judges a key whose unit is in its own name, so 3s is the reader
 // writing it twice. A gap of nothing is the bug the pacing exists to fix.
 func positiveMS(raw string) error {
@@ -130,7 +140,7 @@ func positiveMS(raw string) error {
 	return nil
 }
 
-// rebuildAI builds the assistant again from the model and the key variable now
+// rebuildAI builds the assistant again from the agent command and the model now
 // in m.cfg, which is what makes a change to either reach the next question.
 // Deps without a builder — a test that injected a fake — keeps what it was
 // given.
@@ -138,7 +148,7 @@ func rebuildAI(m *Model) {
 	if m.deps.NewAI == nil {
 		return
 	}
-	m.ai = m.deps.NewAI(m.cfg.AI.Model, m.cfg.AI.APIKeyEnv)
+	m.ai = m.deps.NewAI(m.cfg.AI.Agent, m.cfg.AI.Model)
 }
 
 // rebuildSuggest builds the reaction suggester again from the key variable and

@@ -110,7 +110,7 @@ func TestLoadWith_ReachesANestedKey(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, int64(123), cfg.Resources.MaxBytes)
 	require.Equal(t, 9, cfg.AI.Context)
-	require.Equal(t, "claude-opus-5", cfg.AI.Model, "a sibling in the same section survives")
+	require.Equal(t, "cursor/composer-2.5-fast", cfg.AI.Model, "a sibling in the same section survives")
 }
 
 func TestLoadWith_ParsesAValueTheWayTheFileWould(t *testing.T) {
@@ -178,7 +178,7 @@ func TestGet_SpellsValuesTheWayTheFileDoes(t *testing.T) {
 		"overlap":             "2m",
 		"backfill_days":       "30",
 		"resources.max_bytes": "52428800",
-		"ai.model":            "claude-opus-5",
+		"ai.model":            "cursor/composer-2.5-fast",
 		"silence":             "[]",
 	} {
 		v, ok := cfg.Get(key)

@@ -67,9 +67,11 @@ resources:
   max_bytes: 52428800 # 50 MiB
 
 ai:
-  model: claude-opus-5
-  # Environment variable holding the Anthropic API key.
-  api_key_env: ANTHROPIC_API_KEY
+  # Command that starts an ACP agent on stdio; the agent holds its own login.
+  agent: omp --mode acp
+  # A value of the agent's model option: an exact id, or a part of one that
+  # names a single model. Empty keeps the agent's default.
+  model: cursor/composer-2.5-fast
   # Recent messages handed to the assistant.
   context: 80
   # Environment variable holding the TypeSafe API key. The reaction picker

@@ -4,7 +4,10 @@ import (
 	"context"
 	"errors"
 	"os"
+	"os/exec"
 	"os/signal"
+	"path/filepath"
+	"strings"
 	"syscall"
 
 	"github.com/amzyang/larkim/ai"
@@ -42,16 +45,23 @@ func (a *App) runTUI(_ *cobra.Command, _ []string) error {
 	deps := tui.Deps{Store: st, Client: client, Version: a.Version,
 		DataDir: a.cfg.DataDir, ConfigPath: config.Resolve(a.configPath), Log: a.logger(),
 		Config: a.cfg}
-	// The key is read at the moment the assistant is built, so :config
-	// changing ai.api_key_env reaches an environment this process already has.
-	deps.NewAI = func(model, keyEnv string) tui.AIStreamer {
-		key := os.Getenv(keyEnv)
-		if key == "" {
+	// The agent runs in a directory of its own with nothing in it, since the
+	// transcript is all it is meant to read.
+	aiDir := filepath.Join(a.cfg.DataDir, "ai")
+	if err := os.MkdirAll(aiDir, 0o700); err != nil {
+		return err
+	}
+	deps.NewAI = func(agent, model string) tui.AIStreamer {
+		argv := strings.Fields(agent)
+		if len(argv) == 0 {
 			return nil
 		}
-		return ai.New(key, model)
+		if _, err := exec.LookPath(argv[0]); err != nil {
+			return nil
+		}
+		return ai.New(argv, model, aiDir, deps.Log)
 	}
-	deps.AI = deps.NewAI(a.cfg.AI.Model, a.cfg.AI.APIKeyEnv)
+	deps.AI = deps.NewAI(a.cfg.AI.Agent, a.cfg.AI.Model)
 	deps.NewSuggest = func(keyEnv, endpoint string) tui.ReactSuggester {
 		key := os.Getenv(keyEnv)
 		if key == "" {
