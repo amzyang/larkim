@@ -374,7 +374,7 @@ func (a *App) printSent(sent larkcli.SentMessage, label string) error {
 		return a.printJSON(sent)
 	}
 	if label != "" {
-		fmt.Fprintf(a.Out, "sent %s to %s (%s)\n", sent.MessageID, label, sent.ChatID)
+		fmt.Fprintf(a.Out, "sent %s to %s (%s)\n", sent.MessageID, inline(label), sent.ChatID)
 	} else {
 		fmt.Fprintf(a.Out, "sent %s in %s\n", sent.MessageID, sent.ChatID)
 	}

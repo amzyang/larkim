@@ -210,7 +210,7 @@ func UnreadPage(ctx context.Context, d Deps, sc UnreadScreen) (string, error) {
 		// Padding is what makes a row highlight span the pane, and there is
 		// nothing to highlight here. A placeholder cell is U+10EEEE and its
 		// diacritics, so no picture is trimmed away with the blanks.
-		b.WriteString(strings.TrimRight(line, " "))
+		b.WriteString(strings.TrimRight(safeLine(line), " "))
 		b.WriteByte('\n')
 	}
 	return b.String(), nil

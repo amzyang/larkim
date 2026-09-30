@@ -263,40 +263,45 @@ func (a *App) messagesShowCmd() *cobra.Command {
 					Resources []store.Resource `json:"resources"`
 				}{m, resources})
 			}
-			fmt.Fprintf(a.Out, "message_id:  %s\nchat_id:     %s\ntype:        %s\nsender:      %s (%s)\ncreated:     %s\n",
-				m.MessageID, m.ChatID, m.MsgType, m.SenderName, m.SenderID, fmtMs(m.CreateMs))
+			// Built whole and scrubbed once: every line here carries a field
+			// Feishu filled in, and the body is the one place larkim prints a
+			// sender's text with its newlines kept.
+			var b strings.Builder
+			fmt.Fprintf(&b, "message_id:  %s\nchat_id:     %s\ntype:        %s\nsender:      %s (%s)\ncreated:     %s\n",
+				m.MessageID, m.ChatID, m.MsgType, inline(m.SenderName), m.SenderID, fmtMs(m.CreateMs))
 			if m.Updated {
-				fmt.Fprintf(a.Out, "updated:     %s\n", fmtMs(m.UpdateMs))
+				fmt.Fprintf(&b, "updated:     %s\n", fmtMs(m.UpdateMs))
 			}
 			if m.EditedAt > 0 {
-				fmt.Fprintf(a.Out, "edited:      %s\n", fmtMs(m.EditedAt))
+				fmt.Fprintf(&b, "edited:      %s\n", fmtMs(m.EditedAt))
 			}
 			if m.Deleted {
-				fmt.Fprintf(a.Out, "recalled:    %s\n", fmtMs(m.DeletedSeenAt))
+				fmt.Fprintf(&b, "recalled:    %s\n", fmtMs(m.DeletedSeenAt))
 			}
 			if m.ThreadID != "" {
-				fmt.Fprintf(a.Out, "thread_id:   %s\n", m.ThreadID)
+				fmt.Fprintf(&b, "thread_id:   %s\n", m.ThreadID)
 			}
 			if m.ReplyTo != "" {
-				fmt.Fprintf(a.Out, "reply_to:    %s\n", m.ReplyTo)
+				fmt.Fprintf(&b, "reply_to:    %s\n", m.ReplyTo)
 			}
 			if m.IsReadRemote != nil {
-				fmt.Fprintf(a.Out, "read (feishu): %v\n", *m.IsReadRemote)
+				fmt.Fprintf(&b, "read (feishu): %v\n", *m.IsReadRemote)
 			}
 			if m.LocalReadAt != 0 {
-				fmt.Fprintf(a.Out, "read (local): %s\n", fmtMs(m.LocalReadAt))
+				fmt.Fprintf(&b, "read (local): %s\n", fmtMs(m.LocalReadAt))
 			}
-			fmt.Fprintf(a.Out, "\n%s\n\nraw: %s\n", m.Content, m.ContentRaw)
+			fmt.Fprintf(&b, "\n%s\n\nraw: %s\n", m.Content, m.ContentRaw)
 			for _, r := range resources {
-				fmt.Fprintf(a.Out, "resource: %s %s %s", r.Type, r.FileKey, r.Status)
+				fmt.Fprintf(&b, "resource: %s %s %s", r.Type, r.FileKey, r.Status)
 				if r.LocalPath != "" {
-					fmt.Fprintf(a.Out, " %s (%d bytes)", r.LocalPath, r.SizeBytes)
+					fmt.Fprintf(&b, " %s (%d bytes)", r.LocalPath, r.SizeBytes)
 				}
 				if r.LastError != "" {
-					fmt.Fprintf(a.Out, " [%s]", r.LastError)
+					fmt.Fprintf(&b, " [%s]", inline(r.LastError))
 				}
-				fmt.Fprintln(a.Out)
+				b.WriteByte('\n')
 			}
+			fmt.Fprint(a.Out, scrub(b.String()))
 			return nil
 		},
 	}

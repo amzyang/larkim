@@ -166,6 +166,14 @@ func (a *App) completeFromStore(
 	return out, cobra.ShellCompDirectiveNoFileComp
 }
 
+// candidate is a completion whose value and description are both names and
+// text Feishu filled in, which the shell prints to the terminal as they
+// arrive. Each is scrubbed before they are joined: the tab between them is
+// the protocol's own separator, and one inside either would split it wrong.
+func candidate(value, desc string) cobra.Completion {
+	return cobra.CompletionWithDesc(inline(value), inline(desc))
+}
+
 // completeChatRef offers what --chat accepts: a chat's name, or its id.
 func (a *App) completeChatRef(_ *cobra.Command, _ []string, prefix string) ([]cobra.Completion, cobra.ShellCompDirective) {
 	return a.completeFromStore(func(ctx context.Context, st *store.Store) ([]cobra.Completion, error) {
@@ -177,9 +185,9 @@ func (a *App) completeChatRef(_ *cobra.Command, _ []string, prefix string) ([]co
 		for _, c := range chats {
 			switch {
 			case hasPrefixFold(c.Name, prefix):
-				out = append(out, cobra.CompletionWithDesc(c.Name, c.ChatID))
+				out = append(out, candidate(c.Name, c.ChatID))
 			case hasPrefixFold(c.ChatID, prefix):
-				out = append(out, cobra.CompletionWithDesc(c.ChatID, c.Name))
+				out = append(out, candidate(c.ChatID, c.Name))
 			}
 		}
 		return out, nil
@@ -198,11 +206,11 @@ func (a *App) completeContactRef(_ *cobra.Command, _ []string, prefix string) ([
 		for _, c := range contacts {
 			switch {
 			case hasPrefixFold(c.Name, prefix):
-				out = append(out, cobra.CompletionWithDesc(c.Name, cmp.Or(c.Email, c.OpenID)))
+				out = append(out, candidate(c.Name, cmp.Or(c.Email, c.OpenID)))
 			case hasPrefixFold(c.Email, prefix):
-				out = append(out, cobra.CompletionWithDesc(c.Email, c.Name))
+				out = append(out, candidate(c.Email, c.Name))
 			case hasPrefixFold(c.OpenID, prefix):
-				out = append(out, cobra.CompletionWithDesc(c.OpenID, c.Name))
+				out = append(out, candidate(c.OpenID, c.Name))
 			}
 		}
 		return out, nil
@@ -220,7 +228,7 @@ func (a *App) completeSenderID(_ *cobra.Command, _ []string, prefix string) ([]c
 		var out []cobra.Completion
 		for _, c := range contacts {
 			if hasPrefixFold(c.OpenID, prefix) {
-				out = append(out, cobra.CompletionWithDesc(c.OpenID, c.Name))
+				out = append(out, candidate(c.OpenID, c.Name))
 			}
 		}
 		return out, nil
@@ -247,7 +255,7 @@ func (a *App) completeMessageID(cmd *cobra.Command, _ []string, prefix string) (
 		var out []cobra.Completion
 		for _, m := range rows {
 			if hasPrefixFold(m.MessageID, prefix) {
-				out = append(out, cobra.CompletionWithDesc(m.MessageID, oneLine(contentLabel(m), 48)))
+				out = append(out, candidate(m.MessageID, oneLine(contentLabel(m), 48)))
 			}
 		}
 		return out, nil

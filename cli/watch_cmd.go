@@ -45,7 +45,7 @@ func (a *App) watchCmd() *cobra.Command {
 						}
 						continue
 					}
-					fmt.Fprintf(a.Out, "%s %s %s %s: %s\n", fmtMs(m.CreateMs), m.ChatID, m.MessageID, senderLabel(m), oneLine(contentLabel(m), 120))
+					fmt.Fprintln(a.Out, watchLine(m))
 				}
 			}
 			return nil
@@ -55,6 +55,14 @@ func (a *App) watchCmd() *cobra.Command {
 	cmd.Flags().DurationVar(&every, "every", 500*time.Millisecond, "poll interval")
 	mustWire(cmd.RegisterFlagCompletionFunc("chat", a.completeChatRef))
 	return cmd
+}
+
+// watchLine is one streamed message, a single line however the fields it names
+// arrived: the whole line goes through inline, so neither a sender's name nor
+// their text can break the stream apart or reach the terminal as an escape.
+func watchLine(m store.Message) string {
+	return inline(fmt.Sprintf("%s %s %s %s: %s",
+		fmtMs(m.CreateMs), m.ChatID, m.MessageID, senderLabel(m), oneLine(contentLabel(m), 120)))
 }
 
 func senderLabel(m store.Message) string { return cmp.Or(m.SenderName, m.SenderID) }

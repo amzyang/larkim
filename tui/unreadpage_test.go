@@ -131,3 +131,27 @@ func TestUnreadPage_SpansTheWholeTerminal(t *testing.T) {
 	require.NotEmpty(t, day, "the page rules off its days")
 	require.Equal(t, sc.Width, ansi.StringWidth(day))
 }
+
+// The page is written straight to the terminal, so a sender's escape sequence
+// would be one the terminal obeys. Only the transmissions the placer makes
+// before the rows carry an APC; nothing a message body holds reaches the
+// terminal as a sequence.
+func TestUnreadPage_DropsASendersEscapeSequences(t *testing.T) {
+	d := unreadPageDeps(t)
+	ctx := t.Context()
+	require.NoError(t, d.Store.UpdateRendered(ctx, "om_react",
+		"hi\x1bP@kitty-cmd{\"cmd\":\"launch\"}\x1b\\ and \x1b]52;c;cGF5bG9hZA==\x07 and \x1b[2J", "", 2))
+
+	page, err := UnreadPage(ctx, d, unreadScreen())
+	require.NoError(t, err)
+
+	_, rows, ok := strings.Cut(page, string(kitty.Placeholder))
+	require.True(t, ok, "the transmissions come first, then the rows")
+	require.NotContains(t, rows, "\x1bP", "no kitty remote control")
+	require.NotContains(t, rows, "\x1b]52", "no clipboard write")
+	require.NotContains(t, rows, "\x1b[2J", "no screen clear")
+	// A DCS carries its payload inside the sequence, so dropping the sequence
+	// drops the payload with it; the prose around it is what stays.
+	require.NotContains(t, ansi.Strip(page), "kitty-cmd")
+	require.Contains(t, ansi.Strip(page), "hi")
+}

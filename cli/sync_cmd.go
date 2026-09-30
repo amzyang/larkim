@@ -178,7 +178,8 @@ func (a *App) statusCmd() *cobra.Command {
 			}
 			fmt.Fprintf(a.Out, "status:           %s\n", out.Status)
 			if out.LastError != "" {
-				fmt.Fprintf(a.Out, "last error:       %s\n", out.LastError)
+				// The text is lark-cli's, quoting what Feishu answered.
+				fmt.Fprintf(a.Out, "last error:       %s\n", inline(out.LastError))
 			}
 			if out.Hint != "" {
 				fmt.Fprintf(a.Out, "hint:             %s\n", out.Hint)
