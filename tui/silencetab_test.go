@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -35,12 +36,7 @@ func typeText(t *testing.T, m Model, s string) Model {
 
 // silenceRow is the rendered rule the cursor rests on, styling stripped.
 func silenceRow(m Model) string {
-	lines := m.silenceLines()
-	i := m.config.silence.idx - m.config.silence.top
-	if i < 0 || i >= len(lines) {
-		return ""
-	}
-	return strings.Join(strings.Fields(ansi.Strip(lines[i])), " ")
+	return cursorLine(m.silenceLines(), m.config.silence.idx, m.config.silence.top)
 }
 
 func TestSilenceTab_AddsARuleThroughThePickersAndWritesTheFile(t *testing.T) {
@@ -140,10 +136,10 @@ func TestSilenceTab_DeleteAsksFirst(t *testing.T) {
 func TestSilenceSearch_ListsNamedChatMembersBeforeContacts(t *testing.T) {
 	m := silenceModel(t)
 	m.config.silence.form = silenceForm{
-		open: true,
-		rule: store.SilenceRule{Chat: "oc_quiet"},
+		open:   true,
+		rule:   store.SilenceRule{Chat: "oc_quiet"},
+		roster: []store.Contact{{OpenID: "ou_in", Name: "王五"}},
 	}
-	m.config.silence.roster = []store.Contact{{OpenID: "ou_in", Name: "王五"}}
 	m.contacts = []store.Contact{
 		{OpenID: "cli_c", Name: "构建机器人", IsBot: true},
 		{OpenID: "ou_a", Name: "张三"},
@@ -175,8 +171,8 @@ func TestSilenceTab_RosterLoadRefreshesTheSenderPicker(t *testing.T) {
 
 	m = m.onSilenceRoster(loadSilenceRoster(m.deps, "oc_quiet")().(silenceRosterLoadedMsg))
 
-	require.Len(t, m.config.silence.roster, 1)
-	require.Equal(t, "ou_in", m.config.silence.roster[0].OpenID)
+	require.Len(t, m.config.silence.form.roster, 1)
+	require.Equal(t, "ou_in", m.config.silence.form.roster[0].OpenID)
 	require.Equal(t, "ou_in", m.silenceSearch(fieldSender, "")[0].id)
 	require.Equal(t, "ou_in", m.config.silence.form.pick.hits[0].id)
 }
@@ -227,6 +223,28 @@ func TestSilenceTab_ShowsMatchCountsAndIgnoresRulesSinceRemoved(t *testing.T) {
 	next, _ = m.Update(loadSilenceMatches(m.deps, m.cfg.Silence)())
 	m = next.(Model)
 	require.Equal(t, "❯ — 构建机器人 — 0", silenceRow(m), "a rule that matches nothing reads as a zero")
+}
+
+func TestSilenceRecount_CountsOnlyTheRulesWithoutACount(t *testing.T) {
+	m := silenceModel(t)
+	require.NoError(t, m.writeSilence(store.SilenceRules{{Chat: "oc_team"}, {Sender: "cli_c"}}))
+	m = m.onSilenceMatches(loadSilenceMatches(m.deps, store.SilenceRules{{Chat: "oc_team"}})().(silenceMatchesMsg))
+
+	msg := m.silenceRecount()().(silenceMatchesMsg)
+	require.Equal(t, []string{silenceKey(store.SilenceRule{Sender: "cli_c"})}, slices.Collect(maps.Keys(msg.counts)))
+
+	m = m.onSilenceMatches(msg)
+	require.Nil(t, m.silenceRecount(), "every rule is counted")
+}
+
+func TestSilenceTab_AFormStartsWithoutTheLastRulesRoster(t *testing.T) {
+	m := silenceModel(t)
+	require.NoError(t, m.writeSilence(store.SilenceRules{{Chat: "oc_quiet"}, {Chat: "oc_team"}}))
+	m = press(t, m, "enter")
+	m.config.silence.form.roster = []store.Contact{{OpenID: "ou_in", Name: "王五"}}
+	m = press(t, m, "esc", "j", "enter")
+	require.Equal(t, "oc_team", m.config.silence.form.rule.Chat)
+	require.Empty(t, m.config.silence.form.roster, "oc_quiet's members are not offered for oc_team")
 }
 
 func TestSilenceTab_AFailedWriteLeavesTheSessionAlone(t *testing.T) {

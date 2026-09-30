@@ -256,7 +256,7 @@ func (s *Syncer) resolveApps(ctx context.Context, now time.Time) error {
 	}
 	for _, id := range ids {
 		app, err := s.Client.AppDetail(ctx, id)
-		if le, ok := errors.AsType[*larkcli.Error](err); err != nil && (!ok || !le.IsPermanent()) {
+		if err != nil && !permanentFailure(err) {
 			return err
 		}
 		// A refused app is settled unnamed, for the same reason a refused

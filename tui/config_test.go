@@ -42,9 +42,12 @@ func configFile(t *testing.T, m Model) config.Config {
 }
 
 // configRow is the rendered line the cursor rests on, styling stripped.
-func configRow(m Model) string {
-	lines := m.configLines()
-	i := m.config.idx - m.config.top
+func configRow(m Model) string { return cursorLine(m.configLines(), m.config.idx, m.config.top) }
+
+// cursorLine is the line of a panel's window that the cursor at idx rests on,
+// styling stripped and runs of spaces closed up.
+func cursorLine(lines []string, idx, top int) string {
+	i := idx - top
 	if i < 0 || i >= len(lines) {
 		return ""
 	}

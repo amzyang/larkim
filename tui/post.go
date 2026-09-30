@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"charm.land/lipgloss/v2"
-	"github.com/amzyang/larkim/emoji"
 	"github.com/amzyang/larkim/store"
 	"github.com/amzyang/larkim/sync"
 )
@@ -219,25 +218,17 @@ func (d postDoc) words(s string, style []string) []rowSeg {
 	return cutSegs(s, cuts, ms.render)
 }
 
-// emotion draws the one element an emoji in a post comes from. The glyph is
-// preferred over the picture for the same reason the rest of larkim prefers
-// it: it is text, so it survives a copy and costs the terminal nothing. A key
-// this build has no entry for, or one no character carries where no picture
-// can be drawn, is left as the shortcode it was read as — the spelling the
-// reader can still look up.
+// emotion draws the one element an emoji in a post comes from, through the
+// shortcode spelling the emoji table is keyed by: a glyph where a character
+// carries it, else the picture, else the shortcode the reader can still look
+// up.
 func (d postDoc) emotion(key string) []rowSeg {
-	e, known := emoji.ByKey(key)
-	spelled := []rowSeg{{text: d.ms.base.Render(":" + key + ":")}}
-	switch {
-	case !known:
-		return spelled
-	case e.Glyph != "":
-		return []rowSeg{{text: d.ms.base.Render(e.Glyph)}}
+	ms := d.ms.spelling(spellShortcode)
+	code := ":" + key + ":"
+	if segs := emojiSegs(code, ms.spell, d.st.emojiInline, ms.plain); segs != nil {
+		return segs
 	}
-	if p := d.st.emojiInline(e.Key); p.cols > 0 {
-		return []rowSeg{{pic: p}}
-	}
-	return spelled
+	return []rowSeg{{text: ms.plain(code)}}
 }
 
 // link draws an `a` element. A label that is the address itself is drawn the

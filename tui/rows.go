@@ -1018,7 +1018,7 @@ func cardRows(c card.Card, x store.Message, idx int, st msgStyle, g *leads, ms m
 	rows = textRows(cardHead(c, st.inner()), idx, g)
 	client := applink.ChatLink(x.ChatID, x.MessagePosition)
 	prevText, prevPanel := false, false
-	for i, b := range c.Blocks {
+	for _, b := range c.Blocks {
 		parts := []card.Block{b}
 		var line []rowSeg
 		var pills []clickZone
@@ -1040,7 +1040,7 @@ func cardRows(c card.Card, x store.Message, idx int, st msgStyle, g *leads, ms m
 		// Text beside text is two paragraphs, which a blank line parts, the
 		// way it parts them in the document the card copies out as. Inside
 		// one panel the line between them is the panel's too.
-		if i > 0 && prevText && top {
+		if prevText && top {
 			rows = append(rows, msgRow{lead: g.take(), idx: idx, panel: panel && prevPanel})
 		}
 		prevText, prevPanel = bottom, panel
@@ -1075,8 +1075,7 @@ func (r *msgRow) align(how string, w int) {
 	}
 	used := segsWidth(r.segs)
 	if len(r.segs) == 0 {
-		used = ansi.StringWidth(strings.TrimRight(ansi.Strip(r.text), " "))
-		r.text = cut(r.text, used)
+		r.text, used = trimPad(r.text)
 	}
 	pad := w - used
 	if how == "center" {
@@ -1141,8 +1140,8 @@ func layCardRow(row []card.Cell, x store.Message, idx int, st msgStyle, ms menti
 				return nil, nil, false
 			}
 			if l.segs = rs[0].segs; len(l.segs) == 0 {
-				text := rs[0].text
-				l.segs = []rowSeg{{text: cut(text, ansi.StringWidth(strings.TrimRight(ansi.Strip(text), " ")))}}
+				text, _ := trimPad(rs[0].text)
+				l.segs = []rowSeg{{text: text}}
 			}
 			l.cols = segsWidth(l.segs)
 		case len(c.Buttons) > 0:

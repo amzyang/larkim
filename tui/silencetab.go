@@ -32,9 +32,6 @@ type silenceTab struct {
 	// counts is keyed by each rule's own fingerprint, so a reply that lands
 	// after an edit fills in only the rules still standing.
 	counts map[string]silenceCount
-	// roster is who is in the chat the form names, offered ahead of the global
-	// contacts when the sender is picked.
-	roster []store.Contact
 	// confirmDelete holds the list on a question: d rewrites the file, so it
 	// asks before it does.
 	confirmDelete bool
@@ -62,6 +59,9 @@ type silenceForm struct {
 	field    silenceField
 	contains textinput.Model
 	pick     silencePick
+	// roster is who is in the chat the rule names, offered ahead of the global
+	// contacts when the sender is picked.
+	roster []store.Contact
 	// err is a rule the configuration refused, kept beside what was typed.
 	err string
 }
@@ -130,20 +130,18 @@ func (m Model) onSilenceRoster(msg silenceRosterLoadedMsg) Model {
 	if msg.chatID != m.config.silence.form.rule.Chat {
 		return m
 	}
-	m.config.silence.roster = msg.roster
-	f := &m.config.silence.form
-	if f.pick.open && f.field == fieldSender {
-		f.pick.hits = m.silenceSearch(f.field, f.pick.input.Value())
-		moveCursor(&f.pick.idx, &f.pick.top, 0, len(f.pick.hits), m.silencePickRows())
-	}
+	m.config.silence.form.roster = msg.roster
+	m.refreshSilencePick()
 	return m
 }
 
-func ruleCount(n int) string {
-	if n == 1 {
-		return "1 rule"
+// refreshSilencePick re-runs an open sender picker's search over the people
+// it can now offer, the cursor staying where it was.
+func (m *Model) refreshSilencePick() {
+	if f := &m.config.silence.form; f.pick.open && f.field == fieldSender {
+		f.pick.hits = m.silenceSearch(f.field, f.pick.input.Value())
+		moveCursor(&f.pick.idx, &f.pick.top, 0, len(f.pick.hits), m.silencePickRows())
 	}
-	return strconv.Itoa(n) + " rules"
 }
 
 func (m *Model) silenceMove(d int) {
@@ -163,7 +161,7 @@ func (m Model) onSilenceKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if t.confirmDelete {
 		t.confirmDelete = false
 		if s == "y" {
-			return m.deleteSilence(), m.silenceRecount()
+			return m.deleteSilence(), nil
 		}
 		return m, nil
 	}
@@ -254,7 +252,7 @@ func (m Model) onSilenceFormKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m.openSilencePick()
 	case "backspace", "delete":
 		if f.field == fieldChat {
-			m.config.silence.roster = nil
+			f.roster = nil
 		}
 		*f.idField() = ""
 		f.err = ""
@@ -302,7 +300,7 @@ func (m Model) onSilencePickKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		f.pick = silencePick{}
 		if f.field == fieldChat {
-			m.config.silence.roster = nil
+			f.roster = nil
 			if f.rule.Chat != "" {
 				return m, loadSilenceRoster(m.deps, f.rule.Chat)
 			}
@@ -364,7 +362,8 @@ func (m Model) silenceSearch(field silenceField, query string) []silenceHit {
 		}
 		return out
 	}
-	seen := make(map[string]bool, len(m.config.silence.roster)+len(m.contacts))
+	roster := m.config.silence.form.roster
+	seen := make(map[string]bool, len(roster)+len(m.contacts))
 	add := func(p store.Contact) {
 		if len(out) == fwdLimit || p.OpenID == "" || seen[p.OpenID] {
 			return
@@ -375,10 +374,8 @@ func (m Model) silenceSearch(field silenceField, query string) []silenceHit {
 			out = append(out, silenceHit{id: p.OpenID, name: name, mark: mark})
 		}
 	}
-	if m.config.silence.form.rule.Chat != "" {
-		for _, p := range m.config.silence.roster {
-			add(p)
-		}
+	for _, p := range roster {
+		add(p)
 	}
 	for _, p := range m.contacts {
 		add(p)
@@ -428,16 +425,30 @@ func (m *Model) writeSilence(next store.SilenceRules) error {
 		return err
 	}
 	m.cfg.Silence = next
-	*m = m.notify("silence · "+ruleCount(len(next))+" · next start", false)
+	*m = m.notify("silence · "+plural(len(next), "rule", "rules")+" · next start", false)
 	return nil
 }
 
-func (m Model) silenceRecount() tea.Cmd { return loadSilenceMatches(m.deps, m.cfg.Silence) }
+// silenceRecount counts the rules the panel has no count for, which after a
+// save is the one rule it wrote. Each is a scan of every message, run on the
+// connection the rest of the process waits on.
+func (m Model) silenceRecount() tea.Cmd {
+	var fresh store.SilenceRules
+	for _, r := range m.cfg.Silence {
+		if _, ok := m.config.silence.counts[silenceKey(r)]; !ok {
+			fresh = append(fresh, r)
+		}
+	}
+	if len(fresh) == 0 {
+		return nil
+	}
+	return loadSilenceMatches(m.deps, fresh)
+}
 
 // chatName and senderName resolve a rule's ids for the list. An id nothing
 // here names comes back unresolved, which is how a typo stands out.
 func (m Model) chatName(id string) (string, bool) {
-	i := slices.IndexFunc(m.chats, func(c store.Chat) bool { return c.ChatID == id })
+	i := indexOfChat(m.chats, id)
 	if i < 0 || m.chats[i].Name == "" {
 		return id, false
 	}
@@ -487,10 +498,7 @@ func (m Model) silenceLines() []string {
 	var out []string
 	for i, r := range window(m.cfg.Silence, t.top, m.configRows()) {
 		row := t.top + i
-		lead := "  "
-		if row == t.idx {
-			lead = stAccent.Render("❯ ")
-		}
+		lead := cursorLead(row == t.idx)
 		text := stDim.Render(fit("—", tw))
 		if r.Contains != "" {
 			text = fit(truncate(r.Contains, tw), tw)
@@ -502,7 +510,7 @@ func (m Model) silenceLines() []string {
 				style = stErr
 			}
 			n := strconv.FormatInt(c.matched, 10)
-			count = style.Render(strings.Repeat(" ", max(0, silenceMatchedWidth-len(n))) + n)
+			count = style.Render(pad(n, silenceMatchedWidth))
 		}
 		out = append(out, fit(lead+silenceIDCell(r.Chat, m.chatName, cw)+gap+
 			silenceIDCell(r.Sender, m.senderName, sw)+gap+text+gap+count, w))
@@ -536,10 +544,7 @@ func (m Model) silenceFormLines() []string {
 	}
 	out := []string{fit(stBold.Render(title), w), fit("", w)}
 	for field := range silenceFields {
-		lead := "  "
-		if field == f.field {
-			lead = stAccent.Render("❯ ")
-		}
+		lead := cursorLead(field == f.field)
 		var cell string
 		switch field {
 		case fieldChat:
@@ -566,10 +571,7 @@ func (m Model) silenceFormLines() []string {
 	}
 	out = append(out, padBetween(m.silencePickPrompt()+p.input.View(), right, w))
 	for i, h := range window(p.hits, p.top, m.silencePickRows()) {
-		lead := "  "
-		if p.top+i == p.idx {
-			lead = stAccent.Render("❯ ")
-		}
+		lead := cursorLead(p.top+i == p.idx)
 		out = append(out, padBetween(lead+markName(h.name, h.mark, lipgloss.NewStyle()), stDim.Render(h.id), w))
 	}
 	return out

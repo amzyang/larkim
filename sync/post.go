@@ -129,7 +129,7 @@ func postElemText(el PostElem) string {
 	case "a":
 		switch {
 		case el.Href != "" && el.Text != "":
-			return StyleMarkdown(fmt.Sprintf("[%s](%s)", escapeMDLinkText(el.Text), el.Href), el.Style)
+			return StyleMarkdown(fmt.Sprintf("[%s](%s)", EscapeMDLinkText(el.Text), el.Href), el.Style)
 		case el.Href != "":
 			return StyleMarkdown(el.Href, el.Style)
 		}
@@ -206,4 +206,5 @@ func StyleMarkdown(text string, styles []string) string {
 
 var mdLinkTextEscaper = strings.NewReplacer(`[`, `\[`, `]`, `\]`)
 
-func escapeMDLinkText(s string) string { return mdLinkTextEscaper.Replace(s) }
+// EscapeMDLinkText makes s safe as a markdown link's label.
+func EscapeMDLinkText(s string) string { return mdLinkTextEscaper.Replace(s) }

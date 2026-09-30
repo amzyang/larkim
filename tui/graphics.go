@@ -2,6 +2,7 @@ package tui
 
 import (
 	"bytes"
+	"fmt"
 	"regexp"
 
 	uv "github.com/charmbracelet/ultraviolet"
@@ -16,7 +17,10 @@ const graphicsQueryID = 31
 // reply to the first arriving before it is a yes and its absence is a no; the
 // environment cannot say, because a multiplexer inside kitty inherits kitty's
 // variables whether or not it passes images through.
-const GraphicsQuery = "\x1b_Gi=31,s=1,v=1,a=q,t=d,f=24;AAAA\x1b\\\x1b[c"
+var GraphicsQuery = fmt.Sprintf("\x1b_Gi=%d,s=1,v=1,a=q,t=d,f=24;AAAA\x1b\\\x1b[c", graphicsQueryID)
+
+// graphicsYes is the terminal's yes to GraphicsQuery, as its bytes arrive.
+var graphicsYes = fmt.Appendf(nil, "\x1b_Gi=%d;OK\x1b\\", graphicsQueryID)
 
 // graphicsOK says whether a graphics reply is the yes to GraphicsQuery.
 func graphicsOK(ev uv.KittyGraphicsEvent) bool {
@@ -33,5 +37,5 @@ func GraphicsReply(b []byte) (ok, done bool) {
 	if loc == nil {
 		return false, false
 	}
-	return bytes.Contains(b[:loc[0]], []byte("\x1b_Gi=31;OK\x1b\\")), true
+	return bytes.Contains(b[:loc[0]], graphicsYes), true
 }

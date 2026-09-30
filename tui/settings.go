@@ -105,7 +105,7 @@ var settings = []setting{{
 	key:      "silence",
 	help:     "rules whose messages carry no unread badge; enter edits them in the Silence tab",
 	readOnly: true,
-	summary:  func(c config.Config) string { return ruleCount(len(c.Silence)) },
+	summary:  func(c config.Config) string { return plural(len(c.Silence), "rule", "rules") },
 }}
 
 // positiveMS judges a key whose unit is in its own name, so 3s is the reader

@@ -109,6 +109,15 @@ func (m Model) closeConfig() Model {
 	return m
 }
 
+// cursorLead is what a panel's row starts with: the caret on the row the
+// cursor is on, its width in blanks on every other.
+func cursorLead(on bool) string {
+	if on {
+		return stAccent.Render("❯ ")
+	}
+	return "  "
+}
+
 // configSearch narrows the registry. The prose is matched alongside the key,
 // so "assistant" reaches the ai section and "attachment" the resource cap, but
 // only the name is ever underlined because it is the only column a hit is
@@ -393,11 +402,8 @@ func (m Model) configLines() []string {
 	var out []string
 	for i, h := range window(m.config.hits, m.config.top, m.configRows()) {
 		row := m.config.top + i
-		lead := "  "
+		lead := cursorLead(row == m.config.idx)
 		key := markName(h.s.key, h.mark, stBold)
-		if row == m.config.idx {
-			lead = stAccent.Render("❯ ")
-		}
 		var cell string
 		switch {
 		case row == m.config.idx && m.config.editing:

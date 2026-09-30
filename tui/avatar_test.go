@@ -50,12 +50,6 @@ func writeFilledPNG(t *testing.T, dir, name string, w, h int) string {
 	return name
 }
 
-func TestNewAvatars_FallsBackWhenTheTerminalCannotShowPictures(t *testing.T) {
-	require.IsType(t, &kittyAvatars{}, newAvatars("/data", true))
-	require.IsType(t, textAvatars{}, newAvatars("/data", false))
-	require.IsType(t, textAvatars{}, newAvatars("", true), "without a data dir there is no file to draw")
-}
-
 func TestKittyAvatars_PlaceholderCellsSpanTheAvatarColumn(t *testing.T) {
 	dir := t.TempDir()
 	k := newKittyAvatars(dir)

@@ -429,8 +429,7 @@ func code(p prop) string {
 }
 
 // styled spells the attributes a run of text carries as the markup a reader
-// styles from. A run that spans lines takes them one at a time:
-// the markers do not survive a line break.
+// styles from, a line at a time.
 func styled(content string, style textStyle) string {
 	if content == "" || len(style.Attributes) == 0 {
 		return content
@@ -448,6 +447,12 @@ func styled(content string, style textStyle) string {
 			opening, closing = opening+"<u>", "</u>"+closing
 		}
 	}
+	return perLine(content, opening, closing)
+}
+
+// perLine puts opening and closing round each line of content that has text,
+// since the markers do not survive a line break.
+func perLine(content, opening, closing string) string {
 	if opening == "" {
 		return content
 	}
@@ -467,13 +472,7 @@ func coloured(content, color string) string {
 	if content == "" || color == "" || color == "default" {
 		return content
 	}
-	lines := strings.Split(content, "\n")
-	for i, l := range lines {
-		if strings.TrimSpace(l) != "" {
-			lines[i] = `<font color="` + color + `">` + l + `</font>`
-		}
-	}
-	return strings.Join(lines, "\n")
+	return perLine(content, `<font color="`+color+`">`, `</font>`)
 }
 
 // plain reads the text of an element that holds nothing else: a title, a
