@@ -434,6 +434,59 @@ func TestCardRows_AFooterTooWideForThePaneStacks(t *testing.T) {
 	require.Len(t, pills.zones, 2)
 }
 
+// fillButton is a button the card stretches across the column it stands in.
+func fillButton(label, url string) string {
+	return `{"tag":"button","property":{"type":"default","widthValue":{"type":"builtin_width","value":"fill"},` +
+		`"text":{"tag":"plain_text","property":{"content":"` + label + `"}},` +
+		`"actions":[{"type":"open_url","action":{"url":"` + url + `"}}]}}`
+}
+
+// alarmActions is the row of links an alarm bot closes its card with: a
+// weighted column per button, each button filling its column.
+var alarmActions = bodyCard(`{"tag":"column_set","property":{"columns":[` +
+	cardColumn("weighted", fillButton("详情", "https://example.com/alarm")) + `,` +
+	cardColumn("weighted", fillButton("日志", "https://example.com/log")) + `,` +
+	cardColumn("weighted", fillButton("排查", "https://example.com/triage")) + `]}}`)
+
+func TestCardRows_FillButtonsShareTheirColumnsRow(t *testing.T) {
+	st := baseStyle()
+	rows := renderRows([]store.Message{alarmActions}, st)
+	row, _ := lineOf(t, rows, "详情")
+	line, _ := Model{}.rowLine(row, st.width)
+	require.Regexp(t, `详情.+日志.+排查`, ansi.Strip(line), "the buttons stand abreast")
+	require.Len(t, row.zones, 3, "each pill keeps its target")
+
+	room := st.inner() - 2*cardCellGap
+	shares := []int{room / 3, room / 3, room - 2*(room/3)}
+	labels := []string{"详情", "日志", "排查"}
+	urls := []string{"https://example.com/alarm", "https://example.com/log", "https://example.com/triage"}
+	at := row.lead.cols()
+	for i, z := range row.zones {
+		require.Equal(t, at, z.x0, "pill %d starts where its column does", i)
+		require.Equal(t, shares[i], z.x1-z.x0, "pill %d spans its column", i)
+		require.Equal(t, []string{urls[i]}, z.urls)
+		pill := ansi.Strip(cut(cutLeft(line, z.x0), z.x1-z.x0))
+		require.Equal(t, labels[i], strings.TrimSpace(pill))
+		lead, trail := len(pill)-len(strings.TrimLeft(pill, " ")), len(pill)-len(strings.TrimRight(pill, " "))
+		require.InDelta(t, lead, trail, 1, "the label sits in the middle of %q", pill)
+		at = z.x1 + cardCellGap
+	}
+	require.Equal(t, row.lead.cols()+st.inner(), row.zones[2].x1, "the row ends at the edge of the body")
+}
+
+func TestCardRows_FillButtonsTooWideForThePaneStack(t *testing.T) {
+	st := baseStyle()
+	st.width = leadWidth + 12
+	rows := renderRows([]store.Message{alarmActions}, st)
+	_, first := lineOf(t, rows, "详情")
+	for k, label := range []string{"详情", "日志", "排查"} {
+		row, i := lineOf(t, rows, label)
+		require.Equal(t, first+k, i, "%s has a line of its own", label)
+		require.Len(t, row.zones, 1)
+		require.Equal(t, st.inner(), row.zones[0].x1-row.zones[0].x0, "spanning the body")
+	}
+}
+
 func TestRenderInline_AFontTagColoursItsText(t *testing.T) {
 	ms := mentionsIn("", "")
 	out := renderInline(`<font color="red">**告警**</font> 已恢复`, ms)

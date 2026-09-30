@@ -1146,7 +1146,13 @@ func layCardRow(row []card.Cell, x store.Message, idx int, st msgStyle, ms menti
 			}
 			l.cols = segsWidth(l.segs)
 		case len(c.Buttons) > 0:
-			lines := cardButtons(c.Buttons, st.inner(), client)
+			// A fill button is as wide as its column, which is not known until
+			// the shares are handed out: its label is what the column needs.
+			bs := slices.Clone(c.Buttons)
+			for j := range bs {
+				bs[j].Fill = false
+			}
+			lines := cardButtons(bs, st.inner(), client)
 			if len(lines) != 1 {
 				return nil, nil, false
 			}
@@ -1181,6 +1187,10 @@ func layCardRow(row []card.Cell, x store.Message, idx int, st msgStyle, ms menti
 			if l.cols > width {
 				return nil, nil, false
 			}
+		}
+		if len(c.Buttons) > 0 && c.Buttons[0].Fill {
+			pill := cardButtons(c.Buttons, width, client)[0]
+			l.segs, l.zones, l.cols = []rowSeg{{text: pill.text}}, pill.zones, width
 		}
 		if i > 0 {
 			line = append(line, rowSeg{text: strings.Repeat(" ", cardCellGap)})
