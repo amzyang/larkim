@@ -4,6 +4,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"charm.land/lipgloss/v2"
 	"github.com/amzyang/larkim/store"
@@ -22,6 +23,63 @@ func TestCut_AKeycapNeverOutgrowsItsBudget(t *testing.T) {
 	for w := range 40 {
 		require.LessOrEqual(t, ansi.StringWidth(cut(s, w)), w,
 			"a cut to %d columns may not come back wider", w)
+	}
+}
+
+func TestCut_ARunOfKeycapsKeepsWhatFits(t *testing.T) {
+	s := strings.Repeat(keycap, 60)
+	for w := 2; w <= 20; w++ {
+		require.Equal(t, strings.Repeat(keycap, w/2), cut(s, w), "a cut to %d columns", w)
+	}
+}
+
+func TestWrap_ARunOfKeycapsWiderThanTheRowEnds(t *testing.T) {
+	s := strings.Repeat(keycap, 60)
+	done := make(chan []string, 1)
+	go func() { done <- wrap(s, 20) }()
+	select {
+	case lines := <-done:
+		require.Len(t, lines, 6)
+		for _, l := range lines {
+			require.Equal(t, strings.Repeat(keycap, 10), l)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("wrap made no headway through the run")
+	}
+}
+
+func TestWrap_ARowCarriesOnlyTheEscapesInForce(t *testing.T) {
+	// lipgloss underlines a rune at a time, so a paragraph is an escape pair
+	// per character; a row opening on all of them is a row the size of the
+	// whole paragraph.
+	s := lipgloss.NewStyle().Underline(true).Render(strings.Repeat("lorem ipsum ", 400))
+	var text strings.Builder
+	total := 0
+	for _, l := range wrap(s, 40) {
+		text.WriteString(ansi.Strip(l))
+		total += len(l)
+	}
+	require.Equal(t, strings.Repeat("loremipsum", 400), strings.ReplaceAll(text.String(), " ", ""))
+	require.Less(t, total, 2*len(s), "the rows together are about as big as what they draw")
+}
+
+func TestWrap_KeepsTextAnEscapeCutsAClusterOf(t *testing.T) {
+	// Underlined a rune at a time, a keycap is a digit and two marks to the
+	// width a cut measures, and one cluster to the break; measured the two
+	// ways, the row after it lost its first letter.
+	s := lipgloss.NewStyle().Underline(true).Render(keycap + "a ab")
+	var rows []string
+	for _, l := range wrap(s, 4) {
+		require.Equal(t, 4, ansi.StringWidth(l))
+		rows = append(rows, strings.TrimRight(ansi.Strip(l), " "))
+	}
+	require.Equal(t, []string{keycap + "a", "ab"}, rows)
+}
+
+func BenchmarkWrap_AParagraphWithNoBreakInIt(b *testing.B) {
+	s := strings.Repeat("中文字符测试", 3334)
+	for b.Loop() {
+		wrap(s, 100)
 	}
 }
 

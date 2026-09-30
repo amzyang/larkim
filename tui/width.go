@@ -16,11 +16,13 @@ import (
 // ansi.TruncateLeft breaks the same cluster the other way, dropping the whole
 // of it for the one column it was asked for.
 //
-// Both are corrected the same way: ask, measure what came back, and ask again
-// for as much as the answer was out by. Where the columns asked for fall
-// inside a cluster, both err towards the smaller answer: half a keycap is not
-// a thing a terminal can draw, and it is keeping a column too many that costs
-// a pane its width.
+// Both are corrected the same way: ask, measure what came back, and ask again.
+// A cut is asked for half as much less as it came back over, since each keycap
+// it kept is over by one: taking the whole excess off gives back the cells
+// those keycaps stand in as well, and a run of them all the way down to
+// nothing. Where the columns asked for fall inside a cluster, both err towards
+// the smaller answer: half a keycap is not a thing a terminal can draw, and it
+// is keeping a column too many that costs a pane its width.
 
 // cut is ansi.Truncate measured in the columns the terminal will draw.
 func cut(s string, w int) string {
@@ -33,7 +35,7 @@ func cut(s string, w int) string {
 		if over <= 0 {
 			return closeLink(out)
 		}
-		n -= over
+		n -= (over + 1) / 2
 	}
 	return ""
 }
@@ -45,21 +47,23 @@ func cut(s string, w int) string {
 // leads where that one link led.
 func closeLink(s string) string {
 	_, last, ok := strings.CutLast(s, "\x1b]8;")
-	if !ok {
-		return s
-	}
-	// Both halves of a link start alike; what tells them apart is the target,
-	// which only the opening one names.
-	_, after, ok := strings.Cut(last, ";")
-	if !ok {
-		return s
-	}
-	uri, _, _ := strings.Cut(after, "\a")
-	uri, _, _ = strings.Cut(uri, "\x1b")
-	if uri == "" {
+	if !ok || linkTarget(last) == "" {
 		return s
 	}
 	return s + ansi.ResetHyperlink()
+}
+
+// linkTarget is the address an OSC 8 escape opens, read from what follows its
+// "\x1b]8;". Both halves of a link start alike; what tells them apart is the
+// target, which only the opening one names.
+func linkTarget(rest string) string {
+	_, after, ok := strings.Cut(rest, ";")
+	if !ok {
+		return ""
+	}
+	uri, _, _ := strings.Cut(after, "\a")
+	uri, _, _ = strings.Cut(uri, "\x1b")
+	return uri
 }
 
 // cutLeft drops w columns off the front of s, measured the same way.
@@ -81,4 +85,11 @@ func cutLeft(s string, w int) string {
 		n--
 	}
 	return ansi.TruncateLeft(s, n, "")
+}
+
+// trimPad takes the padding wrap put after a line back off, answering what is
+// left and how wide it is.
+func trimPad(s string) (string, int) {
+	w := ansi.StringWidth(strings.TrimRight(ansi.Strip(s), " "))
+	return cut(s, w), w
 }

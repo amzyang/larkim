@@ -8,6 +8,7 @@ import (
 
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/charmbracelet/x/ansi/parser"
 )
 
 // inlineMD matches the markup lark-cli renders a message body into: links,
@@ -154,23 +155,222 @@ func wrap(s string, w int) []string {
 	s = strings.ReplaceAll(strings.ReplaceAll(s, "\r\n", "\n"), "\t", "    ")
 	var lines []string
 	for src := range strings.SplitSeq(s, "\n") {
-		first := true
-		for {
-			if !first {
-				src = dropLeadingSpaces(src)
-			}
-			head, rest := takeText(src, w)
-			if head == "" && src != "" {
-				// Nowhere to break inside the row: a URL longer than the row.
-				head = closeStyle(cut(src, w))
-				rest = cutLeft(src, ansi.StringWidth(head))
-			}
-			lines = append(lines, head+strings.Repeat(" ", max(0, w-ansi.StringWidth(head))))
-			if first = false; ansi.StringWidth(rest) == 0 {
-				break
-			}
-			src = rest
-		}
+		lines = wrapLine(lines, src, w)
 	}
 	return lines
+}
+
+// wrapLine appends the rows one source line breaks into. The line is read
+// once, into its text, its escapes and where each cluster starts, and every
+// row is cut from that: cutting the styled string itself costs the whole of
+// what is left on every row, which a paragraph with no break in it pays once
+// per row, on every reload of the page it is on.
+func wrapLine(lines []string, src string, w int) []string {
+	l := splitStyled(src)
+	n := len(l.at) - 1
+	i := 0
+	for first := true; ; first = false {
+		if !first {
+			// A row the wrapping opened starts at a word: the space it broke
+			// at belongs to neither row, nor does a mark an escape parted
+			// from it.
+			rest := l.plain[l.at[i]:]
+			if sp := len(rest) - len(strings.TrimLeft(rest, " ")); sp > 0 {
+				for i = l.clusterAt(l.at[i] + sp); i < n && l.cols[i+1] == l.cols[i]; i++ {
+				}
+			}
+		}
+		var end, next int
+		if l.cols[n]-l.cols[i] <= w {
+			end, next = n, n
+		} else if fit, _, fitAt, nextAt := lastBreak(l.plain[l.at[i]:], w); fit > 0 {
+			end, next = l.clusterAt(l.at[i]+fitAt), l.clusterAt(l.at[i]+nextAt)
+			// The break is found in the text, where an emoji an escape cuts
+			// into is one cluster; drawn, its pieces are wider.
+			if end <= i || l.cols[end]-l.cols[i] > w {
+				end = max(i+1, l.upTo(i, w))
+				next = end
+			}
+		} else {
+			// Nowhere to break inside the row: a URL longer than the row.
+			end = max(i+1, l.upTo(i, w))
+			next = end
+		}
+		row := l.row(i, end, end == n)
+		lines = append(lines, row+strings.Repeat(" ", max(0, w-(l.cols[end]-l.cols[i]))))
+		if l.cols[n]-l.cols[next] == 0 {
+			return lines
+		}
+		i = next
+	}
+}
+
+// styledLine is one line of styled text taken apart: its text, the escapes
+// it carries and where in the text each stands, and the column every grapheme
+// cluster of the text starts at. at and cols run one past the last cluster.
+type styledLine struct {
+	plain string
+	escs  []lineEsc
+	at    []int // byte offset into plain of each cluster
+	cols  []int // columns before each cluster
+}
+
+type lineEsc struct {
+	pos int // byte offset into plain the escape stands before
+	seq string
+}
+
+// splitStyled takes a styled line apart, reading bytes the way ansi.Strip
+// does so that its text is exactly what Strip would leave.
+func splitStyled(s string) styledLine {
+	var l styledLine
+	var plain strings.Builder
+	var esc strings.Builder
+	flush := func() {
+		if esc.Len() > 0 {
+			l.escs = append(l.escs, lineEsc{pos: plain.Len(), seq: esc.String()})
+			esc.Reset()
+		}
+	}
+	pstate := parser.GroundState
+	ri, rw := 0, 0
+	for i := range len(s) {
+		if pstate == parser.Utf8State {
+			plain.WriteByte(s[i])
+			if ri++; ri < rw {
+				continue
+			}
+			pstate, ri, rw = parser.GroundState, 0, 0
+			continue
+		}
+		state, action := parser.Table.Transition(pstate, s[i])
+		switch {
+		case action == parser.CollectAction && state == parser.Utf8State:
+			flush()
+			rw, ri = utf8LeadLen(s[i]), 1
+			plain.WriteByte(s[i])
+		case action == parser.PrintAction, action == parser.ExecuteAction:
+			flush()
+			plain.WriteByte(s[i])
+		default:
+			// A sequence ends where the parser is back on the ground, which
+			// keeps each one whole for lineState to read.
+			if esc.WriteByte(s[i]); state == parser.GroundState {
+				flush()
+			}
+		}
+		pstate = state
+	}
+	flush()
+	l.plain = plain.String()
+	// An escape ends a cluster, as it does for ansi.StringWidth: a keycap
+	// drawn one rune at a time measures as its runes, and the row is padded
+	// to what the styled string measures.
+	cols, from := 0, 0
+	for _, stop := range append(slices.Collect(func(yield func(int) bool) {
+		for _, e := range l.escs {
+			if !yield(e.pos) {
+				return
+			}
+		}
+	}), len(l.plain)) {
+		for from < stop {
+			c, cw := ansi.FirstGraphemeCluster(l.plain[from:stop], ansi.GraphemeWidth)
+			l.at, l.cols = append(l.at, from), append(l.cols, cols)
+			cols += cw
+			from += len(c)
+		}
+	}
+	l.at, l.cols = append(l.at, len(l.plain)), append(l.cols, cols)
+	return l
+}
+
+// utf8LeadLen is how many bytes the rune a lead byte opens takes, counted the
+// way ansi.Strip counts them: -1 for a byte no rune starts with.
+func utf8LeadLen(b byte) int {
+	switch {
+	case b <= 0x7F:
+		return 1
+	case b >= 0xC0 && b <= 0xDF:
+		return 2
+	case b >= 0xE0 && b <= 0xEF:
+		return 3
+	case b >= 0xF0 && b <= 0xF7:
+		return 4
+	}
+	return -1
+}
+
+// upTo is the cluster a cut c columns after cluster i ends before, a cluster
+// no wider than nothing on the edge going with the row.
+func (l styledLine) upTo(i, c int) int {
+	j := i
+	for j < len(l.at)-1 && l.cols[j+1]-l.cols[i] <= c {
+		j++
+	}
+	return j
+}
+
+// clusterAt is the last cluster starting at or before byte b of the text.
+func (l styledLine) clusterAt(b int) int {
+	j, found := slices.BinarySearch(l.at, b)
+	if !found {
+		j--
+	}
+	return j
+}
+
+// row draws clusters i to end. It opens on the escapes still in force where i
+// stands, which is what ansi.TruncateLeft keeps less what a reset since has
+// cancelled, and closes what it left open unless it runs to the line's end,
+// where the line's own escapes close it.
+func (l styledLine) row(i, end int, last bool) string {
+	a, b := l.at[i], l.at[end]
+	var open lineState
+	var out strings.Builder
+	k := 0
+	for ; k < len(l.escs) && l.escs[k].pos < a; k++ {
+		open.take(l.escs[k].seq)
+	}
+	out.WriteString(open.String())
+	at := a
+	for ; k < len(l.escs) && (l.escs[k].pos < b || last); k++ {
+		out.WriteString(l.plain[at:l.escs[k].pos])
+		out.WriteString(l.escs[k].seq)
+		at = l.escs[k].pos
+	}
+	out.WriteString(l.plain[at:b])
+	if last {
+		return out.String()
+	}
+	return closeStyle(closeLink(out.String()))
+}
+
+// lineState is what the escapes before a point in a line leave in force: the
+// SGR since the last reset, the link still open, and any escape it has no
+// reading of, kept whole.
+type lineState struct {
+	sgr   []string
+	link  string
+	other []string
+}
+
+func (s *lineState) take(seq string) {
+	switch {
+	case seq == "\x1b[m" || seq == "\x1b[0m":
+		s.sgr = s.sgr[:0]
+	case strings.HasPrefix(seq, "\x1b[") && strings.HasSuffix(seq, "m"):
+		s.sgr = append(s.sgr, seq)
+	case strings.HasPrefix(seq, "\x1b]8;"):
+		s.link = ""
+		if linkTarget(seq[len("\x1b]8;"):]) != "" {
+			s.link = seq
+		}
+	default:
+		s.other = append(s.other, seq)
+	}
+}
+
+func (s lineState) String() string {
+	return strings.Join(s.other, "") + s.link + strings.Join(s.sgr, "")
 }

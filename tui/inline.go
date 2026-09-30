@@ -310,7 +310,7 @@ func takeText(s string, avail int) (head, rest string) {
 	if ansi.StringWidth(s) <= avail {
 		return s, ""
 	}
-	fit, next := lastBreak(ansi.Strip(s), avail)
+	fit, next, _, _ := lastBreak(ansi.Strip(s), avail)
 	if fit == 0 {
 		return "", s
 	}
@@ -320,13 +320,14 @@ func takeText(s string, avail int) (head, rest string) {
 // lastBreak finds the last break opportunity in plain whose line fits avail
 // columns. fit is the columns that line draws, its trailing spaces left out
 // because a line ending at a break hangs them; next is the columns up to
-// where the following line starts. Both are zero when no break fits.
+// where the following line starts. fitAt and nextAt are the same two places
+// as byte offsets into plain. All are zero when no break fits.
 //
 // The clusters come from uniseg, which segments by UAX #14 without cutting
 // into a grapheme cluster, and are measured with ansi.StringWidth, the ruler
 // every cut and every pane in larkim uses.
-func lastBreak(plain string, avail int) (fit, next int) {
-	cols, spaces := 0, 0
+func lastBreak(plain string, avail int) (fit, next, fitAt, nextAt int) {
+	cols, spaces, size := 0, 0, len(plain)
 	for state := -1; plain != ""; {
 		var cluster string
 		var boundaries int
@@ -342,10 +343,12 @@ func lastBreak(plain string, avail int) (fit, next int) {
 			break
 		}
 		if plain != "" && boundaries&uniseg.MaskLine != uniseg.LineDontBreak && cols > spaces {
-			fit, next = cols-spaces, cols
+			// A space is a byte and a column both.
+			at := size - len(plain)
+			fit, next, fitAt, nextAt = cols-spaces, cols, at-spaces, at
 		}
 	}
-	return fit, next
+	return fit, next, fitAt, nextAt
 }
 
 // dropLeadingSpaces takes the spaces a styled run opens with off it. The
