@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"charm.land/lipgloss/v2"
 	"github.com/amzyang/larkim/applink"
 	"github.com/amzyang/larkim/card"
 	"github.com/amzyang/larkim/store"
@@ -243,11 +244,22 @@ func TestCardGist_SaysWhatTheCardSays(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, "设备版本周报 「兜底」", cardGist(c))
 
-	// A card with no band of its own is named by the first thing it says,
-	// with the markers its structure is spelled by left behind.
+	// A card with no band of its own is named by what it says, with the
+	// markers its structure is spelled by left behind.
 	c, ok = card.Parse(cardOf(elHeading+","+elList, nil).ContentRaw)
 	require.True(t, ok)
-	require.Equal(t, "报表", cardGist(c))
+	require.Equal(t, "报表 甲 乙", flatten(cardGist(c)))
+}
+
+// A bot that opens with a greeting says nothing on its first line; the words
+// after it are what the one-line views have room for.
+func TestCardGist_HeadlessCardRunsItsBodyOntoOneLine(t *testing.T) {
+	c, ok := card.Parse(cardOf(`{"tag":"plain_text","property":{"content":"Hey"}},`+
+		`{"tag":"br","property":{}},{"tag":"br","property":{}},`+
+		`{"tag":"plain_text","property":{"content":"排查有结论了："}},`+
+		`{"tag":"code_span","property":{"content":"job-1"}}`, nil).ContentRaw)
+	require.True(t, ok)
+	require.Equal(t, "Hey 排查有结论了：job-1", flatten(cardGist(c)))
 }
 
 func TestCardGist_PictureOnlyCardIsNamedByItsPicture(t *testing.T) {
@@ -294,4 +306,191 @@ func TestCardRows_EachPillIsALinkToWhereItLeads(t *testing.T) {
 	require.Contains(t, pills, ";"+applink.ChatLink("oc_ops", 42)+"\a",
 		"the pill a callback sits behind leads to the client, the way its press does")
 	require.Equal(t, 2, strings.Count(pills, ansi.ResetHyperlink()))
+}
+
+// bodyCard wraps top-level body components the way a bot that posts several
+// of them sends its card.
+func bodyCard(components ...string) store.Message {
+	body := `{"schema":"2.0","body":{"tag":"body","property":{"elements":[` + strings.Join(components, ",") + `]}}}`
+	env, err := json.Marshal(map[string]any{"json_card": body, "json_attachment": map[string]any{}, "card_schema": 2})
+	if err != nil {
+		panic(err)
+	}
+	return store.Message{MessageID: "om_1", SenderName: "构建机器人", SenderID: "ou_a", MsgType: "interactive",
+		ContentRaw: string(env), CreateMs: msgAt(23, 9, 0), RenderedAt: 1}
+}
+
+func mdComponent(elements ...string) string {
+	return `{"tag":"markdown","property":{"elements":[` + strings.Join(elements, ",") + `]}}`
+}
+
+func plainEl(s string) string {
+	return `{"tag":"plain_text","property":{"content":"` + s + `"}}`
+}
+
+func codeEl(s string) string {
+	return `{"tag":"code_span","property":{"content":"` + s + `"}}`
+}
+
+// bodyLines is what each of a message's body rows draws past its lead.
+func bodyLines(rows []msgRow) []string {
+	var out []string
+	for _, r := range rows[1:] { // the first row is the sender line
+		var b strings.Builder
+		b.WriteString(ansi.Strip(r.text))
+		for _, s := range r.segs {
+			b.WriteString(ansi.Strip(s.text))
+		}
+		out = append(out, b.String())
+	}
+	return out
+}
+
+// TestCardRows_AStreamingReplyLaysOutTheWayTheClientDoes is the reply an agent
+// bot streams: an answer run through with code, a line naming the session, a
+// rule, and a footer.
+func TestCardRows_AStreamingReplyLaysOutTheWayTheClientDoes(t *testing.T) {
+	st := baseStyle()
+	m := bodyCard(
+		mdComponent(plainEl("收到，状态已确认。"), `{"tag":"br","property":{}}`, `{"tag":"br","property":{}}`,
+			plainEl("设备原为强制登录待修复，已标记为处理中。如后续仍有个别设备未恢复，可随时让我拉 "),
+			codeEl("lc-device"), plainEl(" 看当前实际在线情况，或调 "), codeEl("lc-cookie"),
+			plainEl(" 查账号的 Cookie 健康度。")),
+		mdComponent(plainEl("sessionId: "), codeEl("s_demo"), plainEl("　"),
+			`{"tag":"link","property":{"content":"🔗 在平台中查看完整对话","url":{"url":"https://example.com/s"}}}`),
+		`{"tag":"hr","property":{}}`,
+	)
+	rows := renderRows([]store.Message{m}, st)
+	lines := bodyLines(rows)
+
+	var session int
+	for i, l := range lines {
+		require.False(t, strings.HasPrefix(l, " "), "row %d opens on the space it broke at: %q", i, l)
+		require.LessOrEqual(t, ansi.StringWidth(strings.TrimRight(l, " ")), st.inner(), "row %d runs past the body: %q", i, l)
+		if strings.Contains(l, "sessionId") {
+			session = i
+		}
+	}
+	require.True(t, strings.HasPrefix(lines[session], "sessionId"), "the session line is a paragraph of its own: %q", lines[session])
+	require.Empty(t, strings.TrimSpace(lines[session-1]), "a blank line parts it from the answer")
+}
+
+func cardColumn(width string, elements string) string {
+	return `{"tag":"column","property":{"width":"` + width + `","weight":1,"elements":[` + elements + `]}}`
+}
+
+// footerCard is a reply signed off the way an agent bot signs one: the answer,
+// then a status on the left of a line and the buttons that rate it on the
+// right.
+var footerCard = bodyCard(
+	mdComponent(plainEl("收到。")),
+	`{"tag":"column_set","property":{"columns":[`+
+		cardColumn("weighted", mdComponent(plainEl("✅ 完成 · 18.2s")))+`,`+
+		cardColumn("auto", cardButton("👍", cardCallback))+`,`+
+		cardColumn("auto", cardButton("👎", cardCallback))+`]}}`,
+)
+
+// lineOf is the body row drawing text, and where it sits among the rows.
+func lineOf(t *testing.T, rows []msgRow, text string) (msgRow, int) {
+	t.Helper()
+	for i, r := range rows {
+		line := ansi.Strip(r.text)
+		for _, s := range r.segs {
+			line += ansi.Strip(s.text)
+		}
+		if strings.Contains(line, text) {
+			return r, i
+		}
+	}
+	t.Fatalf("no row draws %q", text)
+	return msgRow{}, 0
+}
+
+func TestCardRows_AFooterThatFitsSharesOneRow(t *testing.T) {
+	st := baseStyle()
+	rows := renderRows([]store.Message{footerCard}, st)
+	row, i := lineOf(t, rows, "完成")
+	line, _ := Model{}.rowLine(row, st.width)
+	plain := ansi.Strip(line)
+	require.Regexp(t, `✅ 完成 · 18\.2s +👍 +👎 *$`, plain, "status on the left, the buttons on the right")
+
+	require.Len(t, row.zones, 2, "each pill keeps its target")
+	for _, z := range row.zones {
+		pill := ansi.Strip(cut(cutLeft(line, z.x0), z.x1-z.x0))
+		require.True(t, strings.Contains(pill, "👍") || strings.Contains(pill, "👎"), "zone %v covers %q", z, pill)
+	}
+	_, j := lineOf(t, rows, "收到")
+	require.Equal(t, j+2, i, "a blank line parts the footer from the answer")
+}
+
+func TestCardRows_AFooterTooWideForThePaneStacks(t *testing.T) {
+	st := baseStyle()
+	st.width = leadWidth + 16
+	rows := renderRows([]store.Message{footerCard}, st)
+	status, i := lineOf(t, rows, "完成")
+	require.Empty(t, status.zones, "the status has a line of its own")
+	pills, k := lineOf(t, rows, "👍")
+	require.Equal(t, i+1, k, "and the buttons the line below it")
+	require.Len(t, pills.zones, 2)
+}
+
+func TestRenderInline_AFontTagColoursItsText(t *testing.T) {
+	ms := mentionsIn("", "")
+	out := renderInline(`<font color="red">**告警**</font> 已恢复`, ms)
+	require.Equal(t, "告警 已恢复", ansi.Strip(out), "the tag is drawn, not spelled")
+	require.Contains(t, out, lipgloss.NewStyle().Foreground(colErr).Bold(true).Render("告警"))
+	require.Equal(t, "已恢复", ansi.Strip(renderInline(`<font color="grey-600">已恢复</font>`, ms)),
+		"a shade of a colour is that colour")
+	require.Equal(t, "告警", inlineText(`<font color="red">告警</font>`), "the one-line gist reads the words")
+}
+
+func TestCardRows_ACentredBlockSitsInTheMiddle(t *testing.T) {
+	st := baseStyle()
+	title := `{"tag":"markdown","property":{"textAlign":"center","textStyle":{"size":"heading"},` +
+		`"elements":[{"tag":"plain_text","property":{"content":"每日巡检"}}]}}`
+	rows := renderRows([]store.Message{bodyCard(title)}, st)
+	row, _ := lineOf(t, rows, "每日巡检")
+	text := strings.TrimRight(ansi.Strip(row.text), " ")
+	pad := len(text) - len(strings.TrimLeft(text, " "))
+	require.Equal(t, (st.inner()-ansi.StringWidth("每日巡检"))/2, pad, "centred in the body")
+	require.Contains(t, row.text, "\x1b[1m", "a heading-sized title is bold")
+}
+
+func TestCardHead_PaintsTheTemplateAcrossTheRow(t *testing.T) {
+	st := baseStyle()
+	rows := renderRows([]store.Message{weeklyCard}, st)
+	row, _ := lineOf(t, rows, "设备版本周报")
+	require.Equal(t, st.inner(), ansi.StringWidth(row.text), "the band runs the width of the body")
+	require.Contains(t, row.text, ansi.Style{}.BackgroundColor(cardTemplates["blue"].bg).String()[2:], "in the template's colour")
+}
+
+func TestCardButtons_EachTypeHasItsOwnPill(t *testing.T) {
+	pill := func(typ string) string {
+		return cardButtons([]card.Button{{Label: "停止", Type: typ}}, 40, "")[0].text
+	}
+	require.NotEqual(t, pill("default"), pill("danger"))
+	require.NotEqual(t, pill("default"), pill("primary"))
+	require.NotContains(t, pill("text"), "\x1b[48", "a text button lays no fill")
+	require.Equal(t, "停止", strings.TrimSpace(ansi.Strip(pill("danger"))))
+}
+
+func TestCardButtons_AFillButtonSpansTheLine(t *testing.T) {
+	lines := cardButtons([]card.Button{{Label: "停止", Type: "danger", Fill: true}}, 30, applink.ChatLink("oc_ops", 1))
+	require.Len(t, lines, 1)
+	require.Equal(t, 30, ansi.StringWidth(lines[0].text))
+	require.Len(t, lines[0].zones, 1)
+	require.Equal(t, 30, lines[0].zones[0].x1-lines[0].zones[0].x0, "the whole line is the button")
+	text := ansi.Strip(lines[0].text)
+	require.Equal(t, len(text)-len(strings.TrimLeft(text, " ")), len(text)-len(strings.TrimRight(text, " ")),
+		"the label sits in the middle")
+}
+
+func TestRowLine_TheSelectionCoversAPanel(t *testing.T) {
+	m := Model{th: themeFor(lipgloss.Color("#ffffff"), false)}
+	row := msgRow{text: "状态", panel: true}
+	plain := m.paneLine(row, 20, false, false)
+	require.Contains(t, plain, ansi.Style{}.BackgroundColor(m.th.panel.GetBackground()).String()[2:], "a panel lays its shade")
+	selected := m.paneLine(row, 20, true, true)
+	require.NotContains(t, selected, ansi.Style{}.BackgroundColor(m.th.panel.GetBackground()).String()[2:],
+		"a selected row shows the selection, not the panel under it")
 }

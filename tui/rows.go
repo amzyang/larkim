@@ -60,6 +60,9 @@ type msgRow struct {
 	// emoji this terminal may have no character for, next to a count that is
 	// ordinary text.
 	segs []rowSeg
+	// panel marks a row a card lays its panel under: the shade the client
+	// puts behind a column_set given a background.
+	panel bool
 	// tinted marks a row of pieces a selection still colours. Body text earns
 	// it — an emoji drawn over the tint is what the client shows, and a row
 	// left plain inside a selected block reads as a hole. A chip does not: it
@@ -1012,24 +1015,188 @@ func reactionRows(x store.Message, idx int, st msgStyle, g *leads) []msgRow {
 // it.
 func cardRows(c card.Card, x store.Message, idx int, st msgStyle, g *leads, ms mentions) []msgRow {
 	var rows []msgRow
-	if head := cardHead(c); head != "" {
-		rows = textRows(wrap(head, st.inner()), idx, g)
-	}
-	for _, b := range c.Blocks {
-		switch {
-		case b.ImageKey != "":
-			rows = append(rows, pictureRows(b.ImageKey, x, idx, st, g)...)
-		case len(b.Buttons) > 0:
-			for _, l := range cardButtons(b.Buttons, st.inner(), applink.ChatLink(x.ChatID, x.MessagePosition)) {
-				row := msgRow{lead: g.take(), text: l.text, idx: idx}
-				row.addZones(l.zones)
-				rows = append(rows, row)
+	rows = textRows(cardHead(c, st.inner()), idx, g)
+	client := applink.ChatLink(x.ChatID, x.MessagePosition)
+	prevText, prevPanel := false, false
+	for i, b := range c.Blocks {
+		parts := []card.Block{b}
+		var line []rowSeg
+		var pills []clickZone
+		abreast := false
+		if len(b.Row) > 0 {
+			if line, pills, abreast = layCardRow(b.Row, x, idx, st, ms, client); !abreast {
+				parts = b.Stacked()
 			}
-		default:
-			rows = append(rows, mdRows(b.Markdown, x, idx, st, g, ms)...)
+		}
+		if len(parts) == 0 {
+			continue
+		}
+		top, bottom := parts[0].Markdown != "", parts[len(parts)-1].Markdown != ""
+		if abreast {
+			top = slices.ContainsFunc(b.Row, func(c card.Cell) bool { return c.Markdown != "" })
+			bottom = top
+		}
+		panel := b.Background != ""
+		// Text beside text is two paragraphs, which a blank line parts, the
+		// way it parts them in the document the card copies out as. Inside
+		// one panel the line between them is the panel's too.
+		if i > 0 && prevText && top {
+			rows = append(rows, msgRow{lead: g.take(), idx: idx, panel: panel && prevPanel})
+		}
+		prevText, prevPanel = bottom, panel
+		from := len(rows)
+		if abreast {
+			row := msgRow{lead: g.take(), idx: idx, tinted: true, segs: line}
+			row.placeZones()
+			row.addZones(pills)
+			rows = append(rows, row)
+		} else {
+			bold := ms
+			if b.Bold {
+				bold = ms.styled(ms.base.Bold(true))
+			}
+			for _, part := range parts {
+				rows = append(rows, cardBlockRows(part, x, idx, st, g, bold, client)...)
+			}
+		}
+		for j := from; j < len(rows); j++ {
+			rows[j].align(b.Align, st.inner())
+			rows[j].panel = panel
 		}
 	}
 	return rows
+}
+
+// align moves a row's content to where the card sets it in w columns:
+// centred, or against the right edge. Left is where it already stands.
+func (r *msgRow) align(how string, w int) {
+	if how != "center" && how != "right" || r.pic.cols > 0 {
+		return
+	}
+	used := segsWidth(r.segs)
+	if len(r.segs) == 0 {
+		used = ansi.StringWidth(strings.TrimRight(ansi.Strip(r.text), " "))
+		r.text = cut(r.text, used)
+	}
+	pad := w - used
+	if how == "center" {
+		pad /= 2
+	}
+	if pad <= 0 {
+		return
+	}
+	if len(r.segs) == 0 {
+		r.text = strings.Repeat(" ", pad) + r.text
+		return
+	}
+	r.segs = append([]rowSeg{{text: strings.Repeat(" ", pad)}}, r.segs...)
+	r.placeZones()
+}
+
+// cardBlockRows draw one block of a card body.
+func cardBlockRows(b card.Block, x store.Message, idx int, st msgStyle, g *leads, ms mentions, client string) []msgRow {
+	switch {
+	case b.ImageKey != "":
+		return pictureRows(b.ImageKey, x, idx, st, g)
+	case len(b.Buttons) > 0:
+		var rows []msgRow
+		for _, l := range cardButtons(b.Buttons, st.inner(), client) {
+			row := msgRow{lead: g.take(), text: l.text, idx: idx}
+			row.addZones(l.zones)
+			rows = append(rows, row)
+		}
+		return rows
+	}
+	return mdRows(b.Markdown, x, idx, st, g, ms)
+}
+
+// cardCellGap is the columns between two cells of a row: the gap the client
+// leaves between columns, at the width a terminal can draw it.
+const cardCellGap = 1
+
+// layCardRow lays a column_set out on the one line the client draws it on:
+// an auto column as wide as it needs, the columns weighted between them
+// sharing what is left by weight, the way the client's flex layout shares
+// it. It reports false when that line cannot hold them — a cell that runs to
+// a second line, or a share too narrow for what it holds — and the row is
+// then drawn stacked. The pills' targets come back measured from where the
+// row's content starts.
+func layCardRow(row []card.Cell, x store.Message, idx int, st msgStyle, ms mentions, client string) ([]rowSeg, []clickZone, bool) {
+	type laid struct {
+		segs  []rowSeg
+		zones []clickZone
+		cols  int
+	}
+	cells := make([]laid, len(row))
+	room := st.inner() - cardCellGap*(len(row)-1)
+	autos, weights := 0, 0
+	for i, c := range row {
+		var l laid
+		switch {
+		case c.Markdown != "":
+			// Drawn against leads of its own: what this measures is not yet
+			// on screen, and the message's leads go to the rows that are.
+			rs := mdRows(c.Markdown, x, idx, st, &leads{b: &block{}}, ms)
+			if len(rs) != 1 || rs[0].pic.cols > 0 {
+				return nil, nil, false
+			}
+			if l.segs = rs[0].segs; len(l.segs) == 0 {
+				text := rs[0].text
+				l.segs = []rowSeg{{text: cut(text, ansi.StringWidth(strings.TrimRight(ansi.Strip(text), " ")))}}
+			}
+			l.cols = segsWidth(l.segs)
+		case len(c.Buttons) > 0:
+			lines := cardButtons(c.Buttons, st.inner(), client)
+			if len(lines) != 1 {
+				return nil, nil, false
+			}
+			l.segs, l.zones, l.cols = []rowSeg{{text: lines[0].text}}, lines[0].zones, lipgloss.Width(lines[0].text)
+		}
+		if c.Weight > 0 {
+			weights += c.Weight
+		} else {
+			autos += l.cols
+		}
+		cells[i] = l
+	}
+	share := room - autos
+	if share < 0 {
+		return nil, nil, false
+	}
+	var line []rowSeg
+	var zones []clickZone
+	at, handed, given := 0, 0, 0
+	for i, c := range row {
+		l := cells[i]
+		width := l.cols
+		if c.Weight > 0 {
+			// Each takes its share of the whole, and the last what rounding
+			// left, so the row ends at the edge of the pane.
+			if handed += c.Weight; handed == weights {
+				width = share - given
+			} else {
+				width = share * c.Weight / weights
+			}
+			given += width
+			if l.cols > width {
+				return nil, nil, false
+			}
+		}
+		if i > 0 {
+			line = append(line, rowSeg{text: strings.Repeat(" ", cardCellGap)})
+			at += cardCellGap
+		}
+		line = append(line, l.segs...)
+		if pad := width - l.cols; pad > 0 {
+			line = append(line, rowSeg{text: strings.Repeat(" ", pad)})
+		}
+		for _, z := range l.zones {
+			z.x0, z.x1 = z.x0+at, z.x1+at
+			zones = append(zones, z)
+		}
+		at += width
+	}
+	return line, zones, true
 }
 
 // pictureRows reserve the cells a downloaded image will occupy, behind the

@@ -2,6 +2,7 @@ package card
 
 import (
 	"encoding/json"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -139,13 +140,13 @@ func TestParse_ButtonsOfOneRowStayTogether(t *testing.T) {
 	c, ok := Parse(cardJSON(`{"tag":"action","property":{"actions":[`+
 		button("认领", callback)+`,`+button("忽略", callback)+`]}}`, nil))
 	require.True(t, ok)
-	require.Equal(t, []Block{{Buttons: []Button{{Label: "认领"}, {Label: "忽略"}}}}, c.Blocks)
+	require.Equal(t, []Block{{Buttons: []Button{{Label: "认领", Type: "default"}, {Label: "忽略", Type: "default"}}}}, c.Blocks)
 }
 
 func TestParse_ButtonKeepsTheLinkItOpens(t *testing.T) {
 	c, ok := Parse(cardJSON(button("详情", `{"type":"open_url","action":{"url":"https://example.com/run/1"}}`), nil))
 	require.True(t, ok)
-	require.Equal(t, []Block{{Buttons: []Button{{Label: "详情", URL: "https://example.com/run/1"}}}}, c.Blocks)
+	require.Equal(t, []Block{{Buttons: []Button{{Label: "详情", URL: "https://example.com/run/1", Type: "default"}}}}, c.Blocks)
 }
 
 func TestParse_ButtonTakesTheTargetMeantForThisMachine(t *testing.T) {
@@ -162,7 +163,7 @@ func TestParse_ButtonTakesTheTargetMeantForThisMachine(t *testing.T) {
 func TestParse_ACallbackButtonLeadsNowhere(t *testing.T) {
 	c, ok := Parse(cardJSON(button("同意", callback), nil))
 	require.True(t, ok)
-	require.Equal(t, []Button{{Label: "同意"}}, c.Blocks[0].Buttons)
+	require.Equal(t, []Button{{Label: "同意", Type: "default"}}, c.Blocks[0].Buttons)
 }
 
 func TestParse_ColumnsStack(t *testing.T) {
@@ -296,5 +297,129 @@ func TestMessageText_ACardIsTheDocumentItDrawsRenderedOrNot(t *testing.T) {
 		text, raw := MessageText(body, "<card>\n报表\n</card>", rendered)
 		require.Equal(t, "# 报表", text)
 		require.False(t, raw, "a card's own JSON is the document, never a payload in its place")
+	}
+}
+
+// A card body is a list of components, and the client draws each markdown
+// component as a paragraph of its own: the one below never runs on from the
+// last word of the one above.
+func TestParse_EachMarkdownComponentIsAParagraphOfItsOwn(t *testing.T) {
+	body := `{"schema":"2.0","body":{"tag":"body","property":{"elements":[` +
+		`{"tag":"markdown","property":{"elements":[{"tag":"plain_text","property":{"content":"状态已确认。"}}]}},` +
+		`{"tag":"markdown","property":{"elements":[{"tag":"plain_text","property":{"content":"sessionId: "}},` +
+		`{"tag":"code_span","property":{"content":"s_demo"}}]}}]}}}`
+
+	c, ok := Parse(envelopeJSON(body, nil))
+	require.True(t, ok)
+	require.Equal(t, []Block{{Markdown: "状态已确认。\n\nsessionId: `s_demo`"}}, c.Blocks)
+}
+
+// bodyJSON is a card whose body holds the components as they are, without the
+// one markdown component cardJSON puts them in.
+func bodyJSON(components ...string) string {
+	return envelopeJSON(`{"schema":"2.0","body":{"tag":"body","property":{"elements":[`+
+		strings.Join(components, ",")+`]}}}`, nil)
+}
+
+// column is one column of a column_set, sized the way the card sizes it.
+func column(width string, weight int, elements string) string {
+	return `{"tag":"column","property":{"width":"` + width + `","weight":` + strconv.Itoa(weight) +
+		`,"elements":[` + elements + `]}}`
+}
+
+func columnSet(columns ...string) string {
+	return `{"tag":"column_set","property":{"columns":[` + strings.Join(columns, ",") + `]}}`
+}
+
+func mdOf(text string) string {
+	return `{"tag":"markdown","property":{"elements":[{"tag":"plain_text","property":{"content":"` + text + `"}}]}}`
+}
+
+// The footer an agent bot signs its reply with: a status on the left, the
+// buttons that rate the reply on the right, all on one line in the client.
+func TestParse_ASimpleColumnSetIsOneRow(t *testing.T) {
+	c, ok := Parse(bodyJSON(columnSet(
+		column("weighted", 1, mdOf("✅ 完成")),
+		column("auto", 1, button("👍", callback)),
+		column("auto", 1, button("👎", callback)),
+	)))
+	require.True(t, ok)
+	require.Equal(t, []Block{{Row: []Cell{
+		{Markdown: "✅ 完成", Weight: 1},
+		{Buttons: []Button{{Label: "👍", Type: "default"}}},
+		{Buttons: []Button{{Label: "👎", Type: "default"}}},
+	}}}, c.Blocks, "an auto column takes no weight, though the card gives it one")
+	require.Equal(t, "✅ 完成\n\n[👍] [👎]", c.Markdown(), "a document still stacks the columns")
+}
+
+func TestParse_AColumnHoldingMoreThanALineStacks(t *testing.T) {
+	c, ok := Parse(bodyJSON(columnSet(column("weighted", 1, mdOf("名称")), column("weighted", 1, elList))))
+	require.True(t, ok)
+	for _, b := range c.Blocks {
+		require.Empty(t, b.Row, "a list cannot stand in a row")
+	}
+	require.Equal(t, "名称\n\n- 甲\n  - 乙", c.Markdown())
+}
+
+// A colour is spelled the way the card's own markdown spells one, so the
+// reader drawing the block colours the words the sender coloured.
+func TestParse_ColouredTextIsSpelledInTheCardsFontTag(t *testing.T) {
+	require.Equal(t, `<font color="red">**告警**</font>`, blocks(t,
+		`{"tag":"plain_text","property":{"content":"告警","textStyle":{"attributes":["bold"],"color":"red"}}}`)[0].Markdown,
+		"the colour stands outside the emphasis, where a parser still reads both")
+	require.Equal(t, "正常", blocks(t,
+		`{"tag":"plain_text","property":{"content":"正常","textStyle":{"attributes":[],"color":"default"}}}`)[0].Markdown)
+}
+
+func TestCard_MarkdownDropsTheFontTags(t *testing.T) {
+	require.Equal(t, "**告警** 已恢复", markdown(t,
+		`{"tag":"plain_text","property":{"content":"告警","textStyle":{"attributes":["bold"],"color":"red"}}},`+
+			`{"tag":"plain_text","property":{"content":" 已恢复","textStyle":{"attributes":[],"color":"grey"}}}`),
+		"a copy, a search and the assistant read the words, not the colour")
+}
+
+func TestParse_AHeadingSizedComponentIsABoldBlockOfItsOwn(t *testing.T) {
+	title := `{"tag":"markdown","property":{"textAlign":"center","textStyle":{"size":"heading"},` +
+		`"elements":[{"tag":"plain_text","property":{"content":"每日巡检"}}]}}`
+	c, ok := Parse(bodyJSON(mdOf("前言"), title, mdOf("正文")))
+	require.True(t, ok)
+	require.Equal(t, []Block{
+		{Markdown: "前言"},
+		{Markdown: "每日巡检", Bold: true, Align: "center"},
+		{Markdown: "正文"},
+	}, c.Blocks)
+	require.Equal(t, "前言\n\n每日巡检\n\n正文", c.Markdown())
+}
+
+func TestParse_TheHeaderKeepsItsTemplate(t *testing.T) {
+	c, ok := Parse(headedJSON("告警", "", "P1", `{"tag":"plain_text","property":{"content":"详情"}}`))
+	require.True(t, ok)
+	require.Equal(t, "blue", c.Template)
+}
+
+func TestParse_AButtonKeepsItsTypeAndWidth(t *testing.T) {
+	stop := `{"tag":"button","property":{"type":"danger","widthValue":{"type":"builtin_width","value":"fill"},` +
+		`"text":{"tag":"plain_text","property":{"content":"停止"}},"actions":[` + callback + `]}}`
+	c, ok := Parse(cardJSON(stop+","+button("详情", callback), nil))
+	require.True(t, ok)
+	require.Equal(t, []Block{
+		{Buttons: []Button{{Label: "停止", Type: "danger", Fill: true}}},
+		{Buttons: []Button{{Label: "详情", Type: "default"}}},
+	}, c.Blocks, "a button filling the width stands on a line of its own")
+}
+
+func TestParse_AColumnSetsBackgroundMarksEveryBlockItMakes(t *testing.T) {
+	set := func(columns ...string) string {
+		return `{"tag":"column_set","property":{"backgroundStyle":"grey-100","columns":[` + strings.Join(columns, ",") + `]}}`
+	}
+	c, ok := Parse(bodyJSON(mdOf("前言"), set(column("weighted", 1, mdOf("状态")))))
+	require.True(t, ok)
+	require.Equal(t, []Block{{Markdown: "前言"}, {Row: []Cell{{Markdown: "状态", Weight: 1}}, Background: "grey-100"}}, c.Blocks)
+
+	c, ok = Parse(bodyJSON(set(column("weighted", 1, elList))))
+	require.True(t, ok)
+	require.NotEmpty(t, c.Blocks)
+	for _, b := range c.Blocks {
+		require.Equal(t, "grey-100", b.Background, "a stacked column_set is one panel still")
 	}
 }

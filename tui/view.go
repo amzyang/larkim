@@ -154,6 +154,9 @@ var (
 // dark palettes alike.
 type theme struct {
 	sel, selInact lipgloss.Style
+	// panel is the shade a card lays under a column_set given a background:
+	// fainter than a selection, so a panel never reads as one.
+	panel lipgloss.Style
 }
 
 func themeFor(bg color.Color, dark bool) theme {
@@ -166,6 +169,7 @@ func themeFor(bg color.Color, dark bool) theme {
 	return theme{
 		sel:      lipgloss.NewStyle().Background(shade(0.12, 0.18)),
 		selInact: lipgloss.NewStyle().Background(shade(0.06, 0.09)),
+		panel:    lipgloss.NewStyle().Background(shade(0.035, 0.05)),
 	}
 }
 
@@ -504,6 +508,24 @@ func (m *Model) rebuildThread() {
 		st.quoted = x.MessageID
 	}
 	m.threadRows = renderRows(m.thread, st)
+}
+
+// paneLine is one row as a pane draws it: under the selection when it is in
+// one, else over the panel its card lays under it. The selection wins because
+// it re-asserts its shade only after each reset, and a panel's own shade
+// standing inside the line would hold until the next one.
+func (m Model) paneLine(r msgRow, w int, selected, focused bool) string {
+	line, tint := m.rowLine(r, w)
+	switch {
+	case selected && tint && !r.plain:
+		return m.highlight(line, focused)
+	case r.panel:
+		// The lead stays clear: the panel is the card's, and the disc and
+		// the marker beside it belong to the message.
+		lead := m.leadCells(r.lead)
+		return lead + paint(m.th.panel, strings.TrimPrefix(line, lead))
+	}
+	return line
 }
 
 // rowLine is the drawn form of one row, and whether a selection may tint it.
@@ -955,11 +977,7 @@ func (m Model) renderMessages(h int) string {
 			lines = append(lines, fit("", w))
 			continue
 		}
-		line, tint := m.rowLine(r, w)
-		if tint && !r.plain && m.inSelection(paneMessages, r.idx) {
-			line = m.highlight(line, m.focus == paneMessages)
-		}
-		lines = append(lines, line)
+		lines = append(lines, m.paneLine(r, w, m.inSelection(paneMessages, r.idx), m.focus == paneMessages))
 	}
 	// The panel answers for an empty page by the messages it holds, not by the
 	// rows: with every section emptied out it still draws the line counting
@@ -1061,11 +1079,7 @@ func (m Model) renderThread(h int) string {
 	}
 	for i := m.threadTop; i < len(m.threadRows) && len(lines) < h; i++ {
 		r := m.threadRows[i]
-		line, tint := m.rowLine(r, w)
-		if tint && !r.plain && m.inSelection(paneThread, r.idx) {
-			line = m.highlight(line, m.focus == paneThread)
-		}
-		lines = append(lines, line)
+		lines = append(lines, m.paneLine(r, w, m.inSelection(paneThread, r.idx), m.focus == paneThread))
 	}
 	for len(lines) < h {
 		lines = append(lines, fit("", w))

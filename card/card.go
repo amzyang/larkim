@@ -7,6 +7,7 @@ package card
 import (
 	"encoding/json"
 	"maps"
+	"regexp"
 	"slices"
 	"strings"
 )
@@ -17,6 +18,48 @@ type Block struct {
 	Markdown string
 	ImageKey string
 	Buttons  []Button
+	// Row is a column_set the client draws on one line: each cell a line of
+	// text or a set of buttons. Columns that hold more than that arrive
+	// stacked instead, as the blocks they are.
+	Row []Cell
+	// Bold and Align are how the client sets a component apart: a title the
+	// card sizes as a heading, centred over the body.
+	Bold  bool
+	Align string
+	// Background is the panel a column_set lays under its blocks, in the
+	// card's own name for it: grey-100, purple-50.
+	Background string
+}
+
+// Cell is one column of a Row. Weight is the share of the line a weighted
+// column takes; an auto column is zero and takes the width it needs.
+type Cell struct {
+	Markdown string
+	Buttons  []Button
+	Weight   int
+}
+
+// Stacked is the block as a document reads it, a row's columns one under
+// another. Buttons in neighbouring columns stay on the one line a row of
+// buttons makes, which is how an action row reads too.
+func (b Block) Stacked() []Block {
+	if len(b.Row) == 0 {
+		return []Block{b}
+	}
+	var out []Block
+	for _, c := range b.Row {
+		switch {
+		case c.Markdown != "":
+			out = append(out, Block{Markdown: c.Markdown, Background: b.Background})
+		case len(c.Buttons) > 0:
+			if n := len(out); n > 0 && len(out[n-1].Buttons) > 0 {
+				out[n-1].Buttons = append(out[n-1].Buttons, c.Buttons...)
+				continue
+			}
+			out = append(out, Block{Buttons: slices.Clone(c.Buttons), Background: b.Background})
+		}
+	}
+	return out
 }
 
 // Button is one of the buttons a card's action row draws: the label it shows,
@@ -26,6 +69,11 @@ type Block struct {
 type Button struct {
 	Label string
 	URL   string
+	// Type is the look the card gives the button — default, primary, danger
+	// and their filled and text-only kinds — and Fill that it spans the width
+	// it stands in.
+	Type string
+	Fill bool
 }
 
 // Card is an interactive message taken apart: what the Feishu client draws in
@@ -33,6 +81,9 @@ type Button struct {
 // the places a card is named rather than drawn.
 type Card struct {
 	Title, Subtitle, Tags string
+	// Template is the colour of the header band: red for an alarm, green for
+	// a job done, in the card's own names for them.
+	Template string
 	// Summary is what the sending app calls the card where there is room for
 	// a line and no more: the chat list and the notification. It is the
 	// card's own words for itself, so it beats anything read off the body.
@@ -63,10 +114,11 @@ func Parse(contentRaw string) (Card, bool) {
 			}
 		}
 		c.Tags = strings.Join(tags, " ")
+		c.Template = p.Template
 	}
 	c.Summary = strings.TrimSpace(d.Config.Summary.Content)
 	att := attachedOf(env.Attachment)
-	w := writer{images: att.images, people: att.people}
+	w := writer{images: att.images, people: att.people, top: true}
 	if d.Body != nil {
 		w.elements(d.Body.children())
 	}
@@ -85,24 +137,31 @@ func (c Card) Markdown() string {
 	if head := strings.TrimSpace(strings.TrimSpace(c.Title+" "+c.Subtitle) + " " + c.Tags); head != "" {
 		parts = append(parts, head)
 	}
-	for _, b := range c.Blocks {
-		switch {
-		case b.Markdown != "":
-			parts = append(parts, b.Markdown)
-		case len(b.Buttons) > 0:
-			labels := make([]string, 0, len(b.Buttons))
-			for _, btn := range b.Buttons {
-				if btn.URL == "" {
-					labels = append(labels, "["+btn.Label+"]")
-					continue
+	for _, top := range c.Blocks {
+		for _, b := range top.Stacked() {
+			switch {
+			case b.Markdown != "":
+				parts = append(parts, fontTag.ReplaceAllString(b.Markdown, ""))
+			case len(b.Buttons) > 0:
+				labels := make([]string, 0, len(b.Buttons))
+				for _, btn := range b.Buttons {
+					if btn.URL == "" {
+						labels = append(labels, "["+btn.Label+"]")
+						continue
+					}
+					labels = append(labels, "["+btn.Label+"]("+btn.URL+")")
 				}
-				labels = append(labels, "["+btn.Label+"]("+btn.URL+")")
+				parts = append(parts, strings.Join(labels, " "))
 			}
-			parts = append(parts, strings.Join(labels, " "))
 		}
 	}
 	return strings.Join(parts, "\n\n")
 }
+
+// fontTag is the card markdown's own spelling of a colour. A document read
+// anywhere but the pane has no colour to show, and the tag would be noise in
+// a copy, a search index and the assistant's context alike.
+var fontTag = regexp.MustCompile(`</?font\b[^>]*>`)
 
 // MessageText is what a message says wherever it is copied out as text: a
 // card is the document it draws, anything else its rendering while that is
@@ -218,6 +277,13 @@ type prop struct {
 	UserID       string                 `json:"userID"`
 	Key          string                 `json:"key"`
 	TextStyle    textStyle              `json:"textStyle"`
+	// The style fields: how the client draws the element, not what it says.
+	TextAlign       string    `json:"textAlign"`
+	Template        string    `json:"template"`
+	BackgroundStyle string    `json:"backgroundStyle"`
+	Color           string    `json:"color"`
+	Type            string    `json:"type"`
+	WidthValue      widthSpec `json:"widthValue"`
 }
 
 type (
@@ -229,6 +295,14 @@ type (
 	}
 	textStyle struct {
 		Attributes []string `json:"attributes"`
+		Color      string   `json:"color"`
+		Size       string   `json:"size"`
+	}
+	// widthSpec is how wide an element stands. Its value is a number of
+	// pixels for some elements and a keyword for others, so it stays raw.
+	widthSpec struct {
+		Type  string          `json:"type"`
+		Value json.RawMessage `json:"value"`
 	}
 	// listItem is one line of a list. Nesting is a level on the item itself,
 	// not a list inside a list.

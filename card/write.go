@@ -16,6 +16,10 @@ type writer struct {
 	people map[string]person
 	blocks []Block
 	b      strings.Builder
+	// top is the writer of the card body itself. Only there does a component
+	// the client sets apart — a centred title, a panel — become a block of
+	// its own: inside a table cell or a list item there is no block to make.
+	top bool
 }
 
 func (w *writer) done() []Block {
@@ -49,9 +53,13 @@ func (w *writer) block(s string) {
 	w.gap()
 }
 
-func (w *writer) flush() {
+func (w *writer) flush() { w.flushAs(Block{}) }
+
+// flushAs closes the block being built as b, which carries how it is drawn.
+func (w *writer) flushAs(b Block) {
 	if md := strings.TrimRight(strings.TrimLeft(w.b.String(), "\n"), " \t\n"); md != "" {
-		w.blocks = append(w.blocks, Block{Markdown: md})
+		b.Markdown = md
+		w.blocks = append(w.blocks, b)
 	}
 	w.b.Reset()
 }
@@ -73,8 +81,9 @@ func (w *writer) button(b Button) {
 	if b.Label == "" {
 		return
 	}
-	if w.b.Len() == 0 && len(w.blocks) > 0 {
-		if last := &w.blocks[len(w.blocks)-1]; last.Buttons != nil {
+	// A button filling its width shares the line with nothing.
+	if w.b.Len() == 0 && len(w.blocks) > 0 && !b.Fill {
+		if last := &w.blocks[len(w.blocks)-1]; last.Buttons != nil && !last.Buttons[0].Fill {
 			last.Buttons = append(last.Buttons, b)
 			return
 		}
@@ -162,7 +171,7 @@ func (w *writer) element(e elem) {
 	p := e.Property
 	switch e.Tag {
 	case "plain_text", "text":
-		w.write(styled(content(p), p.TextStyle))
+		w.write(coloured(styled(content(p), p.TextStyle), p.TextStyle.Color))
 	case "br":
 		w.write("\n")
 	case "code_span":
@@ -175,7 +184,7 @@ func (w *writer) element(e elem) {
 		w.write("[" + plain(p.Text) + "](" + p.URL.URL + ")")
 	case "text_tag":
 		if s := plain(p.Text); s != "" {
-			w.write("「" + s + "」")
+			w.write(coloured("「"+s+"」", p.Color))
 		}
 	case "at":
 		w.write(w.at(p.UserID))
@@ -202,7 +211,8 @@ func (w *writer) element(e elem) {
 	case "img":
 		w.image(p.ImageID)
 	case "button":
-		w.button(Button{Label: plain(p.Text), URL: buttonURL(p.Actions)})
+		fill := p.WidthValue.Type == "builtin_width" && string(p.WidthValue.Value) == `"fill"`
+		w.button(Button{Label: plain(p.Text), URL: buttonURL(p.Actions), Type: p.Type, Fill: fill})
 	case "div":
 		w.blockOf(p.Text)
 		for _, f := range p.Fields {
@@ -214,14 +224,31 @@ func (w *writer) element(e elem) {
 		w.block(text)
 		w.after(extra)
 	case "column_set":
-		// Columns stand side by side in the client and stack here: a
-		// document has no room to keep them abreast.
 		var cols []elem
-		if json.Unmarshal(p.Columns, &cols) == nil {
+		if json.Unmarshal(p.Columns, &cols) != nil {
+			return
+		}
+		panel := w.top && p.BackgroundStyle != "" && p.BackgroundStyle != "default"
+		if panel {
+			w.flush()
+		}
+		from := len(w.blocks)
+		if row, ok := w.row(p.Columns, cols); ok {
+			w.flush()
+			w.blocks = append(w.blocks, Block{Row: row})
+		} else {
+			// Columns holding more than a line stack: a pane that could keep
+			// them abreast would still have to wrap each into a sliver of it.
 			for _, col := range cols {
 				w.gap()
 				w.element(col)
 				w.gap()
+			}
+		}
+		if panel {
+			w.flush()
+			for i := from; i < len(w.blocks); i++ {
+				w.blocks[i].Background = p.BackgroundStyle
 			}
 		}
 	case "action", "actions":
@@ -234,7 +261,21 @@ func (w *writer) element(e elem) {
 		w.elements(p.Elements)
 	case "markdown", "markdown_v1":
 		if els := e.children(); len(els) > 0 {
+			bold, align := p.TextStyle.Size == "heading", p.TextAlign
+			if align == "left" {
+				align = ""
+			}
+			if w.top && (bold || align != "") {
+				w.flush()
+				w.elements(els)
+				w.flushAs(Block{Bold: bold, Align: align})
+				return
+			}
+			// The client draws each markdown component as a paragraph of its
+			// own, so the next one never runs on from this one's last word.
+			w.gap()
 			w.elements(els)
+			w.gap()
 			return
 		}
 		w.block(content(p))
@@ -245,6 +286,51 @@ func (w *writer) element(e elem) {
 		// An element this package has no frame for still shows what it holds.
 		w.elements(e.children())
 	}
+}
+
+// row reads a column_set as the one line the client draws it on, which it is
+// when every column holds a line of text, a set of buttons, or nothing, and
+// one of them holds something.
+//
+// The widths are read here from the raw columns rather than through prop:
+// Feishu spells them in more than one shape, and one it spells unexpectedly
+// would otherwise fail the whole card rather than just the row.
+func (w *writer) row(raw json.RawMessage, cols []elem) ([]Cell, bool) {
+	var sizes []struct {
+		Property struct {
+			Width  string `json:"width"`
+			Weight int    `json:"weight"`
+		} `json:"property"`
+	}
+	if json.Unmarshal(raw, &sizes) != nil || len(sizes) != len(cols) {
+		return nil, false
+	}
+	cells := make([]Cell, 0, len(cols))
+	filled := false
+	for i, col := range cols {
+		sub := writer{images: w.images, people: w.people}
+		sub.element(col)
+		blocks := sub.done()
+		if len(blocks) > 1 {
+			return nil, false
+		}
+		var c Cell
+		if len(blocks) == 1 {
+			b := blocks[0]
+			if b.ImageKey != "" || len(b.Row) > 0 || strings.Contains(b.Markdown, "\n") {
+				return nil, false
+			}
+			c.Markdown, c.Buttons, filled = b.Markdown, b.Buttons, true
+		}
+		// A column sized in pixels is drawn at the width it needs: a terminal
+		// has cells, not pixels. Only a weighted column claims a share, though
+		// every column carries a weight.
+		if sizes[i].Property.Width == "weighted" {
+			c.Weight = max(1, sizes[i].Property.Weight)
+		}
+		cells = append(cells, c)
+	}
+	return cells, filled
 }
 
 func (w *writer) list(items []listItem) {
@@ -369,6 +455,22 @@ func styled(content string, style textStyle) string {
 	for i, l := range lines {
 		if strings.TrimSpace(l) != "" {
 			lines[i] = opening + l + closing
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+// coloured spells the colour a run of text is drawn in the way the card's
+// markdown spells one. It stands outside any emphasis, where a markdown
+// parser still reads the emphasis inside it; the default colour needs no tag.
+func coloured(content, color string) string {
+	if content == "" || color == "" || color == "default" {
+		return content
+	}
+	lines := strings.Split(content, "\n")
+	for i, l := range lines {
+		if strings.TrimSpace(l) != "" {
+			lines[i] = `<font color="` + color + `">` + l + `</font>`
 		}
 	}
 	return strings.Join(lines, "\n")

@@ -255,6 +255,11 @@ func plainAt(s string) string {
 func inlineText(s string) string {
 	return inlineMD.ReplaceAllStringFunc(s, func(m string) string {
 		g := inlineMD.FindStringSubmatch(m)
+		// A font tag is the one run whose first group is not its words: that
+		// is the colour it names.
+		if g[6] != "" || g[7] != "" {
+			return inlineText(g[7])
+		}
 		for _, alt := range g[1:] {
 			if strings.TrimSpace(alt) != "" {
 				return alt

@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"image/color"
 	"regexp"
 	"slices"
 	"strings"
@@ -10,8 +11,8 @@ import (
 )
 
 // inlineMD matches the markup lark-cli renders a message body into: links,
-// bold and italic runs, strikethrough, inline code, and the underline
-// Feishu's rich text carries over. Italics require a non-space immediately
+// bold and italic runs, strikethrough, inline code, the underline Feishu's
+// rich text carries over, and the colour a card spells as a font tag. Italics require a non-space immediately
 // inside the asterisks so ordinary prose ("3 * 4 * 5") is left alone, and the
 // wider asterisk runs come first so a tripled one is not read as an italic
 // wrapping an asterisk, nor a doubled one as an empty italic.
@@ -19,6 +20,7 @@ var inlineMD = regexp.MustCompile(`\[([^\]\n]*)\]\(([^)\s]*)\)` +
 	`|\*\*\*([^*\n]+)\*\*\*` +
 	`|\*\*([^*\n]+)\*\*` +
 	`|<u>([^<]*)</u>` +
+	`|<font color="([^"]*)">(.*?)</font>` +
 	`|~~([^~\n]+)~~` +
 	"|`([^`\n]+)`" +
 	`|\*(\S[^*\n]*)\*`)
@@ -98,18 +100,50 @@ func renderInline(s string, ms mentions) string {
 		case m[10] >= 0:
 			b.WriteString(in(s[m[10]:m[11]], func(st lipgloss.Style) lipgloss.Style { return st.Underline(true) }))
 		case m[12] >= 0:
-			b.WriteString(in(s[m[12]:m[13]], func(st lipgloss.Style) lipgloss.Style { return st.Strikethrough(true) }))
-		case m[14] >= 0:
+			fg, ok := cardColour(s[m[12]:m[13]])
+			b.WriteString(in(s[m[14]:m[15]], func(st lipgloss.Style) lipgloss.Style {
+				if !ok {
+					return st
+				}
+				return st.Foreground(fg)
+			}))
+		case m[16] >= 0:
+			b.WriteString(in(s[m[16]:m[17]], func(st lipgloss.Style) lipgloss.Style { return st.Strikethrough(true) }))
+		case m[18] >= 0:
 			// Code is the one run that is literal by definition: whatever
 			// asterisks are inside it are the code's own.
-			b.WriteString(stCode.Render(s[m[14]:m[15]]))
-		case m[16] >= 0:
-			b.WriteString(in(s[m[16]:m[17]], func(st lipgloss.Style) lipgloss.Style { return st.Italic(true) }))
+			b.WriteString(stCode.Render(s[m[18]:m[19]]))
+		case m[20] >= 0:
+			b.WriteString(in(s[m[20]:m[21]], func(st lipgloss.Style) lipgloss.Style { return st.Italic(true) }))
 		}
 		last = m[1]
 	}
 	b.WriteString(ms.render(s[last:]))
 	return b.String()
+}
+
+// cardColour is the terminal colour closest to one a card names, the shade a
+// name carries after its hyphen left off. The client's palette is wider than
+// the terminal's; each name lands on the colour that keeps its meaning — red
+// for an alarm, grey for an aside. A name with no such colour, default among
+// them, leaves the text as it is.
+func cardColour(name string) (color.Color, bool) {
+	base, _, _ := strings.Cut(name, "-")
+	switch base {
+	case "red", "carmine":
+		return colErr, true
+	case "green", "turquoise":
+		return lipgloss.Color("2"), true
+	case "orange", "yellow":
+		return colWarn, true
+	case "blue", "wathet", "indigo":
+		return colAccent, true
+	case "purple", "violet":
+		return lipgloss.Color("5"), true
+	case "grey", "gray", "neutral":
+		return colDim, true
+	}
+	return nil, false
 }
 
 // wrap breaks styled text to w columns, returning at least one line, each
