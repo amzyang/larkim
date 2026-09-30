@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"charm.land/lipgloss/v2"
+	"github.com/amzyang/larkim/emoji"
 	"github.com/amzyang/larkim/store"
 	"github.com/amzyang/larkim/sync"
 )
@@ -168,9 +169,12 @@ func (d postDoc) paragraph(para []sync.PostElem) []msgRow {
 			rows = append(rows, textRows(codeRows(code, el.Language, d.st.inner(), d.st.dark), d.idx, d.g)...)
 		case "md":
 			// The one element whose text is markdown by the client's own
-			// doing, so it is the one that goes to the markdown path.
+			// doing, so it is the one that goes to the markdown path. Its
+			// text is still verbatim as far as emoji go: Feishu draws an
+			// emoji in a post from an emotion element, never from a name
+			// somebody typed into an md element.
 			flush()
-			rows = append(rows, mdRows(el.Text, d.x, d.idx, d.st, d.g, d.ms)...)
+			rows = append(rows, mdRows(el.Text, d.x, d.idx, d.st, d.g, d.ms.spelling(spellNone))...)
 		case "hr":
 			flush()
 			rows = append(rows, textRows([]string{stDim.Render(strings.Repeat("─", d.st.inner()))}, d.idx, d.g)...)
@@ -184,8 +188,7 @@ func (d postDoc) paragraph(para []sync.PostElem) []msgRow {
 		case "a":
 			segs = append(segs, d.link(el)...)
 		case "emotion":
-			// The shortcode spelling is the one the emoji table is keyed by.
-			segs = append(segs, d.words(":"+el.EmojiType+":", nil)...)
+			segs = append(segs, d.emotion(el.EmojiType)...)
 		case "media":
 			segs = append(segs, rowSeg{text: stDim.Render(msgTypeLabel("media"))})
 		default:
@@ -201,19 +204,40 @@ func (d postDoc) paragraph(para []sync.PostElem) []msgRow {
 	return rows
 }
 
-// words render one element's own text: the addresses written out in it and the
-// emoji the client draws as pictures cut away, and the rest drawn in the
-// emphasis the element carries. Nothing here reads markup — a post spells its
-// links and its emphasis as elements, so an asterisk in the words is an
-// asterisk.
+// words render one element's own text: the addresses written out in it cut
+// away, and the rest drawn in the emphasis the element carries. Nothing here
+// reads markup — a post spells its links and its emphasis as elements, so an
+// asterisk in the words is an asterisk — and nothing here reads an emoji
+// either: the element's text is what the client draws, character for
+// character, so "[赞]" in it is three characters and not a face.
 func (d postDoc) words(s string, style []string) []rowSeg {
 	if s == "" {
 		return nil
 	}
-	ms := d.ms.styled(postStyle(d.ms.base, style))
+	ms := d.ms.styled(postStyle(d.ms.base, style)).spelling(spellNone)
 	cuts := autoLinkCuts(s, nil, d.st.docLabel)
-	cuts = append(cuts, emojiCuts(s, cuts, d.st.emojiInline)...)
 	return cutSegs(s, cuts, ms.render)
+}
+
+// emotion draws the one element an emoji in a post comes from. The glyph is
+// preferred over the picture for the same reason the rest of larkim prefers
+// it: it is text, so it survives a copy and costs the terminal nothing. A key
+// this build has no entry for, or one no character carries where no picture
+// can be drawn, is left as the shortcode it was read as — the spelling the
+// reader can still look up.
+func (d postDoc) emotion(key string) []rowSeg {
+	e, known := emoji.ByKey(key)
+	spelled := []rowSeg{{text: d.ms.base.Render(":" + key + ":")}}
+	switch {
+	case !known:
+		return spelled
+	case e.Glyph != "":
+		return []rowSeg{{text: d.ms.base.Render(e.Glyph)}}
+	}
+	if p := d.st.emojiInline(e.Key); p.cols > 0 {
+		return []rowSeg{{pic: p}}
+	}
+	return spelled
 }
 
 // link draws an `a` element. A label that is the address itself is drawn the
@@ -228,7 +252,7 @@ func (d postDoc) link(el sync.PostElem) []rowSeg {
 	}
 	label := flatten(el.Text)
 	return []rowSeg{{
-		text:  postStyle(stLink, el.Style).Render(expandEmoji(el.Text)),
+		text:  postStyle(stLink, el.Style).Render(el.Text),
 		urls:  []string{el.Href},
 		label: label,
 		note:  "opening " + label,

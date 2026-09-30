@@ -29,8 +29,8 @@ func (st msgStyle) emojiGist(key string) picture {
 // A line spelling none comes back nil, which is what keeps an ordinary line
 // one string: a string is what a selection can tint and what every caller
 // already knows how to cut.
-func emojiSegs(line string, pic func(key string) picture, render func(string) string) []rowSeg {
-	cuts := emojiCuts(line, nil, pic)
+func emojiSegs(line string, sp emojiSpell, pic func(key string) picture, render func(string) string) []rowSeg {
+	cuts := emojiCuts(line, nil, sp, pic)
 	if len(cuts) == 0 {
 		return nil
 	}
@@ -86,9 +86,10 @@ func truncateSegs(segs []rowSeg, n int) []rowSeg {
 // gistSegs is a summary line in pieces: a head already styled, then the gist
 // with its emoji drawn as pictures, cut to what w leaves after the head. It
 // answers nil when the gist needs no picture, leaving the caller on the string
-// path it had before.
-func gistSegs(head, gist string, w int, style lipgloss.Style, pic func(key string) picture) []rowSeg {
-	segs := emojiSegs(gist, pic, func(t string) string { return style.Render(t) })
+// path it had before. sp is the spellings the summarised body draws an emoji
+// from, which follows its message type the same way a body's own rows do.
+func gistSegs(head, gist string, w int, sp emojiSpell, style lipgloss.Style, pic func(key string) picture) []rowSeg {
+	segs := emojiSegs(gist, sp, pic, func(t string) string { return style.Render(t) })
 	if segs == nil {
 		return nil
 	}
@@ -102,8 +103,8 @@ func gistSegs(head, gist string, w int, style lipgloss.Style, pic func(key strin
 // faceSegs is gistSegs with a picture wedged between the head and the gist,
 // and with the gist always in pieces: the picture is there whether or not the
 // words spell an emoji, so there is no string path left to fall back to.
-func faceSegs(head string, face rowSeg, gist string, w int, style lipgloss.Style, pic func(key string) picture) []rowSeg {
-	segs := emojiSegs(gist, pic, func(t string) string { return style.Render(t) })
+func faceSegs(head string, face rowSeg, gist string, w int, sp emojiSpell, style lipgloss.Style, pic func(key string) picture) []rowSeg {
+	segs := emojiSegs(gist, sp, pic, func(t string) string { return style.Render(t) })
 	if segs == nil {
 		segs = []rowSeg{{text: style.Render(gist)}}
 	}

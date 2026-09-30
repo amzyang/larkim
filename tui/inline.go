@@ -54,10 +54,14 @@ var emojiSpelling = regexp.MustCompile(`:([A-Za-z0-9_]{1,32}):|\[([^\[\]\n]{1,12
 // which the client draws as a picture of its own. It reports nothing for a
 // line holding neither, leaving it on the ordinary text path: the pieces cost
 // the wrapping that a whole string gets for free.
+//
+// Which spellings count as an emoji here rides on ms, so that the pictures cut
+// out of a line and the glyphs drawn into the text between them read the same
+// body the same way.
 func inlineSegs(line string, ms mentions, pic func(key string) picture, doc func(url string) (store.DocLabel, bool)) []rowSeg {
 	cuts := linkCuts(line)
 	cuts = append(cuts, autoLinkCuts(line, cuts, doc)...)
-	cuts = append(cuts, emojiCuts(line, cuts, pic)...)
+	cuts = append(cuts, emojiCuts(line, cuts, ms.spell, pic)...)
 	if len(cuts) == 0 {
 		return nil
 	}
@@ -194,18 +198,25 @@ func docGlyph(docType string) string {
 
 // emojiCuts finds the emoji a line spells that no Unicode character carries,
 // skipping any inside a link: a label is drawn whole so that the whole of it
-// leads to the same place.
-func emojiCuts(line string, links []inlineCut, pic func(key string) picture) []inlineCut {
+// leads to the same place. Only the spellings in sp are read; a body drawing
+// from neither is left whole without a scan.
+func emojiCuts(line string, links []inlineCut, sp emojiSpell, pic func(key string) picture) []inlineCut {
+	if sp == spellNone {
+		return nil
+	}
 	var cuts []inlineCut
 	for _, m := range emojiSpelling.FindAllStringSubmatchIndex(line, -1) {
 		if slices.ContainsFunc(links, func(l inlineCut) bool { return m[0] < l.hi && m[1] > l.lo }) {
 			continue
 		}
-		name, lookup := "", emoji.ByName
+		name, lookup, group := "", emoji.ByName, spellBracket
 		if m[2] >= 0 {
-			name, lookup = line[m[2]:m[3]], emoji.ByKey
+			name, lookup, group = line[m[2]:m[3]], emoji.ByKey, spellShortcode
 		} else {
 			name = line[m[4]:m[5]]
+		}
+		if sp&group == 0 {
+			continue
 		}
 		e, ok := lookup(name)
 		if !ok || e.Glyph != "" {

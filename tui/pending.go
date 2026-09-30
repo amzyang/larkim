@@ -39,5 +39,5 @@ func pendingText(msgType, contentRaw, mentionsJSON string) string {
 // pendingSummary is pendingText for a chat's last message, on one line the
 // way a rendered summary is.
 func pendingSummary(c store.Chat) string {
-	return flatten(expandEmoji(pendingText(c.LastMsgType, c.LastContentRaw, c.LastMentionsJSON)))
+	return flatten(expandEmoji(pendingText(c.LastMsgType, c.LastContentRaw, c.LastMentionsJSON), spellOf(c.LastMsgType)))
 }

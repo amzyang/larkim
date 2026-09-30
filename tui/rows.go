@@ -268,6 +268,14 @@ type msgStyle struct {
 	// peer is who the reader is talking to in such a chat, which is how far an
 	// @ in it carries: a name that is neither of theirs reaches nobody here.
 	peer string
+	// authored says the body being drawn is the reader's own markdown rather
+	// than anything Feishu sent back — the composer's preview, which goes
+	// through these rows so that what is previewed and what is sent cannot
+	// differ. It draws no emoji spelling at all: Feishu keeps an md element's
+	// text verbatim, so a "[赞]" in the draft arrives as those characters and
+	// a preview drawing a face there would promise what the client will not
+	// show.
+	authored bool
 }
 
 // emojiPics sizes the pictures cut out of the sprite sheet. The zero value
@@ -619,7 +627,7 @@ func quoteRow(x store.Message, idx int, st msgStyle, g *leads) (msgRow, bool) {
 	}
 	head := "▏Reply to " + displaySender(parent, st.self, st.suffix[parent.SenderID]) + ": "
 	gist := replyGist(parent)
-	if segs := gistSegs(stDim.Render(head), gist, st.inner(), stDim, st.emojiGist); segs != nil {
+	if segs := gistSegs(stDim.Render(head), gist, st.inner(), spellOf(parent.MsgType), stDim, st.emojiGist); segs != nil {
 		return row("", segs), true
 	}
 	return row(stDim.Render(head+truncate(gist, st.inner()-lipgloss.Width(head))), nil), true
@@ -732,7 +740,7 @@ func bodyRows(x store.Message, idx int, st msgStyle, g *leads) []msgRow {
 	if a, ok := attachmentOf(x.MsgType, x.ContentRaw); ok {
 		return attachRows(a, x, idx, st, g)
 	}
-	ms := mentionsIn(x.MentionsJSON, st.self).facing(st.peer).marking(st.hits)
+	ms := mentionsIn(x.MentionsJSON, st.self).facing(st.peer).marking(st.hits).spelling(st.spell(x.MsgType))
 	// A card describes itself in full, so it is drawn as soon as it lands:
 	// waiting on a rendering would hold back the whole of what it says.
 	if x.MsgType == "interactive" {
@@ -756,7 +764,7 @@ func bodyRows(x store.Message, idx int, st msgStyle, g *leads) []msgRow {
 		return pictureRows(key, x, idx, st, g)
 	}
 	if x.RenderedAt == 0 {
-		return dimRows(pendingText(x.MsgType, x.ContentRaw, x.MentionsJSON), idx, st, g)
+		return dimRows(pendingText(x.MsgType, x.ContentRaw, x.MentionsJSON), idx, st, g, st.spell(x.MsgType))
 	}
 	// A post is markdown by construction, so it is drawn as the document it
 	// is. A text message is not: someone typing "3 * 4 * 5" means the
@@ -788,14 +796,14 @@ func bodyRows(x store.Message, idx int, st msgStyle, g *leads) []msgRow {
 // a rendered body draws one: these rows are what a merged forward's children
 // keep for good, since lark-cli's expansion answers with raw bodies and
 // renders none of them.
-func dimRows(body string, idx int, st msgStyle, g *leads) []msgRow {
+func dimRows(body string, idx int, st msgStyle, g *leads, sp emojiSpell) []msgRow {
 	var rows []msgRow
 	for line := range strings.SplitSeq(body, "\n") {
-		if segs := emojiSegs(line, st.emojiInline, func(t string) string { return stDim.Render(t) }); segs != nil {
+		if segs := emojiSegs(line, sp, st.emojiInline, func(t string) string { return stDim.Render(t) }); segs != nil {
 			rows = append(rows, segRows(segs, "", idx, st, g)...)
 			continue
 		}
-		rows = append(rows, textRows(wrap(stDim.Render(expandEmoji(line)), st.inner()), idx, g)...)
+		rows = append(rows, textRows(wrap(stDim.Render(expandEmoji(line, sp)), st.inner()), idx, g)...)
 	}
 	return rows
 }

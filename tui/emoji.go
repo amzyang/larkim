@@ -18,14 +18,59 @@ var (
 	bracketName = regexp.MustCompile(`\[([^\[\]\n]{1,12})\]`)
 )
 
-// expandEmoji draws Feishu's official emoji. A key the terminal has no glyph
-// for stays as it came, since the Feishu client draws it as a picture and has
-// no bracketed spelling to fall back on either.
-func expandEmoji(s string) string {
-	if strings.Contains(s, ":") {
+// emojiSpell is the set of spellings a body draws an official emoji from.
+//
+// Neither spelling is a spelling everywhere. Feishu keeps a post's text
+// verbatim: a paragraph somebody typed "[赞]" or ":DONE:" into arrives as
+// those characters and the client draws them as those characters, an emoji in
+// a post coming from an emotion element alone. Drawing every spelling
+// everywhere had larkim show an emoji where the client shows brackets, which
+// is the one thing a reader cannot check without leaving larkim.
+type emojiSpell uint8
+
+const (
+	spellNone      emojiSpell = 0
+	spellShortcode emojiSpell = 1 << iota // :KEY:, how larkim writes an emotion element back
+	spellBracket                          // [Name], how a plain text message carries one
+	spellAll       = spellShortcode | spellBracket
+)
+
+// spellOf is the spellings a message of this type draws an emoji from. A post
+// larkim holds only the flattened rendering of carries its emotion elements as
+// the shortcodes sync wrote them; a text message carries the client's bracketed
+// name. Anything else — a card, an attachment, a type larkim has no reading of
+// — keeps both, there being no evidence about how the client spells those.
+func spellOf(msgType string) emojiSpell {
+	switch msgType {
+	case "post":
+		return spellShortcode
+	case "text":
+		return spellBracket
+	}
+	return spellAll
+}
+
+// spell is spellOf for a body these rows are drawing. The composer's preview
+// overrides it: the draft is markdown nobody has sent yet, so none of the
+// spellings in it is one Feishu wrote.
+func (st msgStyle) spell(msgType string) emojiSpell {
+	if st.authored {
+		return spellNone
+	}
+	return spellOf(msgType)
+}
+
+// expandEmoji draws Feishu's official emoji, in the spellings sp allows. A key
+// the terminal has no glyph for stays as it came, since the Feishu client draws
+// it as a picture and has no bracketed spelling to fall back on either.
+func expandEmoji(s string, sp emojiSpell) string {
+	if sp == spellNone {
+		return s
+	}
+	if sp&spellShortcode != 0 && strings.Contains(s, ":") {
 		s = drawEmoji(shortcode, s, emoji.ByKey)
 	}
-	if !strings.Contains(s, "[") {
+	if sp&spellBracket == 0 || !strings.Contains(s, "[") {
 		return s
 	}
 	return drawEmoji(bracketName, s, emoji.ByName)

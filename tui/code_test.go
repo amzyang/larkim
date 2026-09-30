@@ -94,7 +94,7 @@ func TestBodyRows_DropsTheBlankLineLarkLeavesBeforeTheClosingFence(t *testing.T)
 }
 
 func TestBodyRows_KeepsTextAroundACodeBlock(t *testing.T) {
-	out := rowText(renderRows(postWith("看下这个\n```JSON\n{}\n```\n谢谢[THANKS]"), baseStyle()))
+	out := rowText(renderRows(postWith("看下这个\n```JSON\n{}\n```\n谢谢:THANKS:"), baseStyle()))
 	require.Contains(t, out, "看下这个")
 	require.Contains(t, out, "谢谢🙏", "the body around the block still renders as a body")
 	require.Contains(t, out, codeRule+" 1 {}")

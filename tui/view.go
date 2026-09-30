@@ -356,6 +356,7 @@ func (m *Model) rebuildPreview() {
 		meta := msgMeta{suffix: m.meta.suffix, people: m.meta.people, avatars: m.meta.avatars, docs: m.meta.docs}
 		resPending(&meta, []outboxItem{it})
 		st := m.msgStyleFor(m.width-2, meta)
+		st.authored = true
 		// The body alone, not renderRows: a sender line, a day rule and a time
 		// belong to a message that exists, and none of them would tell the
 		// reader anything the composer above does not already say.

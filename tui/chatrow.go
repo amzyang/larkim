@@ -280,7 +280,7 @@ func chatSummary(c store.Chat, self string, pics emojiPics) (string, []rowSeg) {
 	}
 	// The line is dim as a whole, so an @ that reaches the reader is the one
 	// thing on it that still carries a colour.
-	ms := mentionsIn(c.LastMentionsJSON, self).on(stDim)
+	ms := mentionsIn(c.LastMentionsJSON, self).on(stDim).spelling(spellOf(c.LastMsgType))
 	if segs := ms.segs(prefix+body, pics.gist); segs != nil {
 		return "", segs
 	}

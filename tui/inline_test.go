@@ -51,9 +51,10 @@ func TestBodyRows_DrawsAnEmojiWithNoGlyphAsAPicture(t *testing.T) {
 }
 
 func TestBodyRows_DrawsAPostShortcodeAsAPicture(t *testing.T) {
-	rows := bodyOf("abc:Get:", drawingStyle(t))
+	rows := renderRows([]store.Message{{MessageID: "om_1", SenderID: "ou_a", SenderName: "张三",
+		MsgType: "post", Content: "abc:GET:def", CreateMs: msgAt(23, 9, 0), RenderedAt: 1}}, drawingStyle(t))
 	require.Equal(t, 1, picsIn(rows))
-	require.NotContains(t, rowText(rows), ":Get:")
+	require.NotContains(t, rowText(rows), ":GET:")
 }
 
 func TestBodyRows_KeepsTheSpellingWhereNoPictureWasCut(t *testing.T) {

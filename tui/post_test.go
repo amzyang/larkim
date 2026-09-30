@@ -149,6 +149,30 @@ func TestPostRows_AnEmotionIsDrawnAsTheClientDrawsIt(t *testing.T) {
 	require.Equal(t, []string{"好" + e.Glyph}, postLines(t, raw, baseStyle()))
 }
 
+func TestPostRows_AnEmotionWithNoGlyphIsDrawnAsItsPicture(t *testing.T) {
+	rows := renderRows(postRaw(`{"content":[[{"tag":"emotion","emoji_type":"DONE"}]]}`), drawingStyle(t))
+	require.Equal(t, 1, picsIn(rows))
+	require.NotContains(t, rowText(rows), ":DONE:")
+}
+
+func TestPostRows_AnEmojiSpelledInTheWordsIsDrawnAsTheCharacters(t *testing.T) {
+	// The client draws an emoji in a post from an emotion element alone; a
+	// name somebody typed arrives, and is drawn, as the characters it is.
+	raw := `{"zh_cn":{"content":[[{"tag":"md","text":"**收到** [赞] a[Done]b"}],[{"tag":"text","text":":DONE: [THANKS]"}]]}}`
+	rows := renderRows(postRaw(raw), drawingStyle(t))
+	require.Zero(t, picsIn(rows))
+	out := rowText(rows)
+	require.Contains(t, out, "收到 [赞] a[Done]b")
+	require.Contains(t, out, ":DONE: [THANKS]")
+}
+
+func TestBodyRows_AShortcodeInAFlattenedPostIsTheEmotionItWasWrittenFrom(t *testing.T) {
+	msgs := []store.Message{{MessageID: "om_1", SenderName: "张三", SenderID: "ou_a", MsgType: "post",
+		Content: "好 :THUMBSUP: [赞]", CreateMs: msgAt(23, 9, 0), RenderedAt: 1}}
+	out := rowText(renderRows(msgs, baseStyle()))
+	require.Contains(t, out, "好 👍 [赞]", "sync writes an emotion back as :KEY:, and never as a bracketed name")
+}
+
 func TestPostRows_APostLarkimSentReadsBackTheWayItsPreviewDrewIt(t *testing.T) {
 	// The send path writes one md element per paragraph and an empty text
 	// element for each blank line between them, which is the only spelling of

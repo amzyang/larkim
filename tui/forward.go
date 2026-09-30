@@ -227,7 +227,7 @@ const fwdGistMark = "↪ "
 // fwdGistSegs is that line in pieces, or nil when it needs no picture. The
 // pane asks for it twice, once to claim the pictures and once to draw them.
 func (m Model) fwdGistSegs(w int) []rowSeg {
-	return gistSegs(stDim.Render(fwdGistMark), flatten(replyGist(m.fwd.msg)), w, stDim, m.chatPics().gist)
+	return gistSegs(stDim.Render(fwdGistMark), flatten(replyGist(m.fwd.msg)), w, spellOf(m.fwd.msg.MsgType), stDim, m.chatPics().gist)
 }
 
 // loadContacts fills the list the forward chooser offers people from. It reads

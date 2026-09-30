@@ -102,6 +102,19 @@ func TestPreview_RendersThroughTheMessageBody(t *testing.T) {
 	require.Contains(t, ansi.Strip(line), "看 这里", "the preview draws the markup, not its delimiters")
 }
 
+func TestPreview_DrawsAnEmojiSpellingAsTheCharactersItWillArriveAs(t *testing.T) {
+	m, _ := newOutboxModel(t)
+	mm, _ := m.startInsert(nil, false)
+	m = mm.(Model)
+	m.input.SetValue("**收到** [赞] :DONE:")
+	m.replan()
+	m.layout()
+
+	require.Len(t, m.previewRows, 1)
+	line, _ := m.rowLine(m.previewRows[0], m.width-2)
+	require.Contains(t, ansi.Strip(line), "收到 [赞] :DONE:", "Feishu keeps an md element's text verbatim")
+}
+
 func TestRenderInput_BoxIsExactlyAsTallAsItClaims(t *testing.T) {
 	m, _ := newOutboxModel(t)
 	mm, _ := m.startInsert(nil, false)

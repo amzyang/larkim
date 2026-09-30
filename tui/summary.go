@@ -57,10 +57,10 @@ func forwardSummary(x store.Message, root string, idx int, st msgStyle, g *leads
 	}
 	inner := st.inner() - lipgloss.Width(forwardBar)
 	bar := stAccent.Render(forwardBar)
-	row := func(s string, style lipgloss.Style) msgRow {
+	row := func(s string, sp emojiSpell, style lipgloss.Style) msgRow {
 		lead := g.take()
 		x0 := lead.cols()
-		text, segs := "", gistSegs(bar, s, st.inner(), style, st.emojiGist)
+		text, segs := "", gistSegs(bar, s, st.inner(), sp, style, st.emojiGist)
 		if segs == nil {
 			text = bar + style.Render(truncate(s, inner))
 		}
@@ -69,7 +69,8 @@ func forwardSummary(x store.Message, root string, idx int, st msgStyle, g *leads
 			open: x.MessageID, openRoot: root, openKind: rightForward, openName: title,
 		}}}
 	}
-	rows := []msgRow{row(title, stBold)}
+	// The title is larkim's own wording, so no spelling in it is Feishu's.
+	rows := []msgRow{row(title, spellNone, stBold)}
 	for i, c := range gist.Preview {
 		who := displaySender(store.Message{SenderID: c.SenderID, SenderName: c.SenderName},
 			st.self, st.suffix[c.SenderID])
@@ -79,7 +80,7 @@ func forwardSummary(x store.Message, root string, idx int, st msgStyle, g *leads
 		if i == len(gist.Preview)-1 && gist.ChildCount > len(gist.Preview) {
 			line += "…"
 		}
-		rows = append(rows, row(line, stDim))
+		rows = append(rows, row(line, spellOf(c.MsgType), stDim))
 	}
 	return rows, true
 }
@@ -133,7 +134,7 @@ func threadRows(x store.Message, idx int, st msgStyle, g *leads) ([]msgRow, bool
 	for _, r := range gist.Tail {
 		line := " " + displaySender(r, st.self, st.suffix[r.SenderID]) + ": " + replyGist(r)
 		rows = append(rows, threadRow(x, idx, g.take(), "",
-			faceSegs("", replierFace(r, st), line, st.inner(), stDim, st.emojiGist)))
+			faceSegs("", replierFace(r, st), line, st.inner(), spellOf(r.MsgType), stDim, st.emojiGist)))
 	}
 	return rows, true
 }

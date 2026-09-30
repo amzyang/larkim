@@ -178,7 +178,7 @@ func (m Model) renderReplyBar(s composerSide, x store.Message, w int) string {
 	hint := stDim.Render(replyBarHint)
 	head, gist, room := m.replyBarParts(s, x, w)
 	line, used := "", 0
-	if segs := gistSegs(head, gist, room, stDim, m.chatPics().gist); segs != nil {
+	if segs := gistSegs(head, gist, room, spellOf(x.MsgType), stDim, m.chatPics().gist); segs != nil {
 		line, used = m.joinSegsWidth(segs), segsWidth(segs)
 	} else {
 		line = head + stDim.Render(truncate(gist, room-lipgloss.Width(head)))
@@ -214,7 +214,7 @@ func replyGist(x store.Message) string {
 		return msgTypeLabel(x.MsgType)
 	}
 	if c, ok := card.Parse(x.ContentRaw); ok {
-		if text := flatten(expandEmoji(plainAt(cardGist(c)))); text != "" {
+		if text := flatten(expandEmoji(plainAt(cardGist(c)), spellAll)); text != "" {
 			return text
 		}
 		return msgTypeLabel(x.MsgType)
@@ -225,9 +225,9 @@ func replyGist(x store.Message) string {
 		return attachGist(a)
 	}
 	if x.RenderedAt == 0 {
-		return flatten(expandEmoji(plainAt(pendingText(x.MsgType, x.ContentRaw, x.MentionsJSON))))
+		return flatten(expandEmoji(plainAt(pendingText(x.MsgType, x.ContentRaw, x.MentionsJSON)), spellOf(x.MsgType)))
 	}
-	if text := flatten(expandEmoji(plainAt(gistBody(x.Content)))); text != "" {
+	if text := flatten(expandEmoji(plainAt(gistBody(x.Content)), spellOf(x.MsgType))); text != "" {
 		return text
 	}
 	return msgTypeLabel(x.MsgType)

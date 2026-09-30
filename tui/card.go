@@ -14,10 +14,10 @@ var stCardTitle = lipgloss.NewStyle().Bold(true).Foreground(colAccent)
 func cardHead(c card.Card) string {
 	var parts []string
 	if c.Title != "" {
-		parts = append(parts, stCardTitle.Render(flatten(expandEmoji(c.Title))))
+		parts = append(parts, stCardTitle.Render(flatten(expandEmoji(c.Title, spellAll))))
 	}
 	if c.Subtitle != "" {
-		parts = append(parts, stDim.Render(flatten(expandEmoji(c.Subtitle))))
+		parts = append(parts, stDim.Render(flatten(expandEmoji(c.Subtitle, spellAll))))
 	}
 	if c.Tags != "" {
 		parts = append(parts, stDim.Render(c.Tags))
@@ -82,7 +82,7 @@ func cardButtons(bs []card.Button, w int, client string) []cardButtonLine {
 	}
 	for _, b := range bs {
 		label := strings.TrimSpace(b.Label)
-		pill := stBtn.Render(expandEmoji(label))
+		pill := stBtn.Render(expandEmoji(label, spellAll))
 		width := lipgloss.Width(pill)
 		if used > 0 && used+len(gap)+width > w {
 			flush()

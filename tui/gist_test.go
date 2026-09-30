@@ -174,7 +174,7 @@ func TestRenderReplyBar_DrawsTheEmojiTheQuotedMessageSpelled(t *testing.T) {
 	w := m.bandWidth(sideMain) - 2
 
 	head, gist, room := m.replyBarParts(sideMain, *m.replyTo, w)
-	require.Equal(t, 1, picSegs(gistSegs(head, gist, room, stDim, m.chatPics().gist)))
+	require.Equal(t, 1, picSegs(gistSegs(head, gist, room, spellBracket, stDim, m.chatPics().gist)))
 
 	line := ansi.Strip(m.renderReplyBar(sideMain, *m.replyTo, w))
 	require.NotContains(t, line, "[了解]", "the name it was spelled with is not what the client shows")

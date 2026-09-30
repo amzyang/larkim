@@ -520,7 +520,7 @@ func (m Model) picturePrepare() string {
 			continue
 		}
 		head, gist, room := m.replyBarParts(side, x, m.bandWidth(side)-2)
-		for _, s := range gistSegs(head, gist, room, stDim, m.chatPics().gist) {
+		for _, s := range gistSegs(head, gist, room, spellOf(x.MsgType), stDim, m.chatPics().gist) {
 			claimed.take(s.pic)
 		}
 	}

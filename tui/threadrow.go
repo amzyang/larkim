@@ -93,7 +93,7 @@ func threadRowGist(r listRow, self string, pics emojiPics) (string, []rowSeg) {
 	}
 	// The line is dim as a whole, so an @ that reaches the reader is the one
 	// thing on it that still carries a colour.
-	ms := mentionsIn(x.MentionsJSON, self).on(stDim)
+	ms := mentionsIn(x.MentionsJSON, self).on(stDim).spelling(spellOf(x.MsgType))
 	if segs := ms.segs(prefix+replyGist(x), pics.gist); segs != nil {
 		return "", segs
 	}

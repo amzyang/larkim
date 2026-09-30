@@ -70,6 +70,12 @@ type mentions struct {
 	// because this is the last place the text is still text: once a body has
 	// been drawn, the words and the escapes that colour them are one string.
 	hits []string
+	// spell is which spellings of an official emoji this body draws, which
+	// follows the body rather than the reader: a post's own words are literal,
+	// a text message's brackets are not. It rides here because the text around
+	// the runs and the pictures cut out of it have to agree, and mentions is
+	// what both paths already carry.
+	spell emojiSpell
 }
 
 // mentionsIn reads the `[{id,name}]` a message's rendering carries. The text
@@ -124,6 +130,13 @@ func (m mentions) styled(s lipgloss.Style) mentions {
 // one they are already looking at.
 func (m mentions) marking(hits []string) mentions {
 	m.hits = hits
+	return m
+}
+
+// spelling says which ways this body spells an official emoji. A body whose
+// words are Feishu's own verbatim text draws none, which is spellNone.
+func (m mentions) spelling(sp emojiSpell) mentions {
+	m.spell = sp
 	return m
 }
 
@@ -208,7 +221,7 @@ func (m mentions) render(s string) string {
 
 // plain styles a stretch that holds no @ of its own.
 func (m mentions) plain(s string) string {
-	text := expandEmoji(s)
+	text := expandEmoji(s, m.spell)
 	return markName(text, hitPositions(text, m.hits), m.base)
 }
 
@@ -222,7 +235,7 @@ func (m mentions) segs(s string, pic func(key string) picture) []rowSeg {
 		if chunk == "" {
 			return
 		}
-		if segs := emojiSegs(chunk, pic, m.plain); segs != nil {
+		if segs := emojiSegs(chunk, m.spell, pic, m.plain); segs != nil {
 			out, drawn = append(out, segs...), true
 			return
 		}
