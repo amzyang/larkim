@@ -2871,7 +2871,7 @@ func (m Model) onClick(ms tea.Mouse) (tea.Model, tea.Cmd) {
 			case r.isThread():
 				cmd := m.openRow(r, false)
 				return m, cmd
-			case r.chat.ChatID != m.chatID, double:
+			case r.chat.ChatID != m.pageChat(), double:
 				m, keep := m.focusMessages()
 				cmd := m.openRow(r, false)
 				return m, tea.Batch(keep, cmd)

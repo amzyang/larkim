@@ -75,7 +75,7 @@ func (m Model) highlightedRow() (listRow, bool) {
 	if r.isFeed() {
 		return r, m.feed == nil
 	}
-	return r, r.chat.ChatID != m.openingChat()
+	return r, r.chat.ChatID != m.pageChat()
 }
 
 // openRow opens what a row leads to: a chat, or the thread over the chat it
@@ -99,3 +99,14 @@ func (m *Model) openRow(r listRow, take bool) tea.Cmd {
 // openingChat is the chat the cursor belongs to: the one whose page is on its
 // way while it is, and the one on screen otherwise.
 func (m Model) openingChat() string { return cmp.Or(m.pendingChat, m.chatID) }
+
+// pageChat is the chat whose own page the message pane holds or has asked for.
+// Under the Unread panel m.chatID only names where a reply would go — the
+// section the panel's cursor rests in — so it is no chat's page, and the row of
+// that chat still has its page to open.
+func (m Model) pageChat() string {
+	if m.feed != nil {
+		return m.pendingChat
+	}
+	return m.openingChat()
+}

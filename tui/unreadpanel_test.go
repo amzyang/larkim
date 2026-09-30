@@ -577,3 +577,43 @@ func TestFeed_ClickingTheHeldOpenLineUnderThePinTakesNothing(t *testing.T) {
 
 	require.ElementsMatch(t, []string{"oc_platform", "oc_project"}, waitingChats(t, m))
 }
+
+// coldPanel is a cold start with one chat waiting: the first listing puts the
+// panel up on the Unread row, and the panel's cursor rests in that chat's
+// section, which makes the chat its reply target before any key is pressed.
+func coldPanel(t *testing.T) (Model, *store.Store, *[]openCall) {
+	t.Helper()
+	m, st, calls := badgeModel(t)
+	m = applyAll(t, m, loadChats(m.deps))
+	m.layout()
+	require.NotNil(t, m.feed)
+	require.Equal(t, "oc_a", m.chatID, "the panel points its composer at the waiting chat")
+	require.True(t, m.visibleRows()[m.chatIdx].isFeed())
+	return m, st, calls
+}
+
+// The chat the panel's composer points at is not a page on screen, so the
+// cursor walking onto its row still opens it — and reading it there clears
+// the client's dot, as opening any other chat does.
+func TestMove_TheRowOfTheChatThePanelPointsAtOpensIt(t *testing.T) {
+	m, st, calls := coldPanel(t)
+
+	next, _ := m.move(1)
+	m = next.(Model)
+	require.Equal(t, "oc_a", m.pendingChat, "the page is asked for")
+
+	m = arrive(t, m, st, "oc_a")
+
+	require.Nil(t, m.feed, "the panel comes down for the chat")
+	require.Equal(t, []openCall{opened("lark://applink.feishu.cn/client/chat/open?openChatId=oc_a", true)}, *calls)
+}
+
+func TestOnClick_TheRowOfTheChatThePanelPointsAtOpensIt(t *testing.T) {
+	m, _, _ := coldPanel(t)
+
+	next, _ := m.onClick(tea.Mouse{Button: tea.MouseLeft, X: 4, Y: 1 + headerHeight + rowOf(0)*chatRowStride})
+	m = next.(Model)
+
+	require.Equal(t, rowOf(0), m.chatIdx)
+	require.Equal(t, "oc_a", m.pendingChat, "one click opens it, as it does any chat not on screen")
+}
