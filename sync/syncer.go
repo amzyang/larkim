@@ -851,6 +851,17 @@ func fanOut[T, R any](ctx context.Context, items []T, do func(context.Context, T
 	return out, errs
 }
 
+// firstFailure is the answer a fanOut gave: the first error that is not the
+// cancellation a sibling's failure caused.
+func firstFailure(errs []error) error {
+	for _, err := range errs {
+		if err != nil && !errors.Is(err, context.Canceled) {
+			return err
+		}
+	}
+	return nil
+}
+
 // pullChats runs pull against every chat at once. A chat the gateway refuses
 // permanently is recorded and stepped over, as it was when this ran one chat
 // at a time; any other refusal ends the sweep.
@@ -864,16 +875,11 @@ func (s *Syncer) pullChats(ctx context.Context, chatIDs []string, now time.Time,
 		return pulled{n: n, fresh: f}, err
 	})
 
-	for i, r := range res {
+	for _, r := range res {
 		total += r.n
 		fresh += r.fresh
-		// A sibling's failure cancelled this one before it had an answer of
-		// its own, so it has nothing to report that the sibling will not.
-		if errs[i] != nil && err == nil && !errors.Is(errs[i], context.Canceled) {
-			err = errs[i]
-		}
 	}
-	return total, fresh, err
+	return total, fresh, firstFailure(errs)
 }
 
 // listThreads fetches every thread rooted in one chat's window at once, then
@@ -884,17 +890,10 @@ func (s *Syncer) listThreads(ctx context.Context, tids []string, since, until ti
 		return s.Client.ListMessagesRaw(ctx, "thread", tid, since, until)
 	})
 
-	var out []larkcli.RawMessage
-	for i, err := range errs {
-		if err != nil {
-			if errors.Is(err, context.Canceled) {
-				continue // cancelled by a sibling, which carries the real answer
-			}
-			return nil, err
-		}
-		out = append(out, replies[i]...)
+	if err := firstFailure(errs); err != nil {
+		return nil, err
 	}
-	return out, nil
+	return slices.Concat(replies...), nil
 }
 
 // stakedThreadsTopK bounds one pass's thread listings. A thread container
@@ -993,10 +992,17 @@ func (s *Syncer) pullChat(ctx context.Context, chatID string, since, until, now 
 // somebody is reading names itself, so its own arrivals are not stuck behind a
 // backlog elsewhere.
 func (s *Syncer) renderPending(ctx context.Context, chatID string, limit int, now time.Time) (int, error) {
-	total, err := s.renderLocal(ctx, nil, s.Opt.RenderPerTick*50, now)
+	local, err := s.renderLocal(ctx, nil, s.Opt.RenderPerTick*50, now)
 	if err != nil {
-		return total, err
+		return local, err
 	}
+	remote, err := s.renderRemote(ctx, chatID, limit, now)
+	return local + remote, err
+}
+
+// renderRemote renders the types only Feishu can, asked for in batches.
+func (s *Syncer) renderRemote(ctx context.Context, chatID string, limit int, now time.Time) (int, error) {
+	total := 0
 	ids, err := s.Store.UnrenderedMessageIDs(ctx, chatID, limit)
 	if err != nil {
 		return total, err
@@ -1116,6 +1122,11 @@ func (s *Syncer) Run(ctx context.Context) error {
 	s.signals()
 	var wg stdsync.WaitGroup
 	defer wg.Wait()
+	// Run can also leave by a panic in the sweep, which is no ctx of the
+	// caller's ending: without this the wait above would hold it forever and
+	// the panic would never reach the recover that re-panics it.
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	wg.Go(func() {
 		if s.Recover != nil {
 			defer s.Recover()

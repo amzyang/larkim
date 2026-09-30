@@ -160,6 +160,31 @@ func TestRun_DiscoveryLandsAMessageWhileTheSweepRests(t *testing.T) {
 	}, 5*time.Second, 5*time.Millisecond, "the find ended the sweep's pause")
 }
 
+func TestRun_APanicInTheSweepLeavesRunWhileDiscoveryIsStillGoing(t *testing.T) {
+	s, f, clk := newSyncer(t)
+	f.Chats = []larkcli.RawChat{{ChatID: "oc_a", ChatMode: "group"}}
+	discovering(t, s, f, clk.t)
+	s.SetAttended(true)
+	// Discovery never searches, so only the sweep panics.
+	f.Enter = func(call string) {
+		if call == "search" {
+			panic("sweep broke")
+		}
+	}
+
+	panicked := make(chan any, 1)
+	go func() {
+		defer func() { panicked <- recover() }()
+		_ = s.Run(t.Context())
+	}()
+	select {
+	case p := <-panicked:
+		require.Equal(t, "sweep broke", p, "the panic reaches Run's caller, who re-panics it")
+	case <-time.After(5 * time.Second):
+		t.Fatal("Run waited on a discovery loop nothing told to stop")
+	}
+}
+
 func TestRunDiscovery_MakesNoCallWhileLoggedOut(t *testing.T) {
 	s, f, clk := newSyncer(t)
 	f.Chats = []larkcli.RawChat{{ChatID: "oc_a", ChatMode: "group"}}
