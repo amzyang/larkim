@@ -154,10 +154,9 @@ type Model struct {
 	// gists memoises one frame of chat-list lines, so picturePrepare and the
 	// pane that draws them do not each summarise every visible row.
 	gists *gistCache
-	pics  *pictures // message images; nil on a terminal without graphics
-	// graphics is the terminal's yes to GraphicsQuery; until it arrives the
-	// avatars are colour blocks and pics is nil.
-	graphics bool
+	// pics draws message images. It stays nil, and the avatars colour blocks,
+	// until the terminal says yes to GraphicsQuery.
+	pics *pictures
 	// cellW, cellH are the last cell size the terminal reported, kept for the
 	// renderers graphics swaps in after the answer came.
 	cellW, cellH int
@@ -405,8 +404,8 @@ func New(d Deps) Model {
 		chatIx:     newChatIndex(),
 		gists:      newGistCache(),
 		rows:       newRowsCache(),
-		avatars:    newAvatars(d.DataDir, false), pics: newPictures(d.DataDir, false),
-		files: osDraftFiles()}
+		avatars:    textAvatars{},
+		files:      osDraftFiles()}
 	m.emoji.LoadUsed(d.DataDir)
 	m.emojiWrite.LoadUsed(d.DataDir)
 	m.setBackground(color.Black, true)
@@ -593,10 +592,9 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.setBackground(msg, msg.IsDark())
 		return m, nil
 	case uv.KittyGraphicsEvent:
-		if !graphicsOK(msg) || m.graphics || m.deps.DataDir == "" {
+		if !graphicsOK(msg) || m.pics != nil || m.deps.DataDir == "" {
 			return m, nil
 		}
-		m.graphics = true
 		k := newKittyAvatars(m.deps.DataDir)
 		k.setCellSize(m.cellW, m.cellH)
 		m.avatars = k
@@ -849,10 +847,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.fwd.hits = m.fwdSearch(m.fwd.input.Value())
 			m.fwd.move(0, m.fwdRows())
 		}
-		if f := &m.config.silence.form; f.pick.open && f.field == fieldSender {
-			f.pick.hits = m.silenceSearch(f.field, f.pick.input.Value())
-			moveCursor(&f.pick.idx, &f.pick.top, 0, len(f.pick.hits), m.silencePickRows())
-		}
+		m.refreshSilencePick()
 		return m, nil
 	case silenceMatchesMsg:
 		return m.onSilenceMatches(msg), nil
@@ -984,25 +979,28 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			return m.notify("paste: "+msg.err.Error(), true), nil
 		}
+		var text string
 		switch msg.clip.kind {
 		case clipEmpty:
 			return m.notify("the clipboard is empty", true), nil
 		case clipText:
-			m.areap().InsertString(msg.clip.text)
+			text = msg.clip.text
 		case clipImage:
-			m.areap().InsertString(imageRef(msg.clip.path))
+			text = imageRef(msg.clip.path)
 		case clipFile:
 			// A picture goes in as one so it draws in the list; anything else
 			// goes in as an attachment, which is what a file copied in Finder
 			// was meant to be.
+			text = fileRef(msg.clip.path)
 			if isImagePath(msg.clip.path) {
-				m.areap().InsertString(imageRef(msg.clip.path))
-			} else {
-				m.areap().InsertString(fileRef(msg.clip.path))
+				text = imageRef(msg.clip.path)
 			}
 		}
-		m.replan()
-		m.layout()
+		// The composer may have lost focus while the clipboard was read, and a
+		// blurred textarea drops what Update hands it; the paste still lands.
+		before := m.composerRows()
+		m.areap().InsertString(text)
+		m.tookDraft(before)
 		return m.notify("", false), nil
 	case editedMsg:
 		if msg.path != "" {
@@ -1117,12 +1115,7 @@ func (m Model) forward(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	switch m.mode {
 	case modeInsert:
-		before := m.composerRows()
-		ta := m.areap()
-		var cmd tea.Cmd
-		*ta, cmd = ta.Update(msg)
-		m.tookDraft(before)
-		return m, cmd
+		return m.typeIntoComposer(msg)
 	case modeCommand:
 		return m.typeIntoCommand(msg)
 	case modeFilter:
@@ -1137,14 +1130,20 @@ func (m Model) forward(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// tookDraft brings the badge, the preview and the panes back in step after
-// the composer took something in: before is the row split as it stood
-// beforehand, and the writing area grows with the draft while the preview
-// grows with what the draft renders to, so either one moves everything above
-// the box. The preview is redrawn first because the split is measured against
-// its rows; reading the split off the previous keystroke's preview would
-// leave the panes above sized for a box the composer no longer draws.
+// tookDraft brings the popup, the badge, the preview and the panes back in
+// step after the composer took something in: before is the row split as it
+// stood beforehand, and the writing area grows with the draft while the
+// preview grows with what the draft renders to, so either one moves
+// everything above the box. The preview is redrawn first because the split is
+// measured against its rows; reading the split off the previous keystroke's
+// preview would leave the panes above sized for a box the composer no longer
+// draws.
+//
+// The popup's run is re-read rather than watched for: the trigger can arrive
+// by paste or be reached by moving the cursor, and neither is a keypress that
+// says so.
 func (m *Model) tookDraft(before composerRows) {
+	m.takePum()
 	m.replan()
 	m.rebuildPreview()
 	if before != m.composerRows() {
@@ -1703,7 +1702,6 @@ func (m Model) onKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) onInsertKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
-	before := m.composerRows()
 	// The popup answers first, because the keys it owns are ones the composer
 	// otherwise has: Enter would send, Tab and the arrows would reach the
 	// writing area.
@@ -1748,13 +1746,16 @@ func (m Model) onInsertKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "enter":
 		return m.submit()
 	}
+	return m.typeIntoComposer(k)
+}
+
+// typeIntoComposer hands a message to the writing area and brings what the
+// draft drives back in step: the popup, the badge, the preview and the panes.
+func (m Model) typeIntoComposer(msg tea.Msg) (tea.Model, tea.Cmd) {
+	before := m.composerRows()
 	var cmd tea.Cmd
 	ta := m.areap()
-	*ta, cmd = ta.Update(k)
-	// The run is re-read rather than watched for: the trigger can arrive by
-	// paste or be reached by moving the cursor, and neither is a keypress that
-	// says so.
-	m.takePum()
+	*ta, cmd = ta.Update(msg)
 	m.tookDraft(before)
 	return m, cmd
 }
@@ -2314,12 +2315,8 @@ func (m Model) move(n int) (tea.Model, tea.Cmd) {
 		cmd := m.moveToChat(time.Now())
 		return m, cmd
 	case paneMessages:
-		count := len(m.msgs)
 		if m.searching {
-			count = len(m.searchHits)
-		}
-		if m.searching {
-			m.msgIdx = clamp(m.msgIdx+n, 0, count-1)
+			m.msgIdx = clamp(m.msgIdx+n, 0, len(m.searchHits)-1)
 		} else {
 			m.msgIdx = stepCursor(m.msgs, m.msgIdx, n)
 		}
