@@ -23,6 +23,7 @@ import (
 	"github.com/amzyang/larkim/emoji"
 	"github.com/amzyang/larkim/larkcli"
 	"github.com/amzyang/larkim/larkmd"
+	"github.com/amzyang/larkim/markread"
 	"github.com/amzyang/larkim/store"
 	"github.com/amzyang/larkim/sync"
 	uv "github.com/charmbracelet/ultraviolet"
@@ -391,6 +392,14 @@ func New(d Deps) Model {
 		// A Deps built by hand carries no configuration, and a gap of nothing
 		// is the bug the pacing exists to fix.
 		d.Config.ApplinkPaceMS = applink.DefaultPaceMS
+	}
+	// After OpenURL: applink mode clears a badge by handing it one.
+	if d.ClearBadge == nil && d.NewClearBadge == nil {
+		log, st, open := d.Log, d.Store, d.OpenURL
+		d.NewClearBadge = func(cfg config.MarkRead) markread.Clear { return markread.New(cfg, log, st, open) }
+	}
+	if d.ClearBadge == nil {
+		d.ClearBadge = d.NewClearBadge(d.Config.MarkRead)
 	}
 	prunePasted(d.DataDir, time.Now())
 	m := Model{deps: d, input: newComposer(), rightInput: newComposer(), cmdline: ti,

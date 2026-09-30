@@ -3,6 +3,8 @@ package store
 import (
 	"context"
 	"database/sql"
+	"errors"
+	"fmt"
 	"slices"
 )
 
@@ -316,6 +318,56 @@ func (s *Store) ChatsWithUnread(ctx context.Context) ([]ChatUnread, error) {
 	return queryAll(ctx, s.db, scan, `SELECT m.chat_id, max(m.message_position)
  FROM messages m JOIN read_state r ON r.message_id = m.message_id
  WHERE `+clientDot+` GROUP BY m.chat_id ORDER BY m.chat_id`)
+}
+
+// ChatAt names the chat holding the message sent at createMs with position.
+// The pair is how a chat is recognised across id spaces that share nothing
+// else — the web client's numeric chat ids against the OpenAPI's oc_ ones — so
+// anything short of exactly one chat is ok=false rather than a guess: a wrong
+// answer here marks some other chat read.
+func (s *Store) ChatAt(ctx context.Context, createMs, position int64) (string, bool, error) {
+	ids, err := queryAll(ctx, s.db, func(sc scanner) (string, error) {
+		var id string
+		return id, sc.Scan(&id)
+	}, `SELECT DISTINCT chat_id FROM messages WHERE create_ms = ? AND message_position = ? LIMIT 2`,
+		createMs, position)
+	if err != nil || len(ids) != 1 {
+		return "", false, err
+	}
+	return ids[0], true, nil
+}
+
+// WebChatID is the web client's id for a chat, empty until one was matched.
+func (s *Store) WebChatID(ctx context.Context, chatID string) (string, error) {
+	var id string
+	err := s.db.QueryRowContext(ctx, `SELECT web_chat_id FROM chats WHERE chat_id = ?`, chatID).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	return id, err
+}
+
+// SetWebChatIDs records matched web ids. A chat not stored yet is skipped
+// rather than created: the match came from its messages, so the row exists
+// unless the chat was never synced, and a row with nothing but an id would
+// be a chat the list cannot draw.
+func (s *Store) SetWebChatIDs(ctx context.Context, ids map[string]string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	stmt, err := tx.PrepareContext(ctx, `UPDATE chats SET web_chat_id = ? WHERE chat_id = ? AND web_chat_id <> ?`)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+	for chatID, webID := range ids {
+		if _, err := stmt.ExecContext(ctx, webID, chatID, webID); err != nil {
+			return fmt.Errorf("set web chat id %s: %w", chatID, err)
+		}
+	}
+	return tx.Commit()
 }
 
 // UnreadAnchor is where one chat's backlog starts.

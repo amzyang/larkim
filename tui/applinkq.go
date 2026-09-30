@@ -1,21 +1,23 @@
 package tui
 
 import (
+	"context"
 	"slices"
 	"strconv"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/amzyang/larkim/applink"
 	"github.com/amzyang/larkim/store"
 )
 
-// applinkQueue owns the pace the Feishu desktop client is walked at. Two
-// things ask for a chat to be opened — the read gate, one chat at a time, and
-// a mark-all sweep, every chat at once — and the client can only be in one of
-// them, so firing from both at once loses whichever navigation was in flight.
+// applinkQueue owns the pace red dots are cleared at, whichever lever
+// mark_read.mode names. Two things ask for a chat to be cleared — the read
+// gate, one chat at a time, and a mark-all sweep, every chat at once — and
+// one queue keeps them in a single line: in applink mode the desktop client
+// can only be in one chat, so firing from both at once loses whichever
+// navigation was in flight; in web mode the line is what bounds the burst.
 //
-// It delays; it never drops. The number of applinks is still the number of
+// It delays; it never drops. The number of clears is still the number of
 // unread messages (docs/read-sync/PRD.md). A cooling window would drop the
 // ones that landed inside it, leaving messages markChatRead settles quietly
 // and a dot only the next sweep would find — which is the thing that
@@ -38,18 +40,18 @@ type applinkQueue struct {
 	// request to open anything, and an error banner there would blame the
 	// reader's navigation for a dot only the client still draws.
 	swept, failed int
-	// inflight counts the opens that have been fired and not yet answered.
-	// applink.Open waits on the process, which routinely outlives the tick
-	// that started it, so the queue running dry is not the sweep being over
-	// — the last failures are still on their way.
+	// inflight counts the clears that have been fired and not yet answered.
+	// One routinely outlives the tick that started it, so the queue running
+	// dry is not the sweep being over — the last failures are still on their
+	// way.
 	inflight int
 }
 
 // applinkDueMsg advances the chain by one chat.
 type applinkDueMsg struct{ gen int }
 
-// applinkFiredMsg closes one applink, so the failures can be counted while
-// the chain keeps going.
+// applinkFiredMsg closes one clear, so the failures can be counted while the
+// chain keeps going.
 type applinkFiredMsg struct {
 	gen int
 	err error
@@ -84,10 +86,10 @@ func (m Model) applinkTick(gen int) tea.Cmd {
 	return tea.Tick(m.applinkPace(), func(time.Time) tea.Msg { return applinkDueMsg{gen} })
 }
 
-// onApplinkDue fires the chat at the head and arms the next slot. The open
-// and the tick go out together, so the pace is measured between two opens
-// starting — applink.Open waits on the process, and that wait is part of the
-// gap the client needs.
+// onApplinkDue fires the chat at the head and arms the next slot. The clear
+// and the tick go out together, so the pace is measured between two clears
+// starting — the wait on one is part of the gap, which in applink mode is the
+// time the client needs to draw.
 func (m Model) onApplinkDue(msg applinkDueMsg) (Model, tea.Cmd) {
 	if msg.gen != m.applinks.gen {
 		return m, nil
@@ -101,7 +103,7 @@ func (m Model) onApplinkDue(msg applinkDueMsg) (Model, tea.Cmd) {
 	next := m.applinks.left[0]
 	m.applinks.left = m.applinks.left[1:]
 	m.applinks.inflight++
-	return m, tea.Batch(fireApplink(m.deps, next, msg.gen), m.applinkTick(msg.gen))
+	return m, tea.Batch(fireBadgeClear(m.deps, next, msg.gen), m.applinkTick(msg.gen))
 }
 
 // onApplinkFired counts one hand-over. The chain does not stop on a failure:
@@ -145,13 +147,12 @@ func (m Model) closeSweep() Model {
 	return m.notify(note, isErr)
 }
 
-// fireApplink walks the client onto one chat without taking the screen, which
-// is what makes it send the read receipt Feishu offers no API for. It is the
-// only lever larkim has on the client's own red dot, and it is best effort:
-// local_read_at has already dropped the badge drawn here.
-func fireApplink(d Deps, c store.ChatUnread, gen int) tea.Cmd {
+// fireBadgeClear drops one chat's red dot without taking the screen. It is best
+// effort either way: local_read_at has already dropped the badge drawn here.
+// The clear bounds itself (markread.New), so the chain cannot stall on it.
+func fireBadgeClear(d Deps, c store.ChatUnread, gen int) tea.Cmd {
 	return func() tea.Msg {
-		err := d.OpenURL([]string{applink.ChatLink(c.ChatID, c.Position)}, true)
+		err := d.ClearBadge(context.Background(), c)
 		if err != nil {
 			d.Log.Warn("clear feishu badge", "chat_id", c.ChatID, "err", err)
 		}

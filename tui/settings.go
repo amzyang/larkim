@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/amzyang/larkim/config"
+	"github.com/amzyang/larkim/markread"
 )
 
 // setting is one key of the configuration as the TUI presents it: the line of
@@ -75,6 +76,18 @@ var settings = []setting{{
 	live:  true,
 	check: positiveMS,
 }, {
+	key:   "mark_read.mode",
+	help:  "how Feishu's own red dot comes down: applink walks the desktop client, web posts to the web client with browser cookies",
+	live:  true,
+	check: config.ValidMarkReadMode,
+	apply: rebuildClearBadge,
+}, {
+	key:   "mark_read.browser",
+	help:  "the browser whose Feishu login web mode borrows, e.g. chrome or edge",
+	live:  true,
+	check: config.ValidMarkReadBrowser,
+	apply: rebuildClearBadge,
+}, {
 	key:  "resources.max_bytes",
 	help: "skip attachments larger than this; 0 means unlimited",
 }, {
@@ -138,6 +151,16 @@ func rebuildSuggest(m *Model) {
 	m.suggester = m.deps.NewSuggest(m.cfg.AI.JevKeyEnv, m.cfg.AI.JevEndpoint)
 }
 
+// rebuildClearBadge builds the badge clearer again from the mode and browser
+// now in m.cfg, so a :set reaches the next chat the queue fires rather than
+// the next session. Deps without a builder keeps what it was given.
+func rebuildClearBadge(m *Model) {
+	if m.deps.NewClearBadge == nil {
+		return
+	}
+	m.deps.ClearBadge = m.deps.NewClearBadge(m.cfg.MarkRead)
+}
+
 func lookupSetting(key string) (setting, bool) {
 	i := slices.IndexFunc(settings, func(s setting) bool { return s.key == key })
 	if i < 0 {
@@ -146,10 +169,10 @@ func lookupSetting(key string) (setting, bool) {
 	return settings[i], true
 }
 
-// applinkPace is the gap the applink queue leaves between two navigations. The
-// queue re-arms per chat, so a change reaches a chain already running.
+// applinkPace is the gap the queue leaves between two clears. It is read per
+// tick, so a change reaches a chain already running.
 func (m Model) applinkPace() time.Duration {
-	return time.Duration(m.cfg.ApplinkPaceMS) * time.Millisecond
+	return markread.Pace(m.cfg)
 }
 
 // settingValue is what this session is running for a key, spelled the way the

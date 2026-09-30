@@ -46,6 +46,43 @@ func TestLoad_RejectsASilenceRuleThatMatchesEverything(t *testing.T) {
 	require.ErrorContains(t, err, "silence rule 1")
 }
 
+func TestDefault_KeepsTheApplinkLever(t *testing.T) {
+	// A config that names no mode clears dots through the desktop client.
+	require.Equal(t, MarkRead{Mode: MarkReadApplink, Browser: "chrome"}, Default().MarkRead)
+}
+
+func TestLoad_TakesTheWebMode(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "c.yaml")
+	require.NoError(t, os.WriteFile(p, []byte("mark_read:\n  mode: web\n  browser: edge\n"), 0o644))
+	cfg, err := Load(p)
+	require.NoError(t, err)
+	require.Equal(t, MarkRead{Mode: MarkReadWeb, Browser: "edge"}, cfg.MarkRead)
+}
+
+func TestLoad_RejectsAModeNothingImplements(t *testing.T) {
+	// A typo must be a message at startup, not dots that silently never fall.
+	p := filepath.Join(t.TempDir(), "c.yaml")
+	require.NoError(t, os.WriteFile(p, []byte("mark_read:\n  mode: webb\n"), 0o644))
+	_, err := Load(p)
+	require.ErrorContains(t, err, `mark_read.mode: "webb" is not applink or web`)
+}
+
+func TestLoad_RejectsWebModeWithNoBrowser(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "c.yaml")
+	require.NoError(t, os.WriteFile(p, []byte("mark_read:\n  mode: web\n  browser: \"\"\n"), 0o644))
+	_, err := Load(p)
+	require.ErrorContains(t, err, "mark_read.browser")
+}
+
+func TestLoad_RejectsABrowserWebModeCannotRead(t *testing.T) {
+	// Safari's jar is never registered, so naming it is a typo to report,
+	// not a browser with no Feishu login.
+	p := filepath.Join(t.TempDir(), "c.yaml")
+	require.NoError(t, os.WriteFile(p, []byte("mark_read:\n  mode: web\n  browser: safari\n"), 0o644))
+	_, err := Load(p)
+	require.ErrorContains(t, err, `mark_read.browser: "safari" is not one of`)
+}
+
 func TestDefault_TakesThePaceFromApplink(t *testing.T) {
 	// One source for the number, so config.example.yaml and the TUI's :set&
 	// cannot come to name different defaults.

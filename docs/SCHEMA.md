@@ -36,8 +36,11 @@ One row per chat the user is (or was) in, from `GET /im/v1/chats` with `types=p2
 | `last_rendered_at`, `last_deleted` | that message's rendering state and recall flag |
 | `last_unsilenced_ms` | the newest main-flow message no silence rule matched, and the key the list orders on; 0 when every message is silenced |
 | `muted`, `mute_checked_at` | the user's do-not-disturb setting and when it was last answered; 0 means it has never been asked |
+| `web_chat_id` | the Feishu web client's numeric id for the chat, which no OpenAPI response carries; empty until matched. Written by the processes that mark chats read in `mark_read.mode: web`, never by the daemon |
 
 A chat first seen only through a message (before the next full listing) exists with an empty name.
+
+`web_chat_id` is learned by matching: the web client's inbox lists each chat with its newest message, and a message whose `(create_ms, message_position)` pair belongs to exactly one stored chat names that chat. A pair shared by two chats teaches nothing.
 
 `muted` comes from `POST /im/v1/chat_user_setting/batch_get_mute_status` under user identity, since no chat listing carries it. The lookup rides the full chat refresh, covers at most 100 chats per round and only those with a message in the last 30 days, taking the longest unanswered first. Chats the API declines to answer for (non-member, malformed id) keep their previous `muted` and are stamped all the same, so `mute_checked_at` says when a chat was last asked about, not that the answer changed.
 

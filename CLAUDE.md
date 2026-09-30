@@ -70,7 +70,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 - Bubble Tea/Bubbles/Lipgloss 用 `charm.land/...` v2 模块路径，不是 `github.com/charmbracelet/...`
 - SQLite 用 `modernc.org/sqlite`（纯 Go），构建 `CGO_ENABLED=0`
-- 无飞书 Go SDK：所有 API 访问经外部 `lark-cli` 子进程（`larkcli.ExecClient`），认证由 lark-cli 管理，larkim 不存凭据
+- 无飞书 Go SDK：所有数据读写经外部 `lark-cli` 子进程（`larkcli.ExecClient`），认证由 lark-cli 管理，larkim 不存凭据
+- 唯一例外是 `larkweb`：`mark_read.mode: web` 时直连 web client 的 `/im/gateway/`（protobuf，经 `protowire`），
+  因为 OpenAPI 没有 mark-read。凭据是浏览器里的飞书 web 登录，经 kooky 每次调用时从 jar 读取，
+  不落盘、不进 SQLite、不进配置；web client 用数字 chat id，靠 inbox 里各会话最新一条消息的
+  `(create_ms, message_position)` 对到 `oc_`（`store.ChatAt`），对上唯一一个会话才记进
+  `chats.web_chat_id`，对不上就不发
 - lark-cli 调用经 `larkcli` 的计数 lane 限流，背景清扫、新消息发现、屏幕节拍、按键各一条，lane 宽度即并发上限；
   lane 用 `larkcli.WithLane` 挂在 context 上，不写进方法签名
 - lark-cli 自身没有客户端限流器，飞书频控按「每 API × 每应用 × 每租户」分级计，所以 lane 宽度是 larkim
@@ -87,7 +92,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - 时间戳一律 Unix 毫秒 UTC；消息顺序 `ORDER BY create_ms, message_position, id`；`message_position` 为负表示 thread 回复（哨兵值由 API 定，当前数据是 -3，判据只能是符号）
 - FTS5 用 trigram 分词（unicode61 把整段 CJK 当一个 token），MATCH 仅对 ≥3 字符词有效，短词走 `instr` 回退
 - JSON 列（`mentions_json`、`reactions_json`、`chats.last_*_json`）一律存最小化形式，由 store 的 `compactJSON` 在写入时保证；`namesSelf` 按文本匹配 id 就靠这条。lark-cli 的输出是缩进的，绕过 `UpdateRendered`/`UpdateReactions` 直接写这几列会让 @我 标记和 `:mentions` 面板静默失效
-- `daemon.lock` 只圈定 sweep 的所有者（discovery、backfill、`sync_state` 全局游标）；读者按键触发的拉取（发送、reaction、展开转发、回溯历史、冷搜索命中）每个进程都能做，它们是对飞书刚答复过的 id 的幂等 upsert。`read_state.local_read_at` 与 `drafts` 归 TUI；外部消费者的处理进度由消费者自持，库里不记
+- `daemon.lock` 只圈定 sweep 的所有者（discovery、backfill、`sync_state` 全局游标）；读者按键触发的拉取（发送、reaction、展开转发、回溯历史、冷搜索命中）每个进程都能做，它们是对飞书刚答复过的 id 的幂等 upsert。`read_state.local_read_at` 与 `drafts` 归 TUI，`chats.web_chat_id` 归清红点的进程（TUI 与 `read-all`），daemon 不写；外部消费者的处理进度由消费者自持，库里不记
 - 发给飞书的时间必须用 `larkTimeLayout`，绝不输出 `Z`（`messages/search` 原样转发）
 
 ## Telemetry
@@ -98,6 +103,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   收到的是我自己机器上我自己的数据，不存在第三方 PII，也就没有要权衡的隐私或合规因素。
   主机名、用户身份、完整的 argv 与错误文本、消息/会话/用户 id、相关配置——能带的全带上，
   照原样带，不脱敏、不截断、不做「以防万一」的过滤。不确定某个字段有没有用时，带上
+- 唯一例外是 cookie 值：它是能直接冒用身份的凭据。日志、错误文本与 Sentry 只带 cookie 名，
+  诊断要的是「哪个缺了」，不是值本身
 - panic 捕获后必须 re-panic，保留退出码
 
 ## Style

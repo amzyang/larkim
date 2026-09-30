@@ -7,12 +7,14 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/amzyang/larkim/applink"
 	"github.com/amzyang/larkim/jev"
+	"github.com/amzyang/larkim/larkweb"
 	"github.com/amzyang/larkim/store"
 	"gopkg.in/yaml.v3"
 )
@@ -46,12 +48,82 @@ type Config struct {
 	// between two lark:// navigations. Milliseconds rather than a duration
 	// string because this is the one key a reader retunes by hand, from the
 	// TUI's :set and from --set, where 1500 beats "1500ms".
-	ApplinkPaceMS int       `yaml:"applink_pace_ms"`
-	Resources     Resources `yaml:"resources"`
-	AI            AI        `yaml:"ai"`
+	ApplinkPaceMS int `yaml:"applink_pace_ms"`
+	// MarkRead picks which lever drops the Feishu client's own red dot.
+	MarkRead  MarkRead  `yaml:"mark_read"`
+	Resources Resources `yaml:"resources"`
+	AI        AI        `yaml:"ai"`
 	// Silence keeps matching messages out of the unread badge and out of the
 	// chat list's ordering; see docs/silence/PRD.md.
 	Silence store.SilenceRules `yaml:"silence"`
+}
+
+// Mark-read modes.
+const (
+	// MarkReadApplink walks the desktop client onto the chat and lets it send
+	// the receipt itself.
+	MarkReadApplink = "applink"
+	// MarkReadWeb posts the read watermark to the web client's gateway with
+	// cookies borrowed from a browser.
+	MarkReadWeb = "web"
+)
+
+// MarkRead configures how the Feishu client's own red dot comes down. Both
+// modes take the chat as read locally the same way; they differ only in what
+// they ask Feishu.
+type MarkRead struct {
+	// Mode is applink or web. applink drives the desktop client, so it needs
+	// the client running and answers nothing about whether the dot fell; web
+	// posts one request per chat and reports a status, but needs a browser
+	// logged into Feishu.
+	Mode string `yaml:"mode"`
+	// Browser names the cookie jar web mode reads, as kooky registers it.
+	Browser string `yaml:"browser"`
+}
+
+// ValidMarkReadMode names the accepted words, which YAML's own error would
+// not: to the decoder any string is a string.
+func ValidMarkReadMode(mode string) error {
+	switch mode {
+	case MarkReadApplink, MarkReadWeb:
+		return nil
+	}
+	return fmt.Errorf("mark_read.mode: %q is not %s or %s", mode, MarkReadApplink, MarkReadWeb)
+}
+
+// Values is the fixed set a key takes, for the keys that have one, so
+// completion offers the words the validators accept and nothing else. A key
+// that takes any value answers nil.
+func Values(key string) []string {
+	switch key {
+	case "mark_read.mode":
+		return []string{MarkReadApplink, MarkReadWeb}
+	case "mark_read.browser":
+		return larkweb.Browsers
+	}
+	return nil
+}
+
+// ValidMarkReadBrowser names the jars web mode can read, so a browser it has
+// no reader for is refused where it is typed rather than read as a browser
+// with no Feishu login.
+func ValidMarkReadBrowser(browser string) error {
+	if slices.Contains(larkweb.Browsers, browser) {
+		return nil
+	}
+	return fmt.Errorf("mark_read.browser: %q is not one of %s", browser, strings.Join(larkweb.Browsers, ", "))
+}
+
+// Validate refuses a mode nobody implements rather than falling back to one,
+// so a typo is a message at startup instead of dots that never come down.
+func (m MarkRead) Validate() error {
+	if err := ValidMarkReadMode(m.Mode); err != nil {
+		return err
+	}
+	if m.Mode == MarkReadWeb {
+		return ValidMarkReadBrowser(m.Browser)
+	}
+	return nil
 }
 
 // AI configures the TUI assistant.
@@ -91,7 +163,10 @@ func Default() Config {
 		SlowPathEvery:     10 * time.Minute,
 		RepairEvery:       6 * time.Hour,
 		ApplinkPaceMS:     applink.DefaultPaceMS,
-		Resources:         Resources{MaxBytes: 50 << 20},
+		// Browser is filled even in applink mode, which does not read a jar, so
+		// that switching modes is one key rather than two.
+		MarkRead:  MarkRead{Mode: MarkReadApplink, Browser: "chrome"},
+		Resources: Resources{MaxBytes: 50 << 20},
 		AI: AI{Model: "claude-opus-5", APIKeyEnv: "ANTHROPIC_API_KEY", Context: 80,
 			JevKeyEnv: "TYPESAFE_API_KEY", JevEndpoint: jev.DefaultEndpoint},
 	}
@@ -149,6 +224,9 @@ func LoadWith(path string, sets []string) (Config, error) {
 	// spin over lark-cli.
 	cfg.PollIntervalMS = max(cfg.PollIntervalMS, minPollIntervalMS)
 	if err := cfg.Silence.Validate(); err != nil {
+		return cfg, fmt.Errorf("%s: %w", path, err)
+	}
+	if err := cfg.MarkRead.Validate(); err != nil {
 		return cfg, fmt.Errorf("%s: %w", path, err)
 	}
 	return cfg, nil

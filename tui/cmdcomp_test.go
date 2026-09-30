@@ -187,12 +187,22 @@ func TestCmdComp_CompletesASettingWithItsEqualsAlready(t *testing.T) {
 	// An option only ever reads as a pair, so the = comes along and the
 	// reader's next keystroke is the value.
 	m := press(t, cmdModel(t), "s", "e", "t", " ")
-	require.Equal(t, []string{"applink_pace_ms", "ai.model", "ai.api_key_env", "ai.context",
+	require.Equal(t, []string{"applink_pace_ms", "mark_read.mode", "mark_read.browser", "ai.model", "ai.api_key_env", "ai.context",
 		"ai.jev_key_env", "ai.jev_endpoint"}, offers(m),
 		":set reaches only the keys a change takes effect on")
 
 	m = press(t, m, "tab")
 	require.Equal(t, "set applink_pace_ms=", typed(m))
+}
+
+func TestCmdComp_CompletesAModeWithTheWordsItTakes(t *testing.T) {
+	// mark_read.mode takes one of two words; offering them is what spares the
+	// reader a round trip through the refusal.
+	m := press(t, cmdModel(t), []string{"s", "e", "t", " ", "m", "a", "r", "k", "_", "r", "e", "a", "d", ".", "m", "o", "d", "e", "="}...)
+	require.Equal(t, []string{"applink", "web"}, offers(m))
+
+	m = press(t, m, "w", "tab")
+	require.Equal(t, "set mark_read.mode=web", typed(m))
 }
 
 func TestCmdComp_CompletesAConfigKeyBare(t *testing.T) {

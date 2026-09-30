@@ -40,6 +40,19 @@ repair_every: 6h
 # the value that stays.
 applink_pace_ms: 1000
 
+# How the Feishu client's own red dot comes down once larkim has read a chat.
+# applink walks the desktop client onto the chat and it sends the receipt; it
+# needs the client running and reports nothing back. web posts the chat's read
+# watermark to the web client with the Feishu login of `browser`, and each chat
+# answers for itself. A chat is matched to the web client once, through its
+# newest message, and stays clearable after that, Done included; one never
+# matched is reported and left lit. The first read of a process asks for
+# Keychain access to that browser's cookies. browser is one of brave, chrome,
+# chromium, edge.
+mark_read:
+  mode: applink
+  browser: chrome
+
 # Messages matching any rule keep their place in the chat but carry no unread
 # badge and never move their chat up the list. A rule's fields are an AND, an
 # omitted field matches anything, and a rule with no field set is refused.

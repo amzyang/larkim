@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/amzyang/larkim/applink"
+	"github.com/amzyang/larkim/config"
+	"github.com/amzyang/larkim/markread"
 	"github.com/amzyang/larkim/store"
 	"github.com/stretchr/testify/require"
 )
@@ -36,18 +38,19 @@ func TestMarkChatRead_ReportsAFailureTheBadgeCannotShow(t *testing.T) {
 func logDeps(t *testing.T, openErr error) (Deps, *bytes.Buffer) {
 	t.Helper()
 	var buf bytes.Buffer
+	log := slog.New(slog.NewTextHandler(&buf, nil))
+	open := func([]string, bool) error { return openErr }
 	return Deps{
-		Log: slog.New(slog.NewTextHandler(&buf, nil)),
-		OpenURL: func([]string, bool) error {
-			return openErr
-		},
+		Log:        log,
+		OpenURL:    open,
+		ClearBadge: markread.New(config.Default().MarkRead, log, nil, open),
 	}, &buf
 }
 
-func TestFireApplink_LogsAFailureInsteadOfTakingTheNoticeBar(t *testing.T) {
+func TestFireBadgeClear_LogsAFailureInsteadOfTakingTheNoticeBar(t *testing.T) {
 	d, buf := logDeps(t, errors.New("no application knows how to open URL"))
 
-	msg := fireApplink(d, store.ChatUnread{ChatID: "oc_quiet"}, 3)().(applinkFiredMsg)
+	msg := fireBadgeClear(d, store.ChatUnread{ChatID: "oc_quiet"}, 3)().(applinkFiredMsg)
 
 	require.Error(t, msg.err, "the queue counts it; a chat switch is not reported as the reader's error")
 	require.Contains(t, buf.String(), "clear feishu badge")

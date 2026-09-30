@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/amzyang/larkim/config"
 	"github.com/amzyang/larkim/emoji"
 )
 
@@ -148,6 +149,15 @@ func (m Model) argHits(cmd command, stem string) []cmdHit {
 		eq := ""
 		if cmd.arg == argSetting {
 			eq = "="
+		}
+		// Past the =, a key with a fixed set of values offers them.
+		if key, val, typed := strings.Cut(stem, "="); typed && cmd.arg == argSetting {
+			for _, v := range config.Values(key) {
+				if strings.HasPrefix(v, val) {
+					out = append(out, cmdHit{insert: key + "=" + v, label: markName(v, prefixMark(val), stBold)})
+				}
+			}
+			break
 		}
 		for _, st := range settings {
 			if cmd.arg == argSetting && !st.live {

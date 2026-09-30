@@ -1,12 +1,15 @@
 package tui
 
 import (
+	"context"
 	"testing"
 	"time"
 
 	"github.com/amzyang/larkim/applink"
 	"github.com/amzyang/larkim/config"
 	"github.com/amzyang/larkim/jev"
+	"github.com/amzyang/larkim/markread"
+	"github.com/amzyang/larkim/store"
 	"github.com/stretchr/testify/require"
 )
 
@@ -17,6 +20,40 @@ func setModel(t *testing.T) Model {
 	m := pickerModel(t)
 	m.cfg.ApplinkPaceMS = 40
 	return m
+}
+
+func TestRunSet_RebuildsTheBadgeClearerForTheNewMode(t *testing.T) {
+	m := setModel(t)
+	var built []config.MarkRead
+	m.deps.NewClearBadge = func(cfg config.MarkRead) markread.Clear {
+		built = append(built, cfg)
+		return func(context.Context, store.ChatUnread) error { return nil }
+	}
+
+	m = m.runSet("mark_read.mode=web")
+
+	require.Equal(t, []config.MarkRead{{Mode: config.MarkReadWeb, Browser: "chrome"}}, built)
+	require.Equal(t, markread.Pace(m.cfg), m.applinkPace(), "the queue takes the web lever's pace")
+}
+
+func TestRunSet_KeepsAnInjectedBadgeClearer(t *testing.T) {
+	// A test that injects a fake clearer and flips the mode must not end up
+	// reading the browser's cookies or posting to the gateway.
+	m := setModel(t)
+	calls := 0
+	m.deps.ClearBadge = func(context.Context, store.ChatUnread) error { calls++; return nil }
+	m.deps.NewClearBadge = nil
+
+	m = m.runSet("mark_read.mode=web")
+
+	require.NoError(t, m.deps.ClearBadge(t.Context(), store.ChatUnread{ChatID: "oc_quiet"}))
+	require.Equal(t, 1, calls)
+}
+
+func TestRunSet_RefusesAMarkReadModeNothingImplements(t *testing.T) {
+	m := setModel(t).runSet("mark_read.mode=webb")
+	require.Contains(t, m.notice, `"webb" is not applink or web`)
+	require.Equal(t, config.MarkReadApplink, m.cfg.MarkRead.Mode)
 }
 
 func TestRunSet_RetunesTheGapTheQueueTicksOn(t *testing.T) {
@@ -41,7 +78,7 @@ func TestRunSet_RestoresTheDefault(t *testing.T) {
 
 func TestRunSet_ListsEveryOptionWhenGivenNothing(t *testing.T) {
 	m := setModel(t).runSet("")
-	require.Equal(t, "applink_pace_ms=40  ai.model=claude-opus-5  ai.api_key_env=ANTHROPIC_API_KEY  ai.context=80"+
+	require.Equal(t, "applink_pace_ms=40  mark_read.mode=applink  mark_read.browser=chrome  ai.model=claude-opus-5  ai.api_key_env=ANTHROPIC_API_KEY  ai.context=80"+
 		"  ai.jev_key_env=TYPESAFE_API_KEY  ai.jev_endpoint=https://api.typesafe.ai/v1/systemone", m.notice)
 	require.NotContains(t, m.notice, "poll_interval_ms", "a key read once at startup is not listed here")
 }

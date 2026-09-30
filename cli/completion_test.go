@@ -227,6 +227,14 @@ func TestCompleteConfigKey_LeavesAValueAlone(t *testing.T) {
 	require.Len(t, lines, 1, "what the value should be is the reader's business, not a list")
 }
 
+func TestCompleteConfigKey_OffersTheWordsAModeTakes(t *testing.T) {
+	lines := completeArgs(t, "--set", "mark_read.mode=")
+	require.Equal(t, []string{"mark_read.mode=applink", "mark_read.mode=web"}, lines[:len(lines)-1])
+
+	lines = completeArgs(t, "--set", "mark_read.mode=w")
+	require.Equal(t, []string{"mark_read.mode=web"}, lines[:len(lines)-1])
+}
+
 func TestCompleteConfigKey_NeedsNoDatabase(t *testing.T) {
 	// The keys come out of the config struct, so Tab answers before the
 	// first sync the way --config does.

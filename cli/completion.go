@@ -93,9 +93,16 @@ func hasPrefixFold(s, prefix string) bool {
 // The candidates come from the config struct's own yaml tags, so a key added
 // to the file is offered here without a second list to remember.
 func completeConfigKey(_ *cobra.Command, _ []string, prefix string) ([]cobra.Completion, cobra.ShellCompDirective) {
-	// A value already typed is the reader's, not ours to narrow.
-	if _, _, typed := strings.Cut(prefix, "="); typed {
-		return nil, cobra.ShellCompDirectiveNoFileComp
+	// Past the =, only a key with a fixed set of values has anything to
+	// offer; any other value is the reader's, not ours to narrow.
+	if key, val, typed := strings.Cut(prefix, "="); typed {
+		var out []cobra.Completion
+		for _, v := range config.Values(key) {
+			if hasPrefixFold(v, val) {
+				out = append(out, key+"="+v)
+			}
+		}
+		return out, cobra.ShellCompDirectiveNoFileComp
 	}
 	var out []cobra.Completion
 	for _, key := range config.Keys() {

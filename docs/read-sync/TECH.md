@@ -40,7 +40,7 @@
 
 `tea.Tick` 的计时从构造时起，所以 tick 与 `open` 同批挂出时，间隔量的是两次 `open` 开始之间，`applink.Open` 同步等 `open` 返回的那段也算在内。
 
-间隔取 `config.ApplinkPaceMS`（毫秒整数，默认 `applink.DefaultPaceMS`），经 `Deps.Pace` 进 `Model.pace`；`larkim read-all` 直接读同一个配置项。单位写在键名里而不用 duration 串，因为这是唯一一个要按机器手调的值，`:set applink_pace_ms=1500` 比 `1500ms` 少一层。值挂在 `Model` 而不是队列上，所以 `:set` 的改动落到正在跑的那条链上而不是下一次。
+间隔取 `markread.Pace`：applink 模式是 `config.ApplinkPaceMS`（毫秒整数，默认 `applink.DefaultPaceMS`），web 模式是 `larkweb.Pace`；`larkim read-all` 取同一个函数。单位写在键名里而不用 duration 串，因为这是唯一一个要按机器手调的值，`:set applink_pace_ms=1500` 比 `1500ms` 少一层。每个 tick 现读 `Model.cfg`，所以 `:set` 的改动落到正在跑的那条链上而不是下一次。
 
 **没有前台/后台自适应。** 客户端在前台时画得快、后台时画得慢，但 `open -g` 从不把它抬到前台，三个入口又都在终端持有焦点时触发，所以任何 frontmost 探测都只会答「后台」；`lsappinfo` 不报遮挡与隐藏（`isHidden`、`visible` 皆为空），`CGWindowList` 要 cgo，与 `CGO_ENABLED=0` 冲突。默认值因此按慢的那一侧取。
 
@@ -92,9 +92,29 @@ thread 回复与已撤回不进查询集合：applink 打开的是主消息流�
 
 `Deps.OpenURL func(targets []string, background bool) error`（`tui/data.go`）。`New` 在其为 nil 时填 `applink.Open`，测试替换为 recorder，`open` 不在测试里跑。CLI 侧同形：`App.openURL`（`cli/root.go`），`nil` 时走 `applink.Open`。
 
+清红点另走一条缝：`Deps.ClearBadge markread.Clear`。`markread` 包是 `mark_read.mode` 选中的杠杆，TUI 与 `larkim read-all` 共用，两者都不 import `larkweb`：`markread.New` 构造它（applink 模式包一层 `OpenURL`，web 模式是 `larkweb.Resolver.MarkRead`），`markread.Pace` 给队列间隔，`markread.Confirms` 回答成功是不是飞书的答复（决定 read-all 说 walked 还是 cleared）。`o` 键不经它——那是「我要去飞书」，两种模式都前置窗口。`:set mark_read.*` 经 `Deps.NewClearBadge` 当场重建它；测试注入了 `ClearBadge` 而没给构造器时保持不动，与 `NewAI` 同一约定。
+
+## web 模式
+
+`larkweb` 直连 `internal-api-lark-api.feishu.cn/im/gateway/`，body 是 protobuf 的 `Packet` 信封（`payloadType=2, cmd=3, payload=5, cid=6`），路由靠 `x-command` 头，认证只有 cookie（必须有 `session`），无 CSRF、无签名。cookie 由 kooky 每次调用时从 `mark_read.browser` 的 jar 读，只登记 Chromium 系，Safari 不进来，免得 Full Disk Access 的失败混进来。
+
+`PutReadMessages`（cmd 40）的 `chatId` 是 web client 的**数字** id，传 `oc_` 会被 400 拒（`strconv.ParseInt`）。两套 id 之间没有任何字段或接口相连，`entities.Chat.openChatId` 在 inbox 回包里全为空。对法是消息：`feed.PullFeedCards`（cmd 1000，INBOX）给出每个会话最新一条消息的 `chatId`、`position`、`createTimeMs`，`store.ChatAt(create_ms, message_position)` 恰好命中一个本地会话时才建立映射。对不上的多是最新消息早于 backfill 视野的会话，本来就不会有 larkim 侧的未读。
+
+Collapsed Chats 在 inbox 顶层只是一张 `type=BOX` 的卡片，折进去的会话不出现在顶层回包里；`LastMessages` 对每张 box 卡再以 `parentCardId` 拉一遍它自己的一层。
+
+匹配键只用 `(create_ms, message_position)`，不加 sender：本地库里跨会话同毫秒的消息全是同一个人同时发往两个群，sender 相同，分开它们的是 position。
+
+对上的 id 记进 `chats.web_chat_id`（migration `0043`），所以一个会话只需对上一次：之后它移进 Done、或 inbox 列出的最新消息还没同步下来，都照样能清。一次 inbox 拉取把能对上的会话全部记下，一次 sweep 通常不再拉。
+
+没记过的会话先拉一次 inbox 去对；仍对不上就报错不发——猜错的代价是把别的会话记为已读。两次拉取之间至少隔 `relistAfter`（1 分钟），免得一次 sweep 里每个对不上的会话各拉一遍整份 inbox（实测 4 页、500+ 会话）。
+
+数字 id 是飞书侧会话的内部主键，同一会话在所有探测里都是同一个值；没有观察到它会变，因此不为「记下的 id 失效」写回退。
+
+队列在 web 模式下仍串行，间隔取 `larkweb.Pace`（100ms）而不是 `applink_pace_ms`：后者是为客户端画得慢准备的，POST 不需要，但一次 sweep 几十个请求不留间隔就是一个没测过频控的突发。
+
 URL、节奏常量与 `open` 的调用都在 `applink` 包里，因为 TUI 与 `larkim read-all` 共用同一个桌面客户端，也就共用同一个节奏。
 
-`background` 分开两个调用点：`fireApplink` 传 true（`open -g`，焦点留在终端），`o` 键的 `openInFeishu` 传 false（用户要去飞书）。
+`background` 分开两个调用点：applink 模式的 `markread.New` 传 true（`open -g`，焦点留在终端），`o` 键的 `openInFeishu` 传 false（用户要去飞书）。
 
 清红点的 URL 带上该会话**最新一条仍欠着的消息**的 `position`（`store.ChatUnread`）。不带的话客户端停在它自己的未读分隔线上，积压深的会话那条线就在历史中间——正是 `pageShown` 判为「没读」的那种落点。带上的是库里真实存在的序号，不是一个越界的大数：越界值客户端不保证跳到末尾。
 
@@ -102,13 +122,13 @@ URL、节奏常量与 `open` 的调用都在 `applink` 包里，因为 TUI 与 `
 
 ## 数据
 
-无 schema 变更、无 migration。`read_state_unread(is_read_remote, local_read_at, message_id)` 仍以 `is_read_remote` 领衔，`clientDot` 只约束首列，索引照样能驱动 read_state 一侧且仍然覆盖——拿得到 `message_id` 去 join，不必回表。代价只是选择性：命中的行从「当前有徽标的」变成「7 天视野内远端仍未读的」，而 `ExpireReadStatus` 是这个集合现在唯一的上界。
+applink 模式不用任何新列；web 模式用 `chats.web_chat_id`（见上）。`read_state_unread(is_read_remote, local_read_at, message_id)` 仍以 `is_read_remote` 领衔，`clientDot` 只约束首列，索引照样能驱动 read_state 一侧且仍然覆盖——拿得到 `message_id` 去 join，不必回表。代价只是选择性：命中的行从「当前有徽标的」变成「7 天视野内远端仍未读的」，而 `ExpireReadStatus` 是这个集合现在唯一的上界。
 
 `local_read_at` 不因 applink 能翻回执而退休：徽标要立刻落（回执有往返延迟）、回执过 7 天视野归 NULL、applink 可能静默失败。
 
 ## 测试
 
-白盒，`Deps.OpenURL` 注入 recorder。`tui/badgeclear_test.go` 管 applink 这一侧：
+白盒，`Deps.ClearBadge` 由 `markread.New` 包一个 `open` recorder 构造，`open` 与 gateway 都不在测试里跑；web 一侧在 `larkweb` 里对 `httptest` 的假 gateway 测。`tui/badgeclear_test.go` 管 applink 这一侧：
 
 | 用例 | 断言 |
 |---|---|

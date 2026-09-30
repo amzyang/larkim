@@ -19,6 +19,7 @@ import (
 	"github.com/amzyang/larkim/fuzzy"
 	"github.com/amzyang/larkim/jev"
 	"github.com/amzyang/larkim/larkcli"
+	"github.com/amzyang/larkim/markread"
 	"github.com/amzyang/larkim/store"
 	"github.com/amzyang/larkim/sync"
 )
@@ -61,6 +62,19 @@ type Deps struct {
 	// it when nil; tests replace it to keep the real `open` out of the run.
 	// Several targets are opened together rather than one by one.
 	OpenURL func(targets []string, background bool) error
+	// ClearBadge drops the Feishu client's own red dot for one chat, by
+	// whichever lever mark_read.mode names. New fills it when nil; tests
+	// replace it to keep both macOS and the gateway out of the run.
+	//
+	// It is separate from OpenURL because the two answer different questions:
+	// OpenURL hands a URL to the desktop, which is also what the `o` key does
+	// on purpose, while this one is asked for a chat to stop being unread and
+	// may never touch the desktop at all.
+	ClearBadge markread.Clear
+	// NewClearBadge builds ClearBadge again when :set changes mark_read. New
+	// fills it with markread.New when both are nil; a test that injects
+	// ClearBadge leaves it nil, so a :set keeps the fake it was given.
+	NewClearBadge func(config.MarkRead) markread.Clear
 	// Config is the configuration this run loaded. :set retunes a key of it
 	// for the session and :config writes one back to the file. New fills a
 	// zero applink_pace_ms with the default; tests set it small so a

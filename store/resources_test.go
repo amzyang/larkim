@@ -224,6 +224,86 @@ func TestListChats_LeaveThreadRepliesOutOfTheBadge(t *testing.T) {
 	require.Equal(t, int64(2), total, "the backlog measure counts the reply all the same")
 }
 
+func TestChatAt_NamesTheOneChatHoldingTheMessage(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	require.NoError(t, s.EnsureChat(ctx, "oc_a", 1))
+	require.NoError(t, s.EnsureChat(ctx, "oc_b", 1))
+	_, err := s.UpsertMessages(ctx, []Message{
+		msgAt("om_a", "oc_a", 1000, 7, "one"),
+		msgAt("om_b", "oc_b", 1000, 8, "same ms, other position"),
+	}, 1)
+	require.NoError(t, err)
+
+	id, ok, err := s.ChatAt(ctx, 1000, 7)
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, "oc_a", id)
+
+	_, ok, err = s.ChatAt(ctx, 1000, 9)
+	require.NoError(t, err)
+	require.False(t, ok)
+}
+
+func TestChatAt_RefusesAPairTwoChatsShare(t *testing.T) {
+	// A wrong answer marks some other chat read, so two candidates is no
+	// answer at all.
+	s := openTest(t)
+	ctx := t.Context()
+	require.NoError(t, s.EnsureChat(ctx, "oc_a", 1))
+	require.NoError(t, s.EnsureChat(ctx, "oc_b", 1))
+	_, err := s.UpsertMessages(ctx, []Message{
+		msgAt("om_a", "oc_a", 1000, 7, "one"),
+		msgAt("om_b", "oc_b", 1000, 7, "twin"),
+	}, 1)
+	require.NoError(t, err)
+
+	_, ok, err := s.ChatAt(ctx, 1000, 7)
+	require.NoError(t, err)
+	require.False(t, ok)
+}
+
+func TestWebChatID_KeepsWhatWasMatched(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	require.NoError(t, s.EnsureChat(ctx, "oc_a", 1))
+
+	id, err := s.WebChatID(ctx, "oc_a")
+	require.NoError(t, err)
+	require.Empty(t, id, "a chat never matched has no web id")
+
+	require.NoError(t, s.SetWebChatIDs(ctx, map[string]string{"oc_a": "7001"}))
+	id, err = s.WebChatID(ctx, "oc_a")
+	require.NoError(t, err)
+	require.Equal(t, "7001", id)
+}
+
+func TestWebChatID_LeavesTheListUntouched(t *testing.T) {
+	// The id is bookkeeping for mark-read, not something the list draws, so
+	// writing it must not wake every TUI into a reload.
+	s := openTest(t)
+	ctx := t.Context()
+	require.NoError(t, s.EnsureChat(ctx, "oc_a", 1))
+	before, err := s.DataRev(ctx)
+	require.NoError(t, err)
+
+	require.NoError(t, s.SetWebChatIDs(ctx, map[string]string{"oc_a": "7001"}))
+
+	after, err := s.DataRev(ctx)
+	require.NoError(t, err)
+	require.Equal(t, before, after)
+}
+
+func TestSetWebChatIDs_SkipsAChatNotStored(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+
+	require.NoError(t, s.SetWebChatIDs(ctx, map[string]string{"oc_unsynced": "7001"}))
+
+	_, err := s.GetChat(ctx, "oc_unsynced")
+	require.ErrorIs(t, err, ErrNotFound, "a row with nothing but an id is a chat the list cannot draw")
+}
+
 func TestMarkChatRead_ClearsTheBadgeOfOneChat(t *testing.T) {
 	s := openTest(t)
 	ctx := t.Context()
