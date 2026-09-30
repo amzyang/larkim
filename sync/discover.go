@@ -33,14 +33,10 @@ func (s *Syncer) discover(ctx context.Context, now time.Time) (moved, probed int
 	fresh, errs := fanOut(ctx, named, func(ctx context.Context, id string) (int, error) {
 		return s.pullNamed(ctx, id, now)
 	})
-	for i, n := range fresh {
+	for _, n := range fresh {
 		probed += n
-		// A sibling's failure cancelled this one, and carries the real answer.
-		if errs[i] != nil && err == nil && !errors.Is(errs[i], context.Canceled) {
-			err = errs[i]
-		}
 	}
-	if err != nil {
+	if err := firstFailure(errs); err != nil {
 		return len(named), probed, fmt.Errorf("active probe pull: %w", err)
 	}
 	// Recording the ordering is what consumes the delta: once written, the
@@ -64,7 +60,8 @@ func (s *Syncer) pullNamed(ctx context.Context, id string, now time.Time) (int, 
 	if err != nil || fresh == 0 {
 		return fresh, err
 	}
-	n, err := s.renderPending(ctx, id, hotRenderBatch, now)
+	// pullFromCursor rendered the bodies as it landed them.
+	n, err := s.renderRemote(ctx, id, hotRenderBatch, now)
 	s.changed(n)
 	s.wakeSweep()
 	return fresh, err
@@ -262,7 +259,8 @@ func (s *Syncer) discoveryPause(loggedOut bool, err error, failures int) time.Du
 // SetAttended tells discovery whether somebody is looking at what it finds.
 // While they are, it runs cycle after cycle; while they are not, it keeps the
 // sweep's pace, since a message nobody is looking at is no later for landing
-// a second after it was sent. Coming back starts a cycle at once.
+// a second after it was sent. Coming back starts a cycle at once. Only the
+// process running Run discovers, so a TUI beside a daemon says it to nobody.
 func (s *Syncer) SetAttended(on bool) {
 	s.signals()
 	if s.attended.Swap(on) || !on {

@@ -7,9 +7,9 @@ data_dir: ~/.larkim
 # Empty tries /opt/homebrew/bin/lark-cli, then $PATH.
 lark_cli_path: ""
 
-# Pause between sweep ticks, in milliseconds, and between discovery cycles
-# while no larkim window has focus (with focus they run back to back); values
-# below 100 are raised to 100.
+# Pause between sweep ticks, in milliseconds, and between discovery cycles;
+# a TUI syncing in-process runs discovery back to back while its window has
+# focus. Values below 100 are raised to 100.
 poll_interval_ms: 3000
 
 # How far each search window reaches behind the watermark, to absorb the
