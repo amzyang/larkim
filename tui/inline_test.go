@@ -151,9 +151,9 @@ func TestJoinSegs_ClosesALinkTheRowWidthCutThrough(t *testing.T) {
 }
 
 func TestWrapSegs_FillsTheRowWithCJKRatherThanOrphaningWhatCameBefore(t *testing.T) {
-	// CJK breaks nowhere, so a run that will not fit whole is cut where the
-	// row ends. Moving it down instead would leave the piece before it — a
-	// list marker, a mention — alone on a row of its own.
+	// CJK breaks between any two ideographs, so a run that will not fit whole
+	// fills the row it starts on. Moving it down instead would leave the piece
+	// before it — a list marker, a mention — alone on a row of its own.
 	rows := wrapSegs([]rowSeg{{text: "1. "}, {text: strings.Repeat("中", 40)}}, 20)
 	require.Greater(t, len(rows), 1, "the run did not wrap; the test proves nothing")
 	require.Equal(t, 2, len(rows[0]), "the marker keeps company on its row")
@@ -174,4 +174,41 @@ func TestWrapSegs_ALongWordStillMovesToARowOfItsOwn(t *testing.T) {
 	rows := wrapSegs([]rowSeg{{text: "ab "}, {text: "supercalifragilistic"}}, 22)
 	require.Len(t, rows, 2)
 	require.Equal(t, "supercalifragilistic", rows[1][0].text)
+}
+
+// rowStrings is each packed row as the characters it draws.
+func rowStrings(rows [][]rowSeg) []string {
+	out := make([]string, 0, len(rows))
+	for _, row := range rows {
+		var b strings.Builder
+		for _, s := range row {
+			b.WriteString(ansi.Strip(s.text))
+		}
+		out = append(out, b.String())
+	}
+	return out
+}
+
+func TestWrapSegs_TheBreakSpaceAfterAStyledRunOpensNoRow(t *testing.T) {
+	styled := stCode.Render("cd")
+	require.Contains(t, styled, "\x1b[", "an unstyled run would prove nothing here")
+	require.Equal(t, []string{"ab cd", "efgh"},
+		rowStrings(wrapSegs([]rowSeg{{text: "ab " + styled + " efgh"}}, 6)))
+	require.Equal(t, []string{"ab cd", "efgh"},
+		rowStrings(wrapSegs([]rowSeg{{text: "ab cd efgh"}}, 6)), "and the plain run the same")
+}
+
+func TestWrapSegs_AContinuationRowDropsTheSpaceItOpensWith(t *testing.T) {
+	segs := []rowSeg{{text: "aaaa"}, {text: stLink.Render("bb"), urls: []string{"https://example.com/x"}}, {text: " cc"}}
+	require.Equal(t, []string{"aaaabb", "cc"}, rowStrings(wrapSegs(segs, 6)))
+	require.Equal(t, []string{"  ab"}, rowStrings(wrapSegs([]rowSeg{{text: "  ab"}}, 6)),
+		"a line's own indent is kept")
+}
+
+func TestWrapSegs_BreaksBetweenIdeographsLikeTheClient(t *testing.T) {
+	require.Equal(t, []string{"ab 中文", "字符串"}, rowStrings(wrapSegs([]rowSeg{{text: "ab 中文字符串"}}, 8)))
+}
+
+func TestWrapSegs_NoRowOpensOnClosingPunctuation(t *testing.T) {
+	require.Equal(t, []string{"中文", "字，好"}, rowStrings(wrapSegs([]rowSeg{{text: "中文字，好"}}, 6)))
 }

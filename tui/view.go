@@ -486,7 +486,7 @@ func (m Model) aiLines() []string {
 	if text == "" && m.aiBusy {
 		text = "…"
 	}
-	return strings.Split(lipgloss.NewStyle().Width(m.rightWidth()-2).Render(text), "\n")
+	return wrap(text, m.rightWidth()-2)
 }
 
 func (m *Model) rebuildThread() {

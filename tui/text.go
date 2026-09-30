@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // inlineMD matches the markup lark-cli renders a message body into: links,
@@ -111,7 +112,31 @@ func renderInline(s string, ms mentions) string {
 	return b.String()
 }
 
-// wrap breaks styled text to w columns, returning at least one line.
+// wrap breaks styled text to w columns, returning at least one line, each
+// padded to w. It breaks where takeText does, so a body reads the same
+// whichever path draws it.
 func wrap(s string, w int) []string {
-	return strings.Split(lipgloss.NewStyle().Width(max(4, w)).Render(s), "\n")
+	w = max(4, w)
+	s = strings.ReplaceAll(strings.ReplaceAll(s, "\r\n", "\n"), "\t", "    ")
+	var lines []string
+	for src := range strings.SplitSeq(s, "\n") {
+		first := true
+		for {
+			if !first {
+				src = dropLeadingSpaces(src)
+			}
+			head, rest := takeText(src, w)
+			if head == "" && src != "" {
+				// Nowhere to break inside the row: a URL longer than the row.
+				head = closeStyle(cut(src, w))
+				rest = cutLeft(src, ansi.StringWidth(head))
+			}
+			lines = append(lines, head+strings.Repeat(" ", max(0, w-ansi.StringWidth(head))))
+			if first = false; ansi.StringWidth(rest) == 0 {
+				break
+			}
+			src = rest
+		}
+	}
+	return lines
 }

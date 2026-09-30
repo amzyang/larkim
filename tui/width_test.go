@@ -54,8 +54,9 @@ func TestFit_AKeycapLineStaysInsideThePane(t *testing.T) {
 }
 
 func TestWrapSegs_AnUnbreakableRunWithAKeycapFitsTheRow(t *testing.T) {
-	// No spaces to break at, so the run reaches the forced cut.
-	segs := []rowSeg{{text: keycap + strings.Repeat("字", 60)}}
+	// A digit and the letters after it break nowhere, so the run reaches the
+	// forced cut.
+	segs := []rowSeg{{text: keycap + strings.Repeat("x", 120)}}
 	for w := 4; w < 40; w++ {
 		for i, row := range wrapSegs(segs, w) {
 			got := 0
@@ -95,7 +96,7 @@ func TestView_NoFrameLineOutgrowsTheTerminal(t *testing.T) {
 		// the line on the piece-wise path, where a row is padded to the pane
 		// rather than cut to it.
 		{"a keycap in an unbreakable run", "text",
-			keycap + strings.Repeat("字", 27) + "x https://example.com/a"},
+			keycap + strings.Repeat("x", 55) + " https://example.com/a"},
 		// An ordered marker stands in columns the indent did not charge for,
 		// so a numbered item carrying a link arrives a column over as well.
 		{"a numbered item carrying a link", "post",

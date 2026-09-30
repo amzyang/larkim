@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"strings"
 	"testing"
 
 	"charm.land/lipgloss/v2"
@@ -100,4 +101,25 @@ func TestRenderInline_NestedRunsCompose(t *testing.T) {
 func TestRenderInline_ATripleAsteriskIsBoldAndItalic(t *testing.T) {
 	require.Equal(t, lipgloss.NewStyle().Bold(true).Italic(true).Render("abcd"),
 		renderInline("***abcd***", mentionsIn("", "")))
+}
+
+func trimmed(lines []string) []string {
+	out := make([]string, 0, len(lines))
+	for _, l := range lines {
+		out = append(out, strings.TrimRight(ansi.Strip(l), " "))
+	}
+	return out
+}
+
+func TestWrap_BreaksBetweenIdeographs(t *testing.T) {
+	require.Equal(t, []string{"ab 中文", "字符串"}, trimmed(wrap("ab 中文字符串", 8)))
+}
+
+func TestWrap_EveryRowKeepsItsStyle(t *testing.T) {
+	lines := wrap(stDim.Render("aaaa bbbb"), 5)
+	require.Equal(t, []string{"aaaa", "bbbb"}, trimmed(lines))
+	for i, l := range lines {
+		require.Contains(t, l, "\x1b[", "row %d lost the style it was drawn in", i)
+		require.Equal(t, 5, ansi.StringWidth(l), "row %d is padded to the width", i)
+	}
 }

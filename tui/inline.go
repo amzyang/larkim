@@ -11,6 +11,7 @@ import (
 	"github.com/amzyang/larkim/emoji"
 	"github.com/amzyang/larkim/store"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/rivo/uniseg"
 )
 
 // hyperlink hands drawn text to the terminal as a link. A label says where it
@@ -258,20 +259,25 @@ func wrapSegs(segs []rowSeg, w int) [][]rowSeg {
 			return rowSeg{text: text, urls: s.urls, label: s.label, note: s.note}
 		}
 		for text := s.text; text != ""; {
+			// A row the wrapping opened starts at a word, the way the client
+			// starts one: the space it broke at belongs to neither row.
+			if used == 0 && len(rows) > 0 {
+				if text = dropLeadingSpaces(text); text == "" {
+					break
+				}
+			}
 			head, rest := takeText(text, w-used)
 			if head == "" {
 				// The run breaks nowhere the row has space for. One that could
 				// start on a row of its own moves down whole; one that could
-				// not — a stretch of CJK, which has no word boundaries — is
-				// cut where the row ends, the way a wrapped body cuts an
-				// overlong line.
+				// not — a URL longer than the row — is cut where the row ends.
 				if used > 0 {
 					if h, _ := takeText(text, w); h != "" {
 						flush()
 						continue
 					}
 				}
-				head = cut(text, w-used)
+				head = closeStyle(cut(text, w-used))
 				if head == "" {
 					if used > 0 {
 						flush()
@@ -292,9 +298,11 @@ func wrapSegs(segs []rowSeg, w int) [][]rowSeg {
 }
 
 // takeText puts as much of a styled run as fits in the columns a row has left,
-// breaking where the run has a word boundary, and returns what is left for the
-// rows below. An empty head means nothing fits beside what the row already
-// holds.
+// breaking only where the Feishu client would: at a space, between two
+// ideographs, never before a closing mark nor after an opening one — the
+// rules of UAX #14 that the client's browser engine follows. It returns what
+// is left for the rows below, the break's own spaces dropped. An empty head
+// means nothing fits beside what the row already holds.
 func takeText(s string, avail int) (head, rest string) {
 	if avail <= 0 {
 		return "", s
@@ -302,10 +310,62 @@ func takeText(s string, avail int) (head, rest string) {
 	if ansi.StringWidth(s) <= avail {
 		return s, ""
 	}
-	head, _, _ = strings.Cut(ansi.Wordwrap(s, avail, ""), "\n")
-	if w := ansi.StringWidth(head); w == 0 || w > avail {
+	fit, next := lastBreak(ansi.Strip(s), avail)
+	if fit == 0 {
 		return "", s
 	}
-	// The break itself is a space the next row does not open with.
-	return head, strings.TrimLeft(cutLeft(s, ansi.StringWidth(head)), " ")
+	return closeStyle(cut(s, fit)), cutLeft(s, next)
+}
+
+// lastBreak finds the last break opportunity in plain whose line fits avail
+// columns. fit is the columns that line draws, its trailing spaces left out
+// because a line ending at a break hangs them; next is the columns up to
+// where the following line starts. Both are zero when no break fits.
+//
+// The clusters come from uniseg, which segments by UAX #14 without cutting
+// into a grapheme cluster, and are measured with ansi.StringWidth, the ruler
+// every cut and every pane in larkim uses.
+func lastBreak(plain string, avail int) (fit, next int) {
+	cols, spaces := 0, 0
+	for state := -1; plain != ""; {
+		var cluster string
+		var boundaries int
+		cluster, plain, boundaries, state = uniseg.StepString(plain, state)
+		w := ansi.StringWidth(cluster)
+		cols += w
+		if cluster == " " {
+			spaces += w
+		} else {
+			spaces = 0
+		}
+		if cols-spaces > avail {
+			break
+		}
+		if plain != "" && boundaries&uniseg.MaskLine != uniseg.LineDontBreak && cols > spaces {
+			fit, next = cols-spaces, cols
+		}
+	}
+	return fit, next
+}
+
+// dropLeadingSpaces takes the spaces a styled run opens with off it. The
+// escapes standing in front of them stay: they set up the style the rest of
+// the run is drawn in, which is why a plain TrimLeft cannot do this.
+func dropLeadingSpaces(s string) string {
+	plain := ansi.Strip(s)
+	n := len(plain) - len(strings.TrimLeft(plain, " "))
+	if n == 0 {
+		return s
+	}
+	return cutLeft(s, n)
+}
+
+// closeStyle ends a colour the cut went through, so the padding a row is
+// filled out with does not carry an underline or a background on past the
+// text.
+func closeStyle(s string) string {
+	if !strings.Contains(s, "\x1b[") {
+		return s
+	}
+	return s + ansi.ResetStyle
 }
