@@ -3,6 +3,7 @@ package tui
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -134,6 +135,50 @@ func TestSilenceTab_DeleteAsksFirst(t *testing.T) {
 	m = press(t, m, "d", "y")
 	require.Empty(t, configFile(t, m).Silence)
 	require.Contains(t, ansi.Strip(m.silenceDetail()), "no silence rules")
+}
+
+func TestSilenceSearch_ListsNamedChatMembersBeforeContacts(t *testing.T) {
+	m := silenceModel(t)
+	m.config.silence.form = silenceForm{
+		open: true,
+		rule: store.SilenceRule{Chat: "oc_quiet"},
+	}
+	m.config.silence.roster = []store.Contact{{OpenID: "ou_in", Name: "王五"}}
+	m.contacts = []store.Contact{
+		{OpenID: "cli_c", Name: "构建机器人", IsBot: true},
+		{OpenID: "ou_a", Name: "张三"},
+		{OpenID: "ou_in", Name: "王五"},
+	}
+	hits := m.silenceSearch(fieldSender, "")
+	require.GreaterOrEqual(t, len(hits), 2)
+	ids := make([]string, len(hits))
+	for i, h := range hits {
+		ids[i] = h.id
+	}
+	require.Equal(t, "ou_in", ids[0])
+	require.Less(t, slices.Index(ids, "ou_in"), slices.Index(ids, "ou_a"))
+}
+
+func TestSilenceTab_RosterLoadRefreshesTheSenderPicker(t *testing.T) {
+	m := silenceModel(t)
+	ctx := t.Context()
+	require.NoError(t, m.deps.Store.EnsureChat(ctx, "oc_quiet", 1))
+	require.NoError(t, m.deps.Store.SetChatMembers(ctx, "oc_quiet",
+		[]store.Contact{{OpenID: "ou_in", Name: "王五"}}, false, 1))
+	m.contacts = []store.Contact{{OpenID: "ou_a", Name: "张三"}, {OpenID: "ou_in", Name: "王五"}}
+	m.config.silence.form = silenceForm{
+		open:  true,
+		field: fieldSender,
+		rule:  store.SilenceRule{Chat: "oc_quiet"},
+		pick:  silencePick{open: true},
+	}
+
+	m = m.onSilenceRoster(loadSilenceRoster(m.deps, "oc_quiet")().(silenceRosterLoadedMsg))
+
+	require.Len(t, m.config.silence.roster, 1)
+	require.Equal(t, "ou_in", m.config.silence.roster[0].OpenID)
+	require.Equal(t, "ou_in", m.silenceSearch(fieldSender, "")[0].id)
+	require.Equal(t, "ou_in", m.config.silence.form.pick.hits[0].id)
 }
 
 func TestSilenceTab_PickerTakesARawIDWhenNothingMatches(t *testing.T) {

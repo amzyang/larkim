@@ -856,6 +856,8 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case silenceMatchesMsg:
 		return m.onSilenceMatches(msg), nil
+	case silenceRosterLoadedMsg:
+		return m.onSilenceRoster(msg), nil
 	case forwardedMsg:
 		if msg.err != nil {
 			return m.notify("forward: "+msg.err.Error(), true), nil

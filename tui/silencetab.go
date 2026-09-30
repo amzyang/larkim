@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"cmp"
 	"context"
 	"maps"
 	"slices"
@@ -31,6 +32,9 @@ type silenceTab struct {
 	// counts is keyed by each rule's own fingerprint, so a reply that lands
 	// after an edit fills in only the rules still standing.
 	counts map[string]silenceCount
+	// roster is who is in the chat the form names, offered ahead of the global
+	// contacts when the sender is picked.
+	roster []store.Contact
 	// confirmDelete holds the list on a question: d rewrites the file, so it
 	// asks before it does.
 	confirmDelete bool
@@ -77,6 +81,23 @@ type silenceHit struct {
 
 type silenceMatchesMsg struct{ counts map[string]silenceCount }
 
+type silenceRosterLoadedMsg struct {
+	chatID string
+	roster []store.Contact
+}
+
+// loadSilenceRoster reads who can send in the named chat, for the sender picker.
+func loadSilenceRoster(d Deps, chatID string) tea.Cmd {
+	return func() tea.Msg {
+		roster, err := d.Store.ChatRoster(context.Background(), chatID, d.Self)
+		if err != nil {
+			d.log().Error("silence roster", "chat_id", chatID, "err", err)
+			return silenceRosterLoadedMsg{chatID: chatID}
+		}
+		return silenceRosterLoadedMsg{chatID: chatID, roster: roster}
+	}
+}
+
 // silenceKey is the key a rule's count is filed under.
 func silenceKey(r store.SilenceRule) string { return store.SilenceRules{r}.Fingerprint() }
 
@@ -102,6 +123,19 @@ func (m Model) onSilenceMatches(msg silenceMatchesMsg) Model {
 		m.config.silence.counts = make(map[string]silenceCount, len(msg.counts))
 	}
 	maps.Copy(m.config.silence.counts, msg.counts)
+	return m
+}
+
+func (m Model) onSilenceRoster(msg silenceRosterLoadedMsg) Model {
+	if msg.chatID != m.config.silence.form.rule.Chat {
+		return m
+	}
+	m.config.silence.roster = msg.roster
+	f := &m.config.silence.form
+	if f.pick.open && f.field == fieldSender {
+		f.pick.hits = m.silenceSearch(f.field, f.pick.input.Value())
+		moveCursor(&f.pick.idx, &f.pick.top, 0, len(f.pick.hits), m.silencePickRows())
+	}
 	return m
 }
 
@@ -219,6 +253,9 @@ func (m Model) onSilenceFormKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "enter":
 		return m.openSilencePick()
 	case "backspace", "delete":
+		if f.field == fieldChat {
+			m.config.silence.roster = nil
+		}
 		*f.idField() = ""
 		f.err = ""
 	}
@@ -237,8 +274,11 @@ func (m Model) openSilencePick() (tea.Model, tea.Cmd) {
 	f := &m.config.silence.form
 	f.pick = silencePick{open: true, input: m.newQueryInput()}
 	f.pick.hits = m.silenceSearch(f.field, "")
-	cmd := f.pick.input.Focus()
-	return m, cmd
+	focus := f.pick.input.Focus()
+	if f.field == fieldSender && f.rule.Chat != "" {
+		return m, tea.Batch(focus, loadSilenceRoster(m.deps, f.rule.Chat))
+	}
+	return m, focus
 }
 
 func (m Model) onSilencePickKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
@@ -261,6 +301,12 @@ func (m Model) onSilencePickKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			f.err = ""
 		}
 		f.pick = silencePick{}
+		if f.field == fieldChat {
+			m.config.silence.roster = nil
+			if f.rule.Chat != "" {
+				return m, loadSilenceRoster(m.deps, f.rule.Chat)
+			}
+		}
 		return m, nil
 	case "up", "ctrl+p":
 		moveCursor(&p.idx, &p.top, -1, len(p.hits), rows)
@@ -278,9 +324,9 @@ func (m Model) onSilencePickKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-// silenceSearch narrows the chats or the people a rule can name, in the order
-// the forward chooser offers them: the chat list's own, then the contacts with
-// the bots among them, since a bot is the usual sender a rule is written for.
+// silenceSearch narrows the chats or the people a rule can name. Chats follow
+// the list's order. Senders follow the chat the form names when it has one —
+// its roster first, the way @ does, then everyone else in contacts.
 func (m Model) silenceSearch(field silenceField, query string) []silenceHit {
 	ix := fuzzy.NewIndex()
 	var out []silenceHit
@@ -296,16 +342,24 @@ func (m Model) silenceSearch(field silenceField, query string) []silenceHit {
 		}
 		return out
 	}
+	seen := make(map[string]bool, len(m.config.silence.roster)+len(m.contacts))
+	add := func(p store.Contact) {
+		if len(out) == fwdLimit || p.OpenID == "" || seen[p.OpenID] {
+			return
+		}
+		name := cmp.Or(p.Name, p.OpenID)
+		if mark, ok := ix.Match(p.OpenID, name, query); ok {
+			seen[p.OpenID] = true
+			out = append(out, silenceHit{id: p.OpenID, name: name, mark: mark})
+		}
+	}
+	if m.config.silence.form.rule.Chat != "" {
+		for _, p := range m.config.silence.roster {
+			add(p)
+		}
+	}
 	for _, p := range m.contacts {
-		if len(out) == fwdLimit {
-			break
-		}
-		if p.Name == "" {
-			continue
-		}
-		if mark, ok := ix.Match(p.OpenID, p.Name, query); ok {
-			out = append(out, silenceHit{id: p.OpenID, name: p.Name, mark: mark})
-		}
+		add(p)
 	}
 	return out
 }
