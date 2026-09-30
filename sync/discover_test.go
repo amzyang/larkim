@@ -214,7 +214,7 @@ func TestScoutOnce_ASlowChatHoldsUpNobodyElse(t *testing.T) {
 			<-release
 		}
 	}
-	sc := newScout()
+	sc := newScout(s.now, s.delayFor)
 	t.Cleanup(func() {
 		close(release)
 		sc.wg.Wait()
@@ -242,7 +242,7 @@ func TestScoutOnce_AFailedListingBacksOffAndIsOwed(t *testing.T) {
 	f.Chats = []larkcli.RawChat{f.Chats[0], f.Chats[1], f.Chats[2], f.Chats[4], f.Chats[3]}
 	f.AddMessage(msg("om_e", "oc_e", clk.t.Add(-time.Second), "late"))
 	f.ListErr = map[string]error{"oc_e": &larkcli.Error{ExitCode: larkcli.ExitAPI, Subtype: "rate_limit", Code: 99991400}}
-	sc := newScout()
+	sc := newScout(s.now, s.delayFor)
 
 	_, err := s.scoutOnce(ctx, sc, clk.t)
 	require.NoError(t, err)
@@ -257,5 +257,43 @@ func TestScoutOnce_AFailedListingBacksOffAndIsOwed(t *testing.T) {
 	require.NoError(t, err)
 	sc.wg.Wait()
 	_, err = s.Store.GetMessage(ctx, "om_e")
+	require.ErrorIs(t, err, store.ErrNotFound, "a rate-limited chat rests before it is asked again")
+
+	clk.t = clk.t.Add(s.delayFor(le, 1))
+	_, err = s.scoutOnce(ctx, sc, clk.t)
+	require.NoError(t, err)
+	sc.wg.Wait()
+	_, err = s.Store.GetMessage(ctx, "om_e")
 	require.NoError(t, err, "the ordering no longer names oc_e, so the failure has to")
+}
+
+func TestScoutOnce_AChatThatKeepsFailingIsAskedAgainLessOften(t *testing.T) {
+	s, f, clk := newSyncer(t)
+	ctx := t.Context()
+	f.Chats = []larkcli.RawChat{{ChatID: "oc_a", ChatMode: "group"}}
+	discovering(t, s, f, clk.t)
+	// Not a *larkcli.Error, so nothing pins the failure on the chat itself:
+	// the ordering names oc_a every cycle, and only its own wait holds it back.
+	f.ListErr = map[string]error{"oc_a": errors.New("dial tcp: i/o timeout")}
+	sc := newScout(s.now, s.delayFor)
+	cycle := func() {
+		t.Helper()
+		// Taking the failure first is what the loop does before its own pause,
+		// so what holds the chat back here is its wait and nothing else.
+		sc.failure()
+		_, _ = s.scoutOnce(ctx, sc, clk.t)
+		sc.wg.Wait()
+	}
+
+	base := s.Opt.PollInterval
+	cycle()
+	require.Equal(t, 1, callsTo(f, "list:chat:oc_a"))
+	for i, gap := range []time.Duration{base, 2 * base, 4 * base} {
+		clk.t = clk.t.Add(gap - time.Millisecond)
+		cycle()
+		require.Equal(t, i+1, callsTo(f, "list:chat:oc_a"), "the wait after failure %d is not up yet", i+1)
+		clk.t = clk.t.Add(time.Millisecond)
+		cycle()
+		require.Equal(t, i+2, callsTo(f, "list:chat:oc_a"), "the wait after failure %d is up", i+1)
+	}
 }

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	stdsync "sync"
 	"time"
@@ -72,21 +73,49 @@ func (s *Syncer) pullNamed(ctx context.Context, id string, now time.Time) (int, 
 // chats are being listed, which ones a failed listing left owed, and the
 // failure the loop has yet to back off for.
 type scout struct {
+	now      func() time.Time
+	delay    func(err error, failures int) time.Duration
 	mu       stdsync.Mutex
 	inflight map[string]bool
-	owed     []string
+	owed     map[string]owing
 	err      error
 	wg       stdsync.WaitGroup
 }
 
-func newScout() *scout { return &scout{inflight: map[string]bool{}} }
+// owing is what a chat whose listing failed is owed: how many times in a row
+// it has failed, and when it may be listed again. Without the wait, a chat
+// failing for a reason of its own — a listing the gateway refuses, a thread
+// that times out every time — would be relisted every cycle for as long as it
+// keeps failing, since the loop's own backoff counts the cycles that reported
+// the failure rather than the ones that caused it.
+type owing struct {
+	failures int
+	dueAt    time.Time
+}
+
+func newScout(now func() time.Time, delay func(error, int) time.Duration) *scout {
+	return &scout{now: now, delay: delay, inflight: map[string]bool{}, owed: map[string]owing{}}
+}
+
+// plan is the chats to list this cycle: the ones the ordering names plus the
+// ones a failed listing owes, less the ones still resting. A resting chat
+// stays owed, so its own wait is what brings it back rather than the ordering.
+func (sc *scout) plan(named []string) []string {
+	sc.mu.Lock()
+	defer sc.mu.Unlock()
+	ids := UniqueStrings(append(named, slices.Sorted(maps.Keys(sc.owed))...))
+	now := sc.now()
+	return slices.DeleteFunc(ids, func(id string) bool {
+		return now.Before(sc.owed[id].dueAt)
+	})
+}
 
 // scoutOnce reads the ordering and sets a listing going for every chat it
-// names that is not being listed already, then returns without waiting for
-// them: a slow chat holds up nobody but itself, and the next probe goes out
-// at once. The ordering is recorded straight away, so a chat whose listing
-// fails is owed to the next cycle instead, and its failure is returned before
-// that cycle probes, which is when the loop backs off.
+// names that is not being listed already or resting after a failure, then
+// returns without waiting for them: a slow chat holds up nobody but itself,
+// and the next probe goes out at once. The ordering is recorded straight away,
+// so a chat whose listing fails is owed a later cycle instead, and its failure
+// is returned before that cycle probes, which is when the loop backs off.
 func (s *Syncer) scoutOnce(ctx context.Context, sc *scout, now time.Time) (named int, err error) {
 	if err := sc.failure(); err != nil {
 		return 0, err
@@ -95,7 +124,7 @@ func (s *Syncer) scoutOnce(ctx context.Context, sc *scout, now time.Time) (named
 	if err != nil {
 		return 0, fmt.Errorf("active probe: %w", err)
 	}
-	ids := UniqueStrings(append(ActiveDelta(prev, order), sc.takeOwed()...))
+	ids := sc.plan(ActiveDelta(prev, order))
 	for _, id := range ids {
 		sc.launch(id, func() (int, error) {
 			n, err := s.pullNamed(ctx, id, now)
@@ -114,8 +143,8 @@ func (s *Syncer) scoutOnce(ctx context.Context, sc *scout, now time.Time) (named
 }
 
 // launch runs pull for chat id unless one is already running for it. A pull
-// that fails owes the chat to the next cycle; a cancelled one owes nothing,
-// since the loop is ending.
+// that fails owes the chat a listing once its wait is up; a cancelled one owes
+// nothing, since the loop is ending.
 func (sc *scout) launch(id string, pull func() (int, error)) {
 	sc.mu.Lock()
 	defer sc.mu.Unlock()
@@ -128,8 +157,17 @@ func (sc *scout) launch(id string, pull func() (int, error)) {
 		sc.mu.Lock()
 		defer sc.mu.Unlock()
 		delete(sc.inflight, id)
-		if err != nil && !errors.Is(err, context.Canceled) {
-			sc.owed = append(sc.owed, id)
+		switch {
+		case err == nil:
+			delete(sc.owed, id)
+		case !errors.Is(err, context.Canceled):
+			owed := sc.owed[id]
+			owed.failures++
+			// From the failure rather than from the launch: a listing that
+			// takes its whole timeout to fail would otherwise come due the
+			// moment it failed.
+			owed.dueAt = sc.now().Add(sc.delay(err, owed.failures))
+			sc.owed[id] = owed
 			sc.err = cmp.Or(sc.err, err)
 		}
 	})
@@ -142,15 +180,6 @@ func (sc *scout) failure() error {
 	err := sc.err
 	sc.err = nil
 	return err
-}
-
-// takeOwed hands over the chats failed listings left owed, once.
-func (sc *scout) takeOwed() []string {
-	sc.mu.Lock()
-	defer sc.mu.Unlock()
-	owed := sc.owed
-	sc.owed = nil
-	return owed
 }
 
 // activeProbe reads the active-time ordering of the chat list's first page,
@@ -201,7 +230,7 @@ func chatIDs(chats []larkcli.RawChat) []string {
 // no call, since the sweep is what asks whether a login is back.
 func (s *Syncer) runDiscovery(ctx context.Context) {
 	ctx = larkcli.WithLane(ctx, larkcli.LaneDiscovery)
-	sc := newScout()
+	sc := newScout(s.now, s.delayFor)
 	defer sc.wg.Wait()
 	failures := 0
 	for {
