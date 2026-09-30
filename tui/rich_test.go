@@ -8,7 +8,7 @@ import (
 )
 
 // dataLiteral spells html the way `osascript -e 'the clipboard as «class
-// HTML»'` prints it, which is the only form htmlMarkdown ever sees.
+// HTML»'` prints it, which is the only form osaData ever sees.
 func dataLiteral(html string) string {
 	return "«data HTML" + hex.EncodeToString([]byte(html)) + "»"
 }
@@ -31,7 +31,7 @@ func TestOsaData_UnwrapsTheDataLiteral(t *testing.T) {
 }
 
 func TestHTMLMarkdown_KeepsWhatThePostCanCarry(t *testing.T) {
-	md, err := htmlMarkdown(dataLiteral(
+	md, err := htmlMarkdown([]byte(
 		`<h2>发布说明</h2>` +
 			`<ul><li>修了<strong>同步</strong></li><li><del>回滚</del>见<a href="https://example.com/b">看板</a></li></ul>` +
 			`<blockquote>下周再发</blockquote>` +
@@ -49,7 +49,7 @@ func TestHTMLMarkdown_KeepsWhatThePostCanCarry(t *testing.T) {
 }
 
 func TestHTMLMarkdown_TableSurvivesAsGFM(t *testing.T) {
-	md, err := htmlMarkdown(dataLiteral(
+	md, err := htmlMarkdown([]byte(
 		`<table><thead><tr><th>项</th><th>值</th></tr></thead>` +
 			`<tbody><tr><td>待认领</td><td>13</td></tr></tbody></table>`))
 	require.NoError(t, err)
@@ -60,7 +60,7 @@ func TestHTMLMarkdown_TableSurvivesAsGFM(t *testing.T) {
 }
 
 func TestHTMLMarkdown_ImageKeepsItsURL(t *testing.T) {
-	md, err := htmlMarkdown(dataLiteral(`<p>看这个 <img src="https://example.com/chart.png"></p>`))
+	md, err := htmlMarkdown([]byte(`<p>看这个 <img src="https://example.com/chart.png"></p>`))
 	require.NoError(t, err)
 
 	require.Contains(t, md, "![](https://example.com/chart.png)")
@@ -73,15 +73,13 @@ func TestHTMLMarkdown_ImageKeepsItsURL(t *testing.T) {
 
 func TestHTMLMarkdown_ReadsTheCharsetTheSourceDeclared(t *testing.T) {
 	// 0xE9 is é in windows-1252 and not valid UTF-8 on its own.
-	md, err := htmlMarkdown("«data HTML" +
-		hex.EncodeToString([]byte("<meta charset=\"windows-1252\"><h2>caf")) + "e9" +
-		hex.EncodeToString([]byte("</h2>")) + "»")
+	md, err := htmlMarkdown([]byte("<meta charset=\"windows-1252\"><h2>caf\xe9</h2>"))
 	require.NoError(t, err)
 	require.Equal(t, "## café", md)
 }
 
 func TestPickPaste_FormattingWins(t *testing.T) {
-	md, err := htmlMarkdown(dataLiteral(`<h2>发布说明</h2><p>今天上线</p>`))
+	md, err := htmlMarkdown([]byte(`<h2>发布说明</h2><p>今天上线</p>`))
 	require.NoError(t, err)
 
 	require.Equal(t, md, pickPaste(md, "发布说明\n今天上线"))
@@ -90,7 +88,7 @@ func TestPickPaste_FormattingWins(t *testing.T) {
 func TestPickPaste_PlainLookingHTMLKeepsTheTextFlavour(t *testing.T) {
 	// An editor that copies with syntax highlighting — VS Code does, by
 	// default — puts styled spans on the pasteboard for what is only code.
-	md, err := htmlMarkdown(dataLiteral(
+	md, err := htmlMarkdown([]byte(
 		`<div><span style="color:#001080">read_state</span><span>.local_read_at</span></div>` +
 			`<div><span>ORDER BY create_ms, message_position</span></div>`))
 	require.NoError(t, err)

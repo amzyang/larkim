@@ -117,12 +117,12 @@ func clipboardText(flavour clipKind) (string, error) {
 	}
 	data, err := osaData(raw)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("clipboard html: %w", err)
 	}
 	if md, ok := larkPaste(data); ok {
 		return md, nil
 	}
-	md, err := htmlMarkdownBytes(data)
+	md, err := htmlMarkdown(data)
 	if err != nil {
 		return "", err
 	}

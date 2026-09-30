@@ -160,6 +160,24 @@ func TestLarkPaste_UnorderedList(t *testing.T) {
 	assert.Equal(t, "- alpha\n- beta", md)
 }
 
+func TestLarkPaste_HTMLListsKeepTheirItemsApart(t *testing.T) {
+	md, ok := larkPaste(larkHTML(`<ol><li>first</li><li>second</li></ol><ul><li>alpha</li></ul>`))
+	require.True(t, ok)
+	assert.Equal(t, "1. first\n1. second\n- alpha", md)
+}
+
+func TestLarkPaste_HTMLHeadingsAndParagraphsKeepTheirLines(t *testing.T) {
+	md, ok := larkPaste(larkHTML(`<h2>Plan</h2><p>First line.</p><p>Second para.</p>`))
+	require.True(t, ok)
+	assert.Equal(t, "## Plan\nFirst line.\nSecond para.", md)
+}
+
+func TestLarkPaste_HTMLPreIsAFencedBlock(t *testing.T) {
+	md, ok := larkPaste(larkHTML("<p>before</p><pre><code data-lark-language=\"go\">a := 1\nb := 2</code></pre>"))
+	require.True(t, ok)
+	assert.Equal(t, "before\n```go\na := 1\nb := 2\n```", md)
+}
+
 func TestLarkPaste_Blockquote(t *testing.T) {
 	md, ok := larkPaste(larkHTML(
 		`<div class="rich-text-quote"><span>quoted text</span></div>`))

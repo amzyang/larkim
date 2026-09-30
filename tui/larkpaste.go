@@ -1,9 +1,13 @@
 package tui
 
 import (
+	"bytes"
+	"cmp"
 	"os"
+	"slices"
 	"strings"
 
+	"github.com/amzyang/larkim/sync"
 	"golang.org/x/net/html"
 	"golang.org/x/net/html/atom"
 )
@@ -19,11 +23,13 @@ import (
 // The generic html-to-markdown converter cannot read those, so images come
 // out as useless native-resource:// URLs and mentions as bare text.
 func larkPaste(data []byte) (string, bool) {
-	doc, err := html.Parse(strings.NewReader(string(data)))
+	doc, err := html.Parse(bytes.NewReader(data))
 	if err != nil {
 		return "", false
 	}
-	root := findLarkRoot(doc)
+	root := findNode(doc, func(n *html.Node) bool {
+		return n.Type == html.ElementNode && nodeAttr(n, "data-lark-html-role") == "root"
+	})
 	if root == nil {
 		return "", false
 	}
@@ -32,63 +38,61 @@ func larkPaste(data []byte) (string, bool) {
 	return strings.TrimSpace(b.String()), true
 }
 
-// findLarkRoot finds the element with data-lark-html-role="root".
-func findLarkRoot(n *html.Node) *html.Node {
-	if n.Type == html.ElementNode {
-		for _, a := range n.Attr {
-			if a.Key == "data-lark-html-role" && a.Val == "root" {
-				return n
-			}
-		}
-	}
-	for c := n.FirstChild; c != nil; c = c.NextSibling {
-		if found := findLarkRoot(c); found != nil {
-			return found
-		}
-	}
-	return nil
-}
-
 // larkWalk renders one node and its children into the builder. prevPara
 // tracks whether a paragraph separator has already been written, so blank
 // lines are not doubled.
 func larkWalk(b *strings.Builder, n *html.Node, prevPara bool) bool {
-	switch n.Type {
-	case html.TextNode:
+	if n.Type == html.TextNode {
 		b.WriteString(n.Data)
 		return false
-	case html.ElementNode:
-		// nothing
-	default:
-		for c := n.FirstChild; c != nil; c = c.NextSibling {
-			prevPara = larkWalk(b, c, prevPara)
-		}
-		return prevPara
+	}
+	if n.Type != html.ElementNode {
+		return larkChildren(b, n, prevPara)
 	}
 
-	// Element dispatch.
-	cls := nodeAttr(n, "class")
-
+	cls := strings.Fields(nodeAttr(n, "class"))
 	switch {
-	case hasClass(cls, "rich-text-paragraph"):
+	case slices.Contains(cls, "rich-text-paragraph"):
 		return larkParagraph(b, n, prevPara)
 
-	case hasClass(cls, "rich-text-image"):
+	case slices.Contains(cls, "rich-text-image"):
 		return larkImage(b, n, prevPara)
 
-	case hasClass(cls, "rich-text-code-block"):
+	case slices.Contains(cls, "rich-text-code-block"):
 		return larkCodeBlock(b, n, prevPara)
 
-	case hasClass(cls, "rich-text-ordered-list"):
+	case slices.Contains(cls, "rich-text-ordered-list"):
 		larkListItem(b, n, true)
 		return false
 
-	case hasClass(cls, "rich-text-unordered-list"):
+	case slices.Contains(cls, "rich-text-unordered-list"):
 		larkListItem(b, n, false)
 		return false
 
-	case hasClass(cls, "rich-text-quote"), n.DataAtom == atom.Blockquote:
+	case slices.Contains(cls, "rich-text-quote"), n.DataAtom == atom.Blockquote:
 		return larkQuote(b, n, prevPara)
+
+	// The client also writes plain HTML blocks, which the rich-text classes
+	// above do not cover; each keeps a line of its own, the way those do.
+	case n.DataAtom == atom.P:
+		return larkParagraph(b, n, prevPara)
+
+	case n.DataAtom == atom.Pre:
+		return larkCodeBlock(b, n, prevPara)
+
+	case n.DataAtom == atom.Ol, n.DataAtom == atom.Ul:
+		for c := range n.ChildNodes() {
+			if c.DataAtom == atom.Li {
+				larkListItem(b, c, n.DataAtom == atom.Ol)
+			}
+		}
+		return false
+
+	case slices.Contains(headings, n.DataAtom):
+		larkBreak(b, prevPara)
+		b.WriteString(strings.Repeat("#", slices.Index(headings, n.DataAtom)+1) + " ")
+		larkChildren(b, n, false)
+		return false
 
 	case n.DataAtom == atom.A:
 		larkAnchor(b, n)
@@ -114,27 +118,41 @@ func larkWalk(b *strings.Builder, n *html.Node, prevPara bool) bool {
 		larkCode(b, n)
 		return false
 
-	case hasClass(cls, "rich-text-at"):
+	case slices.Contains(cls, "rich-text-at"):
 		larkMention(b, n)
 		return false
 
 	default:
 		// Pass through unknown elements, rendering their children.
-		for c := n.FirstChild; c != nil; c = c.NextSibling {
-			prevPara = larkWalk(b, c, prevPara)
-		}
-		return prevPara
+		return larkChildren(b, n, prevPara)
+	}
+}
+
+// headings are h1 to h6, in the order of the markdown level each one is.
+var headings = []atom.Atom{atom.H1, atom.H2, atom.H3, atom.H4, atom.H5, atom.H6}
+
+// larkChildren walks n's children in order, carrying prevPara across them.
+func larkChildren(b *strings.Builder, n *html.Node, prevPara bool) bool {
+	for c := range n.ChildNodes() {
+		prevPara = larkWalk(b, c, prevPara)
+	}
+	return prevPara
+}
+
+// larkBreak starts a block on a line of its own, unless the paragraph before
+// already ended the line.
+func larkBreak(b *strings.Builder, prevPara bool) {
+	if b.Len() > 0 && !prevPara {
+		b.WriteByte('\n')
 	}
 }
 
 // larkParagraph emits the text of one paragraph. A newline separates it from
 // the previous block; an empty paragraph adds a second one (a blank line).
 func larkParagraph(b *strings.Builder, n *html.Node, prevPara bool) bool {
-	if b.Len() > 0 && !prevPara {
-		b.WriteByte('\n')
-	}
+	larkBreak(b, prevPara)
 	start := b.Len()
-	for c := n.FirstChild; c != nil; c = c.NextSibling {
+	for c := range n.ChildNodes() {
 		larkWalk(b, c, false)
 	}
 	// An empty paragraph is a blank line between two others.
@@ -147,13 +165,11 @@ func larkParagraph(b *strings.Builder, n *html.Node, prevPara bool) bool {
 
 // larkImage emits a markdown image reference for a figure element.
 func larkImage(b *strings.Builder, n *html.Node, prevPara bool) bool {
-	img := findElement(n, atom.Img)
+	img := findNode(n, func(n *html.Node) bool { return n.Type == html.ElementNode && n.DataAtom == atom.Img })
 	if img == nil {
 		return prevPara
 	}
-	if b.Len() > 0 && !prevPara {
-		b.WriteByte('\n')
-	}
+	larkBreak(b, prevPara)
 
 	// Prefer data-origin-file (local cached path) if the file exists.
 	// Fall back to data-image-key (already on Feishu servers).
@@ -167,9 +183,7 @@ func larkImage(b *strings.Builder, n *html.Node, prevPara bool) bool {
 	case origin != "" && fileExists(origin):
 		b.WriteString(imageRef(origin))
 	case key != "":
-		b.WriteString("![](")
-		b.WriteString(key)
-		b.WriteByte(')')
+		b.WriteString(imageRef(key))
 	default:
 		// Nothing useful; skip the image entirely.
 		return prevPara
@@ -179,10 +193,11 @@ func larkImage(b *strings.Builder, n *html.Node, prevPara bool) bool {
 
 // larkCodeBlock emits a fenced code block.
 func larkCodeBlock(b *strings.Builder, n *html.Node, prevPara bool) bool {
-	if b.Len() > 0 && !prevPara {
-		b.WriteByte('\n')
-	}
+	larkBreak(b, prevPara)
 	lang := nodeAttr(n, "data-language")
+	if code := findNode(n, func(c *html.Node) bool { return c.DataAtom == atom.Code }); code != nil {
+		lang = cmp.Or(lang, nodeAttr(code, "data-lark-language"))
+	}
 	b.WriteString("```")
 	b.WriteString(lang)
 	b.WriteByte('\n')
@@ -194,7 +209,7 @@ func larkCodeBlock(b *strings.Builder, n *html.Node, prevPara bool) bool {
 
 // larkCodeLines collects code text, respecting <br> as line breaks.
 func larkCodeLines(b *strings.Builder, n *html.Node) {
-	for c := n.FirstChild; c != nil; c = c.NextSibling {
+	for c := range n.ChildNodes() {
 		switch {
 		case c.Type == html.TextNode:
 			b.WriteString(c.Data)
@@ -217,7 +232,7 @@ func larkListItem(b *strings.Builder, n *html.Node, ordered bool) {
 	} else {
 		b.WriteString("- ")
 	}
-	for c := n.FirstChild; c != nil; c = c.NextSibling {
+	for c := range n.ChildNodes() {
 		larkWalk(b, c, false)
 	}
 }
@@ -226,9 +241,7 @@ func larkListItem(b *strings.Builder, n *html.Node, ordered bool) {
 // rich-text-paragraph divs; collectText flattens those into inline text so the
 // result is a single "> …" line rather than "> \ntext".
 func larkQuote(b *strings.Builder, n *html.Node, prevPara bool) bool {
-	if b.Len() > 0 && !prevPara {
-		b.WriteByte('\n')
-	}
+	larkBreak(b, prevPara)
 	b.WriteString("> ")
 	b.WriteString(strings.TrimSpace(collectText(n)))
 	return false
@@ -248,7 +261,7 @@ func larkAnchor(b *strings.Builder, n *html.Node) {
 		return
 	}
 	b.WriteString("[")
-	b.WriteString(escapeLarkPasteLinkText(text))
+	b.WriteString(sync.EscapeMDLinkText(text))
 	b.WriteString("](")
 	b.WriteString(href)
 	b.WriteString(")")
@@ -257,7 +270,7 @@ func larkAnchor(b *strings.Builder, n *html.Node) {
 // larkInline wraps children in a markdown delimiter (**, *, ~~, etc).
 func larkInline(b *strings.Builder, n *html.Node, delim string) {
 	b.WriteString(delim)
-	for c := n.FirstChild; c != nil; c = c.NextSibling {
+	for c := range n.ChildNodes() {
 		larkWalk(b, c, false)
 	}
 	b.WriteString(delim)
@@ -302,22 +315,11 @@ func nodeAttr(n *html.Node, key string) string {
 	return ""
 }
 
-func hasClass(cls, name string) bool {
-	for _, c := range strings.Fields(cls) {
-		if c == name {
-			return true
-		}
-	}
-	return false
-}
-
-func findElement(n *html.Node, a atom.Atom) *html.Node {
-	if n.Type == html.ElementNode && n.DataAtom == a {
-		return n
-	}
-	for c := n.FirstChild; c != nil; c = c.NextSibling {
-		if found := findElement(c, a); found != nil {
-			return found
+// findNode is the first node beneath n, in document order, that is accepts.
+func findNode(n *html.Node, is func(*html.Node) bool) *html.Node {
+	for d := range n.Descendants() {
+		if is(d) {
+			return d
 		}
 	}
 	return nil
@@ -325,18 +327,12 @@ func findElement(n *html.Node, a atom.Atom) *html.Node {
 
 func collectText(n *html.Node) string {
 	var b strings.Builder
-	collectTextInto(&b, n)
+	for d := range n.Descendants() {
+		if d.Type == html.TextNode {
+			b.WriteString(d.Data)
+		}
+	}
 	return b.String()
-}
-
-func collectTextInto(b *strings.Builder, n *html.Node) {
-	if n.Type == html.TextNode {
-		b.WriteString(n.Data)
-		return
-	}
-	for c := n.FirstChild; c != nil; c = c.NextSibling {
-		collectTextInto(b, c)
-	}
 }
 
 // stripImageKeySuffix removes the quality/format suffix the clipboard adds.
@@ -360,9 +356,3 @@ func fileExists(path string) bool {
 	fi, err := os.Stat(path)
 	return err == nil && !fi.IsDir()
 }
-
-// escapeMDLinkText is imported from sync/post.go; a local re-declaration
-// keeps the cycle away. Same replacer, same result.
-var larkPasteLinkEscaper = strings.NewReplacer(`[`, `\[`, `]`, `\]`)
-
-func escapeLarkPasteLinkText(s string) string { return larkPasteLinkEscaper.Replace(s) }
