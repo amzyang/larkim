@@ -311,13 +311,26 @@ type ChatUnread struct {
 // applink opens the chat, so their receipts never flip and the chat would be
 // listed on every press regardless.
 func (s *Store) ChatsWithUnread(ctx context.Context) ([]ChatUnread, error) {
-	scan := func(sc scanner) (ChatUnread, error) {
-		var c ChatUnread
-		return c, sc.Scan(&c.ChatID, &c.Position)
-	}
-	return queryAll(ctx, s.db, scan, `SELECT m.chat_id, max(m.message_position)
+	return queryAll(ctx, s.db, scanChatUnread, `SELECT m.chat_id, max(m.message_position)
  FROM messages m JOIN read_state r ON r.message_id = m.message_id
  WHERE `+clientDot+` GROUP BY m.chat_id ORDER BY m.chat_id`)
+}
+
+// ChatWithUnread is ChatsWithUnread's entry for one chat, ok=false when the
+// client has no dot for it.
+func (s *Store) ChatWithUnread(ctx context.Context, chatID string) (ChatUnread, bool, error) {
+	rows, err := queryAll(ctx, s.db, scanChatUnread, `SELECT m.chat_id, max(m.message_position)
+ FROM messages m JOIN read_state r ON r.message_id = m.message_id
+ WHERE m.chat_id = ? AND `+clientDot+` GROUP BY m.chat_id`, chatID)
+	if err != nil || len(rows) == 0 {
+		return ChatUnread{}, false, err
+	}
+	return rows[0], true, nil
+}
+
+func scanChatUnread(sc scanner) (ChatUnread, error) {
+	var c ChatUnread
+	return c, sc.Scan(&c.ChatID, &c.Position)
 }
 
 // ChatAt names the chat holding the message sent at createMs with position.

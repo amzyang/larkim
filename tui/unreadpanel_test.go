@@ -1,12 +1,14 @@
 package tui
 
 import (
+	"context"
 	"slices"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/stretchr/testify/require"
 
+	"github.com/amzyang/larkim/config"
 	"github.com/amzyang/larkim/store"
 )
 
@@ -526,6 +528,42 @@ func TestFeed_MTakesTheChatUnderTheCursorAsRead(t *testing.T) {
 	require.Contains(t, out, "项目协作群", "and the one still waiting stays")
 	require.Equal(t, []store.ChatUnread{{ChatID: "oc_platform", Position: 200}}, m.applinks.left,
 		"the client is walked onto the newest it owed, so its own dot falls")
+}
+
+// loudFeed is the panel open on one chat owing more than a section holds, with
+// the badge clearer recorded instead of reaching Feishu.
+func loudFeed(t *testing.T) (Model, *[]store.ChatUnread) {
+	t.Helper()
+	st, ids := firehose(t, unreadSectionLimit+10)
+	var cleared []store.ChatUnread
+	m := New(Deps{Store: st, Self: "ou_me", Config: config.Config{ApplinkPaceMS: testPace},
+		ClearBadge: func(_ context.Context, c store.ChatUnread) error {
+			cleared = append(cleared, c)
+			return nil
+		}})
+	m.width, m.height = 120, 40
+	m.chats = []store.Chat{{ChatID: "oc_loud", Name: "平台组", UnreadCount: int64(len(ids))}}
+	m.unread = map[string]int64{"oc_loud": int64(len(ids))}
+	m.focused = true
+	next, cmd := m.openUnread()
+	m = next.(Model)
+	m.layout()
+	m = applyAll(t, m, cmd)
+	require.True(t, m.feed.section("oc_loud").cut)
+	return m, &cleared
+}
+
+// The page stops at the section cap, the chat's backlog does not: the
+// watermark handed to Feishu is the chat's newest waiting message, so the
+// client's dot falls with larkim's own badge rather than 80 messages short.
+func TestFeed_MClearsTheWholeChatInFeishuPastACutSection(t *testing.T) {
+	m, cleared := loudFeed(t)
+
+	next, cmd := m.Update(tea.KeyPressMsg{Code: 'm', Text: "m"})
+	drain(t, next.(Model), cmd)
+
+	require.Equal(t, []store.ChatUnread{{ChatID: "oc_loud", Position: unreadSectionLimit + 10}}, *cleared,
+		"one clear through mark_read.mode's lever, at the tail of the backlog")
 }
 
 // Everywhere else a chat is read by being gone into, so m carries no meaning

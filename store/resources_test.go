@@ -700,6 +700,34 @@ func TestChatsWithUnread_KeepsAChatTheReaderAlreadyTookHere(t *testing.T) {
 		"the local write settles larkim's half only, so a pass the client slept through can be run again")
 }
 
+func TestChatWithUnread_AnswersWithTheChatsNewestWaitingMessage(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	_, err := s.UpsertMessages(ctx, []Message{
+		msgAt("om_a", "oc_a", 10, 1, "one"),
+		msgAt("om_a2", "oc_a", 11, 2, "two"),
+		msgAt("om_reply", "oc_a", 12, -3, "a thread reply"),
+		msgAt("om_b", "oc_b", 20, 9, "elsewhere"),
+		msgAt("om_c", "oc_c", 30, 1, "read in Feishu"),
+	}, 1)
+	require.NoError(t, err)
+	for _, id := range []string{"om_a", "om_a2", "om_reply", "om_b"} {
+		markUnread(t, s, id)
+	}
+	require.NoError(t, s.SetReadStatus(ctx, "om_c", new(true), 100, 0))
+	require.NoError(t, s.MarkChatRead(ctx, "oc_a", 4000))
+
+	got, ok, err := s.ChatWithUnread(ctx, "oc_a")
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, ChatUnread{ChatID: "oc_a", Position: 2}, got,
+		"the same row ChatsWithUnread lists for the chat, local reads and thread replies aside")
+
+	_, ok, err = s.ChatWithUnread(ctx, "oc_c")
+	require.NoError(t, err)
+	require.False(t, ok, "a chat the client has no dot for")
+}
+
 func TestChatsWithUnread_DropsAChatFeishuReportsRead(t *testing.T) {
 	s := openTest(t)
 	ctx := t.Context()

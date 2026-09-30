@@ -48,7 +48,7 @@ func applyAll(t *testing.T, m Model, cmd tea.Cmd) Model {
 			return m
 		}
 		switch msg.(type) {
-		case unreadFeedLoadedMsg, chatSideMsg, messagesLoadedMsg, chatsLoadedMsg:
+		case unreadFeedLoadedMsg, chatSideMsg, messagesLoadedMsg, chatsLoadedMsg, sectionDotMsg:
 		case errMsg:
 			require.NoError(t, msg.(errMsg).err)
 			return m

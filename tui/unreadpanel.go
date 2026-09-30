@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 
 	tea "charm.land/bubbletea/v2"
@@ -188,25 +189,42 @@ func (m Model) feedRuleLine(w int) (line string, pinned bool) {
 // panel's own reading gate refuses to make for the reader, reached by the check
 // on the section's rule or by m.
 //
-// The messages go over as the page holds them, before the write lands, because
-// that is the state unreadWaiting has to be read against. joinUnread drops the
-// settled section on the reload that follows.
+// The local write settles the whole chat, so the client is walked onto the
+// chat's newest waiting message as the store has it, not the page's: a
+// section stops at unreadSectionLimit, and a watermark taken from the page
+// would leave Feishu's dot on everything past the cut. Unlike takeRead's gate,
+// this fires once per press, the way a mark-all does, so it can read the same
+// set the sweep does. joinUnread drops the settled section on the reload that
+// follows.
 func (m Model) markSectionRead(chatID string) (tea.Model, tea.Cmd) {
 	if !m.inFeed() || chatID == "" {
 		return m, nil
 	}
-	var owed []store.Message
-	for _, x := range m.msgs {
-		if x.ChatID == chatID {
-			owed = append(owed, x)
-		}
-	}
 	label := m.feed.section(chatID).label()
-	m, cmd := m.takeRead(chatID, owed)
 	// The reload answers the press rather than waiting on the store's own
 	// revision, the way onMarkAllDone does.
-	cmds := tea.Batch(cmd, m.reloadCurrent())
+	cmds := tea.Batch(markChatRead(m.deps.Store, m.deps.Log, chatID), sectionDot(m.deps, chatID), m.reloadCurrent())
 	return m.notify(label+" taken as read", false), cmds
+}
+
+// sectionDotMsg carries the chat a section's mark-read still owes Feishu,
+// nothing when the client has no dot for it.
+type sectionDotMsg struct{ chats []store.ChatUnread }
+
+// sectionDot reads the dot the client still draws for a chat. It does not
+// depend on local_read_at, so it reads the same whether or not the local
+// write batched beside it has landed.
+func sectionDot(d Deps, chatID string) tea.Cmd {
+	return func() tea.Msg {
+		c, ok, err := d.Store.ChatWithUnread(context.Background(), chatID)
+		if err != nil {
+			d.Log.Warn("read feishu dot", "chat_id", chatID, "err", err)
+		}
+		if !ok {
+			return sectionDotMsg{}
+		}
+		return sectionDotMsg{chats: []store.ChatUnread{c}}
+	}
 }
 
 // feedTitle names the panel and the chat a reply would go to.

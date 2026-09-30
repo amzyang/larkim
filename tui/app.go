@@ -881,6 +881,8 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.onMarkAllSet(msg)
 	case markAllDoneMsg:
 		return m.onMarkAllDone(msg)
+	case sectionDotMsg:
+		return m.pushApplinks(msg.chats)
 	case applinkDueMsg:
 		return m.onApplinkDue(msg)
 	case applinkFiredMsg:
