@@ -195,8 +195,8 @@ type (
 	selfNameMsg   struct{ name string }
 	syncStatusMsg struct{ status, lastError string }
 	errMsg        struct{ err error }
-	noticeMsg     struct{ text string }
-	aiChunkMsg    struct {
+	noticeMsg struct{ text string }
+	aiChunkMsg  struct {
 		gen   int
 		chunk ai.Chunk
 	}

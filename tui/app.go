@@ -348,6 +348,7 @@ type Model struct {
 
 	notice     string
 	noticeErr  bool
+	statusWarn string
 	syncStatus string
 	syncErr    string
 	pendingG   bool
@@ -438,7 +439,7 @@ func (m Model) Init() tea.Cmd {
 	cmds := tea.Batch(tea.RequestBackgroundColor, tea.Raw(ansi.WindowOp(ansi.RequestCellSizeWinOp)),
 		tea.Raw(GraphicsQuery),
 		loadChats(m.deps), readSyncStatus(m.deps.Store), pollSyncStatus(m.deps.Store), waitForRev(m.revs),
-		loadSelfName(m.deps))
+		loadSelfName(m.deps), keychainStartup(m.deps))
 	return tea.Batch(cmds, scheduleChatPoll())
 }
 
@@ -1044,6 +1045,9 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.notify(msg.err.Error(), true), nil
 	case noticeMsg:
 		return m.notify(msg.text, false), nil
+	case statusWarnMsg:
+		m.statusWarn = msg.text
+		return m, nil
 	case chatRestMsg:
 		r, ok := m.claimRowOpen(msg.key)
 		if !ok {

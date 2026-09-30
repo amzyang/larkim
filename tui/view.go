@@ -1199,9 +1199,13 @@ func (m Model) renderBadge(w int) string {
 
 func (m Model) renderStatus() string {
 	left := fmtStatus(m)
-	right := truncate(cmp.Or(m.notice, "? help"), max(0, m.width-lipgloss.Width(left)-3))
-	if m.noticeErr {
+	right := cmp.Or(m.notice, m.statusWarn, "? help")
+	right = truncate(right, max(0, m.width-lipgloss.Width(left)-3))
+	switch {
+	case m.notice != "" && m.noticeErr:
 		right = stErr.Render(right)
+	case m.notice == "" && m.statusWarn != "":
+		right = stWarn.Render(right)
 	}
 	gap := max(1, m.width-lipgloss.Width(left)-lipgloss.Width(right)-2)
 	return m.th.sel.Render(fit(" "+left+strings.Repeat(" ", gap)+right, m.width))
