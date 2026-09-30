@@ -38,6 +38,29 @@ func TestLoadMeta_NamesTheReactorsTheBlockOnlyHoldsIDsFor(t *testing.T) {
 	require.Equal(t, "李四", meta.people["ou_b"], "the block holds an id alone; the name comes from the contacts")
 }
 
+func TestLoadMeta_NamesTheAppsThatReacted(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "t.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { st.Close() })
+	ctx := t.Context()
+	const block = `{"counts":[{"reaction_type":"Typing","count":"2"}],"details":[
+	  {"emoji_type":"Typing","action_time":"1","operator":{"operator_id":"cli_c","operator_type":"app"}},
+	  {"emoji_type":"Typing","action_time":"2","operator":{"operator_id":"cli_hidden","operator_type":"app"}}]}`
+	m := store.Message{MessageID: "om_a", ChatID: "oc_a", MsgType: "text", SenderID: "ou_a", RawJSON: "{}"}
+	_, err = st.UpsertMessages(ctx, []store.Message{m}, 1)
+	require.NoError(t, err)
+	require.NoError(t, st.UpdateReactions(ctx, "om_a", block))
+	require.NoError(t, st.SetAppName(ctx, "cli_c", "构建机器人", 2))
+	require.NoError(t, st.SetAppName(ctx, "cli_hidden", "", 2))
+
+	m.ReactionsJSON = block
+	meta, err := loadMeta(ctx, st, "ou_me", []store.Message{m})
+	require.NoError(t, err)
+	require.Equal(t, "构建机器人", meta.people["cli_c"], "a reaction names an app by its app id")
+	require.Equal(t, "Bot", meta.people["cli_hidden"],
+		"an app the tenant will not name is still a bot, not a stranger folded into +N")
+}
+
 func TestLoadMeta_NamesTheThreadReplierThePageNeverHeardFrom(t *testing.T) {
 	st, err := store.Open(filepath.Join(t.TempDir(), "t.db"))
 	require.NoError(t, err)

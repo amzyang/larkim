@@ -251,11 +251,15 @@ FTS5 external-content index over `messages(content, sender_name)` with the trigr
 
 Avatar coverage depends on the app's directory scope: users outside it keep `avatar_url = 'none'`, because the only endpoint carrying avatar URLs rejects them. The identity fields have no such limit.
 
+## apps
+
+`apps` names the apps that reacted to a message (`app_id`, `name`, `checked_at`). A reaction names an app reactor by its app id (`cli_…`, `operator_type = 'app'` in `reactions_json`), not by the open id the same bot sends under in `contacts`, and nothing maps one to the other. A row appears once a stored reaction block names the app; `checked_at = 0` means its name has not been looked up yet, and a non-zero `checked_at` with an empty `name` means the tenant would not show the app.
+
 ## data_rev
 
-A single row (`id = 1`) whose `rev` counts the changes a reader cares about in `messages`, `chats`, `read_state`, `resources`, `message_resources` and `contacts`, advanced by triggers. Poll it to know that rows already read have gone stale: `max(messages.id)` moves only on insert, so it misses renderings, read-status flips, cards a bot rewrote in place and attachments that finished downloading.
+A single row (`id = 1`) whose `rev` counts the changes a reader cares about in `messages`, `chats`, `read_state`, `resources`, `message_resources`, `contacts` and `apps`, advanced by triggers. Poll it to know that rows already read have gone stale: `max(messages.id)` moves only on insert, so it misses renderings, read-status flips, cards a bot rewrote in place and attachments that finished downloading.
 
-Inserts always count. An update counts when it moves a column something renders; the columns that pace the syncer do not (`*_seen_at`, `cursor_ms`, `backfill_done_at`, `history_floor_ms`, `members_synced_at`, `mute_checked_at`, `repaired_at`, `raw_json`, `remote_checked_at`, `check_count`, `next_check_at`, `attempts`, `next_attempt_at`, `detail_checked_at`, `updated_at`). A full chat listing restamps `last_seen_at` on every row, so without that rule one refresh over unchanged data would tell every reader to re-read the whole list.
+Inserts always count, except in `apps`, where a row starts unnamed and only its name coming in counts. An update counts when it moves a column something renders; the columns that pace the syncer do not (`*_seen_at`, `cursor_ms`, `backfill_done_at`, `history_floor_ms`, `members_synced_at`, `mute_checked_at`, `repaired_at`, `raw_json`, `remote_checked_at`, `check_count`, `next_check_at`, `attempts`, `next_attempt_at`, `detail_checked_at`, `updated_at`). A full chat listing restamps `last_seen_at` on every row, so without that rule one refresh over unchanged data would tell every reader to re-read the whole list.
 
 ```sql
 SELECT rev FROM data_rev;  -- changed since last poll? re-read what you display

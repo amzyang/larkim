@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -278,6 +279,36 @@ func mustBots(t *testing.T, s *Syncer) []store.BotRef {
 	b, err := s.Store.BotsNeedingAvatar(t.Context(), 10)
 	require.NoError(t, err)
 	return b
+}
+
+func reactedByApps(t *testing.T, s *Syncer, appIDs ...string) {
+	t.Helper()
+	ctx := t.Context()
+	_, err := s.Store.UpsertMessages(ctx, []store.Message{{MessageID: "om_r", ChatID: "oc_team", MsgType: "text", RawJSON: "{}"}}, 1)
+	require.NoError(t, err)
+	var details []string
+	for _, id := range appIDs {
+		details = append(details, `{"emoji_type":"Typing","action_time":"1","operator":{"operator_id":"`+id+`","operator_type":"app"}}`)
+	}
+	block := fmt.Sprintf(`{"counts":[{"reaction_type":"Typing","count":"%d"}],"details":[%s]}`, len(appIDs), strings.Join(details, ","))
+	require.NoError(t, s.Store.UpdateReactions(ctx, "om_r", block))
+}
+
+func TestTick_NamesTheAppsThatReacted(t *testing.T) {
+	s, f, _ := newSyncer(t)
+	ctx := t.Context()
+	f.Apps["cli_c"] = larkcli.AppDetail{AppID: "cli_c", Name: "构建机器人"}
+	reactedByApps(t, s, "cli_c", "cli_hidden")
+
+	_, err := s.Tick(ctx)
+	require.NoError(t, err, "an app the tenant will not show must not fail the tick")
+
+	names, err := s.Store.AppNames(ctx, []string{"cli_c", "cli_hidden"})
+	require.NoError(t, err)
+	require.Equal(t, map[string]string{"cli_c": "构建机器人", "cli_hidden": ""}, names)
+	left, err := s.Store.AppsToResolve(ctx, 10)
+	require.NoError(t, err)
+	require.Empty(t, left, "both are settled, so neither is asked for again")
 }
 
 // A bot only sees the message that names it, so a roster has to record which

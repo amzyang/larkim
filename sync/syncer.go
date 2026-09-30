@@ -467,7 +467,8 @@ func (s *Syncer) tick(ctx context.Context, now time.Time, discover bool) (Report
 		rep.Reactions = n
 	}
 
-	// 15. Repair recent history, refresh members, fetch avatars: a few each.
+	// 15. Repair recent history, refresh members, fetch avatars, name reacting
+	// apps: a few each.
 	if rep.Repaired, err = s.repairSlice(ctx, now); err != nil {
 		return rep, fmt.Errorf("repair: %w", err)
 	}
@@ -479,6 +480,9 @@ func (s *Syncer) tick(ctx context.Context, now time.Time, discover bool) (Report
 	}
 	if rep.Contacts, err = s.contactDetailsSlice(ctx, now); err != nil {
 		return rep, fmt.Errorf("contact details: %w", err)
+	}
+	if err := s.resolveApps(ctx, now); err != nil {
+		return rep, fmt.Errorf("apps: %w", err)
 	}
 
 	// 16. Read the writing in pictures already on disk. Last because nothing

@@ -328,6 +328,16 @@ func loadMeta(ctx context.Context, st *store.Store, self string, msgs []store.Me
 			avatars[id] = f
 		}
 	}
+	// A bot that reacts is named by its app id, which no contact carries.
+	// One whose name the tenant withholds is still known to be a bot, and
+	// says so rather than joining the strangers counted in a chip's +N.
+	apps, err := st.AppNames(ctx, ids)
+	if err != nil {
+		return msgMeta{}, err
+	}
+	for id, name := range apps {
+		people[id] = cmp.Or(name, "Bot")
+	}
 	res, err := st.ResourcesForMessages(ctx, msgIDs)
 	if err != nil {
 		return msgMeta{}, err

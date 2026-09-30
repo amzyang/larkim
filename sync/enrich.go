@@ -246,6 +246,28 @@ func (s *Syncer) resolveBotAvatarURLs(ctx context.Context, now time.Time) error 
 	return nil
 }
 
+// resolveApps names the apps that reacted to a message. A reaction names an
+// app by its app id alone, which no contact carries, so these are asked
+// about on their own; like a bot's picture, the name comes from the app.
+func (s *Syncer) resolveApps(ctx context.Context, now time.Time) error {
+	ids, err := s.Store.AppsToResolve(ctx, s.Opt.AvatarsPerTick)
+	if err != nil {
+		return err
+	}
+	for _, id := range ids {
+		app, err := s.Client.AppDetail(ctx, id)
+		if le, ok := errors.AsType[*larkcli.Error](err); err != nil && (!ok || !le.IsPermanent()) {
+			return err
+		}
+		// A refused app is settled unnamed, for the same reason a refused
+		// bot is: it is asked for once rather than every tick.
+		if err := s.Store.SetAppName(ctx, id, app.Name, now.UnixMilli()); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // avatarsSlice resolves avatar URLs for contacts and downloads a few chat and
 // contact avatars per tick into resources/avatars/.
 func (s *Syncer) avatarsSlice(ctx context.Context, now time.Time) (int, error) {

@@ -204,6 +204,9 @@ func (s *Store) UpdateRendered(ctx context.Context, messageID, content, reaction
 		content, compactJSON(reactionsJSON), now, messageID); err != nil {
 		return err
 	}
+	if err := enrollApps(ctx, tx, reactionsJSON); err != nil {
+		return err
+	}
 	// A contains rule reads the rendering, so this is where a card first
 	// becomes matchable and where an edit can stop matching.
 	if err := s.applySilence(ctx, tx, []string{messageID}); err != nil {
@@ -249,6 +252,9 @@ func (s *Store) UpdateReactions(ctx context.Context, messageID, reactionsJSON st
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE chats SET last_reactions_json = ? WHERE last_message_id = ? AND last_reactions_json <> ?`,
 		reactionsJSON, messageID, reactionsJSON); err != nil {
+		return err
+	}
+	if err := enrollApps(ctx, tx, reactionsJSON); err != nil {
 		return err
 	}
 	return tx.Commit()
