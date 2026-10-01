@@ -19,6 +19,10 @@ const (
 	composerMaxRows = 10
 	// previewMaxRows is as tall as the rendered draft gets shown.
 	previewMaxRows = 6
+	// minListRows is the floor the composer leaves the message panes when a
+	// draft grows: enough to still see the message being written about, and
+	// its neighbours.
+	minListRows = 6
 )
 
 // composerRows is how the composer's inner height is split, so the box, the
@@ -80,14 +84,8 @@ func (m Model) composerRows() composerRows {
 			}
 		}
 	case modeEmoji:
-		// The rows the answer is laid over cost the grid three of its own, so
-		// the box grows by them the way the target chooser grows to its list.
-		// It grows from the moment the picker opens and whatever the answer
-		// turns out to be, because a box that resized when the answer landed
-		// would move the grid under a reader already reading it.
-		if m.picker.suggest != suggestOff {
-			r.input += room(inputHeight + suggestRows)
-		}
+		// The chooser's offers stand over the panes rather than in the box,
+		// so its own rows cost the box nothing.
 	case modeTarget:
 		// The chooser grows to its list the way the writing area grows to a
 		// draft. Three rows at rest would put a card's links behind a scroll
@@ -114,8 +112,8 @@ func draftRows(value string, width int) int {
 	return max(1, n)
 }
 
-// composerHeight is the inner height of the composer, and of the emoji picker
-// that stands in its place.
+// composerHeight is the inner height of the composer, and of whatever chooser
+// stands in its place.
 func (m Model) composerHeight() int { return m.composerRows().total() }
 
 // previewBottom is as far as the preview band scrolls.

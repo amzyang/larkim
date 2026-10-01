@@ -78,27 +78,6 @@ func drawEmoji(re *regexp.Regexp, s string, lookup func(string) (emoji.Emoji, bo
 	})
 }
 
-// emojiWords joins the words drawn beside an emoji: the key Feishu speaks, the
-// name the client displays it under, and the term a query landed on.
-//
-// A piece that repeats one already drawn is dropped. Feishu's lettering emoji
-// spell their own name — OK, Yes, No, OKR — and their picture carries the word
-// too, so the cell would otherwise say it three times over; a query that
-// reached one of them through its key or its own name repeats it a fourth.
-//
-// drawn is the name the caller has already dressed — the picker marks the
-// reader's own reaction onto it, the popup bolds it — while every comparison
-// here is made against the bare text the emoji carries.
-func emojiWords(e emoji.Emoji, drawn, term string, pos []int) string {
-	if key := emojiKey(e); key != "" {
-		drawn = stDim.Render(key) + " " + drawn
-	}
-	if t := emojiTerm(e, term, pos); t != "" {
-		drawn += stDim.Render(" " + t)
-	}
-	return drawn
-}
-
 // emojiKey is the key Feishu speaks, where it says something the name does not.
 func emojiKey(e emoji.Emoji) string {
 	if strings.EqualFold(e.Key, e.Name()) {
@@ -120,8 +99,8 @@ func emojiTerm(e emoji.Emoji, term string, pos []int) string {
 }
 
 // emojiInfo is what the box beside a completion list says about the emoji the
-// cursor is on: the words emojiWords puts beside it in the picker grid, which
-// a list row has no room for.
+// cursor is on: the key Feishu speaks and the term a query landed on, which a
+// list row has no room for.
 func emojiInfo(h emoji.Hit) []string {
 	return infoLines(emojiKey(h.Emoji), emojiTerm(h.Emoji, h.Term, h.Positions))
 }

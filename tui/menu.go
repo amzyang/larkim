@@ -189,6 +189,11 @@ func infoLines(facts ...string) []string {
 	return out
 }
 
+// pickerIconCols is the column every emoji is drawn in, character or picture
+// alike. A fixed width is what keeps the name column from stepping a cell
+// sideways under a single-width character.
+const pickerIconCols = 2
+
 // offerRow is one row in the pieces it is drawn from: the cursor mark, the
 // digit that picks it, the icon, the name. It comes back in pieces because an
 // icon may be a picture, which only the renderer can place, and the box is

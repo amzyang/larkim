@@ -78,39 +78,45 @@ var marked = []string{"DONE", "THUMBSUP", "APPLAUSE", "OK"}
 func TestPicker_WithoutASuggesterHasNoRow(t *testing.T) {
 	m := press(t, pickerModel(t), "e")
 	require.Equal(t, suggestOff, m.picker.suggest)
-	require.Equal(t, m.emoji.Search(""), m.picker.hits, "the grid is the one it has always been")
+	require.Equal(t, reactHits(m.emoji.Search(""), 0, m.picker.mine), m.picker.menu.items, "the list is the one it has always been")
 }
 
 func TestPicker_OpensOnTheGridItHasAlwaysOpenedOn(t *testing.T) {
 	m, _ := openSuggest(t, &fakeSuggest{rank: ready})
 	require.Equal(t, suggestWaiting, m.picker.suggest)
-	require.Equal(t, m.emoji.Search(""), m.picker.hits, "nothing is reserved while the answer is on its way")
+	require.Equal(t, reactHits(m.emoji.Search(""), 0, m.picker.mine), m.picker.menu.items, "nothing is reserved while the answer is on its way")
 	require.Equal(t, "jev…", m.picker.suggestNote(), "the query line is what says an answer is coming")
 }
 
-func TestPicker_MakesRoomForTheRowsTheAnswerWillFill(t *testing.T) {
+func TestPicker_TheHeadRowsCostTheBoxNothing(t *testing.T) {
 	plain := press(t, pickerModel(t), "e")
 	m, _ := openSuggest(t, &fakeSuggest{rank: ready})
-	require.Equal(t, plain.pickerRows()+suggestRows, m.pickerRows(),
-		"the rows come out of the box, not out of the grid")
+	require.Equal(t, plain.composerHeight(), m.composerHeight(),
+		"the head of the list stands over the panes, not in the box")
 }
 
-func TestPicker_TheAnswerLeadsTheGrid(t *testing.T) {
+func TestPicker_TheAnswerLeadsTheList(t *testing.T) {
 	m, cmd := openSuggest(t, &fakeSuggest{rank: ready})
 	m = answer(t, m, cmd)
 	require.Equal(t, suggestReady, m.picker.suggest)
 	for i, key := range marked {
-		require.Equal(t, key, m.picker.hits[i].Emoji.Key)
-		require.True(t, m.picker.suggested(i), key+" is one the conversation chose")
+		require.Equal(t, key, reactKey(m, i))
+		require.True(t, m.picker.menu.items[i].byAsk, key+" is one the conversation chose")
 	}
-	require.Empty(t, m.picker.suggestNote(), "a row that speaks for itself needs no word on the line")
+	require.Empty(t, m.picker.suggestNote(), "a head that speaks for itself needs no word on the line")
 }
 
 func TestPicker_APickUnderTheFloorIsNotOffered(t *testing.T) {
 	m, cmd := openSuggest(t, &fakeSuggest{rank: ready})
 	m = answer(t, m, cmd)
-	require.Equal(t, len(marked), m.picker.marked, "SMILE came in under the floor")
-	require.False(t, m.picker.suggested(len(marked)))
+	n := 0
+	for _, it := range m.picker.menu.items {
+		if it.byAsk {
+			n++
+		}
+	}
+	require.Equal(t, len(marked), n, "SMILE came in under the floor")
+	require.False(t, m.picker.menu.items[len(marked)].byAsk)
 }
 
 func TestPicker_TheRestOfTheRowsComeFromTheReadersOwnOrder(t *testing.T) {
@@ -119,22 +125,24 @@ func TestPicker_TheRestOfTheRowsComeFromTheReadersOwnOrder(t *testing.T) {
 	// Every cell is filled — an empty one costs the grid a place for nothing —
 	// and the ones past the answer's own are the order the picker opened with.
 	for i := range suggestPicks {
-		require.NotEmpty(t, m.picker.hits[i].Emoji.Key)
+		require.NotEmpty(t, reactKey(m, i))
 	}
 	own := slices.DeleteFunc(m.emoji.Search(""), func(h emoji.Hit) bool {
 		return slices.Contains(marked, h.Emoji.Key)
 	})
-	require.Equal(t, own[:suggestPicks-len(marked)], m.picker.hits[len(marked):suggestPicks])
+	for i, h := range own[:suggestPicks-len(marked)] {
+		require.Equal(t, h.Emoji.Key, reactKey(m, len(marked)+i))
+	}
 }
 
 func TestPicker_TheRowsEmojiComeOutOfTheGridUnderThem(t *testing.T) {
 	m, cmd := openSuggest(t, &fakeSuggest{rank: ready})
 	m = answer(t, m, cmd)
-	require.Len(t, m.picker.hits, m.picker.found, "as many out of the grid as into the rows")
+	require.Len(t, m.picker.menu.items, m.picker.found, "as many out of the list as into the head rows")
 	for _, key := range marked {
 		n := 0
-		for _, h := range m.picker.hits {
-			if h.Emoji.Key == key {
+		for _, h := range m.picker.menu.items {
+			if h.hit.Emoji.Key == key {
 				n++
 			}
 		}
@@ -144,9 +152,10 @@ func TestPicker_TheRowsEmojiComeOutOfTheGridUnderThem(t *testing.T) {
 
 func TestPicker_TheCursorKeepsItsEmojiWhenTheAnswerLands(t *testing.T) {
 	m, cmd := openSuggest(t, &fakeSuggest{rank: ready})
-	// Down a row and along, which is a cell the emoji the answer pulls to the
-	// head would otherwise shift out from under.
-	m.picker.move(pickerCols+2, m.pickerRows())
+	// Down two rows, which is an offer the emoji the answer pulls to the head
+	// would otherwise shift out from under.
+	m.picker.moved = true
+	m.picker.menu.move(2, m.reactRows())
 	was := m.pickerCursorKey()
 	m = answer(t, m, cmd)
 	require.Equal(t, was, m.pickerCursorKey())
@@ -155,7 +164,7 @@ func TestPicker_TheCursorKeepsItsEmojiWhenTheAnswerLands(t *testing.T) {
 func TestPicker_ChoosingFromTheRowReactsWithThatEmoji(t *testing.T) {
 	m, cmd := openSuggest(t, &fakeSuggest{rank: ready})
 	m = answer(t, m, cmd)
-	next, _ := m.choose()
+	next, _ := m.chooseAt(m.picker.menu.idx)
 	m = next.(Model)
 	require.Equal(t, modeNormal, m.mode)
 	require.Len(t, m.reacts, 1)
@@ -167,8 +176,8 @@ func TestPicker_AMessageNobodyWouldReactToGivesTheRowsLineBack(t *testing.T) {
 		Options: []jev.Option{{Key: "DONE", P: 1}}, Fits: suggestFits - 0.1}})
 	m = answer(t, m, cmd)
 	require.Equal(t, suggestNone, m.picker.suggest)
-	require.False(t, m.picker.rowOpen(), "nothing more is coming, so the grid has the line")
-	require.Equal(t, m.emoji.Search(""), m.picker.hits)
+	require.False(t, m.picker.rowOpen(), "nothing more is coming, so the list has the line")
+	require.Equal(t, reactHits(m.emoji.Search(""), 0, m.picker.mine), m.picker.menu.items)
 	require.Equal(t, "nothing to react to", m.picker.suggestNote())
 }
 
@@ -176,8 +185,8 @@ func TestPicker_AFailedQuestionSaysSoInTheRowAndNowhereElse(t *testing.T) {
 	m, cmd := openSuggest(t, &fakeSuggest{err: errors.New("boom")})
 	m = answer(t, m, cmd)
 	require.Equal(t, suggestFailed, m.picker.suggest)
-	require.False(t, m.picker.rowOpen(), "a row that will never fill keeps no line")
-	require.Equal(t, m.emoji.Search(""), m.picker.hits)
+	require.False(t, m.picker.rowOpen(), "a head that will never fill keeps no line")
+	require.Equal(t, reactHits(m.emoji.Search(""), 0, m.picker.mine), m.picker.menu.items)
 	require.Empty(t, m.notice, "a best-effort row does not take the notification line")
 	require.Empty(t, m.suggestCache, "the next press is worth another try")
 }
@@ -188,13 +197,13 @@ func TestPicker_AnAnswerForAClosedPickerIsDropped(t *testing.T) {
 	m = press(t, m, "e")
 	m = answer(t, m, cmd)
 	require.Equal(t, suggestWaiting, m.picker.suggest, "the second picker is still waiting on its own answer")
-	require.Equal(t, m.emoji.Search(""), m.picker.hits)
+	require.Equal(t, reactHits(m.emoji.Search(""), 0, m.picker.mine), m.picker.menu.items)
 }
 
 func TestPicker_AnUntouchedCursorLandsOnTheBestPick(t *testing.T) {
 	m, cmd := openSuggest(t, &fakeSuggest{rank: ready})
 	m = answer(t, m, cmd)
-	require.Equal(t, 0, m.picker.idx)
+	require.Equal(t, 0, m.picker.menu.idx)
 	require.Equal(t, "DONE", m.pickerCursorKey())
 }
 
@@ -206,7 +215,7 @@ func TestPicker_ReopeningOnTheSameMessageAsksNothingAgain(t *testing.T) {
 	next, _ := m.openPicker()
 	m = next.(Model)
 	require.Equal(t, suggestReady, m.picker.suggest)
-	require.Equal(t, "DONE", m.picker.hits[0].Emoji.Key)
+	require.Equal(t, "DONE", reactKey(m, 0))
 	require.Len(t, f.asked, 1, "nothing is asked a second time")
 }
 
@@ -214,11 +223,11 @@ func TestPicker_AQueryTakesTheRowAwayAndClearingItBringsItBack(t *testing.T) {
 	m, cmd := openSuggest(t, &fakeSuggest{rank: ready})
 	m = answer(t, m, cmd)
 	m = press(t, m, "z")
-	require.Equal(t, m.emoji.Search("z"), m.picker.hits, "a narrowed grid carries no row")
-	require.False(t, m.picker.suggested(0))
+	require.Equal(t, m.emoji.Search("z")[0].Emoji.Key, reactKey(m, 0), "a narrowed list carries no head")
+	require.False(t, m.picker.menu.items[0].byAsk)
 	m = press(t, m, "backspace")
-	require.Equal(t, "DONE", m.picker.hits[0].Emoji.Key)
-	require.True(t, m.picker.suggested(0))
+	require.Equal(t, "DONE", reactKey(m, 0))
+	require.True(t, m.picker.menu.items[0].byAsk)
 }
 
 func TestStanding_NamesWhatIsAlreadyOnTheMessage(t *testing.T) {
@@ -239,10 +248,10 @@ func TestAskSuggest_NamesBothSpellingsOfAnEmoji(t *testing.T) {
 func TestPicker_TheRowMarksItselfApartFromTheGridUnderIt(t *testing.T) {
 	m, cmd := openSuggest(t, &fakeSuggest{rank: ready})
 	m = answer(t, m, cmd)
-	require.Contains(t, ansi.Strip(m.joinSegs(m.pickerCell(m.picker.hits[0], 0, 60), 60)), "✦")
+	require.Contains(t, ansi.Strip(m.picker.menu.rows[0].name), "✦")
 	pad := len(marked)
-	require.NotContains(t, ansi.Strip(m.joinSegs(m.pickerCell(m.picker.hits[pad], pad, 60), 60)), "✦",
-		"a cell filled from the reader's own order is not something the chat chose")
+	require.NotContains(t, ansi.Strip(m.picker.menu.rows[pad].name), "✦",
+		"a row filled from the reader's own order is not something the chat chose")
 }
 
 func TestAskSuggest_OffersWhatTheReaderReachesForAndOnlyReactions(t *testing.T) {

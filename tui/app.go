@@ -524,14 +524,6 @@ func (m Model) picturePrepare() string {
 	// the reader is looking at outranks one behind it. Without this the
 	// preview reserves cells the terminal was never handed.
 	collect(m.previewRows, m.previewTop, m.previewTop+m.composerRows().preview)
-	// The picker is what the reader is looking at while it is open, so the
-	// emoji it offers are claimed before anything behind it.
-	if m.mode == modeEmoji {
-		for _, hit := range m.pickerVisible() {
-			_, pic := m.pickerIcon(hit.Emoji)
-			claimed.take(pic)
-		}
-	}
 	// The list standing over the panes is claimed on the same rule, from the
 	// very pieces it draws, so no list can show a picture it never asked for.
 	for _, row := range m.floatSegs() {

@@ -14,28 +14,27 @@ import (
 	"github.com/amzyang/larkim/store"
 )
 
-// The contextual row over the emoji grid has no counterpart in the Lark
+// The contextual head of the emoji list has no counterpart in the Lark
 // client: its reaction panel opens on a frequently used band and nothing in it
 // reads the conversation, so there is no behaviour to copy and this is
-// designed here. It is additive on purpose — the grid underneath keeps the
-// frequency order the client's own panel opens with, the row is gone the
-// moment a query narrows the picker, and every emoji in it is one the client
+// designed here. It is additive on purpose — the list under it keeps the
+// frequency order the client's own panel opens with, the head is gone the
+// moment a query narrows the chooser, and every emoji in it is one the client
 // would also take, so nothing the reader does through it is a thing the client
 // could not have done.
 
 // suggestOptions is how many emoji the answer chooses between. They are the
-// head of the picker's own unqueried order — this reader's most used, then
+// head of the chooser's own unqueried order — this reader's most used, then
 // Feishu's panel order — so the set narrows onto what is actually reached for
 // as the remembered list fills. The endpoint takes far more than this; the
 // limit is the reader's own vocabulary, not the protocol's.
 const suggestOptions = 40
 
-// suggestRows is how many rows of the grid the answer is laid over, and so
-// what it costs the composer's box.
-const suggestRows = 3
-
-// suggestPicks is how many cells that comes to across the picker's columns.
-const suggestPicks = suggestRows * pickerCols
+// suggestPicks is how many rows of the list the answer is laid over. The list
+// shows ten — a digit for each — and the head nine of them is the share the
+// answer's rows held in the chooser's old grid, so what the answer named stays
+// on screen whole.
+const suggestPicks = 9
 
 // suggestFloor is the probability under which a pick stops being a suggestion.
 // Measured over six work messages the answer put its real candidates between
@@ -296,24 +295,25 @@ func (m Model) onSuggested(msg suggestedMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// pickerGrid lays the hits the picker draws: what its query answers with, and
-// ahead of them the pickerCols cells of the contextual row.
+// pickerGrid lays the offers the chooser draws: what its query answers with,
+// and ahead of them the head rows of the contextual answer.
 //
-// The row is part of the hits rather than a band beside them so that the
-// cursor, the scroll and the visible window need know nothing about it — and
-// so that an answer landing moves nothing, because the cells are already there
-// and filling them leaves the count of hits alone. Whether the row is laid at
-// all is rowOpen's call.
+// The answer's rows are part of the offers rather than a band beside them so
+// that the cursor, the scroll and the visible window need know nothing about
+// them — and so that an answer landing moves nothing, because the rows are
+// already there and filling them leaves the count of hits alone. Whether they
+// are laid at all is rowOpen's call.
 func (m *Model) pickerGrid() {
 	p := &m.picker
-	p.hits = m.emoji.Search(p.input.Value())
-	p.found, p.marked = len(p.hits), 0
+	hits := m.emoji.Search(p.input.Value())
+	p.found = len(hits)
 	if !p.rowOpen() {
+		p.menu = fillMenu(reactHits(hits, 0, p.mine), reactSpec)
 		return
 	}
-	// What the answer chose comes out of the grid and goes in front of it, so
-	// the head of the picker reads as the conversation's picks and then this
-	// reader's own order, and the count of hits never changes: no cell is
+	// What the answer chose comes out of the list and goes in front of it, so
+	// the head of the chooser reads as the conversation's picks and then this
+	// reader's own order, and the count of hits never changes: no row is
 	// blank, and nothing below moves when the rows are laid.
 	front := make([]emoji.Hit, 0, suggestPicks)
 	for _, o := range p.picks {
@@ -322,67 +322,75 @@ func (m *Model) pickerGrid() {
 		}
 		// A key this build has no entry for cannot be drawn or pressed. It is
 		// skipped rather than left as a hole, which is what keeps the marked
-		// cells the first ones in the row.
+		// rows the first ones in the list.
 		if e, ok := m.emoji.ByKey(o.Key); ok {
 			front = append(front, emoji.Hit{Emoji: e})
 		}
 	}
-	p.marked = len(front)
-	rest := slices.DeleteFunc(slices.Clone(p.hits), func(h emoji.Hit) bool {
+	marked := len(front)
+	rest := slices.DeleteFunc(slices.Clone(hits), func(h emoji.Hit) bool {
 		return slices.ContainsFunc(front, func(f emoji.Hit) bool { return f.Emoji.Key == h.Emoji.Key })
 	})
-	// The cells the answer had nothing confident to say about are filled from
-	// the order the picker would have opened with anyway, unmarked. An empty
-	// cell would cost a keystroke's worth of grid for nothing, and a cell
-	// filled from the tail of the distribution is worse than empty: on a
-	// colleague asking for a confirmation that tail held 烦躁.
+	// The rows the answer had nothing confident to say about are filled from
+	// the order the chooser would have opened with anyway, unmarked. An empty
+	// row would cost a keystroke's worth of list for nothing, and a row filled
+	// from the tail of the distribution is worse than empty: on a colleague
+	// asking for a confirmation that tail held 烦躁.
 	for len(front) < suggestPicks && len(rest) > 0 {
 		front, rest = append(front, rest[0]), rest[1:]
 	}
-	p.hits = append(front, rest...)
+	p.menu = fillMenu(reactHits(append(front, rest...), marked, p.mine), reactSpec)
 }
 
-// pickerSeek puts the cursor back on an emoji after the grid was laid again.
-// An answer pulls what it chose up to the head of the grid, and without this
+// reactHits turns the emoji the chooser lays into the items its menu draws:
+// the first marked of them are the conversation's own picks, and mine is what
+// the strip says the reader has already put on the target.
+func reactHits(hits []emoji.Hit, marked int, mine map[string]bool) []reactHit {
+	out := make([]reactHit, len(hits))
+	for i, h := range hits {
+		out[i] = reactHit{hit: h, mine: mine[emoji.Fold(h.Emoji.Key)], byAsk: i < marked}
+	}
+	return out
+}
+
+// pickerSeek puts the cursor back on an emoji after the list was laid again.
+// An answer pulls what it chose up to the head of the list, and without this
 // the emoji under the cursor would be replaced by whichever one moved into its
 // place — a reader mid-press would react with something they never chose.
 func (m *Model) pickerSeek(key string) {
 	if key == "" {
 		return
 	}
-	if i := slices.IndexFunc(m.picker.hits, func(h emoji.Hit) bool { return h.Emoji.Key == key }); i >= 0 {
-		m.picker.idx = i
+	i := slices.IndexFunc(m.picker.menu.items, func(h reactHit) bool { return h.hit.Emoji.Key == key })
+	if i < 0 {
+		return
 	}
-	row := m.picker.idx / pickerCols
-	m.picker.top = clamp(m.picker.top, max(0, row-m.pickerRows()+1), row)
+	rows := m.reactRows()
+	m.picker.menu.idx = i
+	m.picker.menu.top = clamp(m.picker.menu.top, max(0, i-rows+1), i)
 }
 
-// pickerCursorKey is the emoji the cursor stands on, empty on a cell of the
-// contextual row that has nothing in it yet.
+// pickerCursorKey is the emoji the cursor stands on, empty where the cursor
+// stands on nothing.
 func (m Model) pickerCursorKey() string {
-	if m.picker.idx >= len(m.picker.hits) {
-		return ""
+	if h, ok := m.picker.menu.focused(); ok {
+		return h.hit.Emoji.Key
 	}
-	return m.picker.hits[m.picker.idx].Emoji.Key
+	return ""
 }
 
-// rowOpen reports whether the answer is laid over the head of the grid. Only a
-// landed answer is: the picker opens on exactly the grid it has always opened
+// rowOpen reports whether the answer is laid over the head of the list. Only a
+// landed answer is: the chooser opens on exactly the list it has always opened
 // on, and the rows are rearranged under the query line's own note when the
-// answer comes. Reserving them empty was tried and gives the reader three
-// rows of dots to look past.
+// answer comes. Reserving them empty was tried and gives the reader rows of
+// nothing to look past.
 //
-// A narrowed grid never carries them: once a query is typed the reader has
+// A narrowed list never carries them: once a query is typed the reader has
 // said what they want, and the fuzzy score answers that better than the
 // conversation can.
 func (p picker) rowOpen() bool {
 	return p.suggest == suggestReady && strings.TrimSpace(p.input.Value()) == ""
 }
-
-// suggested reports whether the hit at an absolute index is one the answer
-// chose, rather than one of the cells filled from the reader's own order to
-// finish the rows out.
-func (p picker) suggested(abs int) bool { return p.rowOpen() && abs < p.marked }
 
 // suggestNote is what the query line says of the row, and nothing at all once
 // the row speaks for itself.

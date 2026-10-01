@@ -16,12 +16,6 @@ import (
 	"github.com/amzyang/larkim/store"
 )
 
-// pickerCols is how many emoji stand side by side. The picker is only as tall
-// as the composer box it stands in, so the hits are laid across the width
-// instead of down: three columns still name the key and the word at the
-// narrowest terminal the client draws.
-const pickerCols = 3
-
 // picker is the emoji chooser open over the composer. A zero value is closed.
 type picker struct {
 	target store.Message
@@ -29,28 +23,66 @@ type picker struct {
 	// on, so the query is edited under the readline keys a reader already has
 	// in their fingers rather than a hand-rolled subset of them.
 	input textinput.Model
-	hits  []emoji.Hit
-	idx   int
-	// top is the first grid row on screen, not the first hit: the grid scrolls
-	// by whole rows, so a hit never changes column under the reader.
-	top int
+	// menu is the offers, drawn as the one list every completion is: over the
+	// panes, one offer a row, with the focused emoji's key and matched term in
+	// the box beside the list.
+	menu menu[reactHit]
 	// mine is the emoji the reader has already put on the target, so choosing
 	// one of them takes it back instead of adding it twice.
 	mine map[string]bool
-	// suggest is what the contextual row over the grid is drawing, and keys
+	// suggest is what the head of the list is drawing, and keys
 	// the emoji an answer named, best first. See suggest.go.
 	suggest suggestState
-	// picks is what the answer chose, best first, and marked how many of the
-	// rows' cells came from it rather than from the reader's own order.
-	picks  []jev.Option
-	marked int
-	// found is how many emoji the query itself answered with, which laying
-	// the rows neither adds to nor takes from.
+	// picks is what the answer chose, best first.
+	picks []jev.Option
+	// found is how many emoji the query itself answered with, which laying the
+	// list neither adds to nor takes from.
 	found int
-	// moved says the reader has walked the cursor off the cell the picker
+	// moved says the reader has walked the cursor off the offer the chooser
 	// opened on, which is what decides where the cursor stands once an answer
-	// rearranges the head of the grid.
+	// rearranges the head of the list.
 	moved bool
+}
+
+// reactHit is one emoji the chooser offers, with what its row says of it baked
+// in when the list is filled: the menu's projections read the item alone.
+type reactHit struct {
+	hit emoji.Hit
+	// mine says choosing it takes the reaction back rather than adding it.
+	mine bool
+	// byAsk says the conversation's answer chose it, rather than the row being
+	// one filled from the reader's own order to finish the head of the list.
+	byAsk bool
+}
+
+// reactSpec draws an offer the way the composer's own emoji completions do:
+// the emoji as the icon, its name beside it, and the key with the term a query
+// landed on said in the box beside the list.
+var reactSpec = menuSpec[reactHit]{
+	row: func(h reactHit) offer {
+		name := stBold.Render(h.hit.Emoji.Name())
+		switch {
+		case h.mine:
+			// Already the reader's: choosing it takes it back, and the row has
+			// to say so before they press enter.
+			name += stAccent.Render(" ✓")
+		case h.byAsk:
+			// The conversation chose this one, and the rows below it were only
+			// filled out of the reader's own order, so without the mark the two
+			// kinds of row read alike.
+			name += stAccent.Render(" ✦")
+		case !h.hit.Emoji.Reactable():
+			// Feishu will not take this one as a reaction, so choosing it sends
+			// a picture instead. That is a message in the chat rather than a
+			// mark on one, which the reader has to know before they press enter.
+			name += stDim.Render(" pic")
+		}
+		return offer{icon: emojiIcon(h.hit.Emoji), name: name}
+	},
+	info: func(h reactHit) []string { return emojiInfo(h.hit) },
+	// A reaction is one press, so a digit reaches the row it names: most
+	// reactions are the first row or two, which is where a hand rests.
+	digits: true,
 }
 
 // openPicker arms the chooser against the selected message.
@@ -89,51 +121,44 @@ func (m Model) openPicker() (tea.Model, tea.Cmd) {
 	return m, tea.Batch(focus, ask)
 }
 
-// pickerRows is how many rows of emoji the grid has: the composer's box less
-// the query line it opens with. The picker takes the box the composer would
-// have drawn, so pressing e moves nothing above it.
-func (m Model) pickerRows() int { return m.composerHeight() - 1 }
-
-// pickerVisible is the hits the chooser has room for. The renderer draws
-// exactly these and the picture pass claims exactly their pictures, so the two
-// cannot drift into preparing one emoji and drawing another.
-func (m Model) pickerVisible() []emoji.Hit {
-	return window(m.picker.hits, m.picker.top*pickerCols, m.pickerRows()*pickerCols)
+// reactRows is how many offers the chooser's list has room for. It stands over
+// the panes the way every completion list does, so it costs the composer's box
+// nothing.
+func (m Model) reactRows() int {
+	if m.mode != modeEmoji {
+		return 0
+	}
+	return m.floatRoom(len(m.picker.menu.items), m.picker.menu.maxRows())
 }
 
-// minListRows is the floor the composer leaves the message panes when a draft
-// grows: enough to still see the message being written about, and its
-// neighbours.
-const minListRows = 6
-
 // onEmojiKey drives the chooser. The filter owns every key it can edit with,
-// so movement through the hits is on the arrows and the readline pair rather
-// than hjkl.
+// so movement through the offers is on the arrows and the readline pair rather
+// than hjkl, and a digit picks the row it is drawn beside.
 func (m Model) onEmojiKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	rows := m.reactRows()
 	switch k.String() {
 	case "esc":
 		m.closePicker()
 		return m, nil
 	case "enter":
-		return m.choose()
+		return m.chooseAt(m.picker.menu.idx)
 	case "up", "ctrl+p":
-		m.picker.move(-pickerCols, m.pickerRows())
+		m.picker.moved = true
+		m.picker.menu.move(-1, rows)
 		return m, nil
 	case "down", "ctrl+n":
-		m.picker.move(pickerCols, m.pickerRows())
+		m.picker.moved = true
+		m.picker.menu.move(1, rows)
 		return m, nil
-	case "left":
-		m.picker.move(-1, m.pickerRows())
-		return m, nil
-	case "right":
-		m.picker.move(1, m.pickerRows())
-		return m, nil
+	}
+	if i, ok := m.picker.menu.pick(k.String(), rows); ok {
+		return m.chooseAt(i)
 	}
 	return m.typeIntoFilter(k)
 }
 
 // typeIntoFilter hands a message to the filter and re-runs the search when the
-// query came back changed, which is the only thing the picker reads from it.
+// query came back changed, which is the only thing the chooser reads from it.
 func (m Model) typeIntoFilter(msg tea.Msg) (tea.Model, tea.Cmd) {
 	before := m.picker.input.Value()
 	var cmd tea.Cmd
@@ -143,37 +168,25 @@ func (m Model) typeIntoFilter(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// just typed is looking — and which is also what spares the row
 		// appearing and disappearing from having to move the cursor with it.
 		m.pickerGrid()
-		m.picker.idx, m.picker.top = 0, 0
+		m.picker.menu.idx, m.picker.menu.top = 0, 0
 	}
 	return m, cmd
 }
 
-// move walks the grid by d hits, the arrows crossing a column and the rows
-// keys a whole row, and scrolls by rows to keep the cursor on screen.
-func (p *picker) move(d, rows int) {
-	if len(p.hits) == 0 {
-		return
-	}
-	p.moved = true
-	p.idx = clamp(p.idx+d, 0, len(p.hits)-1)
-	row := p.idx / pickerCols
-	p.top = clamp(p.top, max(0, row-rows+1), row)
-}
-
-// choose puts the highlighted emoji on the message, or takes it back when the
-// reader already chose it.
-func (m Model) choose() (tea.Model, tea.Cmd) {
-	if len(m.picker.hits) == 0 {
+// chooseAt puts the offered emoji on the message, or takes it back when the
+// reader already chose it. i is the cursor's row, or the one a digit names.
+func (m Model) chooseAt(i int) (tea.Model, tea.Cmd) {
+	if i < 0 || i >= len(m.picker.menu.items) {
 		return m, nil
 	}
 	target := m.picker.target
-	key := m.picker.hits[m.picker.idx].Emoji.Key
+	key := m.picker.menu.items[i].hit.Emoji.Key
 	m.closePicker()
 	return m.toggleReaction(target, key)
 }
 
 // closePicker shuts the chooser and retires the contextual answer on its way,
-// so one that lands late cannot fill the row of the picker opened after it.
+// so one that lands late cannot fill the head of the chooser opened after it.
 func (m *Model) closePicker() {
 	m.mode = modeNormal
 	m.picker = picker{}
@@ -206,7 +219,7 @@ func (m Model) toggleReaction(x store.Message, key string) (tea.Model, tea.Cmd) 
 	asPicture := known && !e.Reactable() && !mineOn(m.drawnChips(x), key)
 	// A chip carries whatever key Feishu sent, which may be one this build has
 	// no entry for; remembering that would head an empty query with a name the
-	// picker cannot draw.
+	// chooser cannot draw.
 	if known {
 		m.emoji.Use(key)
 		if err := m.emoji.SaveUsed(m.deps.DataDir); err != nil {
@@ -276,12 +289,27 @@ func react(d Deps, p reactPending) tea.Cmd {
 // placed past it, so its width cannot be measured in two places.
 func pickerPrompt() string { return stBold.Render("react") + stAccent.Render(" › ") }
 
-// renderPicker draws the chooser in the composer's place, filling exactly the
-// box the composer would have drawn: the query it is being narrowed by, then
-// the hits laid across the width.
+// reactHint names the keys the chooser owns while it is open, on the row the
+// badge has in every mode.
+const reactHint = "Enter react · 1-9 pick · Esc cancel"
+
+// renderReactHint draws that row: where in the list the cursor stands, and the
+// keys that move it.
+func (m Model) renderReactHint(w int) string {
+	where := strconv.Itoa(len(m.picker.menu.items))
+	if m.picker.menu.idx >= 0 {
+		where = strconv.Itoa(m.picker.menu.idx+1) + "/" + where
+	}
+	return padBetween("", stDim.Render(where+" · "+reactHint), w)
+}
+
+// renderPicker draws the chooser's own box: the query its offers are narrowed
+// by, padded to the composer's height so nothing above the box moves. The
+// offers themselves are the list over the panes, drawn by the one menu every
+// completion is.
 func (m Model) renderPicker() string {
 	w := m.bandWidth(m.side) - 2
-	rows := m.pickerRows()
+	h := m.composerHeight()
 	// An unnarrowed query answers with the emoji this reader reaches for, the
 	// way the client's own panel opens on its frequently used band, so the
 	// line says that rather than counting the whole table against itself.
@@ -289,93 +317,19 @@ func (m Model) renderPicker() string {
 	if strings.TrimSpace(m.picker.input.Value()) == "" && m.emoji.UsedLen() > 0 {
 		label = "frequently used"
 	}
-	// The row speaks for itself once it is filled; the note is for the states
-	// that need a word, and it takes the line because it is the one thing on
-	// it that changed.
+	// The head of the list speaks for itself once it is filled; the note is
+	// for the states that need a word, and it takes the line because it is the
+	// one thing on it that changed.
 	count := stDim.Render(cmp.Or(m.picker.suggestNote(), label))
-	lines := []string{padBetween(pickerPrompt()+m.picker.input.View(), count, w)}
-	if len(m.picker.hits) == 0 {
-		lines = append(lines, fit(stDim.Render("  no emoji matches "+m.picker.input.Value()), w))
+	rows := []string{padBetween(pickerPrompt()+m.picker.input.View(), count, w)}
+	if len(m.picker.menu.items) == 0 {
+		rows = append(rows, fit(stDim.Render("  no emoji matches "+m.picker.input.Value()), w))
 	}
-	vis := m.pickerVisible()
-	cell := w / pickerCols
-	for i := 0; i < len(vis); i += pickerCols {
-		var segs []rowSeg
-		for j := i; j < min(i+pickerCols, len(vis)); j++ {
-			abs := m.picker.top*pickerCols + j
-			segs = append(segs, m.pickerCell(vis[j], abs, cell)...)
-		}
-		lines = append(lines, m.joinSegs(segs, w))
+	for len(rows) < h-1 {
+		rows = append(rows, "")
 	}
-	for len(lines) < rows+1 {
-		lines = append(lines, fit("", w))
-	}
-	return paneStyle(true).Render(strings.Join(lines[:rows+1], "\n"))
-}
-
-// pickerIconCols is the column every emoji is drawn in, character or picture
-// alike. A fixed width is what keeps the key and name columns from stepping a
-// cell sideways under a single-width character.
-const pickerIconCols = 2
-
-// pickerIcon draws an emoji the way the message strip will once it is chosen:
-// the Unicode character where one carries the same feeling, the client's own
-// picture where none does, and a bare dot where the pictures were never cut
-// out. Exactly one of the two is set.
-func (m Model) pickerIcon(e emoji.Emoji) (string, picture) {
-	if e.Glyph != "" {
-		return fit(e.Glyph, pickerIconCols), picture{}
-	}
-	if pic := m.chatPics().pic(e.Key, pickerIconCols); pic.cols > 0 {
-		return strings.Repeat(" ", pickerIconCols-pic.cols), pic
-	}
-	return fit(stDim.Render("·"), pickerIconCols), picture{}
-}
-
-// pickerCell draws one emoji in its column of the grid: the emoji itself, then
-// the words emojiWords leaves of the key Feishu speaks, the name, and the term
-// the query landed on. It comes back in pieces because the emoji may be a
-// picture, which only the renderer can place.
-func (m Model) pickerCell(h emoji.Hit, abs, cell int) []rowSeg {
-	selected := abs == m.picker.idx
-	mark := " "
-	if selected {
-		mark = stAccent.Render("▸")
-	}
-	name := h.Emoji.Name()
-	drawn := name
-	if selected {
-		// The mark alone is one glyph at the far left of a three-column grid,
-		// which is not where the reader is reading. The name takes the colour
-		// because it is the only run in the cell drawn plain: the key and the
-		// term that answered are dim, and the tick and pic say something else.
-		drawn = stPickerOn.Render(name)
-	}
-	switch {
-	case m.picker.mine[emoji.Fold(h.Emoji.Key)]:
-		// Already the reader's: choosing it takes it back, and the cell has to
-		// say so before they press enter.
-		drawn += stAccent.Render(" ✓")
-	case m.picker.suggested(abs):
-		// The conversation chose this one, and the cells beside it were only
-		// filled out of the reader's own order, so without the mark the two
-		// kinds of cell read alike.
-		drawn += stAccent.Render(" ✦")
-	case !h.Emoji.Reactable():
-		// Feishu will not take this one as a reaction, so choosing it sends a
-		// picture instead. That is a message in the chat rather than a mark on
-		// one, which the reader has to know before they press enter.
-		drawn += stDim.Render(" pic")
-	}
-	// The words are fitted to what is left of the cell, so the column the next
-	// emoji opens in stands still whatever shape this one has.
-	room := max(0, cell-pickerIconCols-2)
-	tail := " " + fit(truncate(emojiWords(h.Emoji, drawn, h.Term, h.Positions), room), room)
-	icon, pic := m.pickerIcon(h.Emoji)
-	if pic.cols > 0 {
-		return []rowSeg{{text: mark}, {pic: pic}, {text: icon + tail}}
-	}
-	return []rowSeg{{text: mark + icon + tail}}
+	rows = append(rows, m.renderReactHint(w))
+	return paneStyle(true).Height(h).Render(fitBlock(strings.Join(rows, "\n"), w, h))
 }
 
 // markMatch underlines the runes of a term the query landed on, so a hit

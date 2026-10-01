@@ -51,6 +51,8 @@ func (m Model) floatMenu() (menuView, bool) {
 		v = m.cmdcomp.menu.view(m.cmdCompRows())
 	case modeCandidates:
 		v = m.cand.view(m.candRows())
+	case modeEmoji:
+		v = m.picker.menu.view(m.reactRows())
 	default:
 		return menuView{}, false
 	}
@@ -75,9 +77,10 @@ func (m Model) floatSegs() [][]rowSeg {
 // floatAnchor is the screen column the run being completed starts at, which is
 // the column the popup's offers line up under.
 func (m Model) floatAnchor() int {
-	if m.mode == modeCandidates {
-		// Nothing is being completed, so the list lines up with the box whose
-		// draft a pick replaces.
+	if m.mode == modeCandidates || m.mode == modeEmoji {
+		// Nothing is being completed, so the list lines up with the box it
+		// stands over — the draft a pick replaces for the one, the query the
+		// reactions are narrowed by for the other.
 		return m.bandLeft(m.side) + 1
 	}
 	if m.mode == modeCommand {
@@ -224,6 +227,8 @@ func (m Model) walkFloat(d int) Model {
 		m = m.walkCmdComp(d)
 	case modeCandidates:
 		m.cand.move(d, m.candRows())
+	case modeEmoji:
+		m.picker.menu.move(d, m.reactRows())
 	}
 	return m
 }

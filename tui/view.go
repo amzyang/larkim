@@ -68,14 +68,6 @@ var (
 	// colWarn is what the badge paints a lint finding: the body still sends,
 	// so it cannot wear the colour a refused path does.
 	colWarn = lipgloss.Color("3")
-	// colPick marks the emoji the picker's cursor stands on. It is green
-	// rather than the accent because on that grid the accent already means
-	// "yours" — the tick a cell the reader has reacted with carries — and the
-	// cursor has to be told from it at a glance. Bold rides along because most
-	// terminals answer it with the bright green, which carries the light
-	// themes that draw index 2 as olive.
-	colPick    = lipgloss.Color("2")
-	stPickerOn = lipgloss.NewStyle().Bold(true).Foreground(colPick)
 	// colChatSel and colChatSelText are the client's own tint for the chat it
 	// is on, kept off the shade ladder so the list reads the same wherever it
 	// is opened. The text colour rides along because the tint is light on

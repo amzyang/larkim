@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/amzyang/larkim/emoji"
@@ -25,29 +26,27 @@ func TestExpandEmoji_ReadsTheBracketedNameATextMessageCarries(t *testing.T) {
 	require.Equal(t, "[Image]", ansi.Strip(expandEmoji("[Image]", spellBracket)), "the stand-ins this list draws itself stay")
 }
 
-func TestEmojiWords_DropsAPieceThatRepeatsOneAlreadyDrawn(t *testing.T) {
-	// Feishu's lettering emoji spell their own name, and their picture spells
-	// it a third time; the cell says it once.
+func TestEmojiInfo_DropsAPieceThatRepeatsTheName(t *testing.T) {
+	// Feishu's lettering emoji spell their own name, and the term a query
+	// landed on may spell it again; the row already draws it once.
 	ok := emoji.Emoji{Key: "OK", EN: "OK"}
+	require.Empty(t, emojiInfo(emoji.Hit{Emoji: ok}))
 	yes := emoji.Emoji{Key: "Yes", EN: "Yes"}
-	require.Equal(t, "OK", ansi.Strip(emojiWords(ok, "OK", "", nil)))
-	require.Equal(t, "Yes", ansi.Strip(emojiWords(yes, "Yes", "yes", []int{0, 1, 2})),
+	require.Empty(t, emojiInfo(emoji.Hit{Emoji: yes, Term: "yes", Positions: []int{0, 1, 2}}),
 		"the term the query landed on spells the same word in another case")
-	require.Equal(t, "Yes ✓", ansi.Strip(emojiWords(yes, "Yes ✓", "", nil)),
-		"what the caller drew onto the name stays")
 }
 
-func TestEmojiWords_KeepsWhatSaysSomethingTheNameDoesNot(t *testing.T) {
+func TestEmojiInfo_KeepsWhatSaysSomethingTheNameDoesNot(t *testing.T) {
 	up := emoji.Emoji{Key: "THUMBSUP", EN: "赞"}
-	require.Equal(t, "THUMBSUP 赞", ansi.Strip(emojiWords(up, "赞", "", nil)))
-	require.Equal(t, "THUMBSUP 赞 dianzan", ansi.Strip(emojiWords(up, "赞", "dianzan", []int{0})),
+	require.Equal(t, "THUMBSUP", ansi.Strip(strings.Join(emojiInfo(emoji.Hit{Emoji: up}), "\n")))
+	require.Equal(t, "THUMBSUP\ndianzan", ansi.Strip(strings.Join(emojiInfo(emoji.Hit{Emoji: up, Term: "dianzan", Positions: []int{0}}), "\n")),
 		"the pinyin the query reached it through is why this hit came back")
-	require.Equal(t, "THUMBSUP 赞", ansi.Strip(emojiWords(up, "赞", "thumbsup", []int{0})),
-		"a term that spells the key is already on the line")
+	require.Equal(t, "THUMBSUP", ansi.Strip(strings.Join(emojiInfo(emoji.Hit{Emoji: up, Term: "thumbsup", Positions: []int{0}}), "\n")),
+		"a term that spells the key is already in the box")
 }
 
-func TestEmojiWords_LeavesTheCharacterToTheIconColumn(t *testing.T) {
+func TestEmojiInfo_LeavesTheCharacterToTheIconColumn(t *testing.T) {
 	up := emoji.Emoji{Key: "THUMBSUP", Glyph: "👍", EN: "赞"}
-	require.Equal(t, "THUMBSUP 赞", ansi.Strip(emojiWords(up, "赞", "👍", []int{0})),
-		"a query that landed on the character repeats what the cell already draws")
+	require.Equal(t, "THUMBSUP", ansi.Strip(strings.Join(emojiInfo(emoji.Hit{Emoji: up, Term: "👍", Positions: []int{0}}), "\n")),
+		"a query that landed on the character repeats what the icon column already draws")
 }

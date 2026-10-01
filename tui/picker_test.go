@@ -113,66 +113,69 @@ func keyCode(name string) rune {
 	return []rune(name)[0]
 }
 
+// reactKey is the emoji the chooser's offer at i names.
+func reactKey(m Model, i int) string { return m.picker.menu.items[i].hit.Emoji.Key }
+
 func TestOpenPicker_ArmsAgainstTheSelectedMessage(t *testing.T) {
 	m := press(t, pickerModel(t), "e")
 	require.Equal(t, modeEmoji, m.mode)
 	require.Equal(t, "om_a", m.picker.target.MessageID)
-	require.NotEmpty(t, m.picker.hits, "an empty query offers the client's own panel order")
+	require.NotEmpty(t, m.picker.menu.items, "an empty query offers the client's own panel order")
 	require.True(t, m.picker.mine["THUMBSUP"], "the reader's own reaction is known before they choose")
 }
 
 func TestPicker_FiltersAsTheReaderTypes(t *testing.T) {
 	m := press(t, pickerModel(t), "e", "z", "a", "n")
 	require.Equal(t, "zan", m.picker.input.Value())
-	require.Equal(t, "THUMBSUP", m.picker.hits[0].Emoji.Key)
-	require.Less(t, len(m.picker.hits), m.emoji.Len(), "the list narrows")
+	require.Equal(t, "THUMBSUP", reactKey(m, 0))
+	require.Less(t, len(m.picker.menu.items), m.emoji.Len(), "the list narrows")
 
 	m = press(t, m, "backspace", "backspace", "backspace")
 	require.Equal(t, "", m.picker.input.Value())
-	require.Len(t, m.picker.hits, m.emoji.Len(), "and opens back up")
+	require.Len(t, m.picker.menu.items, m.emoji.Len(), "and opens back up")
 }
 
 func TestPicker_TakesTheCharacterItselfAsTheQuery(t *testing.T) {
 	// The reader has the emoji in the clipboard, not its name; pasting it is
 	// one keystroke against a spelling they would have to guess.
 	m := press(t, pickerModel(t), "e", "🌹")
-	require.Equal(t, "ROSE", m.picker.hits[0].Emoji.Key)
+	require.Equal(t, "ROSE", reactKey(m, 0))
 
 	// A character of more than one rune arrives as a paste rather than as
 	// keys, which the filter takes the same way it takes anything else.
 	mm, _ := press(t, pickerModel(t), "e").Update(tea.PasteMsg{Content: "❤️"})
-	require.Equal(t, "HEART", mm.(Model).picker.hits[0].Emoji.Key)
+	require.Equal(t, "HEART", reactKey(mm.(Model), 0))
 }
 
-func TestPicker_DrawsTheCharacterOnceInACell(t *testing.T) {
+func TestReactRow_DrawsTheCharacterItselfOnce(t *testing.T) {
 	m := press(t, pickerModel(t), "e", "🌹")
-	require.Len(t, m.picker.hits, 1)
+	require.Len(t, m.picker.menu.items, 1)
 
-	// The character is already in the icon column, so the cell does not name
+	// The character is already in the icon column, so the row does not name
 	// it a second time as the term that answered.
-	cell := ansi.Strip(m.joinSegs(m.pickerCell(m.picker.hits[0], m.picker.idx, 40), 40))
-	require.Equal(t, 1, strings.Count(cell, "🌹"), cell)
+	line := ansi.Strip(m.joinSegsWidth(m.offerRow(m.picker.menu.rows[0], m.picker.menu.cols, 0, true)))
+	require.Equal(t, 1, strings.Count(line, "🌹"), line)
 }
 
 func TestPicker_OffersNothingForACharacterFeishuDrawsItsOwnWay(t *testing.T) {
-	// Feishu's ç is a face looking sideways, not 👀, so it keeps its picture and
-	// the character reaches no reaction at all â the Unicode one is a
+	// Feishu's 看 is a face looking sideways, not 👀, so it keeps its picture and
+	// the character reaches no reaction at all — the Unicode one is a
 	// composer emoji Feishu would refuse.
 	m := press(t, pickerModel(t), "e", "👀")
-	require.Empty(t, m.picker.hits)
+	require.Empty(t, m.picker.menu.items)
 }
 
 func TestPicker_MovesOnArrowsBecauseTheQueryOwnsTheLetters(t *testing.T) {
 	m := press(t, pickerModel(t), "e")
-	first := m.picker.hits[0].Emoji.Key
-	m = press(t, m, "right", "down")
-	require.Equal(t, 1+pickerCols, m.picker.idx, "the arrows cross a column and a row of the grid")
-	require.NotEqual(t, first, m.picker.hits[m.picker.idx].Emoji.Key)
+	first := reactKey(m, 0)
+	m = press(t, m, "down")
+	require.Equal(t, 1, m.picker.menu.idx, "down moves one offer")
+	require.NotEqual(t, first, reactKey(m, m.picker.menu.idx))
 
 	// j is a letter, so it filters rather than moving.
 	m = press(t, m, "j")
 	require.Equal(t, "j", m.picker.input.Value())
-	require.Zero(t, m.picker.idx, "a new query puts the cursor back on the best hit")
+	require.Zero(t, m.picker.menu.idx, "a new query puts the cursor back on the best hit")
 }
 
 func TestPicker_EscLeavesWithoutReacting(t *testing.T) {
@@ -184,15 +187,24 @@ func TestPicker_EscLeavesWithoutReacting(t *testing.T) {
 
 func TestPicker_RemembersWhatWasChosen(t *testing.T) {
 	m := press(t, pickerModel(t), "e", "m", "e", "i", "g", "u", "i")
-	require.Equal(t, "ROSE", m.picker.hits[0].Emoji.Key)
+	require.Equal(t, "ROSE", reactKey(m, 0))
 	m = press(t, m, "enter")
 	require.Equal(t, modeNormal, m.mode)
 	require.Equal(t, []string{"ROSE"}, m.emoji.Used())
 }
 
+func TestPicker_ADigitPicksTheRowItIsDrawnBeside(t *testing.T) {
+	m := press(t, pickerModel(t), "e", "z", "a", "n")
+	require.Equal(t, "THUMBSUP", reactKey(m, 0))
+	m = press(t, m, "1")
+	require.Equal(t, modeNormal, m.mode)
+	require.Len(t, m.reacts, 1)
+	require.Equal(t, "THUMBSUP", m.reacts[0].emojiType)
+}
+
 func TestPicker_OpensOnTheSmallestTerminalTheClientDraws(t *testing.T) {
-	// The chooser is the composer's own box, so any terminal that can write a
-	// message can offer an emoji.
+	// The chooser's own box is the composer's, so any terminal that can write
+	// a message can offer an emoji.
 	m := pickerModel(t)
 	m.height = minHeight
 	m.layout()
@@ -202,36 +214,34 @@ func TestPicker_OpensOnTheSmallestTerminalTheClientDraws(t *testing.T) {
 }
 
 func TestPicker_SurvivesAResizeBelowWhatTheClientDraws(t *testing.T) {
-	// Nothing closes the picker when the terminal shrinks under the size the
+	// Nothing closes the chooser when the terminal shrinks under the size the
 	// client draws at, and the picture pass runs at any height.
 	m := press(t, pickerModel(t), "e")
 	require.Equal(t, modeEmoji, m.mode)
 	next, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 8})
 	shrunk := next.(Model)
-	require.Len(t, shrunk.pickerVisible(), shrunk.pickerRows()*pickerCols)
+	require.Len(t, shrunk.picker.menu.view(shrunk.reactRows()).rows, shrunk.reactRows())
 	require.NotPanics(t, func() { shrunk.picturePrepare() })
 	require.Contains(t, ansi.Strip(shrunk.View().Content), "terminal too small")
 }
 
-func TestPicker_GridScrollsByWholeRows(t *testing.T) {
+func TestPicker_TheListScrollsWithTheCursor(t *testing.T) {
 	m := press(t, pickerModel(t), "e")
-	rows := m.pickerRows()
+	rows := m.reactRows()
 	require.Positive(t, rows)
-	second := m.picker.hits[pickerCols].Emoji.Key
+	second := reactKey(m, 1)
 
-	// One row past the bottom scrolls the grid by exactly one row, so no emoji
-	// changes column under the reader.
+	// One row past the bottom scrolls the list by exactly one row.
 	for range rows {
 		m = press(t, m, "down")
 	}
-	require.Equal(t, 1, m.picker.top)
-	require.Equal(t, second, m.pickerVisible()[0].Emoji.Key, "what was the second row opens the grid")
-	require.Len(t, m.pickerVisible(), rows*pickerCols)
+	require.Equal(t, 1, m.picker.menu.top)
+	require.Equal(t, second, reactKey(m, m.picker.menu.top), "what was the second offer opens the list")
 }
 
 func TestPicker_LeavesTheMessageOnScreenBehindIt(t *testing.T) {
-	// The reader has to see what they are reacting to, so the picker takes the
-	// composer's rows and the panes give up exactly those.
+	// The reader has to see what they are reacting to, so the offers stand
+	// over the panes and cost the composer's box nothing.
 	m := press(t, pickerModel(t), "e")
 	require.GreaterOrEqual(t, m.bodyHeight(), minListRows)
 	require.Contains(t, ansi.Strip(m.View().Content), "下周一发版")
@@ -251,57 +261,29 @@ func TestRenderPicker_StandsInTheComposersBoxRatherThanBesideIt(t *testing.T) {
 	}
 }
 
-// pickerKeyCol is the column a picker line opens its key in, which is what
-// stays still or steps sideways as the emoji beside it changes shape.
-func pickerKeyCol(t *testing.T, m Model, key string) int {
-	t.Helper()
-	e, ok := emoji.ByKey(key)
-	require.True(t, ok)
-	line := ansi.Strip(m.joinSegs(m.pickerCell(emoji.Hit{Emoji: e}, plainCell, 60), 60))
-	at := strings.Index(line, e.Key)
-	require.GreaterOrEqual(t, at, 0, "%s names its key", key)
-	return lipgloss.Width(line[:at])
-}
-
-func TestPickerCell_KeepsTheKeyColumnStillUnderAnEmojiOfAnyShape(t *testing.T) {
-	m := press(t, pickerModel(t), "e")
-	e, ok := emoji.ByKey("OK")
-	require.True(t, ok)
-	require.Empty(t, e.Glyph, "OK is drawn as a word, which no character carries")
-	require.Equal(t, pickerKeyCol(t, m, "THUMBSUP"), pickerKeyCol(t, m, "OK"),
-		"a wide character and the stand-in dot open the same column")
-}
-
-func TestPickerCell_DrawsTheClientsPictureWhereNoCharacterCarriesTheEmoji(t *testing.T) {
-	m := press(t, pickerModel(t), "e")
-	writeTestEmoji(t, m.deps.DataDir, "OK")
-	m.pics = picturesIn(m.deps.DataDir)
-
-	e, ok := emoji.ByKey("OK")
-	require.True(t, ok)
-	segs := m.pickerCell(emoji.Hit{Emoji: e}, plainCell, 60)
-	require.Len(t, segs, 3, "the mark, the picture and the rest of the line")
-	require.Positive(t, segs[1].pic.cols)
-	require.Equal(t, 1, segs[1].pic.rows, "a picture on a line of text is one row tall")
-	require.Equal(t, pickerKeyCol(t, m, "THUMBSUP"), pickerKeyCol(t, m, "OK"),
-		"a picture opens the same column a character does")
-}
-
 func TestModelPicturePrepare_ClaimsWhatTheOpenPickerOffers(t *testing.T) {
 	m := press(t, pickerModel(t), "e")
 	writeTestEmoji(t, m.deps.DataDir, "OK")
 	m.pics = picturesIn(m.deps.DataDir)
-	require.Equal(t, "OK", m.picker.hits[0].Emoji.Key, "an empty query opens on the client's own first emoji")
+	require.Equal(t, "OK", reactKey(m, 0), "an empty query opens on the client's own first emoji")
 
 	require.NotEmpty(t, m.picturePrepare())
-	_, pic := m.pickerIcon(m.picker.hits[0].Emoji)
+	// The claim comes from the pass the list draws through, so the first
+	// offer's picture is drawable on the frame the chooser opens.
+	var pic picture
+	for _, seg := range m.floatSegs()[0] {
+		if seg.pic.cols > 0 {
+			pic = seg.pic
+		}
+	}
+	require.Positive(t, pic.cols)
 	require.NotEmpty(t, m.pics.cells(pic, 0), "the emoji is drawable on the frame the chooser opens")
 }
 
 func TestPicker_MarksAnEmojiTheReaderAlreadyChose(t *testing.T) {
 	m := press(t, pickerModel(t), "e", "z", "a", "n")
-	line := ansi.Strip(m.joinSegs(m.pickerCell(m.picker.hits[0], m.picker.idx, 60), 60))
-	require.Contains(t, line, "✓", "choosing it again takes the reaction back, and the line says so")
+	require.Contains(t, ansi.Strip(m.picker.menu.rows[0].name), "✓",
+		"choosing it again takes the reaction back, and the row says so")
 }
 
 func TestRunReact_TogglesOffWhatTheReaderAlreadyChose(t *testing.T) {
@@ -309,7 +291,7 @@ func TestRunReact_TogglesOffWhatTheReaderAlreadyChose(t *testing.T) {
 	next, cmd := m.runCommand("react zan")
 	require.NotNil(t, cmd)
 	require.Equal(t, []string{"THUMBSUP"}, next.(Model).emoji.Used(),
-		"naming it by pinyin reaches the same emoji the picker would")
+		"naming it by pinyin reaches the same emoji the chooser would")
 }
 
 func TestRunReact_SaysWhatIsWrongRatherThanReactingWithTheFirstThingItFinds(t *testing.T) {
@@ -357,7 +339,7 @@ func TestPicker_FilterErasesTheWayReadlineDoes(t *testing.T) {
 
 	m = press(t, m, "ctrl+w")
 	require.Equal(t, "", m.picker.input.Value(), "a filter is one word, so erasing the word empties it")
-	require.Len(t, m.picker.hits, m.emoji.Len(), "and the list opens back up")
+	require.Len(t, m.picker.menu.items, m.emoji.Len(), "and the list opens back up")
 
 	m = press(t, m, "z", "a", "n", "ctrl+a", "ctrl+d")
 	require.Equal(t, "an", m.picker.input.Value(), "the cursor moves, it does not only sit at the end")
@@ -487,24 +469,22 @@ func TestOpenPicker_MarksWhatAPressAlreadyPut(t *testing.T) {
 	require.False(t, m.picker.mine["THUMBSUP"], "the tick follows the strip, not the summary behind it")
 }
 
-func TestPickerCell_SaysALetteringEmojisNameOnce(t *testing.T) {
+func TestReactRow_SaysALetteringEmojisNameOnce(t *testing.T) {
 	// OK, Yes, No and OKR are spelled as their own name, and the picture in
-	// the icon column spells it again; the words beside it must not.
+	// the icon column spells it again; the row must not.
 	m := press(t, pickerModel(t), "e", "y", "e", "s")
-	i := slices.IndexFunc(m.picker.hits, func(h emoji.Hit) bool { return h.Emoji.Key == "Yes" })
+	i := slices.IndexFunc(m.picker.menu.items, func(h reactHit) bool { return h.hit.Emoji.Key == "Yes" })
 	require.GreaterOrEqual(t, i, 0)
-	line := ansi.Strip(m.joinSegs(m.pickerCell(m.picker.hits[i], plainCell, 60), 60))
-	require.Equal(t, 1, strings.Count(strings.ToLower(line), "yes"), "line=%q", line)
+	require.Equal(t, 1, strings.Count(strings.ToLower(ansi.Strip(m.picker.menu.rows[i].name)), "yes"),
+		"row=%q", m.picker.menu.rows[i].name)
 }
 
-func TestPickerCell_StillNamesTheKeyAndThePinyinThatReachedIt(t *testing.T) {
+func TestReactInfo_StillNamesTheKeyAndThePinyinThatReachedIt(t *testing.T) {
 	m := press(t, pickerModel(t), "e", "d", "z")
-	h := m.picker.hits[0]
-	require.Equal(t, "THUMBSUP", h.Emoji.Key)
-	line := ansi.Strip(m.joinSegs(m.pickerCell(h, plainCell, 60), 60))
-	require.Contains(t, line, "THUMBSUP", "the key is what :react takes")
-	require.Contains(t, line, "Like", "the client's own English name")
-	require.Contains(t, line, "dz", "and the initials say why this hit came back")
+	require.Equal(t, "THUMBSUP", reactKey(m, 0))
+	info := ansi.Strip(strings.Join(m.picker.menu.view(m.reactRows()).info, "\n"))
+	require.Contains(t, info, "THUMBSUP", "the key is what :react takes")
+	require.Contains(t, info, "dz", "and the initials say why this hit came back")
 }
 
 func TestRenderPicker_NamesTheBandOnlyWhenItIsTheReadersOwn(t *testing.T) {
@@ -513,7 +493,7 @@ func TestRenderPicker_NamesTheBandOnlyWhenItIsTheReadersOwn(t *testing.T) {
 		"nothing reached for yet: the lead is the client's panel order, not this reader's habits")
 
 	m.emoji.Use("THUMBSUP")
-	m.picker.hits = m.emoji.Search("")
+	m.pickerGrid()
 	require.Contains(t, ansi.Strip(m.renderPicker()), "frequently used")
 
 	m = press(t, m, "z", "a", "n")
@@ -522,7 +502,7 @@ func TestRenderPicker_NamesTheBandOnlyWhenItIsTheReadersOwn(t *testing.T) {
 }
 
 // withdrawnKey is an emoji the client took out of the reaction panel. Feishu
-// answers a reaction with it "reaction type is invalid", so the picker sends
+// answers a reaction with it "reaction type is invalid", so the chooser sends
 // it as a picture instead.
 const withdrawnKey = "GOODJOB"
 
@@ -580,41 +560,11 @@ func TestToggleReaction_StillTakesBackAWithdrawnEmojiAlreadyOnTheMessage(t *test
 	require.False(t, m.reacts[0].on)
 }
 
-func TestPickerCell_SaysWhichEmojiGoInAsAPicture(t *testing.T) {
-	m := pickerModel(t)
-	hits := m.emoji.Search("给力")
-	require.NotEmpty(t, hits)
-	require.Equal(t, withdrawnKey, hits[0].Emoji.Key, "the picker still finds it")
-	line := ansi.Strip(m.joinSegs(m.pickerCell(hits[0], m.picker.idx, 60), 60))
-	require.Contains(t, line, "pic", "pressing enter sends a message, not a reaction, and the cell says so")
-}
-
-func TestPickerCell_MarksTheCellTheCursorStandsOn(t *testing.T) {
+func TestReactRow_SaysWhichEmojiGoInAsAPicture(t *testing.T) {
 	m := press(t, pickerModel(t), "e")
-	e, ok := emoji.ByKey("THUMBSUP")
-	require.True(t, ok)
-	on := m.joinSegs(m.pickerCell(emoji.Hit{Emoji: e}, m.picker.idx, 60), 60)
-	off := m.joinSegs(m.pickerCell(emoji.Hit{Emoji: e}, plainCell, 60), 60)
-	require.Contains(t, on, stPickerOn.Render(e.Name()), "the cursor colours the name, not the mark alone")
-	require.NotContains(t, off, stPickerOn.Render(e.Name()))
-	// Past the mark the two cells are the same text: the colour is what the
-	// cursor adds, and it must not move the column the next emoji opens in.
-	require.Equal(t, strings.TrimPrefix(ansi.Strip(off), " "), strings.TrimPrefix(ansi.Strip(on), "\u25b8"))
-	require.Equal(t, lipgloss.Width(off), lipgloss.Width(on), "the colour costs the cell no column")
+	m = paste(t, m, "给力")
+	require.NotEmpty(t, m.picker.menu.items)
+	require.Equal(t, withdrawnKey, reactKey(m, 0), "the chooser still finds it")
+	require.Contains(t, ansi.Strip(m.picker.menu.rows[0].name), "pic",
+		"pressing enter sends a message, not a reaction, and the row says so")
 }
-
-func TestPickerCell_MarksTheCursorOnAnEmojiDrawnAsAPicture(t *testing.T) {
-	m := press(t, pickerModel(t), "e")
-	writeTestEmoji(t, m.deps.DataDir, "OK")
-	m.pics = picturesIn(m.deps.DataDir)
-	e, ok := emoji.ByKey("OK")
-	require.True(t, ok)
-	segs := m.pickerCell(emoji.Hit{Emoji: e}, m.picker.idx, 60)
-	require.Len(t, segs, 3, "the mark, the picture and the rest of the line")
-	require.Contains(t, segs[2].text, stPickerOn.Render(e.Name()),
-		"the words carry the cursor where the icon is a placement the renderer fills")
-}
-
-// plainCell is a grid position that is neither under the cursor nor one of the
-// contextual row's, which is what the cases about a cell's own dressing want.
-const plainCell = pickerCols
