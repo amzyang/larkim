@@ -22,6 +22,7 @@ import (
 	"github.com/amzyang/larkim/markread"
 	"github.com/amzyang/larkim/store"
 	"github.com/amzyang/larkim/sync"
+	"github.com/amzyang/larkim/todoist"
 )
 
 // Deps are the collaborators the TUI needs. Syncer pulls whatever the reader
@@ -54,6 +55,10 @@ type Deps struct {
 	// names no key.
 	Suggest    ReactSuggester
 	NewSuggest func(keyEnv, endpoint string) ReactSuggester
+	// Todoist files the selected message or chat as a task; nil when no
+	// token is configured, which leaves the T key answering a notice instead
+	// of failing a request that cannot land.
+	Todoist TaskAdder
 	// Nudge signals that the store changed, so the watch checks without
 	// waiting out its interval. It carries this process's own writes, the
 	// sweep's too when the sweep runs here; a daemon's land on the interval.
@@ -109,6 +114,13 @@ type AIStreamer interface {
 // crosses the network, and a row nobody can drive is a row nobody can test.
 type ReactSuggester interface {
 	Rank(ctx context.Context, ask jev.Ask) (jev.Rank, error)
+}
+
+// TaskAdder is the one call the T key makes, named here for the same reason
+// as ReactSuggester: the call crosses the network, and a key nobody can drive
+// is a key nobody can test.
+type TaskAdder interface {
+	CreateTask(ctx context.Context, task todoist.Task) (todoist.Task, error)
 }
 
 // discardLog stands in for a Deps built by hand — in a test — which has no
@@ -852,9 +864,9 @@ func (d Deps) env() func(string) string {
 }
 
 // openInFeishu opens a chat (optionally at a message position) in the desktop client.
-func openInFeishu(d Deps, chatID string, position int64) tea.Cmd {
+func openInFeishu(d Deps, chatID, messageID string, position int64) tea.Cmd {
 	return func() tea.Msg {
-		if err := d.OpenURL([]string{applink.ChatLink(chatID, position)}, false); err != nil {
+		if err := d.OpenURL([]string{applink.ChatLink(chatID, messageID, position)}, false); err != nil {
 			// The notice bar holds the message and is gone at the next
 			// keypress; which chat was asked for only exists here.
 			d.Log.Error("open in feishu", "chat_id", chatID, "position", position, "err", err)

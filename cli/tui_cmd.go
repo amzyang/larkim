@@ -15,6 +15,7 @@ import (
 	"github.com/amzyang/larkim/emoji"
 	"github.com/amzyang/larkim/jev"
 	"github.com/amzyang/larkim/sync"
+	"github.com/amzyang/larkim/todoist"
 	"github.com/amzyang/larkim/tui"
 	"github.com/spf13/cobra"
 )
@@ -70,6 +71,12 @@ func (a *App) runTUI(_ *cobra.Command, _ []string) error {
 		return jev.New(key, endpoint)
 	}
 	deps.Suggest = deps.NewSuggest(a.cfg.AI.JevKeyEnv, a.cfg.AI.JevEndpoint)
+	// No rebuild path, unlike Suggest and AI: the token is pasted into the
+	// file once and a restart after editing it is the honest contract. The
+	// key stays off without one rather than failing a request that cannot land.
+	if a.cfg.Todoist.Token != "" {
+		deps.Todoist = todoist.New(a.cfg.Todoist.Token, a.cfg.Todoist.ProjectID, "")
+	}
 	deps.Self = selfOpenID(ctx, st)
 	// Every process pulls what the reader asks for: each of those
 	// calls names ids Feishu just answered for and upserts them, so

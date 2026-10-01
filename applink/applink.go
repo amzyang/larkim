@@ -37,11 +37,17 @@ const openTimeout = 20 * time.Second
 
 // ChatLink addresses a chat, optionally at a message position. The lark://
 // scheme reaches the desktop client directly; the https applink form would
-// first open a browser tab that only redirects here.
-func ChatLink(chatID string, position int64) string {
+// first open a browser tab that only redirects here. messageId is not what
+// the client navigates by — position is — but the links leave the client
+// (yanked rows, tasks filed elsewhere) and their readers resolve the id back
+// to a message, so it rides along whenever one is at hand.
+func ChatLink(chatID, messageID string, position int64) string {
 	url := "lark://applink.feishu.cn/client/chat/open?openChatId=" + chatID
 	if position > 0 {
 		url += "&position=" + strconv.FormatInt(position, 10)
+	}
+	if messageID != "" {
+		url += "&messageId=" + messageID
 	}
 	return url
 }

@@ -128,11 +128,11 @@ func TestOpenTargets_TheMessageItselfClosesTheList(t *testing.T) {
 	require.Len(t, m.targets.zones, 3, "what larkim cannot hand over is still reachable through the client")
 	last := m.targets.zones[2]
 	require.Equal(t, "open in Feishu", last.label)
-	require.Equal(t, []string{applink.ChatLink("oc_a", 227)}, last.urls)
+	require.Equal(t, []string{applink.ChatLink("oc_a", "om_1", 227)}, last.urls)
 
 	_, cmd := press(t, m, "G").onTargetKey(keyMsg("enter"))
 	collect(cmd)
-	require.Equal(t, []openCall{opened(applink.ChatLink("oc_a", 227), false)}, *calls)
+	require.Equal(t, []openCall{opened(applink.ChatLink("oc_a", "om_1", 227), false)}, *calls)
 }
 
 func TestOpenTargets_TheMessageIsNotListedTwice(t *testing.T) {
@@ -188,7 +188,7 @@ func TestOnNormalKey_OStillOpensTheMessageWhenItLeadsNowhere(t *testing.T) {
 	_, cmd := m.onNormalKey("o")
 	collect(cmd)
 	require.Equal(t, []openCall{
-		opened("lark://applink.feishu.cn/client/chat/open?openChatId=oc_a&position=227", false)}, *calls)
+		opened("lark://applink.feishu.cn/client/chat/open?openChatId=oc_a&position=227&messageId=om_1", false)}, *calls)
 }
 
 func TestTargetHint_SaysWhereEachKindLeads(t *testing.T) {

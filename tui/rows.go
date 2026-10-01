@@ -1020,7 +1020,7 @@ func reactionRows(x store.Message, idx int, st msgStyle, g *leads) []msgRow {
 func cardRows(c card.Card, x store.Message, idx int, st msgStyle, g *leads, ms mentions) []msgRow {
 	var rows []msgRow
 	rows = textRows(cardHead(c, st.inner()), idx, g)
-	client := applink.ChatLink(x.ChatID, x.MessagePosition)
+	client := applink.ChatLink(x.ChatID, x.MessageID, x.MessagePosition)
 	prevText, prevPanel := false, false
 	for _, b := range c.Blocks {
 		parts := []card.Block{b}

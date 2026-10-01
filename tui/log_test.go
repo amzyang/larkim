@@ -61,7 +61,7 @@ func TestFireBadgeClear_LogsAFailureInsteadOfTakingTheNoticeBar(t *testing.T) {
 func TestOpenInFeishu_LogsTheChatTheNoticeBarCannotName(t *testing.T) {
 	d, buf := logDeps(t, errors.New("boom"))
 
-	require.Equal(t, errMsg{errors.New("boom")}, openInFeishu(d, "oc_quiet", 227)(),
+	require.Equal(t, errMsg{errors.New("boom")}, openInFeishu(d, "oc_quiet", "", 227)(),
 		"the keypress asked for this, so it is still reported on screen")
 
 	require.Contains(t, buf.String(), "open in feishu")

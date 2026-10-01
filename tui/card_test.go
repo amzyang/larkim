@@ -167,7 +167,7 @@ func TestCardRows_EachButtonOpensWhatItsPressWouldReach(t *testing.T) {
 	zones := rowZones(renderRows([]store.Message{msg}, baseStyle()))
 	require.Len(t, zones, 2)
 	require.Equal(t, []string{"https://example.com/run/1"}, zones[0].urls)
-	require.Equal(t, []string{applink.ChatLink("oc_ops", 42)}, zones[1].urls,
+	require.Equal(t, []string{applink.ChatLink("oc_ops", "om_1", 42)}, zones[1].urls,
 		"no open API submits a card callback, so the client is where that press still lands")
 	require.LessOrEqual(t, zones[0].x1, zones[1].x0, "each target sits under the pill it belongs to")
 }
@@ -303,7 +303,7 @@ func TestCardRows_EachPillIsALinkToWhereItLeads(t *testing.T) {
 		}
 	}
 	require.Contains(t, pills, ";https://example.com/run/1\a")
-	require.Contains(t, pills, ";"+applink.ChatLink("oc_ops", 42)+"\a",
+	require.Contains(t, pills, ";"+applink.ChatLink("oc_ops", "om_1", 42)+"\a",
 		"the pill a callback sits behind leads to the client, the way its press does")
 	require.Equal(t, 2, strings.Count(pills, ansi.ResetHyperlink()))
 }
@@ -528,7 +528,7 @@ func TestCardButtons_EachTypeHasItsOwnPill(t *testing.T) {
 }
 
 func TestCardButtons_AFillButtonSpansTheLine(t *testing.T) {
-	lines := cardButtons([]card.Button{{Label: "停止", Type: "danger", Fill: true}}, 30, applink.ChatLink("oc_ops", 1))
+	lines := cardButtons([]card.Button{{Label: "停止", Type: "danger", Fill: true}}, 30, applink.ChatLink("oc_ops", "", 1))
 	require.Len(t, lines, 1)
 	require.Equal(t, 30, ansi.StringWidth(lines[0].text))
 	require.Len(t, lines[0].zones, 1)

@@ -53,6 +53,7 @@ type Config struct {
 	MarkRead  MarkRead  `yaml:"mark_read"`
 	Resources Resources `yaml:"resources"`
 	AI        AI        `yaml:"ai"`
+	Todoist   Todoist   `yaml:"todoist"`
 	// Silence keeps matching messages out of the unread badge and out of the
 	// chat list's ordering; see docs/silence/PRD.md.
 	Silence store.SilenceRules `yaml:"silence"`
@@ -156,6 +157,19 @@ type AI struct {
 type Resources struct {
 	// MaxBytes skips resources larger than this (0 = unlimited).
 	MaxBytes int64 `yaml:"max_bytes"`
+}
+
+// Todoist configures the T key, which files the selected message (or the chat
+// under the cursor) as a Todoist task: the message's first line as the task,
+// a lark:// link back to it as the description. The token sits here rather
+// than behind an env-var name, unlike jev_key_env: the local config file is
+// gitignored and this is a single-user tool, and a pasted token is one less
+// indirection to keep working.
+type Todoist struct {
+	// Token is the Todoist API token. Empty disables the T key.
+	Token string `yaml:"token"`
+	// ProjectID is the project tasks land in; empty is Todoist's Inbox.
+	ProjectID string `yaml:"project_id"`
 }
 
 // minPollIntervalMS is the smallest pause LoadWith will hand the daemon.

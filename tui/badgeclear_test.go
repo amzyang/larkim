@@ -153,7 +153,7 @@ func TestTakeRead_IgnoresUnreadTheChatBadgeLeavesOut(t *testing.T) {
 
 func TestOpenInFeishu_TakesTheScreen(t *testing.T) {
 	m, _, calls := badgeModel(t)
-	collect(openInFeishu(m.deps, "oc_a", 227))
+	collect(openInFeishu(m.deps, "oc_a", "", 227))
 
 	require.Equal(t, []openCall{opened("lark://applink.feishu.cn/client/chat/open?openChatId=oc_a&position=227", false)}, *calls)
 }

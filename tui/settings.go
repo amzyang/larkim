@@ -116,6 +116,12 @@ var settings = []setting{{
 	live:  true,
 	apply: rebuildSuggest,
 }, {
+	key:  "todoist.token",
+	help: "the Todoist API token behind the T key; empty leaves the key answering that it is not configured",
+}, {
+	key:  "todoist.project_id",
+	help: "the project T files tasks into; empty is Todoist's Inbox",
+}, {
 	key:      "silence",
 	help:     "rules whose messages carry no unread badge; enter edits them in the Silence tab",
 	readOnly: true,

@@ -164,7 +164,7 @@ func TestOnNormalKey_OOpensALiveCallByJoiningIt(t *testing.T) {
 func TestOnNormalKey_OOnAnEndedCallOpensTheMessage(t *testing.T) {
 	m, calls := callPage(t, endedCall)
 	collect(mustCmd(m.onNormalKey("o")))
-	require.Equal(t, []openCall{opened("lark://applink.feishu.cn/client/chat/open?openChatId=oc_a&position=227", false)}, *calls,
+	require.Equal(t, []openCall{opened("lark://applink.feishu.cn/client/chat/open?openChatId=oc_a&position=227&messageId=om_1", false)}, *calls,
 		"once the call is over there is nothing to join")
 }
 

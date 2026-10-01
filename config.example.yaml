@@ -85,3 +85,13 @@ ai:
   jev_key_env: TYPESAFE_API_KEY
   # The evaluation endpoint that answers it.
   jev_endpoint: https://api.typesafe.ai/v1/systemone
+
+todoist:
+  # The T key files the message under the cursor (the chat under it, in the
+  # list) as a Todoist task: its first line as the task, a lark:// link back
+  # to it as the description. The token is a Todoist API token (app.todoist.com
+  # Settings -> Integrations -> Developer); empty leaves the key answering
+  # that it is not configured.
+  token: ""
+  # Project tasks land in; empty is Todoist's Inbox.
+  project_id: ""

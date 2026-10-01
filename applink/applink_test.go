@@ -10,15 +10,27 @@ import (
 
 func TestChatLink_CarriesAPositionOnlyWhenThereIsOne(t *testing.T) {
 	const base = "lark://applink.feishu.cn/client/chat/open?openChatId=oc_quiet"
-	require.Equal(t, base, ChatLink("oc_quiet", 0))
-	require.Equal(t, base+"&position=42", ChatLink("oc_quiet", 42))
+	require.Equal(t, base, ChatLink("oc_quiet", "", 0))
+	require.Equal(t, base+"&position=42", ChatLink("oc_quiet", "", 42))
 	// A thread reply is stored at -1, which is no position in the main flow:
 	// sending it would land the client somewhere it cannot receipt from.
-	require.Equal(t, base, ChatLink("oc_quiet", -1))
+	require.Equal(t, base, ChatLink("oc_quiet", "", -1))
+}
+
+func TestChatLink_CarriesAMessageIdForLaterReaders(t *testing.T) {
+	// The client navigates by position; the id is for the readers the link
+	// leaves behind — a yanked row, a task filed elsewhere — so it rides
+	// along whenever one is at hand, position or no position.
+	require.Equal(t,
+		"lark://applink.feishu.cn/client/chat/open?openChatId=oc_quiet&position=42&messageId=om_a",
+		ChatLink("oc_quiet", "om_a", 42))
+	require.Equal(t,
+		"lark://applink.feishu.cn/client/chat/open?openChatId=oc_quiet&messageId=om_a",
+		ChatLink("oc_quiet", "om_a", -1))
 }
 
 func TestLinks_UseTheSchemeThatReachesTheClientDirectly(t *testing.T) {
-	for _, url := range []string{ChatLink("oc_quiet", 7), MeetingLink("123456789"),
+	for _, url := range []string{ChatLink("oc_quiet", "", 7), MeetingLink("123456789"),
 		EventLink("cal_team", "evt-a_0", 1788143400000)} {
 		// The https applink form opens a browser tab that only redirects here.
 		require.True(t, strings.HasPrefix(url, "lark://"), "%s", url)

@@ -2015,6 +2015,11 @@ func (m Model) onNormalKey(s string) (tea.Model, tea.Cmd) {
 		return m.copySelection()
 	case "y":
 		return m.startYank()
+	case "T":
+		// Both operands are calls, so the copy is bound to a name before the
+		// return hands it back: the evaluation order there is not promised.
+		out, cmd := m.todoistTask()
+		return out, cmd
 	case "v":
 		return m.startVisual()
 	case "o":
@@ -2025,10 +2030,10 @@ func (m Model) onNormalKey(s string) (tea.Model, tea.Cmd) {
 		switch zs := m.selectedZones(); len(zs) {
 		case 0:
 			if sel, ok := m.selected(); ok {
-				return m, openInFeishu(m.deps, sel.ChatID, sel.MessagePosition)
+				return m, openInFeishu(m.deps, sel.ChatID, sel.MessageID, sel.MessagePosition)
 			}
 			if m.chatID != "" {
-				return m, openInFeishu(m.deps, m.chatID, 0)
+				return m, openInFeishu(m.deps, m.chatID, "", 0)
 			}
 		case 1:
 			return m, openZone(m.deps, zs[0])

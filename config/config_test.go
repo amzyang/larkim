@@ -207,3 +207,21 @@ func TestLoad_ParsesSilenceSyncOnlyWithWebMode(t *testing.T) {
 	require.ErrorContains(t, err, "silence_sync needs mark_read.mode: web",
 		"applink cannot settle a position, so the pairing is refused where it is typed")
 }
+
+func TestDefault_DisablesTodoistUntilATokenIsSet(t *testing.T) {
+	require.Equal(t, Todoist{}, Default().Todoist)
+}
+
+func TestLoad_TakesTheTodoistSection(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "c.yaml")
+	require.NoError(t, os.WriteFile(path, []byte(
+		"todoist:\n  token: tk_1\n  project_id: proj_1\n"), 0o644))
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	require.Equal(t, Todoist{Token: "tk_1", ProjectID: "proj_1"}, cfg.Todoist)
+}
+
+func TestKeys_NamesTheTodoistKeys(t *testing.T) {
+	require.Contains(t, Keys(), "todoist.token")
+	require.Contains(t, Keys(), "todoist.project_id")
+}

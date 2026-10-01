@@ -58,6 +58,8 @@ func buildHelpEntries() []helpEntry {
 		{"NORMAL", "", "inside Unread, the next/previous chat's stretch of the page"},
 		{"NORMAL", "m", "inside Unread, take as read the chat the cursor is standing in"},
 		{"NORMAL", "Y", "copy agent context"},
+		{"NORMAL", "T", "file the selected message (the chat under the cursor, in the list) as a Todoist task"},
+		{"NORMAL", "", "its first line as the task, a lark:// link back to it as the description; needs todoist.token"},
 		{"NORMAL", "yy", "copy the message id"},
 		{"NORMAL", "yr", "copy the raw json"},
 		{"NORMAL", "yc", "copy the content"},

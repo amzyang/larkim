@@ -42,7 +42,10 @@ func New(cfg config.MarkRead, log *slog.Logger, st larkweb.Store, open func([]st
 		}
 	}
 	return func(_ context.Context, chat store.ChatUnread) error {
-		return open([]string{applink.ChatLink(chat.ChatID, chat.Position)}, true)
+		// No messageId rides along: this link is consumed by the client
+		// itself, this instant, for the receipt — no later reader resolves
+		// the id from it.
+		return open([]string{applink.ChatLink(chat.ChatID, "", chat.Position)}, true)
 	}
 }
 
