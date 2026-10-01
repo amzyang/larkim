@@ -3,6 +3,7 @@ package tui
 import (
 	"cmp"
 	"context"
+	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -26,9 +27,11 @@ type fakeAI struct {
 	asks      []aiAsk
 }
 
-// aiAsk is one question the fake was asked, as Stream received it.
+// aiAsk is one question the fake was asked, as Stream received it. message
+// says it was the stream-to-chat variant.
 type aiAsk struct {
 	transcript, prompt string
+	message            bool
 }
 
 func newFakeAI() *fakeAI {
@@ -37,6 +40,15 @@ func newFakeAI() *fakeAI {
 
 func (f *fakeAI) Stream(ctx context.Context, transcript, prompt string) <-chan ai.Chunk {
 	f.asks = append(f.asks, aiAsk{transcript: transcript, prompt: prompt})
+	go func() {
+		<-ctx.Done()
+		close(f.cancelled)
+	}()
+	return f.ch
+}
+
+func (f *fakeAI) StreamChat(ctx context.Context, transcript, prompt string) <-chan ai.Chunk {
+	f.asks = append(f.asks, aiAsk{transcript: transcript, prompt: prompt, message: true})
 	go func() {
 		<-ctx.Done()
 		close(f.cancelled)
@@ -1020,4 +1032,195 @@ func TestSnippets_TheSlashPopupFillsTheBox(t *testing.T) {
 	m.aiP.input.SetValue("看下 /etc/hosts")
 	m.takePum()
 	require.False(t, m.pum.open())
+}
+
+// streamWritten runs a cmd batch the stream pipeline returned and hands back
+// the card-write answer in it. The waitForAI arm of the batch consumes a
+// chunk the test has already buffered, so nothing blocks.
+func streamWritten(t *testing.T, cmd tea.Cmd) (streamWrittenMsg, bool) {
+	t.Helper()
+	var found streamWrittenMsg
+	var run func(tea.Cmd)
+	run = func(c tea.Cmd) {
+		if c == nil {
+			return
+		}
+		switch v := c().(type) {
+		case streamWrittenMsg:
+			found = v
+		case tea.BatchMsg:
+			for _, cc := range v {
+				run(cc)
+			}
+		}
+	}
+	run(cmd)
+	return found, found.turn != ""
+}
+
+// streamAsk arms the ctrl+s ask and answers its y, leaving the stream armed.
+func streamAsk(t *testing.T, m Model, question string) (Model, *aiTurn) {
+	t.Helper()
+	// A plain stream test carries no anchor; the caller that wants one sets it
+	// after this.
+	m.aiP.anchor, m.aiP.selection = nil, nil
+	m.aiP.input.SetValue(question)
+	out, _ := m.askStreamConfirm()
+	m = out.(Model)
+	require.Equal(t, confirmAIStream, m.confirm.kind)
+	yout, ycmd, _ := m.answerConfirm("y")
+	m = yout.(Model)
+	started := askStarted(t, ycmd)
+	sout, _ := m.onAIStarted(started)
+	m = sout.(Model)
+	t1 := m.aiP.session().turns[0]
+	require.NotNil(t, t1.stream)
+	return m, t1
+}
+
+// One post puts the card up, every rewrite carries the full text so far, and
+// the last write is the final text.
+func TestStreamToChat_OnePostThenWholeCardRewrites(t *testing.T) {
+	f := newFakeAI()
+	m, c := aiSendFixture(t, f)
+	m = press(t, m, "a")
+	m, t1 := streamAsk(t, m, "把结论发出来")
+	require.True(t, f.asks[0].message, "the ask is the message variant")
+	require.Contains(t, f.asks[0].prompt, "<ask>\n把结论发出来\n</ask>")
+
+	// The first piece posts the card at once.
+	f.ch <- ai.Chunk{Text: "第二"}
+	out, cmd := m.onAIChunk(aiChunkMsg{turn: t1.id, chunk: ai.Chunk{Text: "第一段"}})
+	m = out.(Model)
+	w, ok := streamWritten(t, cmd)
+	require.True(t, ok, "the first piece posts")
+	sout, _ := m.onStreamWritten(w)
+	m = sout.(Model)
+	require.Len(t, c.Sent, 1, "one send, and no more after it")
+	require.Contains(t, ansi.Strip(m.renderAI(m.bodyHeight())), "● live in chat")
+
+	// A rewrite while the answer grows carries the full text so far.
+	f.ch <- ai.Chunk{Text: "，第二段"}
+	out, cmd = m.onAIChunk(aiChunkMsg{turn: t1.id, chunk: ai.Chunk{Text: "，第二段"}})
+	m = out.(Model)
+	w, ok = streamWritten(t, cmd)
+	require.True(t, ok)
+	sout, _ = m.onStreamWritten(w)
+	m = sout.(Model)
+
+	// The answer ends with its last piece, and the final write is the final
+	// text.
+	f.ch <- ai.Chunk{Done: true}
+	out, cmd = m.onAIChunk(aiChunkMsg{turn: t1.id, chunk: ai.Chunk{Text: "。", Done: true}})
+	m = out.(Model)
+	w, ok = streamWritten(t, cmd)
+	require.True(t, ok, "the answer's end writes the card closed")
+	sout, _ = m.onStreamWritten(w)
+	m = sout.(Model)
+
+	require.Len(t, c.Sent, 1, "still the one post")
+	require.GreaterOrEqual(t, len(c.Patched), 2)
+	require.Equal(t, "第一段，第二段。", larkcli.CardMarkdown(lastPatch(t, c)),
+		"the last write is the final text, whole")
+	require.True(t, t1.stream.closed)
+	require.Contains(t, ansi.Strip(m.renderAI(m.bodyHeight())), "Recall")
+}
+
+// lastPatch is the content of the last card rewrite.
+func lastPatch(t *testing.T, c *larkcli.Fake) string {
+	t.Helper()
+	_, content, _ := strings.Cut(c.Patched[len(c.Patched)-1], " ")
+	return content
+}
+
+// x stops the answer and the card is marked interrupted, half-written no more.
+func TestStreamToChat_StopLeavesTheCardMarkedInterrupted(t *testing.T) {
+	f := newFakeAI()
+	m, c := aiSendFixture(t, f)
+	m = press(t, m, "a")
+	m, t1 := streamAsk(t, m, "写下去")
+
+	f.ch <- ai.Chunk{Done: true}
+	out, cmd := m.onAIChunk(aiChunkMsg{turn: t1.id, chunk: ai.Chunk{Text: "写了一半"}})
+	m = out.(Model)
+	w, ok := streamWritten(t, cmd)
+	require.True(t, ok)
+	sout, _ := m.onStreamWritten(w)
+	m = sout.(Model)
+
+	f.ch <- ai.Chunk{Done: true}
+	out, cmd = m.onAIChunk(aiChunkMsg{turn: t1.id, chunk: ai.Chunk{Stopped: true, Done: true}})
+	m = out.(Model)
+	require.Equal(t, aiStopped, t1.state)
+	w, ok = streamWritten(t, cmd)
+	require.True(t, ok, "the stop writes the card closed")
+	sout, _ = m.onStreamWritten(w)
+	m = sout.(Model)
+	require.True(t, t1.stream.closed)
+	require.Contains(t, larkcli.CardMarkdown(lastPatch(t, c)), "(interrupted)",
+		"a stopped answer says so on the card")
+}
+
+// A first post that fails keeps the answer in the panel, marked not posted.
+func TestStreamToChat_AFailedSendKeepsTheAnswerInThePanel(t *testing.T) {
+	f := newFakeAI()
+	m, c := aiSendFixture(t, f)
+	c.SendErr = errors.New("boom")
+	m = press(t, m, "a")
+	m, t1 := streamAsk(t, m, "说说看")
+
+	f.ch <- ai.Chunk{Done: true}
+	out, cmd := m.onAIChunk(aiChunkMsg{turn: t1.id, chunk: ai.Chunk{Text: "答案"}})
+	m = out.(Model)
+	w, ok := streamWritten(t, cmd)
+	require.True(t, ok)
+	require.Error(t, w.err, "the post itself failed")
+	sout, _ := m.onStreamWritten(w)
+	m = sout.(Model)
+
+	require.Empty(t, t1.stream.messageID, "nothing of it reached the chat")
+	require.NotEmpty(t, t1.stream.err)
+	require.Contains(t, ansi.Strip(m.renderAI(m.bodyHeight())), "not posted",
+		"the answer stays in the panel and says what happened")
+	require.Contains(t, ansi.Strip(m.renderAI(m.bodyHeight())), "Send", "Send is offered")
+}
+
+// With an anchor the card is a reply, inside its thread when it is in one.
+func TestStreamToChat_AnAnchoredAnswerRepliesIntoTheThread(t *testing.T) {
+	f := newFakeAI()
+	m, c := aiSendFixture(t, f)
+	c.Messages["om_r"] = larkcli.RawMessage{MessageID: "om_r", ChatID: "oc_quiet"}
+	m = press(t, m, "a")
+	anchor := store.Message{MessageID: "om_r", ChatID: "oc_quiet", ThreadID: "omt_r",
+		MessagePosition: -1, SenderID: "ou_a", SenderName: "张三", Content: "发布单合了吗"}
+	m.aiP.anchor = &anchor
+	m.aiP.input.SetValue("帮我回")
+	out, _ := m.askStreamConfirm()
+	m = out.(Model)
+	require.Contains(t, m.notice, "as a reply to 张三")
+
+	yout, ycmd, _ := m.answerConfirm("y")
+	m = yout.(Model)
+	started := askStarted(t, ycmd)
+	sout, _ := m.onAIStarted(started)
+	m = sout.(Model)
+	t1 := m.aiP.session().turns[0]
+	require.Equal(t, "om_r", t1.stream.replyTo)
+	require.True(t, t1.stream.inThread)
+
+	f.ch <- ai.Chunk{Done: true}
+	out, cmd := m.onAIChunk(aiChunkMsg{turn: t1.id, chunk: ai.Chunk{Text: "回在串里", Done: true}})
+	m = out.(Model)
+	w, ok := streamWritten(t, cmd)
+	require.True(t, ok)
+	sout, _ = m.onStreamWritten(w)
+	m = sout.(Model)
+	var sent larkcli.RawMessage
+	for _, x := range c.Messages {
+		if x.ParentID == "om_r" {
+			sent = x
+		}
+	}
+	require.Equal(t, "oc_quiet", sent.ChatID, "the card went to the chat")
+	require.NotEmpty(t, sent.ThreadID, "the reply is inside the thread")
 }

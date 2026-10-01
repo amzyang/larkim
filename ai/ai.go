@@ -62,6 +62,23 @@ Answer from the material you are given. Do not use any tool: a tool call ends th
 // Stream sends prompt with the chat transcript as context and streams the
 // answer.
 func (c *Client) Stream(ctx context.Context, transcript, prompt string) <-chan Chunk {
+	return c.stream(ctx, transcript, prompt, system)
+}
+
+// systemMessage is the instruction a stream-to-chat turn leads with instead:
+// the whole output is the message that goes to the chat as it stands.
+const systemMessage = system + `
+
+This turn is different: your entire output becomes one message sent to the chat exactly as you write it. Write no commentary, no preamble, no <reply> tags — the message itself and nothing else. Mentions and file references stay plain text.`
+
+// StreamChat is Stream for an answer whose whole output is the message: it
+// is posted to the chat as it stands, so the agent writes the message and
+// nothing around it.
+func (c *Client) StreamChat(ctx context.Context, transcript, prompt string) <-chan Chunk {
+	return c.stream(ctx, transcript, prompt, systemMessage)
+}
+
+func (c *Client) stream(ctx context.Context, transcript, prompt, instructions string) <-chan Chunk {
 	out := make(chan Chunk, 64)
 	go func() {
 		defer close(out)
@@ -88,7 +105,7 @@ func (c *Client) Stream(ctx context.Context, transcript, prompt string) <-chan C
 		// ACP has no system prompt, so the instructions lead the one turn.
 		// The window travels as data between tags, never as instructions,
 		// because colleagues wrote it.
-		text := system + "\n\n<data>\n" + transcript + "\n</data>\n\n" + prompt
+		text := instructions + "\n\n<data>\n" + transcript + "\n</data>\n\n" + prompt
 		if err := c.ask(ctx, text, func(t string) bool { return send(Chunk{Text: t}) }); err != nil {
 			if errors.Is(err, errStopped) {
 				send(Chunk{Stopped: true, Done: true})

@@ -105,6 +105,12 @@ type Fake struct {
 	SentKeys []string
 	// Sent records the body of every send, in the same order as SentKeys.
 	Sent []Outgoing
+	// Patched records each card rewrite as "<message id> <content>", in
+	// order, so a test can read the whole life of a streamed card.
+	Patched []string
+	// PatchErr fails PatchMessage alone, so a test can take the final
+	// rewrite of a streamed card down without touching the send.
+	PatchErr error
 	// Recalled records the id of every message taken back, in order.
 	Recalled []string
 	// Forwarded records each forward as "<message id>->
@@ -592,6 +598,8 @@ func (f *Fake) SearchChats(_ context.Context, query string) ([]RawChat, error) {
 // both here lets a test follow a send all the way through ingest.
 func (o Outgoing) body() (msgType, content, rendered string) {
 	switch {
+	case o.Card != "":
+		return "interactive", o.Card, CardMarkdown(o.Card)
 	case o.Markdown != "":
 		// Built by the same function the wire uses, so the two cannot drift.
 		return "post", larkmd.PostContent(o.Markdown), o.Markdown
@@ -653,6 +661,29 @@ func (f *Fake) Send(_ context.Context, target Target, msg Outgoing, idempotencyK
 	f.Messages[id] = m
 	f.Rendered[id] = RenderedMessage{MessageID: id, ChatID: chat, MsgType: msgType, Content: rendered, Raw: m.Raw}
 	return SentMessage{MessageID: id, ChatID: chat}, nil
+}
+
+// PatchMessage rewrites the stored card the way the wire does: the message's
+// content becomes the new card JSON, and the rewrite is recorded in order.
+// PatchErr, when set, fails every rewrite.
+func (f *Fake) PatchMessage(_ context.Context, messageID, content string) error {
+	if err := f.record("patch:" + messageID); err != nil {
+		return err
+	}
+	if f.PatchErr != nil {
+		return f.PatchErr
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	m, ok := f.Messages[messageID]
+	if !ok {
+		return &Error{ExitCode: ExitAPI, Type: "api", Subtype: "not_found", Message: "message not found"}
+	}
+	f.Patched = append(f.Patched, messageID+" "+content)
+	m.Body.Content = content
+	m.Updated = true
+	f.Messages[messageID] = m
+	return nil
 }
 
 func (f *Fake) Recall(_ context.Context, messageID string) error {

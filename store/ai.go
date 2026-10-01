@@ -43,6 +43,9 @@ type AITurn struct {
 	State          int
 	Answer, Err    string
 	AtMs           int64
+	// CardID is the message an answer streamed into the chat as, '' when the
+	// answer stayed in the panel.
+	CardID string
 }
 
 // SaveAISession writes one session row whole. Upsert, so a title learned at
@@ -64,16 +67,17 @@ func (s *Store) SaveAITurn(ctx context.Context, v AITurn) error {
 	}
 	_, err = s.db.ExecContext(ctx,
 		`INSERT INTO ai_turns(id, session_id, seq, ask, sent, anchor_id,
-		                      thread_id, window, compose, sel, state, answer, err, at_ms)
-		 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+		                      thread_id, window, compose, sel, state, answer, err, at_ms, card_id)
+		 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 		 ON CONFLICT(id) DO UPDATE SET
 		   seq = excluded.seq, ask = excluded.ask, sent = excluded.sent,
 		   anchor_id = excluded.anchor_id, thread_id = excluded.thread_id,
 		   window = excluded.window, compose = excluded.compose,
 		   sel = excluded.sel, state = excluded.state,
-		   answer = excluded.answer, err = excluded.err, at_ms = excluded.at_ms`,
+		   answer = excluded.answer, err = excluded.err, at_ms = excluded.at_ms,
+		   card_id = excluded.card_id`,
 		v.ID, v.SessionID, v.Seq, v.Ask, v.Sent, v.AnchorID,
-		v.ThreadID, v.Window, v.Compose, sel, v.State, v.Answer, v.Err, v.AtMs)
+		v.ThreadID, v.Window, v.Compose, sel, v.State, v.Answer, v.Err, v.AtMs, v.CardID)
 	return err
 }
 
@@ -94,7 +98,7 @@ func (s *Store) ListAITurns(ctx context.Context, sessionID string) ([]AITurn, er
 		var sel []byte
 		err := sc.Scan(&v.ID, &v.SessionID, &v.Seq, &v.Ask, &v.Sent,
 			&v.AnchorID, &v.ThreadID, &v.Window, &v.Compose, &sel,
-			&v.State, &v.Answer, &v.Err, &v.AtMs)
+			&v.State, &v.Answer, &v.Err, &v.AtMs, &v.CardID)
 		if err != nil {
 			return AITurn{}, err
 		}
@@ -105,7 +109,7 @@ func (s *Store) ListAITurns(ctx context.Context, sessionID string) ([]AITurn, er
 		}
 		return v, nil
 	}, `SELECT id, session_id, seq, ask, sent, anchor_id, thread_id,
-	          window, compose, sel, state, answer, err, at_ms
+	          window, compose, sel, state, answer, err, at_ms, card_id
 	   FROM ai_turns WHERE session_id = ? ORDER BY seq`, sessionID)
 }
 

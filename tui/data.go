@@ -102,11 +102,14 @@ type Deps struct {
 	Log *slog.Logger
 }
 
-// AIStreamer is the one call the assistant pane makes. It is named here
-// rather than taken as *ai.Client because every chunk of it crosses the
-// network, and a pane nobody can drive is a pane nobody can test.
+// AIStreamer is the pair of calls the assistant pane makes. They are named
+// here rather than taken as *ai.Client because every chunk of them crosses
+// the network, and a pane nobody can drive is a pane nobody can test.
 type AIStreamer interface {
 	Stream(ctx context.Context, transcript, prompt string) <-chan ai.Chunk
+	// StreamChat is Stream for an answer whose whole output is the message,
+	// posted to the chat as it stands.
+	StreamChat(ctx context.Context, transcript, prompt string) <-chan ai.Chunk
 }
 
 // ReactSuggester is the one call the picker's contextual row makes. It is

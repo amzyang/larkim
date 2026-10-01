@@ -247,6 +247,7 @@ question is asked, never when it is merely opened.
 | `answer` | the answer text so far, Markdown |
 | `err` | the failure's message on a failed answer |
 | `at_ms` | when the question was asked, Unix ms UTC |
+| `card_id` | the message an answer streamed into the chat as, '' when it stayed in the panel |
 
 A row still `asking` at load is an answer the previous run never finished —
 the TUI reads it as `interrupted`, and nobody owes it further.

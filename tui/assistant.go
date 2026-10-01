@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"unicode/utf8"
 	"slices"
 	"strings"
 	"time"
@@ -112,6 +113,9 @@ type aiTurn struct {
 	// sent card shows until the panel closes. In-memory only — the wire, not
 	// the panel, is where a sent message's truth lives.
 	sentAt map[int]time.Time
+	// stream is the card this answer streams into the chat as, when the
+	// question was asked with ctrl+s. Nil when the answer stays in the panel.
+	stream *aiStreamCard
 	ch     <-chan ai.Chunk
 	cancel context.CancelFunc
 }
@@ -210,6 +214,12 @@ func (p *aiPanel) load(m Model) {
 			}
 			if tv.AnchorID != "" {
 				anchors = append(anchors, tv.AnchorID)
+			}
+			if tv.CardID != "" {
+				// The card is a message in the chat now; the stream itself is
+				// over, and what it left is closed at the text it last held.
+				t.stream = &aiStreamCard{chatID: p.chat, messageID: tv.CardID,
+					wrote: len(tv.Answer), closed: true}
 			}
 			s.turns = append(s.turns, t)
 		}
@@ -368,9 +378,10 @@ func (p *aiPanel) busy() bool {
 // stopAll cancels every answer in flight, which is what leaving the program
 // owes them: nothing keeps a child process alive past its reader. The stashed
 // sessions are in flight as surely as the chat on screen. Each answer that
-// never finished is marked interrupted on its way out, so the next run reads
-// it as that rather than as an answer still owed.
-func (p *aiPanel) stopAll(d Deps) []tea.Cmd {
+// never finished is marked interrupted on its way out — its card marked so
+// too, the closing write riding the exit ahead of the persist — so the next
+// run reads it as that rather than as an answer still owed.
+func (p *aiPanel) stopAll(m *Model) []tea.Cmd {
 	var cmds []tea.Cmd
 	for _, s := range p.allSessions() {
 		for _, t := range s.turns {
@@ -379,7 +390,10 @@ func (p *aiPanel) stopAll(d Deps) []tea.Cmd {
 			}
 			if t.streaming() {
 				t.state, t.cancel = aiInterrupted, nil
-				cmds = append(cmds, saveTurnCmd(d, s, t))
+				cmds = append(cmds, saveTurnCmd(m.deps, s, t))
+			}
+			if cmd := m.pumpStreamCard(t); cmd != nil {
+				cmds = append(cmds, cmd)
 			}
 		}
 	}
@@ -390,10 +404,14 @@ func (p *aiPanel) stopAll(d Deps) []tea.Cmd {
 // carries the complete state, so an out-of-order write cannot leave half a
 // turn behind.
 func storedTurn(s *aiSession, t *aiTurn) store.AITurn {
-	return store.AITurn{ID: t.id, SessionID: s.id, Seq: t.seq, Ask: t.ask, Sent: t.sent,
+	v := store.AITurn{ID: t.id, SessionID: s.id, Seq: t.seq, Ask: t.ask, Sent: t.sent,
 		AnchorID: t.anchorID, ThreadID: t.thread, Window: t.window,
 		Compose: t.compose, Sel: t.sel, State: int(t.state), Answer: t.answer,
 		Err: t.err, AtMs: t.at.UnixMilli()}
+	if t.stream != nil {
+		v.CardID = t.stream.messageID
+	}
+	return v
 }
 
 // saveTurnCmd persists a turn as it stands at this moment. The snapshot is
@@ -434,7 +452,7 @@ func (m Model) aiDraftText() string {
 // submitAI is Enter in the panel's box: the question becomes a turn of the
 // session on screen, and the asking itself happens off the Update loop.
 func (m Model) submitAI() (tea.Model, tea.Cmd) {
-	return m.askAI(strings.TrimSpace(m.aiP.input.Value()), "")
+	return m.askAI(strings.TrimSpace(m.aiP.input.Value()), "", false)
 }
 
 // cloneMsg copies a message the way a recorded context wants it: nobody's
@@ -493,6 +511,11 @@ func askTurn(d Deps, client AIStreamer, off error, p *aiPanel, s *aiSession, t *
 		turn := ai.Turn{Window: agentctx.Render(in), About: extra,
 			History: history, Question: t.sent}
 		cctx, cancel := context.WithCancel(ctx)
+		// An answer that is the message is asked as the message: no
+		// commentary, no reply blocks.
+		if t.stream != nil {
+			return aiStartedMsg{turn: t.id, ch: client.StreamChat(cctx, turn.Window, turn.Prompt()), cancel: cancel}
+		}
 		return aiStartedMsg{turn: t.id, ch: client.Stream(cctx, turn.Window, turn.Prompt()), cancel: cancel}
 	}
 }
@@ -546,7 +569,8 @@ func (p *aiPanel) allSessions() []*aiSession {
 
 // onAIChunk takes one piece of an answer into its turn, wherever the panel
 // itself has gone in the meantime. A turn that reaches its end is persisted
-// as it stands, whole.
+// as it stands, whole; a turn streaming into the chat keeps its card moving
+// toward the text the answer holds now.
 func (m Model) onAIChunk(msg aiChunkMsg) (tea.Model, tea.Cmd) {
 	s, t := m.aiP.findTurn(msg.turn)
 	if t == nil {
@@ -556,27 +580,32 @@ func (m Model) onAIChunk(msg aiChunkMsg) (tea.Model, tea.Cmd) {
 	// every state.
 	c := msg.chunk
 	t.answer += c.Text
+	var cmds []tea.Cmd
+	done := false
 	switch {
 	case c.Err != nil:
-		t.state, t.err = aiFailed, c.Err.Error()
+		t.state, t.err, done = aiFailed, c.Err.Error(), true
 		t.cancel = nil
 	case c.Stopped:
-		t.state, t.cancel = aiStopped, nil
+		t.state, t.cancel, done = aiStopped, nil, true
 	case !c.Done:
 		if m.aiP.follow {
 			m.aiP.toBottom(m.listHeight())
 		}
-		m.aiP.rebuild(m)
-		return m, waitForAI(t.id, t.ch)
+		cmds = append(cmds, waitForAI(t.id, t.ch))
 	default:
-		t.state, t.cancel = aiDone, nil
-		if !m.aiOpen() || m.aiP.chat != m.chatID {
-			return m.notify("assistant finished", false), saveTurnCmd(m.deps, s, t)
-		}
+		t.state, t.cancel, done = aiDone, nil, true
 	}
+	if done {
+		cmds = append(cmds, saveTurnCmd(m.deps, s, t))
+	}
+	cmds = append(cmds, m.pumpStreamCard(t))
 	m.aiP.rebuild(m)
 	m.layout()
-	return m.notify("", false), saveTurnCmd(m.deps, s, t)
+	if done && !m.aiOpen() || done && m.aiP.chat != m.chatID {
+		return m.notify("assistant finished", false), tea.Batch(cmds...)
+	}
+	return m.notify("", false), tea.Batch(cmds...)
 }
 
 // stopAI cancels the answer in flight on the session on screen. The stream
@@ -712,6 +741,9 @@ const (
 	actStop
 	actSend
 	actReply
+	actJump
+	actRecall
+	actStreamRetry
 )
 
 // aiAct names what an act runs on: the answer's turn, and which card of it
@@ -751,6 +783,22 @@ func (p *aiPanel) rebuild(m Model) {
 		add(aiRowOf(m.aiTurnHead(t, w), w), none)
 		addAll(plainRows(wrap(t.ask, w), w), none)
 		add(m.aiAnswerHeadRow(t, w, last), none)
+		// An answer that streams into the chat is the message itself: one
+		// text, no reply blocks, and the chat side's own actions under it —
+		// from the moment its card posts, asking or not.
+		if t.stream != nil {
+			if strings.TrimSpace(t.answer) == "" && t.state == aiAsking {
+				add(aiRowOf(stDim.Render("…"), w), none)
+			} else if t.state == aiFailed {
+				add(aiRowOf(stErr.Render(truncate(t.err, w)), w), none)
+			} else {
+				var b block
+				g := leads{b: &b}
+				addAll(mdRows(t.answer, store.Message{}, 0, st, &g, mentions{}), none)
+			}
+			add(m.streamFoot(t, w), none)
+			continue
+		}
 		switch t.state {
 		case aiAsking:
 			if strings.TrimSpace(t.answer) == "" {
@@ -863,6 +911,56 @@ func aiCardFoot(w int, a aiAct, anchored, sent bool, at time.Time) msgRow {
 	return row
 }
 
+// streamFoot is the action row a streamed answer draws: where its card
+// stands in the chat, and what can be done with it — Jump, Copy, Recall,
+// Send when the first post never landed, Retry when a write failed. The
+// client's own words, the panel's own acts.
+func (m Model) streamFoot(t *aiTurn, w int) msgRow {
+	c := t.stream
+	const lead = "└─ "
+	state := "● live in chat"
+	if c.messageID == "" && c.err != "" {
+		state = "not posted"
+	} else if c.err != "" {
+		state = "write failed"
+	} else if c.closed {
+		state = "sent"
+	}
+	type actLabel struct {
+		label string
+		act   aiAct
+	}
+	var parts []actLabel
+	if c.messageID == "" && c.err != "" {
+		parts = append(parts, actLabel{"Send", aiAct{kind: actSend, turn: t.id, card: 0}})
+	}
+	if c.err != "" && c.messageID != "" {
+		parts = append(parts, actLabel{"Retry", aiAct{kind: actStreamRetry, turn: t.id, card: -1}})
+	}
+	if c.messageID != "" {
+		parts = append(parts, actLabel{"Jump", aiAct{kind: actJump, turn: t.id, card: -1}})
+	}
+	parts = append(parts, actLabel{"Copy", aiAct{kind: actCopy, turn: t.id, card: -1}})
+	if c.messageID != "" {
+		parts = append(parts, actLabel{"Recall", aiAct{kind: actRecall, turn: t.id, card: -1}})
+	}
+	x, line := lipgloss.Width(lead), lead
+	var zones []clickZone
+	for _, p := range parts {
+		if len(line) > len(lead) {
+			line += " · "
+			x += 3
+		}
+		line += p.label
+		zones = append(zones, clickZone{x0: x, x1: x + len(p.label), act: p.act})
+		x += len(p.label)
+	}
+	tail := strings.Repeat("─", max(1, w-lipgloss.Width(line)))
+	row := aiRowOf(stDim.Render(state)+stDim.Render("  ")+stDim.Render(line)+stDim.Render(tail), w)
+	row.zones = zones
+	return row
+}
+
 // cardBodyRows draws a card's text the way Send would post it: the composer
 // preview's own rendering, bodyRows over the planned draft.
 func (m Model) cardBodyRows(text string, w int) []msgRow {
@@ -916,13 +1014,17 @@ func (m *Model) aiMove(n int) {
 	p.top = clamp(p.top, 0, max(0, len(p.rows)-h))
 }
 
-// cardText is the card an act names.
+// cardText is the card an act names. A streamed answer is one text with no
+// blocks, so its Copy takes the whole of it.
 func (m Model) cardText(a aiAct) (string, bool) {
-	if a.card < 0 {
-		return "", false
-	}
 	_, t := m.aiP.findTurn(a.turn)
 	if t == nil {
+		return "", false
+	}
+	if t.stream != nil {
+		return t.answer, true
+	}
+	if a.card < 0 {
 		return "", false
 	}
 	cards := cardsOf(t)
@@ -1133,6 +1235,9 @@ func (m Model) regenerateAI() (tea.Model, tea.Cmd) {
 	if t.streaming() {
 		return m.notify("answering · x stops", true), nil
 	}
+	if t.stream != nil {
+		return m.notify("a streamed answer is a message now — ask again with ctrl+s", true), nil
+	}
 	// A panel with no agent still takes the retry: the turn fails with the
 	// notice rather than the key refusing to answer.
 	var off error
@@ -1167,6 +1272,27 @@ func (m Model) aiPress(a aiAct) (tea.Model, tea.Cmd) {
 		return m.regenerateAI()
 	case actStop:
 		return m.stopAI()
+	case actJump:
+		_, t := m.aiP.findTurn(a.turn)
+		if t == nil || t.stream == nil || t.stream.messageID == "" {
+			return m, nil
+		}
+		return m, openInFeishu(m.deps, t.stream.chatID, t.stream.messageID, 0)
+	case actRecall:
+		_, t := m.aiP.findTurn(a.turn)
+		if t == nil || t.stream == nil || t.stream.messageID == "" {
+			return m, nil
+		}
+		// Recall is recall: the confirmation the messages pane's D runs, over
+		// a message that is as visible to the chat as any other.
+		m.confirm = confirmation{kind: confirmRecall, messageID: t.stream.messageID}
+		return m.notify("recall the streamed card? y/n", false), nil
+	case actStreamRetry:
+		_, t := m.aiP.findTurn(a.turn)
+		if t == nil {
+			return m, nil
+		}
+		return m.retryStreamCard(t)
 	}
 	return m, nil
 }
@@ -1376,14 +1502,15 @@ func (m Model) askCommand(input string) (tea.Model, tea.Cmd) {
 		}
 	}
 	next, cmd := m.openAI(m.aiChat(), true)
-	out, ask := next.askAI(input, sent)
+	out, ask := next.askAI(input, sent, false)
 	return out, tea.Batch(cmd, ask)
 }
 
 // askAI turns a question into a turn of the session on screen and starts it.
 // sent is what the model is asked when it differs from the question shown,
-// which is a snippet's text under the name the reader typed.
-func (m Model) askAI(ask, sent string) (tea.Model, tea.Cmd) {
+// which is a snippet's text under the name the reader typed. intoChat asks
+// with the answer streaming into the chat as one card.
+func (m Model) askAI(ask, sent string, intoChat bool) (tea.Model, tea.Cmd) {
 	p := m.aiP
 	if ask == "" {
 		return m, nil
@@ -1415,6 +1542,10 @@ func (m Model) askAI(ask, sent string) (tea.Model, tea.Cmd) {
 	t := &aiTurn{id: uuid.New().String(), ask: ask, sent: sent, seq: len(s.turns),
 		anchorID: msgIDOf(anchor), anchor: anchor, thread: m.threadID, window: m.cfg.AI.Context,
 		compose: m.aiDraftText(), sel: slices.Clone(p.selection), at: time.Now()}
+	if intoChat {
+		t.stream = &aiStreamCard{chatID: p.chat, replyTo: msgIDOf(anchor),
+			inThread: anchor != nil && anchor.ThreadID != "", threadID: threadIDOf(anchor)}
+	}
 	if s.created == 0 {
 		s.created = t.at.UnixMilli()
 	}
@@ -1426,6 +1557,14 @@ func (m Model) askAI(ask, sent string) (tea.Model, tea.Cmd) {
 	asking := askTurn(m.deps, m.ai, off, p, s, t)
 	return m.notify("asking "+m.agentName()+"…", false),
 		tea.Batch(saveSessionCmd(m.deps, p.chat, s), saveTurnCmd(m.deps, s, t), asking)
+}
+
+// threadIDOf names the thread a message belongs to, '' for none.
+func threadIDOf(x *store.Message) string {
+	if x == nil {
+		return ""
+	}
+	return x.ThreadID
 }
 
 // msgIDOf names a message a turn records, ” for none.
@@ -1685,4 +1824,186 @@ func (m Model) aiChipAt(x int) int {
 		}
 	}
 	return -1
+}
+
+// --- stream to chat --------------------------------------------------------
+
+// aiStreamCard is the chat side of an answer asked with ctrl+s: one card,
+// posted at once and rewritten whole as the answer grows. The writer keeps
+// one write in flight per card — Feishu has no sequence for concurrent
+// rewrites of one message, and meters them per message besides — so each
+// write carries the latest text and nothing older.
+type aiStreamCard struct {
+	chatID   string
+	replyTo  string
+	threadID string
+	inThread bool
+	// messageID is the card once the first post answered; until then nothing
+	// of this answer is on the wire.
+	messageID string
+	// wrote is how much of the answer the card holds, busy whether a write
+	// is in flight, closed whether the card is finished.
+	wrote  int
+	busy   bool
+	closed bool
+	// err is the write that failed, empty while the card keeps up. A first
+	// post that failed leaves the answer in the panel marked not posted; a
+	// rewrite that failed leaves it open at what it last held. Either way
+	// Retry runs the write again.
+	err string
+}
+
+// streamCardMax is where a streamed card closes: Feishu refuses a content
+// past 30 KB, and an answer longer than that is not one message anymore.
+const streamCardMax = 30 << 10
+
+// streamCardNote closes a card cut at the cap, and streamInterrupted marks an
+// answer that never finished. Nothing is left half-written without saying so.
+const (
+	streamCardNote = "\n\n(the rest is in larkim)"
+	streamStopped  = "\n\n(interrupted)"
+)
+
+// streamCardText is what the card holds for the answer as it stands: the text
+// so far while it streams, the final text with its marker once it has ended.
+func streamCardText(t *aiTurn) string {
+	text, tail := t.answer, ""
+	if !t.streaming() && t.state != aiDone {
+		tail = streamStopped
+	}
+	if len(text)+len(tail) > streamCardMax {
+		// Cut on a rune boundary: a card that ends mid-character is a
+		// message nobody can read the tail of.
+		room := streamCardMax - len(streamCardNote) - len(tail)
+		for room > 0 && !utf8.RuneStart(text[room]) {
+			room--
+		}
+		text = text[:room] + streamCardNote
+	}
+	return text + tail
+}
+
+// askStreamConfirm arms the y/n streaming into the chat asks for: the card is
+// on the wire the moment the answer starts growing, which no composer step
+// gates, and without an anchor it opens the chat as a new message.
+func (m Model) askStreamConfirm() (tea.Model, tea.Cmd) {
+	q := strings.TrimSpace(m.aiP.input.Value())
+	if q == "" {
+		return m.notify("type the question first", true), nil
+	}
+	if p := m.aiP; p.chat == "" {
+		return m.notify("open a chat first", true), nil
+	} else if p.busy() {
+		return m.notify("assistant is still answering", true), nil
+	}
+	name, _ := m.chatName(m.aiP.chat)
+	asks := []string{"stream the answer into " + cmp.Or(name, m.aiP.chat)}
+	if a := m.aiP.anchor; a != nil {
+		asks = append(asks, "as a reply to "+displaySender(*a, m.deps.Self, m.suffixOf(a.SenderID)))
+	}
+	m.confirm = confirmation{kind: confirmAIStream, aiStream: q}
+	return m.notify(strings.Join(asks, " ")+"? y/n", false), nil
+}
+
+// streamWrittenMsg answers one write of a streamed card: how much of the
+// answer the card now holds, the message it is, or the failure that kept it
+// from holding more.
+type streamWrittenMsg struct {
+	turn      string
+	wrote     int
+	messageID string
+	err       error
+}
+
+// writeStreamCard puts text on the card: the first post when the card has no
+// message yet, a whole-card rewrite after.
+func writeStreamCard(d Deps, t *aiTurn, text string) tea.Cmd {
+	c := t.stream
+	card, id := larkcli.Card(text), t.id
+	var post func(ctx context.Context) (larkcli.SentMessage, error)
+	if c.replyTo != "" {
+		replyTo, inThread := c.replyTo, c.inThread
+		post = func(ctx context.Context) (larkcli.SentMessage, error) {
+			return d.Client.Reply(ctx, replyTo, card, inThread, "")
+		}
+	} else {
+		chatID := c.chatID
+		post = func(ctx context.Context) (larkcli.SentMessage, error) {
+			return d.Client.Send(ctx, larkcli.Target{ChatID: chatID}, card, "")
+		}
+	}
+	patchID := c.messageID
+	return func() tea.Msg {
+		// The card's own lane: rewrites are serial per message by the API's
+		// own accounting, and a line of width one cannot outrun itself.
+		ctx, cancel := waited(sendTimeout)
+		defer cancel()
+		ctx = larkcli.WithLane(ctx, larkcli.LaneCard)
+		if patchID != "" {
+			if err := d.Client.PatchMessage(ctx, patchID, card.Card); err != nil {
+				return streamWrittenMsg{turn: id, err: err}
+			}
+			return streamWrittenMsg{turn: id, wrote: len(text), messageID: patchID}
+		}
+		sent, err := post(ctx)
+		if err != nil {
+			return streamWrittenMsg{turn: id, err: err}
+		}
+		return streamWrittenMsg{turn: id, wrote: len(text), messageID: sent.MessageID}
+	}
+}
+
+// pumpStreamCard starts the next card write when one is due: nothing in
+// flight, no failure waiting on a Retry, and text the card does not hold yet.
+func (m *Model) pumpStreamCard(t *aiTurn) tea.Cmd {
+	c := t.stream
+	if c == nil || c.busy || c.closed || c.err != "" {
+		return nil
+	}
+	text := streamCardText(t)
+	if c.wrote == len(text) {
+		return nil
+	}
+	c.busy = true
+	return writeStreamCard(m.deps, t, text)
+}
+
+// onStreamWritten takes a card write's answer. The turn's card closes when
+// the write that carries its final text lands; a failure leaves it at what it
+// last held and says so.
+func (m Model) onStreamWritten(msg streamWrittenMsg) (tea.Model, tea.Cmd) {
+	_, t := m.aiP.findTurn(msg.turn)
+	if t == nil || t.stream == nil {
+		return m, nil
+	}
+	c := t.stream
+	c.busy = false
+	if msg.err != nil {
+		c.err = msg.err.Error()
+		m.aiP.rebuild(m)
+		m.layout()
+		return m.notify("card write failed: "+c.err, true), nil
+	}
+	c.messageID, c.wrote = msg.messageID, msg.wrote
+	if !t.streaming() && c.wrote == len(streamCardText(t)) {
+		c.closed = true
+	}
+	cmd := m.pumpStreamCard(t)
+	m.aiP.rebuild(m)
+	m.layout()
+	return m, cmd
+}
+
+// retryStreamCard runs the write that failed again: the first post, or the
+// rewrite the card last held.
+func (m Model) retryStreamCard(t *aiTurn) (tea.Model, tea.Cmd) {
+	c := t.stream
+	if c == nil || c.busy || c.err == "" {
+		return m, nil
+	}
+	c.err = ""
+	cmd := m.pumpStreamCard(t)
+	m.aiP.rebuild(m)
+	m.layout()
+	return m, cmd
 }

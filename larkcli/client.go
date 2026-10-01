@@ -94,6 +94,10 @@ type Client interface {
 	// sent, and only inside its own time limit, so it answers the refusal
 	// rather than this deciding either.
 	Recall(ctx context.Context, messageID string) error
+	// PatchMessage replaces a message's content wholesale — the streaming
+	// card's route. Feishu takes it for a message this identity sent within
+	// 14 days whose content stays under 30 KB, and answers for both itself.
+	PatchMessage(ctx context.Context, messageID, content string) error
 	// Forward sends an existing message on to another chat or person. The
 	// idempotency key deduplicates for an hour, the way a send's does.
 	Forward(ctx context.Context, messageID string, target Target, idempotencyKey string) (SentMessage, error)
@@ -127,6 +131,7 @@ type Outgoing struct {
 	Post     string // msg_type post, already the body Feishu stores
 	ImageKey string // msg_type image; a key, never a path
 	FileKey  string // msg_type file; a key, never a path
+	Card     string // msg_type interactive, already the 2.0 card JSON
 }
 
 // Text is an Outgoing carrying plain text.
@@ -150,6 +155,47 @@ func Emotion(emojiType string) Outgoing {
 // as a message of its own rather than as something inside one, so a draft that
 // names a file names nothing else.
 func File(key string) Outgoing { return Outgoing{FileKey: key} }
+
+// cardBody is the shape of the one-element card Card builds. Unexported so
+// the JSON stays this package's own spelling of it.
+type cardBody struct {
+	Schema string `json:"schema"`
+	Body   struct {
+		Elements []struct {
+			Tag     string `json:"tag"`
+			Content string `json:"content"`
+		} `json:"elements"`
+	} `json:"body"`
+}
+
+// Card is an Outgoing carrying a 2.0 card whose one element is the markdown:
+// the streaming answer's vehicle, posted once and rewritten whole.
+func Card(md string) Outgoing {
+	var c cardBody
+	c.Schema = "2.0"
+	c.Body.Elements = []struct {
+		Tag     string `json:"tag"`
+		Content string `json:"content"`
+	}{{Tag: "markdown", Content: md}}
+	b, _ := json.Marshal(c)
+	return Outgoing{Card: string(b)}
+}
+
+// CardMarkdown reads the markdown back out of the card JSON Card builds, and
+// of any card shaped like it — the renderer of a stored card walks the same
+// element.
+func CardMarkdown(cardJSON string) string {
+	var c cardBody
+	if json.Unmarshal([]byte(cardJSON), &c) != nil {
+		return ""
+	}
+	for _, e := range c.Body.Elements {
+		if e.Tag == "markdown" {
+			return e.Content
+		}
+	}
+	return ""
+}
 
 // Image is an Outgoing naming an already-uploaded image.
 func Image(key string) Outgoing { return Outgoing{ImageKey: key} }

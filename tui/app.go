@@ -943,6 +943,8 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	case suggestedMsg:
 		return m.onSuggested(msg)
+	case streamWrittenMsg:
+		return m.onStreamWritten(msg)
 	case aiChunkMsg:
 		return m.onAIChunk(msg)
 	case aiStartedMsg:
@@ -1268,7 +1270,8 @@ func (m Model) saveChatBox() tea.Cmd {
 func (m Model) quit() tea.Cmd {
 	cmds := []tea.Cmd{m.saveComposer()}
 	if m.aiP != nil {
-		cmds = append(cmds, m.aiP.stopAll(m.deps)...)
+		inner := m
+		cmds = append(cmds, m.aiP.stopAll(&inner)...)
 	}
 	cmds = slices.DeleteFunc(cmds, func(c tea.Cmd) bool { return c == nil })
 	return tea.Sequence(append(cmds, tea.Quit)...)
@@ -1793,6 +1796,13 @@ func (m Model) onInsertKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.setQuote(nil, false)
+		return m, nil
+	case "ctrl+s":
+		// The assistant's box alone: streaming into the chat is the one ask
+		// whose answer other people watch being written.
+		if m.side == sideAI {
+			return m.askStreamConfirm()
+		}
 		return m, nil
 	case "ctrl+o":
 		m.previewOpen = !m.previewOpen

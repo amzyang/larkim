@@ -78,7 +78,7 @@ type ExecClient struct {
 	Log *slog.Logger
 
 	once                    sync.Once
-	bg, beat, fg, discovery lane
+	bg, beat, fg, discovery, card lane
 	// calls numbers the invocations so a request line and its response line
 	// can be paired, which the lanes make necessary: several calls are in
 	// flight at once and their lines interleave.
@@ -102,6 +102,7 @@ func (c *ExecClient) lanes() {
 		c.beat = make(lane, beatLane)
 		c.fg = make(lane, interactiveLane)
 		c.discovery = make(lane, discoveryLane)
+		c.card = make(lane, cardLane)
 	})
 }
 
@@ -115,6 +116,8 @@ func (c *ExecClient) lane(ctx context.Context) lane {
 		return c.beat
 	case LaneDiscovery:
 		return c.discovery
+	case LaneCard:
+		return c.card
 	default:
 		return c.bg
 	}
@@ -1072,6 +1075,8 @@ func (o Outgoing) flags() []string {
 	switch {
 	case o.Post != "":
 		return []string{"--msg-type", "post", "--content", o.Post}
+	case o.Card != "":
+		return []string{"--msg-type", "interactive", "--content", o.Card}
 	case o.Markdown != "":
 		// Not --markdown: that flag rewrites H1-H3 into H4/H5 before sending,
 		// and the rewrite lands in what this client stores and draws.
@@ -1119,6 +1124,19 @@ func (c *ExecClient) Reply(ctx context.Context, messageID string, msg Outgoing, 
 		args = append(args, "--idempotency-key", idempotencyKey)
 	}
 	return c.sent(ctx, args...)
+}
+
+// PatchMessage replaces a message's content wholesale. The card rewrite path
+// has no lark-cli shortcut, so it walks the generic api command; the body
+// rides on stdin like every large payload.
+func (c *ExecClient) PatchMessage(ctx context.Context, messageID, content string) error {
+	body, err := json.Marshal(map[string]string{"content": content})
+	if err != nil {
+		return err
+	}
+	_, err = c.runInput(WithLane(ctx, LaneCard), "user", body,
+		"api", "PATCH", "/open-apis/im/v1/messages/"+messageID)
+	return err
 }
 
 // uploadRoot is where a file lark-cli may not read is staged before it is

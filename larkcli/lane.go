@@ -18,6 +18,10 @@ const (
 	LaneBeat
 	LaneInteractive
 	LaneDiscovery
+	// LaneCard is the streaming answer's line: one card rewrite at a time,
+	// because Feishu meters rewrites per message and has no sequence to put
+	// concurrent ones back in order with.
+	LaneCard
 )
 
 func (l Lane) String() string {
@@ -82,4 +86,5 @@ const (
 	beatLane        = 3
 	interactiveLane = 3
 	discoveryLane   = 6
+	cardLane        = 1
 )

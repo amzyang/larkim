@@ -132,6 +132,7 @@ func buildHelpEntries() []helpEntry {
 		{"ASSISTANT", "1…9", "put a snippet in the box — the offers the band lists under their digits, never asked on their own"},
 		{"ASSISTANT", "/", "at the start of the box: the snippet popup, narrowed the way chat names are"},
 		{"ASSISTANT", "Enter", "ask; the window, the anchor and the session so far go with the question"},
+		{"ASSISTANT", "ctrl+s", "ask with the answer streaming into the chat as one card, rewritten as it grows — y/n first"},
 		{"ASSISTANT", "j / k", "walk the turns; Enter or r puts the card under the cursor in the composer, R replies in its thread"},
 		{"ASSISTANT", "yy / Y", "copy the card under the cursor / the whole answer"},
 		{"ASSISTANT", ".", "redo the last answer from its own record — Retry, on one that failed or stopped"},

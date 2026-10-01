@@ -71,6 +71,8 @@ const (
 	confirmDeleteAI
 	// confirmAISend puts one of the assistant's cards on the wire.
 	confirmAISend
+	// confirmAIStream asks a question whose answer streams into the chat.
+	confirmAIStream
 )
 
 // confirmation is an action waiting on y or n. A zero value is nothing
@@ -83,6 +85,9 @@ type confirmation struct {
 	// aiSend is the card a confirmAISend is about. When its text names a
 	// local file, n is an answer too: send without the upload.
 	aiSend *aiSendPending
+	// aiStream is the question a confirmAIStream asks, held because the box
+	// it was typed in can move on before y lands.
+	aiStream string
 }
 
 // answerConfirm handles the key a pending confirmation is waiting on. ok is
@@ -112,6 +117,9 @@ func (m Model) answerConfirm(key string) (tea.Model, tea.Cmd, bool) {
 	case confirmAISend:
 		withFile := key == "y"
 		next, cmd := m.aiSendCard(*pending.aiSend, withFile)
+		return next, cmd, true
+	case confirmAIStream:
+		next, cmd := m.askAI(pending.aiStream, "", true)
 		return next, cmd, true
 	}
 	return m, nil, true
