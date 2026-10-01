@@ -279,12 +279,12 @@ func emojiInsert(e emoji.Emoji) string { return cmp.Or(e.Glyph, "["+e.Name()+"]"
 // writing area, so every key here is one the composer would otherwise have.
 func (m Model) onPumKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 	switch k.String() {
-	case "tab", "enter":
+	case "enter", "ctrl+y":
 		return m.acceptPum(), nil, true
-	case "down", "ctrl+n":
+	case "tab", "down", "ctrl+n":
 		m.pum.menu.move(1, m.pumRows())
 		return m, nil, true
-	case "up", "ctrl+p":
+	case "shift+tab", "up", "ctrl+p":
 		m.pum.menu.move(-1, m.pumRows())
 		return m, nil, true
 	case "esc":

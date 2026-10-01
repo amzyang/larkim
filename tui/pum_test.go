@@ -148,11 +148,30 @@ func TestPum_ClosesWhenNobodyAnswers(t *testing.T) {
 
 func TestPum_AcceptingAMentionWritesThePlainNameAndRemembersWho(t *testing.T) {
 	m := typeInto(newPumModel(t), "@zs")
-	mm, _ := m.onInsertKey(tea.KeyPressMsg{Code: tea.KeyTab})
+	mm, _ := m.onInsertKey(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = mm.(Model)
 
 	require.Equal(t, "@张三 ", m.input.Value())
 	require.Equal(t, map[string]string{"张三": "ou_a"}, m.picked)
+	require.False(t, m.pum.open())
+}
+
+func TestPum_TabAndShiftTabWalkRatherThanAccept(t *testing.T) {
+	m := typeInto(newPumModel(t), "@")
+	mm, _ := m.onInsertKey(tea.KeyPressMsg{Code: tea.KeyTab})
+	m = mm.(Model)
+	require.True(t, m.pum.open(), "tab walks the offers, it does not accept")
+	require.Equal(t, 1, m.pum.menu.idx)
+	mm, _ = m.onInsertKey(tea.KeyPressMsg{Code: tea.KeyTab, Mod: tea.ModShift})
+	m = mm.(Model)
+	require.Zero(t, m.pum.menu.idx, "shift+tab walks back")
+}
+
+func TestPum_CtrlYAccepts(t *testing.T) {
+	m := typeInto(newPumModel(t), "@zs")
+	mm, _ := m.onInsertKey(tea.KeyPressMsg{Code: 'y', Mod: tea.ModCtrl})
+	m = mm.(Model)
+	require.Equal(t, "@张三 ", m.input.Value())
 	require.False(t, m.pum.open())
 }
 
@@ -195,7 +214,7 @@ func TestPum_AcceptingMidDraftLeavesTheTailAlone(t *testing.T) {
 	m.takePum()
 	require.True(t, m.pum.open())
 
-	mm, _ := m.onInsertKey(tea.KeyPressMsg{Code: tea.KeyTab})
+	mm, _ := m.onInsertKey(tea.KeyPressMsg{Code: tea.KeyEnter})
 	require.Equal(t, "好的 @张三  你看下", mm.(Model).input.Value())
 }
 
@@ -203,7 +222,7 @@ func TestPum_AcceptingAnEmojiWithNoCharacterWritesTheBracketedName(t *testing.T)
 	m := typeInto(newPumModel(t), ":done")
 	require.True(t, m.pum.open())
 
-	mm, _ := m.onInsertKey(tea.KeyPressMsg{Code: tea.KeyTab})
+	mm, _ := m.onInsertKey(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = mm.(Model)
 	require.Equal(t, "[Done] ", m.input.Value(), "the spelling the client itself sends")
 	// The message list reads the bracketed form back as the emoji it names.
@@ -224,7 +243,7 @@ func TestPum_OpensOnTheBracketedFormTheClientSends(t *testing.T) {
 	m := typeInto(newPumModel(t), "[wancheng")
 	require.True(t, m.pum.open())
 
-	mm, _ := m.onInsertKey(tea.KeyPressMsg{Code: tea.KeyTab})
+	mm, _ := m.onInsertKey(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = mm.(Model)
 	require.Equal(t, "[Done] ", m.input.Value(), "the bracket is erased with the rest of the run")
 
@@ -254,7 +273,7 @@ func TestPum_OffersTheUnicodeEmojiFeishuHasNoAnswerFor(t *testing.T) {
 	require.True(t, m.pum.open())
 	require.NotContains(t, pumInfo(m), larkMark, "a character is not one of Lark's own")
 
-	mm, _ := m.onInsertKey(tea.KeyPressMsg{Code: tea.KeyTab})
+	mm, _ := m.onInsertKey(tea.KeyPressMsg{Code: tea.KeyEnter})
 	require.Equal(t, "🚀 ", mm.(Model).input.Value())
 }
 

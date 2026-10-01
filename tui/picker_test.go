@@ -172,6 +172,23 @@ func TestPicker_RemembersWhatWasChosen(t *testing.T) {
 	require.Equal(t, []string{"ROSE"}, m.emoji.Used())
 }
 
+func TestPicker_TabWalksAndShiftTabWalksBack(t *testing.T) {
+	m := press(t, pickerModel(t), "e")
+	m = press(t, m, "tab")
+	require.Equal(t, 1, m.picker.menu.idx, "tab walks one offer")
+	m = press(t, m, "shift+tab")
+	require.Zero(t, m.picker.menu.idx, "shift+tab walks back")
+	require.True(t, m.picker.moved, "the walk anchors the cursor against a rearranging answer")
+}
+
+func TestPicker_CtrlYAccepts(t *testing.T) {
+	m := press(t, pickerModel(t), "e", "m", "e", "i", "g", "u", "i")
+	require.Equal(t, "ROSE", reactKey(m, 0))
+	m = press(t, m, "ctrl+y")
+	require.Equal(t, modeNormal, m.mode)
+	require.Equal(t, []string{"ROSE"}, m.emoji.Used())
+}
+
 func TestPicker_ADigitPicksTheRowItIsDrawnBeside(t *testing.T) {
 	// The digit narrows nothing — "zan1" is no emoji's term — so the rule
 	// hands it to the row it names.

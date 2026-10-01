@@ -134,21 +134,22 @@ func (m Model) reactRows() int {
 }
 
 // onEmojiKey drives the chooser. The filter owns every key it can edit with,
-// so movement through the offers is on the arrows and the readline pair rather
-// than hjkl, and a digit is settled by the rule the menu's spec declares.
+// so movement through the offers is on the arrows and the readline pair —
+// with the tab pair, the key every other list here walks by — rather than
+// hjkl, and a digit is settled by the rule the menu's spec declares.
 func (m Model) onEmojiKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	rows := m.reactRows()
 	switch k.String() {
 	case "esc":
 		m.closePicker()
 		return m, nil
-	case "enter":
+	case "enter", "ctrl+y":
 		return m.chooseAt(m.picker.menu.idx)
-	case "up", "ctrl+p":
+	case "shift+tab", "up", "ctrl+p":
 		m.picker.moved = true
 		m.picker.menu.move(-1, rows)
 		return m, nil
-	case "down", "ctrl+n":
+	case "tab", "down", "ctrl+n":
 		m.picker.moved = true
 		m.picker.menu.move(1, rows)
 		return m, nil
