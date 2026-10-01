@@ -69,6 +69,8 @@ const (
 	confirmReEdit
 	// confirmDeleteAI drops an assistant session and its turns.
 	confirmDeleteAI
+	// confirmAISend puts one of the assistant's cards on the wire.
+	confirmAISend
 )
 
 // confirmation is an action waiting on y or n. A zero value is nothing
@@ -78,6 +80,9 @@ type confirmation struct {
 	messageID string
 	// aiSession is the assistant session a confirmDeleteAI names.
 	aiSession string
+	// aiSend is the card a confirmAISend is about. When its text names a
+	// local file, n is an answer too: send without the upload.
+	aiSend *aiSendPending
 }
 
 // answerConfirm handles the key a pending confirmation is waiting on. ok is
@@ -88,9 +93,11 @@ func (m Model) answerConfirm(key string) (tea.Model, tea.Cmd, bool) {
 	}
 	pending := m.confirm
 	m.confirm = confirmation{}
-	if key != "y" {
-		// Anything but y cancels, rather than only n: these are the answers
-		// where a slip costs something no undo reaches.
+	// Anything but y cancels, rather than only n: these are the answers
+	// where a slip costs something no undo reaches. The one exception is a
+	// card whose text names a local file — there n says send it without the
+	// upload, and only Esc says don't send.
+	if key != "y" && !(pending.kind == confirmAISend && pending.aiSend.file && key == "n") {
 		m.reEdit = nil
 		return m.notify("", false), nil, true
 	}
@@ -101,6 +108,10 @@ func (m Model) answerConfirm(key string) (tea.Model, tea.Cmd, bool) {
 		return m.notify("recalling…", false), recallCmd(m.deps, pending.messageID), true
 	case confirmDeleteAI:
 		next, cmd := m.deleteAI(pending.aiSession)
+		return next, cmd, true
+	case confirmAISend:
+		withFile := key == "y"
+		next, cmd := m.aiSendCard(*pending.aiSend, withFile)
 		return next, cmd, true
 	}
 	return m, nil, true

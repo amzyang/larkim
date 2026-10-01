@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -14,6 +15,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/amzyang/larkim/agentctx"
 	"github.com/amzyang/larkim/ai"
+	"github.com/amzyang/larkim/larkcli"
 	"github.com/amzyang/larkim/store"
 	"uuid"
 )
@@ -58,6 +60,10 @@ type aiPanel struct {
 	top    int
 	sel    int
 	pG     bool
+	// sending maps the outbox ids of cards put on the wire to the cards they
+	// came from, so the ✓ a successful send earns lands on the card that
+	// earned it.
+	sending map[string]aiAct
 	// follow sticks the viewport to the bottom while an answer streams, and
 	// is given up the moment a scroll says otherwise.
 	follow bool
@@ -105,6 +111,10 @@ type aiTurn struct {
 	answer string
 	err    string
 	at     time.Time
+	// sentAt marks the cards of this answer that were sent, and when: the ✓ a
+	// sent card shows until the panel closes. In-memory only — the wire, not
+	// the panel, is where a sent message's truth lives.
+	sentAt map[int]time.Time
 	ch     <-chan ai.Chunk
 	cancel context.CancelFunc
 }
@@ -255,10 +265,17 @@ func (m Model) openAI(chat string, fresh bool) (Model, tea.Cmd) {
 }
 
 // closeAI puts the column away and uncovers the frame it stood over, answer
-// streams included: they belong to their sessions, not to the pane.
+// streams included: they belong to their sessions, not to the pane. The ✓ a
+// sent card showed goes with the column — the wire is where a sent message's
+// truth lives now.
 func (m Model) closeAI() Model {
 	if m.aiP != nil {
 		m.aiP.open = false
+		for _, s := range m.aiP.allSessions() {
+			for _, t := range s.turns {
+				clear(t.sentAt)
+			}
+		}
 	}
 	// The box goes with the column, so a cursor parked in it steps back to
 	// the pane behind; the frame under the panel comes back focused, the way
@@ -708,6 +725,8 @@ const (
 	actCopy
 	actRegenerate
 	actStop
+	actSend
+	actReply
 )
 
 // aiAct names what an act runs on: the answer's turn, and which card of it
@@ -776,9 +795,10 @@ func (p *aiPanel) rebuild(m Model) {
 			}
 			act := aiAct{turn: t.id, card: cards}
 			cards++
+			sentWhen := t.sentAt[act.card]
 			add(aiRowOf(stDim.Render("┌─"), w), act)
 			addAll(m.cardBodyRows(seg.Text, w), act)
-			add(aiCardFoot(w, act), act)
+			add(aiCardFoot(w, act, t.anchor != nil, !sentWhen.IsZero(), sentWhen), act)
 		}
 	}
 	p.sel = clamp(p.sel, 0, max(0, len(p.rows)-1))
@@ -821,19 +841,29 @@ func (m Model) aiAnswerHeadRow(t *aiTurn, w int, last bool) msgRow {
 	return row
 }
 
-// aiCardFoot is the action row a finished card draws under itself. The
-// labels are the client's own words (Insert, Copy); Send and Reply join them
-// from their phase.
-func aiCardFoot(w int, a aiAct) msgRow {
+// aiCardFoot is the action row a finished card draws under itself: Send,
+// Reply (when its question had an anchor), Insert, Copy — the client's own
+// words — and the ✓ of a card that was sent, with the time it went at.
+func aiCardFoot(w int, a aiAct, anchored, sent bool, at time.Time) msgRow {
 	const lead = "└─ "
-	parts := []struct {
+	type actLabel struct {
 		label string
 		kind  aiActKind
-	}{{"Insert", actInsert}, {"Copy", actCopy}}
+	}
+	parts := []actLabel{{"Send", actSend}}
+	if anchored {
+		parts = append(parts, actLabel{"Reply", actReply})
+	}
+	parts = append(parts, actLabel{"Insert", actInsert}, actLabel{"Copy", actCopy})
 	x, line := lipgloss.Width(lead), lead
+	if sent {
+		mark := "✓ sent " + at.Format("15:04")
+		line += mark
+		x += lipgloss.Width(mark)
+	}
 	var zones []clickZone
 	for _, p := range parts {
-		if x > lipgloss.Width(lead) {
+		if len(line) > len(lead) {
 			line += " · "
 			x += 3
 		}
@@ -969,6 +999,124 @@ func (m Model) copyCard(a aiAct) (tea.Model, tea.Cmd) {
 	return m.notify("card copied", false), tea.SetClipboard(text)
 }
 
+// aiSendPending is one card waiting on its y/n. file says its text names a
+// local file, which turns n into "send without the upload" rather than
+// "don't send".
+type aiSendPending struct {
+	act   aiAct
+	reply bool
+	file  bool
+}
+
+// askSendAI arms the y/n a card's send asks for: writing to Feishu is the one
+// act here that other people see. The prompt names where the text goes and,
+// for a reply, to whom, shows its first line, and says when it mentions @All
+// or names a local file.
+func (m Model) askSendAI(a aiAct, reply bool) (tea.Model, tea.Cmd, bool) {
+	text, ok := m.cardText(a)
+	if !ok {
+		return m.notify("no card here", true), nil, true
+	}
+	_, t := m.aiP.findTurn(a.turn)
+	if reply && t.anchor == nil {
+		return m.notify("that question had no message to reply to", true), nil, true
+	}
+	plan, err := m.files.planDraft(text)
+	if err != nil {
+		return m.notify(err.Error(), true), nil, true
+	}
+	var asks []string
+	if reply {
+		asks = append(asks, "reply to "+displaySender(*t.anchor, m.deps.Self, m.suffixOf(t.anchor.SenderID)))
+	} else {
+		name, _ := m.chatName(m.aiP.chat)
+		asks = append(asks, "send to "+cmp.Or(name, m.aiP.chat))
+	}
+	asks = append(asks, firstDisplayLine(text))
+	if strings.Contains(text, allName) {
+		asks = append(asks, "mentions @All")
+	}
+	if plan.kind == kindFile {
+		asks = append(asks, "file "+cmp.Or(plan.file.key, filepath.Base(plan.file.local)))
+	}
+	// A name the roster cannot answer for stays text, and the reader should
+	// know it will: the destination is not the open chat.
+	if strings.Contains(text, "@") && m.aiP.chat != m.chatID {
+		asks = append(asks, "@names stay text")
+	}
+	m.confirm = confirmation{kind: confirmAISend,
+		aiSend: &aiSendPending{act: a, reply: reply, file: plan.kind == kindFile}}
+	return m.notify(strings.Join(asks, " · ")+"? y/n", false), nil, true
+}
+
+// aiSendCard puts a card on the wire through the same path a typed send
+// takes: the same conversion of the text, the same pending bubble, the same
+// . and x when it fails. withFile is the y/n choice when the text named a
+// local file: y sends it with the upload, n leaves the reference as text.
+func (m Model) aiSendCard(p aiSendPending, withFile bool) (tea.Model, tea.Cmd) {
+	a := p.act
+	text, ok := m.cardText(a)
+	if !ok {
+		return m.notify("no card here", true), nil
+	}
+	_, t := m.aiP.findTurn(a.turn)
+	dest, replyTo, inThread, threadID := m.aiP.chat, "", false, ""
+	if p.reply {
+		anchor := t.anchor
+		dest, replyTo = anchor.ChatID, anchor.MessageID
+		inThread, threadID = anchor.ThreadID != "", anchor.ThreadID
+	}
+	plan, err := m.files.planDraft(text)
+	if err != nil {
+		return m.notify(err.Error(), true), nil
+	}
+	if !withFile {
+		// No upload: the reference stays the text the reader can read.
+		plan = draftPlan{kind: kindText, body: text, send: larkcli.Text(text)}
+	}
+	// Names become tags only for the open chat, whose roster is the one
+	// loaded; anywhere else the name stays text.
+	if dest == m.chatID {
+		plan.send = m.tagMentions(plan.send)
+	}
+	it := outboxItem{localID: uuid.New().String(), chatID: dest,
+		replyTo: replyTo, inThread: inThread, threadID: threadID,
+		msgType: plan.kind.msgType(), send: plan.send, body: plan.body,
+		images: plan.uploads(), file: plan.file, createMs: time.Now().UnixMilli()}
+	cmd := m.sendItem(it)
+	m.enqueue(it)
+	m.refreshPanes()
+	if m.aiP.sending == nil {
+		m.aiP.sending = map[string]aiAct{}
+	}
+	m.aiP.sending[it.localID] = a
+	m.aiP.rebuild(m)
+	m.layout()
+	if m.aiOpen() {
+		return m.notify("sending…", false), cmd
+	}
+	return m.notify("", false), cmd
+}
+
+// markAISent is the ✓ an outbox send earns its card: called when the wire
+// answered for one of the panel's sends.
+func (m *Model) markAISent(localID string) {
+	a, ok := m.aiP.sending[localID]
+	if !ok {
+		return
+	}
+	delete(m.aiP.sending, localID)
+	_, t := m.aiP.findTurn(a.turn)
+	if t == nil {
+		return
+	}
+	if t.sentAt == nil {
+		t.sentAt = map[int]time.Time{}
+	}
+	t.sentAt[a.card] = time.Now()
+	m.aiP.rebuild(*m)
+}
+
 // copyAnswer copies the whole answer the cursor stands in — or the session's
 // last, when it stands in none — as the Markdown the agent wrote.
 func (m Model) copyAnswer() (tea.Model, tea.Cmd, bool) {
@@ -1024,6 +1172,12 @@ func (m Model) aiPress(a aiAct) (tea.Model, tea.Cmd) {
 		return m.insertCard(a, true)
 	case actCopy:
 		return m.copyCard(a)
+	case actSend:
+		next, cmd, _ := m.askSendAI(a, false)
+		return next, cmd
+	case actReply:
+		next, cmd, _ := m.askSendAI(a, true)
+		return next, cmd
 	case actRegenerate:
 		return m.regenerateAI()
 	case actStop:
@@ -1384,6 +1538,12 @@ func (m Model) onAIKey(s string) (Model, tea.Cmd, bool) {
 	case "x":
 		next, cmd := m.stopAI()
 		return next.(Model), cmd, true
+	case "s":
+		next, cmd, _ := m.askSendAI(p.cursorAct(), false)
+		return next.(Model), cmd, true
+	case "S":
+		next, cmd, _ := m.askSendAI(p.cursorAct(), true)
+		return next.(Model), cmd, true
 	case ".":
 		next, cmd := m.regenerateAI()
 		return next.(Model), cmd, true
@@ -1422,7 +1582,7 @@ func (m Model) onAIKey(s string) (Model, tea.Cmd, bool) {
 	case "D":
 		next, cmd, _ := m.askDeleteAI()
 		return next.(Model), cmd, true
-	case "s", "S", "e", "f", "C", "E", "t", "v", "1", "2", "3", "4", "5", "6", "7", "8", "9", "0":
+	case "e", "f", "C", "E", "t", "v", "1", "2", "3", "4", "5", "6", "7", "8", "9", "0":
 		// These act on a message, and no message is on screen here: the frame
 		// under the panel keeps its own until Esc uncovers it.
 		return m.notify("no message selected here — Esc uncovers the frame beneath", true), nil, true

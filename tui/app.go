@@ -1000,6 +1000,9 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if it != nil {
 			it.state, it.messageID = outSent, msg.messageID
 		}
+		if m.aiP != nil {
+			m.markAISent(msg.localID)
+		}
 		return m, ingestCmd(m.deps, msg.localID, msg.messageID)
 	case pastedMsg:
 		if msg.err != nil {

@@ -10,6 +10,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/amzyang/larkim/ai"
+	"github.com/amzyang/larkim/larkcli"
 	"github.com/amzyang/larkim/store"
 	"github.com/amzyang/larkim/sync"
 	"github.com/charmbracelet/x/ansi"
@@ -772,4 +773,177 @@ func TestRegenerate_RebuildsThePromptWithTheWindowCutAtAskTime(t *testing.T) {
 	require.NotContains(t, f.asks[1].prompt, "第一版答案", "the answer being replaced is not its own history")
 	require.Contains(t, f.asks[1].prompt, "<ask>\n总结一下\n</ask>", "the same question is asked")
 	require.Equal(t, aiAsking, t1.state)
+}
+
+// aiSendFixture is the AI fixture with a Fake client behind it, so a card's
+// send reaches something that answers.
+func aiSendFixture(t *testing.T, f *fakeAI) (Model, *larkcli.Fake) {
+	t.Helper()
+	c := larkcli.NewFake()
+	m := aiFixture(t, f)
+	m.deps.Client = c
+	return m, c
+}
+
+// s asks first, naming the chat, the first line of the text and its @All; y
+// posts exactly one message to the panel's chat, and the card earns its ✓.
+func TestSendCard_AsksFirstAndYPostsOnce(t *testing.T) {
+	f := newFakeAI()
+	m, c := aiSendFixture(t, f)
+	m, t1 := ask(t, m, "帮我回")
+	m = answerDone(t, m, t1, "<reply>\n今晚合 #4412。@All\n</reply>")
+	m.mode = modeNormal
+	m.areap().Blur()
+
+	out, _, _ := m.onAIKey("s")
+	m = out
+	require.Equal(t, confirmAISend, m.confirm.kind)
+	require.Contains(t, m.notice, "send to 平台组", "the prompt names the chat")
+	require.Contains(t, m.notice, "今晚合 #4412", "the prompt shows the first line")
+	require.Contains(t, m.notice, "@All", "the prompt says when it mentions @All")
+	require.Empty(t, c.Sent)
+
+	yout, ycmd, _ := m.answerConfirm("y")
+	m = yout.(Model)
+	require.Len(t, m.outbox, 1)
+	require.Equal(t, "oc_quiet", m.outbox[0].chatID)
+	require.Empty(t, m.outbox[0].replyTo, "a send posts a new message")
+	res := ycmd()
+	next, _ := m.Update(res)
+	m = next.(Model)
+	require.Len(t, c.Sent, 1, "y records exactly one send")
+	require.Contains(t, ansi.Strip(m.renderAI(m.bodyHeight())), "✓ sent",
+		"the card shows it went")
+
+	// Sending it again asks again.
+	out, _, _ = m.onAIKey("s")
+	m = out
+	require.Equal(t, confirmAISend, m.confirm.kind)
+}
+
+// n and Esc record no send at all.
+func TestSendCard_NAndEscSendNothing(t *testing.T) {
+	f := newFakeAI()
+	m, c := aiSendFixture(t, f)
+	m, t1 := ask(t, m, "帮我回")
+	m = answerDone(t, m, t1, "<reply>\n今晚合。\n</reply>")
+	m.mode = modeNormal
+	m.areap().Blur()
+
+	out, _, _ := m.onAIKey("s")
+	m = out
+	nout, _, _ := m.answerConfirm("n")
+	m = nout.(Model)
+	require.Empty(t, m.outbox)
+	require.Empty(t, c.Sent)
+
+	out, _, _ = m.onAIKey("s")
+	m = out
+	// Esc cancels through the ordinary key path: anything but y or n.
+	eout, _, _ := m.answerConfirm("esc")
+	m = eout.(Model)
+	require.Empty(t, m.outbox)
+	require.Empty(t, c.Sent)
+}
+
+// S replies to the question's anchor, inside its thread when it is in one.
+func TestReplyCard_RepliesToTheAnchorInItsThread(t *testing.T) {
+	f := newFakeAI()
+	m, c := aiSendFixture(t, f)
+	c.Messages["om_r"] = larkcli.RawMessage{MessageID: "om_r", ChatID: "oc_quiet"}
+	anchor := store.Message{MessageID: "om_r", ChatID: "oc_quiet", ThreadID: "omt_r",
+		MessagePosition: -1, SenderID: "ou_a", SenderName: "张三", Content: "发布单合了吗"}
+	m, t1 := askAnchored(t, m, &anchor, "怎么回")
+	m = answerDone(t, m, t1, "<reply>\n好的，明早合。\n</reply>")
+	m.mode = modeNormal
+	m.areap().Blur()
+
+	out, _, _ := m.onAIKey("S")
+	m = out
+	require.Contains(t, m.notice, "reply to 张三", "the prompt names whom")
+	yout, ycmd, _ := m.answerConfirm("y")
+	m = yout.(Model)
+	require.Len(t, m.outbox, 1)
+	require.Equal(t, "om_r", m.outbox[0].replyTo)
+	require.True(t, m.outbox[0].inThread, "a reply of a thread lands in the thread")
+	require.Equal(t, "omt_r", m.outbox[0].threadID)
+	res := ycmd()
+	next, _ := m.Update(res)
+	m = next.(Model)
+	require.Len(t, c.Sent, 1)
+	var sent larkcli.RawMessage
+	for _, x := range c.Messages {
+		if x.ParentID == "om_r" {
+			sent = x
+		}
+	}
+	require.NotEmpty(t, sent.ThreadID, "Feishu holds the reply inside a thread")
+}
+
+// A card whose text names a local file asks, and the answer is the reader's:
+// y sends it with the upload, n leaves the reference as text, and nothing
+// uploads without the y.
+func TestSendCard_ALocalFileIsTheReadersChoice(t *testing.T) {
+	f := newFakeAI()
+	m, c := aiSendFixture(t, f)
+	m.files = fakeFiles(map[string]int64{"/Users/linlan/发布说明.pdf": 2048})
+	card := "[发布说明.pdf](~/发布说明.pdf)"
+	m, t1 := ask(t, m, "转给他们")
+	m = answerDone(t, m, t1, "<reply>\n"+card+"\n</reply>")
+	m.mode = modeNormal
+	m.areap().Blur()
+
+	out, _, _ := m.onAIKey("s")
+	m = out
+	require.Contains(t, m.notice, "发布说明.pdf", "the prompt shows the file")
+
+	yout, ycmd, _ := m.answerConfirm("y")
+	m = yout.(Model)
+	require.Equal(t, "file", m.outbox[0].msgType, "y sends it with the upload")
+	res := ycmd()
+	next, _ := m.Update(res)
+	m = next.(Model)
+	require.Len(t, c.Sent, 1)
+
+	// Sending the same card again asks again, and n sends without the file:
+	// the reference stays text.
+	m.mode = modeNormal
+	m.areap().Blur()
+	out2, _, _ := m.onAIKey("s")
+	m = out2
+	nout, ncmd, _ := m.answerConfirm("n")
+	m = nout.(Model)
+	require.Equal(t, "text", m.outbox[1].msgType, "n sends the reference as text")
+	require.Empty(t, m.outbox[1].file.local)
+	res2 := ncmd()
+	next2, _ := m.Update(res2)
+	m = next2.(Model)
+	require.Len(t, c.Sent, 2)
+	require.Equal(t, card, m.outbox[1].send.Text, "the reference stays what the reader can read")
+}
+
+// A name resolves only when the destination is the open chat; anywhere else
+// it stays the text the reader can read.
+func TestSendCard_AnAtNameOutsideTheOpenChatStaysText(t *testing.T) {
+	f := newFakeAI()
+	m, c := aiSendFixture(t, f)
+	m, t1 := ask(t, m, "帮我回")
+	m = answerDone(t, m, t1, "<reply>\n@张三 收一下\n</reply>")
+	m.mode = modeNormal
+	m.areap().Blur()
+	// The card belongs to a chat the reader has since left.
+	m.aiP.chat = "oc_elsewhere"
+
+	out, _, _ := m.onAIKey("s")
+	m = out
+	require.Contains(t, m.notice, "@names stay text", "the prompt says so")
+	yout, ycmd, _ := m.answerConfirm("y")
+	m = yout.(Model)
+	require.Equal(t, "oc_elsewhere", m.outbox[0].chatID)
+	res := ycmd()
+	next, _ := m.Update(res)
+	m = next.(Model)
+	require.Len(t, c.Sent, 1)
+	require.NotContains(t, c.Sent[0].Text, "<at", "the name was never turned into a tag")
+	require.Contains(t, c.Sent[0].Text, "@张三")
 }
