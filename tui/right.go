@@ -117,7 +117,11 @@ func (m Model) openRight(f rightFrame) (Model, tea.Cmd) {
 // list, the way walking onto a chat opens its page without leaving the list;
 // only a container the reader asked for opens around them.
 func (m Model) openRightIn(f rightFrame, p pane) (Model, tea.Cmd) {
-	m.stopAI()
+	// The assistant column hides rather than stopping: its answers belong to
+	// their sessions and go on landing in them.
+	if m.aiP != nil {
+		m.aiP.open = false
+	}
 	m.infoOpen = false
 	m.rightStack = nil
 	m.focus = p

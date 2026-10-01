@@ -61,6 +61,14 @@ func TestForward_EveryInputTakesAPaste(t *testing.T) {
 	}{
 		{"composer", func(t *testing.T) Model { return press(t, pickerModel(t), "i") },
 			func(t *testing.T, m Model) { require.Equal(t, "平台", m.input.Value()) }},
+		{"ai prompt", func(t *testing.T) Model {
+			f := newFakeAI()
+			m := aiFixture(t, f)
+			return press(t, m, "a")
+		}, func(t *testing.T, m Model) {
+			require.Equal(t, "平台", m.aiP.input.Value())
+			require.False(t, m.pumShowing(), "a question completes against nothing")
+		}},
 		{"thread composer", func(t *testing.T) Model {
 			m := threadFrame(130, 30)
 			m.focus = paneThread

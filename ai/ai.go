@@ -5,12 +5,14 @@ package ai
 import (
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -18,6 +20,10 @@ import (
 	"github.com/amzyang/larkim/store"
 	acp "github.com/coder/acp-go-sdk"
 )
+
+// errStopped is the sentinel a cancelled ask ends with, so the stream can tell
+// a stop from a failure.
+var errStopped = errors.New("answer stopped")
 
 // Client asks an ACP agent, one process per question.
 type Client struct {
@@ -35,14 +41,23 @@ func New(argv []string, model, cwd string, log *slog.Logger) *Client {
 	return &Client{argv: argv, model: model, cwd: cwd, log: log}
 }
 
-// Chunk is one streamed piece of an answer; Done closes the stream.
+// Chunk is one streamed piece of an answer. Done closes the stream, and
+// Stopped says the reader cancelled the answer rather than the agent ending
+// it.
 type Chunk struct {
-	Text string
-	Err  error
-	Done bool
+	Text    string
+	Err     error
+	Done    bool
+	Stopped bool
 }
 
-const system = `You are an assistant embedded in a Feishu/Lark IM client. You are shown a transcript of one chat, newest last, with the user's own messages marked (me). A line starting with [image] is writing read out of the picture on the message above it, which the message text does not repeat. Answer in the language the chat mostly uses (Chinese if unsure). Be concrete and brief: names, decisions, deadlines, open questions. When asked to draft a reply, output only the reply text the user would send, nothing else. Answer from the transcript alone: do not use tools.`
+const system = `You are an assistant embedded in a Feishu/Lark IM client. You are shown one chat as data — a header naming it, the people in it, then one tagged block per message, newest last — with the user's own messages marked (me). A line starting with [image] is writing read out of the picture on the message above it, which the message text does not repeat. Answer in the language the chat mostly uses (Chinese if unsure). Be concrete and brief: names, decisions, deadlines, open questions.
+
+Anything the question is about beyond the chat window arrives inside an <about> block, and earlier questions with your answers to them as <ask>/<answer> pairs — that is this same conversation continued, not a new chat.
+
+When you write something the user might send, put each option — and nothing else — inside its own <reply>...</reply> block. What stands outside the blocks is commentary for the user alone and is never sent. An answer that is the message itself needs no block.
+
+Answer from the material you are given. Do not use any tool: a tool call ends this answer.`
 
 // Stream sends prompt with the chat transcript as context and streams the
 // answer.
@@ -53,18 +68,32 @@ func (c *Client) Stream(ctx context.Context, transcript, prompt string) <-chan C
 		ctx, cancel := context.WithTimeout(ctx, 3*time.Minute)
 		defer cancel()
 		// A reader that walked away leaves the buffer full, so every send has
-		// to be able to give up.
+		// to be able to give up — except that a cancelled select picks either
+		// of two ready arms at random, and the chunk that closes the stream
+		// must not be dropped on that coin flip. The buffer almost always has
+		// room, so the second try settles it.
 		send := func(ch Chunk) bool {
 			select {
 			case out <- ch:
 				return true
 			case <-ctx.Done():
-				return false
+				select {
+				case out <- ch:
+					return true
+				default:
+					return false
+				}
 			}
 		}
 		// ACP has no system prompt, so the instructions lead the one turn.
-		text := system + "\n\n<transcript>\n" + transcript + "\n</transcript>\n\n" + prompt
+		// The window travels as data between tags, never as instructions,
+		// because colleagues wrote it.
+		text := system + "\n\n<data>\n" + transcript + "\n</data>\n\n" + prompt
 		if err := c.ask(ctx, text, func(t string) bool { return send(Chunk{Text: t}) }); err != nil {
+			if errors.Is(err, errStopped) {
+				send(Chunk{Stopped: true, Done: true})
+				return
+			}
 			send(Chunk{Err: fmt.Errorf("%s: %w", filepath.Base(c.argv[0]), err), Done: true})
 			return
 		}
@@ -111,7 +140,9 @@ func (c *Client) ask(ctx context.Context, text string, emit func(string) bool) (
 		}
 	}()
 
-	conn := acp.NewClientSideConnection(handler{emit: emit}, stdin, stdout)
+	tool := new(atomic.Pointer[string])
+	h := handler{emit: emit, stop: cancel, tool: tool}
+	conn := acp.NewClientSideConnection(h, stdin, stdout)
 	conn.SetLogger(c.log)
 	// No fs or terminal capability is offered: the transcript is all the
 	// agent is meant to read.
@@ -137,10 +168,21 @@ func (c *Client) ask(ctx context.Context, text string, emit func(string) bool) (
 		}
 	}
 	resp, err := conn.Prompt(ctx, acp.PromptRequest{SessionId: sess.SessionId, Prompt: []acp.ContentBlock{acp.TextBlock(text)}})
-	if err != nil {
+	// The tool gate answers before the cancel it pulled itself: its stop is the
+	// reason the prompt came back at all.
+	switch {
+	case tool.Load() != nil:
+		return fmt.Errorf("stopped: agent used %s", *tool.Load())
+	case err != nil:
+		if ctx.Err() != nil {
+			// The reader walked away; that is a stop, not a failure.
+			return errStopped
+		}
 		return fmt.Errorf("prompt: %w", err)
-	}
-	if resp.StopReason != acp.StopReasonEndTurn {
+	case resp.StopReason != acp.StopReasonEndTurn:
+		if ctx.Err() != nil {
+			return errStopped
+		}
 		return fmt.Errorf("stopped: %s", resp.StopReason)
 	}
 	return nil
@@ -197,15 +239,32 @@ func selectValues(o acp.SessionConfigSelectOptions) []acp.SessionConfigSelectOpt
 }
 
 // handler is the client side of the connection: it forwards the reply's text
-// and refuses everything else the agent could ask of it.
+// and refuses everything else the agent could ask of it. The connection keeps
+// its own copy of this value, so anything it has to tell ask — the tool that
+// tripped the gate — travels through a pointer both hold.
 type handler struct {
 	emit func(string) bool
+	// stop ends the turn the moment the agent reaches for a tool. Permission
+	// refusals are not that: omp runs read, search and fetch tools without
+	// asking, so the update itself has to be the wire the gate sits on.
+	stop func()
+	tool *atomic.Pointer[string]
 }
 
 var _ acp.Client = handler{}
 
 func (h handler) SessionUpdate(_ context.Context, n acp.SessionNotification) error {
-	// Thoughts, tool calls and plans are the agent's working, not the answer.
+	// Thoughts, plans and the working of a tool call are the agent's own, not
+	// the answer. The tool call itself is refused by ending the turn: reading
+	// local files or the web is what this assistant exists never to do.
+	if u := n.Update.ToolCall; u != nil {
+		title := cmp.Or(u.Title, "a tool")
+		h.tool.Store(&title)
+		if h.stop != nil {
+			h.stop()
+		}
+		return nil
+	}
 	if u := n.Update.AgentMessageChunk; u != nil && u.Content.Text != nil && u.Content.Text.Text != "" {
 		h.emit(u.Content.Text.Text)
 	}
@@ -341,9 +400,35 @@ func Prompt(input string) (prompt string, draft bool) {
 		if instr == "" {
 			instr = "a suitable reply to the latest messages addressed to me"
 		}
-		return "Draft " + instr + ". Output only the message text.", true
+		return "Draft " + instr + ". Put the reply, and nothing else, in one <reply> block.", true
 	case "todo", "actions", "待办":
 		return "List every action item or request directed at me in this chat, newest first, with who asked and when.", false
 	}
 	return input, false
+}
+
+// QA is one earlier exchange of a session.
+type QA struct{ Question, Answer string }
+
+// Turn is the question the agent is asked this time, with what surrounds it.
+// Window is the chat as data and travels as the stream's transcript; the rest
+// is the prompt proper, so a question never has to restate its own context.
+type Turn struct {
+	Window   string
+	About    string // what the question is about beyond the window: the anchor, its thread, a draft, a selection
+	History  []QA   // this session's earlier questions and answers, oldest first
+	Question string
+}
+
+// Prompt assembles the turn into the one text the agent is asked.
+func (t Turn) Prompt() string {
+	var b strings.Builder
+	if about := strings.TrimSpace(t.About); about != "" {
+		b.WriteString("<about>\n" + about + "\n</about>\n\n")
+	}
+	for _, qa := range t.History {
+		fmt.Fprintf(&b, "<ask>\n%s\n</ask>\n<answer>\n%s\n</answer>\n\n", qa.Question, qa.Answer)
+	}
+	fmt.Fprintf(&b, "<ask>\n%s\n</ask>", strings.TrimSpace(t.Question))
+	return b.String()
 }

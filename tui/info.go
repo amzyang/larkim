@@ -31,7 +31,11 @@ func (m Model) toggleInfo() (tea.Model, tea.Cmd) {
 	}
 	keep := m.closeRight()
 	m.infoOpen, m.infoTop = true, 0
-	m.aiOpen = false
+	// The assistant column hides rather than stopping, the way a frame hides
+	// it: its answers go on landing in their sessions.
+	if m.aiP != nil {
+		m.aiP.open = false
+	}
 	m.layout()
 	cmds := []tea.Cmd{keep, loadInfo(m.deps, m.chatID)}
 	// A chat of two answers with the person across from it, whom the contacts

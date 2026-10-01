@@ -6,17 +6,18 @@ import (
 	"github.com/amzyang/larkim/store"
 )
 
-// composerSide names which of the two writing areas the keys go to: the one
-// under the message panes, or the one the right column carries. The client
-// gives its Thread sidebar an input of its own so a chat's half-written
-// message and an answer inside a thread can both exist; this is that, with one
-// band height shared between the two boxes so the panes above them end on the
-// same row.
+// composerSide names which of the writing areas the keys go to: the one
+// under the message panes, the one the right column carries, or the assistant
+// panel's own. The client gives its Thread sidebar an input of its own so a
+// chat's half-written message and an answer inside a thread can both exist;
+// the assistant's box is that again, with one band height shared between the
+// boxes so the panes above them end on the same row.
 type composerSide int
 
 const (
 	sideMain composerSide = iota
 	sideRight
+	sideAI
 )
 
 // threadPrompt is the client's own placeholder for the Thread sidebar's input.
@@ -46,28 +47,40 @@ func newComposer() textarea.Model {
 
 // area is the writing area the keys go to.
 func (m Model) area() textarea.Model {
-	if m.side == sideRight {
+	switch m.side {
+	case sideRight:
 		return m.rightInput
+	case sideAI:
+		if m.aiP != nil {
+			return m.aiP.input
+		}
 	}
 	return m.input
 }
 
 // areap is area for the callers that write into it.
 func (m *Model) areap() *textarea.Model {
-	if m.side == sideRight {
+	switch m.side {
+	case sideRight:
 		return &m.rightInput
+	case sideAI:
+		if m.aiP != nil {
+			return &m.aiP.input
+		}
 	}
 	return &m.input
 }
 
 // rightHasComposer says the frame in the right column is one an answer can be
-// written into. The client only puts an input in its Thread sidebar; its reply
-// Details pane has none, and larkim gives that frame one anyway because the
-// Details frame is where a reply tree is read, and an answer written from it
-// lands in the chat's flow beside the message it answers. A forwarded bundle
-// belongs to another chat and is refused outright.
+// written into. The assistant panel over the column carries its own box
+// instead, so while it is open the frame's is not on screen — hidden, not
+// closed, and its draft waits under it. The client only puts an input in its
+// Thread sidebar; its reply Details pane has none, and larkim gives that frame
+// one anyway because the Details frame is where a reply tree is read, and an
+// answer written from it lands in the chat's flow beside the message it
+// answers. A forwarded bundle belongs to another chat and is refused outright.
 func (m Model) rightHasComposer() bool {
-	return m.rightKind == rightThread || m.rightKind == rightReply
+	return !m.aiOpen() && (m.rightKind == rightThread || m.rightKind == rightReply)
 }
 
 // frameRoot is the message the visible frame's conversation started from: a
@@ -96,13 +109,17 @@ func (m Model) frameRoot() (store.Message, bool) {
 // quotedOn is the message a box draws a quote for: the one the reader aimed it
 // at, and none until they do. Where an unaimed box sends is its frame's
 // business, which rightTarget answers and the placeholder says out loud; a bar
-// the reader never asked for would be one ^r cannot take back.
+// the reader never asked for would be one ^r cannot take back. The assistant's
+// box answers no message: what it is about is the panel's context strip.
 func (m Model) quotedOn(s composerSide) (store.Message, bool) {
-	if s == sideRight {
+	switch s {
+	case sideRight:
 		if m.rightReply == nil {
 			return store.Message{}, false
 		}
 		return *m.rightReply, true
+	case sideAI:
+		return store.Message{}, false
 	}
 	if m.replyTo == nil {
 		return store.Message{}, false
@@ -122,20 +139,23 @@ func (m Model) rightTarget() (store.Message, bool) {
 
 // inThreadOn says an answer written in this box lands inside a thread.
 func (m Model) inThreadOn(s composerSide) bool {
-	if s == sideRight {
+	switch s {
+	case sideRight:
 		return m.rightKind == rightThread
+	case sideAI:
+		return false
 	}
 	return m.inThrd
 }
 
-// splitBand reports that both boxes are drawn, which is the only time the
-// reader can see one while writing in the other.
-func (m Model) splitBand() bool { return m.rightHasComposer() && !m.foldRight() }
+// splitBand reports that more than one box is drawn, which is the only time
+// the reader can see one while writing in another.
+func (m Model) splitBand() bool { return (m.aiOpen() || m.rightHasComposer()) && !m.foldRight() }
 
 // bandWidth is the width of one box, borders included. A box is exactly as
 // wide as the pane it stands under.
 func (m Model) bandWidth(s composerSide) int {
-	if s == sideRight || m.foldRight() {
+	if s == sideRight || s == sideAI || m.foldRight() {
 		return m.rightWidth()
 	}
 	return m.messagesWidth()
@@ -143,7 +163,7 @@ func (m Model) bandWidth(s composerSide) int {
 
 // bandLeft is the screen column a box starts at.
 func (m Model) bandLeft(s composerSide) int {
-	if s == sideRight {
+	if s == sideRight || s == sideAI {
 		return m.width - m.rightWidth()
 	}
 	return chatsWidth
@@ -151,13 +171,16 @@ func (m Model) bandLeft(s composerSide) int {
 
 // bandAt names the box drawn at a screen column, and whether one is drawn
 // there at all: the chats pane has none, and neither has a right column
-// showing a frame nothing can be written into.
+// showing something that carries no box of its own.
 func (m Model) bandAt(x int) (composerSide, bool) {
 	switch {
 	case x < chatsWidth:
 		return sideMain, false
 	case m.rightOpen() && x >= m.width-m.rightWidth():
-		if m.rightHasComposer() {
+		switch {
+		case m.aiOpen():
+			return sideAI, true
+		case m.rightHasComposer():
 			return sideRight, true
 		}
 		// Folded, the right column stands where the messages pane was, so the
@@ -172,7 +195,12 @@ func (m Model) bandAt(x int) (composerSide, bool) {
 // box under the messages pane — or, where the right column has taken that
 // pane's place, the only box on screen.
 func (m Model) cmdSide() composerSide {
-	if m.foldRight() && m.rightHasComposer() {
+	switch {
+	case m.aiOpen():
+		if m.foldRight() {
+			return sideAI
+		}
+	case m.foldRight() && m.rightHasComposer():
 		return sideRight
 	}
 	return sideMain
@@ -182,6 +210,8 @@ func (m Model) cmdSide() composerSide {
 // the reader is in. A press that comes from a box keeps that box.
 func (m *Model) pickSide() {
 	switch {
+	case m.focus == paneThread && m.aiOpen():
+		m.side = sideAI
 	case m.focus == paneThread && m.rightHasComposer():
 		m.side = sideRight
 	case m.focus != paneInput:
@@ -191,12 +221,23 @@ func (m *Model) pickSide() {
 
 // holdSide sends the keys back to a box that is on screen. A frame with no
 // input of its own leaves only the chat's box, and a folded column covers the
-// chat's box with its own.
+// chat's box with its own. The assistant panel is a column of its own: its box
+// is on screen while it is open, and the frame it covers loses its own for
+// that while.
 func (m *Model) holdSide() {
 	switch {
+	case m.side == sideAI && !m.aiOpen():
+		m.side = sideMain
+	case m.aiOpen():
+		switch {
+		case m.side == sideRight:
+			m.side = sideMain
+		case m.foldRight() && m.side == sideMain:
+			m.side = sideAI
+		}
 	case !m.rightHasComposer():
 		m.side = sideMain
-	case m.foldRight():
+	case m.foldRight() && m.side == sideMain:
 		m.side = sideRight
 	}
 }
@@ -209,11 +250,15 @@ func (m *Model) setQuote(replyTo *store.Message, inThread bool) {
 
 // setQuoteOn is setQuote with the box named, for the callers that mean the
 // chat's box whatever has the keys. The quote takes a row of its own, so every
-// pane above it is re-laid out.
+// pane above it is re-laid out. The assistant's box takes no quote at all;
+// ctrl+r there drops a context chip instead.
 func (m *Model) setQuoteOn(s composerSide, replyTo *store.Message, inThread bool) {
-	if s == sideRight {
+	switch s {
+	case sideRight:
 		m.rightReply = replyTo
-	} else {
+	case sideAI:
+		return
+	default:
 		m.replyTo, m.inThrd = replyTo, inThread
 	}
 	m.layout()

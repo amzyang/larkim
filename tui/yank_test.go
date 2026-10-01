@@ -243,8 +243,8 @@ func TestOnYankKey_RefusesWhereThereIsNoObjectUnderTheCursor(t *testing.T) {
 		model func() Model
 	}{
 		{"assistant pane", func() Model {
-			m := sized(120, 36)
-			m.focus, m.aiOpen = paneThread, true
+			m := aiOpenOn(sized(120, 36))
+			m.focus = paneThread
 			return m
 		}},
 		{"composer", func() Model { m := sized(120, 36); m.focus = paneInput; return m }},

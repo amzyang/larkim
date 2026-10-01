@@ -107,8 +107,8 @@ func TestStartVisual_UnsupportedWhereThereIsNothingToSelect(t *testing.T) {
 			return m
 		}},
 		{"assistant pane", func() Model {
-			m := base
-			m.focus, m.aiOpen = paneThread, true
+			m := aiOpenOn(base)
+			m.focus = paneThread
 			return m
 		}},
 		{"composer", func() Model { m := base; m.focus = paneInput; return m }},
@@ -135,8 +135,8 @@ func TestCopySelection_RefusesWhereThereIsNoContext(t *testing.T) {
 			return m
 		}},
 		{"assistant pane", func() Model {
-			m := sized(120, 36)
-			m.focus, m.aiOpen = paneThread, true
+			m := aiOpenOn(sized(120, 36))
+			m.focus = paneThread
 			return m
 		}},
 		{"composer", func() Model { m := sized(120, 36); m.focus = paneInput; return m }},

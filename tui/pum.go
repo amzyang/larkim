@@ -158,8 +158,14 @@ func lineBeforeCursor(ta textarea.Model) string {
 // takePum re-reads the run under the cursor and opens, refilters or closes the
 // popup. It runs after every key the writing area took, so the popup follows a
 // paste and a cursor move as readily as typing, and there is no second place
-// that has to know what a trigger looks like.
+// that has to know what a trigger looks like. The assistant's box is a
+// question, not a message: nothing in it completes, and its snippet popup is
+// its own.
 func (m *Model) takePum() {
+	if m.side == sideAI {
+		m.pum = pum{}
+		return
+	}
 	line := lineBeforeCursor(m.area())
 	if m.pum.dismissed != "" && strings.HasPrefix(line, m.pum.dismissed) {
 		m.pum = pum{dismissed: m.pum.dismissed}

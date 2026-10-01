@@ -52,6 +52,10 @@ type Input struct {
 	Threads map[string]int
 	// Res maps a message id to its attachments, local paths already absolute.
 	Res map[string][]store.Resource
+	// ImgText carries the writing read out of each message's pictures, keyed
+	// by message id. nil leaves each picture as the placeholder the renderer
+	// wrote; only the assistant fills it, so a clipboard copy is unchanged.
+	ImgText map[string][]string
 	// More is the follow-up command shown at the end; empty omits the block.
 	More string
 }
@@ -77,6 +81,24 @@ func Render(in Input) string {
 		b.WriteString(join(flatten(p.Name), email(p.Email), p.OpenID, marker(p, in.Self)) + "\n")
 	}
 
+	b.WriteString(blocks(in, tag))
+	if in.More != "" {
+		fmt.Fprintf(&b, "\n<!-- 更多上下文：\n%s -->\n", in.More)
+	}
+	return b.String()
+}
+
+// Blocks renders Input's message blocks alone, without the header or the
+// follow-up: the assistant's window is one document, and what a question is
+// about beyond it — the anchor, its thread, a selection — rides inside as
+// blocks of the same shape.
+func Blocks(in Input) string {
+	return blocks(in, "msg-"+in.Boundary)
+}
+
+// blocks writes one tagged block per message.
+func blocks(in Input, tag string) string {
+	var b strings.Builder
 	for _, m := range in.Messages {
 		text, raw := card.MessageText(m.ContentRaw, m.Content, m.RenderedAt > 0)
 		fmt.Fprintf(&b, "\n<%s %s>\n", tag, attrs(in, m, raw))
@@ -84,9 +106,6 @@ func Render(in Input) string {
 			b.WriteString(body + "\n")
 		}
 		fmt.Fprintf(&b, "</%s>\n", tag)
-	}
-	if in.More != "" {
-		fmt.Fprintf(&b, "\n<!-- 更多上下文：\n%s -->\n", in.More)
 	}
 	return b.String()
 }
@@ -143,7 +162,29 @@ func body(in Input, m store.Message, text string) string {
 	for _, r := range in.Res[m.MessageID] {
 		lines = append(lines, attachment(r))
 	}
+	// Appended rather than substituted into the placeholder, the way ai.Line
+	// does it: a picture inside a post or a card is named nowhere the
+	// rendering spells out, and this reaches those too.
+	for _, t := range in.ImgText[m.MessageID] {
+		if t = excerpt(t); t != "" {
+			lines = append(lines, "    [image] "+t)
+		}
+	}
 	return strings.Join(lines, "\n")
+}
+
+// imgTextMax bounds one picture's contribution in runes, the same cut ai.Line
+// makes: a guard against the screenshot of a whole document rather than a
+// summary.
+const imgTextMax = 1000
+
+// excerpt flattens a picture's regions onto one line and cuts it to length.
+func excerpt(s string) string {
+	s = strings.Join(strings.Fields(s), " ")
+	if r := []rune(s); len(r) > imgTextMax {
+		s = strings.TrimSpace(string(r[:imgTextMax])) + "…"
+	}
+	return s
 }
 
 // attachment describes one attachment; a file that never landed keeps its

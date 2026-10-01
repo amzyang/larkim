@@ -70,3 +70,24 @@ func TestLine_AnEditAwaitingItsRenderingReadsAsThePayload(t *testing.T) {
 	require.Contains(t, line, `张三: {"text":"四点开会"}`)
 	require.NotContains(t, line, "三点开会", "the rendering an edit replaced is no longer what the message says")
 }
+
+// Prompt assembles the whole turn, so a question never restates its own
+// context and the conversation so far reads as data.
+func TestTurnPrompt_AssemblesAboutHistoryAndQuestion(t *testing.T) {
+	p := Turn{
+		Window:   "chat: 平台组",
+		About:    "replying to om_1",
+		History:  []QA{{Question: "summarize", Answer: "we shipped"}, {Question: "who shipped?", Answer: "张三"}},
+		Question: " and the next step?",
+	}
+	require.Equal(t,
+		"<about>\nreplying to om_1\n</about>\n\n"+
+			"<ask>\nsummarize\n</ask>\n<answer>\nwe shipped\n</answer>\n\n"+
+			"<ask>\nwho shipped?\n</ask>\n<answer>\n张三\n</answer>\n\n"+
+			"<ask>\nand the next step?\n</ask>", p.Prompt())
+}
+
+// An empty about and no history leave the question alone.
+func TestTurnPrompt_BareQuestionStandsAlone(t *testing.T) {
+	require.Equal(t, "<ask>\n怎么回?\n</ask>", Turn{Question: " 怎么回? "}.Prompt())
+}

@@ -3,6 +3,7 @@ package tui
 import (
 	"strings"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/amzyang/larkim/store"
@@ -20,14 +21,20 @@ func wheelRight(m Model, n int) Model {
 }
 
 func TestWheel_RightPaneScrollsTheAssistantWhileItIsOpen(t *testing.T) {
-	m := withThread(sized(120, 36))
-	m.aiOpen, m.aiText = true, strings.Repeat("回答很长 answer\n", 80)
+	m := aiOpenOn(withThread(sized(120, 36)))
+	s := &aiSession{id: "s1", title: "问", turns: []*aiTurn{{
+		ask: "总结", answer: strings.Repeat("回答很长 answer\n", 80), state: aiDone, at: time.Now()}}}
+	m.aiP.sess = []*aiSession{s}
+	m.aiP.rebuild(m)
+	// Off the bottom, the way a reader who scrolled up is: the follow would
+	// otherwise pin the viewport and eat the wheel.
+	m.aiP.top, m.aiP.follow = 0, false
 	m.layout()
-	require.Greater(t, len(m.aiLines()), m.listHeight())
+	require.Greater(t, len(m.aiP.rows), m.listHeight())
 
 	m = wheelRight(m, 2)
 
-	require.Equal(t, 6, m.aiTop)
+	require.Equal(t, 6, m.aiP.top)
 	require.Equal(t, 0, m.threadTop, "the thread is behind the assistant, not under the pointer")
 }
 
@@ -56,6 +63,6 @@ func TestWheel_RightPaneScrollsTheThreadOtherwise(t *testing.T) {
 	m = wheelRight(m, 2)
 
 	require.Equal(t, 6, m.threadTop)
-	require.Equal(t, 0, m.aiTop)
+	require.Nil(t, m.aiP)
 	require.Equal(t, 0, m.infoTop)
 }

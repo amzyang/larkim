@@ -18,7 +18,6 @@ import (
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"github.com/amzyang/larkim/agentctx"
-	"github.com/amzyang/larkim/ai"
 	"github.com/amzyang/larkim/applink"
 	"github.com/amzyang/larkim/config"
 	"github.com/amzyang/larkim/emoji"
@@ -294,19 +293,11 @@ type Model struct {
 	// silent failure this field exists to make impossible.
 	pendingSelect pendingJump
 
-	// Assistant pane (replaces the thread pane while open).
-	aiOpen  bool
-	aiBusy  bool
-	aiDraft bool
-	aiTitle string
-	aiText  string
-	aiTop   int
-	aiChan  <-chan ai.Chunk
-	// aiGen numbers the streams. A wait is already armed when a pane closes,
-	// so one more chunk arrives for a stream nobody reads; the generation is
-	// what tells it apart from the answer now on screen.
-	aiGen    int
-	aiCancel context.CancelFunc
+	// aiP is the assistant column: sessions per chat, its own box, and the
+	// answers streaming into them. Held by pointer so an answer finishing
+	// while the column is hidden lands in the model still on screen; nil
+	// until the panel is first opened. See assistant.go.
+	aiP *aiPanel
 
 	// roster is who is in the open chat: what @ completes against, and what
 	// turns the names it inserted into tags on the way out.
@@ -954,6 +945,8 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.onSuggested(msg)
 	case aiChunkMsg:
 		return m.onAIChunk(msg)
+	case aiStartedMsg:
+		return m.onAIStarted(msg)
 	case threadLoadedMsg:
 		if m.rightKind != rightThread || msg.threadID != m.threadID {
 			return m, nil
@@ -1268,7 +1261,13 @@ func (m Model) saveChatBox() tea.Cmd {
 
 // quit ends the program, keeping what is in the composer. Sequence, not Batch:
 // Quit ends the program, and a draft written alongside it would race the exit.
-func (m Model) quit() tea.Cmd { return tea.Sequence(m.saveComposer(), tea.Quit) }
+// The answers in flight are cancelled first, since nothing else will.
+func (m Model) quit() tea.Cmd {
+	if m.aiP != nil {
+		m.aiP.stopAll()
+	}
+	return tea.Sequence(m.saveComposer(), tea.Quit)
+}
 
 // enterChat swaps the panes over to the chat whose page has just arrived.
 // Everything the previous chat owned — its thread, the message being quoted,
@@ -1284,6 +1283,13 @@ func (m *Model) enterChat() tea.Cmd {
 	// on arrival, so the next chat starts free to ask for its own history.
 	m.msgPullInFlight = false
 	keep := m.closeRight()
+	// The assistant column follows the reader the way the info pane does: the
+	// sessions on screen become the new chat's own, and an answer still
+	// streaming into the old one keeps landing there, out of sight.
+	if m.aiP != nil && m.aiP.open {
+		m.aiP.point(m.chatID)
+		m.aiP.rebuild(*m)
+	}
 	m.replyTo, m.inThrd = nil, false
 	m.selectCurrentChat()
 	return keep
@@ -1341,7 +1347,7 @@ func (m *Model) clearDotsAtCursor() bool {
 	switch {
 	case m.focus == paneMessages && !m.searching && m.feed == nil:
 		return m.clearBlockDots(m.msgs, m.msgIdx, m.msgStyleFor(m.messagesWidth()-2, m.meta))
-	case m.focus == paneThread && !m.aiOpen:
+	case m.focus == paneThread && !m.aiOpen():
 		return m.clearBlockDots(m.thread, m.threadIdx, m.msgStyleFor(m.rightWidth()-2, m.threadMeta))
 	}
 	return false
@@ -1643,7 +1649,7 @@ func (m Model) selectedZones() []clickZone {
 }
 
 // rightOpen reports whether the third pane (thread or assistant) is shown.
-func (m Model) rightOpen() bool { return m.threadOpen() || m.aiOpen || m.infoOpen }
+func (m Model) rightOpen() bool { return m.threadOpen() || m.aiOpen() || m.infoOpen }
 
 func (m Model) currentChat() (store.Chat, bool) {
 	if i := indexOfChat(m.chats, m.chatID); i >= 0 {
@@ -1759,7 +1765,14 @@ func (m Model) onInsertKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		// resized to it: they keep whatever sized last wrote, and the box would
 		// go on drawing rows the panes above it have taken back — which fitBlock
 		// makes room for by dropping the quote off the top.
-		if m.side == sideRight {
+		switch m.side {
+		case sideAI:
+			// The box belongs to the assistant column, so that is the pane
+			// behind it to step back into.
+			m.focus = paneThread
+			m.layout()
+			return m, nil
+		case sideRight:
 			// The box belongs to the right column, so that is the pane behind
 			// it to step back into.
 			m.focus = paneThread
@@ -1770,6 +1783,10 @@ func (m Model) onInsertKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		next.layout()
 		return next, keep
 	case "ctrl+r":
+		if m.side == sideAI {
+			m.dropAIChip()
+			return m, nil
+		}
 		m.setQuote(nil, false)
 		return m, nil
 	case "ctrl+o":
@@ -1889,6 +1906,14 @@ func (m Model) onNormalKey(s string) (tea.Model, tea.Cmd) {
 	// both answer the question and do something else.
 	if next, cmd, answered := m.answerConfirm(s); answered {
 		return next, cmd
+	}
+	// The assistant column takes its own keys before the switch below can
+	// hand any of them to the frame hidden under it: a message nobody can see
+	// is not a message to act on.
+	if m.focus == paneThread && m.aiOpen() {
+		if next, cmd, took := m.onAIKey(s); took {
+			return next, cmd
+		}
 	}
 	if m.pendingY {
 		out, cmd, _ := m.onYankKey(s)
@@ -2028,16 +2053,8 @@ func (m Model) onNormalKey(s string) (tea.Model, tea.Cmd) {
 		m.cmdcomp = cmdComp{}
 		focus := m.cmdline.Focus()
 		return m, focus
-	case "a":
-		m.mode = modeCommand
-		m.cmdline.Prompt = ":"
-		m.cmdline.SetValue("ai ")
-		m.cmdline.CursorEnd()
-		m.cmdcomp = cmdComp{}
-		m.takeCmdComp()
-		m.layout()
-		focus := m.cmdline.Focus()
-		return m, focus
+	case "a", "A":
+		return m.openAIKey(s == "A")
 	case "esc":
 		switch {
 		// A mark-all sweep is the one thing here that keeps acting after the
@@ -2047,7 +2064,7 @@ func (m Model) onNormalKey(s string) (tea.Model, tea.Cmd) {
 		// dot until the next sweep, which does find that chat again.
 		case m.applinks.swept > 0:
 			return m.clearApplinks().notify("stopped", false), nil
-		case m.aiOpen:
+		case m.aiOpen():
 			return m.closeAI(), nil
 		case m.searching:
 			m.closeSearch()
@@ -2088,6 +2105,10 @@ func (m Model) onVisualKey(s string) (tea.Model, tea.Cmd) {
 		return m.move(1)
 	case "k", "up":
 		return m.move(-1)
+	case "a":
+		// The range names its own context: the panel opens on it with the
+		// keys, and nothing is asked.
+		return m.openAISelection()
 	case "Y":
 		out, cmd := m.copySelection()
 		out.mode = modeNormal
@@ -2156,7 +2177,7 @@ func (m Model) yankSources() ([]yankSource, bool) {
 		// link to somewhere, and the client's own link for a row like this
 		// leads into the chat.
 		return []yankSource{chatYank(vis[m.chatIdx].chat)}, true
-	case m.focus == paneMessages, m.focus == paneThread && !m.aiOpen:
+	case m.focus == paneMessages, m.focus == paneThread && !m.aiOpen():
 		list := m.focusedList()
 		if m.searching && m.focus == paneMessages {
 			list = m.searchMessages()
@@ -2180,7 +2201,7 @@ func (m Model) startVisual() (tea.Model, tea.Cmd) {
 		return m.notify("press Enter to open the hit; v selects inside a chat", true), nil
 	}
 	selectable := m.focus == paneMessages && len(m.msgs) > 0 ||
-		m.focus == paneThread && !m.aiOpen && len(m.thread) > 0
+		m.focus == paneThread && !m.aiOpen() && len(m.thread) > 0
 	if !selectable {
 		return m.notify("v selects in the messages or thread pane", true), nil
 	}
@@ -2267,7 +2288,7 @@ func (m Model) copySelection() (Model, tea.Cmd) {
 		}
 		spec := copySpec{chatID: vis[m.chatIdx].chatID(), rng: agentctx.Range{Since: chatsCopyAge, Limit: chatsCopyLimit}}
 		return m.notify("copying…", false), copyContext(m.deps, spec)
-	case m.focus == paneMessages, m.focus == paneThread && !m.aiOpen:
+	case m.focus == paneMessages, m.focus == paneThread && !m.aiOpen():
 		list := m.focusedList()
 		if len(list) == 0 {
 			return m.notify("nothing to copy", true), nil
@@ -2338,8 +2359,8 @@ func (m Model) pageStep() int {
 // moves a cursor.
 func (m *Model) scrollRight(n int) bool {
 	switch {
-	case m.aiOpen:
-		m.aiTop = clamp(m.aiTop+n, 0, max(0, len(m.aiLines())-m.listHeight()))
+	case m.aiOpen():
+		m.aiP.scroll(n, m.listHeight())
 	case m.infoOpen:
 		m.infoTop = clamp(m.infoTop+n, 0, max(0, len(m.infoLines(m.rightWidth()-2))-m.listHeight()))
 	default:
@@ -2535,8 +2556,14 @@ func (m Model) resumeInsert() (tea.Model, tea.Cmd) {
 
 // replan re-resolves the draft after anything that can change it. The lint
 // reads the body mentions have already been resolved in, so a name the
-// composer did place draws no warning about not placing it.
+// composer did place draws no warning about not placing it. The assistant's
+// box holds a question, not a message: there is nothing to plan, and the
+// chat's own plan waits untouched for its box back.
 func (m *Model) replan() {
+	if m.side == sideAI {
+		m.draft, m.draftErr, m.draftLint = draftPlan{}, nil, nil
+		return
+	}
 	m.draft, m.draftErr = m.files.planDraft(m.area().Value())
 	m.draftLint = larkmd.Lint(m.tagMentions(m.draft.send).Markdown)
 }
@@ -2544,6 +2571,9 @@ func (m *Model) replan() {
 // submit puts the draft on screen before it puts it on the wire: the bubble
 // is what says the message went, so nothing holds a second one back either.
 func (m Model) submit() (tea.Model, tea.Cmd) {
+	if m.side == sideAI {
+		return m.submitAI()
+	}
 	text := strings.TrimSpace(m.area().Value())
 	if text == "" {
 		return m, nil
@@ -2743,7 +2773,7 @@ func (m Model) runCommand(line string) (tea.Model, tea.Cmd) {
 	case "react":
 		return m.runReact(rest)
 	case "ai":
-		return m.startAI(rest)
+		return m.askCommand(rest)
 	case "sync":
 		// A tick moves the global cursors, which belong to the sweep alone.
 		if !m.deps.Embedded {
@@ -2793,67 +2823,10 @@ func (m Model) runReact(arg string) (tea.Model, tea.Cmd) {
 
 // --- assistant ------------------------------------------------------------
 
-func (m Model) startAI(input string) (tea.Model, tea.Cmd) {
-	if m.ai == nil {
-		return m.notify("assistant off: "+m.agentName()+" not found (config ai.agent)", true), nil
-	}
-	if m.chatID == "" || len(m.msgs) == 0 {
-		return m.notify("open a chat with messages first", true), nil
-	}
-	if m.aiBusy {
-		return m.notify("assistant is still answering", true), nil
-	}
-	prompt, draft := ai.Prompt(input)
-	n := m.cfg.AI.Context
-	if n <= 0 || n > len(m.msgs) {
-		n = len(m.msgs)
-	}
-	transcript := ai.Transcript(m.transcriptName(), m.msgs[len(m.msgs)-n:], m.deps.Self, m.meta.imgText)
-	keep := m.closeRight()
-	m.stopAI()
-	m.aiOpen, m.aiBusy, m.aiDraft = true, true, draft
-	m.aiTitle = cmp.Or(strings.TrimSpace(input), "summary")
-	m.aiText, m.aiTop = "", 0
-	m.focus = paneThread
-	m.layout()
-	ctx, cancel := context.WithCancel(context.Background())
-	m.aiCancel = cancel
-	m.aiChan = m.ai.Stream(ctx, transcript, prompt)
-	return m.notify("asking "+m.agentName()+"…", false), tea.Batch(keep, waitForAI(m.aiGen, m.aiChan))
-}
-
 // agentName is the program ai.agent starts, as the status line names it.
 func (m Model) agentName() string {
 	name, _, _ := strings.Cut(strings.TrimSpace(m.cfg.AI.Agent), " ")
 	return filepath.Base(name)
-}
-
-func (m Model) onAIChunk(msg aiChunkMsg) (tea.Model, tea.Cmd) {
-	if msg.gen != m.aiGen {
-		return m, nil
-	}
-	c := msg.chunk
-	if c.Err != nil {
-		m.releaseAI()
-		m.aiText += "\n\n" + c.Err.Error()
-		return m.notify("assistant failed", true), nil
-	}
-	m.aiText += c.Text
-	if !c.Done {
-		// Follow the stream unless the user scrolled up.
-		bottom := max(0, len(m.aiLines())-m.listHeight())
-		if m.aiTop >= bottom-3 {
-			m.aiTop = bottom
-		}
-		return m, waitForAI(m.aiGen, m.aiChan)
-	}
-	m.releaseAI()
-	if m.aiDraft && strings.TrimSpace(m.aiText) != "" {
-		m.areap().SetValue(strings.TrimSpace(m.aiText))
-		m.replan()
-		return m.notify("draft placed in the composer: i to edit, Enter to send", false), nil
-	}
-	return m.notify("", false), nil
 }
 
 // focusMessages moves focus to the messages pane; on a folded layout the
@@ -2862,42 +2835,16 @@ func (m Model) focusMessages() (Model, tea.Cmd) {
 	var keep tea.Cmd
 	if m.foldRight() {
 		// The reader is leaving the column, not stepping back through it, so
-		// the whole stack goes rather than one frame.
+		// the whole stack goes rather than one frame. The assistant column
+		// hides with it; its answers run on into their sessions.
 		keep = m.closeRight()
-		m.stopAI()
+		if m.aiP != nil {
+			m.aiP.open = false
+		}
 		m.layout()
 	}
 	m.focus = paneMessages
 	return m, keep
-}
-
-// stopAI drops the answer in flight. The request is cancelled so an abandoned
-// stream stops costing tokens, and the generation moves on so the wait already
-// armed on the old channel retires instead of re-arming on the nil one this
-// leaves behind.
-func (m *Model) stopAI() {
-	m.releaseAI()
-	m.aiOpen, m.aiChan = false, nil
-	m.aiGen++
-}
-
-// releaseAI retires the request once its stream has ended; the pane stays as
-// it is, because the answer in it is what the reader asked for.
-func (m *Model) releaseAI() {
-	m.aiBusy = false
-	if m.aiCancel != nil {
-		m.aiCancel()
-		m.aiCancel = nil
-	}
-}
-
-func (m Model) closeAI() Model {
-	m.stopAI()
-	if m.focus == paneThread {
-		m.focus = paneMessages
-	}
-	m.layout()
-	return m
 }
 
 // --- mouse ----------------------------------------------------------------
@@ -2983,6 +2930,11 @@ func (m Model) onClick(ms tea.Mouse) (tea.Model, tea.Cmd) {
 			}
 		}
 	case paneThread:
+		// The assistant column draws over the frame: its rows are its own,
+		// and nothing under them may answer a click until it is uncovered.
+		if m.aiOpen() {
+			return m, nil
+		}
 		if z, ok := zoneAt(m.threadRows, m.threadTop+row, ms.X-(m.width-m.rightWidth())-1); ok {
 			return m.pressZone(paneThread, m.threadRows, m.threadTop+row, z)
 		}

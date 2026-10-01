@@ -84,6 +84,12 @@ func (a *fakeAgent) Prompt(ctx context.Context, p acp.PromptRequest) (acp.Prompt
 		return acp.PromptResponse{}, ctx.Err()
 	case "refuse":
 		return acp.PromptResponse{StopReason: acp.StopReasonRefusal}, nil
+	case "tool":
+		say(acp.UpdateAgentMessageText("let me look at "))
+		say(acp.SessionUpdate{ToolCall: &acp.SessionUpdateToolCall{
+			ToolCallId: "t1", Title: "$ cat ~/.ssh/id_rsa", Kind: acp.ToolKindExecute, Status: acp.ToolCallStatusPending}})
+		<-ctx.Done()
+		return acp.PromptResponse{}, ctx.Err()
 	}
 	say(acp.UpdateAgentThoughtText("private working"))
 	perm, err := a.conn.RequestPermission(ctx, acp.RequestPermissionRequest{SessionId: p.SessionId,
@@ -103,7 +109,7 @@ func (a *fakeAgent) Prompt(ctx context.Context, p acp.PromptRequest) (acp.Prompt
 	say(acp.UpdateAgentMessageText("model=" + a.model))
 	say(acp.UpdateAgentMessageText(" permission=" + outcome))
 	say(acp.UpdateAgentMessageText(fmt.Sprintf(" system=%t transcript=%t",
-		strings.HasPrefix(prompt, system), strings.Contains(prompt, "<transcript>\nchat: 平台组\n</transcript>"))))
+		strings.HasPrefix(prompt, system), strings.Contains(prompt, "<data>\nchat: 平台组\n</data>"))))
 	return acp.PromptResponse{StopReason: acp.StopReasonEndTurn}, nil
 }
 
@@ -185,6 +191,44 @@ func TestStream_AStopOtherThanEndTurnIsAnError(t *testing.T) {
 	c := fakeClient(t, "refuse", "")
 	_, end := drain(t, c.Stream(t.Context(), "chat: 平台组", "Summarize"))
 	require.ErrorContains(t, end.Err, "stopped: refusal")
+}
+
+// The permission refusals are not the gate: omp runs read and fetch tools
+// without asking, so the tool call itself has to end the answer.
+func TestStream_AToolCallEndsTheAnswer(t *testing.T) {
+	c := fakeClient(t, "tool", "")
+	text, end := drain(t, c.Stream(t.Context(), "chat: 平台组", "Summarize"))
+	require.Equal(t, "let me look at ", text, "what arrived before the tool call is kept")
+	require.ErrorContains(t, end.Err, "stopped: agent used $ cat ~/.ssh/id_rsa")
+}
+
+// A reader cancelling mid-answer is a stop, not a failure: the turn shows
+// "stopped" and offers Retry rather than an error.
+func TestStream_CancellingEndsAsAStop(t *testing.T) {
+	c := fakeClient(t, "hang", "")
+	ctx, cancel := context.WithCancel(t.Context())
+	ch := c.Stream(ctx, "chat: 平台组", "Summarize")
+	require.Equal(t, "thinking about it", (<-ch).Text)
+	cancel()
+	end := drainRest(t, ch)
+	require.NoError(t, end.Err)
+	require.True(t, end.Stopped)
+}
+
+// drainRest reads what is left of a stream whose first chunk was taken.
+func drainRest(t *testing.T, ch <-chan Chunk) Chunk {
+	t.Helper()
+	timeout := time.After(10 * time.Second)
+	for {
+		select {
+		case c, ok := <-ch:
+			if c.Done || !ok {
+				return c
+			}
+		case <-timeout:
+			t.Fatal("stream did not finish")
+		}
+	}
 }
 
 func TestStream_AnAgentThatDiesSaysWhyThroughItsStderr(t *testing.T) {

@@ -220,7 +220,7 @@ type (
 	errMsg        struct{ err error }
 	noticeMsg     struct{ text string }
 	aiChunkMsg    struct {
-		gen   int
+		turn  string
 		chunk ai.Chunk
 	}
 	searchMsg struct {
@@ -444,13 +444,16 @@ func localSearch(d Deps, chats []store.Chat, query string, gen int) tea.Cmd {
 	}
 }
 
-func waitForAI(gen int, ch <-chan ai.Chunk) tea.Cmd {
+// waitForAI reads one piece of the answer owed to turn. A chunk naming a turn
+// the panel no longer holds is dropped by the handler, which is what retires a
+// stream whose session went away.
+func waitForAI(turn string, ch <-chan ai.Chunk) tea.Cmd {
 	return func() tea.Msg {
 		c, ok := <-ch
 		if !ok {
-			return aiChunkMsg{gen: gen, chunk: ai.Chunk{Done: true}}
+			return aiChunkMsg{turn: turn, chunk: ai.Chunk{Done: true}}
 		}
-		return aiChunkMsg{gen: gen, chunk: c}
+		return aiChunkMsg{turn: turn, chunk: c}
 	}
 }
 

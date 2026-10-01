@@ -196,6 +196,9 @@ func (m *Model) layout() {
 	m.holdSide()
 	m.input.SetWidth(max(10, m.bandWidth(sideMain)-2))
 	m.rightInput.SetWidth(max(10, m.bandWidth(sideRight)-2))
+	if m.aiP != nil {
+		m.aiP.input.SetWidth(max(10, m.bandWidth(sideAI)-2))
+	}
 	// A prompt stands where a quote would, so it is there only while the box
 	// is answering its frame rather than a message in it. A Thread is answered
 	// without naming anything; a reply tree's answer lands in the chat's flow,
@@ -235,9 +238,17 @@ func (m *Model) layout() {
 
 // sized gives a box's writing area its share of the band.
 func (m *Model) sized(s composerSide, rows composerRows) {
-	ta := &m.input
-	if s == sideRight {
+	var ta *textarea.Model
+	switch s {
+	case sideRight:
 		ta = &m.rightInput
+	case sideAI:
+		if m.aiP == nil {
+			return
+		}
+		ta = &m.aiP.input
+	default:
+		ta = &m.input
 	}
 	ta.SetHeight(m.textHeight(s, rows))
 }
@@ -476,14 +487,8 @@ func searchRowText(h searchHit) string {
 	return line
 }
 
-// aiLines wraps the assistant's answer to the right pane.
-func (m Model) aiLines() []string {
-	text := m.aiText
-	if text == "" && m.aiBusy {
-		text = "…"
-	}
-	return wrap(text, m.rightWidth()-2)
-}
+// aiLines went with the one-shot pane; the column draws its turns as rows now
+// — see assistant.go.
 
 func (m *Model) rebuildThread() {
 	if !m.threadOpen() {
@@ -790,7 +795,7 @@ func (m Model) View() tea.View {
 		cols = append(cols, m.renderMessages(m.bodyHeight())+"\n"+m.renderBand(sideMain))
 	}
 	switch {
-	case m.aiOpen:
+	case m.aiOpen():
 		cols = append(cols, m.rightColumn(m.renderAI))
 	case m.infoOpen:
 		cols = append(cols, m.rightColumn(m.renderInfo))
@@ -988,21 +993,7 @@ func (m Model) renderMessages(h int) string {
 }
 
 func (m Model) renderAI(h int) string {
-	w := m.rightWidth() - 2
-	lines := make([]string, 0, h)
-	state := ""
-	if m.aiBusy {
-		state = stDim.Render(" (streaming)")
-	}
-	lines = append(lines, fit(stBold.Render("AI · ")+truncate(m.aiTitle, w-14)+state, w))
-	body := m.aiLines()
-	for i := m.aiTop; i < len(body) && len(lines) < h; i++ {
-		lines = append(lines, fit(body[i], w))
-	}
-	for len(lines) < h {
-		lines = append(lines, fit("", w))
-	}
-	return paneStyle(m.focus == paneThread).Height(h).Render(strings.Join(lines, "\n"))
+	return m.aiP.renderAI(m, h)
 }
 
 func (m Model) renderHeader(w int) string {
@@ -1119,8 +1110,13 @@ func (m Model) renderInput(s composerSide) string {
 		return paneStyle(true).Height(h).Render(fitBlock(strings.Join(rows, "\n"), w, h))
 	}
 	ta := m.input
-	if s == sideRight {
+	switch s {
+	case sideRight:
 		ta = m.rightInput
+	case sideAI:
+		if m.aiP != nil {
+			ta = m.aiP.input
+		}
 	}
 	content := strings.Join(append(m.composerAbove(s, w), ta.View()), "\n")
 	if s == m.side && m.composerRows().badge > 0 {
@@ -1145,12 +1141,15 @@ func (m Model) renderBand(s composerSide) string {
 	return m.renderInput(s)
 }
 
-// rightColumn draws the right pane with whatever stands under it: its own box
-// when the frame has one, the chat's box when the column is standing in for
-// the messages pane, and nothing at all otherwise — in which case the pane
-// runs to the status bar the way the chats pane does.
+// rightColumn draws the right pane with whatever stands under it: the
+// assistant panel's own box, the frame's box when the column carries one, the
+// chat's box when the column is standing in for the messages pane, and nothing
+// at all otherwise — in which case the pane runs to the status bar the way the
+// chats pane does.
 func (m Model) rightColumn(render func(int) string) string {
 	switch {
+	case m.aiOpen():
+		return render(m.bodyHeight()) + "\n" + m.renderBand(sideAI)
 	case m.rightHasComposer():
 		return render(m.bodyHeight()) + "\n" + m.renderBand(sideRight)
 	case m.foldRight():
@@ -1171,8 +1170,12 @@ const (
 // renderBadge names the message type the draft will be sent as, so the
 // composer's choice is never a surprise Enter springs on the reader. Outside
 // insert mode the row names the key that opens it instead of the keys that
-// send.
+// send. The assistant's box asks rather than sends, so its row says that.
 func (m Model) renderBadge(w int) string {
+	if m.side == sideAI {
+		return padBetween(stChipEdge.Render(chipLeft)+stChip.Render("AI")+stChipEdge.Render(chipRight),
+			stDim.Render("Enter ask · Esc back"), w)
+	}
 	left := stChipEdge.Render(chipLeft) + stChip.Render(m.draft.kind.msgType()) + stChipEdge.Render(chipRight)
 	hint := stDim.Render(composerHint)
 	switch {
