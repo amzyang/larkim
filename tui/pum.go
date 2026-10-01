@@ -11,6 +11,7 @@ import (
 	"github.com/amzyang/larkim/emoji"
 	"github.com/amzyang/larkim/fuzzy"
 	"github.com/amzyang/larkim/larkmd"
+	"github.com/amzyang/larkim/store"
 )
 
 // pumKind is what a completion run completes.
@@ -53,12 +54,14 @@ type pumHit struct {
 	// id is the open id a mention names, and name is what picked is keyed by.
 	// Both are empty for an emoji.
 	id, name string
-	// emoji is set only for an emoji offer, for the icon column the row opens
-	// with. A mention has no picture.
-	emoji emoji.Emoji
-	// label is the row's words, with the runes the query landed on already
-	// marked.
-	label string
+	// mark is the runes of name the query landed on.
+	mark []int
+	// person is who a mention names; zero for @All and for an emoji.
+	person store.Contact
+	// face is a mention's avatar: the person's, or the chat's for @All.
+	face offerIcon
+	// emoji is set only for an emoji offer.
+	emoji emoji.Hit
 }
 
 // pum is the completion popup standing over the writing area. It is not a mode:
@@ -67,9 +70,7 @@ type pumHit struct {
 // that takes the box. A zero value is closed.
 type pum struct {
 	run  pumRun
-	hits []pumHit
-	idx  int
-	top  int
+	menu menu[pumHit]
 	// dismissed is the line Esc closed the popup on. Typing further along that
 	// same line leaves it closed: a reader who dismissed the popup meant the
 	// colon literally, and one that came back on the next keystroke would be
@@ -77,15 +78,12 @@ type pum struct {
 	dismissed string
 }
 
-func (p pum) open() bool { return len(p.hits) > 0 }
+func (p pum) open() bool { return p.menu.open() }
 
 // showing reports whether the popup has room to be drawn. A popup nobody can
 // see must not be taking Enter: on a terminal too short to spare it a row, the
 // composer keeps every key it has.
 func (m Model) pumShowing() bool { return m.pumRows() > 0 }
-
-// move walks the list and scrolls to keep the cursor on screen.
-func (p *pum) move(d, rows int) { moveCursor(&p.idx, &p.top, d, len(p.hits), rows) }
 
 // pumKindOf reports which completion a rune opens, if any.
 func pumKindOf(r rune) (pumKind, bool) {
@@ -177,7 +175,28 @@ func (m *Model) takePum() {
 	if m.pum.open() && run == m.pum.run {
 		return
 	}
-	m.pum = pum{run: run, hits: m.pumHits(run)}
+	m.pum = pum{run: run, menu: fillMenu(m.pumHits(run), pumSpec)}
+}
+
+// pumSpec draws an offer: an emoji as its picture and name, a person by name,
+// with what tells two of them apart in the box beside the list.
+var pumSpec = menuSpec[pumHit]{
+	row: func(h pumHit) offer {
+		if h.emoji.Emoji.Key != "" {
+			return offer{icon: emojiIcon(h.emoji.Emoji), name: stBold.Render(h.emoji.Emoji.Name())}
+		}
+		name := markName(h.name, h.mark, stBold)
+		if h.person.IsBot {
+			name += botBadge
+		}
+		return offer{icon: h.face, name: name}
+	},
+	info: func(h pumHit) []string {
+		if h.emoji.Emoji.Key != "" {
+			return emojiInfo(h.emoji)
+		}
+		return infoLines(h.person.Department, h.person.Email)
+	},
 }
 
 // closePum dismisses the popup for the rest of the run the reader is on.
@@ -208,25 +227,20 @@ func (m Model) pumHits(run pumRun) []pumHit {
 func (m Model) mentionHits(query string) []pumHit {
 	var out []pumHit
 	ix := fuzzy.NewIndex()
-	keep := func(id, name string, bot bool) {
-		mark, hit := ix.Match(id, name, query)
-		if !hit {
-			return
+	keep := func(id, name string, person store.Contact, face offerIcon) {
+		if mark, hit := ix.Match(id, name, query); hit {
+			out = append(out, pumHit{insert: "@" + name, id: id, name: name, mark: mark, person: person, face: face})
 		}
-		label := markName(name, mark, stBold)
-		if bot {
-			label += botBadge
-		}
-		out = append(out, pumHit{insert: "@" + name, id: id, name: name, label: label})
 	}
 	if c, ok := m.currentChat(); ok && c.ChatMode != "p2p" {
-		keep(allKey, strings.TrimPrefix(allName, "@"), false)
+		// @All reaches the whole group, so it wears the group's face.
+		keep(allKey, strings.TrimPrefix(allName, "@"), store.Contact{}, faceIcon(c.AvatarSeed(), c.Name, c.AvatarFile()))
 	}
 	for _, c := range m.roster {
 		if c.Name == "" {
 			continue
 		}
-		keep(c.OpenID, c.Name, c.IsBot)
+		keep(c.OpenID, c.Name, c, faceIcon(c.OpenID, c.Name, c.AvatarFile()))
 	}
 	return out
 }
@@ -235,9 +249,7 @@ func (m Model) mentionHits(query string) []pumHit {
 func (m Model) emojiHits(query string) []pumHit {
 	var out []pumHit
 	for _, h := range m.emojiWrite.Search(query) {
-		name := h.Emoji.Name()
-		label := emojiWords(h.Emoji, stBold.Render(name), h.Term, h.Positions)
-		out = append(out, pumHit{insert: emojiInsert(h.Emoji), emoji: h.Emoji, label: label})
+		out = append(out, pumHit{insert: emojiInsert(h.Emoji), emoji: h})
 	}
 	return out
 }
@@ -258,10 +270,10 @@ func (m Model) onPumKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 	case "tab", "enter":
 		return m.acceptPum(), nil, true
 	case "down", "ctrl+n":
-		m.pum.move(1, m.pumRows())
+		m.pum.menu.move(1, m.pumRows())
 		return m, nil, true
 	case "up", "ctrl+p":
-		m.pum.move(-1, m.pumRows())
+		m.pum.menu.move(-1, m.pumRows())
 		return m, nil, true
 	case "esc":
 		// The popup goes, insert mode stays: a second Esc leaves it, the way
@@ -277,7 +289,7 @@ func (m Model) onPumKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
 // by backspacing over it — the typing run in reverse — so the draft is left
 // exactly as if the reader had written the whole thing out.
 func (m Model) acceptPum() Model {
-	hit := m.pum.hits[m.pum.idx]
+	hit, _ := m.pum.menu.focused()
 	for range m.pum.run.runes {
 		ta := m.areap()
 		*ta, _ = ta.Update(tea.KeyPressMsg{Code: tea.KeyBackspace})
@@ -294,8 +306,8 @@ func (m Model) acceptPum() Model {
 		}
 		m.picked[hit.name] = hit.id
 	}
-	if hit.emoji.Key != "" {
-		m.emojiWrite.Use(hit.emoji.Key)
+	if key := hit.emoji.Emoji.Key; key != "" {
+		m.emojiWrite.Use(key)
 		if err := m.emojiWrite.SaveUsed(m.deps.DataDir); err != nil {
 			// The list is derived data; losing it costs the ordering of an
 			// empty query, which is not worth interrupting the draft for.
@@ -315,34 +327,7 @@ func (m Model) pumRows() int {
 	if m.mode != modeInsert {
 		return 0
 	}
-	return m.floatRoom(len(m.pum.hits))
-}
-
-// pumVisible is the offers the popup has room for. The renderer draws exactly
-// these and the picture pass claims exactly their pictures, so the two cannot
-// drift into preparing one emoji and drawing another.
-func (m Model) pumVisible() []pumHit { return window(m.pum.hits, m.pum.top, m.pumRows()) }
-
-// offerSegs is one row of a completion list — the composer's popup and the :
-// line alike — in the pieces it is drawn from: the cursor mark, the emoji where
-// there is one, and the words the hit was assembled with. It comes back in
-// pieces because the popup sizes itself to its widest row, and a row carrying a
-// picture has to be measured as the cells that picture fills rather than as the
-// characters standing in for them.
-func (m Model) offerSegs(e emoji.Emoji, label string, selected bool) []rowSeg {
-	mark := "  "
-	if selected {
-		mark = stAccent.Render("▸ ")
-	}
-	if e.Key == "" {
-		return []rowSeg{{text: mark + label}}
-	}
-	icon, pic := m.pickerIcon(e)
-	tail := " " + label
-	if pic.cols > 0 {
-		return []rowSeg{{text: mark}, {pic: pic}, {text: icon + tail}}
-	}
-	return []rowSeg{{text: mark + icon + tail}}
+	return m.floatRoom(len(m.pum.menu.items), m.pum.menu.maxRows())
 }
 
 // pumHint names the keys the popup owns while it is open, since it takes two

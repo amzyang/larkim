@@ -1,6 +1,10 @@
 package tui
 
 import (
+	"image"
+	"image/png"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -132,7 +136,7 @@ func TestPum_OffersABotWithItsBadge(t *testing.T) {
 	m := typeInto(newPumModel(t), "@gjjqr")
 
 	require.Equal(t, []string{"构建机器人"}, pumNames(m))
-	require.Contains(t, m.pum.hits[0].label, botBadge)
+	require.Contains(t, m.pum.menu.rows[0].name, botBadge)
 }
 
 func TestPum_ClosesWhenNobodyAnswers(t *testing.T) {
@@ -197,7 +201,7 @@ func TestPum_AcceptingMidDraftLeavesTheTailAlone(t *testing.T) {
 func TestPum_AcceptingAnEmojiWritesTheCharacterWhereThereIsOne(t *testing.T) {
 	m := typeInto(newPumModel(t), ":dianzan")
 	require.True(t, m.pum.open())
-	require.Equal(t, "👍", m.pum.hits[0].insert)
+	require.Equal(t, "👍", m.pum.menu.items[0].insert)
 
 	mm, _ := m.onInsertKey(tea.KeyPressMsg{Code: tea.KeyTab})
 	require.Equal(t, "👍 ", mm.(Model).input.Value())
@@ -235,7 +239,7 @@ func TestPum_OpensOnTheBracketedFormTheClientSends(t *testing.T) {
 	// The bracket is a second way in, not a second insert rule: an emoji a
 	// character carries still goes in as that character.
 	m = typeInto(newPumModel(t), "[dianzan")
-	require.Equal(t, "👍", m.pum.hits[0].insert)
+	require.Equal(t, "👍", m.pum.menu.items[0].insert)
 }
 
 // The emoji terms and the pinyin of a name are all lowercase, so the smart case
@@ -245,10 +249,10 @@ func TestPum_OpensOnTheBracketedFormTheClientSends(t *testing.T) {
 func TestPum_MatchesWhateverCaseTheQueryIsTypedIn(t *testing.T) {
 	for _, run := range []string{"[Do", ":Do"} {
 		m := typeInto(newPumModel(t), run)
-		require.True(t, slices.ContainsFunc(m.pum.hits, func(h pumHit) bool { return h.insert == "[Done]" }), run)
+		require.True(t, slices.ContainsFunc(m.pum.menu.items, func(h pumHit) bool { return h.insert == "[Done]" }), run)
 	}
 	m := typeInto(newPumModel(t), "[DONE")
-	require.Equal(t, "[Done]", m.pum.hits[0].insert)
+	require.Equal(t, "[Done]", m.pum.menu.items[0].insert)
 	m = typeInto(newPumModel(t), "@Zs")
 	require.Equal(t, []string{"张三"}, pumNames(m))
 }
@@ -295,11 +299,11 @@ func TestPum_MovingKeepsItsPlaceWhileTheRunStands(t *testing.T) {
 	m := typeInto(newPumModel(t), "@")
 	mm, _ := m.onInsertKey(tea.KeyPressMsg{Code: 'n', Mod: tea.ModCtrl})
 	m = mm.(Model)
-	require.Equal(t, 1, m.pum.idx)
+	require.Equal(t, 1, m.pum.menu.idx)
 
 	// Re-reading an unchanged run must not throw the cursor back to the top.
 	m.takePum()
-	require.Equal(t, 1, m.pum.idx)
+	require.Equal(t, 1, m.pum.menu.idx)
 
 	mm, _ = m.onInsertKey(tea.KeyPressMsg{Code: tea.KeyEnter})
 	require.Equal(t, "@林岚 ", mm.(Model).input.Value())
@@ -307,12 +311,12 @@ func TestPum_MovingKeepsItsPlaceWhileTheRunStands(t *testing.T) {
 
 func TestPumRows_HoldThePopupToThePaneItCovers(t *testing.T) {
 	m := typeInto(newPumModel(t), "@")
-	require.Equal(t, len(m.pum.hits), m.pumRows())
+	require.Equal(t, len(m.pum.menu.items), m.pumRows())
 	require.Len(t, m.floatSegs(), m.pumRows())
 
 	// The offers outrun the cap; the popup does not.
 	m = typeInto(newPumModel(t), ":ha")
-	require.Greater(t, len(m.pum.hits), pumMaxRows)
+	require.Greater(t, len(m.pum.menu.items), pumMaxRows)
 	require.Equal(t, pumMaxRows, m.pumRows())
 
 	// A terminal with nothing to spare keeps the message panes their floor and
@@ -350,25 +354,39 @@ func TestRenderInput_BoxStandsStillWhenThePopupOpens(t *testing.T) {
 }
 
 func TestModelPicturePrepare_ClaimsWhatTheOpenPopupOffers(t *testing.T) {
-	m := typeInto(newPumModel(t), ":ha")
-	require.NotEmpty(t, m.pumVisible())
-	require.LessOrEqual(t, len(m.pumVisible()), pumMaxRows)
-	for i, h := range m.pumVisible() {
-		require.Equal(t, m.pum.hits[m.pum.top+i], h, "the renderer and the picture pass see the same offers")
-	}
+	m := newPumModel(t)
+	writeTestEmoji(t, m.deps.DataDir, "DONE")
+	m.pics = picturesIn(m.deps.DataDir)
+	m = typeInto(m, ":done")
+	require.Equal(t, "DONE", m.pum.menu.items[0].emoji.Emoji.Key, "Done is drawn as a word, which no character carries")
+
+	require.NotEmpty(t, m.picturePrepare())
+	pic := m.floatSegs()[0][1].pic
+	require.Positive(t, pic.cols, "the row draws the client's picture")
+	require.NotEmpty(t, m.pics.cells(pic, 0), "and it is drawable on the frame the popup opens")
 }
 
 // offerText is one of the popup's rows as the reader sees it, drawn the width
 // the popup would give it.
-func offerText(m Model, h pumHit, selected bool) string {
-	segs := m.offerSegs(h.emoji, h.label, selected)
+func offerText(m Model, i int, selected bool) string {
+	segs := m.offerRow(m.pum.menu.rows[i], m.pum.menu.cols, i, selected)
 	return ansi.Strip(m.joinSegs(segs, segsWidth(segs)))
+}
+
+// pumInfo is what the box beside the popup says about the focused offer.
+func pumInfo(m Model) []string {
+	v, _ := m.floatMenu()
+	out := make([]string, 0, len(v.info))
+	for _, l := range v.info {
+		out = append(out, ansi.Strip(l))
+	}
+	return out
 }
 
 // pumNames is what the popup is offering, in order.
 func pumNames(m Model) []string {
-	out := make([]string, 0, len(m.pum.hits))
-	for _, h := range m.pum.hits {
+	out := make([]string, 0, len(m.pum.menu.items))
+	for _, h := range m.pum.menu.items {
 		out = append(out, h.name)
 	}
 	return out
@@ -386,8 +404,81 @@ func emojiByBracket(draft string) (string, bool) {
 func TestOfferSegs_SayALetteringEmojisNameOnce(t *testing.T) {
 	m := newPumModel(t)
 	m = typeInto(m, ":yes")
-	i := slices.IndexFunc(m.pum.hits, func(h pumHit) bool { return h.emoji.Key == "Yes" })
+	i := slices.IndexFunc(m.pum.menu.items, func(h pumHit) bool { return h.emoji.Emoji.Key == "Yes" })
 	require.GreaterOrEqual(t, i, 0)
-	line := offerText(m, m.pum.hits[i], false)
+	m.pum.menu.idx = i
+	line := offerText(m, i, true) + strings.Join(pumInfo(m), " ")
 	require.Equal(t, 1, strings.Count(strings.ToLower(line), "yes"), "line=%q", line)
+}
+
+func TestPum_AnEmojisKeyAndTermAreItsInfoNotItsName(t *testing.T) {
+	m := typeInto(newPumModel(t), ":dianzan")
+	require.Equal(t, "THUMBSUP", m.pum.menu.items[0].emoji.Emoji.Key)
+	require.Equal(t, "Like", ansi.Strip(m.pum.menu.rows[0].name))
+	require.Equal(t, []string{"THUMBSUP", "dianzan"}, pumInfo(m), "the key, then the pinyin that answered")
+}
+
+func TestPum_APersonsInfoIsDepartmentThenEmail(t *testing.T) {
+	m := newPumModel(t)
+	m.roster[1].Department = "平台组"
+	m.roster[1].Email = "zhangsan@example.com"
+	m = typeInto(m, "@zs")
+	require.Equal(t, "张三", ansi.Strip(m.pum.menu.rows[0].name), "the row is the name alone")
+	require.Equal(t, []string{"平台组", "zhangsan@example.com"}, pumInfo(m))
+
+	// Somebody with neither has nothing more to say, and no box opens.
+	m = typeInto(newPumModel(t), "@ls")
+	require.Empty(t, pumInfo(m))
+	f, ok := m.floater()
+	require.True(t, ok)
+	_, ok = m.infoFloater(f)
+	require.False(t, ok)
+}
+
+// writeTestAvatar puts a square picture where a contact's avatar would be
+// downloaded to, and returns the path the store records for it.
+func writeTestAvatar(t *testing.T, dataDir, id string) string {
+	t.Helper()
+	rel := filepath.Join("resources", "avatars", id+".png")
+	require.NoError(t, os.MkdirAll(filepath.Join(dataDir, filepath.Dir(rel)), 0o700))
+	f, err := os.Create(filepath.Join(dataDir, rel))
+	require.NoError(t, err)
+	defer f.Close()
+	require.NoError(t, png.Encode(f, image.NewRGBA(image.Rect(0, 0, 64, 64))))
+	return rel
+}
+
+func TestPum_AMentionWearsItsFace(t *testing.T) {
+	// Without graphics the face is the colour block the chat list stands in
+	// with, so the column is there either way.
+	m := typeInto(newPumModel(t), "@zs")
+	require.True(t, m.pum.menu.cols.icon)
+	require.Equal(t, "  张 张三", strings.TrimRight(offerText(m, 0, false), " "))
+
+	m = newPumModel(t)
+	m.roster[1].AvatarPath = writeTestAvatar(t, m.deps.DataDir, "ou_a")
+	m.pics = picturesIn(m.deps.DataDir)
+	m = typeInto(m, "@zs")
+	pic := m.floatSegs()[0][1].pic
+	require.Positive(t, pic.cols, "the avatar is drawn as a picture")
+	require.True(t, pic.disc, "cut to the client's circle")
+	require.NotEmpty(t, m.picturePrepare())
+	require.NotEmpty(t, m.pics.cells(pic, 0), "and claimed on the frame the popup opens")
+}
+
+func TestPum_AtAllWearsTheGroupsFace(t *testing.T) {
+	m := newPumModel(t)
+	m.chats[0].AvatarPath = writeTestAvatar(t, m.deps.DataDir, "oc_group")
+	m = typeInto(m, "@")
+	require.Equal(t, allKey, m.pum.menu.items[0].id)
+	icon := m.pum.menu.rows[0].icon
+	require.True(t, icon.avatar)
+	require.Equal(t, "oc_group", icon.id)
+	require.Equal(t, m.chats[0].AvatarPath, icon.image)
+}
+
+func TestPum_AnEmojiListHasNoFaces(t *testing.T) {
+	m := typeInto(newPumModel(t), ":dianzan")
+	require.False(t, m.pum.menu.rows[0].icon.avatar)
+	require.Equal(t, "👍", m.pum.menu.rows[0].icon.text)
 }

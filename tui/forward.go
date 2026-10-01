@@ -21,6 +21,9 @@ type fwdTarget struct {
 	userID string
 	name   string
 	mark   []int
+	// seed and file are the face a completion row draws: the chat's or the
+	// person's avatar, and the identity its stand-in is coloured by.
+	seed, file string
 }
 
 func (t fwdTarget) target() larkcli.Target {
@@ -84,7 +87,7 @@ func (m Model) fwdSearch(query string) []fwdTarget {
 		}
 		name := flatten(c.Name)
 		if mark, ok := ix.Match(c.ChatID, name, query); ok {
-			out = append(out, fwdTarget{chatID: c.ChatID, name: name, mark: mark})
+			out = append(out, fwdTarget{chatID: c.ChatID, name: name, mark: mark, seed: c.AvatarSeed(), file: c.AvatarFile()})
 		}
 	}
 	seen := make(map[string]bool, len(out))
@@ -100,7 +103,7 @@ func (m Model) fwdSearch(query string) []fwdTarget {
 			continue
 		}
 		if mark, ok := ix.Match(p.OpenID, p.Name, query); ok {
-			out = append(out, fwdTarget{userID: p.OpenID, name: p.Name, mark: mark})
+			out = append(out, fwdTarget{userID: p.OpenID, name: p.Name, mark: mark, seed: p.OpenID, file: p.AvatarFile()})
 		}
 	}
 	return out

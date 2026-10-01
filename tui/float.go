@@ -32,24 +32,42 @@ func (f floater) covers(x, y int) bool {
 // opening the popup neither moves the panes nor starves the preview. The pane
 // keeps its head — the title row is the only thing naming the chat the popup
 // stands over — and the popup pays for its own border.
-func (m Model) floatRoom(n int) int {
-	return clamp(n, 0, min(pumMaxRows, m.bodyHeight()-msgHeaderHeight-1))
+func (m Model) floatRoom(n, maxRows int) int {
+	return clamp(n, 0, min(maxRows, m.floatCeiling()))
+}
+
+// floatCeiling is the most rows a float may stand over the pane with.
+func (m Model) floatCeiling() int { return m.bodyHeight() - msgHeaderHeight - 1 }
+
+// floatMenu is the list standing over the panes, if one is: the mode is what
+// says which, so a list left behind by a mode the reader has moved on from is
+// never drawn.
+func (m Model) floatMenu() (menuView, bool) {
+	var v menuView
+	switch m.mode {
+	case modeInsert:
+		v = m.pum.menu.view(m.pumRows())
+	case modeCommand:
+		v = m.cmdcomp.menu.view(m.cmdCompRows())
+	case modeCandidates:
+		v = m.cand.view(m.candRows())
+	default:
+		return menuView{}, false
+	}
+	return v, len(v.rows) > 0
 }
 
 // floatSegs is the offers the popup draws, each in the pieces it was measured
 // from. Drawing and measuring come from one pass so the box cannot be sized for
 // a row it does not draw.
 func (m Model) floatSegs() [][]rowSeg {
-	var out [][]rowSeg
-	switch m.mode {
-	case modeInsert:
-		for i, h := range m.pumVisible() {
-			out = append(out, m.offerSegs(h.emoji, h.label, m.pum.top+i == m.pum.idx))
-		}
-	case modeCommand:
-		for i, h := range m.cmdCompVisible() {
-			out = append(out, m.offerSegs(h.emoji, h.label, m.cmdcomp.top+i == m.cmdcomp.idx))
-		}
+	v, ok := m.floatMenu()
+	if !ok {
+		return nil
+	}
+	out := make([][]rowSeg, len(v.rows))
+	for i, o := range v.rows {
+		out[i] = m.offerRow(o, v.cols, i, i == v.sel)
 	}
 	return out
 }
@@ -57,6 +75,11 @@ func (m Model) floatSegs() [][]rowSeg {
 // floatAnchor is the screen column the run being completed starts at, which is
 // the column the popup's offers line up under.
 func (m Model) floatAnchor() int {
+	if m.mode == modeCandidates {
+		// Nothing is being completed, so the list lines up with the box whose
+		// draft a pick replaces.
+		return m.bandLeft(m.side) + 1
+	}
 	if m.mode == modeCommand {
 		// The field the list rewrites, rather than the caret: walking the list
 		// writes into the line, and a box that moved with what it wrote would
@@ -113,10 +136,81 @@ func (m Model) floater() (floater, bool) {
 	return f, true
 }
 
-// floatAt reports whether a screen cell belongs to an open popup.
+const (
+	// infoMaxCols is as wide as the box beside a list gets: a line of prose,
+	// not a pane.
+	infoMaxCols = 48
+	// infoMinCols is the narrowest that box is wrapped to when what it says
+	// fits neither side. Under it a line holds a word or two, and the box is
+	// dropped rather than read a word at a time, which is neovim's rule for its
+	// own (it gives up under ten).
+	infoMinCols = 12
+)
+
+// infoFloater places what the focused offer has to say beside the list:
+// east of it where it fits, west where only that does, and otherwise on the
+// side with more room. Its bottom border shares the list's, so the two grow
+// up from one line.
+func (m Model) infoFloater(menu floater) (floater, bool) {
+	v, ok := m.floatMenu()
+	if !ok || len(v.info) == 0 {
+		return floater{}, false
+	}
+	want := 0
+	for _, p := range v.info {
+		want = max(want, lipgloss.Width(p))
+	}
+	want = min(want, infoMaxCols)
+	// The room either side, less the box's own border.
+	east := m.width - (menu.x + menu.w) - 2
+	west := menu.x - 2
+	cols, left := want, false
+	switch {
+	case east >= want:
+	case west >= want:
+		left = true
+	case max(east, west) < infoMinCols:
+		return floater{}, false
+	case east >= west:
+		cols = east
+	default:
+		cols, left = west, true
+	}
+	var lines []string
+	for _, p := range v.info {
+		lines = append(lines, wrap(p, cols)...)
+	}
+	room := m.floatCeiling()
+	if room <= 0 {
+		return floater{}, false
+	}
+	if len(lines) > room {
+		lines = lines[:room]
+		last := strings.TrimRight(lines[room-1], " ")
+		lines[room-1] = fit(truncate(last+"…", cols), cols)
+	}
+	f := floater{
+		block: paneStyle(true).Render(strings.Join(lines, "\n")),
+		w:     cols + 2,
+		h:     len(lines) + 2,
+	}
+	f.y = menu.y + menu.h - f.h
+	f.x = menu.x + menu.w
+	if left {
+		f.x = menu.x - f.w
+	}
+	return f, true
+}
+
+// floatAt reports whether a screen cell belongs to an open popup, the box
+// beside it included.
 func (m Model) floatAt(x, y int) bool {
 	f, ok := m.floater()
-	return ok && f.covers(x, y)
+	if !ok {
+		return false
+	}
+	info, ok := m.infoFloater(f)
+	return f.covers(x, y) || ok && info.covers(x, y)
 }
 
 // walkFloat moves the popup's cursor, for the wheel. The keys reach the lists
@@ -125,9 +219,11 @@ func (m Model) floatAt(x, y int) bool {
 func (m Model) walkFloat(d int) Model {
 	switch m.mode {
 	case modeInsert:
-		m.pum.move(d, m.pumRows())
+		m.pum.menu.move(d, m.pumRows())
 	case modeCommand:
 		m = m.walkCmdComp(d)
+	case modeCandidates:
+		m.cand.move(d, m.candRows())
 	}
 	return m
 }
@@ -139,10 +235,14 @@ func (m Model) floatOver(frame string) string {
 	if !ok {
 		return frame
 	}
-	cv := lipgloss.NewCanvas(m.width, m.height)
-	cv.Compose(lipgloss.NewCompositor(
+	layers := []*lipgloss.Layer{
 		lipgloss.NewLayer(frame),
 		lipgloss.NewLayer(f.block).X(f.x).Y(f.y).Z(1),
-	))
+	}
+	if info, ok := m.infoFloater(f); ok {
+		layers = append(layers, lipgloss.NewLayer(info.block).X(info.x).Y(info.y).Z(1))
+	}
+	cv := lipgloss.NewCanvas(m.width, m.height)
+	cv.Compose(lipgloss.NewCompositor(layers...))
 	return cv.Render()
 }

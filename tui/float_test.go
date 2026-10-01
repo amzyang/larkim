@@ -90,12 +90,12 @@ func TestWheel_WalksThePopupRatherThanTheMessagesUnderIt(t *testing.T) {
 	m := typeInto(newPumModel(t), ":ha")
 	f, ok := m.floater()
 	require.True(t, ok)
-	require.Zero(t, m.pum.idx)
+	require.Zero(t, m.pum.menu.idx)
 	top := m.msgTop
 
 	mm, _ := m.onWheel(tea.Mouse{X: f.x + 1, Y: f.y + 1, Button: tea.MouseWheelDown})
 	next := mm.(Model)
-	require.Equal(t, 1, next.pum.idx, "the offers move")
+	require.Equal(t, 1, next.pum.menu.idx, "the offers move")
 	require.Equal(t, top, next.msgTop, "the conversation behind does not")
 }
 
@@ -105,4 +105,90 @@ func TestClick_IsSwallowedByThePopupItLandsOn(t *testing.T) {
 	require.True(t, ok)
 	require.True(t, m.floatAt(f.x, f.y))
 	require.False(t, m.floatAt(f.x-1, f.y), "and nothing beside it")
+}
+
+func TestFloater_KeepsItsWidthWhileTheListScrolls(t *testing.T) {
+	m := typeInto(newPumModel(t), ":ha")
+	require.Greater(t, len(m.pum.menu.items), pumMaxRows)
+	f, ok := m.floater()
+	require.True(t, ok)
+	for range len(m.pum.menu.items) {
+		m.pum.menu.move(1, m.pumRows())
+		g, ok := m.floater()
+		require.True(t, ok)
+		require.Equal(t, f.w, g.w, "row %d", m.pum.menu.idx)
+	}
+}
+
+// infoPumModel is the popup open on a colleague whose box says something.
+func infoPumModel(t *testing.T, draft string) Model {
+	t.Helper()
+	m := newPumModel(t)
+	m.roster[1].Department = "平台组"
+	m.roster[1].Email = "zhangsan@example.com"
+	return typeInto(m, draft)
+}
+
+func TestInfoFloater_OpensBesideTheMenuForTheFocusedItem(t *testing.T) {
+	m := infoPumModel(t, "@zs")
+	f, _ := m.floater()
+	info, ok := m.infoFloater(f)
+	require.True(t, ok)
+	require.Equal(t, f.x+f.w, info.x, "east of the list, where there is room")
+
+	// A list pushed to the right edge has its box west of it.
+	f.x = m.width - f.w
+	info, ok = m.infoFloater(f)
+	require.True(t, ok)
+	require.Equal(t, f.x, info.x+info.w, "west, when only that side fits")
+	require.GreaterOrEqual(t, info.x, 0)
+}
+
+func TestInfoFloater_IsDroppedWhereNeitherSideHasRoom(t *testing.T) {
+	m := infoPumModel(t, "@zs")
+	f, _ := m.floater()
+	// A list as wide as the screen leaves nothing either side.
+	f.x, f.w = 0, m.width
+	_, ok := m.infoFloater(f)
+	require.False(t, ok)
+}
+
+func TestInfoFloater_RestsOnTheListsBaseline(t *testing.T) {
+	m := infoPumModel(t, "@zs")
+	f, _ := m.floater()
+	info, ok := m.infoFloater(f)
+	require.True(t, ok)
+	require.Equal(t, f.y+f.h, info.y+info.h, "the two grow up from one line")
+	require.LessOrEqual(t, info.h-2, m.floatCeiling())
+}
+
+func TestInfoFloater_FollowsTheCursor(t *testing.T) {
+	m := infoPumModel(t, "@")
+	// @All leads and says nothing; the box opens once the cursor reaches 张三.
+	f, _ := m.floater()
+	_, ok := m.infoFloater(f)
+	require.False(t, ok)
+	m.pum.menu.move(2, m.pumRows())
+	_, ok = m.infoFloater(f)
+	require.True(t, ok)
+	require.Contains(t, ansi.Strip(m.View().Content), "zhangsan@example.com")
+}
+
+func TestFloatAt_CoversTheInfoBox(t *testing.T) {
+	m := infoPumModel(t, "@zs")
+	f, _ := m.floater()
+	info, ok := m.infoFloater(f)
+	require.True(t, ok)
+	require.True(t, m.floatAt(info.x+info.w-1, info.y))
+	require.False(t, m.floatAt(info.x+info.w, info.y), "and nothing past it")
+}
+
+func TestInfoFloater_DrawsAShortAnswerAtItsOwnWidth(t *testing.T) {
+	m := newPumModel(t)
+	m.roster[1].Department = "QA"
+	m = typeInto(m, "@zs")
+	f, _ := m.floater()
+	info, ok := m.infoFloater(f)
+	require.True(t, ok, "an answer narrower than the floor still fits beside the list")
+	require.Equal(t, len("QA")+2, info.w)
 }

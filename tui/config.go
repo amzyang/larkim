@@ -432,14 +432,7 @@ func (m Model) configDetail() string {
 	if !ok {
 		return fit(stDim.Render("nothing matches "+m.config.input.Value()), w)
 	}
-	reach := "next start"
-	switch {
-	case s.readOnly:
-		reach = "Silence tab"
-	case s.live:
-		reach = "takes effect now"
-	}
-	return fit(stDim.Render(truncate(s.help+" · "+reach, w)), w)
+	return fit(stDim.Render(truncate(s.help+" · "+settingReach(s), w)), w)
 }
 
 func (m Model) renderConfig() string {

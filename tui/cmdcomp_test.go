@@ -28,11 +28,21 @@ func cmdModel(t *testing.T) Model {
 // typed is the : line as the reader sees it.
 func typed(m Model) string { return m.cmdline.Value() }
 
-// offers is what the list is holding, with its styling taken off.
+// offers is the names the list's rows show, with their styling taken off.
 func offers(m Model) []string {
-	out := make([]string, 0, len(m.cmdcomp.hits))
-	for _, h := range m.cmdcomp.hits {
-		out = append(out, ansi.Strip(h.label))
+	out := make([]string, 0, len(m.cmdcomp.menu.rows))
+	for _, o := range m.cmdcomp.menu.rows {
+		out = append(out, ansi.Strip(o.name))
+	}
+	return out
+}
+
+// focusedInfo is what the box beside the list says, with its styling taken off.
+func focusedInfo(m Model) []string {
+	v, _ := m.floatMenu()
+	out := make([]string, 0, len(v.info))
+	for _, l := range v.info {
+		out = append(out, ansi.Strip(l))
 	}
 	return out
 }
@@ -45,7 +55,7 @@ func TestCmdComp_OpensOnTheFirstRuneAndNotOnABareColon(t *testing.T) {
 
 	m = press(t, m, "c")
 	require.True(t, m.cmdcomp.open())
-	require.Equal(t, -1, m.cmdcomp.idx, "the line is still what the reader typed")
+	require.Equal(t, -1, m.cmdcomp.menu.idx, "the line is still what the reader typed")
 }
 
 func TestCmdComp_OffersEveryCommandAPrefixReaches(t *testing.T) {
@@ -53,7 +63,50 @@ func TestCmdComp_OffersEveryCommandAPrefixReaches(t *testing.T) {
 
 	// goto is reached through its alias chat, and is offered under the name
 	// the line will carry.
-	require.Equal(t, []string{"copy <200|7d|all>", "goto <chat>", "candidates", "config [<key>]"}, offers(m))
+	require.Equal(t, []string{"copy", "goto", "candidates", "config"}, offers(m))
+}
+
+func TestCmdComp_UsageAndHelpAreTheFocusedRowsInfoNotItsName(t *testing.T) {
+	m := press(t, cmdModel(t), "c")
+	require.Empty(t, focusedInfo(m), "nothing is focused until the reader walks onto a row")
+
+	m = press(t, m, "tab")
+	require.Equal(t, []string{":copy <200|7d|all>", "put that much of the chat on the clipboard as agent context"}, focusedInfo(m))
+
+	// A command that takes nothing has only its help to say.
+	m = press(t, m, "ctrl+n", "ctrl+n")
+	require.Equal(t, "candidates", typed(m))
+	require.Equal(t, []string{"pick a pending lark-watch reply draft into the composer"}, focusedInfo(m))
+}
+
+func TestCmdComp_ATargetsIDIsItsInfo(t *testing.T) {
+	m := press(t, cmdModel(t), "s", "e", "n", "d", " ")
+	require.Equal(t, []string{"平台组", "项目协作群", "张三"}, offers(m), "the rows name; the id they write is not on them")
+
+	m = press(t, m, "tab")
+	require.Equal(t, []string{"oc_team"}, focusedInfo(m))
+
+	// :goto gets the id too, though it writes the name.
+	m = press(t, cmdModel(t), "g", "o", "t", "o", " ", "tab")
+	require.Equal(t, []string{"oc_team"}, focusedInfo(m))
+}
+
+func TestCmdComp_ASettingsInfoIsItsHelpValueAndReach(t *testing.T) {
+	m := press(t, cmdModel(t), "s", "e", "t", " ", "tab")
+	require.Equal(t, "set applink_pace_ms=", typed(m))
+	info := focusedInfo(m)
+	require.Len(t, info, 2)
+	require.Contains(t, info[1], "takes effect now", ":set reaches only live keys")
+}
+
+func TestCmdComp_AnEnumWordHasNothingMoreToSay(t *testing.T) {
+	m := press(t, cmdModel(t), "c", "o", "p", "y", " ", "tab")
+	require.Equal(t, "copy 200", typed(m))
+	require.Empty(t, focusedInfo(m))
+	f, ok := m.floater()
+	require.True(t, ok)
+	_, ok = m.infoFloater(f)
+	require.False(t, ok, "no box opens on an empty answer")
 }
 
 func TestCmdComp_WalkingWritesTheOfferIntoTheLine(t *testing.T) {
@@ -62,7 +115,7 @@ func TestCmdComp_WalkingWritesTheOfferIntoTheLine(t *testing.T) {
 
 	m = press(t, m, "tab")
 	require.Equal(t, "copy", typed(m))
-	require.Equal(t, 0, m.cmdcomp.idx)
+	require.Equal(t, 0, m.cmdcomp.menu.idx)
 
 	m = press(t, m, "ctrl+n")
 	require.Equal(t, "goto", typed(m))
@@ -73,7 +126,7 @@ func TestCmdComp_WalkingBackPastTheTopRestoresWhatWasTyped(t *testing.T) {
 	m := press(t, cmdModel(t), "c", "tab", "ctrl+p")
 
 	require.Equal(t, "c", typed(m), "the stem is the only way back off a list that overwrote it")
-	require.Equal(t, -1, m.cmdcomp.idx)
+	require.Equal(t, -1, m.cmdcomp.menu.idx)
 	require.True(t, m.cmdcomp.open(), "the offers stand: walking back is not dismissing")
 }
 
@@ -119,14 +172,14 @@ func TestCmdComp_OffersOnlyChatsToGoto(t *testing.T) {
 
 func TestCmdComp_CompletesAnEmojiKeyForReact(t *testing.T) {
 	m := press(t, cmdModel(t), "r", "e", "a", "c", "t", " ", "z", "a", "n")
-	require.NotEmpty(t, m.cmdcomp.hits, "the pinyin reaches the emoji the picker reaches")
-	require.Equal(t, "THUMBSUP", m.cmdcomp.hits[0].insert)
+	require.NotEmpty(t, m.cmdcomp.menu.items, "the pinyin reaches the emoji the picker reaches")
+	require.Equal(t, "THUMBSUP", m.cmdcomp.menu.items[0].insert)
 
 	// What the list writes has to be what :react reads back, or completing a
 	// name would react with something else.
 	m = press(t, m, "tab")
 	require.Equal(t, "react THUMBSUP", typed(m))
-	for _, h := range m.cmdcomp.hits {
+	for _, h := range m.cmdcomp.menu.items {
 		_, ok := m.emoji.ByKey(h.insert)
 		require.True(t, ok, "%s is not a key :react reads back", h.insert)
 	}
@@ -237,7 +290,7 @@ func TestFloater_FollowsTheFieldNotTheLineTheListWrites(t *testing.T) {
 	f, _ := m.floater()
 
 	m = press(t, m, "tab")
-	require.GreaterOrEqual(t, m.cmdcomp.idx, 0, "the list has written into the line")
+	require.GreaterOrEqual(t, m.cmdcomp.menu.idx, 0, "the list has written into the line")
 	g, ok := m.floater()
 	require.True(t, ok)
 	require.Equal(t, f.x, g.x, "the box stands where the field does, not where the caret went")
@@ -249,4 +302,31 @@ func TestCursorAt_StaysOnTheCommandLinesOwnRow(t *testing.T) {
 	// The first inner row of the box: the panes with their border, then the
 	// box's own top border.
 	require.Equal(t, m.bodyHeight()+3, m.View().Cursor.Y)
+}
+
+func TestModelPicturePrepare_ClaimsWhatTheReactListOffers(t *testing.T) {
+	m := cmdModel(t)
+	writeTestEmoji(t, m.deps.DataDir, "DONE")
+	m.pics = picturesIn(m.deps.DataDir)
+	m = press(t, m, "r", "e", "a", "c", "t", " ", "d", "o", "n", "e")
+	require.Equal(t, "DONE", m.cmdcomp.menu.items[0].insert)
+
+	require.NotEmpty(t, m.picturePrepare())
+	pic := m.floatSegs()[0][1].pic
+	require.Positive(t, pic.cols, "a picture-only emoji draws the client's picture")
+	require.NotEmpty(t, m.pics.cells(pic, 0), "and the : line's list claims it, as the composer's popup does")
+}
+
+func TestCmdComp_ATargetWearsItsFace(t *testing.T) {
+	m := press(t, cmdModel(t), "s", "e", "n", "d", " ")
+	require.True(t, m.cmdcomp.menu.cols.icon)
+	chat := m.cmdcomp.menu.rows[0].icon
+	require.True(t, chat.avatar)
+	require.Equal(t, "oc_team", chat.id, "a group is coloured by its own id")
+	person := m.cmdcomp.menu.rows[2].icon
+	require.Equal(t, "ou_a", person.id, "a colleague with no chat yet, by theirs")
+
+	// A list of words has nothing to wear.
+	m = press(t, cmdModel(t), "c")
+	require.False(t, m.cmdcomp.menu.cols.icon)
 }

@@ -90,16 +90,48 @@ func drawEmoji(re *regexp.Regexp, s string, lookup func(string) (emoji.Emoji, bo
 // reader's own reaction onto it, the popup bolds it — while every comparison
 // here is made against the bare text the emoji carries.
 func emojiWords(e emoji.Emoji, drawn, term string, pos []int) string {
-	key, name := e.Key, e.Name()
-	if !strings.EqualFold(key, name) {
+	if key := emojiKey(e); key != "" {
 		drawn = stDim.Render(key) + " " + drawn
 	}
-	// A term that spells neither the key nor the name says which spelling
-	// answered — which pinyin, which alias — because otherwise a hit reached
-	// that way looks arbitrary. The character is not one of them: it is already
-	// drawn in the icon column, so naming it would repeat what is on screen.
-	if term != "" && term != e.Glyph && !strings.EqualFold(term, name) && !strings.EqualFold(term, key) {
-		drawn += stDim.Render(" " + markMatch(term, pos))
+	if t := emojiTerm(e, term, pos); t != "" {
+		drawn += stDim.Render(" " + t)
 	}
 	return drawn
+}
+
+// emojiKey is the key Feishu speaks, where it says something the name does not.
+func emojiKey(e emoji.Emoji) string {
+	if strings.EqualFold(e.Key, e.Name()) {
+		return ""
+	}
+	return e.Key
+}
+
+// emojiTerm is the term a query landed on, marked, where it spells neither the
+// key nor the name. It says which spelling answered — which pinyin, which
+// alias — because otherwise a hit reached that way looks arbitrary. The
+// character is not one of them: it is already drawn in the icon column, so
+// naming it would repeat what is on screen.
+func emojiTerm(e emoji.Emoji, term string, pos []int) string {
+	if term == "" || term == e.Glyph || strings.EqualFold(term, e.Name()) || strings.EqualFold(term, e.Key) {
+		return ""
+	}
+	return markMatch(term, pos)
+}
+
+// emojiInfo is what the box beside a completion list says about the emoji the
+// cursor is on: the words emojiWords puts beside it in the picker grid, which
+// a list row has no room for.
+func emojiInfo(h emoji.Hit) []string {
+	return infoLines(emojiKey(h.Emoji), emojiTerm(h.Emoji, h.Term, h.Positions))
+}
+
+// emojiIcon is an emoji as the icon column draws it: the character where one
+// carries the same feeling, the client's own picture where none does, and a
+// bare dot where the pictures were never cut out.
+func emojiIcon(e emoji.Emoji) offerIcon {
+	if e.Glyph != "" {
+		return offerIcon{text: e.Glyph}
+	}
+	return offerIcon{text: stDim.Render("·"), image: emoji.Picture("", e.Key)}
 }

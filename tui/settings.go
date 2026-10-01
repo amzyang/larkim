@@ -195,6 +195,27 @@ func (m Model) settingValue(s setting) string {
 	return v
 }
 
+// settingReach is how far a change to the key goes.
+func settingReach(s setting) string {
+	switch {
+	case s.readOnly:
+		return "Silence tab"
+	case s.live:
+		return "takes effect now"
+	}
+	return "next start"
+}
+
+// settingInfo is what the box beside the : line's list says about a key: what
+// it is for, then what it is set to under cfg and how far a change reaches.
+func settingInfo(cfg config.Config, s setting) []string {
+	value := settingCell(cfg, s)
+	if value != "" {
+		value += " · "
+	}
+	return infoLines(s.help, value+settingReach(s))
+}
+
 // settingCell is what the General tab draws for a key under cfg.
 func settingCell(cfg config.Config, s setting) string {
 	if s.summary != nil {

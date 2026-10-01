@@ -15,15 +15,57 @@ import (
 // forward chooser's own ceiling, which lists the same chats and people.
 const cmdCompLimit = 50
 
-// cmdHit is one offer the : line makes.
+// cmdHit is one offer the : line makes. Which of its sources is set says
+// what the row is; each projects its own row and box.
 type cmdHit struct {
 	// insert is what walking onto this row writes in the field's place.
 	insert string
-	// label is the row's words, with the runes the query landed on marked.
-	label string
-	// emoji is set only for a :react offer, for the icon column the row opens
-	// with.
-	emoji emoji.Emoji
+	// name is the word the row shows, and mark the runes of it the query
+	// landed on.
+	name string
+	mark []int
+	// cmd is set for a command, setting for a key of the configuration, and
+	// emoji for a :react offer.
+	cmd     command
+	setting setting
+	emoji   emoji.Hit
+	// id is the chat or open id a target names, which the box beside the list
+	// shows: :send writes it into the line, and :goto opens it. face is the
+	// target's avatar.
+	id   string
+	face offerIcon
+	// info is what the box says about a setting, read from the configuration
+	// when the list was filled.
+	info []string
+}
+
+// cmdSpec draws an offer by what it is: an emoji as its picture and name,
+// anything else by its word, with the rest of what it is in the box beside
+// the list.
+var cmdSpec = menuSpec[cmdHit]{
+	row: func(h cmdHit) offer {
+		if h.emoji.Emoji.Key != "" {
+			return offer{icon: emojiIcon(h.emoji.Emoji), name: stBold.Render(h.emoji.Emoji.Name())}
+		}
+		return offer{icon: h.face, name: markName(h.name, h.mark, stBold)}
+	},
+	info: func(h cmdHit) []string {
+		switch {
+		case h.emoji.Emoji.Key != "":
+			return emojiInfo(h.emoji)
+		case h.cmd.name != "":
+			// The usage is the signature, so it leads; a command that takes
+			// nothing has only its help to say.
+			if h.cmd.usage == "" {
+				return infoLines(h.cmd.help)
+			}
+			return infoLines(h.cmd.display(), h.cmd.help)
+		case h.info != nil:
+			return h.info
+		}
+		return infoLines(h.id)
+	},
+	noselect: true,
 }
 
 // cmdComp is the completion list standing over the : line. Unlike the
@@ -39,17 +81,15 @@ type cmdComp struct {
 	// stem is what the reader typed in the field. The hits stay keyed to it,
 	// so walking off the end of the list and back lands on it again.
 	stem string
-	hits []cmdHit
-	// idx is -1 until the reader walks onto a row, which is when the line
-	// stops being what they typed.
-	idx int
-	top int
+	// menu focuses nothing until the reader walks onto a row, which is when
+	// the line stops being what they typed.
+	menu menu[cmdHit]
 	// dismissed is the line Esc closed the list on. Typing further along that
 	// same line leaves it closed.
 	dismissed string
 }
 
-func (c cmdComp) open() bool { return len(c.hits) > 0 }
+func (c cmdComp) open() bool { return c.menu.open() }
 
 // cmdField reads the field the cursor stands in: which token of the line it
 // is, where the token starts in runes, and what has been typed of it. A run of
@@ -75,7 +115,7 @@ func cmdField(line string, pos int) (token, start int, stem string) {
 func (m *Model) takeCmdComp() {
 	line, pos := m.cmdline.Value(), m.cmdline.Position()
 	if m.cmdcomp.dismissed != "" && strings.HasPrefix(line, m.cmdcomp.dismissed) {
-		m.cmdcomp = cmdComp{idx: -1, dismissed: m.cmdcomp.dismissed}
+		m.cmdcomp = cmdComp{dismissed: m.cmdcomp.dismissed}
 		return
 	}
 	token, start, stem := cmdField(line, pos)
@@ -86,12 +126,12 @@ func (m *Model) takeCmdComp() {
 	if m.cmdcomp.open() && m.cmdcomp.start == start && m.cmdcomp.stem == stem && m.cmdcomp.tail == tail {
 		return
 	}
-	m.cmdcomp = cmdComp{start: start, tail: tail, stem: stem, idx: -1, hits: m.cmdHits(line, token, stem)}
+	m.cmdcomp = cmdComp{start: start, tail: tail, stem: stem, menu: fillMenu(m.cmdHits(line, token, stem), cmdSpec)}
 }
 
 // closeCmdComp dismisses the list for the rest of the line the reader is on.
 func (m *Model) closeCmdComp() {
-	m.cmdcomp = cmdComp{idx: -1, dismissed: m.cmdline.Value()}
+	m.cmdcomp = cmdComp{dismissed: m.cmdline.Value()}
 }
 
 // cmdHits is what a field offers, best first.
@@ -109,11 +149,7 @@ func (m Model) cmdHits(line string, token int, stem string) []cmdHit {
 		}
 		var out []cmdHit
 		for _, c := range commandsWithPrefix(stem) {
-			label := markName(c.name, prefixMark(stem), stBold)
-			if c.usage != "" {
-				label += " " + stDim.Render(c.usage)
-			}
-			out = append(out, cmdHit{insert: c.name, label: label})
+			out = append(out, cmdHit{insert: c.name, name: c.name, mark: prefixMark(stem), cmd: c})
 		}
 		return out
 	case 1:
@@ -138,7 +174,7 @@ func (m Model) argHits(cmd command, stem string) []cmdHit {
 	case argEnum:
 		for _, w := range cmd.enum {
 			if strings.HasPrefix(w, stem) {
-				out = append(out, cmdHit{insert: w, label: markName(w, prefixMark(stem), stBold)})
+				out = append(out, cmdHit{insert: w, name: w, mark: prefixMark(stem)})
 			}
 		}
 	case argSetting, argConfigKey:
@@ -154,7 +190,7 @@ func (m Model) argHits(cmd command, stem string) []cmdHit {
 		if key, val, typed := strings.Cut(stem, "="); typed && cmd.arg == argSetting {
 			for _, v := range config.Values(key) {
 				if strings.HasPrefix(v, val) {
-					out = append(out, cmdHit{insert: key + "=" + v, label: markName(v, prefixMark(val), stBold)})
+					out = append(out, cmdHit{insert: key + "=" + v, name: v, mark: prefixMark(val)})
 				}
 			}
 			break
@@ -164,7 +200,8 @@ func (m Model) argHits(cmd command, stem string) []cmdHit {
 				continue
 			}
 			if strings.HasPrefix(st.key, stem) {
-				out = append(out, cmdHit{insert: st.key + eq, label: markName(st.key, prefixMark(stem), stBold)})
+				out = append(out, cmdHit{insert: st.key + eq, name: st.key, mark: prefixMark(stem),
+					setting: st, info: settingInfo(m.cfg, st)})
 			}
 		}
 	case argChat, argTarget:
@@ -172,16 +209,15 @@ func (m Model) argHits(cmd command, stem string) []cmdHit {
 			if cmd.arg == argChat && t.chatID == "" {
 				continue
 			}
-			label := markName(t.name, t.mark, stBold)
 			// :send splits its target from its text on the first space, so a
 			// name is not a target it can take; the open id is. :goto reads
 			// its whole rest and folds it, so it gets the readable name.
+			id := cmp.Or(t.chatID, t.userID)
 			insert := t.name
 			if cmd.arg == argTarget {
-				insert = cmp.Or(t.chatID, t.userID)
-				label += stDim.Render("  " + insert)
+				insert = id
 			}
-			out = append(out, cmdHit{insert: insert, label: label})
+			out = append(out, cmdHit{insert: insert, name: t.name, mark: t.mark, id: id, face: faceIcon(t.seed, t.name, t.file)})
 		}
 	case argEmoji:
 		for _, h := range m.emoji.Search(stem) {
@@ -190,11 +226,7 @@ func (m Model) argHits(cmd command, stem string) []cmdHit {
 			}
 			// The key rather than the display name, because it is what the
 			// reaction is made of and the one spelling no other emoji shares.
-			out = append(out, cmdHit{
-				insert: h.Emoji.Key,
-				label:  emojiWords(h.Emoji, stBold.Render(h.Emoji.Name()), h.Term, h.Positions),
-				emoji:  h.Emoji,
-			})
+			out = append(out, cmdHit{insert: h.Emoji.Key, emoji: h})
 		}
 	}
 	return out
@@ -232,13 +264,10 @@ func (m Model) onCmdCompKey(k tea.KeyPressMsg) (Model, bool) {
 // to a stem the list has already overwritten.
 func (m Model) walkCmdComp(d int) Model {
 	c := &m.cmdcomp
-	c.idx = clamp(c.idx+d, -1, len(c.hits)-1)
-	if rows := m.cmdCompRows(); c.idx >= 0 {
-		c.top = clamp(c.top, max(0, c.idx-rows+1), c.idx)
-	}
+	c.menu.move(d, m.cmdCompRows())
 	text := c.stem
-	if c.idx >= 0 {
-		text = c.hits[c.idx].insert
+	if h, ok := c.menu.focused(); ok {
+		text = h.insert
 	}
 	head := string([]rune(m.cmdline.Value())[:c.start])
 	m.cmdline.SetValue(head + text + c.tail)
@@ -252,13 +281,7 @@ func (m Model) cmdCompRows() int {
 	if m.mode != modeCommand {
 		return 0
 	}
-	return m.floatRoom(len(m.cmdcomp.hits))
-}
-
-// cmdCompVisible is the offers the list has room for. The renderer draws
-// exactly these and the picture pass claims exactly their pictures.
-func (m Model) cmdCompVisible() []cmdHit {
-	return window(m.cmdcomp.hits, m.cmdcomp.top, m.cmdCompRows())
+	return m.floatRoom(len(m.cmdcomp.menu.items), m.cmdcomp.menu.maxRows())
 }
 
 // cmdCompHint names the keys the list owns while it is open, since it takes
@@ -272,9 +295,9 @@ func (m Model) renderCmdCompHint(w int) string {
 	if m.mode != modeCommand || !m.cmdcomp.open() {
 		return ""
 	}
-	where := strconv.Itoa(len(m.cmdcomp.hits))
-	if m.cmdcomp.idx >= 0 {
-		where = strconv.Itoa(m.cmdcomp.idx+1) + "/" + where
+	where := strconv.Itoa(len(m.cmdcomp.menu.items))
+	if m.cmdcomp.menu.idx >= 0 {
+		where = strconv.Itoa(m.cmdcomp.menu.idx+1) + "/" + where
 	}
 	return padBetween("", stDim.Render(where+" · "+cmdCompHint), w)
 }

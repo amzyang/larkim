@@ -2,23 +2,42 @@ package tui
 
 import (
 	"context"
-	"strconv"
 	"strings"
 
 	"github.com/amzyang/larkim/store"
 
 	tea "charm.land/bubbletea/v2"
-	"charm.land/lipgloss/v2"
 )
 
-// candPicker lists the reply drafts lark-watch is holding for the open chat,
-// open only in modeCandidates. It fills the composer's box the way the forward
-// and targets choosers do, and holds no text of its own: a candidate is picked,
-// not edited — editing is what the composer it lands in is for.
-type candPicker struct {
-	rows []store.Candidate
-	idx  int
-	top  int
+// The drafts picker lists the reply drafts lark-watch is holding for the open
+// chat, open only in modeCandidates. It stands over the panes as a list the way
+// a completion does, so the draft a pick would replace stays in sight under it,
+// and the focused draft is read whole in the box beside it. It holds no text of
+// its own: a candidate is picked, not edited — editing is what the composer it
+// lands in is for.
+
+// candSpec draws a draft by its opening line, numbered for the digit that
+// picks it. One the reader has answered past is dimmed: it is a wording to
+// borrow, not a reply still owed.
+var candSpec = menuSpec[store.Candidate]{
+	row: func(c store.Candidate) offer {
+		name := firstDisplayLine(c.Text)
+		if c.Replied {
+			name = stDim.Render(name)
+		}
+		return offer{name: name}
+	},
+	info: func(c store.Candidate) []string {
+		var marks []string
+		if c.Format == "markdown" {
+			marks = append(marks, "markdown")
+		}
+		if c.Replied {
+			marks = append(marks, "replied after")
+		}
+		return infoLines(strings.TrimSpace(c.Text), strings.Join(marks, " · "))
+	},
+	digits: true,
 }
 
 // openCandidates asks the store for the chat's pending drafts. The picker
@@ -43,21 +62,27 @@ func loadCandidates(d Deps, chatID string) tea.Cmd {
 
 // onCandidatesKey drives the picker. The keys are the ones every list here
 // takes, and enter is the composer hand-off the assistant's drafts use: the
-// wording is a starting point, not a verdict.
+// wording is a starting point, not a verdict. A digit picks the row it is
+// drawn beside, the way the targets chooser's do.
 func (m Model) onCandidatesKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	rows := m.candRows()
 	switch s := k.String(); s {
 	case "esc", "q", "ctrl+[":
 		return m.closeCandidates(), nil
 	case "enter", "o", "l", "right":
 		return m.chooseCandidate(m.cand.idx)
 	case "j", "down", "ctrl+n":
-		m.cand.move(1, m.candRows())
+		m.cand.move(1, rows)
 	case "k", "up", "ctrl+p":
-		m.cand.move(-1, m.candRows())
+		m.cand.move(-1, rows)
 	case "g", "home":
-		m.cand.move(-len(m.cand.rows), m.candRows())
+		m.cand.move(-len(m.cand.items), rows)
 	case "G", "end":
-		m.cand.move(len(m.cand.rows), m.candRows())
+		m.cand.move(len(m.cand.items), rows)
+	default:
+		if i, ok := m.cand.pick(s, rows); ok {
+			return m.chooseCandidate(i)
+		}
 	}
 	return m, nil
 }
@@ -66,10 +91,10 @@ func (m Model) onCandidatesKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 // so the send that leaves the composer can drop the mirrored row — the card on
 // Feishu stays lark-watch's and resolves on its own.
 func (m Model) chooseCandidate(i int) (tea.Model, tea.Cmd) {
-	if i < 0 || i >= len(m.cand.rows) {
+	if i < 0 || i >= len(m.cand.items) {
 		return m, nil
 	}
-	c := m.cand.rows[i]
+	c := m.cand.items[i]
 	m = m.closeCandidates()
 	m.areap().SetValue(strings.TrimSpace(c.Text))
 	m.replan()
@@ -80,7 +105,7 @@ func (m Model) chooseCandidate(i int) (tea.Model, tea.Cmd) {
 // closeCandidates puts the composer back.
 func (m Model) closeCandidates() Model {
 	m.mode = modeNormal
-	m.cand = candPicker{}
+	m.cand = menu[store.Candidate]{}
 	m.layout()
 	return m
 }
@@ -97,67 +122,17 @@ func clearCandidate(d Deps, mid string) tea.Cmd {
 	}
 }
 
-func (c *candPicker) move(d, rows int) { moveCursor(&c.idx, &c.top, d, len(c.rows), rows) }
-
-// candRows is how many candidates the box shows: the composer's height less
-// the line the list is titled by.
-func (m Model) candRows() int { return max(1, m.composerHeight()-1) }
-
-func (m Model) candVisible() []store.Candidate {
-	return window(m.cand.rows, m.cand.top, m.candRows())
+// candRows is how many drafts the list shows. It stands over the pane, so it
+// costs the composer's box nothing.
+func (m Model) candRows() int {
+	if m.mode != modeCandidates {
+		return 0
+	}
+	return m.floatRoom(len(m.cand.items), m.cand.maxRows())
 }
 
-// renderCandidates draws the picker in the composer's place, filling exactly
-// the box the composer would have drawn.
-func (m Model) renderCandidates() string {
-	w := m.bandWidth(m.side) - 2
-	rows := m.candRows()
-	count := stDim.Render(strconv.Itoa(m.cand.idx+1) + "/" + strconv.Itoa(len(m.cand.rows)))
-	lines := []string{padBetween(stBold.Render("drafts")+stAccent.Render(" › ")+
-		stDim.Render("j/k move · enter fill composer · esc cancel"), count, w)}
-	for i, c := range m.candVisible() {
-		lines = append(lines, m.candLine(c, m.cand.top+i, w))
-	}
-	for len(lines) < rows+1 {
-		lines = append(lines, fit("", w))
-	}
-	return paneStyle(true).Render(strings.Join(lines[:rows+1], "\n"))
-}
-
-// candLine stands one candidate up in a row: the numeral the Feishu card gives
-// the same draft, the first line of its wording, and the marks that change what
-// picking it means — markdown renders as rich text, and a draft the reader has
-// already answered past is a wording to borrow, not a reply still owed.
-func (m Model) candLine(c store.Candidate, i int, w int) string {
-	mark := "  "
-	if i == m.cand.idx {
-		mark = stAccent.Render("› ")
-	}
-	head := mark + candNumeral(m.cand.top+i) + " "
-	text := firstDisplayLine(c.Text)
-	room := max(4, w-lipgloss.Width(head)-2)
-	style := lipgloss.NewStyle()
-	if i == m.cand.idx {
-		style = stBold
-	}
-	line := style.Render(truncate(text, room))
-	if c.Format == "markdown" {
-		line += stDim.Render(" md")
-	}
-	if c.Replied {
-		line += stDim.Render(" · replied after")
-	}
-	return head + line
-}
-
-// candNumeral counts candidates the way the Feishu card does. lark-watch stops
-// at three; a longer list keeps counting, in plain digits.
-func candNumeral(i int) string {
-	if i >= 0 && i <= 19 {
-		return string(rune('①' + i))
-	}
-	return strconv.Itoa(i + 1)
-}
+// candHint names the keys the picker owns, on the badge row under it.
+const candHint = "Enter fill · 1-9 pick · Esc cancel"
 
 // firstDisplayLine is the whole of a single-line draft and the opening of a
 // longer one — enough to tell the candidates apart, which is all a row is for.

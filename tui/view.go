@@ -828,7 +828,7 @@ func (m Model) View() tea.View {
 // wherever keys are text, vim's block wherever they are commands. The block is
 // steady because it is parked rather than written at.
 func cursorShape(md mode) (tea.CursorShape, bool) {
-	if md == modeNormal || md == modeVisual || md == modeTarget {
+	if md == modeNormal || md == modeVisual || md == modeTarget || md == modeCandidates {
 		return tea.CursorBlock, false
 	}
 	return tea.CursorBar, true
@@ -1148,8 +1148,6 @@ func (m Model) renderBand(s composerSide) string {
 			return m.renderForward()
 		case modeTarget:
 			return m.renderTargets()
-		case modeCandidates:
-			return m.renderCandidates()
 		}
 	}
 	return m.renderInput(s)
@@ -1186,13 +1184,15 @@ func (m Model) renderBadge(w int) string {
 	left := stChipEdge.Render(chipLeft) + stChip.Render(m.draft.kind.msgType()) + stChipEdge.Render(chipRight)
 	hint := stDim.Render(composerHint)
 	switch {
+	case m.mode == modeCandidates && m.candRows() > 0:
+		hint = stDim.Render(strconv.Itoa(m.cand.idx+1) + "/" + strconv.Itoa(len(m.cand.items)) + " · " + candHint)
 	case m.mode != modeInsert:
 		hint = stDim.Render(writeHint)
 	case m.pumShowing():
 		// The popup has taken Enter, so the row says so rather than going on
 		// promising a send. Its count rides here too, which is what keeps the
 		// popup itself to offers alone.
-		hint = stDim.Render(strconv.Itoa(m.pum.idx+1) + "/" + strconv.Itoa(len(m.pum.hits)) + " · " + pumHint)
+		hint = stDim.Render(strconv.Itoa(m.pum.menu.idx+1) + "/" + strconv.Itoa(len(m.pum.menu.items)) + " · " + pumHint)
 	}
 	room := max(0, w-lipgloss.Width(left)-lipgloss.Width(hint)-2)
 	if m.draftErr != nil {

@@ -107,7 +107,7 @@ type Model struct {
 	targets targets
 	// cand is the chooser over lark-watch's pending drafts for the open
 	// chat, open only in modeCandidates.
-	cand candPicker
+	cand menu[store.Candidate]
 	// candFilled names the mid whose candidate the composer was seeded with,
 	// so the send that leaves the composer can drop the mirrored row. It does
 	// not follow the reader into another chat.
@@ -532,11 +532,11 @@ func (m Model) picturePrepare() string {
 			claimed.take(pic)
 		}
 	}
-	// The completion popup stands over the writing area on the same rule.
-	for _, hit := range m.pumVisible() {
-		if hit.emoji.Key != "" {
-			_, pic := m.pickerIcon(hit.emoji)
-			claimed.take(pic)
+	// The list standing over the panes is claimed on the same rule, from the
+	// very pieces it draws, so no list can show a picture it never asked for.
+	for _, row := range m.floatSegs() {
+		for _, seg := range row {
+			claimed.take(seg.pic)
 		}
 	}
 	// The lines standing over the composer are claimed with it: the message
@@ -695,7 +695,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.notify("no pending reply drafts in this chat", true), nil
 		}
 		m.mode = modeCandidates
-		m.cand = candPicker{rows: msg.rows}
+		m.cand = fillMenu(msg.rows, candSpec)
 		m.layout()
 		return m, nil
 	case candidateClearedMsg:
