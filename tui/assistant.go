@@ -602,7 +602,7 @@ func (m Model) onAIChunk(msg aiChunkMsg) (tea.Model, tea.Cmd) {
 		t.state, t.cancel, done = aiStopped, nil, true
 	case !c.Done:
 		if m.aiP.follow {
-			m.aiP.toBottom(m.listHeight())
+			m.aiP.toBottom(m.aiListHeight())
 		}
 		cmds = append(cmds, waitForAI(t.id, t.ch))
 	default:
@@ -851,7 +851,7 @@ func (p *aiPanel) rebuild(m Model) {
 	}
 	p.sel = clamp(p.sel, 0, max(0, len(p.rows)-1))
 	if p.follow {
-		p.toBottom(m.listHeight())
+		p.toBottom(m.aiListHeight())
 		p.sel = max(0, len(p.rows)-1)
 	}
 }
@@ -1019,7 +1019,7 @@ func (m *Model) aiMove(n int) {
 	}
 	p.follow = false
 	p.sel = clamp(p.sel+n, 0, len(p.rows)-1)
-	h := m.listHeight()
+	h := m.aiListHeight()
 	if p.sel < p.top {
 		p.top = p.sel
 	}
@@ -1913,7 +1913,8 @@ func streamCardText(t *aiTurn) string {
 
 // askStreamConfirm arms the y/n streaming into the chat asks for: the card is
 // on the wire the moment the answer starts growing, which no composer step
-// gates, and without an anchor it opens the chat as a new message.
+// gates, and without an anchor it opens the chat as a new message. The keys
+// step out of the box to answer it — a y typed on is a letter, not an answer.
 func (m Model) askStreamConfirm() (tea.Model, tea.Cmd) {
 	q := strings.TrimSpace(m.aiP.input.Value())
 	if q == "" {
@@ -1929,6 +1930,9 @@ func (m Model) askStreamConfirm() (tea.Model, tea.Cmd) {
 	if a := m.aiP.anchor; a != nil {
 		asks = append(asks, "as a reply to "+displaySender(*a, m.deps.Self, m.suffixOf(a.SenderID)))
 	}
+	m.mode = modeNormal
+	m.focus = paneThread
+	m.areap().Blur()
 	m.confirm = confirmation{kind: confirmAIStream, aiStream: q}
 	return m.notify(strings.Join(asks, " ")+"? y/n", false), nil
 }

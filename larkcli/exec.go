@@ -1135,7 +1135,7 @@ func (c *ExecClient) PatchMessage(ctx context.Context, messageID, content string
 		return err
 	}
 	_, err = c.runInput(WithLane(ctx, LaneCard), "user", body,
-		"api", "PATCH", "/open-apis/im/v1/messages/"+messageID)
+		"api", "PATCH", "/open-apis/im/v1/messages/"+messageID, "--data", "-")
 	return err
 }
 

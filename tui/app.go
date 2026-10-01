@@ -2380,7 +2380,7 @@ func (m Model) pageStep() int {
 func (m *Model) scrollRight(n int) bool {
 	switch {
 	case m.aiOpen():
-		m.aiP.scroll(n, m.listHeight())
+		m.aiP.scroll(n, m.aiListHeight())
 	case m.infoOpen:
 		m.infoTop = clamp(m.infoTop+n, 0, max(0, len(m.infoLines(m.rightWidth()-2))-m.listHeight()))
 	default:

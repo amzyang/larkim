@@ -291,6 +291,10 @@ func (m Model) listHeight() int { return max(1, m.bodyHeight()-headerHeight) }
 // on the rule under its title.
 func (m Model) msgListHeight() int { return max(1, m.bodyHeight()-msgHeaderHeight) }
 
+// aiListHeight is the assistant panel's viewport: the pane's title, the
+// context strip and the rule under it are three rows the turns never get.
+func (m Model) aiListHeight() int { return max(1, m.bodyHeight()-3) }
+
 // picHeight is the tallest a picture may be. It is the list height with the
 // composer at its shortest rather than the current one: sizing to the live
 // pane would re-encode and re-send every picture on screen each time the reply

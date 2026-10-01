@@ -1079,6 +1079,7 @@ func streamAsk(t *testing.T, m Model, question string) (Model, *aiTurn) {
 	out, _ := m.askStreamConfirm()
 	m = out.(Model)
 	require.Equal(t, confirmAIStream, m.confirm.kind)
+	require.Equal(t, modeNormal, m.mode, "the y/n owns the next key, so the keys leave the box")
 	yout, ycmd, _ := m.answerConfirm("y")
 	m = yout.(Model)
 	started := askStarted(t, ycmd)
