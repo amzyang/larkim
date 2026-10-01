@@ -83,7 +83,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   加宽前先确认目标端点的频控等级
 - `go generate ./emoji` 需要已安装的飞书客户端（读它的 emoji 资源）与 `uv`（`uv run --with pypinyin`
   给词表注音）：go-pinyin 逐字查表、多音字只取第一个读音，把音乐读成 yinle、调皮读成 diaopi。
-  只有 `table.go` 的生成走 Python，产物入库，运行时仍是纯 Go；会话名与人名的拼音仍走 go-pinyin
+  只有 `table.go` 与 `unicode_table.go` 的生成走 Python，产物入库，运行时仍是纯 Go；会话名与人名的拼音仍走 go-pinyin
+- `unicode_table.go`（composer 的全量 Unicode emoji）由 `emoji/internal/genunicode` 从 jsdelivr 拉固定版本的
+  unicode-emoji-json、emojilib、CLDR annotations（含 derived），缓存在 `~/Library/Caches/larkim/genunicode/<pkg>@<ver>`：
+  只有首次或改版本常量时联网，删该目录强制重拉
 
 ## Data contracts
 

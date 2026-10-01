@@ -25,11 +25,6 @@ type Emoji struct {
 	// Glyph is the Unicode this terminal can draw in its place, or "" when no
 	// character carries the same feeling and a name or picture has to stand in.
 	Glyph string
-	// Insert is what a draft carries when this emoji is chosen, where that is
-	// not the glyph: an ASCII emoticon is several cells of text rather than one
-	// character, so it cannot be drawn in the column an emoji is drawn in and
-	// has to say separately what it writes.
-	Insert string
 	// ZH and EN are the names the client displays, which are also what a text
 	// message carries between brackets.
 	ZH, EN string
@@ -40,12 +35,17 @@ type Emoji struct {
 	// pinyin and pinyin initials, the aliases, the English name, the key, and
 	// the character itself where this emoji is the one that owns it.
 	Terms []string
+	// Names is how many of Terms spell the emoji's own names, the rest being
+	// keywords it is tagged with. A query that lands on a name outranks one
+	// that lands on a tag at the same score: rocket is the rocket's name and
+	// only one of the astronaut's tags. Zero means every term is a name.
+	Names int
 	// Order is the emoji's place in the client's own panel, which is the order
 	// a picker falls back to when nothing has been typed.
 	Order int
 	// NoReaction marks an emoji Feishu refuses as a reaction however it reaches
 	// this client: another tenant's culture emoji, the ones the client has
-	// withdrawn, and the Unicode ones in common.go, which are characters a
+	// withdrawn, and the Unicode ones in unicode.go, which are characters a
 	// message carries rather than keys the reaction API knows.
 	NoReaction bool
 	// Delisted marks an emoji the client has withdrawn. It is the one kind of

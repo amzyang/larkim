@@ -152,11 +152,11 @@ func TestSearch_FindsAnEmojiByTheCharacterItDraws(t *testing.T) {
 		require.Equal(t, want, first(t, react.Search(query)).Key, query)
 	}
 	require.Equal(t, "rocket", first(t, NewComposerIndex().Search("🚀")).Key,
-		"the Unicode extras answer to their character too")
+		"the Unicode emoji answer to their character too")
 }
 
 func TestSearch_ACharacterAnswersWithOneEmoji(t *testing.T) {
-	// 👀 is the Unicode extra alone: Feishu's 看 is a face looking sideways
+	// 👀 is the Unicode emoji alone: Feishu's 看 is a face looking sideways
 	// and draws as its own picture, so nothing else claims the character.
 	hits := NewComposerIndex().Search("👀")
 	require.Len(t, hits, 1)

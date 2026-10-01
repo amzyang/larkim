@@ -90,7 +90,7 @@ func shortcodeFinding(e emoji.Emoji, spelling string, line, col int) Finding {
 	return Finding{
 		Rule: "emoji_not_rendered", Line: line, Column: col,
 		Message: spelling + " arrives as those characters: Feishu reads no shortcode",
-		Hint:    "write " + cmp.Or(e.Insert, e.Glyph, "["+e.Name()+"]") + " instead",
+		Hint:    "write " + cmp.Or(e.Glyph, "["+e.Name()+"]") + " instead",
 	}
 }
 
@@ -105,8 +105,8 @@ func bracketFinding(e emoji.Emoji, spelling string, line, col int) Finding {
 		Message: spelling + " arrives as those characters: this line goes as markdown, which reads no emoji name",
 		Hint:    "move it to a line of its own, clear of the markup around it",
 	}
-	if g := cmp.Or(e.Insert, e.Glyph); g != "" {
-		f.Hint = "write " + g + " instead"
+	if e.Glyph != "" {
+		f.Hint = "write " + e.Glyph + " instead"
 	}
 	return f
 }

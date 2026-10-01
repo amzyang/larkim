@@ -23,6 +23,8 @@ type Hit struct {
 	Term      string
 	Positions []int
 	score     int
+	// tag is a hit that landed on a keyword rather than a name.
+	tag bool
 }
 
 // Index is a prepared set of emoji to search. Building it once keeps the
@@ -56,12 +58,12 @@ type usage struct {
 // search would put them out of reach entirely.
 func NewReactionIndex() *Index { return newIndex(reactionUsedFile, All(), Emoji.Offerable) }
 
-// NewComposerIndex prepares the emoji a draft may carry: Feishu's own, and the
-// Unicode ones it has no answer for. Everything here is either a character any
+// NewComposerIndex prepares the emoji a draft may carry: Feishu's own, and every
+// Unicode one it has no answer for. Everything here is either a character any
 // terminal draws or a name a Feishu text message spells, so the composer can
 // offer more than the reaction picker may.
 func NewComposerIndex() *Index {
-	return newIndex(composerUsedFile, slices.Concat(All(), Common()), nil)
+	return newIndex(composerUsedFile, slices.Concat(All(), Unicode()), nil)
 }
 
 // newIndex prepares the items that pass keep. A nil keep takes all of them.
@@ -174,7 +176,8 @@ func (ix *Index) Search(query string) []Hit {
 		if score <= 0 {
 			continue
 		}
-		hits = append(hits, Hit{Emoji: e, Term: e.Terms[j], Positions: pos, score: score})
+		tag := e.Names > 0 && j >= e.Names
+		hits = append(hits, Hit{Emoji: e, Term: e.Terms[j], Positions: pos, score: score, tag: tag})
 	}
 	slices.SortStableFunc(hits, func(a, b Hit) int {
 		// Score on its own before the rest: cmp.Or evaluates every argument it
@@ -185,11 +188,19 @@ func (ix *Index) Search(query string) []Hit {
 		}
 		return cmp.Or(
 			ix.usedRank(a.Emoji)-ix.usedRank(b.Emoji),
+			cmp.Compare(boolInt(a.tag), boolInt(b.tag)),
 			utf8.RuneCountInString(a.Term)-utf8.RuneCountInString(b.Term),
 			a.Emoji.Order-b.Emoji.Order,
 		)
 	})
 	return hits
+}
+
+func boolInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
 }
 
 // unqueried is what an empty query answers with.

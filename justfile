@@ -17,5 +17,9 @@ test:
 vet:
     go vet ./...
 
+# 重新生成 emoji 表：需要飞书客户端与 uv；首次需联网，之后读 ~/Library/Caches/larkim/genunicode
+generate:
+    go generate ./emoji
+
 snapshot:
     goreleaser release --snapshot --clean

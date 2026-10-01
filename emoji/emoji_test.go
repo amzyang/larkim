@@ -306,7 +306,7 @@ func TestAll_NoTwoOfferableEmojiShareACharacter(t *testing.T) {
 	// bare spellings in glyphs.go are the one allowed overlap: they carry no
 	// terms and no name, so no query ever reaches them.
 	owner := map[string]string{}
-	for _, e := range slices.Concat(All(), Common()) {
+	for _, e := range slices.Concat(All(), Unicode()) {
 		if e.Glyph == "" || len(e.Terms) == 0 {
 			continue
 		}

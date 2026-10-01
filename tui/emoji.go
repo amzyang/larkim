@@ -94,12 +94,6 @@ func emojiWords(e emoji.Emoji, drawn, term string, pos []int) string {
 	if !strings.EqualFold(key, name) {
 		drawn = stDim.Render(key) + " " + drawn
 	}
-	// An emoji written rather than drawn has nothing in the icon column, so
-	// the line has to show the text itself: it is what pressing Enter writes,
-	// and a name alone says nothing about which face it is.
-	if e.Insert != "" {
-		drawn += " " + e.Insert
-	}
 	// A term that spells neither the key nor the name says which spelling
 	// answered — which pinyin, which alias — because otherwise a hit reached
 	// that way looks arbitrary. The character is not one of them: it is already

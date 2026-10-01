@@ -16,11 +16,12 @@ import (
 	"log"
 	"maps"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
+
+	"github.com/amzyang/larkim/emoji/internal/genutil"
 )
 
 // assetsDir is where the macOS client keeps the files below. Versions/Current
@@ -68,9 +69,6 @@ var delisted = map[string]bool{
 	"DETERGENT": true, "AWESOME": true, "GOODJOB": true,
 }
 
-// nonTerm strips everything a query could not carry from a search term.
-var nonTerm = regexp.MustCompile(`[^a-z0-9]+`)
-
 // toneSuffix is how the client marks a skin tone in a display name: 鼓掌（中等浅色）
 // is 鼓掌 in one of five tones. The names are what ties a variant back to the
 // emoji it is a tone of — the keys do not, because Applaud and APPLAUSE are
@@ -116,7 +114,7 @@ func main() {
 		}
 	}
 	slices.Sort(kept)
-	sound := sounds(spoken(i18n, aliases, kept))
+	sound := genutil.Sounds(spoken(i18n, aliases, kept))
 
 	entries := make([]entry, 0, len(kept))
 	folded := map[string]string{}
@@ -146,7 +144,7 @@ func main() {
 		entries = append(entries, entry{
 			Key: key, ZH: names["zh-CN"], EN: names["en-US"],
 			Rect:  [4]int{box.X, box.Y, box.Width, box.Height},
-			Terms: terms(sound, names["zh-CN"], names["en-US"], key, aliases[key]),
+			Terms: genutil.Terms(sound, append([]string{names["zh-CN"]}, aliases[key]...), []string{names["en-US"], key}),
 			Order: pos, NoReaction: foreign[key] || delisted[key], Delisted: delisted[key],
 		})
 	}
@@ -181,69 +179,6 @@ func expired(key string) bool { return yearly.MatchString(key) || zodiac[key] }
 // tone is a skin-tone variant of an emoji the client offers alongside it.
 func tone(key string) bool {
 	return slices.ContainsFunc(tones, func(t string) bool { return strings.HasPrefix(key, t) })
-}
-
-// terms is what a query is matched against. Each Chinese name contributes the
-// name itself, its pinyin and the pinyin initials, because those are the three
-// ways one reaches for 赞 without leaving the home row.
-func terms(sound map[string][2]string, zh, en, key string, aliases []string) []string {
-	var out []string
-	add := func(s string) {
-		if s = nonTerm.ReplaceAllString(strings.ToLower(s), ""); s != "" && !slices.Contains(out, s) {
-			out = append(out, s)
-		}
-	}
-	for _, name := range append([]string{zh}, aliases...) {
-		if name == "" {
-			continue
-		}
-		out = append(out, name) // the name itself keeps its Chinese
-		add(sound[name][0])
-		add(sound[name][1])
-	}
-	add(en)
-	add(key)
-	return out
-}
-
-// pinyinScript reads one name per line and answers with its full pinyin and
-// its initials, tab-separated.
-//
-// It is pypinyin rather than the go-pinyin this module already carries because
-// only pypinyin reads a name as a phrase: go-pinyin looks a character up on its
-// own, so it takes the first reading of every polyphone and spells 音乐 yinle,
-// 调皮 diaopi and 精神补给 jingshenbugei — none of which anyone would type.
-// This runs at generation time and its answers are baked into table.go, so the
-// binary keeps its pure-Go runtime and nothing but `go generate` needs Python.
-const pinyinScript = `
-import sys
-from pypinyin import Style, lazy_pinyin
-for line in sys.stdin.read().splitlines():
-    full = "".join(lazy_pinyin(line, style=Style.NORMAL))
-    initials = "".join(lazy_pinyin(line, style=Style.FIRST_LETTER))
-    print(f"{full}\t{initials}")
-`
-
-// sounds spells every name in one call, because starting an interpreter per
-// name would cost more than the whole generation does.
-func sounds(names []string) map[string][2]string {
-	cmd := exec.Command("uv", "run", "--quiet", "--with", "pypinyin", "python", "-c", pinyinScript)
-	cmd.Stdin = strings.NewReader(strings.Join(names, "\n"))
-	cmd.Stderr = os.Stderr
-	out, err := cmd.Output()
-	if err != nil {
-		log.Fatalf("uv run pypinyin: %v", err)
-	}
-	lines := strings.Split(strings.TrimRight(string(out), "\n"), "\n")
-	if len(lines) != len(names) {
-		log.Fatalf("pypinyin answered %d of %d names", len(lines), len(names))
-	}
-	sound := make(map[string][2]string, len(names))
-	for i, line := range lines {
-		full, initials, _ := strings.Cut(line, "\t")
-		sound[names[i]] = [2]string{full, initials}
-	}
-	return sound
 }
 
 // spoken is every name a term is built from, deduplicated so one pypinyin call

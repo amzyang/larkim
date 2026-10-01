@@ -243,14 +243,13 @@ func (m Model) emojiHits(query string) []pumHit {
 }
 
 // emojiInsert is what accepting an emoji writes: the character where one
-// carries the same feeling, the ASCII where the emoji is written rather than
-// drawn, and the bracketed name where neither does.
+// carries the same feeling, and the bracketed name where none does.
 //
 // The name is the English one this client displays, which is the spelling it
 // puts on the wire. A bracketed name is resolved against the reading client's
 // own table, which holds both languages' names for every emoji, so it draws
 // there whichever language that client is set to.
-func emojiInsert(e emoji.Emoji) string { return cmp.Or(e.Insert, e.Glyph, "["+e.Name()+"]") }
+func emojiInsert(e emoji.Emoji) string { return cmp.Or(e.Glyph, "["+e.Name()+"]") }
 
 // onPumKey drives the popup. It is reached only while one is open, ahead of the
 // writing area, so every key here is one the composer would otherwise have.
