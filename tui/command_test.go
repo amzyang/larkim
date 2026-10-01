@@ -53,7 +53,7 @@ func TestResolveCommand_RefusesAPrefixSeveralCommandsAnswerTo(t *testing.T) {
 func TestCommandsWithPrefix_OffersACommandOnceHoweverManySpellingsMatched(t *testing.T) {
 	// goto answers to both "goto" and the alias "chat", and c reaches it
 	// through the second — but it is one command and so one offer.
-	require.Equal(t, []string{"copy", "goto", "config"}, names(commandsWithPrefix("c")))
+	require.Equal(t, []string{"copy", "goto", "candidates", "config"}, names(commandsWithPrefix("c")))
 	require.Equal(t, []string{"react", "read-all"}, names(commandsWithPrefix("re")))
 	require.Empty(t, commandsWithPrefix("zz"))
 }

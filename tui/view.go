@@ -941,7 +941,7 @@ func (m Model) renderChats(h int) string {
 		default:
 			mark, _ := m.chatIx.match(row.chat, m.chatFilter)
 			r = renderChatRow(m.avatars, row, m.draftForRow(row.chatID()), m.unread[row.chatID()],
-				m.gists.at(row, m.deps.Self, m.chatPics()), now, w, mark)
+				m.cands[row.chatID()], m.gists.at(row, m.deps.Self, m.chatPics()), now, w, mark)
 		}
 		sel := i == m.chatIdx
 		bottom := line(r.avatarBottom, r.bottom, sel)
@@ -1148,6 +1148,8 @@ func (m Model) renderBand(s composerSide) string {
 			return m.renderForward()
 		case modeTarget:
 			return m.renderTargets()
+		case modeCandidates:
+			return m.renderCandidates()
 		}
 	}
 	return m.renderInput(s)

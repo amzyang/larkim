@@ -52,6 +52,7 @@ const (
 	modeSearch
 	modeTarget
 	modeForward
+	modeCandidates
 )
 
 // Model is the Bubble Tea model.
@@ -90,6 +91,10 @@ type Model struct {
 	drafts map[string]store.Draft
 	// frameDrafts is the same for the thread rows, keyed by thread.
 	frameDrafts map[string]store.Draft
+	// cands is how many pending lark-watch drafts each chat holds, for the
+	// chat list's marker. lark-watch mirrors them in; the revision bump a
+	// put or clear costs is what refreshes this map.
+	cands map[string]int
 	// chatPollInFlight holds the open chat's poll to one call at a time, so a
 	// slow one costs a skipped beat instead of a queue.
 	chatPollInFlight bool
@@ -100,6 +105,13 @@ type Model struct {
 	// targets is the chooser over what the selected message leads to, open
 	// only in modeTarget.
 	targets targets
+	// cand is the chooser over lark-watch's pending drafts for the open
+	// chat, open only in modeCandidates.
+	cand candPicker
+	// candFilled names the mid whose candidate the composer was seeded with,
+	// so the send that leaves the composer can drop the mirrored row. It does
+	// not follow the reader into another chat.
+	candFilled string
 	// picker is the emoji chooser, open only in modeEmoji.
 	picker picker
 	// pum is the completion popup over the writing area, open only while
@@ -653,7 +665,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		vis := m.visibleRows()
 		wasCursor, wasTop := rowKeyAt(vis, m.chatIdx), rowKeyAt(vis, m.chatTop)
 		m.chats, m.threads, m.unread = msg.chats, msg.threads, msg.unread
-		m.drafts, m.frameDrafts = msg.drafts, msg.frameDrafts
+		m.drafts, m.frameDrafts, m.cands = msg.drafts, msg.frameDrafts, msg.cands
 		// The list opens on the Unread row, which is the one row that answers
 		// what is waiting without taking any of it as read. Opening a chat
 		// instead would put its page in front of a reader who has not looked
@@ -671,6 +683,16 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.rebuildMessages()
 		}
 		return m, open
+	case candidatesLoadedMsg:
+		if len(msg.rows) == 0 {
+			return m.notify("no pending reply drafts in this chat", true), nil
+		}
+		m.mode = modeCandidates
+		m.cand = candPicker{rows: msg.rows}
+		m.layout()
+		return m, nil
+	case candidateClearedMsg:
+		return m, nil
 	case messagesLoadedMsg:
 		// A page for the chat the panel's cursor happens to rest in is not the
 		// panel's page: it would put that chat's whole history under the
@@ -1048,7 +1070,12 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.dropOutbox(msg.localID)
 		m.refreshPanes()
-		return m.notify("sent", false), m.reloadCurrent()
+		var clear tea.Cmd
+		if m.candFilled != "" {
+			clear = clearCandidate(m.deps, m.candFilled)
+			m.candFilled = ""
+		}
+		return m.notify("sent", false), tea.Batch(m.reloadCurrent(), clear)
 	case selfNameMsg:
 		m.selfName = msg.name
 		m.refreshPanes()
@@ -1184,6 +1211,7 @@ func (m *Model) openChatFrom(chatID string, sinceMs int64) tea.Cmd {
 		limit = anchoredPageSize
 	}
 	m.pendingChat, m.pendingSince, m.pendingLimit = chatID, sinceMs, limit
+	m.candFilled = ""
 	m.selectCurrentChat()
 	return tea.Batch(keep, loadMessages(m.deps, chatID, sinceMs, limit), scheduleChatRefresh(chatID))
 }
@@ -1705,6 +1733,8 @@ func (m Model) onKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m.onForwardKey(k)
 	case modeTarget:
 		return m.onTargetKey(k)
+	case modeCandidates:
+		return m.onCandidatesKey(k)
 	case modeSearch:
 		return m.onSearchKey(k)
 	case modeVisual:
@@ -1951,6 +1981,8 @@ func (m Model) onNormalKey(s string) (tea.Model, tea.Cmd) {
 		return m.askReEdit()
 	case "f":
 		return m.openForward()
+	case "C":
+		return m.openCandidates()
 	case "I":
 		return m.toggleInfo()
 	case "t":
@@ -2699,6 +2731,8 @@ func (m Model) runCommand(line string) (tea.Model, tea.Cmd) {
 		return m.startMarkAll()
 	case "mentions":
 		return m.openMentions()
+	case "candidates":
+		return m.openCandidates()
 	case "unread":
 		return m.openUnread()
 	case "search":
@@ -3121,6 +3155,8 @@ func modeLabel(md mode) string {
 		return "SEARCH"
 	case modeTarget:
 		return "OPEN"
+	case modeCandidates:
+		return "DRAFTS"
 	}
 	return "NORMAL"
 }

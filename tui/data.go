@@ -148,6 +148,9 @@ type (
 		drafts map[string]store.Draft
 		// frameDrafts is the same for the thread rows, keyed by thread.
 		frameDrafts map[string]store.Draft
+		// cands counts each chat's pending lark-watch drafts, for the marker
+		// beside the drafts one.
+		cands map[string]int
 	}
 	messagesLoadedMsg struct {
 		chatID string
@@ -162,6 +165,12 @@ type (
 		// names it inserted into tags on the way out.
 		roster []store.Contact
 	}
+	candidatesLoadedMsg struct {
+		rows []store.Candidate
+	}
+	// candidateClearedMsg closes a fire-and-forget mirror clear. Nothing acts
+	// on it; the badge goes with the revision bump.
+	candidateClearedMsg struct{}
 	// draftSavedMsg closes a fire-and-forget draft write. Nothing acts on it;
 	// it exists because a tea.Cmd has to return a message.
 	draftSavedMsg   struct{}
@@ -478,8 +487,15 @@ func loadChats(d Deps) tea.Cmd {
 			d.log().Error("load frame drafts", "err", err)
 			frameDrafts = nil
 		}
+		// A chat whose mirror count cannot be answered for keeps its rows and
+		// loses only the marker, the same trade the drafts make.
+		cands, err := d.Store.CandidateChats(ctx)
+		if err != nil {
+			d.log().Error("load candidates", "err", err)
+			cands = nil
+		}
 		return chatsLoadedMsg{chats: chats, threads: threads, unread: unread,
-			drafts: drafts, frameDrafts: frameDrafts}
+			drafts: drafts, frameDrafts: frameDrafts, cands: cands}
 	}
 }
 

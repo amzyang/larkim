@@ -174,6 +174,29 @@ A send that Feishu refused is not kept here. It stays in the TUI's in-memory
 outbox as a `(failed)` bubble the reader resends with `.` or drops with `x`, so
 it does not survive the process.
 
+## draft_candidates
+
+The reply drafts lark-watch is holding for a message, mirrored so the TUI can
+offer them at the composer. lark-watch owns the writes and reaches them through
+the `larkim candidates` command, never the database file: `candidates put`
+when it sends a confirmation card, `candidates clear` when the pending
+resolves — a card button, a banner send, a quick reply, the 24h TTL sweep.
+One row per pending source message, the same `mid` key lark-watch's own
+`pending` table uses, so a re-draft overwrites. The TUI only reads the rows and
+clears one after a send left a composer it filled; the Feishu card stays
+lark-watch's and resolves on its own. Unlike `drafts` this table is inside the
+`data_rev` triggers — the writer is not the displayer — and it is the only
+table here with a DELETE trigger.
+
+| column | meaning |
+|---|---|
+| `mid` | the source message the drafts answer, and the primary key |
+| `chat_id` | its chat, looked up from `messages` at `candidates put` time |
+| `draft` | candidate 0 |
+| `format` | `text` or `markdown`, applying to every candidate of the mid |
+| `extras` | minimal JSON array holding candidates 1..n |
+| `created_ms` | when `candidates put` ran, Unix ms UTC |
+
 ## resources, message_resources
 
 A Feishu resource key is globally unique, so `resources` holds one row per key: what the bytes are and whether they arrived. `message_resources` holds the references — which messages name which key — and many messages routinely share one, because a notification card's header picture is in every card its sender posts.

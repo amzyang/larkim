@@ -53,7 +53,7 @@ func TestCmdComp_OffersEveryCommandAPrefixReaches(t *testing.T) {
 
 	// goto is reached through its alias chat, and is offered under the name
 	// the line will carry.
-	require.Equal(t, []string{"copy <200|7d|all>", "goto <chat>", "config [<key>]"}, offers(m))
+	require.Equal(t, []string{"copy <200|7d|all>", "goto <chat>", "candidates", "config [<key>]"}, offers(m))
 }
 
 func TestCmdComp_WalkingWritesTheOfferIntoTheLine(t *testing.T) {

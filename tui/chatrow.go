@@ -80,6 +80,22 @@ const muteGlyph = "\uf1f6" + enSpace
 // its place in the message list as a (failed) bubble the outbox can resend.
 const draftGlyph = "\uea73" + enSpace
 
+// candGlyph is the row's own slot for replies someone else drafted: the
+// lightbulb says a suggestion is waiting, where the pencil above says the
+// reader's own words are. It comes from the block muteGlyph is from, so it
+// takes the colour it is given.
+const candGlyph = "\uf0eb" + enSpace
+
+// candMark is what a chat with pending lark-watch drafts draws. The count is
+// the picker's first line, not the row's: one glyph is enough to say drafts
+// are waiting, and a number beside the unread one would be read as theirs.
+func candMark(n int) string {
+	if n <= 0 {
+		return ""
+	}
+	return stDim.Render(candGlyph)
+}
+
 // selfMark is the row's own slot: the draft waiting in this chat. The glyph
 // carries the cell that parts it from the summary, so a chat with nothing
 // unsent gives the whole line to the summary rather than an indent that means
@@ -374,12 +390,12 @@ func chatChips(c store.Chat, pics emojiPics) []rowSeg {
 	return out
 }
 
-// chatSummaryLine is the row's second line: what the reader left unsent, then
-// the reactions the chat collected, then who said what, then the mute mark at
-// the far edge. It comes back in pieces only when a reaction is a picture — a
+// chatSummaryLine is the row's second line: what someone suggested and what
+// the reader left unsent, then the reactions the chat collected, then who said
+// what, then the mute mark at the far edge. It comes back in pieces only when a reaction is a picture — a
 // line of characters stays one string, which is what lets a selection tint it.
-func chatSummaryLine(c store.Chat, d store.Draft, g rowGist, w int) (string, []rowSeg) {
-	mine := selfMark(d)
+func chatSummaryLine(c store.Chat, d store.Draft, cands int, g rowGist, w int) (string, []rowSeg) {
+	mine := candMark(cands) + selfMark(d)
 	chips := g.chips
 	// A message that wants the reader outranks the reactions on it, so the
 	// mention badge stands in their place rather than beside them.
@@ -457,7 +473,7 @@ func markName(s string, pos []int, base lipgloss.Style) string {
 // is left, so the right edge stays aligned however long a name is. mark is
 // the runes of the name the filter landed on, empty when there is no filter
 // or the hit came through pinyin.
-func renderChatRow(av avatars, r listRow, d store.Draft, unread int64, g rowGist, now time.Time, w int, mark []int) chatRow {
+func renderChatRow(av avatars, r listRow, d store.Draft, unread int64, cands int, g rowGist, now time.Time, w int, mark []int) chatRow {
 	c := r.chat
 	avatarTop, avatarBottom, badged := av.cells(r, unread)
 	textWidth := chatTextWidth(w)
@@ -476,7 +492,7 @@ func renderChatRow(av avatars, r listRow, d store.Draft, unread int64, g rowGist
 	room := textWidth - lipgloss.Width(right) - lipgloss.Width(bot) - lipgloss.Width(suffix) - 1
 	title := markName(personName(truncate(name, max(minTitleWidth, room)), suffix), mark, stBold) + bot
 
-	bottom, segs := chatSummaryLine(c, d, g, textWidth)
+	bottom, segs := chatSummaryLine(c, d, cands, g, textWidth)
 	return chatRow{
 		avatarTop:    avatarTop,
 		avatarBottom: avatarBottom,

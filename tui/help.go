@@ -51,6 +51,7 @@ func buildHelpEntries() []helpEntry {
 		{"NORMAL", "", "a link, a file, its pictures, the call it invites to, or the message itself in Feishu"},
 		{"NORMAL", "e", "react to the selected message"},
 		{"NORMAL", "f", "forward it: type to filter chats and people, Enter sends"},
+		{"NORMAL", "C", "pick a reply lark-watch drafted for this chat into the composer"},
 		{"NORMAL", "D", "recall your own message, after a y/n it asks for"},
 		{"NORMAL", "E", "recall it and take its text back into the composer, after the same y/n"},
 		{"NORMAL", "n/N", "the next/previous row with something waiting, muted ones skipped"},
