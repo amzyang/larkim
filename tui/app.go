@@ -2940,6 +2940,9 @@ func (m Model) onClick(ms tea.Mouse) (tea.Model, tea.Cmd) {
 		// The assistant column draws over the frame: its rows are its own,
 		// and nothing under them may answer a click until it is uncovered.
 		if m.aiOpen() {
+			if z, ok := zoneAt(m.aiP.rows, m.aiP.top+row, ms.X-(m.width-m.rightWidth())-1); ok {
+				return m.pressZone(paneThread, m.aiP.rows, m.aiP.top+row, z)
+			}
 			return m, nil
 		}
 		if z, ok := zoneAt(m.threadRows, m.threadTop+row, ms.X-(m.width-m.rightWidth())-1); ok {
@@ -2970,6 +2973,10 @@ func (m Model) onClick(ms tea.Mouse) (tea.Model, tea.Cmd) {
 // read off the strip on screen, which the first press has already changed, so
 // a double click adds and then takes back — which is what the client does.
 func (m Model) pressZone(p pane, rows []msgRow, line int, z clickZone) (tea.Model, tea.Cmd) {
+	// The assistant panel's acts are things to do, not places to open.
+	if z.act.kind != actNone {
+		return m.aiPress(z.act)
+	}
 	if z.jump != "" {
 		return m.jumpToQuoted(p, z.jump)
 	}

@@ -541,3 +541,235 @@ func TestDeleteAI_AsksFirstAndDropsTheStoredRows(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, sessions, "the rows went with the conversation")
 }
+
+// askAnchored asks a question whose anchor is set by hand, the way a cursor
+// on a thread reply would leave it.
+func askAnchored(t *testing.T, m Model, anchor *store.Message, question string) (Model, *aiTurn) {
+	t.Helper()
+	m = press(t, m, "a")
+	m.aiP.anchor = anchor
+	m.aiP.input.SetValue(question)
+	out, cmd := m.submitAI()
+	m = out.(Model)
+	started := askStarted(t, cmd)
+	out, _ = m.onAIStarted(started)
+	m = out.(Model)
+	s := m.aiP.session()
+	require.NotNil(t, s)
+	return m, s.turns[0]
+}
+
+// answerDone finishes a turn's answer and runs the save its finish fires.
+func answerDone(t *testing.T, m Model, t1 *aiTurn, text string) Model {
+	t.Helper()
+	out, done := m.onAIChunk(aiChunkMsg{turn: t1.id, chunk: ai.Chunk{Text: text, Done: true}})
+	m = out.(Model)
+	require.NotNil(t, done)
+	done()
+	return m
+}
+
+// A finished answer's blocks become cards drawn through the preview's own
+// rendering, with their actions under them; a streaming answer shows none of
+// that yet.
+func TestRebuild_BlocksBecomeCardsWithActions(t *testing.T) {
+	f := newFakeAI()
+	m := aiFixture(t, f)
+	m, t1 := ask(t, m, "帮我回复")
+	m = answerDone(t, m, t1, "两选一：\n<reply>\n今晚合。\n</reply>\n<reply>\n明早合，先跑回归。\n</reply>")
+	m.aiP.rebuild(m)
+
+	feet, cards := 0, 0
+	for _, a := range m.aiP.rowAct {
+		if a.card >= 0 {
+			cards++
+		}
+	}
+	for _, r := range m.aiP.rows {
+		if strings.Contains(ansi.Strip(r.text), "Insert") {
+			feet++
+		}
+	}
+	require.Equal(t, 2, feet, "each card draws its own action row")
+	require.Positive(t, cards)
+	require.Contains(t, ansi.Strip(m.renderAI(m.bodyHeight())), "今晚合。")
+
+	// While the answer streams there is nothing to act on yet.
+	m2, t2 := ask(t, aiFixture(t, newFakeAI()), "帮我回复")
+	out, _ := m2.onAIChunk(aiChunkMsg{turn: t2.id, chunk: ai.Chunk{Text: "<reply>\n写到一半"}})
+	m2 = out.(Model)
+	require.NotContains(t, ansi.Strip(m2.renderAI(m2.bodyHeight())), "Insert",
+		"actions wait for the answer to finish")
+}
+
+// The action zones hit at their edges and miss the cells beside them.
+func TestAICardZones_HitAtTheEdgesMissBesideThem(t *testing.T) {
+	f := newFakeAI()
+	m := aiFixture(t, f)
+	m, t1 := ask(t, m, "帮我回复")
+	m = answerDone(t, m, t1, "<reply>\n今晚合。\n</reply>")
+	m.aiP.rebuild(m)
+
+	line := -1
+	for i, r := range m.aiP.rows {
+		if strings.Contains(ansi.Strip(r.text), "Insert") {
+			line = i
+			break
+		}
+	}
+	require.GreaterOrEqual(t, line, 0)
+	// One zone of the row: its own edges hit, and the cells beside it — or
+	// past the row's end — answer nothing that belongs to another act.
+	at := func(x int) (clickZone, bool) { return zoneAt(m.aiP.rows, line, x) }
+	for _, z := range m.aiP.rows[line].zones {
+		hl, ok := at(z.x0)
+		require.True(t, ok && hl.act == z.act, "the left edge hits")
+		hr, ok := at(z.x1 - 1)
+		require.True(t, ok && hr.act == z.act, "the right edge hits")
+		if next, ok := at(z.x1); ok {
+			require.NotEqual(t, z.act, next.act, "the cell after the zone is not this zone")
+		}
+	}
+}
+
+// Insert fills the chat's box with the card's text, quoting the anchor — in
+// its thread when the anchor is a reply of one — and never sends anything.
+func TestInsertCard_FillsTheChatBoxQuotingTheAnchor(t *testing.T) {
+	f := newFakeAI()
+	m := aiFixture(t, f)
+	anchor := store.Message{MessageID: "om_r", ChatID: "oc_quiet", ThreadID: "omt_9",
+		MessagePosition: -1, SenderID: "ou_a", SenderName: "张三", Content: "发布单合了吗"}
+	m, t1 := askAnchored(t, m, &anchor, "怎么回")
+	m = answerDone(t, m, t1, "<reply>\n好的，明早合。\n</reply>")
+
+	m.mode = modeNormal
+	m.areap().Blur()
+	// The cursor stands on the card the follow left it on.
+	out, _, took := m.onAIKey("enter")
+	m = out
+	require.True(t, took)
+	require.False(t, m.aiOpen(), "inserting puts the panel away")
+	require.Equal(t, "om_r", m.replyTo.MessageID, "the box quotes the anchor")
+	require.True(t, m.inThrd, "a reply of a thread is answered in the thread")
+	require.Equal(t, "好的，明早合。", m.input.Value())
+	require.Empty(t, m.outbox, "inserting never sends")
+	require.Equal(t, modeInsert, m.mode)
+}
+
+// Insert into an empty box fills it; a box that already holds text gets the
+// card at the cursor; and the question's draft chip turns it into Replace.
+func TestInsertCard_ReplacesWhenTheQuestionCarriedTheDraft(t *testing.T) {
+	f := newFakeAI()
+	m := aiFixture(t, f)
+	m.input.SetValue("旧草稿")
+	m, t1 := ask(t, m, "润色一下")
+	m = answerDone(t, m, t1, "<reply>\n新的措辞\n</reply>")
+
+	m.mode = modeNormal
+	m.areap().Blur()
+	out, _, _ := m.onAIKey("r")
+	m = out
+	require.Equal(t, "新的措辞", m.input.Value(), "the draft chip the question carried makes this Replace")
+}
+
+func TestInsertCard_ATypedBoxGetsTheCardAtTheCursor(t *testing.T) {
+	f := newFakeAI()
+	m := aiFixture(t, f)
+	m, t1 := ask(t, m, "给个措辞")
+	m = answerDone(t, m, t1, "<reply>\n插进来\n</reply>")
+	// The box picked up typing after the question was asked, so no draft chip
+	// rode with it: the text goes in at the cursor, not over what is there.
+	m.input.Reset()
+	m.input.SetValue("先说这个 ")
+	m.mode = modeNormal
+	m.areap().Blur()
+	out, _, _ := m.onAIKey("r")
+	m = out
+	require.Equal(t, "先说这个 插进来", m.input.Value())
+}
+
+// The thread frame's own box is used when the anchor's thread is the frame
+// standing under the panel.
+func TestInsertCard_TheFrameUnderThePanelTakesTheThreadAnswer(t *testing.T) {
+	f := newFakeAI()
+	m := threadFrame(130, 30)
+	m.deps.AI = f
+	// The fixture builds its model by hand; the ask needs a store to save
+	// its turn into, and an empty one answers.
+	st, err := store.Open(filepath.Join(t.TempDir(), "t.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { st.Close() })
+	m.deps.Store = st
+	// threadFrame loads a thread omt_1 whose replies are anchored there.
+	root := m.thread[0]
+	anchor := m.thread[len(m.thread)-1]
+	require.NotEqual(t, root.MessageID, anchor.MessageID)
+	require.NotEmpty(t, anchor.ThreadID)
+	m, t1 := askAnchored(t, m, &anchor, "怎么回")
+	m = answerDone(t, m, t1, "<reply>\n在串里回\n</reply>")
+
+	m.mode = modeNormal
+	m.areap().Blur()
+	out, _, _ := m.onAIKey("enter")
+	m = out
+	require.False(t, m.aiOpen())
+	require.Equal(t, rightThread, m.rightKind, "the frame is back, holding the answer")
+	require.Equal(t, anchor.MessageID, m.rightReply.MessageID)
+	require.Equal(t, "在串里回", m.rightInput.Value())
+}
+
+// yy copies the card under the cursor, Y the whole answer.
+func TestCopy_CardAndAnswer(t *testing.T) {
+	f := newFakeAI()
+	m := aiFixture(t, f)
+	m, t1 := ask(t, m, "给个措辞")
+	m = answerDone(t, m, t1, "解说\n<reply>\n卡片文字\n</reply>")
+	m.mode = modeNormal
+	m.areap().Blur()
+
+	out, arm, _ := m.onAIKey("y")
+	m = out
+	require.Nil(t, arm, "arming the prefix copies nothing yet")
+	out, cmd, _ := m.onAIKey("y")
+	m = out
+	require.Equal(t, "卡片文字", clipboard(t, cmd))
+
+	out, cmd, _ = m.onAIKey("Y")
+	m = out
+	require.Equal(t, "解说\n<reply>\n卡片文字\n</reply>", clipboard(t, cmd),
+		"Y takes the whole answer as the agent wrote it")
+}
+
+// Regenerate re-asks from the recorded context: the window is cut at the
+// time the question was asked, and the answer being replaced does not ride
+// along as history.
+func TestRegenerate_RebuildsThePromptWithTheWindowCutAtAskTime(t *testing.T) {
+	f := newFakeAI()
+	m := aiFixture(t, f)
+	st := m.deps.Store
+	m, t1 := ask(t, m, "总结一下")
+	m = answerDone(t, m, t1, "第一版答案")
+	asked := t1.at
+
+	// A message that arrived after the question was asked.
+	_, err := st.UpsertMessages(t.Context(), []store.Message{
+		{MessageID: "om_late", ChatID: "oc_quiet", CreateMs: asked.Add(time.Minute).UnixMilli(),
+			MessagePosition: 9, SenderID: "ou_a", SenderName: "张三", RawJSON: "{}"}}, 9)
+	require.NoError(t, err)
+	require.NoError(t, st.UpdateRendered(t.Context(), "om_late", "后来的消息", "", 10))
+
+	m.mode = modeNormal
+	m.areap().Blur()
+	out, cmd, _ := m.onAIKey(".")
+	m = out
+	started := askStarted(t, cmd)
+	sout, _ := m.onAIStarted(started)
+	m = sout.(Model)
+
+	require.Len(t, f.asks, 2)
+	require.Contains(t, f.asks[1].transcript, "发布单合了吗", "the window is the one the question saw")
+	require.NotContains(t, f.asks[1].transcript, "后来的消息", "the window is cut at the ask time")
+	require.NotContains(t, f.asks[1].prompt, "第一版答案", "the answer being replaced is not its own history")
+	require.Contains(t, f.asks[1].prompt, "<ask>\n总结一下\n</ask>", "the same question is asked")
+	require.Equal(t, aiAsking, t1.state)
+}

@@ -49,9 +49,15 @@ type aiPanel struct {
 	loaded  map[string]bool
 	cur     int
 	// rows is the turn list as the pane draws it, rebuilt on every change,
-	// and top the first row of it on screen.
-	rows []msgRow
-	top  int
+	// and top the first row of it on screen. rowAct names, for every row, the
+	// answer and card it belongs to, which is what the keys and the click
+	// zones act on. sel is the cursor row; pendingG is the panel's own gg
+	// half.
+	rows   []msgRow
+	rowAct []aiAct
+	top    int
+	sel    int
+	pG     bool
 	// follow sticks the viewport to the bottom while an answer streams, and
 	// is given up the moment a scroll says otherwise.
 	follow bool
@@ -449,10 +455,13 @@ func askTurn(d Deps, client AIStreamer, off error, p *aiPanel, s *aiSession, t *
 	}
 	chatID := p.chat
 	// The window is gathered ahead of the stream so the history and about are
-	// the only things taken from the panel, which the Update loop owns.
+	// the only things taken from the panel, which the Update loop owns. The
+	// history stops at this turn's own place: a regenerated answer replays
+	// the conversation as it stood when the question was asked, and its own
+	// earlier answer is not part of that.
 	history := make([]ai.QA, 0, aiHistory)
 	for _, older := range s.turns {
-		if older == t || older.state != aiDone {
+		if older.seq >= t.seq || older.state != aiDone {
 			continue
 		}
 		history = append(history, ai.QA{Question: older.sent, Answer: older.answer})
@@ -460,10 +469,10 @@ func askTurn(d Deps, client AIStreamer, off error, p *aiPanel, s *aiSession, t *
 	history = history[max(0, len(history)-aiHistory):]
 	anchor := cloneMsg(t.anchor)
 	sel := slices.Clone(t.sel)
-	compose, window := t.compose, t.window
+	compose, window, until := t.compose, t.window, t.at.UnixMilli()
 	return func() tea.Msg {
 		ctx := context.Background()
-		in, extra, err := aiWindow(ctx, d, chatID, window, anchor, sel, compose)
+		in, extra, err := aiWindow(ctx, d, chatID, window, anchor, sel, compose, until)
 		if err != nil {
 			return aiStartedMsg{turn: t.id, ch: errCh(ai.Chunk{Err: err, Done: true})}
 		}
@@ -585,12 +594,17 @@ func (m Model) stopAI() (tea.Model, tea.Cmd) {
 // aiWindow reads the chat as the agent reads it: the newest window messages
 // as one agentctx document, and whatever the question is about beyond them —
 // the anchor and its thread, a selection, a draft — as blocks of the same
-// shape.
-func aiWindow(ctx context.Context, d Deps, chatID string, window int, anchor *store.Message, sel []string, composeText string) (agentctx.Input, string, error) {
+// shape. until cuts the window at a moment: a retried or regenerated answer
+// is built from the chat as it stood when its question was asked, never the
+// one the chat has moved on to.
+func aiWindow(ctx context.Context, d Deps, chatID string, window int, anchor *store.Message, sel []string, composeText string, until int64) (agentctx.Input, string, error) {
 	if window <= 0 {
 		window = messagePageSize
 	}
 	q := store.MessageQuery{ChatID: chatID, Desc: true, Limit: window, ExcludeThreadReplies: true}
+	if until > 0 {
+		q.UntilMs = until
+	}
 	rows, err := d.Store.ListMessages(ctx, q)
 	if err != nil {
 		return agentctx.Input{}, "", err
@@ -682,45 +696,353 @@ var errAssistantOff = errors.New("assistant off: no agent found (config ai.agent
 
 // --- drawing ---------------------------------------------------------------
 
-// rebuild lays the turn list out for the width the pane has now. The head rows
-// are the panel's own; answer bodies go through the markdown renderer posts
-// use, so what the reader checks against the chat and what the agent writes
-// are one language.
+// aiActKind is one act of the assistant panel's own: the actions a finished
+// card draws under itself, or the head's Regenerate and Stop. These are not
+// places to open but things to do.
+type aiActKind int
+
+const (
+	actNone aiActKind = iota
+	actInsert
+	actInsertThread
+	actCopy
+	actRegenerate
+	actStop
+)
+
+// aiAct names what an act runs on: the answer's turn, and which card of it
+// (-1 for the acts that take the whole answer).
+type aiAct struct {
+	kind aiActKind
+	turn string
+	card int
+}
+
+// rebuild lays the turn list out for the width the pane has now. The head
+// rows are the panel's own; a finished answer's cards are drawn through the
+// composer preview's rendering, so what the reader checks against the chat
+// and what Send would post cannot describe different messages. Actions
+// appear only on finished answers: streaming text cannot move a target under
+// the mouse.
 func (p *aiPanel) rebuild(m Model) {
 	w := m.rightWidth() - 2
-	p.rows = nil
+	p.rows, p.rowAct = nil, nil
 	s := p.session()
 	if s == nil {
 		return
 	}
 	st := m.msgStyleFor(w, msgMeta{})
-	for _, t := range s.turns {
-		p.rows = append(p.rows, aiRowOf(m.aiTurnHead(t, w), w))
-		p.rows = append(p.rows, plainRows(wrap(t.ask, w), w)...)
-		p.rows = append(p.rows, aiRowOf(m.aiAnswerHead(t, w), w))
+	add := func(r msgRow, a aiAct) {
+		p.rows = append(p.rows, r)
+		p.rowAct = append(p.rowAct, a)
+	}
+	addAll := func(rs []msgRow, a aiAct) {
+		for _, r := range rs {
+			add(r, a)
+		}
+	}
+	for i, t := range s.turns {
+		last := i == len(s.turns)-1
+		none := aiAct{turn: t.id, card: -1}
+		add(aiRowOf(m.aiTurnHead(t, w), w), none)
+		addAll(plainRows(wrap(t.ask, w), w), none)
+		add(m.aiAnswerHeadRow(t, w, last), none)
 		switch t.state {
 		case aiAsking:
 			if strings.TrimSpace(t.answer) == "" {
-				p.rows = append(p.rows, aiRowOf(stDim.Render("…"), w))
+				add(aiRowOf(stDim.Render("…"), w), none)
 				continue
 			}
+			// Half an answer is commentary while it grows: the cards it
+			// becomes are not there yet, and a card still being written is
+			// not a target to send.
+			var b block
+			g := leads{b: &b}
+			addAll(mdRows(t.answer, store.Message{}, 0, st, &g, mentions{}), none)
+			continue
 		case aiFailed:
-			p.rows = append(p.rows, aiRowOf(stErr.Render(truncate(t.err, w)), w))
+			add(aiRowOf(stErr.Render(truncate(t.err, w)), w), none)
 			continue
-		case aiStopped:
-			p.rows = append(p.rows, aiRowOf(stDim.Render("stopped"), w))
-			continue
-		case aiInterrupted:
-			p.rows = append(p.rows, aiRowOf(stDim.Render("interrupted"), w))
+		case aiStopped, aiInterrupted:
 			continue
 		}
-		var b block
-		g := leads{b: &b}
-		p.rows = append(p.rows, mdRows(t.answer, store.Message{}, 0, st, &g, mentions{})...)
+		cards := 0
+		for _, seg := range ai.SplitAnswer(t.answer) {
+			if !seg.Card {
+				var b block
+				g := leads{b: &b}
+				addAll(mdRows(seg.Text, store.Message{}, 0, st, &g, mentions{}), none)
+				continue
+			}
+			act := aiAct{turn: t.id, card: cards}
+			cards++
+			add(aiRowOf(stDim.Render("┌─"), w), act)
+			addAll(m.cardBodyRows(seg.Text, w), act)
+			add(aiCardFoot(w, act), act)
+		}
 	}
+	p.sel = clamp(p.sel, 0, max(0, len(p.rows)-1))
 	if p.follow {
 		p.toBottom(m.listHeight())
+		p.sel = max(0, len(p.rows)-1)
 	}
+}
+
+// aiAnswerHeadRow names an answer and the state it is in. The head of the
+// last answer carries its own acts: Stop while it streams, Regenerate —
+// Retry, on one that failed, was stopped or interrupted — once it has ended.
+func (m Model) aiAnswerHeadRow(t *aiTurn, w int, last bool) msgRow {
+	head := stBold.Render("AI " + t.at.Format("15:04"))
+	state := ""
+	var act aiActKind
+	switch t.state {
+	case aiAsking:
+		state, act = "answering · x stops", actStop
+	case aiFailed:
+		state, act = "failed · Retry", actRegenerate
+	case aiStopped:
+		state, act = "stopped · Retry", actRegenerate
+	case aiInterrupted:
+		state, act = "interrupted · Retry", actRegenerate
+	case aiDone:
+		if last {
+			state, act = "Regenerate", actRegenerate
+		}
+	}
+	if state == "" {
+		return aiRowOf(head, w)
+	}
+	row := aiRowOf(head+stDim.Render("  "+state), w)
+	if act != actNone && last {
+		x := lipgloss.Width(head) + 2
+		row.zones = append(row.zones, clickZone{x0: x, x1: min(w, x+lipgloss.Width(state)),
+			act: aiAct{kind: act, turn: t.id, card: -1}})
+	}
+	return row
+}
+
+// aiCardFoot is the action row a finished card draws under itself. The
+// labels are the client's own words (Insert, Copy); Send and Reply join them
+// from their phase.
+func aiCardFoot(w int, a aiAct) msgRow {
+	const lead = "└─ "
+	parts := []struct {
+		label string
+		kind  aiActKind
+	}{{"Insert", actInsert}, {"Copy", actCopy}}
+	x, line := lipgloss.Width(lead), lead
+	var zones []clickZone
+	for _, p := range parts {
+		if x > lipgloss.Width(lead) {
+			line += " · "
+			x += 3
+		}
+		line += p.label
+		zones = append(zones, clickZone{x0: x, x1: x + len(p.label),
+			act: aiAct{kind: p.kind, turn: a.turn, card: a.card}})
+		x += len(p.label)
+	}
+	tail := strings.Repeat("─", max(1, w-lipgloss.Width(line)))
+	row := aiRowOf(stDim.Render(line)+stDim.Render(tail), w)
+	row.zones = zones
+	return row
+}
+
+// cardBodyRows draws a card's text the way Send would post it: the composer
+// preview's own rendering, bodyRows over the planned draft.
+func (m Model) cardBodyRows(text string, w int) []msgRow {
+	p, _ := m.files.planDraft(text)
+	it := outboxItem{localID: "ai", chatID: cmp.Or(m.aiP.chat, m.chatID),
+		msgType: p.kind.msgType(), body: p.body, images: p.uploads()}
+	meta := msgMeta{suffix: m.meta.suffix, people: m.meta.people,
+		avatars: m.meta.avatars, docs: m.meta.docs}
+	resPending(&meta, []outboxItem{it})
+	st := m.msgStyleFor(w, meta)
+	var b block
+	g := leads{b: &b}
+	return bodyRows(it.message(m.deps.Self, m.selfName), 0, st, &g)
+}
+
+// cardsOf is a finished answer's cards, in order.
+func cardsOf(t *aiTurn) []string {
+	var out []string
+	for _, seg := range ai.SplitAnswer(t.answer) {
+		if seg.Card {
+			out = append(out, seg.Text)
+		}
+	}
+	return out
+}
+
+// cursorAct is the act the cursor row belongs to: the card its rows make up,
+// or the head's own acts.
+func (p *aiPanel) cursorAct() aiAct {
+	if p.sel >= 0 && p.sel < len(p.rowAct) {
+		return p.rowAct[p.sel]
+	}
+	return aiAct{card: -1}
+}
+
+// aiMove walks the turn list by rows and keeps the cursor on screen.
+func (m *Model) aiMove(n int) {
+	p := m.aiP
+	if len(p.rows) == 0 {
+		return
+	}
+	p.follow = false
+	p.sel = clamp(p.sel+n, 0, len(p.rows)-1)
+	h := m.listHeight()
+	if p.sel < p.top {
+		p.top = p.sel
+	}
+	if p.sel >= p.top+h {
+		p.top = p.sel - h + 1
+	}
+	p.top = clamp(p.top, 0, max(0, len(p.rows)-h))
+}
+
+// cardText is the card an act names.
+func (m Model) cardText(a aiAct) (string, bool) {
+	if a.card < 0 {
+		return "", false
+	}
+	_, t := m.aiP.findTurn(a.turn)
+	if t == nil {
+		return "", false
+	}
+	cards := cardsOf(t)
+	if a.card >= len(cards) {
+		return "", false
+	}
+	return cards[a.card], true
+}
+
+// insertCard fills a composer with a card's text. The frame's box when the
+// anchor's thread is the frame under the panel; otherwise the chat's box,
+// quoting the anchor — inside its thread when it is in one, or whenever the
+// reader asked for a thread with R. A box that carried the question's draft
+// chip is swapped (Replace); an empty one is filled; a written one gets the
+// text at the cursor.
+func (m Model) insertCard(a aiAct, inThread bool) (tea.Model, tea.Cmd) {
+	text, ok := m.cardText(a)
+	if !ok {
+		return m.notify("no card here — j/k walks the cards", true), nil
+	}
+	_, t := m.aiP.findTurn(a.turn)
+	anchor := cloneMsg(t.anchor)
+	if anchor != nil && anchor.ThreadID != "" {
+		inThread = true
+	}
+	// The frame under the panel owns the box when the anchor belongs to its
+	// conversation — a reply of its thread, or its own root.
+	frameBox := m.threadOpen() && anchor != nil &&
+		(anchor.ThreadID == m.threadID || indexOfID(m.thread, anchor.MessageID) >= 0)
+	m = m.closeAI()
+	var closeFrame tea.Cmd
+	if !frameBox && m.foldRight() {
+		// The chat's box is under the folded column; the panel is gone and
+		// the frame under it goes too, so the box the text lands in is on
+		// screen.
+		closeFrame = m.closeRight()
+	}
+	next, cmd := m.startInsert(anchor, inThread)
+	m = next.(Model)
+	switch {
+	case strings.TrimSpace(t.compose) != "":
+		m.areap().SetValue(text)
+	case strings.TrimSpace(m.areap().Value()) == "":
+		m.areap().SetValue(text)
+	default:
+		m.areap().InsertString(text)
+	}
+	m.replan()
+	m.layout()
+	return m.notify("card in the composer: i to edit, Enter to send", false), tea.Batch(cmd, closeFrame)
+}
+
+// copyCard puts a card's text on the clipboard.
+func (m Model) copyCard(a aiAct) (tea.Model, tea.Cmd) {
+	text, ok := m.cardText(a)
+	if !ok {
+		return m.notify("no card here", true), nil
+	}
+	return m.notify("card copied", false), tea.SetClipboard(text)
+}
+
+// copyAnswer copies the whole answer the cursor stands in — or the session's
+// last, when it stands in none — as the Markdown the agent wrote.
+func (m Model) copyAnswer() (tea.Model, tea.Cmd, bool) {
+	a := m.aiP.cursorAct()
+	_, t := m.aiP.findTurn(a.turn)
+	if t == nil {
+		if s := m.aiP.session(); s != nil && len(s.turns) > 0 {
+			t = s.turns[len(s.turns)-1]
+		}
+	}
+	if t == nil || strings.TrimSpace(t.answer) == "" {
+		return m.notify("nothing to copy", true), nil, true
+	}
+	return m.notify("answer copied", false), tea.SetClipboard(t.answer), true
+}
+
+// regenerateAI re-asks the session's last question from its own record: the
+// window is cut at the time it was asked, so the rebuilt prompt is the one
+// that built the answer, not the one the chat has moved on to. Regenerate on
+// a finished answer and Retry on a failed, stopped or interrupted one are
+// the same act.
+func (m Model) regenerateAI() (tea.Model, tea.Cmd) {
+	p := m.aiP
+	s := p.session()
+	if s == nil || len(s.turns) == 0 {
+		return m.notify("no answer to redo", true), nil
+	}
+	t := s.turns[len(s.turns)-1]
+	if t.streaming() {
+		return m.notify("answering · x stops", true), nil
+	}
+	// A panel with no agent still takes the retry: the turn fails with the
+	// notice rather than the key refusing to answer.
+	var off error
+	if m.ai == nil {
+		off = fmt.Errorf("assistant off: %s not found (config ai.agent)", m.agentName())
+	}
+	t.answer, t.err, t.state, t.ch, t.cancel = "", "", aiAsking, nil, nil
+	p.follow = true
+	p.rebuild(m)
+	m.layout()
+	asking := askTurn(m.deps, m.ai, off, p, s, t)
+	return m.notify("asking "+m.agentName()+"…", false),
+		tea.Batch(saveTurnCmd(m.deps, s, t), asking)
+}
+
+// aiPress runs one of the panel's acts, by mouse or by key.
+func (m Model) aiPress(a aiAct) (tea.Model, tea.Cmd) {
+	switch a.kind {
+	case actInsert:
+		return m.insertCard(a, false)
+	case actInsertThread:
+		return m.insertCard(a, true)
+	case actCopy:
+		return m.copyCard(a)
+	case actRegenerate:
+		return m.regenerateAI()
+	case actStop:
+		return m.stopAI()
+	}
+	return m, nil
+}
+
+// openCardLink opens the first link the cursor row carries: a card's text is
+// the same rendering a post gets, and its links lead the same places.
+func (m Model) openCardLink() (tea.Model, tea.Cmd, bool) {
+	if m.aiP.sel >= 0 && m.aiP.sel < len(m.aiP.rows) {
+		for _, z := range m.aiP.rows[m.aiP.sel].zones {
+			if len(z.urls) > 0 {
+				return m, openZone(m.deps, z), true
+			}
+		}
+	}
+	return m.notify("no link here", true), nil, true
 }
 
 // toBottom puts the last rows on screen.
@@ -772,26 +1094,6 @@ func (m Model) aiTurnChips(t *aiTurn, w int) string {
 	}
 	chips = append(chips, "▤ "+plural(max(1, t.window), "msg", "msgs"))
 	return truncate(strings.Join(chips, " · "), w)
-}
-
-// aiAnswerHead names an answer and the state it is in.
-func (m Model) aiAnswerHead(t *aiTurn, w int) string {
-	head := stBold.Render("AI "+t.at.Format("15:04"))
-	state := ""
-	switch t.state {
-	case aiAsking:
-		state = "answering · x stops"
-	case aiFailed:
-		state = "failed"
-	case aiStopped:
-		state = "stopped"
-	case aiInterrupted:
-		state = "interrupted"
-	}
-	if state == "" {
-		return head
-	}
-	return head + stDim.Render("  "+state)
 }
 
 // aiHeader is the pane's title: the chat's sessions as tabs, the one on
@@ -1038,12 +1340,34 @@ func (m Model) deleteAI(id string) (tea.Model, tea.Cmd) {
 // onAIKey takes the keys the assistant column owns, before any of them can
 // reach the frame hidden under the panel: a message nobody can see is not a
 // message to act on. It answers took only for keys it owns; the ones every
-// pane shares — movement, panes, help, Esc's ladder — fall through untouched.
+// pane shares — panes, help, Esc's ladder — fall through untouched. The
+// panel's list is its own, so its movement keys are too.
 func (m Model) onAIKey(s string) (Model, tea.Cmd, bool) {
+	p := m.aiP
+	// gg is the panel's own pair while it owns the keys.
+	if p.pG {
+		p.pG = false
+		if s == "g" {
+			m.aiMove(-len(p.rows))
+			return m, nil, true
+		}
+	}
+	// The y prefix armed here resolves on the panel's own objects: y card.
+	if m.pendingY {
+		m.pendingY = false
+		if s == "y" {
+			next, cmd := m.copyCard(p.cursorAct())
+			return next.(Model), cmd, true
+		}
+	}
 	switch s {
-	case "i", "enter":
+	case "i":
 		next, cmd := m.enterAI()
 		return next.(Model), cmd, true
+	case "enter", "r":
+		return m.insertAtCursor(false)
+	case "R":
+		return m.insertAtCursor(true)
 	case "a":
 		next, cmd := m.openAIKey(false)
 		return next.(Model), cmd, true
@@ -1060,18 +1384,58 @@ func (m Model) onAIKey(s string) (Model, tea.Cmd, bool) {
 	case "x":
 		next, cmd := m.stopAI()
 		return next.(Model), cmd, true
+	case ".":
+		next, cmd := m.regenerateAI()
+		return next.(Model), cmd, true
+	case "y":
+		m.pendingY = true
+		return m.notify("y… y card", false), nil, true
+	case "Y":
+		next, cmd, _ := m.copyAnswer()
+		return next.(Model), cmd, true
+	case "j", "down":
+		m.aiMove(1)
+		return m, nil, true
+	case "k", "up":
+		m.aiMove(-1)
+		return m, nil, true
+	case "ctrl+d":
+		m.aiMove(m.listHeight() / 2)
+		return m, nil, true
+	case "ctrl+u":
+		m.aiMove(-m.listHeight() / 2)
+		return m, nil, true
+	case "g":
+		p.pG = true
+		return m, nil, true
+	case "G", "end":
+		m.aiMove(len(p.rows))
+		return m, nil, true
 	case "h", "left":
 		// The column keeps its frame; h steps to the messages pane rather
 		// than backing out of a stack that is not even on screen.
 		m.focus = paneMessages
 		return m, nil, true
+	case "o":
+		next, cmd, _ := m.openCardLink()
+		return next.(Model), cmd, true
 	case "D":
 		next, cmd, _ := m.askDeleteAI()
 		return next.(Model), cmd, true
-	case "r", "R", "s", "S", "e", "f", "C", "E", "t", "o", "Y", "y", "v", ".", "1", "2", "3", "4", "5", "6", "7", "8", "9", "0":
+	case "s", "S", "e", "f", "C", "E", "t", "v", "1", "2", "3", "4", "5", "6", "7", "8", "9", "0":
 		// These act on a message, and no message is on screen here: the frame
 		// under the panel keeps its own until Esc uncovers it.
 		return m.notify("no message selected here — Esc uncovers the frame beneath", true), nil, true
 	}
 	return m, nil, false
+}
+
+// insertAtCursor is Enter, r and R on the card the cursor stands in.
+func (m Model) insertAtCursor(inThread bool) (Model, tea.Cmd, bool) {
+	a := m.aiP.cursorAct()
+	if a.card < 0 {
+		return m.notify("no card here — j/k walks the cards", true), nil, true
+	}
+	next, cmd := m.insertCard(a, inThread)
+	return next.(Model), cmd, true
 }

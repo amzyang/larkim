@@ -117,6 +117,10 @@ type clickZone struct {
 	openRoot string
 	openName string
 	openKind rightKind
+	// act is one of the assistant panel's own acts — a card's actions, the
+	// head's Regenerate or Stop — which are not places to open but things to
+	// do, naming the answer and the card within it.
+	act aiAct
 	// label names the target the way the chooser lists it, and note is what
 	// the status bar says once it has been handed over. They differ because a
 	// list wants the thing and a status line wants the act.
@@ -126,7 +130,7 @@ type clickZone struct {
 
 // live reports whether the zone leads anywhere at all.
 func (z clickZone) live() bool {
-	return len(z.urls) > 0 || z.react != "" || z.jump != "" || z.open != ""
+	return len(z.urls) > 0 || z.react != "" || z.jump != "" || z.open != "" || z.act.kind != actNone
 }
 
 func (z clickZone) hit(x int) bool { return z.live() && x >= z.x0 && x < z.x1 }

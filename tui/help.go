@@ -128,7 +128,13 @@ func buildHelpEntries() []helpEntry {
 
 		{"ASSISTANT", "a", "the panel on this chat, keys in its box — nothing is asked until Enter"},
 		{"ASSISTANT", "A", "the same, with a new session"},
+		{"ASSISTANT", "i", "the panel's box, to ask; Enter there asks"},
 		{"ASSISTANT", "Enter", "ask; the window, the anchor and the session so far go with the question"},
+		{"ASSISTANT", "j / k", "walk the turns; Enter or r puts the card under the cursor in the composer, R replies in its thread"},
+		{"ASSISTANT", "yy / Y", "copy the card under the cursor / the whole answer"},
+		{"ASSISTANT", ".", "redo the last answer from its own record — Retry, on one that failed or stopped"},
+		{"ASSISTANT", "D", "delete this session, after a y/n"},
+		{"ASSISTANT", "o", "open the link in the card under the cursor"},
 		{"ASSISTANT", "[ / ]", "the chat's other sessions"},
 		{"ASSISTANT", "x", "stop the answer in flight"},
 		{"ASSISTANT", ":ai <form>", "a new session that asks at once: summary, draft, todo, or a question"},
