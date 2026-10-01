@@ -37,7 +37,7 @@ var candSpec = menuSpec[store.Candidate]{
 		}
 		return infoLines(strings.TrimSpace(c.Text), strings.Join(marks, " · "))
 	},
-	digits: true,
+	digits: digitRow,
 }
 
 // openCandidates asks the store for the chat's pending drafts. The picker

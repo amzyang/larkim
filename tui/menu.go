@@ -56,6 +56,18 @@ type offerCols struct {
 	name   int  // the widest name, capped at offerNameMax
 }
 
+// digitRule is what a bare digit keystroke means to a list that draws the
+// number column: the row it names, or the query the host narrows by with the
+// row as the fallback — the emoji whose own terms are digits, 666, 100, +1,
+// are typed exactly the way they read.
+type digitRule uint8
+
+const (
+	digitOff   digitRule = iota // no number column; a digit is the host's alone
+	digitRow                    // a digit picks the visible row it names
+	digitQuery                  // a digit is query text first, the row on a query that answers nothing
+)
+
 // offerNameMax bounds the name column. Past it a name is cut rather than
 // pushing the box across a pane the reader is still reading.
 const offerNameMax = 40
@@ -78,8 +90,9 @@ type menuSpec[T any] struct {
 	// noselect leaves nothing focused until the reader walks onto a row: on
 	// the : line, which must go on saying what Enter will run.
 	noselect bool
-	// digits draws the number column and lets 1–9 and 0 pick a visible row.
-	digits bool
+	// digits draws the number column and says what a bare digit keystroke
+	// means to the list. See digitRule.
+	digits digitRule
 }
 
 // menu is the list a host draws. A zero value is closed.
@@ -95,7 +108,7 @@ type menu[T any] struct {
 
 func fillMenu[T any](items []T, spec menuSpec[T]) menu[T] {
 	u := menu[T]{spec: spec, items: items, rows: make([]offer, len(items))}
-	u.cols.digits = spec.digits
+	u.cols.digits = spec.digits != digitOff
 	for i, it := range items {
 		o := spec.row(it)
 		u.rows[i] = o
@@ -112,7 +125,7 @@ func (u menu[T]) open() bool { return len(u.items) > 0 }
 
 // maxRows is how many rows the menu ever draws.
 func (u menu[T]) maxRows() int {
-	if u.spec.digits {
+	if u.spec.digits != digitOff {
 		return quickRows
 	}
 	return pumMaxRows
@@ -136,7 +149,7 @@ func (u *menu[T]) move(d, rows int) {
 // row scrolled out of sight, and 0 is the tenth row, where it sits on the
 // keyboard.
 func (u menu[T]) pick(key string, rows int) (int, bool) {
-	if !u.spec.digits || len(key) != 1 || key[0] < '0' || key[0] > '9' {
+	if u.spec.digits == digitOff || len(key) != 1 || key[0] < '0' || key[0] > '9' {
 		return 0, false
 	}
 	line := (int(key[0]-'0') + 9) % 10
@@ -194,15 +207,22 @@ func infoLines(facts ...string) []string {
 // sideways under a single-width character.
 const pickerIconCols = 2
 
-// offerRow is one row in the pieces it is drawn from: the cursor mark, the
-// digit that picks it, the icon, the name. It comes back in pieces because an
-// icon may be a picture, which only the renderer can place, and the box is
-// sized to its widest row measured as the cells a picture fills.
+// offerRow is one row in the pieces it is drawn from: the digit that picks
+// it, the icon, the name. The cursor is not a column of its own — the client
+// marks the row it is on with a tint, so the selected row's text wears the
+// client's selection colour here and the floater paints the background the
+// rest of the row width, under pictures and padding alike. It comes back in
+// pieces because an icon may be a picture, which only the renderer can place,
+// and the box is sized to its widest row measured as the cells a picture
+// fills.
 func (m Model) offerRow(o offer, c offerCols, i int, selected bool) []rowSeg {
-	head := "  "
-	if selected {
-		head = stAccent.Render("▸ ")
+	sel := func(s string) string {
+		if !selected {
+			return s
+		}
+		return paint(stChatSel, s)
 	}
+	head := ""
 	if c.digits {
 		num := " "
 		if i < quickRows {
@@ -210,15 +230,18 @@ func (m Model) offerRow(o offer, c offerCols, i int, selected bool) []rowSeg {
 		}
 		head += stDim.Render(num) + " "
 	}
-	name := fit(truncate(o.name, c.name), c.name)
+	name := sel(fit(truncate(o.name, c.name), c.name))
 	if !c.icon {
-		return []rowSeg{{text: head + name}}
+		return []rowSeg{{text: sel(head) + name}}
 	}
 	if pic := m.iconPic(o.icon); pic.cols > 0 {
 		pad := pickerIconCols - pic.cols
-		return []rowSeg{{text: head}, {pic: pic}, {text: strings.Repeat(" ", pad) + " " + name}}
+		if head == "" {
+			return []rowSeg{{pic: pic}, {text: sel(strings.Repeat(" ", pad) + " " + name)}}
+		}
+		return []rowSeg{{text: sel(head)}, {pic: pic}, {text: sel(strings.Repeat(" ", pad) + " " + name)}}
 	}
-	return []rowSeg{{text: head + fit(o.icon.text, pickerIconCols) + " " + name}}
+	return []rowSeg{{text: sel(head + fit(o.icon.text, pickerIconCols) + " " + name)}}
 }
 
 // iconPic is the picture an icon is drawn as, if the terminal draws one. A

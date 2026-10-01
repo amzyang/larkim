@@ -81,8 +81,10 @@ var reactSpec = menuSpec[reactHit]{
 	},
 	info: func(h reactHit) []string { return emojiInfo(h.hit) },
 	// A reaction is one press, so a digit reaches the row it names: most
-	// reactions are the first row or two, which is where a hand rests.
-	digits: true,
+	// reactions are the first row or two, which is where a hand rests. The
+	// digit is query text first, because the emoji spelled in digits — 666,
+	// 100, +1 — are typed exactly the way they read.
+	digits: digitQuery,
 }
 
 // openPicker arms the chooser against the selected message.
@@ -133,7 +135,7 @@ func (m Model) reactRows() int {
 
 // onEmojiKey drives the chooser. The filter owns every key it can edit with,
 // so movement through the offers is on the arrows and the readline pair rather
-// than hjkl, and a digit picks the row it is drawn beside.
+// than hjkl, and a digit is settled by the rule the menu's spec declares.
 func (m Model) onEmojiKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	rows := m.reactRows()
 	switch k.String() {
@@ -151,10 +153,35 @@ func (m Model) onEmojiKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.picker.menu.move(1, rows)
 		return m, nil
 	}
-	if i, ok := m.picker.menu.pick(k.String(), rows); ok {
-		return m.chooseAt(i)
+	if s := k.String(); m.picker.menu.spec.digits == digitQuery && bareDigit(s) {
+		return m.digitKey(s)
 	}
 	return m.typeIntoFilter(k)
+}
+
+// bareDigit says a key is one digit on its own, no modifier riding it.
+func bareDigit(s string) bool {
+	return len(s) == 1 && s[0] >= '0' && s[0] <= '9'
+}
+
+// digitKey takes a digit the digitQuery rule hands it: it goes into the query
+// first, and a query that still answers keeps it. One that answers nothing is
+// the reader pointing at a numbered row, so the digit comes back off the query
+// and picks it against the list as it stood.
+func (m Model) digitKey(s string) (tea.Model, tea.Cmd) {
+	idx, top := m.picker.menu.idx, m.picker.menu.top
+	next, _ := m.typeIntoFilter(tea.KeyPressMsg{Code: rune(s[0]), Text: s})
+	m = next.(Model)
+	if len(m.picker.menu.items) > 0 {
+		return m, nil
+	}
+	m.picker.input, _ = m.picker.input.Update(tea.KeyPressMsg{Code: tea.KeyBackspace})
+	m.pickerGrid()
+	m.picker.menu.idx, m.picker.menu.top = idx, top
+	if i, ok := m.picker.menu.pick(s, m.reactRows()); ok {
+		return m.chooseAt(i)
+	}
+	return m, nil
 }
 
 // typeIntoFilter hands a message to the filter and re-runs the search when the

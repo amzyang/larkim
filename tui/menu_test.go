@@ -21,7 +21,7 @@ func TestMenu_DropsTheIconColumnWhenNoRowHasOne(t *testing.T) {
 	m := newPumModel(t)
 	plain := fillMenu([]string{"copy", "goto"}, wordSpec(noIcon))
 	require.False(t, plain.cols.icon)
-	require.Equal(t, "▸ copy", ansi.Strip(m.joinSegsWidth(m.offerRow(plain.rows[0], plain.cols, 0, true))))
+	require.Equal(t, "copy", ansi.Strip(m.joinSegsWidth(m.offerRow(plain.rows[0], plain.cols, 0, true))))
 
 	// One row with an icon is enough for the column; the others keep its
 	// cells blank so the names still start in one column.
@@ -32,8 +32,8 @@ func TestMenu_DropsTheIconColumnWhenNoRowHasOne(t *testing.T) {
 		return ""
 	}))
 	require.True(t, mixed.cols.icon)
-	require.Equal(t, "     copy", ansi.Strip(m.joinSegsWidth(m.offerRow(mixed.rows[0], mixed.cols, 0, false))))
-	require.Equal(t, "  >  goto", ansi.Strip(m.joinSegsWidth(m.offerRow(mixed.rows[1], mixed.cols, 1, false))))
+	require.Equal(t, "   copy", ansi.Strip(m.joinSegsWidth(m.offerRow(mixed.rows[0], mixed.cols, 0, false))))
+	require.Equal(t, ">  goto", ansi.Strip(m.joinSegsWidth(m.offerRow(mixed.rows[1], mixed.cols, 1, false))))
 }
 
 func TestMenu_MeasuresEveryItemNotTheWindow(t *testing.T) {
@@ -43,7 +43,7 @@ func TestMenu_MeasuresEveryItemNotTheWindow(t *testing.T) {
 
 	m := newPumModel(t)
 	first := m.offerRow(u.rows[0], u.cols, 0, false)
-	require.Equal(t, 2+len("a much longer word"), segsWidth(first), "a short row is padded to the column")
+	require.Equal(t, len("a much longer word"), segsWidth(first), "a short row is padded to the column")
 }
 
 func TestMenu_CutsALongNameWithAnEllipsis(t *testing.T) {
@@ -52,7 +52,7 @@ func TestMenu_CutsALongNameWithAnEllipsis(t *testing.T) {
 	require.Equal(t, offerNameMax, u.cols.name)
 	line := ansi.Strip(m.joinSegsWidth(m.offerRow(u.rows[0], u.cols, 0, false)))
 	require.True(t, strings.HasSuffix(line, "…"), line)
-	require.Equal(t, 2+offerNameMax, len([]rune(line)))
+	require.Equal(t, offerNameMax, len([]rune(line)))
 }
 
 func TestMenu_NoselectStartsUnfocusedAndWalksBackToIt(t *testing.T) {
@@ -94,7 +94,7 @@ func TestMenu_InfoIsResolvedForTheFocusedItemOnly(t *testing.T) {
 
 func TestMenu_PicksTheVisibleRowADigitIsDrawnBeside(t *testing.T) {
 	spec := wordSpec(noIcon)
-	spec.digits = true
+	spec.digits = digitRow
 	items := make([]string, 12)
 	u := fillMenu(items, spec)
 
@@ -122,12 +122,21 @@ func TestMenu_PicksTheVisibleRowADigitIsDrawnBeside(t *testing.T) {
 	require.False(t, ok, "a menu without digits reads none")
 }
 
+func TestOfferRow_TintsTheCursorRowRatherThanMarkingIt(t *testing.T) {
+	m := newPumModel(t)
+	u := fillMenu([]string{"copy"}, wordSpec(noIcon))
+	marked := m.joinSegsWidth(m.offerRow(u.rows[0], u.cols, 0, true))
+	require.Contains(t, marked, "\x1b[38;2;31;35;41;48;2;231;238;252m", "the selected row's text wears the client's selection colour")
+	require.Contains(t, marked, "231;238;252")
+	plain := m.joinSegsWidth(m.offerRow(u.rows[0], u.cols, 0, false))
+	require.NotContains(t, plain, "231;238;252", "an unselected row wears no tint")
+}
 func TestOfferRow_DrawsTheNumberColumnOnlyWithDigits(t *testing.T) {
 	m := newPumModel(t)
 	spec := wordSpec(noIcon)
-	spec.digits = true
+	spec.digits = digitRow
 	u := fillMenu([]string{"a", "b"}, spec)
-	require.Equal(t, "  2 b", ansi.Strip(m.joinSegsWidth(m.offerRow(u.rows[1], u.cols, 1, false))))
-	require.Equal(t, "  0 b", ansi.Strip(m.joinSegsWidth(m.offerRow(u.rows[1], u.cols, 9, false))), "the tenth row is 0")
-	require.Equal(t, "    b", ansi.Strip(m.joinSegsWidth(m.offerRow(u.rows[1], u.cols, 10, false))), "past ten no digit reaches it")
+	require.Equal(t, "2 b", ansi.Strip(m.joinSegsWidth(m.offerRow(u.rows[1], u.cols, 1, false))))
+	require.Equal(t, "0 b", ansi.Strip(m.joinSegsWidth(m.offerRow(u.rows[1], u.cols, 9, false))), "the tenth row is 0")
+	require.Equal(t, "  b", ansi.Strip(m.joinSegsWidth(m.offerRow(u.rows[1], u.cols, 10, false))), "past ten no digit reaches it")
 }

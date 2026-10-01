@@ -155,8 +155,8 @@ func TestCandidates_StandOverThePaneNumbered(t *testing.T) {
 	m := openCand(t)
 	segs := m.floatSegs()
 	require.Len(t, segs, 4)
-	require.Equal(t, "▸ 1 缓冲话术", strings.TrimRight(ansi.Strip(m.joinSegsWidth(segs[0])), " "))
-	require.Equal(t, "  4 已排期，周四发", strings.TrimRight(ansi.Strip(m.joinSegsWidth(segs[3])), " "))
+	require.Equal(t, "1 缓冲话术", strings.TrimRight(ansi.Strip(m.joinSegsWidth(segs[0])), " "))
+	require.Equal(t, "4 已排期，周四发", strings.TrimRight(ansi.Strip(m.joinSegsWidth(segs[3])), " "))
 
 	f, ok := m.floater()
 	require.True(t, ok)

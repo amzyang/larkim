@@ -5,6 +5,7 @@ import (
 	"image/png"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -198,15 +199,6 @@ func TestPum_AcceptingMidDraftLeavesTheTailAlone(t *testing.T) {
 	require.Equal(t, "好的 @张三  你看下", mm.(Model).input.Value())
 }
 
-func TestPum_AcceptingAnEmojiWritesTheCharacterWhereThereIsOne(t *testing.T) {
-	m := typeInto(newPumModel(t), ":dianzan")
-	require.True(t, m.pum.open())
-	require.Equal(t, "👍", m.pum.menu.items[0].insert)
-
-	mm, _ := m.onInsertKey(tea.KeyPressMsg{Code: tea.KeyTab})
-	require.Equal(t, "👍 ", mm.(Model).input.Value())
-}
-
 func TestPum_AcceptingAnEmojiWithNoCharacterWritesTheBracketedName(t *testing.T) {
 	m := typeInto(newPumModel(t), ":done")
 	require.True(t, m.pum.open())
@@ -215,8 +207,8 @@ func TestPum_AcceptingAnEmojiWithNoCharacterWritesTheBracketedName(t *testing.T)
 	m = mm.(Model)
 	require.Equal(t, "[Done] ", m.input.Value(), "the spelling the client itself sends")
 	// The message list reads the bracketed form back as the emoji it names.
-	_, ok := emojiByBracket(m.input.Value())
-	require.True(t, ok)
+	require.True(t, emojiByBracket.MatchString(m.input.Value()),
+		"a bracketed spelling is there to read")
 }
 
 func TestPum_StaysShutUntilTwoLettersStand(t *testing.T) {
@@ -236,10 +228,10 @@ func TestPum_OpensOnTheBracketedFormTheClientSends(t *testing.T) {
 	m = mm.(Model)
 	require.Equal(t, "[Done] ", m.input.Value(), "the bracket is erased with the rest of the run")
 
-	// The bracket is a second way in, not a second insert rule: an emoji a
-	// character carries still goes in as that character.
+	// The bracket is a second way in, not a second insert rule: both spellings
+	// go in as the bracketed name the client itself sends.
 	m = typeInto(newPumModel(t), "[dianzan")
-	require.Equal(t, "👍", m.pum.menu.items[0].insert)
+	require.Equal(t, "[Like]", m.pum.menu.items[0].insert)
 }
 
 // The emoji terms and the pinyin of a name are all lowercase, so the smart case
@@ -260,6 +252,7 @@ func TestPum_MatchesWhateverCaseTheQueryIsTypedIn(t *testing.T) {
 func TestPum_OffersTheUnicodeEmojiFeishuHasNoAnswerFor(t *testing.T) {
 	m := typeInto(newPumModel(t), ":rocket")
 	require.True(t, m.pum.open())
+	require.NotContains(t, pumInfo(m), larkMark, "a character is not one of Lark's own")
 
 	mm, _ := m.onInsertKey(tea.KeyPressMsg{Code: tea.KeyTab})
 	require.Equal(t, "🚀 ", mm.(Model).input.Value())
@@ -361,7 +354,7 @@ func TestModelPicturePrepare_ClaimsWhatTheOpenPopupOffers(t *testing.T) {
 	require.Equal(t, "DONE", m.pum.menu.items[0].emoji.Emoji.Key, "Done is drawn as a word, which no character carries")
 
 	require.NotEmpty(t, m.picturePrepare())
-	pic := m.floatSegs()[0][1].pic
+	pic := m.floatSegs()[0][0].pic
 	require.Positive(t, pic.cols, "the row draws the client's picture")
 	require.NotEmpty(t, m.pics.cells(pic, 0), "and it is drawable on the frame the popup opens")
 }
@@ -393,13 +386,7 @@ func pumNames(m Model) []string {
 }
 
 // emojiByBracket reads a draft's `[Name]` back the way the message list does.
-func emojiByBracket(draft string) (string, bool) {
-	g := bracketName.FindStringSubmatch(draft)
-	if g == nil {
-		return "", false
-	}
-	return g[1], true
-}
+var emojiByBracket = regexp.MustCompile(`^\[([^\[\]\n]{1,12})\]`)
 
 func TestOfferSegs_SayALetteringEmojisNameOnce(t *testing.T) {
 	m := newPumModel(t)
@@ -415,7 +402,13 @@ func TestPum_AnEmojisKeyAndTermAreItsInfoNotItsName(t *testing.T) {
 	m := typeInto(newPumModel(t), ":dianzan")
 	require.Equal(t, "THUMBSUP", m.pum.menu.items[0].emoji.Emoji.Key)
 	require.Equal(t, "Like", ansi.Strip(m.pum.menu.rows[0].name))
-	require.Equal(t, []string{"THUMBSUP", "dianzan"}, pumInfo(m), "the key, then the pinyin that answered")
+	require.Equal(t, []string{"THUMBSUP", "dianzan", larkMark}, pumInfo(m), "the key, then the pinyin that answered")
+}
+
+func TestPum_ALarkBuiltInEmojiSaysLarkInTheBox(t *testing.T) {
+	m := typeInto(newPumModel(t), ":dianzan")
+	require.Equal(t, "THUMBSUP", m.pum.menu.items[0].emoji.Emoji.Key)
+	require.Contains(t, pumInfo(m), larkMark, "one of Lark's own is marked; a character is not")
 }
 
 func TestPum_APersonsInfoIsDepartmentThenEmail(t *testing.T) {
@@ -430,7 +423,7 @@ func TestPum_APersonsInfoIsDepartmentThenEmail(t *testing.T) {
 	m = typeInto(newPumModel(t), "@ls")
 	require.Empty(t, pumInfo(m))
 	f, ok := m.floater()
-	require.True(t, ok)
+	require.True(t, ok, "a bracketed spelling is there to read")
 	_, ok = m.infoFloater(f)
 	require.False(t, ok)
 }
@@ -453,13 +446,13 @@ func TestPum_AMentionWearsItsFace(t *testing.T) {
 	// with, so the column is there either way.
 	m := typeInto(newPumModel(t), "@zs")
 	require.True(t, m.pum.menu.cols.icon)
-	require.Equal(t, "  张 张三", strings.TrimRight(offerText(m, 0, false), " "))
+	require.Equal(t, "张 张三", strings.TrimRight(offerText(m, 0, false), " "))
 
 	m = newPumModel(t)
 	m.roster[1].AvatarPath = writeTestAvatar(t, m.deps.DataDir, "ou_a")
 	m.pics = picturesIn(m.deps.DataDir)
 	m = typeInto(m, "@zs")
-	pic := m.floatSegs()[0][1].pic
+	pic := m.floatSegs()[0][0].pic
 	require.Positive(t, pic.cols, "the avatar is drawn as a picture")
 	require.True(t, pic.disc, "cut to the client's circle")
 	require.NotEmpty(t, m.picturePrepare())
@@ -479,6 +472,7 @@ func TestPum_AtAllWearsTheGroupsFace(t *testing.T) {
 
 func TestPum_AnEmojiListHasNoFaces(t *testing.T) {
 	m := typeInto(newPumModel(t), ":dianzan")
-	require.False(t, m.pum.menu.rows[0].icon.avatar)
-	require.Equal(t, "👍", m.pum.menu.rows[0].icon.text)
+	icon := m.pum.menu.rows[0].icon
+	require.False(t, icon.avatar)
+	require.Equal(t, "emoji/THUMBSUP.png", icon.image, "the icon is the client's own picture")
 }

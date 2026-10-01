@@ -135,33 +135,12 @@ func TestPicker_FiltersAsTheReaderTypes(t *testing.T) {
 	require.Len(t, m.picker.menu.items, m.emoji.Len(), "and opens back up")
 }
 
-func TestPicker_TakesTheCharacterItselfAsTheQuery(t *testing.T) {
-	// The reader has the emoji in the clipboard, not its name; pasting it is
-	// one keystroke against a spelling they would have to guess.
-	m := press(t, pickerModel(t), "e", "🌹")
-	require.Equal(t, "ROSE", reactKey(m, 0))
-
-	// A character of more than one rune arrives as a paste rather than as
-	// keys, which the filter takes the same way it takes anything else.
-	mm, _ := press(t, pickerModel(t), "e").Update(tea.PasteMsg{Content: "❤️"})
-	require.Equal(t, "HEART", reactKey(mm.(Model), 0))
-}
-
-func TestReactRow_DrawsTheCharacterItselfOnce(t *testing.T) {
-	m := press(t, pickerModel(t), "e", "🌹")
-	require.Len(t, m.picker.menu.items, 1)
-
-	// The character is already in the icon column, so the row does not name
-	// it a second time as the term that answered.
-	line := ansi.Strip(m.joinSegsWidth(m.offerRow(m.picker.menu.rows[0], m.picker.menu.cols, 0, true)))
-	require.Equal(t, 1, strings.Count(line, "🌹"), line)
-}
-
-func TestPicker_OffersNothingForACharacterFeishuDrawsItsOwnWay(t *testing.T) {
-	// Feishu's 看 is a face looking sideways, not 👀, so it keeps its picture and
-	// the character reaches no reaction at all — the Unicode one is a
-	// composer emoji Feishu would refuse.
-	m := press(t, pickerModel(t), "e", "👀")
+func TestPicker_AnswersNoCharacterQuery(t *testing.T) {
+	// A built-in answers by its names alone: the client draws it as its
+	// picture, and the wire never carries a character, so a pasted character
+	// names no reaction. A character is how the composer's own menu reaches a
+	// Unicode row, which is a thing to write rather than to react with.
+	m := paste(t, press(t, pickerModel(t), "e"), "❤️")
 	require.Empty(t, m.picker.menu.items)
 }
 
@@ -194,12 +173,33 @@ func TestPicker_RemembersWhatWasChosen(t *testing.T) {
 }
 
 func TestPicker_ADigitPicksTheRowItIsDrawnBeside(t *testing.T) {
+	// The digit narrows nothing — "zan1" is no emoji's term — so the rule
+	// hands it to the row it names.
 	m := press(t, pickerModel(t), "e", "z", "a", "n")
 	require.Equal(t, "THUMBSUP", reactKey(m, 0))
 	m = press(t, m, "1")
 	require.Equal(t, modeNormal, m.mode)
 	require.Len(t, m.reacts, 1)
 	require.Equal(t, "THUMBSUP", m.reacts[0].emojiType)
+}
+
+func TestPicker_ADigitGoesIntoTheQueryWhenOneAnswers(t *testing.T) {
+	m := press(t, pickerModel(t), "e", "6", "6", "6")
+	require.Equal(t, "666", m.picker.input.Value())
+	require.Equal(t, "AWESOME", reactKey(m, 0))
+
+	// The digit-led queries all work the way they read, the leading one too.
+	m = press(t, pickerModel(t), "e", "1")
+	require.Equal(t, "1", m.picker.input.Value())
+	require.Equal(t, "JIAYI", reactKey(m, 0))
+	require.Equal(t, modeEmoji, m.mode, "the query answered, so nothing was reacted")
+}
+
+func TestPicker_ATermSpelledInDigitsIsTypeable(t *testing.T) {
+	// 18X's every term carries a digit, so the query has to start with one.
+	m := press(t, pickerModel(t), "e", "1", "8")
+	require.Equal(t, "18", m.picker.input.Value())
+	require.Equal(t, "18X", reactKey(m, 0))
 }
 
 func TestPicker_OpensOnTheSmallestTerminalTheClientDraws(t *testing.T) {
@@ -263,7 +263,11 @@ func TestRenderPicker_StandsInTheComposersBoxRatherThanBesideIt(t *testing.T) {
 
 func TestModelPicturePrepare_ClaimsWhatTheOpenPickerOffers(t *testing.T) {
 	m := press(t, pickerModel(t), "e")
-	writeTestEmoji(t, m.deps.DataDir, "OK")
+	// Every offer the chooser can show carries a picture on a real start, so
+	// the whole visible window is cut before the pass claims it.
+	for _, it := range m.picker.menu.items {
+		writeTestEmoji(t, m.deps.DataDir, it.hit.Emoji.Key)
+	}
 	m.pics = picturesIn(m.deps.DataDir)
 	require.Equal(t, "OK", reactKey(m, 0), "an empty query opens on the client's own first emoji")
 
@@ -382,12 +386,12 @@ func chipAt(t *testing.T, m Model, key string) (Model, tea.Cmd) {
 func TestPressChip_DrawsThePressBeforeItIsSent(t *testing.T) {
 	m := pickerModel(t)
 	before := rowText(m.msgRows)
-	require.Contains(t, before, "👍⋮You", "the reader already reacted, which is what a press takes back")
+	require.Contains(t, before, "[Like]⋮You", "the reader already reacted, which is what a press takes back")
 	m, cmd := chipAt(t, m, "THUMBSUP")
 	require.NotNil(t, cmd)
 	require.Len(t, m.reacts, 1)
 	require.False(t, m.reacts[0].on, "pressing what the reader already put takes it back")
-	require.NotContains(t, rowText(m.msgRows), "👍", "the strip answers the press, not the round trip")
+	require.NotContains(t, rowText(m.msgRows), "[Like]", "the strip answers the press, not the round trip")
 }
 
 func TestPressChip_SecondPressGoesTheOtherWay(t *testing.T) {
@@ -401,7 +405,7 @@ func TestPressChip_SecondPressGoesTheOtherWay(t *testing.T) {
 	require.NotNil(t, cmd)
 	require.Len(t, m.reacts, 1, "the last press is what the reader means")
 	require.True(t, m.reacts[0].on, "the direction answers the strip the first press left")
-	require.Contains(t, rowText(m.msgRows), "👍⋮You")
+	require.Contains(t, rowText(m.msgRows), "[Like]⋮You")
 }
 
 func TestPressChip_LeavesTheCursorWhereItWas(t *testing.T) {
@@ -414,11 +418,11 @@ func TestPressChip_LeavesTheCursorWhereItWas(t *testing.T) {
 func TestReactedMsg_TakesAFailedPressBackOffTheStrip(t *testing.T) {
 	m := pickerModel(t)
 	m, _ = chipAt(t, m, "THUMBSUP")
-	require.NotContains(t, rowText(m.msgRows), "👍")
+	require.NotContains(t, rowText(m.msgRows), "[Like]")
 	next, _ := m.update(reactedMsg{p: m.reacts[0], err: errors.New("no network")})
 	m = next.(Model)
 	require.Empty(t, m.reacts)
-	require.Contains(t, rowText(m.msgRows), "👍⋮You", "the strip goes back to what Feishu holds")
+	require.Contains(t, rowText(m.msgRows), "[Like]⋮You", "the strip goes back to what Feishu holds")
 	require.Contains(t, m.notice, "no network")
 }
 
@@ -439,13 +443,13 @@ func TestReactedMsg_StopsDrawingARemovalFeishuTookWithoutChangingAnything(t *tes
 	// keeps showing a reaction that is not there until the window runs out.
 	m := pickerModel(t)
 	m, _ = chipAt(t, m, "THUMBSUP")
-	require.NotContains(t, rowText(m.msgRows), "👍")
+	require.NotContains(t, rowText(m.msgRows), "[Like]")
 	next, _ := m.update(reactedMsg{p: m.reacts[0]})
 	m = next.(Model)
 	m.applyOutbox()
 	m.layout()
 	require.Empty(t, m.reacts)
-	require.Contains(t, rowText(m.msgRows), "👍⋮You", "the strip goes back to what Feishu holds")
+	require.Contains(t, rowText(m.msgRows), "[Like]⋮You", "the strip goes back to what Feishu holds")
 }
 
 func TestReactedMsg_RollsBackOnlyThePressThatFailed(t *testing.T) {

@@ -178,6 +178,10 @@ func (m *Model) takePum() {
 	m.pum = pum{run: run, menu: fillMenu(m.pumHits(run), pumSpec)}
 }
 
+// larkMark says an offer is one of Lark's own emoji, which reaches the other
+// side as the picture this client draws, where a Unicode row is a character.
+const larkMark = "🐦 Lark"
+
 // pumSpec draws an offer: an emoji as its picture and name, a person by name,
 // with what tells two of them apart in the box beside the list.
 var pumSpec = menuSpec[pumHit]{
@@ -193,7 +197,14 @@ var pumSpec = menuSpec[pumHit]{
 	},
 	info: func(h pumHit) []string {
 		if h.emoji.Emoji.Key != "" {
-			return emojiInfo(h.emoji)
+			info := emojiInfo(h.emoji)
+			// The client's composer offers only its own emoji, so it has no
+			// mark for ours-vs-plain-character; the distinction exists only
+			// where the two are listed together, which is here.
+			if h.emoji.Emoji.Glyph == "" {
+				info = append(info, larkMark)
+			}
+			return info
 		}
 		return infoLines(h.person.Department, h.person.Email)
 	},
@@ -254,13 +265,14 @@ func (m Model) emojiHits(query string) []pumHit {
 	return out
 }
 
-// emojiInsert is what accepting an emoji writes: the character where one
-// carries the same feeling, and the bracketed name where none does.
+// emojiInsert is what accepting an emoji writes: the bracketed name for one
+// of Feishu's own, and the character for a Unicode row.
 //
 // The name is the English one this client displays, which is the spelling it
 // puts on the wire. A bracketed name is resolved against the reading client's
 // own table, which holds both languages' names for every emoji, so it draws
-// there whichever language that client is set to.
+// there whichever language that client is set to — as the picture, the way
+// this client drew it in the menu.
 func emojiInsert(e emoji.Emoji) string { return cmp.Or(e.Glyph, "["+e.Name()+"]") }
 
 // onPumKey drives the popup. It is reached only while one is open, ahead of the

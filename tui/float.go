@@ -118,9 +118,17 @@ func (m Model) floater() (floater, bool) {
 		w = max(w, segsWidth(s))
 	}
 	w = min(w, m.width-2)
+	v, _ := m.floatMenu()
 	lines := make([]string, len(segs))
 	for i, s := range segs {
-		lines[i] = m.joinSegs(s, w)
+		line := m.joinSegs(s, w)
+		// The cursor row wears the tint across its whole width, the trailing
+		// padding included, and only as a background: a picture's cells name
+		// their image in the foreground, which a text colour would clobber.
+		if i == v.sel {
+			line = paint(stChatSelBG, line)
+		}
+		lines[i] = line
 	}
 	f := floater{
 		block: paneStyle(true).Render(strings.Join(lines, "\n")),

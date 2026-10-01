@@ -56,6 +56,16 @@ func TestPumRows_IsZeroOutsideInsertMode(t *testing.T) {
 	require.False(t, ok)
 }
 
+func TestFloater_TintsTheCursorRowAcrossItsWidth(t *testing.T) {
+	m := typeInto(newPumModel(t), ":do")
+	f, ok := m.floater()
+	require.True(t, ok)
+	lines := strings.Split(f.block, "\n")
+	require.Contains(t, lines[1], "\x1b[48;2;231;238;252m", "the cursor row wears the client's tint")
+	if len(lines) > 2 {
+		require.NotContains(t, lines[2], "\x1b[48;2;231;238;252m", "no other row does")
+	}
+}
 func TestFloatOver_DrawsThePopupOverTheMessagesPane(t *testing.T) {
 	m := typeInto(newPumModel(t), ":do")
 	f, ok := m.floater()

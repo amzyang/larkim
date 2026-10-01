@@ -312,7 +312,7 @@ func TestModelPicturePrepare_ClaimsWhatTheReactListOffers(t *testing.T) {
 	require.Equal(t, "DONE", m.cmdcomp.menu.items[0].insert)
 
 	require.NotEmpty(t, m.picturePrepare())
-	pic := m.floatSegs()[0][1].pic
+	pic := m.floatSegs()[0][0].pic
 	require.Positive(t, pic.cols, "a picture-only emoji draws the client's picture")
 	require.NotEmpty(t, m.pics.cells(pic, 0), "and the : line's list claims it, as the composer's popup does")
 }
