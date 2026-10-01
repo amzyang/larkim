@@ -18,16 +18,14 @@ func TestTranscriptAndPrompt(t *testing.T) {
 	require.Contains(t, tr, "林岚 (me): 上线了")
 	require.Contains(t, tr, `张三: {"text":"raw"}`, "unrendered messages fall back to the raw body")
 	require.NotContains(t, tr, "gone")
+}
 
-	p, draft := Prompt("summary")
-	require.False(t, draft)
-	require.Contains(t, p, "Summarize")
-	p, draft = Prompt("draft 委婉拒绝")
-	require.True(t, draft)
-	require.Contains(t, p, "委婉拒绝")
-	p, draft = Prompt("谁提到了发布时间？")
-	require.False(t, draft)
-	require.Equal(t, "谁提到了发布时间？", p)
+func TestBuiltinSnippets_AreThePanelsOffers(t *testing.T) {
+	sn := BuiltinSnippets()
+	require.Len(t, sn, 3)
+	require.Equal(t, "Summary", sn[0].Name)
+	require.Contains(t, sn[0].Text, "action items with owners")
+	require.Contains(t, sn[2].Text, "each in its own reply block")
 }
 
 // cardRaw is the raw content of a card whose body is a heading over a list —

@@ -387,24 +387,18 @@ func excerpt(s string) string {
 	return s
 }
 
-// Prompt maps the TUI's :ai forms onto an instruction. draft reports that the
-// answer is a reply to place in the composer.
-func Prompt(input string) (prompt string, draft bool) {
-	input = strings.TrimSpace(input)
-	head, rest, _ := strings.Cut(input, " ")
-	switch strings.ToLower(head) {
-	case "", "summary", "summarize", "总结":
-		return "Summarize this chat: what was discussed, decisions, action items with owners, and anything that needs my reply.", false
-	case "draft", "reply", "回复":
-		instr := strings.TrimSpace(rest)
-		if instr == "" {
-			instr = "a suitable reply to the latest messages addressed to me"
-		}
-		return "Draft " + instr + ". Put the reply, and nothing else, in one <reply> block.", true
-	case "todo", "actions", "待办":
-		return "List every action item or request directed at me in this chat, newest first, with who asked and when.", false
+// Snippet is one scripted question the panel offers: a name the digits and
+// the / popup reach it by, and the text that lands in the box.
+type Snippet struct{ Name, Text string }
+
+// BuiltinSnippets are the panel's own offers, replaced whole by ai.snippets
+// when that is set.
+func BuiltinSnippets() []Snippet {
+	return []Snippet{
+		{"Summary", "Summarize this chat: what was discussed, decisions, action items with owners, and what needs my reply."},
+		{"Draft", "Draft my reply to the message I'm replying to."},
+		{"Options", "Draft three different replies to the message I'm replying to, each in its own reply block."},
 	}
-	return input, false
 }
 
 // QA is one earlier exchange of a session.

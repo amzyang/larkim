@@ -198,7 +198,7 @@ func TestConfig_TabIsTypedIntoAnOpenEditor(t *testing.T) {
 func TestConfig_FilterNarrowsOnKeyAndOnProse(t *testing.T) {
 	m := configModel(t)
 	m = press(t, m, "/", "a", "i", ".")
-	require.Len(t, m.config.hits, 6, "the ai section, and silence_sync's help names mark_read.mode")
+	require.Len(t, m.config.hits, 7, "the ai section, and silence_sync's help names mark_read.mode")
 
 	m = configModel(t)
 	m = press(t, m, "/", "u", "n", "l", "i", "m", "i", "t", "e", "d")

@@ -151,6 +151,33 @@ type AI struct {
 	JevKeyEnv string `yaml:"jev_key_env"`
 	// JevEndpoint is the evaluation endpoint that answers it.
 	JevEndpoint string `yaml:"jev_endpoint"`
+	// Snippets replaces the assistant panel's built-in snippet offers whole,
+	// when it is set. Each is a scripted question the panel inserts into its
+	// box under a digit and behind the / popup.
+	Snippets SnippetList `yaml:"snippets"`
+}
+
+// SnippetList reads an empty list as unset, so a config that carries
+// `snippets: []` keeps the built-ins — the offers are replaced by what is
+// written, not by the fact of writing.
+type SnippetList []AISnippet
+
+// UnmarshalYAML decodes the list and normalizes an empty one to nil.
+func (s *SnippetList) UnmarshalYAML(n *yaml.Node) error {
+	var list []AISnippet
+	if err := n.Decode(&list); err != nil {
+		return err
+	}
+	if len(list) > 0 {
+		*s = list
+	}
+	return nil
+}
+
+// AISnippet is one scripted question the assistant panel offers.
+type AISnippet struct {
+	Name string `yaml:"name"`
+	Text string `yaml:"text"`
 }
 
 // Resources configures attachment downloads.

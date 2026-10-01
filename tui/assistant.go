@@ -93,9 +93,6 @@ type aiTurn struct {
 	// ask is what the reader typed, as the list shows it; sent is what the
 	// model was asked, which differs for the :ai forms.
 	ask, sent string
-	// draft says the answer goes to the composer when it lands, the :ai draft
-	// hand-off.
-	draft bool
 	// the recorded context. anchorID names the message the question was about
 	// even after the message itself is gone; anchor is that message as it
 	// stood, resolved from the id.
@@ -197,7 +194,7 @@ func (p *aiPanel) load(m Model) {
 			turns = nil
 		}
 		for _, tv := range turns {
-			t := &aiTurn{id: tv.ID, seq: tv.Seq, ask: tv.Ask, sent: tv.Sent, draft: tv.Draft,
+			t := &aiTurn{id: tv.ID, seq: tv.Seq, ask: tv.Ask, sent: tv.Sent,
 				anchorID: tv.AnchorID, thread: tv.ThreadID, window: tv.Window,
 				compose: tv.Compose, sel: tv.Sel, answer: tv.Answer, err: tv.Err,
 				at: time.UnixMilli(tv.AtMs)}
@@ -355,7 +352,7 @@ func (m *Model) switchAI(d int) {
 	if len(p.sess) < 2 {
 		return
 	}
-	p.cur = (p.cur+d+len(p.sess)) % len(p.sess)
+	p.cur = (p.cur + d + len(p.sess)) % len(p.sess)
 	p.top, p.follow = 0, true
 	p.rebuild(*m)
 	m.layout()
@@ -394,7 +391,7 @@ func (p *aiPanel) stopAll(d Deps) []tea.Cmd {
 // turn behind.
 func storedTurn(s *aiSession, t *aiTurn) store.AITurn {
 	return store.AITurn{ID: t.id, SessionID: s.id, Seq: t.seq, Ask: t.ask, Sent: t.sent,
-		Draft: t.draft, AnchorID: t.anchorID, ThreadID: t.thread, Window: t.window,
+		AnchorID: t.anchorID, ThreadID: t.thread, Window: t.window,
 		Compose: t.compose, Sel: t.sel, State: int(t.state), Answer: t.answer,
 		Err: t.err, AtMs: t.at.UnixMilli()}
 }
@@ -437,7 +434,7 @@ func (m Model) aiDraftText() string {
 // submitAI is Enter in the panel's box: the question becomes a turn of the
 // session on screen, and the asking itself happens off the Update loop.
 func (m Model) submitAI() (tea.Model, tea.Cmd) {
-	return m.askAI(strings.TrimSpace(m.aiP.input.Value()), "", false)
+	return m.askAI(strings.TrimSpace(m.aiP.input.Value()), "")
 }
 
 // cloneMsg copies a message the way a recorded context wants it: nobody's
@@ -573,18 +570,6 @@ func (m Model) onAIChunk(msg aiChunkMsg) (tea.Model, tea.Cmd) {
 		return m, waitForAI(t.id, t.ch)
 	default:
 		t.state, t.cancel = aiDone, nil
-		// The draft hand-off belongs to the chat it was asked in: a draft
-		// landing in another chat's composer is a message aimed at nobody.
-		// The chat's box is filled by name, so the keys being in the panel's
-		// own box costs nothing.
-		if t.draft && m.aiP.chat == m.chatID && strings.TrimSpace(t.answer) != "" {
-			m.input.SetValue(strings.TrimSpace(t.answer))
-			if m.side != sideAI {
-				m.replan()
-			}
-			return m.notify("draft placed in the composer: i to edit, Enter to send", false),
-				saveTurnCmd(m.deps, s, t)
-		}
 		if !m.aiOpen() || m.aiP.chat != m.chatID {
 			return m.notify("assistant finished", false), saveTurnCmd(m.deps, s, t)
 		}
@@ -1225,7 +1210,7 @@ func aiRowOf(l string, w int) msgRow { return msgRow{text: fit(l, w), plain: tru
 
 // aiTurnHead names a question, when it was asked and what it carried.
 func (m Model) aiTurnHead(t *aiTurn, w int) string {
-	head := stBold.Render("You "+t.at.Format("15:04"))
+	head := stBold.Render("You " + t.at.Format("15:04"))
 	chips := m.aiTurnChips(t, w-lipgloss.Width(head)-3)
 	if chips == "" {
 		return head
@@ -1373,7 +1358,8 @@ func (m Model) openAISelection() (tea.Model, tea.Cmd) {
 }
 
 // askCommand is :ai. Alone it opens the panel; with an argument it starts a
-// new session and asks at once, the scripted path the : line has always had.
+// new session and asks at once. A snippet's name asks the snippet, and
+// anything else is the question as typed.
 func (m Model) askCommand(input string) (tea.Model, tea.Cmd) {
 	input = strings.TrimSpace(input)
 	if input == "" {
@@ -1382,16 +1368,22 @@ func (m Model) askCommand(input string) (tea.Model, tea.Cmd) {
 	if m.aiChat() == "" {
 		return m.notify("open a chat first", true), nil
 	}
-	prompt, draft := ai.Prompt(input)
+	sent := ""
+	for _, sn := range m.snippets() {
+		if strings.EqualFold(sn.Name, input) {
+			input, sent = sn.Name, sn.Text
+			break
+		}
+	}
 	next, cmd := m.openAI(m.aiChat(), true)
-	out, ask := next.askAI(input, prompt, draft)
+	out, ask := next.askAI(input, sent)
 	return out, tea.Batch(cmd, ask)
 }
 
 // askAI turns a question into a turn of the session on screen and starts it.
 // sent is what the model is asked when it differs from the question shown,
-// which is the :ai forms.
-func (m Model) askAI(ask, sent string, draft bool) (tea.Model, tea.Cmd) {
+// which is a snippet's text under the name the reader typed.
+func (m Model) askAI(ask, sent string) (tea.Model, tea.Cmd) {
 	p := m.aiP
 	if ask == "" {
 		return m, nil
@@ -1420,7 +1412,7 @@ func (m Model) askAI(ask, sent string, draft bool) (tea.Model, tea.Cmd) {
 		off = fmt.Errorf("assistant off: %s not found (config ai.agent)", m.agentName())
 	}
 	anchor := cloneMsg(p.anchor)
-	t := &aiTurn{id: uuid.New().String(), ask: ask, sent: sent, draft: draft, seq: len(s.turns),
+	t := &aiTurn{id: uuid.New().String(), ask: ask, sent: sent, seq: len(s.turns),
 		anchorID: msgIDOf(anchor), anchor: anchor, thread: m.threadID, window: m.cfg.AI.Context,
 		compose: m.aiDraftText(), sel: slices.Clone(p.selection), at: time.Now()}
 	if s.created == 0 {
@@ -1436,7 +1428,7 @@ func (m Model) askAI(ask, sent string, draft bool) (tea.Model, tea.Cmd) {
 		tea.Batch(saveSessionCmd(m.deps, p.chat, s), saveTurnCmd(m.deps, s, t), asking)
 }
 
-// msgIDOf names a message a turn records, '' for none.
+// msgIDOf names a message a turn records, ” for none.
 func msgIDOf(x *store.Message) string {
 	if x == nil {
 		return ""
@@ -1582,10 +1574,15 @@ func (m Model) onAIKey(s string) (Model, tea.Cmd, bool) {
 	case "D":
 		next, cmd, _ := m.askDeleteAI()
 		return next.(Model), cmd, true
-	case "e", "f", "C", "E", "t", "v", "1", "2", "3", "4", "5", "6", "7", "8", "9", "0":
+	case "e", "f", "C", "E", "t", "v", "0":
 		// These act on a message, and no message is on screen here: the frame
 		// under the panel keeps its own until Esc uncovers it.
 		return m.notify("no message selected here — Esc uncovers the frame beneath", true), nil, true
+	}
+	// The digits reach the snippet offers, the same chips the band draws.
+	if len(s) == 1 && s[0] >= '1' && s[0] <= '9' {
+		next, cmd := m.insertSnippet(int(s[0] - '1'))
+		return next.(Model), cmd, true
 	}
 	return m, nil, false
 }
@@ -1598,4 +1595,94 @@ func (m Model) insertAtCursor(inThread bool) (Model, tea.Cmd, bool) {
 	}
 	next, cmd := m.insertCard(a, inThread)
 	return next.(Model), cmd, true
+}
+
+// snippets is what the panel offers: the config's list when it is set, else
+// the built-ins.
+func (m Model) snippets() []ai.Snippet {
+	if len(m.cfg.AI.Snippets) > 0 {
+		out := make([]ai.Snippet, len(m.cfg.AI.Snippets))
+		for i, s := range m.cfg.AI.Snippets {
+			out[i] = ai.Snippet{Name: s.Name, Text: s.Text}
+		}
+		return out
+	}
+	return ai.BuiltinSnippets()
+}
+
+// snippetNames is the offers' names, in order — what :ai's completion lists.
+func (m Model) snippetNames() []string {
+	sn := m.snippets()
+	out := make([]string, len(sn))
+	for i, s := range sn {
+		out[i] = strings.ToLower(s.Name)
+	}
+	return out
+}
+
+// insertSnippet drops a snippet's text in the panel's box and puts the keys
+// there. Inserting is never asking: Enter is what asks.
+func (m Model) insertSnippet(i int) (tea.Model, tea.Cmd) {
+	sn := m.snippets()
+	if i < 0 || i >= len(sn) || i >= 9 {
+		return m.notify("no snippet under that digit", true), nil
+	}
+	m.aiP.input.SetValue(sn[i].Text)
+	return m.enterAI()
+}
+
+// aiChip is one snippet chip of the AI band's badge row: the digit that
+// reaches it, and the columns it is drawn over.
+type aiChip struct {
+	idx    int
+	x0, x1 int
+}
+
+// aiChipRow lays the chips out at the width the AI band has. The row the
+// reader sees and the click target the mouse answers come from the same
+// layout, so they cannot disagree.
+func (m Model) aiChipRow(w int) []aiChip {
+	room := w - lipgloss.Width(snippetHint) - 2
+	var out []aiChip
+	x := 0
+	for i, sn := range m.snippets() {
+		if i >= 9 {
+			break
+		}
+		chip := fmt.Sprintf("%d %s", i+1, sn.Name)
+		if x > 0 {
+			x += 2
+		}
+		if x+lipgloss.Width(chip) > room {
+			break
+		}
+		out = append(out, aiChip{idx: i, x0: x, x1: x + lipgloss.Width(chip)})
+		x += lipgloss.Width(chip)
+	}
+	return out
+}
+
+// snippetHint names the other way in, beside the chips that fit.
+const snippetHint = "/ snippets · Enter ask"
+
+// renderSnippetRow is the AI band's badge row: the panel's snippet offers
+// under their digits, as far as they fit — the rest are reached with /.
+func (m Model) renderSnippetRow(w int) string {
+	chips := m.aiChipRow(w)
+	var parts []string
+	for _, c := range chips {
+		parts = append(parts, fmt.Sprintf("%d %s", c.idx+1, m.snippets()[c.idx].Name))
+	}
+	return padBetween(strings.Join(parts, "  "), stDim.Render(snippetHint), w)
+}
+
+// aiChipAt names the snippet chip at column x of the badge row's content, -1
+// for none.
+func (m Model) aiChipAt(x int) int {
+	for _, c := range m.aiChipRow(m.bandWidth(sideAI) - 2) {
+		if x >= c.x0 && x < c.x1 {
+			return c.idx
+		}
+	}
+	return -1
 }

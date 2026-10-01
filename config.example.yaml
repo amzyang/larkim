@@ -85,6 +85,13 @@ ai:
   jev_key_env: TYPESAFE_API_KEY
   # The evaluation endpoint that answers it.
   jev_endpoint: https://api.typesafe.ai/v1/systemone
+  # Scripted questions the assistant panel offers, as chips under digits and
+  # behind the / popup. Setting the list replaces the built-ins (Summary,
+  # Draft, Options) whole.
+  # snippets:
+  #   - name: Summary
+  #     text: Summarize this chat: what was discussed, decisions, action items
+  #           with owners, and what needs my reply.
 
 todoist:
   # The T key files the message under the cursor (the chat under it, in the

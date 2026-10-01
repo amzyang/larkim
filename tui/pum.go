@@ -20,6 +20,7 @@ type pumKind int
 const (
 	pumMention pumKind = iota // `@` — the people in this chat
 	pumEmoji                  // `:` or `[` — an emoji, Feishu's own or a Unicode one
+	pumSnippet                // `/` — the assistant panel's snippet offers
 )
 
 const (
@@ -62,6 +63,9 @@ type pumHit struct {
 	face offerIcon
 	// emoji is set only for an emoji offer.
 	emoji emoji.Hit
+	// text is a snippet's question, shown beside the list so the name does
+	// not have to carry what the snippet asks.
+	text string
 }
 
 // pum is the completion popup standing over the writing area. It is not a mode:
@@ -159,11 +163,24 @@ func lineBeforeCursor(ta textarea.Model) string {
 // popup. It runs after every key the writing area took, so the popup follows a
 // paste and a cursor move as readily as typing, and there is no second place
 // that has to know what a trigger looks like. The assistant's box is a
-// question, not a message: nothing in it completes, and its snippet popup is
-// its own.
+// question, not a message: nothing in it completes the way a draft does, and
+// its snippet popup — a / at the very start of the question — is its own.
 func (m *Model) takePum() {
 	if m.side == sideAI {
-		m.pum = pum{}
+		value := m.aiP.input.Value()
+		if m.pum.dismissed != "" && strings.HasPrefix(value, m.pum.dismissed) {
+			m.pum = pum{dismissed: m.pum.dismissed}
+			return
+		}
+		run, ok := snippetRunAt(m.aiP.input)
+		if !ok {
+			m.pum = pum{}
+			return
+		}
+		if m.pum.open() && run == m.pum.run {
+			return
+		}
+		m.pum = pum{run: run, menu: fillMenu(m.snippetHits(run.query), pumSpec)}
 		return
 	}
 	line := lineBeforeCursor(m.area())
@@ -182,6 +199,21 @@ func (m *Model) takePum() {
 		return
 	}
 	m.pum = pum{run: run, menu: fillMenu(m.pumHits(run), pumSpec)}
+}
+
+// snippetRunAt is the assistant box's completion run: a / standing at the very
+// start of the question, with the query everything typed past it. A / anywhere
+// else — a path, a date — opens nothing.
+func snippetRunAt(ta textarea.Model) (pumRun, bool) {
+	if !strings.HasPrefix(ta.Value(), "/") || ta.Line() != 0 {
+		return pumRun{}, false
+	}
+	line := lineBeforeCursor(ta)
+	query, ok := strings.CutPrefix(line, "/")
+	if !ok {
+		return pumRun{}, false
+	}
+	return pumRun{kind: pumSnippet, runes: len([]rune(line)), query: query}, true
 }
 
 // larkMark says an offer is one of Lark's own emoji, which reaches the other
@@ -211,6 +243,9 @@ var pumSpec = menuSpec[pumHit]{
 				info = append(info, larkMark)
 			}
 			return info
+		}
+		if h.text != "" {
+			return infoLines(h.text)
 		}
 		return infoLines(h.person.Department, h.person.Email)
 	},
@@ -267,6 +302,21 @@ func (m Model) emojiHits(query string) []pumHit {
 	var out []pumHit
 	for _, h := range m.emojiWrite.Search(query) {
 		out = append(out, pumHit{insert: emojiInsert(h.Emoji), emoji: h})
+	}
+	return out
+}
+
+// snippetHits narrows the panel's snippet offers with the matcher the chat
+// list narrows by — a substring or initialism of the name, its pinyin
+// included.
+func (m Model) snippetHits(query string) []pumHit {
+	q := strings.ToLower(query)
+	ix := fuzzy.NewIndex()
+	var out []pumHit
+	for _, sn := range m.snippets() {
+		if mark, hit := ix.Match(sn.Name, sn.Name, q); hit {
+			out = append(out, pumHit{insert: sn.Text, name: sn.Name, mark: mark, text: sn.Text})
+		}
 	}
 	return out
 }

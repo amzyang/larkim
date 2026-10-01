@@ -35,7 +35,6 @@ type AITurn struct {
 	ID, SessionID  string
 	Seq            int
 	Ask, Sent      string
-	Draft          bool
 	AnchorID       string // the message the question was about, '' for none
 	ThreadID       string // the frame standing under the panel, '' for none
 	Window         int    // chat messages the question carried, 0 for the default
@@ -64,16 +63,16 @@ func (s *Store) SaveAITurn(ctx context.Context, v AITurn) error {
 		return err
 	}
 	_, err = s.db.ExecContext(ctx,
-		`INSERT INTO ai_turns(id, session_id, seq, ask, sent, draft, anchor_id,
+		`INSERT INTO ai_turns(id, session_id, seq, ask, sent, anchor_id,
 		                      thread_id, window, compose, sel, state, answer, err, at_ms)
-		 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+		 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 		 ON CONFLICT(id) DO UPDATE SET
 		   seq = excluded.seq, ask = excluded.ask, sent = excluded.sent,
-		   draft = excluded.draft, anchor_id = excluded.anchor_id,
-		   thread_id = excluded.thread_id, window = excluded.window,
-		   compose = excluded.compose, sel = excluded.sel, state = excluded.state,
+		   anchor_id = excluded.anchor_id, thread_id = excluded.thread_id,
+		   window = excluded.window, compose = excluded.compose,
+		   sel = excluded.sel, state = excluded.state,
 		   answer = excluded.answer, err = excluded.err, at_ms = excluded.at_ms`,
-		v.ID, v.SessionID, v.Seq, v.Ask, v.Sent, v.Draft, v.AnchorID,
+		v.ID, v.SessionID, v.Seq, v.Ask, v.Sent, v.AnchorID,
 		v.ThreadID, v.Window, v.Compose, sel, v.State, v.Answer, v.Err, v.AtMs)
 	return err
 }
@@ -93,7 +92,7 @@ func (s *Store) ListAITurns(ctx context.Context, sessionID string) ([]AITurn, er
 	return queryAll(ctx, s.db, func(sc scanner) (AITurn, error) {
 		var v AITurn
 		var sel []byte
-		err := sc.Scan(&v.ID, &v.SessionID, &v.Seq, &v.Ask, &v.Sent, &v.Draft,
+		err := sc.Scan(&v.ID, &v.SessionID, &v.Seq, &v.Ask, &v.Sent,
 			&v.AnchorID, &v.ThreadID, &v.Window, &v.Compose, &sel,
 			&v.State, &v.Answer, &v.Err, &v.AtMs)
 		if err != nil {
@@ -105,7 +104,7 @@ func (s *Store) ListAITurns(ctx context.Context, sessionID string) ([]AITurn, er
 			}
 		}
 		return v, nil
-	}, `SELECT id, session_id, seq, ask, sent, draft, anchor_id, thread_id,
+	}, `SELECT id, session_id, seq, ask, sent, anchor_id, thread_id,
 	          window, compose, sel, state, answer, err, at_ms
 	   FROM ai_turns WHERE session_id = ? ORDER BY seq`, sessionID)
 }

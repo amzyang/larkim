@@ -237,8 +237,7 @@ question is asked, never when it is merely opened.
 | `session_id` | the session the question belongs to |
 | `seq` | question order within the session |
 | `ask` | the question as the reader typed it, which the list shows |
-| `sent` | what the model was asked; differs for the `:ai` forms |
-| `draft` | whether the answer goes to the composer when it lands |
+| `sent` | what the model was asked; differs when a snippet's text stands behind the name the reader typed |
 | `anchor_id` | the message the question was about, '' for none; the message itself may since be gone |
 | `thread_id` | the frame standing under the panel at ask time, '' for none |
 | `window` | how many chat messages the question carried, 0 for the default |

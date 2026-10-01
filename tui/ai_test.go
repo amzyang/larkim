@@ -10,6 +10,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/amzyang/larkim/ai"
+	"github.com/amzyang/larkim/config"
 	"github.com/amzyang/larkim/larkcli"
 	"github.com/amzyang/larkim/store"
 	"github.com/amzyang/larkim/sync"
@@ -340,30 +341,26 @@ func TestOnAIKey_EnterMovesToTheInput(t *testing.T) {
 	_ = cmd
 }
 
-// The draft hand-off stays for the :ai draft form, and only into the chat the
-// question was asked in.
-func TestAskAI_TheDraftFormFillsTheComposerOfItsOwnChat(t *testing.T) {
+// :ai with a snippet's name asks the snippet's text, and no composer is
+// touched by an answer: Insert is the only path that writes into one.
+func TestAskAI_ASnippetNameAsksTheSnippet(t *testing.T) {
 	f := newFakeAI()
 	m := aiFixture(t, f)
 
-	out, cmd := m.askCommand("draft 委婉")
+	out, cmd := m.askCommand("summary")
 	m = out.(Model)
 	started := askStarted(t, cmd)
 	out, _ = m.onAIStarted(started)
 	m = out.(Model)
 	turn := m.aiP.session().turns[0]
-	require.True(t, turn.draft)
-	require.Equal(t, "draft 委婉", strings.TrimSpace(turn.ask), "the form's wording is what the list shows")
+	require.Equal(t, "Summary", strings.TrimSpace(turn.ask), "the snippet's name is what the list shows")
+	require.Contains(t, turn.sent, "Summarize this chat")
+	require.Len(t, f.asks, 1)
+	require.Contains(t, f.asks[0].prompt, "action items with owners")
 
-	out, _ = m.onAIChunk(aiChunkMsg{turn: turn.id, chunk: ai.Chunk{Text: "好的，今晚合。", Done: true}})
+	out, _ = m.onAIChunk(aiChunkMsg{turn: turn.id, chunk: ai.Chunk{Text: "讨论了发布。", Done: true}})
 	m = out.(Model)
-	require.Equal(t, "好的，今晚合。", m.input.Value(), "the finished draft lands in the chat's composer")
-
-	m.input.Reset()
-	m.aiP.chat = "oc_elsewhere"
-	out, _ = m.onAIChunk(aiChunkMsg{turn: turn.id, chunk: ai.Chunk{Text: "好的，今晚合。", Done: true}})
-	m = out.(Model)
-	require.Empty(t, m.input.Value(), "another chat's draft stays out of this one's composer")
+	require.Empty(t, m.input.Value(), "no model output reaches a composer")
 }
 
 func TestAskAI_WithoutAnAgentTheQuestionStillLands(t *testing.T) {
@@ -946,4 +943,81 @@ func TestSendCard_AnAtNameOutsideTheOpenChatStaysText(t *testing.T) {
 	require.Len(t, c.Sent, 1)
 	require.NotContains(t, c.Sent[0].Text, "<at", "the name was never turned into a tag")
 	require.Contains(t, c.Sent[0].Text, "@张三")
+}
+
+// The digits and the chips insert a snippet without asking anything.
+func TestSnippets_InsertWithoutAsking(t *testing.T) {
+	f := newFakeAI()
+	m := aiFixture(t, f)
+	m = press(t, m, "a")
+	m.mode = modeNormal
+	m.areap().Blur()
+
+	out, _, _ := m.onAIKey("1")
+	m = out
+	require.Equal(t, ai.BuiltinSnippets()[0].Text, m.aiP.input.Value(),
+		"the digit puts the snippet's text in the box")
+	require.Equal(t, modeInsert, m.mode, "the keys land in the box")
+	require.Empty(t, f.asks, "inserting never asks")
+
+	// The band draws the offers under their digits.
+	band := ansi.Strip(m.renderBand(sideAI))
+	require.Contains(t, band, "1 Summary")
+	require.Contains(t, band, "2 Draft")
+	require.Contains(t, band, "/ snippets")
+}
+
+// ai.snippets replaces the built-ins whole.
+func TestSnippets_TheConfigListReplacesTheBuiltins(t *testing.T) {
+	f := newFakeAI()
+	m := aiFixture(t, f)
+	m.cfg.AI.Snippets = config.SnippetList{{Name: "Standup", Text: "Summarize today's blockers."}}
+	m = press(t, m, "a")
+	m.mode = modeNormal
+	m.areap().Blur()
+
+	out, _, _ := m.onAIKey("1")
+	m = out
+	require.Equal(t, "Summarize today's blockers.", m.aiP.input.Value())
+	band := ansi.Strip(m.renderBand(sideAI))
+	require.Contains(t, band, "1 Standup")
+	require.NotContains(t, band, "Summary", "the built-ins went with the list")
+
+	// And :ai names the replacement offer.
+	cout, cmd := m.askCommand("standup")
+	m = cout.(Model)
+	started := askStarted(t, cmd)
+	sout, _ := m.onAIStarted(started)
+	m = sout.(Model)
+	require.Contains(t, m.aiP.session().turns[0].sent, "blockers")
+}
+
+// The / popup offers the snippets, filters as typed, and writes the chosen
+// text in the box.
+func TestSnippets_TheSlashPopupFillsTheBox(t *testing.T) {
+	f := newFakeAI()
+	m := aiFixture(t, f)
+	m = press(t, m, "a")
+
+	m.aiP.input.SetValue("/")
+	m.takePum()
+	require.True(t, m.pum.open(), "a bare / at the start opens the offers")
+	require.Len(t, m.pum.menu.items, 3)
+
+	m.aiP.input.SetValue("/opt")
+	m.takePum()
+	require.True(t, m.pum.open())
+	require.Len(t, m.pum.menu.items, 1, "the query narrows the offers")
+
+	out, _, took := m.onPumKey(tea.KeyPressMsg{Code: tea.KeyEnter})
+	m = out.(Model)
+	require.True(t, took)
+	require.False(t, strings.HasPrefix(m.aiP.input.Value(), "/"), "the / run is erased")
+	require.Contains(t, m.aiP.input.Value(), "three different replies", "the chosen text stands in the box")
+	require.False(t, m.pum.open())
+
+	// A / anywhere else opens nothing.
+	m.aiP.input.SetValue("看下 /etc/hosts")
+	m.takePum()
+	require.False(t, m.pum.open())
 }

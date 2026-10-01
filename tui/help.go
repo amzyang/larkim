@@ -129,6 +129,8 @@ func buildHelpEntries() []helpEntry {
 		{"ASSISTANT", "a", "the panel on this chat, keys in its box — nothing is asked until Enter"},
 		{"ASSISTANT", "A", "the same, with a new session"},
 		{"ASSISTANT", "i", "the panel's box, to ask; Enter there asks"},
+		{"ASSISTANT", "1…9", "put a snippet in the box — the offers the band lists under their digits, never asked on their own"},
+		{"ASSISTANT", "/", "at the start of the box: the snippet popup, narrowed the way chat names are"},
 		{"ASSISTANT", "Enter", "ask; the window, the anchor and the session so far go with the question"},
 		{"ASSISTANT", "j / k", "walk the turns; Enter or r puts the card under the cursor in the composer, R replies in its thread"},
 		{"ASSISTANT", "yy / Y", "copy the card under the cursor / the whole answer"},
@@ -137,7 +139,7 @@ func buildHelpEntries() []helpEntry {
 		{"ASSISTANT", "o", "open the link in the card under the cursor"},
 		{"ASSISTANT", "[ / ]", "the chat's other sessions"},
 		{"ASSISTANT", "x", "stop the answer in flight"},
-		{"ASSISTANT", ":ai <form>", "a new session that asks at once: summary, draft, todo, or a question"},
+		{"ASSISTANT", ":ai <form>", "a new session that asks at once: a snippet's name, or a question"},
 		{"ASSISTANT", "Esc", "close the panel; the frame it covered comes back, answers keep streaming"},
 
 		{"MOUSE", "click", "focuses and selects"},

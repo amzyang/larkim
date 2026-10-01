@@ -172,7 +172,14 @@ func (m Model) argHits(cmd command, stem string) []cmdHit {
 	var out []cmdHit
 	switch cmd.arg {
 	case argEnum:
-		for _, w := range cmd.enum {
+		// The ai command's words are the snippet offers, which the reader
+		// may have replaced in the config; every other enum is the table's
+		// own.
+		words := cmd.enum
+		if cmd.name == "ai" {
+			words = m.snippetNames()
+		}
+		for _, w := range words {
 			if strings.HasPrefix(w, stem) {
 				out = append(out, cmdHit{insert: w, name: w, mark: prefixMark(stem)})
 			}

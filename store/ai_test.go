@@ -80,7 +80,7 @@ func TestListAITurns_RoundsTheRecordedContext(t *testing.T) {
 	ctx := t.Context()
 	require.NoError(t, st.SaveAISession(ctx, AISession{ID: "as_1", ChatID: "oc_quiet", CreatedMs: 1}))
 	require.NoError(t, st.SaveAITurn(ctx, AITurn{ID: "at_1", SessionID: "as_1", Seq: 0,
-		Ask: "帮我润色", Sent: "帮我润色，语气委婉", Draft: true, AnchorID: "om_1",
+		Ask: "帮我润色", Sent: "帮我润色，语气委婉", AnchorID: "om_1",
 		ThreadID: "omt_1", Window: 80, Compose: "我的草稿", Sel: []string{"om_1", "om_2"},
 		State: AITurnStopped, AtMs: 1234}))
 	require.NoError(t, st.SaveAITurn(ctx, AITurn{ID: "at_0", SessionID: "as_1", Seq: 1,
@@ -92,7 +92,6 @@ func TestListAITurns_RoundsTheRecordedContext(t *testing.T) {
 	require.Equal(t, "at_1", turns[0].ID, "question order, not write order")
 	require.Equal(t, "at_0", turns[1].ID)
 	first := turns[0]
-	require.True(t, first.Draft)
 	require.Equal(t, "om_1", first.AnchorID)
 	require.Equal(t, "omt_1", first.ThreadID)
 	require.Equal(t, 80, first.Window)

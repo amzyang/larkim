@@ -1170,11 +1170,11 @@ const (
 // renderBadge names the message type the draft will be sent as, so the
 // composer's choice is never a surprise Enter springs on the reader. Outside
 // insert mode the row names the key that opens it instead of the keys that
-// send. The assistant's box asks rather than sends, so its row says that.
+// send. The assistant's box asks rather than sends, so its row is the
+// snippet offers instead of a message type.
 func (m Model) renderBadge(w int) string {
 	if m.side == sideAI {
-		return padBetween(stChipEdge.Render(chipLeft)+stChip.Render("AI")+stChipEdge.Render(chipRight),
-			stDim.Render("Enter ask · Esc back"), w)
+		return m.renderSnippetRow(w)
 	}
 	left := stChipEdge.Render(chipLeft) + stChip.Render(m.draft.kind.msgType()) + stChipEdge.Render(chipRight)
 	hint := stDim.Render(composerHint)
