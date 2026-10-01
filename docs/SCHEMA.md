@@ -208,6 +208,50 @@ table here with a DELETE trigger.
 | `extras` | minimal JSON array holding candidates 1..n |
 | `created_ms` | when `candidates put` ran, Unix ms UTC |
 
+## ai_sessions, ai_turns
+
+The assistant panel's own conversations: one session per chat per
+conversation, and one turn per question with its answer and the recorded
+context the question was asked in — the anchor, the window size, the draft,
+the selection. Later actions on an answer (Retry and Regenerate included)
+replay the recorded context rather than the live cursor, so that record is
+what an answer's meaning rests on.
+
+TUI-owned, like `drafts`: the daemon never writes these tables, and they sit
+outside the `data_rev` triggers — the process that writes a turn is the one
+that displays it. Ids are uuids minted in the TUI, so a stream key exists
+before its row is inserted; turn rows are upserted whole, so an out-of-order
+write cannot leave half a turn behind. A session is stored when its first
+question is asked, never when it is merely opened.
+
+| `ai_sessions` column | meaning |
+|---|---|
+| `id` | uuid, the primary key |
+| `chat_id` | `oc_…` the session belongs to; the panel lists only the open chat's sessions |
+| `title` | first line of the first question |
+| `created_ms` | when the session was opened, Unix ms UTC; orders a chat's sessions |
+
+| `ai_turns` column | meaning |
+|---|---|
+| `id` | uuid, the primary key |
+| `session_id` | the session the question belongs to |
+| `seq` | question order within the session |
+| `ask` | the question as the reader typed it, which the list shows |
+| `sent` | what the model was asked; differs for the `:ai` forms |
+| `draft` | whether the answer goes to the composer when it lands |
+| `anchor_id` | the message the question was about, '' for none; the message itself may since be gone |
+| `thread_id` | the frame standing under the panel at ask time, '' for none |
+| `window` | how many chat messages the question carried, 0 for the default |
+| `compose` | the anchor's composer text at ask time |
+| `sel` | minimal JSON array of message ids a VISUAL range left |
+| `state` | 0 asking, 1 done, 2 failed, 3 stopped, 4 interrupted |
+| `answer` | the answer text so far, Markdown |
+| `err` | the failure's message on a failed answer |
+| `at_ms` | when the question was asked, Unix ms UTC |
+
+A row still `asking` at load is an answer the previous run never finished —
+the TUI reads it as `interrupted`, and nobody owes it further.
+
 ## resources, message_resources
 
 A Feishu resource key is globally unique, so `resources` holds one row per key: what the bytes are and whether they arrived. `message_resources` holds the references — which messages name which key — and many messages routinely share one, because a notification card's header picture is in every card its sender posts.

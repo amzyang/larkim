@@ -41,9 +41,12 @@ type aiPanel struct {
 	chat string
 	// sess are the chat on screen's sessions in creation order, cur the one
 	// on screen, and stashed the sessions of chats the reader left, picked
-	// back up on return.
+	// back up on return. loaded names the chats whose sessions the store has
+	// already answered for this run, so coming back to a chat keeps what the
+	// panel holds rather than re-reading it.
 	sess    []*aiSession
 	stashed map[string][]*aiSession
+	loaded  map[string]bool
 	cur     int
 	// rows is the turn list as the pane draws it, rebuilt on every change,
 	// and top the first row of it on screen.
@@ -63,9 +66,10 @@ type aiPanel struct {
 // aiSession is one conversation with the assistant. An empty one — opened
 // with a or A and never asked anything — stays in memory and is gone on quit.
 type aiSession struct {
-	id    string
-	title string
-	turns []*aiTurn
+	id      string
+	title   string
+	created int64
+	turns   []*aiTurn
 }
 
 // aiTurn is one question and its answer, with the context the question was
@@ -80,13 +84,17 @@ type aiTurn struct {
 	// draft says the answer goes to the composer when it lands, the :ai draft
 	// hand-off.
 	draft bool
-	// the recorded context
-	anchor  *store.Message
-	thread  string
-	window  int
-	compose string
-	sel     []string
+	// the recorded context. anchorID names the message the question was about
+	// even after the message itself is gone; anchor is that message as it
+	// stood, resolved from the id.
+	anchorID string
+	anchor   *store.Message
+	thread   string
+	window   int
+	compose  string
+	sel      []string
 
+	seq    int
 	state  aiTurnState
 	answer string
 	err    string
@@ -102,6 +110,9 @@ const (
 	aiDone
 	aiFailed
 	aiStopped
+	// aiInterrupted is an answer that never finished because the program
+	// left: stopped on quit, asking at load.
+	aiInterrupted
 )
 
 // streaming reports an answer still arriving.
@@ -119,22 +130,99 @@ func newAI() *aiPanel {
 }
 
 // point aims the panel at chat: the sessions of the chat it stood on are
-// stashed and the new chat's own picked up, so the header never lists another
-// chat's conversations.
-func (p *aiPanel) point(chat string) {
-	if p.chat == chat {
+// stashed and the new chat's own picked up — out of the store the first time
+// — so the header never lists another chat's conversations.
+func (p *aiPanel) point(chat string, m Model) {
+	if p.chat != chat {
+		if p.stashed == nil {
+			p.stashed = map[string][]*aiSession{}
+		}
+		if len(p.sess) > 0 {
+			p.stashed[p.chat] = p.sess
+		}
+		p.sess, p.stashed[chat] = p.stashed[chat], nil
+		delete(p.stashed, chat)
+		p.chat = chat
+		p.cur, p.top, p.follow = 0, 0, true
+	}
+	p.load(m)
+}
+
+// load reads the chat's sessions out of the store the first time the panel
+// stands on it: a restart finds its conversations where they were left. A
+// turn still asking at load is an answer nobody finished, and reads as
+// interrupted.
+func (p *aiPanel) load(m Model) {
+	// A model a test built by hand carries no store; its sessions are the
+	// ones the test put in the panel, and the store has none to answer with.
+	if m.deps.Store == nil {
 		return
 	}
-	if p.stashed == nil {
-		p.stashed = map[string][]*aiSession{}
+	if p.loaded == nil {
+		p.loaded = map[string]bool{}
 	}
-	if len(p.sess) > 0 {
-		p.stashed[p.chat] = p.sess
+	if p.loaded[p.chat] {
+		return
 	}
-	p.sess, p.stashed[chat] = p.stashed[chat], nil
-	delete(p.stashed, chat)
-	p.chat = chat
-	p.cur, p.top, p.follow = 0, 0, true
+	p.loaded[p.chat] = true
+	ctx := context.Background()
+	stored, err := m.deps.Store.ListAISessions(ctx, p.chat)
+	if err != nil {
+		m.deps.log().Error("load ai sessions", "chat_id", p.chat, "err", err)
+		return
+	}
+	sessions := make([]*aiSession, 0, len(stored))
+	var anchors []string
+	for _, sv := range stored {
+		s := &aiSession{id: sv.ID, title: sv.Title, created: sv.CreatedMs}
+		turns, err := m.deps.Store.ListAITurns(ctx, sv.ID)
+		if err != nil {
+			m.deps.log().Error("load ai turns", "session_id", sv.ID, "err", err)
+			turns = nil
+		}
+		for _, tv := range turns {
+			t := &aiTurn{id: tv.ID, seq: tv.Seq, ask: tv.Ask, sent: tv.Sent, draft: tv.Draft,
+				anchorID: tv.AnchorID, thread: tv.ThreadID, window: tv.Window,
+				compose: tv.Compose, sel: tv.Sel, answer: tv.Answer, err: tv.Err,
+				at: time.UnixMilli(tv.AtMs)}
+			switch tv.State {
+			case store.AITurnAsking, store.AITurnInterrupted:
+				t.state = aiInterrupted
+			case store.AITurnFailed:
+				t.state = aiFailed
+			case store.AITurnStopped:
+				t.state = aiStopped
+			default:
+				t.state = aiDone
+			}
+			if tv.AnchorID != "" {
+				anchors = append(anchors, tv.AnchorID)
+			}
+			s.turns = append(s.turns, t)
+		}
+		sessions = append(sessions, s)
+	}
+	if len(sessions) == 0 {
+		return
+	}
+	// The anchors are messages of this chat, already synced; a recalled one
+	// resolves to nothing and its chip goes with it.
+	picked, err := m.deps.Store.MessagesByIDs(ctx, anchors)
+	if err != nil {
+		m.deps.log().Error("load ai anchors", "chat_id", p.chat, "err", err)
+	}
+	for _, s := range sessions {
+		for _, t := range s.turns {
+			if x, ok := picked[t.anchorID]; ok {
+				a := x
+				t.anchor = &a
+			}
+		}
+	}
+	// Sessions this run created are newer than anything stored, so they keep
+	// the tail of the list.
+	p.sess = append(sessions, p.sess...)
+	p.cur = len(p.sess) - 1
 }
 
 // openAI shows the assistant column on chat. fresh starts a new session rather
@@ -148,15 +236,13 @@ func (m Model) openAI(chat string, fresh bool) (Model, tea.Cmd) {
 		m.aiP = newAI()
 	}
 	m.aiP.open = true
-	if m.aiP.chat != chat {
-		m.aiP.point(chat)
-		m.aiP.rebuild(m)
-	}
+	m.aiP.point(chat, m)
 	if fresh || len(m.aiP.sess) == 0 {
-		m.aiP.sess = append(m.aiP.sess, &aiSession{id: uuid.New().String()})
+		m.aiP.sess = append(m.aiP.sess, &aiSession{id: uuid.New().String(), created: time.Now().UnixMilli()})
 		m.aiP.cur = len(m.aiP.sess) - 1
 		m.aiP.top = 0
 	}
+	m.aiP.rebuild(m)
 	m.focus = paneThread
 	m.layout()
 	return m, nil
@@ -261,14 +347,58 @@ func (p *aiPanel) busy() bool {
 
 // stopAll cancels every answer in flight, which is what leaving the program
 // owes them: nothing keeps a child process alive past its reader. The stashed
-// sessions are in flight as surely as the chat on screen.
-func (p *aiPanel) stopAll() {
+// sessions are in flight as surely as the chat on screen. Each answer that
+// never finished is marked interrupted on its way out, so the next run reads
+// it as that rather than as an answer still owed.
+func (p *aiPanel) stopAll(d Deps) []tea.Cmd {
+	var cmds []tea.Cmd
 	for _, s := range p.allSessions() {
 		for _, t := range s.turns {
 			if t.cancel != nil {
 				t.cancel()
 			}
+			if t.streaming() {
+				t.state, t.cancel = aiInterrupted, nil
+				cmds = append(cmds, saveTurnCmd(d, s, t))
+			}
 		}
+	}
+	return cmds
+}
+
+// storedTurn snapshots a turn whole, the shape the table upserts: every write
+// carries the complete state, so an out-of-order write cannot leave half a
+// turn behind.
+func storedTurn(s *aiSession, t *aiTurn) store.AITurn {
+	return store.AITurn{ID: t.id, SessionID: s.id, Seq: t.seq, Ask: t.ask, Sent: t.sent,
+		Draft: t.draft, AnchorID: t.anchorID, ThreadID: t.thread, Window: t.window,
+		Compose: t.compose, Sel: t.sel, State: int(t.state), Answer: t.answer,
+		Err: t.err, AtMs: t.at.UnixMilli()}
+}
+
+// saveTurnCmd persists a turn as it stands at this moment. The snapshot is
+// taken here, before the cmd runs, so a turn that keeps moving under the
+// Update loop writes the state it was asked to write.
+func saveTurnCmd(d Deps, s *aiSession, t *aiTurn) tea.Cmd {
+	v := storedTurn(s, t)
+	return func() tea.Msg {
+		if err := d.Store.SaveAITurn(context.Background(), v); err != nil {
+			d.log().Error("save ai turn", "id", v.ID, "err", err)
+		}
+		return nil
+	}
+}
+
+// saveSessionCmd persists a session row. A session is stored when its first
+// question is asked — until then it is the reader's to leave behind — and the
+// upsert keeps that first write's creation time.
+func saveSessionCmd(d Deps, chat string, s *aiSession) tea.Cmd {
+	v := store.AISession{ID: s.id, ChatID: chat, Title: s.title, CreatedMs: s.created}
+	return func() tea.Msg {
+		if err := d.Store.SaveAISession(context.Background(), v); err != nil {
+			d.log().Error("save ai session", "id", v.ID, "err", err)
+		}
+		return nil
 	}
 }
 
@@ -365,14 +495,21 @@ func (m Model) onAIStarted(msg aiStartedMsg) (tea.Model, tea.Cmd) {
 // and the stashed ones alike: an answer belongs to its session wherever the
 // reader has since gone.
 func (p *aiPanel) turn(id string) *aiTurn {
+	_, t := p.findTurn(id)
+	return t
+}
+
+// findTurn is turn with the session the turn belongs to, which is what
+// persisting one needs.
+func (p *aiPanel) findTurn(id string) (*aiSession, *aiTurn) {
 	for _, s := range p.allSessions() {
 		for _, t := range s.turns {
 			if t.id == id {
-				return t
+				return s, t
 			}
 		}
 	}
-	return nil
+	return nil, nil
 }
 
 // allSessions is every session the panel still holds.
@@ -385,9 +522,10 @@ func (p *aiPanel) allSessions() []*aiSession {
 }
 
 // onAIChunk takes one piece of an answer into its turn, wherever the panel
-// itself has gone in the meantime.
+// itself has gone in the meantime. A turn that reaches its end is persisted
+// as it stands, whole.
 func (m Model) onAIChunk(msg aiChunkMsg) (tea.Model, tea.Cmd) {
-	t := m.aiP.turn(msg.turn)
+	s, t := m.aiP.findTurn(msg.turn)
 	if t == nil {
 		return m, nil
 	}
@@ -418,15 +556,16 @@ func (m Model) onAIChunk(msg aiChunkMsg) (tea.Model, tea.Cmd) {
 			if m.side != sideAI {
 				m.replan()
 			}
-			return m.notify("draft placed in the composer: i to edit, Enter to send", false), nil
+			return m.notify("draft placed in the composer: i to edit, Enter to send", false),
+				saveTurnCmd(m.deps, s, t)
 		}
 		if !m.aiOpen() || m.aiP.chat != m.chatID {
-			return m.notify("assistant finished", false), nil
+			return m.notify("assistant finished", false), saveTurnCmd(m.deps, s, t)
 		}
 	}
 	m.aiP.rebuild(m)
 	m.layout()
-	return m.notify("", false), nil
+	return m.notify("", false), saveTurnCmd(m.deps, s, t)
 }
 
 // stopAI cancels the answer in flight on the session on screen. The stream
@@ -571,6 +710,9 @@ func (p *aiPanel) rebuild(m Model) {
 		case aiStopped:
 			p.rows = append(p.rows, aiRowOf(stDim.Render("stopped"), w))
 			continue
+		case aiInterrupted:
+			p.rows = append(p.rows, aiRowOf(stDim.Render("interrupted"), w))
+			continue
 		}
 		var b block
 		g := leads{b: &b}
@@ -643,6 +785,8 @@ func (m Model) aiAnswerHead(t *aiTurn, w int) string {
 		state = "failed"
 	case aiStopped:
 		state = "stopped"
+	case aiInterrupted:
+		state = "interrupted"
 	}
 	if state == "" {
 		return head
@@ -803,7 +947,7 @@ func (m Model) askAI(ask, sent string, draft bool) (tea.Model, tea.Cmd) {
 		return m.notify("assistant is still answering", true), nil
 	}
 	if p.session() == nil {
-		p.sess = append(p.sess, &aiSession{id: uuid.New().String()})
+		p.sess = append(p.sess, &aiSession{id: uuid.New().String(), created: time.Now().UnixMilli()})
 		p.cur = len(p.sess) - 1
 	}
 	s := p.session()
@@ -819,15 +963,76 @@ func (m Model) askAI(ask, sent string, draft bool) (tea.Model, tea.Cmd) {
 	if m.ai == nil {
 		off = fmt.Errorf("assistant off: %s not found (config ai.agent)", m.agentName())
 	}
-	t := &aiTurn{id: uuid.New().String(), ask: ask, sent: sent, draft: draft,
-		anchor: cloneMsg(p.anchor), thread: m.threadID, window: m.cfg.AI.Context,
+	anchor := cloneMsg(p.anchor)
+	t := &aiTurn{id: uuid.New().String(), ask: ask, sent: sent, draft: draft, seq: len(s.turns),
+		anchorID: msgIDOf(anchor), anchor: anchor, thread: m.threadID, window: m.cfg.AI.Context,
 		compose: m.aiDraftText(), sel: slices.Clone(p.selection), at: time.Now()}
+	if s.created == 0 {
+		s.created = t.at.UnixMilli()
+	}
 	s.turns = append(s.turns, t)
 	p.input.Reset()
 	p.follow = true
 	p.rebuild(m)
 	m.layout()
-	return m.notify("asking "+m.agentName()+"…", false), askTurn(m.deps, m.ai, off, p, s, t)
+	asking := askTurn(m.deps, m.ai, off, p, s, t)
+	return m.notify("asking "+m.agentName()+"…", false),
+		tea.Batch(saveSessionCmd(m.deps, p.chat, s), saveTurnCmd(m.deps, s, t), asking)
+}
+
+// msgIDOf names a message a turn records, '' for none.
+func msgIDOf(x *store.Message) string {
+	if x == nil {
+		return ""
+	}
+	return x.MessageID
+}
+
+// askDeleteAI arms the y/n a session's deletion asks for: the conversation
+// and its questions go together, and there is no undo to reach them with.
+func (m Model) askDeleteAI() (tea.Model, tea.Cmd, bool) {
+	s := m.aiP.session()
+	if s == nil {
+		return m.notify("no session to delete", true), nil, true
+	}
+	m.confirm = confirmation{kind: confirmDeleteAI, aiSession: s.id}
+	return m.notify("delete "+cmp.Or(s.title, "this session")+"? y/n", false), nil, true
+}
+
+// deleteAI drops a session: out of the panel's lists, and out of the store
+// with its turns. An answer still streaming into it is stopped first —
+// nothing keeps a child process alive past its conversation.
+func (m Model) deleteAI(id string) (tea.Model, tea.Cmd) {
+	p := m.aiP
+	var doomed *aiSession
+	for _, s := range p.sess {
+		if s.id == id {
+			doomed = s
+			break
+		}
+	}
+	if doomed == nil {
+		return m, nil
+	}
+	for _, t := range doomed.turns {
+		if t.cancel != nil {
+			t.cancel()
+		}
+	}
+	p.sess = slices.DeleteFunc(p.sess, func(s *aiSession) bool { return s.id == id })
+	if len(p.sess) == 0 {
+		p.sess = append(p.sess, &aiSession{id: uuid.New().String(), created: time.Now().UnixMilli()})
+	}
+	p.cur = min(p.cur, len(p.sess)-1)
+	p.top, p.follow = 0, true
+	p.rebuild(m)
+	m.layout()
+	return m.notify("session deleted", false), func() tea.Msg {
+		if err := m.deps.Store.DeleteAISession(context.Background(), id); err != nil {
+			m.deps.log().Error("delete ai session", "id", id, "err", err)
+		}
+		return nil
+	}
 }
 
 // onAIKey takes the keys the assistant column owns, before any of them can
@@ -860,7 +1065,10 @@ func (m Model) onAIKey(s string) (Model, tea.Cmd, bool) {
 		// than backing out of a stack that is not even on screen.
 		m.focus = paneMessages
 		return m, nil, true
-	case "r", "R", "s", "S", "e", "f", "C", "D", "E", "t", "o", "Y", "y", "v", ".", "1", "2", "3", "4", "5", "6", "7", "8", "9", "0":
+	case "D":
+		next, cmd, _ := m.askDeleteAI()
+		return next.(Model), cmd, true
+	case "r", "R", "s", "S", "e", "f", "C", "E", "t", "o", "Y", "y", "v", ".", "1", "2", "3", "4", "5", "6", "7", "8", "9", "0":
 		// These act on a message, and no message is on screen here: the frame
 		// under the panel keeps its own until Esc uncovers it.
 		return m.notify("no message selected here — Esc uncovers the frame beneath", true), nil, true

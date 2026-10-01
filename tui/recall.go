@@ -67,6 +67,8 @@ const (
 	confirmNone confirmKind = iota
 	confirmRecall
 	confirmReEdit
+	// confirmDeleteAI drops an assistant session and its turns.
+	confirmDeleteAI
 )
 
 // confirmation is an action waiting on y or n. A zero value is nothing
@@ -74,6 +76,8 @@ const (
 type confirmation struct {
 	kind      confirmKind
 	messageID string
+	// aiSession is the assistant session a confirmDeleteAI names.
+	aiSession string
 }
 
 // answerConfirm handles the key a pending confirmation is waiting on. ok is
@@ -95,6 +99,9 @@ func (m Model) answerConfirm(key string) (tea.Model, tea.Cmd, bool) {
 		// One call for both: a re-edit is a recall whose answer also refills
 		// the composer, which the recall's own reply is what triggers.
 		return m.notify("recalling…", false), recallCmd(m.deps, pending.messageID), true
+	case confirmDeleteAI:
+		next, cmd := m.deleteAI(pending.aiSession)
+		return next, cmd, true
 	}
 	return m, nil, true
 }

@@ -8,7 +8,8 @@ import (
 	"testing"
 	"time"
 
-"github.com/amzyang/larkim/ai"
+	tea "charm.land/bubbletea/v2"
+	"github.com/amzyang/larkim/ai"
 	"github.com/amzyang/larkim/store"
 	"github.com/amzyang/larkim/sync"
 	"github.com/charmbracelet/x/ansi"
@@ -77,6 +78,31 @@ func aiFixture(t *testing.T, f *fakeAI) Model {
 	return m
 }
 
+// askStarted runs the batch an ask returns — every cmd of it, the way a live
+// run does, saves included — and hands back the stream-start message among
+// them.
+func askStarted(t *testing.T, cmd tea.Cmd) aiStartedMsg {
+	t.Helper()
+	var found aiStartedMsg
+	var run func(tea.Cmd)
+	run = func(c tea.Cmd) {
+		if c == nil {
+			return
+		}
+		switch v := c().(type) {
+		case aiStartedMsg:
+			found = v
+		case tea.BatchMsg:
+			for _, cc := range v {
+				run(cc)
+			}
+		}
+	}
+	run(cmd)
+	require.NotZero(t, found.turn, "the ask arms a stream")
+	return found
+}
+
 // ask feeds one question through the panel: Enter in its box, the ask run,
 // and the stream armed. The turn comes back for the chunks a test plays.
 func ask(t *testing.T, m Model, question string) (Model, *aiTurn) {
@@ -85,8 +111,7 @@ func ask(t *testing.T, m Model, question string) (Model, *aiTurn) {
 	m.aiP.input.SetValue(question)
 	out, cmd := m.submitAI()
 	m = out.(Model)
-	started, ok := cmd().(aiStartedMsg)
-	require.True(t, ok, "the ask arms a stream")
+	started := askStarted(t, cmd)
 	out, _ = m.onAIStarted(started)
 	m = out.(Model)
 	s := m.aiP.session()
@@ -165,8 +190,7 @@ func TestAskAI_ReadsTheWindowFromTheStoreAndCarriesHistory(t *testing.T) {
 	m.aiP.input.SetValue("那风险呢？")
 	out, cmd := m.submitAI()
 	m = out.(Model)
-	started, ok := cmd().(aiStartedMsg)
-	require.True(t, ok)
+	started := askStarted(t, cmd)
 	out, _ = m.onAIStarted(started)
 	m = out.(Model)
 
@@ -188,8 +212,7 @@ func TestAskAI_AnchorAndDraftRideInTheAboutBlock(t *testing.T) {
 	m.aiP.input.SetValue("帮我润色")
 	out, cmd := m.submitAI()
 	m = out.(Model)
-	_, ok := cmd().(aiStartedMsg)
-	require.True(t, ok)
+	askStarted(t, cmd)
 	require.Len(t, f.asks, 1)
 	// The anchor sits inside the store's window already, and the draft is the
 	// reader's own words, so both travel in the about block of the prompt.
@@ -282,7 +305,7 @@ func TestOnAIKey_TheHiddenFrameGetsNoKeys(t *testing.T) {
 	m.mode, m.side = modeNormal, sideMain
 	m.areap().Blur()
 
-	for _, key := range []string{"r", "R", "D", "E", "e", "t", "o"} {
+	for _, key := range []string{"r", "R", "E", "e", "t", "o"} {
 		out, _, took := m.onAIKey(key)
 		m = out
 		require.True(t, took, "the %s key belongs to the panel", key)
@@ -290,6 +313,15 @@ func TestOnAIKey_TheHiddenFrameGetsNoKeys(t *testing.T) {
 	require.Equal(t, modeNormal, m.mode)
 	require.Nil(t, m.replyTo, "no reply was started against the hidden thread")
 	require.Equal(t, confirmNone, m.confirm.kind, "no recall was armed")
+
+	// D deletes the panel's own session, which asks first; the frame beneath
+	// is untouched either way.
+	m.confirm = confirmation{}
+	out, _, took := m.onAIKey("D")
+	m = out
+	require.True(t, took)
+	require.Equal(t, confirmDeleteAI, m.confirm.kind, "D arms the session delete, not a recall")
+	require.Nil(t, m.replyTo)
 }
 
 func TestOnAIKey_EnterMovesToTheInput(t *testing.T) {
@@ -315,8 +347,7 @@ func TestAskAI_TheDraftFormFillsTheComposerOfItsOwnChat(t *testing.T) {
 
 	out, cmd := m.askCommand("draft 委婉")
 	m = out.(Model)
-	started, ok := cmd().(aiStartedMsg)
-	require.True(t, ok)
+	started := askStarted(t, cmd)
 	out, _ = m.onAIStarted(started)
 	m = out.(Model)
 	turn := m.aiP.session().turns[0]
@@ -381,8 +412,7 @@ func TestAskAI_VISUALSelectionBecomesContext(t *testing.T) {
 	m.aiP.input.SetValue("这两条什么意思？")
 	out, cmd := m.submitAI()
 	m = out.(Model)
-	_, ok := cmd().(aiStartedMsg)
-	require.True(t, ok)
+	askStarted(t, cmd)
 	require.Len(t, f.asks, 1)
 	require.Contains(t, f.asks[0].prompt, "id=om_1")
 	require.Contains(t, f.asks[0].prompt, "id=om_2")
@@ -406,4 +436,108 @@ func TestRenderAI_ShowsTheTurnsAndItsOwnBand(t *testing.T) {
 	band := ansi.Strip(m.renderBand(sideAI))
 	require.Contains(t, band, "Enter ask")
 	require.Contains(t, band, "Ask about this chat…")
+}
+
+// A restart finds the chat's conversations where they were left, and another
+// chat's header does not list them.
+func TestAIPanel_ARestartFindsTheSessionsWhereTheyWereLeft(t *testing.T) {
+	f := newFakeAI()
+	m := aiFixture(t, f)
+	m, t1 := ask(t, m, "发布单怎么回？")
+	// The save the finish fires is part of the finish: run it before the
+	// store is re-read, the way a live run does.
+	mm, done := m.onAIChunk(aiChunkMsg{turn: t1.id, chunk: ai.Chunk{Text: "今晚合。", Done: true}})
+	m = mm.(Model)
+	require.NotNil(t, done)
+	done()
+
+	// A new model over the same store, the way a restart is.
+	f2 := newFakeAI()
+	reborn := New(Deps{Store: m.deps.Store, Syncer: &sync.Syncer{Store: m.deps.Store},
+		Self: "ou_me", AI: f2})
+	reborn.width, reborn.height = 130, 40
+	reborn.chatID = "oc_quiet"
+	reborn.chats = m.chats
+	reborn.layout()
+	reborn = press(t, reborn, "a")
+
+	require.Len(t, reborn.aiP.sess, 1, "the stored session comes back")
+	s := reborn.aiP.session()
+	require.Equal(t, "发布单怎么回？", s.title)
+	require.Len(t, s.turns, 1)
+	require.Equal(t, "今晚合。", s.turns[0].answer)
+	require.Equal(t, aiDone, s.turns[0].state)
+
+	// Another chat's header lists nothing of this chat's.
+	reborn.pendingChat = "oc_elsewhere"
+	reborn.chatID = "oc_elsewhere"
+	_ = reborn.enterChat()
+	require.Empty(t, reborn.aiP.sess, "another chat's sessions are its own")
+}
+
+// A turn still asking at load is an answer nobody finished: it reads as
+// interrupted, not as one still owed.
+func TestAIPanel_ATurnStillAskingAtLoadIsInterrupted(t *testing.T) {
+	m := aiFixture(t, newFakeAI())
+	// The row an ask writes before any answer arrives, left behind by a run
+	// that died mid-stream.
+	st := m.deps.Store
+	require.NoError(t, st.UpsertChats(t.Context(), []store.Chat{{ChatID: "oc_quiet", Name: "平台组", ChatMode: "group"}}, 1))
+	s := &aiSession{id: "as_kept", title: "总结", created: 10}
+	tt := &aiTurn{id: "at_kept", seq: 0, ask: "总结一下", sent: "总结一下",
+		window: 80, state: aiAsking, at: time.UnixMilli(11)}
+	s.turns = append(s.turns, tt)
+	require.NoError(t, st.SaveAISession(t.Context(), store.AISession{ID: "as_kept", ChatID: "oc_quiet", Title: "总结", CreatedMs: 10}))
+	require.NoError(t, st.SaveAITurn(t.Context(), storedTurn(s, tt)))
+
+	f2 := newFakeAI()
+	reborn := New(Deps{Store: st, Syncer: &sync.Syncer{Store: st}, Self: "ou_me", AI: f2})
+	reborn.width, reborn.height = 130, 40
+	reborn.chatID = "oc_quiet"
+	reborn.layout()
+	reborn = press(t, reborn, "a")
+
+	loaded := reborn.aiP.turn("at_kept")
+	require.NotNil(t, loaded)
+	require.Equal(t, aiInterrupted, loaded.state)
+	require.Empty(t, reborn.aiP.session().turns[0].ch, "nobody owes this answer anymore")
+}
+
+// D asks first, and y drops the session and its turns from the panel and the
+// store.
+func TestDeleteAI_AsksFirstAndDropsTheStoredRows(t *testing.T) {
+	f := newFakeAI()
+	m := aiFixture(t, f)
+	m, t1 := ask(t, m, "总结一下")
+	mm, _ := m.onAIChunk(aiChunkMsg{turn: t1.id, chunk: ai.Chunk{Text: "答", Done: true}})
+	m = mm.(Model)
+
+	m.mode, m.side = modeNormal, sideMain
+	m.areap().Blur()
+
+	out, _, _ := m.onAIKey("D")
+	m = out
+	require.Equal(t, confirmDeleteAI, m.confirm.kind, "D asks before it deletes")
+
+	// n leaves everything where it was.
+	nout, ncmd, _ := m.answerConfirm("n")
+	m = nout.(Model)
+	require.Nil(t, ncmd)
+	sessions, err := m.deps.Store.ListAISessions(t.Context(), "oc_quiet")
+	require.NoError(t, err)
+	require.Len(t, sessions, 1)
+
+	out, _, _ = m.onAIKey("D")
+	m = out
+	yout, ycmd, _ := m.answerConfirm("y")
+	m = yout.(Model)
+	require.NotNil(t, ycmd)
+	ycmd()
+	require.Empty(t, m.confirm.kind)
+	require.Len(t, m.aiP.sess, 1, "the panel opens an empty session when none is left")
+	require.Empty(t, m.aiP.sess[0].turns)
+	require.Empty(t, m.aiP.sess[0].title)
+	sessions, err = m.deps.Store.ListAISessions(t.Context(), "oc_quiet")
+	require.NoError(t, err)
+	require.Empty(t, sessions, "the rows went with the conversation")
 }

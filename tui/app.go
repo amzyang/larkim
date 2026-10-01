@@ -1263,10 +1263,12 @@ func (m Model) saveChatBox() tea.Cmd {
 // Quit ends the program, and a draft written alongside it would race the exit.
 // The answers in flight are cancelled first, since nothing else will.
 func (m Model) quit() tea.Cmd {
+	cmds := []tea.Cmd{m.saveComposer()}
 	if m.aiP != nil {
-		m.aiP.stopAll()
+		cmds = append(cmds, m.aiP.stopAll(m.deps)...)
 	}
-	return tea.Sequence(m.saveComposer(), tea.Quit)
+	cmds = slices.DeleteFunc(cmds, func(c tea.Cmd) bool { return c == nil })
+	return tea.Sequence(append(cmds, tea.Quit)...)
 }
 
 // enterChat swaps the panes over to the chat whose page has just arrived.
@@ -1287,7 +1289,7 @@ func (m *Model) enterChat() tea.Cmd {
 	// sessions on screen become the new chat's own, and an answer still
 	// streaming into the old one keeps landing there, out of sight.
 	if m.aiP != nil && m.aiP.open {
-		m.aiP.point(m.chatID)
+		m.aiP.point(m.chatID, *m)
 		m.aiP.rebuild(*m)
 	}
 	m.replyTo, m.inThrd = nil, false
