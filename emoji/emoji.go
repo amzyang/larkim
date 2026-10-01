@@ -1,9 +1,10 @@
 // Package emoji is larkim's single source of truth for Feishu's emoji: the
 // emoji_type keys the API speaks, the names a message spells them as, the
-// Unicode a terminal can draw, and the search terms a picker matches against.
+// picture the client draws each one with, and the search terms a picker
+// matches against.
 //
-// Everything but the Unicode column is generated from the installed Lark
-// client's own offline assets; see internal/gen.
+// Everything is generated from the installed Lark client's own offline
+// assets; see internal/gen.
 package emoji
 
 //go:generate go run ./internal/gen
@@ -22,8 +23,10 @@ type Emoji struct {
 	// Key is the emoji_type the API speaks. It is case-sensitive there, and
 	// spelled every which way: OK, BubbleTea, Status_PrivateMessage, 18X.
 	Key string
-	// Glyph is the Unicode this terminal can draw in its place, or "" when no
-	// character carries the same feeling and a name or picture has to stand in.
+	// Glyph is the character a Unicode row puts in a draft — the payload a
+	// composer writes for an emoji Feishu has no key of its own for. A
+	// built-in emoji carries none: the client draws it as its picture, which
+	// is what larkim draws too.
 	Glyph string
 	// ZH and EN are the names the client displays, which are also what a text
 	// message carries between brackets.
@@ -56,45 +59,18 @@ type Emoji struct {
 	Delisted bool
 }
 
-// index is the table joined to its Unicode column, with the spellings that
-// carry a glyph but no table entry of their own added on the end.
-//
-// The character joins the search terms of the emoji that owns it, so the one
-// spelling a reader already has in the clipboard finds it. A bare spelling owns
-// nothing — it is a second name for a character the table already carries — so
-// it stays termless and the character keeps answering with one emoji.
-var index = sync.OnceValue(func() []Emoji {
-	out := make([]Emoji, 0, len(table)+len(glyphs))
-	owned := make(map[string]bool, len(table))
-	for _, e := range table {
-		key := Fold(e.Key)
-		owned[key] = true
-		if e.Glyph = glyphs[key]; e.Glyph != "" {
-			e.Terms = append(slices.Clip(e.Terms), e.Glyph)
-		}
-		out = append(out, e)
-	}
-	for key, glyph := range glyphs {
-		if !owned[key] {
-			out = append(out, Emoji{Key: key, Glyph: glyph, Order: len(table) + 1})
-		}
-	}
-	slices.SortFunc(out, func(a, b Emoji) int { return strings.Compare(a.Key, b.Key) })
-	return out
-})
-
-// byKey and byName are the lookups over index, built once alongside it.
+// byKey and byName are the lookups over the table, built once.
 var (
 	byKey = sync.OnceValue(func() map[string]Emoji {
-		m := make(map[string]Emoji, len(index()))
-		for _, e := range index() {
+		m := make(map[string]Emoji, len(table))
+		for _, e := range table {
 			m[Fold(e.Key)] = e
 		}
 		return m
 	})
 	byName = sync.OnceValue(func() map[string]Emoji {
-		m := make(map[string]Emoji, 2*len(index()))
-		for _, e := range index() {
+		m := make(map[string]Emoji, 2*len(table))
+		for _, e := range table {
 			for _, name := range []string{e.ZH, e.EN} {
 				if name != "" {
 					m[name] = e
@@ -105,29 +81,25 @@ var (
 	})
 )
 
-// All is every emoji, ordered by key. It includes the spellings that carry a
-// glyph but nothing else, because a message's text can name one; a picker
-// wants Reactable instead.
-func All() []Emoji { return index() }
+// All is every emoji the Lark client ships, ordered by key. A picker wants
+// Reactable instead, and the Unicode rows a composer may also write come from
+// Unicode, which is no part of this table.
+func All() []Emoji { return table }
 
 // Reactable reports whether this emoji may be put on a message as a reaction.
-// Three kinds may not: another tenant's culture emoji and the ones the client
-// has withdrawn, both of which Feishu rejects outright, and the bare spellings
-// that live in glyphs.go alone, which the client never offers and which would
-// land on a message as a reaction nobody can draw.
+// The kinds that may not are another tenant's culture emoji and the ones the
+// client has withdrawn, both of which Feishu rejects outright.
 func (e Emoji) Reactable() bool { return e.EN != "" && !e.NoReaction }
 
 // Offerable reports whether the picker lists this emoji at all. Everything the
 // client names is offered, reaction or not: one Feishu refuses as a reaction
 // still reaches the other side as the picture the client draws it with, which
-// is the only way it reaches them. The bare spellings are left out — they have
-// no name to search by and no rectangle to cut a picture from.
+// is the only way it reaches them.
 func (e Emoji) Offerable() bool { return e.EN != "" }
 
 // Name is what this emoji is called on screen and between the brackets a
 // message carries it in: the English name, because the client here runs in
-// English and every client's table holds both languages' names. A bare
-// spelling from glyphs.go has no name of its own and stands for itself.
+// English and every client's table holds both languages' names.
 func (e Emoji) Name() string { return cmp.Or(e.EN, e.Key) }
 
 // Fold puts the spellings of one emoji on a single lookup key: the client

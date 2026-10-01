@@ -2,7 +2,6 @@ package emoji
 
 import (
 	"regexp"
-	"slices"
 	"strings"
 	"testing"
 
@@ -21,8 +20,8 @@ func TestByKey_ResolvesEverySpelling(t *testing.T) {
 	e, ok := ByKey("Lark_Emoji_ThumbsUp_0")
 	require.True(t, ok)
 	require.Equal(t, "THUMBSUP", e.Key)
-	require.Equal(t, "👍", e.Glyph)
 	require.Equal(t, "赞", e.ZH)
+	require.Empty(t, e.Glyph, "a built-in emoji is drawn as its picture, never as a character")
 
 	_, ok = ByKey("lock")
 	require.False(t, ok, "a card icon name is not an emoji")
@@ -32,10 +31,6 @@ func TestName_IsTheOneTheClientShows(t *testing.T) {
 	e, ok := ByKey("THUMBSUP")
 	require.True(t, ok)
 	require.Equal(t, "Like", e.Name(), "the client here runs in English")
-
-	bare, ok := ByKey("OKHAND")
-	require.True(t, ok)
-	require.Equal(t, "OKHAND", bare.Name(), "a spelling the client never names stands for itself")
 }
 
 func TestByName_ReadsTheNameAMessageCarries(t *testing.T) {
@@ -115,23 +110,6 @@ func keysOf(hits []Hit) []string {
 	return out
 }
 
-// A glyph for a key the client no longer ships is dead weight that nothing
-// will ever look up, so the table is what bounds the hand-kept column.
-func TestGlyphs_HoldNoKeyTheClientStoppedShipping(t *testing.T) {
-	// Spellings Feishu sends in message text without offering them as emoji:
-	// the ones it never listed, and the new-year greetings the generator drops
-	// once their year is over — a message sent back then still carries one.
-	beyondTable := map[string]bool{"FIGHTING": true, "GRIN": true, "OKHAND": true,
-		"HAPPYDRAGON": true, "JUBILANTRABBIT": true}
-	inTable := map[string]bool{}
-	for _, e := range table {
-		inTable[Fold(e.Key)] = true
-	}
-	for key := range glyphs {
-		assert.True(t, inTable[key] || beyondTable[key], "%s is in neither the client's table nor the spellings it sends", key)
-	}
-}
-
 func TestSummary_ReadsTheCountFeishuSendsAsAString(t *testing.T) {
 	chips := Summary(`{"counts":[{"reaction_type":"THUMBSUP","count":"3"},{"reaction_type":"OK","count":1}]}`, "")
 	require.Equal(t, []Chip{{Key: "THUMBSUP", Count: 3}, {Key: "OK", Count: 1}}, chips)
@@ -162,7 +140,7 @@ func TestByKey_ReadsASkinToneAsTheEmojiItIsAToneOf(t *testing.T) {
 	for _, key := range []string{"DarkThumbsup", "MediumLightThumbsup", "LightFistBump", "MediumDarkApplaud"} {
 		e, ok := ByKey(key)
 		require.True(t, ok, "%s resolves to the emoji it is a tone of", key)
-		require.NotEmpty(t, e.Glyph, "%s draws as %s", key, e.Key)
+		require.Positive(t, e.Rect[2], "%s draws as the picture of %s", key, e.Key)
 	}
 	thumb, _ := ByKey("DarkThumbsup")
 	require.Equal(t, "THUMBSUP", thumb.Key)
@@ -174,37 +152,6 @@ func TestToneVariants_AllLandOnAnEmojiTheTableHolds(t *testing.T) {
 	for variant, base := range toneVariants {
 		_, ok := byKey()[base]
 		assert.True(t, ok, "%s is a tone of %s, which is not in the table", variant, base)
-	}
-}
-
-func TestGlyphs_LeaveTheUnfaithfulOnesToThePicture(t *testing.T) {
-	// A near-miss character is worse than no character: it says the wrong
-	// thing with full confidence, where a blank falls through to the client's
-	// own picture, or failing that to the client's own name.
-	for _, key := range []string{
-		"SLIGHT", "WITTY", "SCOWL", "HUSKY", "LUCK", // the character means something else
-		"OK", "OKR", "No", "DONE", "MinusOne", // Feishu draws a word, Unicode offers a shape
-		"CheckMark", "CrossMark", "Music", "GeneralDoNotDisturb", // no colour of its own
-	} {
-		e, ok := ByKey(key)
-		require.True(t, ok, "%s is not in the table", key)
-		assert.Empty(t, e.Glyph, "%s (%s) has no faithful character", key, e.ZH)
-		assert.Positive(t, e.Rect[2], "%s must have a picture to fall through to", key)
-	}
-}
-
-func TestGlyphs_LetNoTwoEmojiWearTheSameCharacter(t *testing.T) {
-	// Two emoji drawn the same way is a reaction strip that cannot say which
-	// one a colleague chose.
-	seen := map[string]Emoji{}
-	for _, e := range All() {
-		if e.Glyph == "" || !e.Reactable() {
-			continue
-		}
-		was, clash := seen[e.Glyph]
-		assert.False(t, clash, "%s (%s) and %s (%s) are both drawn %s",
-			was.Key, was.ZH, e.Key, e.ZH, e.Glyph)
-		seen[e.Glyph] = e
 	}
 }
 
@@ -300,29 +247,13 @@ func TestTable_LeavesOutTheNewYearGreetingsOfYearsGoneBy(t *testing.T) {
 	}
 }
 
-func TestAll_NoTwoOfferableEmojiShareACharacter(t *testing.T) {
+func TestUnicode_NoTwoRowsShareACharacter(t *testing.T) {
 	// A character on two rows is a picker asking the reader to tell apart what
-	// it draws the same, and after a glyph query it is the same hit twice. The
-	// bare spellings in glyphs.go are the one allowed overlap: they carry no
-	// terms and no name, so no query ever reaches them.
+	// it draws the same, and after a character query it is the same hit twice.
 	owner := map[string]string{}
-	for _, e := range slices.Concat(All(), Unicode()) {
-		if e.Glyph == "" || len(e.Terms) == 0 {
-			continue
-		}
+	for _, e := range Unicode() {
 		require.NotContains(t, owner, e.Glyph,
 			"%s and %s both answer to %s", owner[e.Glyph], e.Key, e.Glyph)
 		owner[e.Glyph] = e.Key
-	}
-}
-
-func TestAll_ABareSpellingStaysOutOfReachOfAQuery(t *testing.T) {
-	// They exist so ByName can read [Fighting] out of a message, not so a
-	// picker can offer a second 💪.
-	for _, key := range []string{"FIGHTING", "GRIN", "OKHAND"} {
-		e, ok := ByKey(key)
-		require.True(t, ok, key)
-		assert.Empty(t, e.Terms, "%s is a spelling of a character the table already owns", key)
-		assert.False(t, e.Offerable(), key)
 	}
 }

@@ -52,13 +52,11 @@ func TestSearch_ReadsCaseTheWayFzfDoes(t *testing.T) {
 
 func TestSearch_OffersNothingFeishuWouldRefuse(t *testing.T) {
 	ix := NewReactionIndex()
-	require.Less(t, ix.Len(), len(All()))
 	for _, h := range ix.Search("") {
 		require.True(t, h.Emoji.Offerable(), "%s is not an emoji the client names", h.Emoji.Key)
 	}
 	require.False(t, first(t, ix.Search("zhuiqiujizhi")).Reactable(),
 		"another tenant's culture emoji is offered, but as a picture rather than a reaction")
-	require.Empty(t, ix.Search("fighting"), "a spelling the client never offers is not offered here")
 }
 
 func TestSearch_PutsTheMostUsedFirstWhenNothingIsTyped(t *testing.T) {
@@ -140,19 +138,14 @@ func TestLoadUsed_LeavesTheListEmptyRatherThanFailing(t *testing.T) {
 	require.Empty(t, ix.Used())
 }
 
-func TestSearch_FindsAnEmojiByTheCharacterItDraws(t *testing.T) {
+func TestSearch_FindsAUnicodeRowByTheCharacterItCarries(t *testing.T) {
 	// The character is the one spelling a reader already has in the clipboard,
-	// and the only one they never have to translate into a name.
-	react := NewReactionIndex()
-	for query, want := range map[string]string{
-		"👍": "THUMBSUP",
-		"🌹": "ROSE",
-		"💯": "Hundred",
-	} {
-		require.Equal(t, want, first(t, react.Search(query)).Key, query)
-	}
-	require.Equal(t, "rocket", first(t, NewComposerIndex().Search("🚀")).Key,
-		"the Unicode emoji answer to their character too")
+	// and the only one they never have to translate into a name. A Unicode row
+	// carries it as its payload; a built-in is drawn as its picture and has no
+	// character to answer by.
+	require.Equal(t, "rocket", first(t, NewComposerIndex().Search("🚀")).Key)
+	require.Empty(t, NewReactionIndex().Search("👍"),
+		"a built-in is reached by its names, not by a stand-in character")
 }
 
 func TestSearch_ACharacterAnswersWithOneEmoji(t *testing.T) {

@@ -197,10 +197,10 @@ func docGlyph(docType string) string {
 	}
 }
 
-// emojiCuts finds the emoji a line spells that no Unicode character carries,
-// skipping any inside a link: a label is drawn whole so that the whole of it
-// leads to the same place. Only the spellings in sp are read; a body drawing
-// from neither is left whole without a scan.
+// emojiCuts finds the emoji a line spells, skipping any inside a link: a label
+// is drawn whole so that the whole of it leads to the same place. Only the
+// spellings in sp are read; a body drawing from neither is left whole without
+// a scan.
 func emojiCuts(line string, links []inlineCut, sp emojiSpell, pic func(key string) picture) []inlineCut {
 	if sp == spellNone {
 		return nil
@@ -220,7 +220,7 @@ func emojiCuts(line string, links []inlineCut, sp emojiSpell, pic func(key strin
 			continue
 		}
 		e, ok := lookup(name)
-		if !ok || e.Glyph != "" {
+		if !ok {
 			continue
 		}
 		p := pic(e.Key)

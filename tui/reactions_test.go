@@ -21,7 +21,7 @@ func TestRenderRows_DrawsReactionsBelowTheBody(t *testing.T) {
 		Content: "这个方案我同意", CreateMs: msgAt(23, 9, 0), RenderedAt: 1, ReactionsJSON: twoReactions}}
 	out := rowText(renderRows(msgs, baseStyle()))
 	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
-	require.Contains(t, lines[len(lines)-1], "👍⋮You +2", "the reader is named, and the two Feishu did not name are counted")
+	require.Contains(t, lines[len(lines)-1], "[Like]⋮You +2", "the reader is named, and the two Feishu did not name are counted")
 	require.Contains(t, lines[len(lines)-1], "[+1]⋮+1", "an emoji with no character is named the way the client names it")
 	require.Contains(t, lines[len(lines)-2], "这个方案我同意", "the reactions follow the body, they do not replace it")
 }
@@ -33,9 +33,9 @@ func TestRenderRows_StylesEveryReactorAlike(t *testing.T) {
 	strip := segText(rows[len(rows)-1])
 	// 你 among the reactors is what marks a chip as the reader's own, so
 	// nothing on the strip needs a colour of its own to say it.
-	require.Contains(t, strip, chipText("👍", "You +2"))
+	require.Contains(t, strip, chipText("[Like]", "You +2"))
 	require.Contains(t, strip, chipText("[+1]", "+1"))
-	require.NotContains(t, strip, stAccent.Underline(true).Render("👍⋮You +2"))
+	require.NotContains(t, strip, stAccent.Underline(true).Render("[Like]⋮You +2"))
 }
 
 func TestRenderRows_WrapsALongReactionStripRatherThanCuttingIt(t *testing.T) {
@@ -56,7 +56,7 @@ func TestRenderRows_WrapsALongReactionStripRatherThanCuttingIt(t *testing.T) {
 			"a row never runs past the pane: %q", ansi.Strip(segText(r)))
 	}
 	out := rowText(rows)
-	require.Contains(t, out, "🏆⋮+1", "the last reaction survives the wrap")
+	require.Contains(t, out, "[Trophy]⋮+1", "the last reaction survives the wrap")
 }
 
 func TestRenderRows_DropsTheReactionsOfARecalledMessage(t *testing.T) {
@@ -64,12 +64,13 @@ func TestRenderRows_DropsTheReactionsOfARecalledMessage(t *testing.T) {
 		Content: "撤回前的内容", CreateMs: msgAt(23, 9, 0), RenderedAt: 1, Deleted: true, ReactionsJSON: twoReactions}}
 	out := rowText(renderRows(msgs, baseStyle()))
 	require.Contains(t, out, "张三 recalled a message.")
-	require.NotContains(t, out, "👍", "the client drops a recalled message's reactions with its body")
+	require.NotContains(t, out, "[Like]", "the client drops a recalled message's reactions with its body")
 }
 
-func TestReactionChip_DrawsAPictureWhereNoCharacterCarriesTheEmoji(t *testing.T) {
+func TestReactionChip_DrawsTheClientsOwnPicture(t *testing.T) {
 	dir := t.TempDir()
 	writeTestEmoji(t, dir, "JIAYI")
+	writeTestEmoji(t, dir, "THUMBSUP")
 	st := baseStyle()
 	st.dataDir = dir
 	st.place = picturesIn(dir).place
@@ -84,16 +85,32 @@ func TestReactionChip_DrawsAPictureWhereNoCharacterCarriesTheEmoji(t *testing.T)
 		"the reactors close the chip the picture opened, parted from it by the rule alone: the slack "+
 			"left over from rounding the picture's width up to the grid is the space before it")
 
-	// A terminal with no graphics, or a data dir the pictures were never cut
-	// into, names the emoji instead — on the same chip.
+	// The client draws every built-in emoji as its picture, so a key a Unicode
+	// character once stood in for is drawn no differently.
+	thumb := reactionChip(emoji.Chip{Key: "THUMBSUP", Count: 1}, st)
+	require.Positive(t, thumb[1].pic.cols, "the picture replaces the character that once carried it")
+
+	// A terminal with no graphics names the emoji instead — on the same chip.
+	// A data dir without the picture is a broken start, not this fallback.
 	plain := reactionChip(emoji.Chip{Key: "JIAYI", Count: 2}, baseStyle())
 	require.Len(t, plain, 1, "a chip of characters alone stays one piece")
 	require.Equal(t, chipped("[+1]⋮+2"), ansi.Strip(plain[0].text))
 }
 
+// TestReactionChip_PanicsOnAPictureTheStartDidNotCut holds the other half of
+// the invariant: a renderer that cannot produce the picture says so by
+// crashing, because every start cut the pictures before any drawing began.
+func TestReactionChip_PanicsOnAPictureTheStartDidNotCut(t *testing.T) {
+	dir := t.TempDir()
+	st := baseStyle()
+	st.dataDir = dir
+	st.place = picturesIn(dir).place
+	require.Panics(t, func() { reactionChip(emoji.Chip{Key: "THUMBSUP", Count: 1}, st) })
+}
+
 func TestReactionChip_ReadsASkinToneAsTheEmojiItIsAToneOf(t *testing.T) {
 	segs := reactionChip(emoji.Chip{Key: "DarkThumbsup", Count: 1}, baseStyle())
-	require.Equal(t, chipped("👍⋮+1"), ansi.Strip(segs[0].text),
+	require.Equal(t, chipped("[Like]⋮+1"), ansi.Strip(segs[0].text),
 		"a tone Feishu sent but the picker never offered still draws")
 }
 
@@ -123,7 +140,7 @@ func TestRenderRows_KeepsAnAllCharacterStripAsOrdinaryText(t *testing.T) {
 	rows := renderRows(msgs, baseStyle())
 	strip := rows[len(rows)-1]
 	require.Empty(t, strip.segs, "no chip carries a picture, so the row is plain text")
-	require.Contains(t, ansi.Strip(strip.text), "👍⋮You +2")
+	require.Contains(t, ansi.Strip(strip.text), "[Like]⋮You +2")
 }
 
 // namedStyle is baseStyle with the contacts a chip's reactors are named from.
@@ -149,7 +166,7 @@ func reacted(key string, count int, ids ...string) emoji.Chip {
 
 func TestReactionChip_NamesUpToThreeReactors(t *testing.T) {
 	segs := reactionChip(reacted("THUMBSUP", 3, "ou_a", "ou_b", "ou_c"), namedStyle())
-	require.Equal(t, chipped("👍⋮张三, 李四, 王五"), ansi.Strip(segs[0].text))
+	require.Equal(t, chipped("[Like]⋮张三, 李四, 王五"), ansi.Strip(segs[0].text))
 }
 
 func TestReactionChip_TellsSameNamedReactorsApart(t *testing.T) {
@@ -157,29 +174,29 @@ func TestReactionChip_TellsSameNamedReactorsApart(t *testing.T) {
 	st.people["ou_z"] = "张三"
 	st.suffix = map[string]string{"ou_a": "01", "ou_z": "02"}
 	segs := reactionChip(reacted("THUMBSUP", 2, "ou_a", "ou_z"), st)
-	require.Equal(t, chipped("👍⋮张三01, 张三02"), ansi.Strip(segs[0].text),
+	require.Equal(t, chipped("[Like]⋮张三01, 张三02"), ansi.Strip(segs[0].text),
 		"two 张三 on one chip read as two people")
 }
 
 func TestReactionChip_CountsTheRestAsPlusN(t *testing.T) {
 	segs := reactionChip(reacted("THUMBSUP", 9, "ou_a", "ou_b", "ou_c", "ou_d"), namedStyle())
-	require.Equal(t, chipped("👍⋮张三, 李四, 王五 +6"), ansi.Strip(segs[0].text),
+	require.Equal(t, chipped("[Like]⋮张三, 李四, 王五 +6"), ansi.Strip(segs[0].text),
 		"a fourth name costs more width than it tells, and the rest is a number")
 }
 
 func TestReactionChip_CallsTheReaderYou(t *testing.T) {
 	segs := reactionChip(reacted("THUMBSUP", 2, "ou_me", "ou_a"), namedStyle())
-	require.Equal(t, chipped("👍⋮You, 张三"), ansi.Strip(segs[0].text))
+	require.Equal(t, chipped("[Like]⋮You, 张三"), ansi.Strip(segs[0].text))
 }
 
 func TestReactionChip_LeavesAStrangerInThePlusN(t *testing.T) {
 	// A raw open id on screen says nothing, so somebody the contacts table
 	// has never seen is counted rather than named.
 	segs := reactionChip(reacted("THUMBSUP", 2, "ou_stranger", "ou_a"), namedStyle())
-	require.Equal(t, chipped("👍⋮张三 +1"), ansi.Strip(segs[0].text))
+	require.Equal(t, chipped("[Like]⋮张三 +1"), ansi.Strip(segs[0].text))
 
 	none := reactionChip(reacted("THUMBSUP", 2, "ou_stranger"), namedStyle())
-	require.Equal(t, chipped("👍⋮+2"), ansi.Strip(none[0].text), "nobody to name leaves the total alone")
+	require.Equal(t, chipped("[Like]⋮+2"), ansi.Strip(none[0].text), "nobody to name leaves the total alone")
 }
 
 func TestReactionChip_KeepsOneChipInsideThePane(t *testing.T) {
@@ -239,7 +256,7 @@ func TestReactionRows_ZonesLandOnTheChipTheyName(t *testing.T) {
 		x    int
 		want string
 	}{
-		{strip.zones[0].x0, "👍⋮You +2"},
+		{strip.zones[0].x0, "[Like]⋮You +2"},
 		{strip.zones[1].x0, "[+1]⋮+1"},
 	} {
 		z, ok := zoneAt(rows, line, tc.x)
@@ -281,7 +298,7 @@ func TestReactionRows_DrawAPressAheadOfFeishusAnswer(t *testing.T) {
 	st.reacts = map[string]map[string]bool{"om_a": {"JIAYI": true}}
 	out := rowText(renderRows(msgs, st))
 	require.Contains(t, out, "[+1]⋮You +1", "the press draws before it is sent")
-	require.Contains(t, out, "👍⋮You +2", "the chip beside it is left alone")
+	require.Contains(t, out, "[Like]⋮You +2", "the chip beside it is left alone")
 }
 
 func TestReactionRows_ClosesAChipAPressEmptied(t *testing.T) {
@@ -293,7 +310,7 @@ func TestReactionRows_ClosesAChipAPressEmptied(t *testing.T) {
 	st.reacts = map[string]map[string]bool{"om_a": {"THUMBSUP": false}}
 	rows := renderRows(msgs, st)
 	require.Empty(t, chipZones(rows), "the strip went with the last reaction on it")
-	require.NotContains(t, rowText(rows), "👍")
+	require.NotContains(t, rowText(rows), "[Like]")
 }
 
 func TestSelectedZones_LeavesReactionChipsOut(t *testing.T) {

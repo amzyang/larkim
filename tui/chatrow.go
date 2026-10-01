@@ -350,9 +350,9 @@ const chatChipGap = " "
 // A badge stands for one reaction, so each icon wears its own, the way the
 // client draws them and the way the message strip already does.
 //
-// An emoji this terminal can draw neither as a character nor as a picture is
-// left out rather than spelled: its name at the head of the line would cost
-// more room than the message behind it.
+// A terminal that draws no pictures gets no badges: the row is icons-only by
+// design, and a name spelled out would cost more room than the message behind
+// it. An emoji this build knows nothing of is left out for the same reason.
 func chatChips(c store.Chat, pics emojiPics) []rowSeg {
 	if c.LastDeleted {
 		return nil
@@ -364,27 +364,20 @@ func chatChips(c store.Chat, pics emojiPics) []rowSeg {
 			break
 		}
 		e, known := emoji.ByKey(chip.Key)
-		var badge []rowSeg
-		switch {
-		case !known:
+		if !known {
 			continue
-		case e.Glyph != "":
-			// A badge of characters stays one piece, so a strip made of them
-			// is ordinary text that a selected row can still tint.
-			badge = []rowSeg{{text: stChipEdge.Render(chipLeft) +
-				stChip.Render(e.Glyph) + stChipEdge.Render(chipRight)}}
-		default:
-			pic := pics.chip(e.Key, chatChipCols)
-			if pic.cols == 0 {
-				continue
-			}
-			badge = []rowSeg{{text: stChipEdge.Render(chipLeft)}, {pic: pic},
-				{text: stChipEdge.Render(chipRight)}}
+		}
+		pic := pics.chip(e.Key, chatChipCols)
+		if pic.cols == 0 {
+			continue
 		}
 		if shown > 0 {
 			out = append(out, rowSeg{text: chatChipGap})
 		}
-		out = append(out, badge...)
+		out = append(out,
+			rowSeg{text: stChipEdge.Render(chipLeft)},
+			rowSeg{pic: pic},
+			rowSeg{text: stChipEdge.Render(chipRight)})
 		shown++
 	}
 	return out

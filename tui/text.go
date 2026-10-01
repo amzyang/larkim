@@ -91,7 +91,7 @@ func renderInline(s string, ms mentions) string {
 			if strings.TrimSpace(label) == "" {
 				label = s[m[4]:m[5]]
 			}
-			b.WriteString(stLink.Render(expandEmoji(label, ms.spell)))
+			b.WriteString(stLink.Render(label))
 		case m[6] >= 0:
 			b.WriteString(in(s[m[6]:m[7]], func(st lipgloss.Style) lipgloss.Style {
 				return st.Bold(true).Italic(true)

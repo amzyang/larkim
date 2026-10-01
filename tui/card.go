@@ -47,10 +47,10 @@ func cardHead(c card.Card, w int) []string {
 	}
 	var parts []string
 	if c.Title != "" {
-		parts = append(parts, title.Render(flatten(expandEmoji(c.Title, spellAll))))
+		parts = append(parts, title.Render(flatten(c.Title)))
 	}
 	if c.Subtitle != "" {
-		parts = append(parts, aside.Render(flatten(expandEmoji(c.Subtitle, spellAll))))
+		parts = append(parts, aside.Render(flatten(c.Subtitle)))
 	}
 	if c.Tags != "" {
 		parts = append(parts, aside.Render(c.Tags))
@@ -177,7 +177,7 @@ func cardButtons(bs []card.Button, w int, client string) []cardButtonLine {
 			// The whole line is the button, its label in the middle of it.
 			style = style.Width(w).Align(lipgloss.Center)
 		}
-		pill := style.Render(expandEmoji(label, spellAll))
+		pill := style.Render(label)
 		width := lipgloss.Width(pill)
 		if used > 0 && used+len(gap)+width > w {
 			flush()

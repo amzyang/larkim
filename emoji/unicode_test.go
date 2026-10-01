@@ -26,14 +26,15 @@ func TestUnicode_StandsBesideFeishusOwnRatherThanOverIt(t *testing.T) {
 	}
 }
 
-func TestUnicode_LeavesACharacterFeishuDrawsToFeishu(t *testing.T) {
-	// 👋 is Feishu's WAVE, which can also be a reaction; its tones are not
-	// Feishu's, so they stay.
+func TestUnicode_StandsBesideAFeishuEmojiOfTheSameCharacter(t *testing.T) {
+	// 👋 is Feishu's WAVE, drawn as its picture; waving_hand carries the
+	// character itself as a draft's payload. They are two different things to
+	// send, so both are listed.
 	keys := map[string]bool{}
 	for _, e := range Unicode() {
 		keys[e.Key] = true
 	}
-	assert.False(t, keys["waving_hand"])
+	assert.True(t, keys["waving_hand"])
 	assert.True(t, keys["waving_hand_medium_skin_tone"])
 }
 

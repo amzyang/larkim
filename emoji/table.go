@@ -3,8 +3,8 @@
 package emoji
 
 // table is every emoji the Lark client ships, minus the skin-tone variants
-// and the new-year emoji. Glyph is not here: it is the one column no client
-// asset can answer, and it lives in glyphs.go.
+// and the new-year emoji. Every entry carries the rectangle its picture is
+// cut from, which is how the emoji is drawn everywhere.
 var table = []Emoji{
 	{Key: "18X", ZH: "18禁", EN: "NoOneUnder18", Rect: [4]int{480, 1057, 96, 96}, Order: 169,
 		Terms: []string{"18禁", "18jin", "18j", "nooneunder18", "18x"}},

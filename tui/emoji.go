@@ -1,21 +1,9 @@
 package tui
 
 import (
-	"regexp"
 	"strings"
 
 	"github.com/amzyang/larkim/emoji"
-)
-
-// Feishu spells an official emoji two ways, and both reach the rendered text:
-// a rich-text post carries an emotion element, which lark-cli writes as the
-// emoji_type key between colons, while a plain text message carries the
-// emoji's display name in brackets, in whichever language the sender's client
-// was set to. Anything else shaped like either — a card icon name, a clock
-// time, a bracketed noun — is left alone by expandEmoji.
-var (
-	shortcode   = regexp.MustCompile(`:([A-Za-z0-9_]{1,32}):`)
-	bracketName = regexp.MustCompile(`\[([^\[\]\n]{1,12})\]`)
 )
 
 // emojiSpell is the set of spellings a body draws an official emoji from.
@@ -50,34 +38,6 @@ func spellOf(msgType string) emojiSpell {
 	return spellAll
 }
 
-// expandEmoji draws Feishu's official emoji, in the spellings sp allows. A key
-// the terminal has no glyph for stays as it came, since the Feishu client draws
-// it as a picture and has no bracketed spelling to fall back on either.
-func expandEmoji(s string, sp emojiSpell) string {
-	if sp == spellNone {
-		return s
-	}
-	if sp&spellShortcode != 0 && strings.Contains(s, ":") {
-		s = drawEmoji(shortcode, s, emoji.ByKey)
-	}
-	if sp&spellBracket == 0 || !strings.Contains(s, "[") {
-		return s
-	}
-	return drawEmoji(bracketName, s, emoji.ByName)
-}
-
-// drawEmoji swaps every spelling re matches for the glyph lookup finds under
-// it, stripping the delimiters with it. A spelling that names no emoji, or one
-// no character carries, stays as it came.
-func drawEmoji(re *regexp.Regexp, s string, lookup func(string) (emoji.Emoji, bool)) string {
-	return re.ReplaceAllStringFunc(s, func(m string) string {
-		if e, ok := lookup(m[1 : len(m)-1]); ok && e.Glyph != "" {
-			return e.Glyph
-		}
-		return m
-	})
-}
-
 // emojiKey is the key Feishu speaks, where it says something the name does not.
 func emojiKey(e emoji.Emoji) string {
 	if strings.EqualFold(e.Key, e.Name()) {
@@ -105,11 +65,13 @@ func emojiInfo(h emoji.Hit) []string {
 	return infoLines(emojiKey(h.Emoji), emojiTerm(h.Emoji, h.Term, h.Positions))
 }
 
-// emojiIcon is an emoji as the icon column draws it: the character where one
-// carries the same feeling, the client's own picture where none does, and a
-// bare dot where the pictures were never cut out.
+// emojiIcon is an emoji as the icon column draws it: the client's own
+// picture, with a bare dot standing in where the terminal draws none. A
+// Unicode row carries a character rather than a key, and the character is
+// what it draws — it is what accepting the row writes, where a built-in goes
+// to Feishu as its key.
 func emojiIcon(e emoji.Emoji) offerIcon {
-	if e.Glyph != "" {
+	if e.Rect[2] == 0 {
 		return offerIcon{text: e.Glyph}
 	}
 	return offerIcon{text: stDim.Render("·"), image: emoji.Picture("", e.Key)}

@@ -212,7 +212,7 @@ func replyGist(x store.Message) string {
 		return msgTypeLabel(x.MsgType)
 	}
 	if c, ok := card.Parse(x.ContentRaw); ok {
-		if text := flatten(expandEmoji(plainAt(cardGist(c)), spellAll)); text != "" {
+		if text := flatten(plainAt(cardGist(c))); text != "" {
 			return text
 		}
 		return msgTypeLabel(x.MsgType)
@@ -223,9 +223,9 @@ func replyGist(x store.Message) string {
 		return attachGist(a)
 	}
 	if x.RenderedAt == 0 {
-		return flatten(expandEmoji(plainAt(pendingText(x.MsgType, x.ContentRaw, x.MentionsJSON)), spellOf(x.MsgType)))
+		return flatten(plainAt(pendingText(x.MsgType, x.ContentRaw, x.MentionsJSON)))
 	}
-	if text := flatten(expandEmoji(plainAt(gistBody(x.Content)), spellOf(x.MsgType))); text != "" {
+	if text := flatten(plainAt(gistBody(x.Content))); text != "" {
 		return text
 	}
 	return msgTypeLabel(x.MsgType)

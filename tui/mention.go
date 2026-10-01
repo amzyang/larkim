@@ -221,8 +221,7 @@ func (m mentions) render(s string) string {
 
 // plain styles a stretch that holds no @ of its own.
 func (m mentions) plain(s string) string {
-	text := expandEmoji(s, m.spell)
-	return markName(text, hitPositions(text, m.hits), m.base)
+	return markName(s, hitPositions(s, m.hits), m.base)
 }
 
 // segs is render in pieces, so that an official emoji no character carries can

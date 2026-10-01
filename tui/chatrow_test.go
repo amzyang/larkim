@@ -2,11 +2,13 @@ package tui
 
 import (
 	"fmt"
+
 	"strings"
 	"testing"
 	"time"
 
 	"charm.land/lipgloss/v2"
+	"github.com/amzyang/larkim/emoji"
 	"github.com/amzyang/larkim/store"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/stretchr/testify/require"
@@ -380,51 +382,98 @@ func chatBadges(glyphs ...string) string {
 	return strings.Join(out, chatChipGap) + chatChipGap
 }
 
+// chipPics cuts a picture for each key and hands back the emojiPics that
+// draw them, which is what a real start holds for every emoji there is.
+func chipPics(t *testing.T, keys ...string) emojiPics {
+	t.Helper()
+	dir := t.TempDir()
+	for _, k := range keys {
+		writeTestEmoji(t, dir, k)
+	}
+	return emojiPics{dir: dir, place: picturesIn(dir).place}
+}
+
+// picRow renders a chat's second line with pictures behind it, the way a real
+// start draws one. It answers the whole row, whose segs the badges sit in.
+func picRow(t *testing.T, c store.Chat, w int) chatRow {
+	t.Helper()
+	var keys []string
+	for _, chip := range emoji.Summary(c.LastReactionsJSON, "") {
+		keys = append(keys, chip.Key)
+	}
+	return renderChatRow(textAvatars{}, listRow{chat: c}, store.Draft{}, 0, 0,
+		gistOf(listRow{chat: c}, "ou_me", chipPics(t, keys...)), testNow, w, nil)
+}
+
+// segText2 is a chat row's pieces as the text they carry.
+func segText2(row chatRow) string {
+	var b strings.Builder
+	for _, s := range row.segs {
+		b.WriteString(s.text)
+		if s.pic.cols > 0 {
+			b.WriteString(strings.Repeat(" ", s.pic.cols))
+		}
+	}
+	return ansi.Strip(b.String())
+}
+
+// reactionBadges is how many reaction badges a row's pieces open.
+func reactionBadges(row chatRow) int {
+	n := 0
+	for _, s := range row.segs {
+		if strings.Contains(ansi.Strip(s.text), chipLeft) {
+			n++
+		}
+	}
+	return n
+}
+
 func TestChatSummary_LeadsAP2PLineWithTheReactionIcons(t *testing.T) {
-	_, bottom := plainRow(reactedP2P("THUMBSUP", "HEART"), 0, 40)
-	require.True(t, strings.HasPrefix(bottom, chatBadges("👍", "❤️")+"You: 明天上午的排期"), "got %q", bottom)
-	require.NotContains(t, bottom, "2", "in a chat of two, how many reacted says nothing")
+	row := picRow(t, reactedP2P("THUMBSUP", "HEART"), 40)
+	require.Equal(t, 2, reactionBadges(row), "one badge per reaction, ahead of the summary")
+	require.Positive(t, row.segs[1].pic.cols, "the icon is the client's own picture")
+	require.True(t, row.segs[1].pic.chip, "the badge wears its own tint")
+	require.Contains(t, ansi.Strip(row.segs[len(row.segs)-1].text), "You: 明天上午的排期")
+	require.NotContains(t, segText2(row), "2", "in a chat of two, how many reacted says nothing")
 }
 
 func TestChatSummary_LeadsAGroupsLineWithTheReactionIcons(t *testing.T) {
 	c := reactedP2P("THUMBSUP")
 	c.ChatMode, c.Name = "group", "平台组"
-	_, bottom := plainRow(c, 0, 40)
-	require.True(t, strings.HasPrefix(bottom, chatBadges("👍")+"You: 明天上午的排期"), "got %q", bottom)
-	require.NotContains(t, bottom, "2", "who reacted and how many did are the message pane's to say")
+	row := picRow(t, c, 40)
+	require.Equal(t, 1, reactionBadges(row))
+	require.Contains(t, ansi.Strip(row.segs[len(row.segs)-1].text), "You: 明天上午的排期",
+		"who reacted and how many did are the message pane's to say")
 }
 
 func TestChatSummary_DropsTheReactionsOfARecalledMessage(t *testing.T) {
 	c := reactedP2P("THUMBSUP")
 	c.LastDeleted = true
-	_, bottom := plainRow(c, 0, 40)
-	require.NotContains(t, bottom, "👍", "the client drops a recalled message's reactions with its body")
-	require.Contains(t, bottom, " recalled a message")
+	row := picRow(t, c, 40)
+	require.Zero(t, reactionBadges(row), "the client drops a recalled message's reactions with its body")
+	require.Contains(t, ansi.Strip(row.bottom), " recalled a message")
 }
 
 func TestChatSummary_ShowsNoMoreThanThreeReactions(t *testing.T) {
-	_, bottom := plainRow(reactedP2P("THUMBSUP", "HEART", "ROSE", "MUSCLE"), 0, 44)
-	require.True(t, strings.HasPrefix(bottom, chatBadges("👍", "❤️", "🌹")+"You:"), "got %q", bottom)
-	require.NotContains(t, bottom, "💪", "past three the icons crowd out the message behind them")
+	row := picRow(t, reactedP2P("THUMBSUP", "HEART", "ROSE", "MUSCLE"), 44)
+	require.Equal(t, 3, reactionBadges(row), "past three the icons crowd out the message behind them")
 }
 
-func TestChatSummary_LeavesOutAnEmojiItCanDrawNoWayAtAll(t *testing.T) {
-	// No graphics here and no pictures cut out, so OK has neither a character
-	// nor a picture. Its name at the head of the line would cost more room
-	// than the message it sits in front of.
-	_, bottom := plainRow(reactedP2P("OK", "THUMBSUP"), 0, 40)
-	require.True(t, strings.HasPrefix(bottom, chatBadges("👍")+"You:"), "got %q", bottom)
-	require.NotContains(t, bottom, "[OK]")
+func TestChatSummary_LeavesOutAnEmojiItKnowsNothingOf(t *testing.T) {
+	// A key outside this build's table names no emoji and cuts no picture, so
+	// the row leaves it out rather than head the line with a key nobody reads.
+	row := picRow(t, reactedP2P("NOSUCHEMOJI", "THUMBSUP"), 40)
+	require.Equal(t, 1, reactionBadges(row))
+	require.NotContains(t, segText2(row), "NOSUCHEMOJI")
 }
 
 func TestChatSummary_KeepsTheBodyClearOfTheReactions(t *testing.T) {
 	const w = 31
 	c := reactedP2P("THUMBSUP", "HEART", "ROSE")
 	c.LastContent = strings.Repeat("很长的内容", 20)
-	row := renderChatRow(textAvatars{}, listRow{chat: c}, store.Draft{}, 0, 0, gistOf(listRow{chat: c}, "ou_me", emojiPics{}), testNow, w, nil)
-	require.Equal(t, chatTextWidth(w), lipgloss.Width(row.bottom), "the line fills its column exactly")
-	require.True(t, strings.HasPrefix(ansi.Strip(row.bottom), chatBadges("👍", "❤️", "🌹")),
-		"the icons are what survives, the body gives way")
+	row := picRow(t, c, w)
+	require.Equal(t, chatTextWidth(w), segsWidth(row.segs), "the line fills its column exactly")
+	require.Positive(t, row.segs[1].pic.cols, "the icons are what survives, the body gives way")
 }
 
 func TestChatSummary_DrawsAReactionNoCharacterCarriesAsAPicture(t *testing.T) {

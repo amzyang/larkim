@@ -6,7 +6,6 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
-	"github.com/amzyang/larkim/emoji"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/stretchr/testify/require"
 )
@@ -113,8 +112,7 @@ func TestPreview_DrawsAnEmojiWhereTheSendCarriesOne(t *testing.T) {
 
 	require.Len(t, m.previewRows, 1)
 	line, _ := m.rowLine(m.previewRows[0], m.width-2)
-	e, _ := emoji.ByKey("THUMBSUP")
-	require.Contains(t, ansi.Strip(line), "收到 "+e.Glyph+" :THUMBSUP:",
+	require.Contains(t, ansi.Strip(line), "收到 :THUMBSUP: :THUMBSUP:",
 		"the name goes as an emotion, the shortcode as the characters it is")
 }
 

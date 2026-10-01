@@ -117,9 +117,8 @@ type emojiRow struct {
 	Key   string `json:"key"`
 	ZH    string `json:"zh"`
 	EN    string `json:"en"`
-	Glyph string `json:"glyph,omitempty"`
 	// Terms is what a query is matched against: the names, their pinyin and
-	// pinyin initials, the aliases, the key, and the character itself.
+	// pinyin initials, the aliases, and the key.
 	Terms []string `json:"terms"`
 	// Order is the emoji's place in the client's own panel, which is the
 	// order a picker falls back to when nothing has been typed.
@@ -193,16 +192,14 @@ func (a *App) listCustom() error {
 	return nil
 }
 
-// emojiRows is every emoji a picker may offer, in panel order. The bare
-// spellings from glyphs.go are left out: they have no name to search by and no
-// rectangle to cut a picture from.
+// emojiRows is every emoji a picker may offer, in panel order.
 func emojiRows(dataDir string) []emojiRow {
 	var rows []emojiRow
 	for _, e := range emoji.All() {
 		if !e.Offerable() {
 			continue
 		}
-		rows = append(rows, emojiRow{Key: e.Key, ZH: e.ZH, EN: e.EN, Glyph: e.Glyph, Terms: e.Terms,
+		rows = append(rows, emojiRow{Key: e.Key, ZH: e.ZH, EN: e.EN, Terms: e.Terms,
 			Order: e.Order, Reactable: e.Reactable(), Delisted: e.Delisted,
 			Picture: emoji.Path(dataDir, e.Key)})
 	}

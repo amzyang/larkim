@@ -57,13 +57,13 @@ func TestLint_ShortcodeArrivesAsCharacters(t *testing.T) {
 	}
 }
 
-func TestLint_ShortcodeHintOffersTheCharacterWhereOneExists(t *testing.T) {
+func TestLint_ShortcodeHintOffersTheSpellingTheSendCarries(t *testing.T) {
+	// The hint names the bracketed spelling — the one the client itself puts
+	// on the wire for its own emoji, and the one every client draws.
 	got := Lint("摊手 :Shrug:")
 	require.Len(t, got, 1)
-	require.Contains(t, got[0].Hint, "🤷")
+	require.Contains(t, got[0].Hint, "[Shrug]")
 
-	// DONE is Feishu's own art, which no character carries, so the spelling
-	// the send turns into its emotion is the one to offer.
 	got = Lint("收到 :DONE:")
 	require.Len(t, got, 1)
 	require.Contains(t, got[0].Hint, "[Done]")

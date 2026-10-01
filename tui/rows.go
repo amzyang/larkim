@@ -282,13 +282,20 @@ type emojiPics struct {
 }
 
 // pic sizes one emoji's picture to sit on a line of text: one row tall, and
-// up to cols wide. A zero size means there is nothing to draw, and the caller
-// falls back to the emoji's name or leaves it out.
+// up to cols wide. A zero size means there is no renderer to draw with, and
+// the caller falls back to the emoji's name or leaves it out. A renderer that
+// cannot produce the picture is a broken start rather than a degraded one —
+// startup cut every picture before any of this runs — so it panics.
 func (p emojiPics) pic(key string, cols int) picture {
 	if p.place == nil || p.dir == "" {
 		return picture{}
 	}
-	return p.place(emoji.Picture(p.dir, key), cols, 1)
+	path := emoji.Picture(p.dir, key)
+	pic := p.place(path, cols, 1)
+	if pic.cols == 0 {
+		panic("emoji picture unreadable: " + path)
+	}
+	return pic
 }
 
 // chip is the same picture with the reaction's tint behind its cells, which is
@@ -798,7 +805,7 @@ func dimRows(body string, idx int, st msgStyle, g *leads, sp emojiSpell) []msgRo
 			rows = append(rows, segRows(segs, "", idx, st, g)...)
 			continue
 		}
-		rows = append(rows, textRows(wrap(stDim.Render(expandEmoji(line, sp)), st.inner()), idx, g)...)
+		rows = append(rows, textRows(wrap(stDim.Render(line), st.inner()), idx, g)...)
 	}
 	return rows
 }
@@ -896,9 +903,9 @@ func reactors(c emoji.Chip, st msgStyle) string {
 
 // reactionChip is one emoji's standing on a message, drawn as the chip the
 // client puts it on: the emoji and who put it there share one tint, closed by
-// a round cap either side. The emoji is a Unicode character where one carries
-// the same feeling, the client's own picture where none does, and the client's
-// name for it where this terminal draws no pictures at all.
+// a round cap either side. The emoji is the client's own picture — the client
+// draws its emoji as pictures and never as characters — and the client's name
+// for it only where this terminal draws no pictures at all.
 //
 // The strip wraps between chips but never cuts inside one, so a chip crowded
 // with names is fitted here rather than left to run past the pane.
@@ -906,11 +913,7 @@ func reactionChip(c emoji.Chip, st msgStyle) []rowSeg {
 	e, known := emoji.ByKey(c.Key)
 	label := "[" + c.Key + "]"
 	var pic picture
-	switch {
-	case !known:
-	case e.Glyph != "":
-		label = e.Glyph
-	default:
+	if known {
 		if pic = st.emojiChip(e.Key); pic.cols > 0 {
 			label = ""
 		} else {
@@ -922,6 +925,7 @@ func reactionChip(c emoji.Chip, st msgStyle) []rowSeg {
 	// picture is drawn at its own shape inside the cells it rounded to.
 	// The rule is what parts the emoji from the names, and it only has to be
 	// read as a break, not as a gap.
+	label = truncate(label, st.inner()-chipPad)
 	who := truncate(reactors(c, st), st.inner()-chipPad-pic.cols-lipgloss.Width(label)-lipgloss.Width(chipRule))
 	// The rule exists only to part the emoji from the names, so a chip too
 	// narrow to name anybody draws neither.

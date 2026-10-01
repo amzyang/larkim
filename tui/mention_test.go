@@ -89,7 +89,8 @@ func TestMentions_PostTagFollowsTheSameReach(t *testing.T) {
 
 func TestMentions_MalformedJSONStillDraws(t *testing.T) {
 	require.Equal(t, "@林岚 hi", mentionsIn("not json", "ou_me").render("@林岚 hi"))
-	require.Equal(t, "笑 😂", ansi.Strip(mentionsIn("", "ou_me").spelling(spellBracket).render("笑 [笑哭]")), "emoji still expand")
+	require.Equal(t, "笑 [笑哭]", ansi.Strip(mentionsIn("", "ou_me").spelling(spellBracket).render("笑 [笑哭]")),
+		"the emoji keeps the spelling the message stores")
 }
 
 func TestMentions_BadgeSurvivesTheRowHighlight(t *testing.T) {

@@ -20,10 +20,11 @@ func gistOf(r listRow, self string, pics emojiPics) rowGist {
 func TestGistCache_SummarisesEachRowOnce(t *testing.T) {
 	g := newGistCache()
 	r := listRow{chat: reactedP2P("THUMBSUP")}
+	pics := chipPics(t, "THUMBSUP")
 
-	first := g.at(r, "ou_me", emojiPics{})
+	first := g.at(r, "ou_me", pics)
 	require.NotEmpty(t, first.chips, "the reaction earns the row a badge")
-	second := g.at(r, "ou_me", emojiPics{})
+	second := g.at(r, "ou_me", pics)
 	require.Same(t, &first.chips[0], &second.chips[0], "the second ask is answered from the frame")
 }
 
@@ -31,16 +32,17 @@ func TestGistCache_HoldsTheSummariesWhileTheInterleaveStands(t *testing.T) {
 	g := newGistCache()
 	chats := []store.Chat{reactedP2P("THUMBSUP")}
 	rows := listRows(chats, nil)
+	pics := chipPics(t, "THUMBSUP")
 
 	g.hold(rows)
-	first := g.at(rows[0], "ou_me", emojiPics{})
+	first := g.at(rows[0], "ou_me", pics)
 	g.hold(rows)
-	held := g.at(rows[0], "ou_me", emojiPics{})
+	held := g.at(rows[0], "ou_me", pics)
 	require.Same(t, &first.chips[0], &held.chips[0], "a key that reloaded nothing leaves the lines alone")
 
 	g.hold(listRows(chats, nil))
 	require.Empty(t, g.rows, "a reload builds its own interleave, so nothing summarised stands")
-	again := g.at(rows[0], "ou_me", emojiPics{})
+	again := g.at(rows[0], "ou_me", pics)
 	require.NotSame(t, &first.chips[0], &again.chips[0], "the row is summarised afresh")
 	require.Equal(t, first, again, "to the same line")
 }
@@ -48,7 +50,11 @@ func TestGistCache_HoldsTheSummariesWhileTheInterleaveStands(t *testing.T) {
 // The interleave is what the summaries are keyed on, so a list that reaches
 // them only through it — the threads — has to reach them through Update too.
 func TestUpdate_ThreadsArrivingAnewDropTheSummaries(t *testing.T) {
+	dir := t.TempDir()
+	writeTestEmoji(t, dir, "THUMBSUP")
 	m := sized(100, 30)
+	m.deps.DataDir = dir
+	m.pics = picturesIn(dir)
 	m.chats = []store.Chat{reactedP2P("THUMBSUP")}
 	row := listRow{chat: m.chats[0]}
 

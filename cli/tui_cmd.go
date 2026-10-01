@@ -103,10 +103,10 @@ func (a *App) runTUI(_ *cobra.Command, _ []string) error {
 		return err
 	}
 	// The pictures are cut from the sheet this binary carries, so a build
-	// with a newer sheet cuts them again rather than asking anyone to.
-	// Failing costs only the pictures: the list names what it cannot draw.
+	// with a newer sheet cuts them again rather than asking anyone to. Every
+	// emoji is drawn as its picture, so a start without them is a broken one.
 	if _, err := emoji.Ensure(a.cfg.DataDir); err != nil {
-		captureError(err)
+		return err
 	}
 	return tui.Run(ctx, deps)
 }

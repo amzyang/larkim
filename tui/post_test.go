@@ -6,7 +6,6 @@ import (
 
 	"charm.land/lipgloss/v2"
 
-	"github.com/amzyang/larkim/emoji"
 	"github.com/amzyang/larkim/store"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/stretchr/testify/require"
@@ -138,21 +137,17 @@ func TestPostRows_ABodyThatCannotBeReadFallsBackToItsRendering(t *testing.T) {
 	require.Contains(t, rowText(renderRows(msgs, baseStyle())), "标题")
 }
 
-func TestPostRows_AnEmotionIsDrawnAsTheClientDrawsIt(t *testing.T) {
+func TestPostRows_AnEmotionIsDrawnAsTheClientsPicture(t *testing.T) {
 	// emoji_type is the table's key, and the shortcode is the spelling keyed
 	// by it: the display name is capped at twelve characters, which the keys
-	// Feishu sends run past.
-	raw := `{"content":[[{"tag":"text","text":"好"},{"tag":"emotion","emoji_type":"Lark_Emoji_Thumbsup_0"}]]}`
-	e, ok := emoji.ByKey("Lark_Emoji_Thumbsup_0")
-	require.True(t, ok)
-	require.NotEmpty(t, e.Glyph, "this emoji has a character; the test reads the glyph, not a picture")
-	require.Equal(t, []string{"好" + e.Glyph}, postLines(t, raw, baseStyle()))
-}
-
-func TestPostRows_AnEmotionWithNoGlyphIsDrawnAsItsPicture(t *testing.T) {
-	rows := renderRows(postRaw(`{"content":[[{"tag":"emotion","emoji_type":"DONE"}]]}`), drawingStyle(t))
-	require.Equal(t, 1, picsIn(rows))
-	require.NotContains(t, rowText(rows), ":DONE:")
+	// Feishu sends run past. The Lark_Emoji_ spelling is folded to the same
+	// emoji, and every emotion draws as the client draws it.
+	raw := `{"content":[[{"tag":"text","text":"好"},{"tag":"emotion","emoji_type":"Lark_Emoji_Thumbsup_0"},{"tag":"emotion","emoji_type":"DONE"}]]}`
+	rows := renderRows(postRaw(raw), drawingStyle(t))
+	require.Equal(t, 2, picsIn(rows))
+	out := rowText(rows)
+	require.NotContains(t, out, ":DONE:")
+	require.NotContains(t, out, "Thumbsup")
 }
 
 func TestPostRows_AnEmojiSpelledInTheWordsIsDrawnAsTheCharacters(t *testing.T) {
@@ -170,7 +165,7 @@ func TestBodyRows_AShortcodeInAFlattenedPostIsTheEmotionItWasWrittenFrom(t *test
 	msgs := []store.Message{{MessageID: "om_1", SenderName: "张三", SenderID: "ou_a", MsgType: "post",
 		Content: "好 :THUMBSUP: [赞]", CreateMs: msgAt(23, 9, 0), RenderedAt: 1}}
 	out := rowText(renderRows(msgs, baseStyle()))
-	require.Contains(t, out, "好 👍 [赞]", "sync writes an emotion back as :KEY:, and never as a bracketed name")
+	require.Contains(t, out, "好 :THUMBSUP: [赞]", "sync writes an emotion back as :KEY:, and never as a bracketed name")
 }
 
 func TestPostRows_APostLarkimSentReadsBackTheWayItsPreviewDrewIt(t *testing.T) {

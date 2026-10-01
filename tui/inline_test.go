@@ -14,7 +14,7 @@ import (
 func drawingStyle(t *testing.T) msgStyle {
 	t.Helper()
 	dir := t.TempDir()
-	for _, key := range []string{"DONE", "GET", "JIAYI"} {
+	for _, key := range []string{"DONE", "GET", "JIAYI", "THANKS", "THUMBSUP"} {
 		writeTestEmoji(t, dir, key)
 	}
 	st := baseStyle()
@@ -40,7 +40,7 @@ func picsIn(rows []msgRow) int {
 	return n
 }
 
-func TestBodyRows_DrawsAnEmojiWithNoGlyphAsAPicture(t *testing.T) {
+func TestBodyRows_DrawsEveryEmojiAsTheClientsPicture(t *testing.T) {
 	rows := bodyOf("abc[完成]def[了解]", drawingStyle(t))
 	require.Equal(t, 2, picsIn(rows), "both emoji are the client's own pictures")
 	out := rowText(rows)
@@ -57,16 +57,19 @@ func TestBodyRows_DrawsAPostShortcodeAsAPicture(t *testing.T) {
 	require.NotContains(t, rowText(rows), ":GET:")
 }
 
-func TestBodyRows_KeepsTheSpellingWhereNoPictureWasCut(t *testing.T) {
+func TestBodyRows_KeepsTheSpellingWhereNoPictureCanBeDrawn(t *testing.T) {
 	rows := bodyOf("abc[完成]", baseStyle())
 	require.Zero(t, picsIn(rows), "a terminal without graphics draws no picture")
-	require.Contains(t, rowText(rows), "[完成]")
+	require.Contains(t, rowText(rows), "[完成]", "the spelling stays the text the message stores")
 }
 
-func TestBodyRows_LeavesAnEmojiWithAGlyphAsText(t *testing.T) {
+func TestBodyRows_DrawsAnEmojiACharacterOnceCarriedAsItsPicture(t *testing.T) {
+	// The client draws every built-in emoji as its picture, so an emoji a
+	// Unicode character once stood in for is drawn no differently.
 	rows := bodyOf("谢谢[双手合十]", drawingStyle(t))
-	require.Zero(t, picsIn(rows), "a character carries this one, so no picture is placed")
-	require.Contains(t, rowText(rows), "谢谢🙏")
+	require.Equal(t, 1, picsIn(rows))
+	require.Contains(t, rowText(rows), "谢谢")
+	require.NotContains(t, rowText(rows), "[双手合十]")
 }
 
 func TestBodyRows_WrapsALongLineWithoutBreakingThePicture(t *testing.T) {

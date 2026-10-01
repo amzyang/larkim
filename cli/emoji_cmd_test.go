@@ -45,14 +45,13 @@ func TestEmojiRows_CarryTheSearchTermsAndThePicturePath(t *testing.T) {
 	require.Equal(t, "赞", e.ZH)
 }
 
-func TestEmojiRows_LeaveOutTheBareSpellingsAPickerCannotDraw(t *testing.T) {
-	// glyphs.go carries spellings with no name to search by and no rectangle
-	// to cut a picture from; a message can name one but a picker cannot list it.
+func TestEmojiRows_ListEverythingTheClientNames(t *testing.T) {
 	rows := emojiRows("/data")
 	for _, e := range rows {
 		require.NotEmpty(t, e.EN, "%s has no name", e.Key)
+		require.NotEmpty(t, e.Picture, "%s has no picture cut out", e.Key)
 	}
-	require.Less(t, len(rows), len(emoji.All()))
+	require.Equal(t, len(emoji.All()), len(rows), "every emoji the client ships is offered")
 }
 
 func TestEmojiFlags_NameTheOneThingThatIsTrue(t *testing.T) {
