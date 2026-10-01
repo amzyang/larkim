@@ -155,6 +155,10 @@ type AI struct {
 	// when it is set. Each is a scripted question the panel inserts into its
 	// box under a digit and behind the / popup.
 	Snippets SnippetList `yaml:"snippets"`
+	// History lets the agent read the chat's synced history itself, through
+	// the read-only larkim commands the system prompt teaches and the tool
+	// gate allows nothing else than. Off means no tools at all.
+	History bool `yaml:"history"`
 }
 
 // SnippetList reads an empty list as unset, so a config that carries

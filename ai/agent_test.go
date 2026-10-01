@@ -90,6 +90,36 @@ func (a *fakeAgent) Prompt(ctx context.Context, p acp.PromptRequest) (acp.Prompt
 			ToolCallId: "t1", Title: "$ cat ~/.ssh/id_rsa", Kind: acp.ToolKindExecute, Status: acp.ToolCallStatusPending}})
 		<-ctx.Done()
 		return acp.PromptResponse{}, ctx.Err()
+	case "hist-ok":
+		// The taught command, answered as the shell would: the call runs, its
+		// result comes back, and the answer goes on.
+		cmd := "larkim messages list --chat oc_quiet --json --limit 40"
+		say(acp.SessionUpdate{ToolCall: &acp.SessionUpdateToolCall{
+			ToolCallId: "t1", Title: "$ " + cmd, Kind: acp.ToolKindExecute,
+			RawInput:   map[string]any{"command": cmd, "timeout": 30},
+			Status:     acp.ToolCallStatusInProgress}})
+		done := acp.ToolCallStatusCompleted
+		say(acp.SessionUpdate{ToolCallUpdate: &acp.SessionToolCallUpdate{
+			ToolCallId: "t1", Status: &done,
+			RawOutput:  map[string]any{"output": "[{},{},{},{}]"}}})
+		say(acp.UpdateAgentMessageText("read four rows"))
+		return acp.PromptResponse{StopReason: acp.StopReasonEndTurn}, nil
+	case "hist-bad", "hist-otherchat", "hist-read", "hist-shell":
+		cmd := map[string]string{
+			"hist-bad":       "rm -rf ~",
+			"hist-otherchat": "larkim messages list --chat oc_elsewhere --json",
+			"hist-read":      "larkim messages list --chat oc_quiet --json",
+			"hist-shell":     "larkim messages list --chat oc_quiet --json; say pwned",
+		}[a.mode]
+		kind := acp.ToolKind(acp.ToolKindExecute)
+		if a.mode == "hist-read" {
+			kind = acp.ToolKindRead
+		}
+		say(acp.SessionUpdate{ToolCall: &acp.SessionUpdateToolCall{
+			ToolCallId: "t1", Title: "$ " + cmd, Kind: kind,
+			RawInput:   map[string]any{"command": cmd}, Status: acp.ToolCallStatusInProgress}})
+		<-ctx.Done()
+		return acp.PromptResponse{}, ctx.Err()
 	}
 	say(acp.UpdateAgentThoughtText("private working"))
 	perm, err := a.conn.RequestPermission(ctx, acp.RequestPermissionRequest{SessionId: p.SessionId,
@@ -283,4 +313,54 @@ func TestTail_KeepsTheEnd(t *testing.T) {
 	_, _ = io.WriteString(tl, "abc")
 	_, _ = io.WriteString(tl, "defg")
 	require.Equal(t, "defg", tl.String())
+}
+
+// drainTraces is drain with the trace lines the history gate leaves.
+func drainTraces(t *testing.T, ch <-chan Chunk) (string, []string, Chunk) {
+	t.Helper()
+	var b strings.Builder
+	var traces []string
+	timeout := time.After(20 * time.Second)
+	for {
+		select {
+		case c, ok := <-ch:
+			require.True(t, ok, "the stream closes only after its Done chunk")
+			b.WriteString(c.Text)
+			if c.Trace != "" {
+				traces = append(traces, c.Trace)
+			}
+			if c.Done {
+				return b.String(), traces, c
+			}
+		case <-timeout:
+			t.Fatal("stream did not finish")
+		}
+	}
+}
+
+// The taught command runs, its result leaves its trace, and the answer goes
+// on to finish.
+func TestStreamHistory_TheTaughtCommandRunsAndTracesItsRows(t *testing.T) {
+	c := fakeClient(t, "hist-ok", "")
+	text, traces, end := drainTraces(t, c.StreamHistory(t.Context(), "chat: 平台组", "再早的呢",
+		History{ChatID: "oc_quiet", ConfigPath: "/Users/linlan/dev.yaml"}))
+	require.NoError(t, end.Err)
+	require.Equal(t, "read four rows", text, "the turn was not cancelled by the call")
+	require.Equal(t, []string{"⌕ larkim messages list --chat oc_quiet --json --limit 40 · 4 rows"}, traces)
+}
+
+// The gate passes only the taught command for this chat: anything else —
+// another command, another chat, a tool that is not the shell, a shell that
+// would run more than the one command — cancels the turn.
+func TestStreamHistory_AnythingElseCancelsTheTurn(t *testing.T) {
+	for _, mode := range []string{"hist-bad", "hist-otherchat", "hist-read", "hist-shell"} {
+		t.Run(mode, func(t *testing.T) {
+			c := fakeClient(t, mode, "")
+			_, _, end := drainTraces(t, c.StreamHistory(t.Context(), "chat: 平台组", "看看",
+				History{ChatID: "oc_quiet"}))
+			require.Error(t, end.Err)
+			require.Contains(t, end.Err.Error(), "stopped: agent used",
+				"the call itself is what the reader sees stopped the answer")
+		})
+	}
 }

@@ -110,6 +110,10 @@ type AIStreamer interface {
 	// StreamChat is Stream for an answer whose whole output is the message,
 	// posted to the chat as it stands.
 	StreamChat(ctx context.Context, transcript, prompt string) <-chan ai.Chunk
+	// StreamHistory is Stream with the agent allowed to read the chat's
+	// synced history itself, gated to the read-only commands the prompt
+	// teaches.
+	StreamHistory(ctx context.Context, transcript, prompt string, h ai.History) <-chan ai.Chunk
 }
 
 // ReactSuggester is the one call the picker's contextual row makes. It is

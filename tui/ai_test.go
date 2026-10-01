@@ -28,10 +28,12 @@ type fakeAI struct {
 }
 
 // aiAsk is one question the fake was asked, as Stream received it. message
-// says it was the stream-to-chat variant.
+// says it was the stream-to-chat variant, history that the agent was given
+// the chat's own reading reach.
 type aiAsk struct {
 	transcript, prompt string
 	message            bool
+	history            ai.History
 }
 
 func newFakeAI() *fakeAI {
@@ -40,6 +42,15 @@ func newFakeAI() *fakeAI {
 
 func (f *fakeAI) Stream(ctx context.Context, transcript, prompt string) <-chan ai.Chunk {
 	f.asks = append(f.asks, aiAsk{transcript: transcript, prompt: prompt})
+	go func() {
+		<-ctx.Done()
+		close(f.cancelled)
+	}()
+	return f.ch
+}
+
+func (f *fakeAI) StreamHistory(ctx context.Context, transcript, prompt string, h ai.History) <-chan ai.Chunk {
+	f.asks = append(f.asks, aiAsk{transcript: transcript, prompt: prompt, history: h})
 	go func() {
 		<-ctx.Done()
 		close(f.cancelled)
@@ -1223,4 +1234,38 @@ func TestStreamToChat_AnAnchoredAnswerRepliesIntoTheThread(t *testing.T) {
 	}
 	require.Equal(t, "oc_quiet", sent.ChatID, "the card went to the chat")
 	require.NotEmpty(t, sent.ThreadID, "the reply is inside the thread")
+}
+
+// With ai.history on the ask goes out through the history variant, the chip
+// says so, and the trace lines a call leaves render dim.
+func TestAskAI_HistoryOnTeachesAndTraces(t *testing.T) {
+	f := newFakeAI()
+	m := aiFixture(t, f)
+	m.cfg.AI.History = true
+	m.deps.ConfigPath = "/Users/linlan/dev.yaml"
+
+	m, t1 := ask(t, m, "再早一点的记录？")
+	require.Len(t, f.asks, 1)
+	require.Equal(t, ai.History{ChatID: "oc_quiet", ConfigPath: "/Users/linlan/dev.yaml"}, f.asks[0].history,
+		"the ask carries the chat and the config path it was taught")
+	require.Contains(t, ansi.Strip(m.aiChips(m.rightWidth()-2)), "⌕ history")
+
+	out, _ := m.onAIChunk(aiChunkMsg{turn: t1.id, chunk: ai.Chunk{Trace: "⌕ messages list · 40 rows"}})
+	m = out.(Model)
+	out, _ = m.onAIChunk(aiChunkMsg{turn: t1.id, chunk: ai.Chunk{Text: "更早还有一条。", Done: true}})
+	m = out.(Model)
+	m.aiP.rebuild(m)
+	pane := ansi.Strip(m.renderAI(m.bodyHeight()))
+	require.Contains(t, pane, "⌕ messages list · 40 rows",
+		"the call leaves its dim line in the answer")
+}
+
+// Off means no history reach at all: the plain stream is what asks.
+func TestAskAI_HistoryOffIsThePlainStream(t *testing.T) {
+	f := newFakeAI()
+	m := aiFixture(t, f)
+	m, _ = ask(t, m, "总结一下")
+	require.Len(t, f.asks, 1)
+	require.Zero(t, f.asks[0].history)
+	require.NotContains(t, ansi.Strip(m.aiChips(m.rightWidth()-2)), "history")
 }

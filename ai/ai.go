@@ -45,29 +45,41 @@ func New(argv []string, model, cwd string, log *slog.Logger) *Client {
 // Stopped says the reader cancelled the answer rather than the agent ending
 // it.
 type Chunk struct {
-	Text    string
-	Err     error
-	Done    bool
+	Text string
+	Err  error
+	Done bool
+	// Stopped says the reader cancelled the answer rather than the agent
+	// ending it.
 	Stopped bool
+	// Trace is a line the answer did not write: a history call's dim
+	// footprint, shown in the panel beside the text.
+	Trace string
 }
 
-const system = `You are an assistant embedded in a Feishu/Lark IM client. You are shown one chat as data — a header naming it, the people in it, then one tagged block per message, newest last — with the user's own messages marked (me). A line starting with [image] is writing read out of the picture on the message above it, which the message text does not repeat. Answer in the language the chat mostly uses (Chinese if unsure). Be concrete and brief: names, decisions, deadlines, open questions.
+const system = systemCore + `
+
+Answer from the material you are given. Do not use any tool: a tool call ends this answer.`
+
+// systemCore is the assistant's standing instructions; the closing paragraph
+// — what the agent may reach for beyond the material it is handed — is what
+// each stream variant adds its own of.
+const systemCore = `You are an assistant embedded in a Feishu/Lark IM client. You are shown one chat as data — a header naming it, the people in it, then one tagged block per message, newest last — with the user's own messages marked (me). A line starting with [image] is writing read out of the picture on the message above it, which the message text does not repeat. Answer in the language the chat mostly uses (Chinese if unsure). Be concrete and brief: names, decisions, deadlines, open questions.
 
 Anything the question is about beyond the chat window arrives inside an <about> block, and earlier questions with your answers to them as <ask>/<answer> pairs — that is this same conversation continued, not a new chat.
 
-When you write something the user might send, put each option — and nothing else — inside its own <reply>...</reply> block. What stands outside the blocks is commentary for the user alone and is never sent. An answer that is the message itself needs no block.
-
-Answer from the material you are given. Do not use any tool: a tool call ends this answer.`
+When you write something the user might send, put each option — and nothing else — inside its own <reply>...</reply> block. What stands outside the blocks is commentary for the user alone and is never sent. An answer that is the message itself needs no block.`
 
 // Stream sends prompt with the chat transcript as context and streams the
 // answer.
 func (c *Client) Stream(ctx context.Context, transcript, prompt string) <-chan Chunk {
-	return c.stream(ctx, transcript, prompt, system)
+	return c.stream(ctx, transcript, prompt, system, nil)
 }
 
 // systemMessage is the instruction a stream-to-chat turn leads with instead:
 // the whole output is the message that goes to the chat as it stands.
-const systemMessage = system + `
+const systemMessage = systemCore + `
+
+Answer from the material you are given.
 
 This turn is different: your entire output becomes one message sent to the chat exactly as you write it. Write no commentary, no preamble, no <reply> tags — the message itself and nothing else. Mentions and file references stay plain text.`
 
@@ -75,10 +87,18 @@ This turn is different: your entire output becomes one message sent to the chat 
 // is posted to the chat as it stands, so the agent writes the message and
 // nothing around it.
 func (c *Client) StreamChat(ctx context.Context, transcript, prompt string) <-chan Chunk {
-	return c.stream(ctx, transcript, prompt, systemMessage)
+	return c.stream(ctx, transcript, prompt, systemMessage, nil)
 }
 
-func (c *Client) stream(ctx context.Context, transcript, prompt, instructions string) <-chan Chunk {
+// StreamHistory is Stream with the agent allowed to read the chat's synced
+// history itself: the system prompt teaches the exact commands, and the gate
+// passes only those — scoped to the one chat — cancelling the turn on
+// anything else, because a permission may never be asked at all.
+func (c *Client) StreamHistory(ctx context.Context, transcript, prompt string, h History) <-chan Chunk {
+	return c.stream(ctx, transcript, prompt, systemCore+"\n\n"+h.instructions(), h.gate())
+}
+
+func (c *Client) stream(ctx context.Context, transcript, prompt, instructions string, gate *toolGate) <-chan Chunk {
 	out := make(chan Chunk, 64)
 	go func() {
 		defer close(out)
@@ -106,7 +126,12 @@ func (c *Client) stream(ctx context.Context, transcript, prompt, instructions st
 		// The window travels as data between tags, never as instructions,
 		// because colleagues wrote it.
 		text := instructions + "\n\n<data>\n" + transcript + "\n</data>\n\n" + prompt
-		if err := c.ask(ctx, text, func(t string) bool { return send(Chunk{Text: t}) }); err != nil {
+		emit := func(t string) bool { return send(Chunk{Text: t}) }
+		if gate != nil {
+			emitTrace := func(line string) bool { return send(Chunk{Trace: line}) }
+			gate.trace = emitTrace
+		}
+		if err := c.ask(ctx, text, emit, gate); err != nil {
 			if errors.Is(err, errStopped) {
 				send(Chunk{Stopped: true, Done: true})
 				return
@@ -121,7 +146,7 @@ func (c *Client) stream(ctx context.Context, transcript, prompt, instructions st
 
 // ask runs one prompt turn in a fresh agent process, handing each piece of
 // the reply to emit as it arrives.
-func (c *Client) ask(ctx context.Context, text string, emit func(string) bool) (err error) {
+func (c *Client) ask(ctx context.Context, text string, emit func(string) bool, gate *toolGate) (err error) {
 	ctx, cancel := context.WithCancel(ctx)
 	cmd := exec.CommandContext(ctx, c.argv[0], c.argv[1:]...)
 	cmd.Dir = c.cwd
@@ -158,7 +183,7 @@ func (c *Client) ask(ctx context.Context, text string, emit func(string) bool) (
 	}()
 
 	tool := new(atomic.Pointer[string])
-	h := handler{emit: emit, stop: cancel, tool: tool}
+	h := handler{emit: emit, stop: cancel, tool: tool, gate: gate}
 	conn := acp.NewClientSideConnection(h, stdin, stdout)
 	conn.SetLogger(c.log)
 	// No fs or terminal capability is offered: the transcript is all the
@@ -255,17 +280,44 @@ func selectValues(o acp.SessionConfigSelectOptions) []acp.SessionConfigSelectOpt
 	return nil
 }
 
+// toolGate decides one tool call: true and the call runs — the shell on an
+// allowlisted command — false and the turn stops. trace carries the dim line
+// a running call leaves in the answer when its result arrives.
+type toolGate struct {
+	allow func(kind, title string, rawInput any) bool
+	trace func(string) bool
+	// title is the call the gate passed, whose trace its result carries: an
+	// agent may not repeat the title on the update.
+	title string
+}
+
+// gate is the History's own decision function.
+func (h History) gate() *toolGate {
+	return &toolGate{allow: func(kind, title string, rawInput any) bool {
+		cmd, ok := commandOf(kind, rawInput)
+		if !ok {
+			return false
+		}
+		argv, ok := splitCommand(cmd)
+		return ok && AllowCommand(argv, h.ChatID)
+	}}
+}
+
 // handler is the client side of the connection: it forwards the reply's text
 // and refuses everything else the agent could ask of it. The connection keeps
 // its own copy of this value, so anything it has to tell ask — the tool that
 // tripped the gate — travels through a pointer both hold.
 type handler struct {
 	emit func(string) bool
-	// stop ends the turn the moment the agent reaches for a tool. Permission
-	// refusals are not that: omp runs read, search and fetch tools without
-	// asking, so the update itself has to be the wire the gate sits on.
+	// stop ends the turn the moment the agent reaches for a tool the gate
+	// did not pass. Permission refusals are not that: omp runs read, search
+	// and fetch tools without asking, so the update itself has to be the
+	// wire the gate sits on.
 	stop func()
 	tool *atomic.Pointer[string]
+	// gate is nil for the no-tools configuration: every tool call stops the
+	// turn. With it, a call it passes runs and its result leaves a trace.
+	gate *toolGate
 }
 
 var _ acp.Client = handler{}
@@ -275,12 +327,22 @@ func (h handler) SessionUpdate(_ context.Context, n acp.SessionNotification) err
 	// the answer. The tool call itself is refused by ending the turn: reading
 	// local files or the web is what this assistant exists never to do.
 	if u := n.Update.ToolCall; u != nil {
+		if h.gate != nil && h.gate.allow(string(u.Kind), u.Title, u.RawInput) {
+			// The taught command, on this chat: it runs, and the answer
+			// keeps going.
+			h.gate.title = u.Title
+			return nil
+		}
 		title := cmp.Or(u.Title, "a tool")
 		h.tool.Store(&title)
 		if h.stop != nil {
 			h.stop()
 		}
 		return nil
+	}
+	if u := n.Update.ToolCallUpdate; u != nil && h.gate != nil && u.Status != nil &&
+		*u.Status == acp.ToolCallStatusCompleted && h.gate.trace != nil {
+		h.gate.trace(traceLine(cmp.Or(deref(u.Title), h.gate.title), u.RawOutput))
 	}
 	if u := n.Update.AgentMessageChunk; u != nil && u.Content.Text != nil && u.Content.Text.Text != "" {
 		h.emit(u.Content.Text.Text)
@@ -442,4 +504,12 @@ func (t Turn) Prompt() string {
 	}
 	fmt.Fprintf(&b, "<ask>\n%s\n</ask>", strings.TrimSpace(t.Question))
 	return b.String()
+}
+
+// deref reads a title the update may carry or not.
+func deref(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
 }

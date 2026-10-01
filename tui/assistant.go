@@ -116,6 +116,9 @@ type aiTurn struct {
 	// stream is the card this answer streams into the chat as, when the
 	// question was asked with ctrl+s. Nil when the answer stays in the panel.
 	stream *aiStreamCard
+	// traces are the dim lines the answer's history calls left, in the order
+	// they ran.
+	traces []string
 	ch     <-chan ai.Chunk
 	cancel context.CancelFunc
 }
@@ -478,7 +481,7 @@ type aiStartedMsg struct {
 // the Update loop because a fork and a store read are both too slow to sit
 // under a keypress. off, when set, is the failure the turn ends with instead:
 // a panel without an agent takes the question and answers it with the notice.
-func askTurn(d Deps, client AIStreamer, off error, p *aiPanel, s *aiSession, t *aiTurn) tea.Cmd {
+func askTurn(d Deps, client AIStreamer, off error, p *aiPanel, s *aiSession, t *aiTurn, h ai.History) tea.Cmd {
 	if off != nil || client == nil {
 		err := cmp.Or(off, errAssistantOff)
 		return func() tea.Msg {
@@ -515,6 +518,12 @@ func askTurn(d Deps, client AIStreamer, off error, p *aiPanel, s *aiSession, t *
 		// commentary, no reply blocks.
 		if t.stream != nil {
 			return aiStartedMsg{turn: t.id, ch: client.StreamChat(cctx, turn.Window, turn.Prompt()), cancel: cancel}
+		}
+		// With history on, the agent reads the chat itself through the
+		// commands it was taught; the gate holds regardless of how the agent
+		// was configured, and nothing else reaches it.
+		if h.ChatID != "" {
+			return aiStartedMsg{turn: t.id, ch: client.StreamHistory(cctx, turn.Window, turn.Prompt(), h), cancel: cancel}
 		}
 		return aiStartedMsg{turn: t.id, ch: client.Stream(cctx, turn.Window, turn.Prompt()), cancel: cancel}
 	}
@@ -580,6 +589,9 @@ func (m Model) onAIChunk(msg aiChunkMsg) (tea.Model, tea.Cmd) {
 	// every state.
 	c := msg.chunk
 	t.answer += c.Text
+	if c.Trace != "" {
+		t.traces = append(t.traces, c.Trace)
+	}
 	var cmds []tea.Cmd
 	done := false
 	switch {
@@ -783,6 +795,9 @@ func (p *aiPanel) rebuild(m Model) {
 		add(aiRowOf(m.aiTurnHead(t, w), w), none)
 		addAll(plainRows(wrap(t.ask, w), w), none)
 		add(m.aiAnswerHeadRow(t, w, last), none)
+		for _, line := range t.traces {
+			add(aiRowOf(stDim.Render(line), w), none)
+		}
 		// An answer that streams into the chat is the message itself: one
 		// text, no reply blocks, and the chat side's own actions under it —
 		// from the moment its card posts, asking or not.
@@ -1244,11 +1259,11 @@ func (m Model) regenerateAI() (tea.Model, tea.Cmd) {
 	if m.ai == nil {
 		off = fmt.Errorf("assistant off: %s not found (config ai.agent)", m.agentName())
 	}
-	t.answer, t.err, t.state, t.ch, t.cancel = "", "", aiAsking, nil, nil
+	t.answer, t.err, t.state, t.ch, t.cancel, t.traces = "", "", aiAsking, nil, nil, nil
 	p.follow = true
 	p.rebuild(m)
 	m.layout()
-	asking := askTurn(m.deps, m.ai, off, p, s, t)
+	asking := askTurn(m.deps, m.ai, off, p, s, t, m.aiHistory())
 	return m.notify("asking "+m.agentName()+"…", false),
 		tea.Batch(saveTurnCmd(m.deps, s, t), asking)
 }
@@ -1399,6 +1414,9 @@ func (m Model) aiChips(w int) string {
 	}
 	if strings.TrimSpace(m.aiDraftText()) != "" {
 		chips = append(chips, "✎ draft")
+	}
+	if m.cfg.AI.History {
+		chips = append(chips, "⌕ history")
 	}
 	chips = append(chips, fmt.Sprintf("▤ last %d", max(1, m.cfg.AI.Context)))
 	return fit(stDim.Render(truncate(strings.Join(chips, " · "), w)), w)
@@ -1554,9 +1572,19 @@ func (m Model) askAI(ask, sent string, intoChat bool) (tea.Model, tea.Cmd) {
 	p.follow = true
 	p.rebuild(m)
 	m.layout()
-	asking := askTurn(m.deps, m.ai, off, p, s, t)
+	asking := askTurn(m.deps, m.ai, off, p, s, t, m.aiHistory())
 	return m.notify("asking "+m.agentName()+"…", false),
 		tea.Batch(saveSessionCmd(m.deps, p.chat, s), saveTurnCmd(m.deps, s, t), asking)
+}
+
+// aiHistory is the reading reach the next ask carries: the chat it is about
+// and the config path its commands spell, no chat when history is off. It is
+// read off the session's cfg rather than deps because :set retunes it live.
+func (m Model) aiHistory() ai.History {
+	if !m.cfg.AI.History || m.aiP.chat == "" {
+		return ai.History{}
+	}
+	return ai.History{ChatID: m.aiP.chat, ConfigPath: m.deps.ConfigPath}
 }
 
 // threadIDOf names the thread a message belongs to, '' for none.

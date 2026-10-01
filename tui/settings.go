@@ -111,15 +111,19 @@ var settings = []setting{{
 	live:  true,
 	apply: rebuildSuggest,
 }, {
-	key:   "ai.jev_endpoint",
-	help:  "the evaluation endpoint the reaction suggestions are asked of",
-	live:  true,
-	apply: rebuildSuggest,
+	key:      "ai.jev_endpoint",
+	help:     "the evaluation endpoint the reaction suggestions are asked of",
+	live:     true,
+	apply:    rebuildSuggest,
 }, {
 	key:      "ai.snippets",
 	help:     "the assistant panel's snippet offers, name and text; enter edits them in the config file",
 	readOnly: true,
-	summary: func(c config.Config) string { return plural(len(c.AI.Snippets), "snippet", "snippets") },
+	summary:  func(c config.Config) string { return plural(len(c.AI.Snippets), "snippet", "snippets") },
+}, {
+	key:  "ai.history",
+	help: "let the agent read this chat's synced history itself, through the read-only larkim commands the prompt teaches; anything else it runs stops the answer. Run the agent with --tools bash when on, --no-tools when off",
+	live:  true,
 }, {
 	key:  "todoist.token",
 	help: "the Todoist API token behind the T key; empty leaves the key answering that it is not configured",

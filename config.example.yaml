@@ -85,6 +85,12 @@ ai:
   jev_key_env: TYPESAFE_API_KEY
   # The evaluation endpoint that answers it.
   jev_endpoint: https://api.typesafe.ai/v1/systemone
+  # Let the agent read the chat's synced history itself: the system prompt
+  # teaches the read-only larkim commands and the tool gate passes only
+  # those. Give the agent its shell when on, and none when off:
+  #   agent: omp --mode acp --tools bash   # with history: true
+  #   agent: omp --mode acp --no-tools     # otherwise
+  history: false
   # Scripted questions the assistant panel offers, as chips under digits and
   # behind the / popup. Setting the list replaces the built-ins (Summary,
   # Draft, Options) whole.
