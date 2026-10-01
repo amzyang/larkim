@@ -15,6 +15,8 @@ import (
 
 	"github.com/amzyang/larkim/config"
 	"github.com/amzyang/larkim/larkcli"
+	"github.com/amzyang/larkim/larkweb"
+	"github.com/amzyang/larkim/markread"
 	"github.com/amzyang/larkim/store"
 )
 
@@ -144,6 +146,12 @@ type Syncer struct {
 	OnChange func()
 	// Fetch downloads avatars; nil disables avatar files.
 	Fetch Fetcher
+	// SettleSilenced, when set, settles a chat's server-side read watermark
+	// at a position the silence rules chose, so the Feishu clients' dots
+	// follow them too; nil disables the settle step. It is the lever
+	// mark_read.mode names (markread.Clear), the same one a read settles
+	// through, so the two writes reach Feishu the same way.
+	SettleSilenced markread.Clear
 	// Recover, when set, is deferred at the top of the goroutine Run starts for
 	// discovery, so a panic there is reported the way one in Run's own
 	// goroutine is. It must call recover itself and re-panic.
@@ -192,6 +200,7 @@ type Report struct {
 	DocLinks   int // document links named or settled as out of reach
 	ImageText  int // pictures whose writing was read
 	Contacts   int // contacts whose identity fields were resolved
+	Settled    int // chats whose silenced unread was settled server-side
 }
 
 // changed reports whether the tick moved anything. The daemon ticks every few
@@ -358,7 +367,15 @@ func (s *Syncer) tick(ctx context.Context, now time.Time, discover bool) (Report
 	}
 	s.changed(rep.Downloaded)
 
-	// 4. Historical discovery: one day-slice of cross-chat search per tick,
+	// 4. Settle the chats a silence flag flip queued: push the server-side
+	// read watermark past their silenced unread, so the Feishu clients' dots
+	// follow the local rules. After the read probe on purpose — the plan
+	// reads the remote flags it just refreshed.
+	if rep.Settled, err = s.settleSilenced(ctx); err != nil {
+		return rep, fmt.Errorf("silence settle: %w", err)
+	}
+
+	// 5. Historical discovery: one day-slice of cross-chat search per tick,
 	// from now-BackfillDays up to the live window. Far cheaper than listing
 	// every chat, so recent history fills in within minutes.
 	n, err := s.historySlice(ctx, rep.Window.Start, now)
@@ -367,7 +384,7 @@ func (s *Syncer) tick(ctx context.Context, now time.Time, discover bool) (Report
 	}
 	rep.History = n
 
-	// 5. Full chat listing, and the per-user settings it does not carry.
+	// 6. Full chat listing, and the per-user settings it does not carry.
 	chatsRefreshed, err := s.stateTime(ctx, KeyChatsRefreshed)
 	if err != nil {
 		return rep, err
@@ -383,7 +400,7 @@ func (s *Syncer) tick(ctx context.Context, now time.Time, discover bool) (Report
 		}
 	}
 
-	// 6. Slow path: reconcile the most active chats, then the threads the
+	// 7. Slow path: reconcile the most active chats, then the threads the
 	// reader has a stake in, which no chat's listing carries.
 	slowPathAt, err := s.stateTime(ctx, KeySlowPathAt)
 	if err != nil {
@@ -400,21 +417,21 @@ func (s *Syncer) tick(ctx context.Context, now time.Time, discover bool) (Report
 		}
 	}
 
-	// 7. Backfill a few chats per tick so live data keeps flowing.
+	// 8. Backfill a few chats per tick so live data keeps flowing.
 	n, err = s.backfillSlice(ctx, now)
 	if err != nil {
 		return rep, fmt.Errorf("backfill: %w", err)
 	}
 	rep.Backfilled = n
 
-	// 8. Render and fetch whatever the sweeps above added.
+	// 9. Render and fetch whatever the sweeps above added.
 	n, err = s.renderPending(ctx, "", s.Opt.RenderPerTick*50, now)
 	if err != nil {
 		return rep, fmt.Errorf("render: %w", err)
 	}
 	rep.Rendered += n
 
-	// 9. Download attachments that are pending or due for retry.
+	// 10. Download attachments that are pending or due for retry.
 	n, err = s.downloadPending(ctx, now)
 	if err != nil {
 		return rep, fmt.Errorf("resources: %w", err)
@@ -422,7 +439,7 @@ func (s *Syncer) tick(ctx context.Context, now time.Time, discover bool) (Report
 	rep.Downloaded += n
 	s.changed(rep.Rendered + rep.Downloaded)
 
-	// 10. Expand a few merged-forward bundles into their children.
+	// 11. Expand a few merged-forward bundles into their children.
 	n, err = s.expandForwards(ctx, now)
 	if err != nil {
 		return rep, fmt.Errorf("forwards: %w", err)
@@ -430,14 +447,14 @@ func (s *Syncer) tick(ctx context.Context, now time.Time, discover bool) (Report
 	rep.Forwards = n
 	s.changed(n)
 
-	// 11. Copy sticker pictures out of the Lark client's own storage.
+	// 12. Copy sticker pictures out of the Lark client's own storage.
 	n, err = s.copyStickers(ctx, now)
 	if err != nil {
 		return rep, fmt.Errorf("stickers: %w", err)
 	}
 	rep.Stickers = n
 
-	// 12. Name the documents linked to from messages.
+	// 13. Name the documents linked to from messages.
 	n, err = s.resolveDocLinks(ctx, now)
 	if err != nil {
 		return rep, fmt.Errorf("doc links: %w", err)
@@ -445,7 +462,7 @@ func (s *Syncer) tick(ctx context.Context, now time.Time, discover bool) (Report
 	rep.DocLinks = n
 	s.changed(n)
 
-	// 13. Walk the read-status ladder over recent messages from others; the
+	// 14. Walk the read-status ladder over recent messages from others; the
 	// probe ran in step 3.
 	n, err = s.pollReadStatus(ctx, now)
 	if err != nil {
@@ -454,7 +471,7 @@ func (s *Syncer) tick(ctx context.Context, now time.Time, discover bool) (Report
 	rep.ReadChecks += n
 	s.changed(n)
 
-	// 14. Keep the chat list's reactions current for the liveliest p2p chats.
+	// 15. Keep the chat list's reactions current for the liveliest p2p chats.
 	reactionsAt, err := s.stateTime(ctx, KeyReactionsAt)
 	if err != nil {
 		return rep, err
@@ -467,7 +484,7 @@ func (s *Syncer) tick(ctx context.Context, now time.Time, discover bool) (Report
 		rep.Reactions = n
 	}
 
-	// 15. Repair recent history, refresh members, fetch avatars, name reacting
+	// 16. Repair recent history, refresh members, fetch avatars, name reacting
 	// apps: a few each.
 	if rep.Repaired, err = s.repairSlice(ctx, now); err != nil {
 		return rep, fmt.Errorf("repair: %w", err)
@@ -485,13 +502,55 @@ func (s *Syncer) tick(ctx context.Context, now time.Time, discover bool) (Report
 		return rep, fmt.Errorf("apps: %w", err)
 	}
 
-	// 16. Read the writing in pictures already on disk. Last because nothing
+	// 17. Read the writing in pictures already on disk. Last because nothing
 	// on screen waits for it: it feeds the assistant and the reaction
 	// suggester, which are asked for by hand.
 	if rep.ImageText, err = s.readImageText(ctx, now); err != nil {
 		return rep, fmt.Errorf("image text: %w", err)
 	}
 	return rep, nil
+}
+
+// silenceSettlePerTick bounds one tick's settles; each is one gateway POST.
+const silenceSettlePerTick = 10
+
+// settleSilenced drains the silence settle queue. A chat whose plan answers
+// no action is dropped without a write; a settle the gateway refuses keeps
+// its row and counts an attempt, so the next tick retries it until the cap
+// retires it. larkweb is not under lark-cli's lanes, so the pace between two
+// posts is its own.
+func (s *Syncer) settleSilenced(ctx context.Context) (int, error) {
+	if s.SettleSilenced == nil {
+		return 0, nil
+	}
+	pending, err := s.Store.PendingSilenceSettle(ctx, silenceSettlePerTick)
+	if err != nil || len(pending) == 0 {
+		return 0, err
+	}
+	settled := 0
+	for _, p := range pending {
+		if !p.Push {
+			if err := s.Store.SilenceSettleDone(ctx, p.ChatID, 0); err != nil {
+				return settled, err
+			}
+			continue
+		}
+		if settled > 0 {
+			time.Sleep(larkweb.Pace)
+		}
+		if err := s.SettleSilenced(ctx, store.ChatUnread{ChatID: p.ChatID, Position: p.Position}); err != nil {
+			s.log().Warn("silence settle failed", "chat_id", p.ChatID, "err", err)
+			if serr := s.Store.SilenceSettleFailed(ctx, p.ChatID); serr != nil {
+				s.log().Warn("count silence settle failure", "chat_id", p.ChatID, "err", serr)
+			}
+			continue
+		}
+		settled++
+		if err := s.Store.SilenceSettleDone(ctx, p.ChatID, p.Position); err != nil {
+			return settled, err
+		}
+	}
+	return settled, nil
 }
 
 // searchWindow searches w, bisecting on truncation. coveredEnd is the end of

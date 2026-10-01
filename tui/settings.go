@@ -120,6 +120,9 @@ var settings = []setting{{
 	help:     "rules whose messages carry no unread badge; enter edits them in the Silence tab",
 	readOnly: true,
 	summary:  func(c config.Config) string { return plural(len(c.Silence), "rule", "rules") },
+}, {
+	key:  "silence_sync",
+	help: "settle Feishu's own read watermark past silenced messages, so every client's dot follows the same rules; needs mark_read.mode: web",
 }}
 
 // nonEmpty judges a key with no default to fall back on: an empty command

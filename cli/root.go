@@ -12,6 +12,7 @@ import (
 
 	"github.com/amzyang/larkim/config"
 	"github.com/amzyang/larkim/larkcli"
+	"github.com/amzyang/larkim/markread"
 	"github.com/amzyang/larkim/store"
 	"github.com/amzyang/larkim/sync"
 	"github.com/spf13/cobra"
@@ -173,8 +174,15 @@ func (a *App) client() larkcli.Client {
 }
 
 func (a *App) syncer(st *store.Store) *sync.Syncer {
+	// silence_sync is validated to web mode, the one lever that settles a
+	// position rather than a whole chat.
+	var settle markread.Clear
+	if a.cfg.SilenceSync {
+		settle = markread.New(a.cfg.MarkRead, a.logger(), st, a.open)
+	}
 	return &sync.Syncer{Client: a.client(), Store: st, Clock: sync.RealClock{}, Opt: sync.OptionsFrom(a.cfg),
-		Log: a.logger(), OnError: captureError, Fetch: sync.HTTPFetch, Recover: sentryRecoverRepanic}
+		Log: a.logger(), OnError: captureError, Fetch: sync.HTTPFetch, Recover: sentryRecoverRepanic,
+		SettleSilenced: settle}
 }
 
 // parseTime accepts YYYY-MM-DD, RFC 3339, or a duration such as 24h (relative to now).

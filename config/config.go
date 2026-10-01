@@ -56,6 +56,12 @@ type Config struct {
 	// Silence keeps matching messages out of the unread badge and out of the
 	// chat list's ordering; see docs/silence/PRD.md.
 	Silence store.SilenceRules `yaml:"silence"`
+	// SilenceSync settles the server-side read watermark past silenced
+	// messages, so the Feishu clients' own dots follow the same rules. It
+	// needs mark_read.mode: web — the watermark is the one lever that names a
+	// position — and is one-way: dropping a rule never re-lights a dot
+	// anywhere.
+	SilenceSync bool `yaml:"silence_sync"`
 }
 
 // Mark-read modes.
@@ -100,6 +106,8 @@ func Values(key string) []string {
 		return []string{MarkReadApplink, MarkReadWeb}
 	case "mark_read.browser":
 		return larkweb.Browsers
+	case "silence_sync":
+		return []string{"true", "false"}
 	}
 	return nil
 }
@@ -230,6 +238,9 @@ func LoadWith(path string, sets []string) (Config, error) {
 	}
 	if err := cfg.MarkRead.Validate(); err != nil {
 		return cfg, fmt.Errorf("%s: %w", path, err)
+	}
+	if cfg.SilenceSync && cfg.MarkRead.Mode != MarkReadWeb {
+		return cfg, fmt.Errorf("%s: silence_sync needs mark_read.mode: %s", path, MarkReadWeb)
 	}
 	return cfg, nil
 }

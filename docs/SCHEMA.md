@@ -35,6 +35,7 @@ One row per chat the user is (or was) in, from `GET /im/v1/chats` with `types=p2
 | `last_reactions_json` | that message's reaction block, the shape `messages.reactions_json` holds; empty while nobody has reacted |
 | `last_rendered_at`, `last_deleted` | that message's rendering state and recall flag |
 | `last_unsilenced_ms` | the newest main-flow message no silence rule matched, and the key the list orders on; 0 when every message is silenced |
+| `silence_settled_pos` | the read watermark `silence_sync` last settled for the chat; messages at or below it never queue or settle again. The settle moves the feed's unread count only, never the per-message `is_read_remote` |
 | `muted`, `mute_checked_at` | the user's do-not-disturb setting and when it was last answered; 0 means it has never been asked |
 | `web_chat_id` | the Feishu web client's numeric id for the chat, which no OpenAPI response carries; empty until matched. Written by the processes that mark chats read in `mark_read.mode: web`, never by the daemon |
 
@@ -142,6 +143,16 @@ Per-message read state, joined on `message_id`. A row exists for a message whose
 `is_read_remote` is also read on its own, without `local_read_at`: on a live message with a non-negative `message_position` that combination means the Feishu desktop client still shows a red dot for the chat, which reading the chat in larkim never takes down. That is the set `larkim read-all` walks the client over, and it is bounded only by the 7-day horizon, so it is wider than any badge — a chat whose badge is 0 can still be in it.
 
 A chat's badge counts the rows where `is_read_remote` is 0 and `local_read_at` is 0 on a live, unsilenced message with a non-negative `message_position`; thread replies are left out. Both flags can only witness that a message was seen, so taking either one as read adds no false unread. Marking a chat read is deliberately wider than the badge: it takes every live row with both flags still unset in the chat, silenced messages and thread replies included, because the chat's page put them in front of the reader too. Anything that page shows but marking read cannot collect keeps its flags for good, and the unread marker beside it relights on every visit.
+
+## silence_settle_queue
+
+Chats a silence flag flip left with server-side unread, waiting for the sweep to push the web client's read watermark past the silenced messages (config `silence_sync: true`, which requires `mark_read.mode: web`). Rows are written inside the transaction that flips the flags, by whichever process stores the message; drained by the `daemon.lock` holder, a few chats per tick. The row only names the chat — the watermark is re-derived from `read_state` when the row is drained.
+
+| column | meaning |
+|---|---|
+| `attempts` | failed settles counted; past 10 the row is dropped and a warn logged, and the next silence flip in the chat queues it again |
+
+Derived state: rebuild it by re-queuing every chat with a silenced message still unread server-side above `chats.silence_settled_pos`.
 
 ## drafts
 

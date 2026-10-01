@@ -1,6 +1,8 @@
 package sync
 
 import (
+	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -61,4 +63,101 @@ func chatOf(t *testing.T, s *Syncer, chatID string) store.Chat {
 	c, err := s.Store.GetChat(t.Context(), chatID)
 	require.NoError(t, err)
 	return c
+}
+
+// settleRecorder stands in for the markread lever, remembering the watermarks
+// it was asked to settle.
+type settleRecorder struct {
+	calls []store.ChatUnread
+	err   error
+}
+
+func (r *settleRecorder) Clear(_ context.Context, chat store.ChatUnread) error {
+	if r.err != nil {
+		return r.err
+	}
+	r.calls = append(r.calls, chat)
+	return nil
+}
+
+func TestTick_SettlesSilencedUnreadOnTheServer(t *testing.T) {
+	s, f, clk := newSyncer(t)
+	ctx := t.Context()
+	s.Store.Silence = store.SilenceRules{{Sender: "cli_c"}}
+	rec := &settleRecorder{}
+	s.SettleSilenced = rec.Clear
+	require.NoError(t, func() error { _, err := s.EnsureIdentity(ctx); return err }())
+	f.Chats = []larkcli.RawChat{{ChatID: "oc_quiet", Name: "Platform", ChatMode: "group"}}
+	at := clk.t.Add(-30 * time.Second)
+	noise := msg("om_a", "oc_quiet", at, "nightly build #418")
+	noise.MessagePosition = 1
+	noise.Sender = larkcli.RawSender{ID: "cli_c", SenderType: "app", SenderName: "Build bot"}
+	human := msg("om_human", "oc_quiet", at.Add(time.Second), "did anyone look at it")
+	human.MessagePosition = 2
+	human.Sender = larkcli.RawSender{ID: "ou_b", SenderType: "user", SenderName: "Bob"}
+	more := msg("om_c", "oc_quiet", at.Add(2*time.Second), "nightly build #419")
+	more.MessagePosition = 3
+	more.Sender = noise.Sender
+	f.AddMessage(noise)
+	f.AddMessage(human)
+	f.AddMessage(more)
+
+	rep, err := s.Tick(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1, rep.Settled)
+	require.Equal(t, []store.ChatUnread{{ChatID: "oc_quiet", Position: 1}}, rec.calls,
+		"the watermark stops below the unsilenced message, which keeps its dot")
+
+	// The settle moves the feed count alone — Feishu's per-message read state
+	// never flips — so the sweeps' later touches re-queue the chat. The next
+	// tick must see the floor and settle nothing.
+	clk.t = clk.t.Add(10 * time.Second)
+	rep, err = s.Tick(ctx)
+	require.NoError(t, err)
+	require.Zero(t, rep.Settled)
+	require.Len(t, rec.calls, 1, "a covered message never settles twice")
+	pending, err := s.Store.PendingSilenceSettle(ctx, 10)
+	require.NoError(t, err)
+	require.Empty(t, pending, "the no-action row is dropped without a write")
+}
+
+func TestTick_KeepsAQueuedChatWhenTheSettleFails(t *testing.T) {
+	s, f, clk := newSyncer(t)
+	ctx := t.Context()
+	s.Store.Silence = store.SilenceRules{{Sender: "cli_c"}}
+	rec := &settleRecorder{err: errors.New("gateway refused")}
+	s.SettleSilenced = rec.Clear
+	_, err0 := s.EnsureIdentity(ctx)
+	require.NoError(t, err0)
+	f.Chats = []larkcli.RawChat{{ChatID: "oc_quiet", Name: "Platform", ChatMode: "group"}}
+	noise := msg("om_noise", "oc_quiet", clk.t.Add(-30*time.Second), "nightly build #418 passed")
+	noise.MessagePosition = 1
+	noise.Sender = larkcli.RawSender{ID: "cli_c", SenderType: "app", SenderName: "Build bot"}
+	f.AddMessage(noise)
+
+	_, err := s.Tick(ctx)
+	require.NoError(t, err, "a refused settle costs its chat, not the tick")
+	pending, err := s.Store.PendingSilenceSettle(ctx, 10)
+	require.NoError(t, err)
+	require.Len(t, pending, 1, "the row waits for the next tick")
+}
+
+func TestTick_SkipsTheSilenceSettleWhenNoLever(t *testing.T) {
+	s, f, clk := newSyncer(t)
+	ctx := t.Context()
+	s.Store.Silence = store.SilenceRules{{Sender: "cli_c"}}
+	_, err0 := s.EnsureIdentity(ctx)
+	require.NoError(t, err0)
+	f.Chats = []larkcli.RawChat{{ChatID: "oc_quiet", Name: "Platform", ChatMode: "group"}}
+	noise := msg("om_noise", "oc_quiet", clk.t.Add(-30*time.Second), "nightly build #418 passed")
+	noise.MessagePosition = 1
+	noise.Sender = larkcli.RawSender{ID: "cli_c", SenderType: "app", SenderName: "Build bot"}
+	f.AddMessage(noise)
+
+	rep, err := s.Tick(ctx)
+	require.NoError(t, err)
+	require.Zero(t, rep.Settled)
+	pending, err := s.Store.PendingSilenceSettle(ctx, 10)
+	require.NoError(t, err)
+	require.Len(t, pending, 1, "with no lever the queue only fills")
 }

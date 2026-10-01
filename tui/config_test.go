@@ -153,7 +153,7 @@ func TestConfig_RestoresTheDefault(t *testing.T) {
 func TestConfig_ResetRefusesTheSilenceList(t *testing.T) {
 	m := configModel(t)
 	m.cfg.Silence = store.SilenceRules{{Chat: "oc_quiet"}}
-	m = press(t, m, "G", "&")
+	m = press(t, m, "G", "k", "&")
 	require.True(t, m.noticeErr)
 	require.Contains(t, m.notice, "Silence tab")
 	require.Equal(t, store.SilenceRules{{Chat: "oc_quiet"}}, m.cfg.Silence, "the rules stay")
@@ -165,7 +165,7 @@ func TestConfig_SilenceKeyOpensTheSilenceTab(t *testing.T) {
 	require.Equal(t, tabSilence, m.config.tab, ":config silence")
 
 	m = configModel(t)
-	m = press(t, m, "G")
+	m = press(t, m, "G", "k")
 	require.Equal(t, "❯ silence 0 rules", configRow(m), "the list is summed up, not spelled inline")
 	m = press(t, m, "enter")
 	require.Equal(t, tabSilence, m.config.tab, "enter on the row")
@@ -198,7 +198,7 @@ func TestConfig_TabIsTypedIntoAnOpenEditor(t *testing.T) {
 func TestConfig_FilterNarrowsOnKeyAndOnProse(t *testing.T) {
 	m := configModel(t)
 	m = press(t, m, "/", "a", "i", ".")
-	require.Len(t, m.config.hits, 5)
+	require.Len(t, m.config.hits, 6, "the ai section, and silence_sync's help names mark_read.mode")
 
 	m = configModel(t)
 	m = press(t, m, "/", "u", "n", "l", "i", "m", "i", "t", "e", "d")

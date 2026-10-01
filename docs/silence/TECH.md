@@ -41,7 +41,7 @@ UPDATE messages SET silenced = 1 WHERE message_id IN (…) AND <rule>;  -- 每�
 
 ## 数据
 
-`store/migrations/0014_silence.sql`：
+`store/migrations/0014_silence.sql` 与 `0045_silence_settle_queue.sql`：
 
 ```sql
 ALTER TABLE messages ADD COLUMN silenced INTEGER NOT NULL DEFAULT 0;
@@ -80,6 +80,30 @@ const unreadCounted = unreadBadge + ` AND m.silenced = 0`
 `MarkChatRead` 不加 `silenced = 0` 是硬约束：`tui/badgeclear.go` 的 `unreadWaiting` 逐项复刻 `unreadBadge` 决定投不投 applink，而 `MarkChatRead` 必须能收掉它看见的每一条，否则每次 reload 都重投（见 [read-sync/TECH.md](../read-sync/TECH.md) 的「门控」）。两者取同一个集合，这条不变式就成立，顺带静音消息也不会永远挂在 read-status 轮询里。`MarkThreadRead` 同理不加 `silenced = 0`：一条被静音的回复留在那儿，话题的摘要行就永远亮着。
 
 `last_unsilenced_ms` 为 0 的会话——全部消息被静音的，和一条消息都没有的——沉到底部，组内按 `last_message_ms` 排。
+
+## 服务端同步（silence_sync）
+
+`silence_sync: true`（需 `mark_read.mode: web`，配置加载时校验）把静音效果推向飞书其他端：sweep 对被静音的未读消息推一次 web 客户端的已读水位（`larkweb.Client.MarkRead`，cmd 40），桌面/网页/手机端的红点与计数随之收敛。与 `markread.Clear` 是同一根杠杆，走的同一条网关路径。
+
+wire 实测（安全会话，3 条未读推第 1 条的 position）：
+
+- cmd 40 的 `maxPosition` 是精确的部分水位——badge 3→2，桌面与手机同步；同值重推幂等，低于服务端现值的推送无害。
+- 它只动 feed 的未读计数，**不产生 per-message 已读**：`read_state.is_read_remote` 推后仍为 0。settle 的成功判据是 push 返回 OK，不是 read probe 收敛。
+
+计划是纯函数（store/silencesettle.go）：
+
+```go
+func SettlePlan(msgs []UnreadMsg) (watermark int64, push bool)
+```
+
+取该 chat 服务端未读主干消息按 position 排序：全部被静音 → 水位推到最新未读（红点清）；存在未静音的 → 停在它之下那条（红点留、计数降）；第一条未读就是未静音的 → 不动，读会话时由既有 badge-clear 整体结清。
+
+队列与防循环：
+
+- `silence_settle_queue` 在打标事务内写入（`applySilence`/`ReapplySilence`），崩溃不会丢一次翻转；plan 在排水时从 `read_state` 现算，不存水位。
+- 水位不会翻 per-message 已读，所以被 settle 覆盖的消息永远 `is_read_remote = 0`，每次 listing 都会重新入队。`chats.silence_settled_pos` 记录该 chat 已 settle 的水位，入队与排水都以它为地板：地板之下不再入队、不再推送。服务端水位单调，地板只升不降。
+- 排水在 `Syncer.tick` 第 4 步（read 探针之后，plan 依赖它刷新的 flag），每 tick ≤10 个 chat，chat 间 `larkweb.Pace`；失败计 `attempts`，>10 退役并 warn。推送经注入的 `Syncer.SettleSilenced`（`markread.Clear`），nil 即整步跳过。
+- 单向：un-silence 不回写服务端——删规则让所有设备回响，比一个迟到的红点更糟。
 
 ## 注入与生效范围
 
@@ -124,8 +148,16 @@ store 层白盒，真 SQLite：
 | `TestMarkChatRead_MarksSilencedMessagesToo` | 超集不变式 |
 | `TestSilenceMatches_CountsOneRule` | 诊断命令的数据源，含命中为 0 的规则 |
 
+settle：`TestSettlePlan_*`（四分支）、`TestUpsertMessages_QueuesAChatWhoseArrivalWasSilenced`、
+`TestUpsertMessages_DoesNotQueueAReadSilencedMessage`、`TestReapplySilence_QueuesChatsAcrossARuleChange`、
+`TestPendingSilenceSettle_AnswersTheWatermarkBelowTheFirstUnsilenced`、`TestPendingSilenceSettle_PlansNoActionForAChatReadElsewhere`、
+`TestSilenceSettleDone_DropsTheRowAndRemembersTheWatermark`（地板只升不降、覆盖内的重渲染不再入队）、
+`TestSilenceSettleFailed_RetiresAChatAfterTenAttempts`。
+
 sync：`TestTick_RebuildsSilenceWhenTheRulesChange`（改配置后一次 tick 即落到历史消息与排序键）、
-`TestTick_LeavesSilenceAloneWhenTheRulesHold`（指纹一致的 tick 不写 `data_rev`）。
+`TestTick_LeavesSilenceAloneWhenTheRulesHold`（指纹一致的 tick 不写 `data_rev`）、
+`TestTick_SettlesSilencedUnreadOnTheServer`（交错水位 + 下一 tick 不重推）、
+`TestTick_KeepsAQueuedChatWhenTheSettleFails`、`TestTick_SkipsTheSilenceSettleWhenNoLever`。
 config：`TestLoad_ParsesSilenceRules`、`TestLoad_RejectsASilenceRuleThatMatchesEverything`。
 cli：`TestSilenceCmd_ReportsPerRuleMatches`、`TestSilenceCmd_RejectsARuleThatMatchesEverything`。
 

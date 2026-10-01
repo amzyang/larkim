@@ -391,7 +391,14 @@ func New(d Deps) Model {
 	// so it is never absent: the injected one carries the sweep's options
 	// when the sweep runs here, and this one stands in when it does not.
 	if d.Syncer == nil {
-		d.Syncer = &sync.Syncer{Client: d.Client, Store: d.Store, Clock: sync.RealClock{}, Log: d.Log}
+		s := &sync.Syncer{Client: d.Client, Store: d.Store, Clock: sync.RealClock{}, Log: d.Log}
+		if d.Config.SilenceSync {
+			// Web mode only (silence_sync is validated to it), which is the
+			// lever that never calls the opener the block below has not
+			// defaulted yet.
+			s.SettleSilenced = markread.New(d.Config.MarkRead, d.Log, d.Store, nil)
+		}
+		d.Syncer = s
 	}
 	// After the logger: the opener is the one hand-over to a subprocess the
 	// TUI makes, and it logs the argv it builds.

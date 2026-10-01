@@ -61,6 +61,10 @@ silence: []
 #  - chat: oc_quiet       # chat_id, from `larkim chats list`
 #    sender: cli_c        # sender_id, from `larkim contacts list --search`
 #  - contains: nightly build   # case-insensitive substring of the message text
+# Settle the server-side read watermark past silenced messages too, so the
+# Feishu clients' own dots follow the same rules (needs mark_read.mode: web).
+# One-way: dropping a rule never re-lights a dot anywhere.
+silence_sync: false
 
 resources:
   # Skip attachments larger than this; 0 means unlimited.

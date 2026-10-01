@@ -193,3 +193,17 @@ func TestGet_RefusesAKeyThatIsNotOne(t *testing.T) {
 	_, ok = Default().Get("nope")
 	require.False(t, ok)
 }
+
+func TestLoad_ParsesSilenceSyncOnlyWithWebMode(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "c.yaml")
+	require.NoError(t, os.WriteFile(p, []byte("silence_sync: true\nmark_read:\n  mode: web\n  browser: edge\n"), 0o644))
+	cfg, err := Load(p)
+	require.NoError(t, err)
+	require.True(t, cfg.SilenceSync)
+	require.False(t, Default().SilenceSync, "off is the default: it writes the user's account state")
+
+	require.NoError(t, os.WriteFile(p, []byte("silence_sync: true\n"), 0o644))
+	_, err = Load(p)
+	require.ErrorContains(t, err, "silence_sync needs mark_read.mode: web",
+		"applink cannot settle a position, so the pairing is refused where it is typed")
+}
