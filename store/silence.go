@@ -1,6 +1,7 @@
 package store
 
 import (
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"database/sql"
@@ -36,6 +37,16 @@ func (rs SilenceRules) Validate() error {
 		}
 	}
 	return nil
+}
+
+// Sort puts the rules in the one order every copy and the fingerprint share:
+// chat, then sender, then contains for a total order. Fingerprint reads the
+// slice as given, so a set that changes hands must be sorted or the copies
+// disagree on whether a rescan is due.
+func (rs SilenceRules) Sort() {
+	slices.SortFunc(rs, func(a, b SilenceRule) int {
+		return cmp.Or(cmp.Compare(a.Chat, b.Chat), cmp.Compare(a.Sender, b.Sender), cmp.Compare(a.Contains, b.Contains))
+	})
 }
 
 // Fingerprint identifies the rule set, so a rescan runs exactly when the

@@ -143,7 +143,9 @@ func TestSetFileValue_WritesSilenceAsABlockList(t *testing.T) {
 		"the form a reader writes by hand, with no empty field")
 	cfg, err := Load(p)
 	require.NoError(t, err)
-	require.Equal(t, rules, cfg.Silence)
+	// Load normalises the rules into the canonical order, whatever order the
+	// writer left them in.
+	require.Equal(t, store.SilenceRules{{Contains: "nightly build"}, {Chat: "oc_quiet", Sender: "cli_c"}}, cfg.Silence)
 }
 
 func TestSetFileValue_KeepsCommentsAndSiblings(t *testing.T) {

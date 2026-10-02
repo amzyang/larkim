@@ -32,6 +32,22 @@ func TestSilenceRules_FingerprintFollowsTheRules(t *testing.T) {
 	require.NotEqual(t, a.Fingerprint(), SilenceRules{}.Fingerprint())
 }
 
+func TestSilenceRules_SortOrdersByChatThenSenderThenContains(t *testing.T) {
+	rs := SilenceRules{
+		{Chat: "oc_quiet", Sender: "ou_b"},
+		{Chat: "oc_gone", Contains: "nightly"},
+		{Sender: "cli_c"},
+		{Chat: "oc_quiet", Sender: "cli_c"},
+	}
+	rs.Sort()
+	require.Equal(t, SilenceRules{
+		{Sender: "cli_c"},
+		{Chat: "oc_gone", Contains: "nightly"},
+		{Chat: "oc_quiet", Sender: "cli_c"},
+		{Chat: "oc_quiet", Sender: "ou_b"},
+	}, rs)
+}
+
 func TestUpsertMessages_SilencesAMatchingSender(t *testing.T) {
 	s := openTest(t)
 	s.SetSilence(SilenceRules{{Chat: "oc_quiet", Sender: "cli_c"}})

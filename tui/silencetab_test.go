@@ -109,15 +109,16 @@ func TestSilenceTab_EditReplacesOnlyItsRule(t *testing.T) {
 	m := silenceModel(t)
 	rules := store.SilenceRules{{Chat: "oc_quiet"}, {Sender: "cli_c", Contains: "nightly"}}
 	require.NoError(t, m.writeSilence(rules))
-	m = press(t, m, "j", "enter")
+	// The write sorted the set, so the rule with text sits first.
+	m = press(t, m, "enter")
 	require.Equal(t, fieldContains, m.config.silence.form.field, "a rule with text opens on it")
 	m = press(t, m, "backspace", "backspace", "backspace", "backspace", "backspace", "backspace", "backspace")
 	m = typeText(t, m, "daily")
 	m = press(t, m, "enter")
 
-	want := store.SilenceRules{{Chat: "oc_quiet"}, {Sender: "cli_c", Contains: "daily"}}
+	want := store.SilenceRules{{Sender: "cli_c", Contains: "daily"}, {Chat: "oc_quiet"}}
 	require.Equal(t, want, configFile(t, m).Silence)
-	require.Equal(t, 1, m.config.silence.idx, "the cursor stays on the rule")
+	require.Equal(t, 0, m.config.silence.idx, "the cursor stays on the rule")
 }
 
 func TestSilenceTab_EscAbandonsTheForm(t *testing.T) {
@@ -146,7 +147,7 @@ func TestSilenceTab_DeleteAsksFirst(t *testing.T) {
 	require.Len(t, configFile(t, m).Silence, 2, "anything but y keeps it")
 
 	m = press(t, m, "d", "y")
-	require.Equal(t, store.SilenceRules{{Sender: "cli_c"}}, configFile(t, m).Silence)
+	require.Equal(t, store.SilenceRules{{Chat: "oc_quiet"}}, configFile(t, m).Silence)
 	m = press(t, m, "d", "y")
 	require.Empty(t, configFile(t, m).Silence)
 	require.Contains(t, ansi.Strip(m.silenceDetail()), "no silence rules")
@@ -218,11 +219,12 @@ func TestSilenceTab_EscOutOfThePickerKeepsTheField(t *testing.T) {
 func TestSilenceTab_NamesChatsAndSendersAndFallsBackToTheID(t *testing.T) {
 	m := silenceModel(t)
 	require.NoError(t, m.writeSilence(store.SilenceRules{{Chat: "oc_quiet", Sender: "cli_c"}, {Chat: "oc_gone", Contains: "nightly"}}))
-	require.Equal(t, "❯ 平台组 构建机器人 — …", silenceRow(m))
-	m = press(t, m, "j")
+	// The set is written unsorted above and listed by chat: oc_gone first.
 	require.Equal(t, "❯ oc_gone — nightly …", silenceRow(m))
+	m = press(t, m, "j")
+	require.Equal(t, "❯ 平台组 构建机器人 — …", silenceRow(m))
 	cw, _, _ := m.silenceColumns()
-	require.Contains(t, m.silenceLines()[1], stErr.Render(fit("oc_gone", cw)), "an id nothing names stands out")
+	require.Contains(t, m.silenceLines()[0], stErr.Render(fit("oc_gone", cw)), "an id nothing names stands out")
 }
 
 func TestSilenceTab_ShowsMatchCountsAndIgnoresRulesSinceRemoved(t *testing.T) {

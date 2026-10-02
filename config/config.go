@@ -290,6 +290,9 @@ func (c *Config) Normalize() {
 	// not a rate limit — it only keeps 0 from turning the loop into a busy
 	// spin over lark-cli.
 	c.PollIntervalMS = max(c.PollIntervalMS, minPollIntervalMS)
+	// Every process loads the same file; the rules must come out in the same
+	// order everywhere or the silence fingerprints disagree.
+	c.Silence.Sort()
 }
 
 // Validate refuses a configuration no run could honour, including the rules

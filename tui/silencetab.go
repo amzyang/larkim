@@ -400,7 +400,11 @@ func (m Model) saveSilenceForm() (tea.Model, tea.Cmd) {
 		f.err = err.Error()
 		return m, nil
 	}
+	written := f.rule
 	m.config.silence.form = silenceForm{}
+	// The write sorted the set, so the rule the form held sits wherever it
+	// belongs now, not at the slot the form was opened on.
+	at = slices.Index(m.cfg.Silence, written)
 	moveCursor(&m.config.silence.idx, &m.config.silence.top, at-m.config.silence.idx, len(next), m.configRows())
 	return m, m.silenceRecount()
 }
@@ -422,6 +426,7 @@ func (m *Model) writeSilence(next store.SilenceRules) error {
 	if err := next.Validate(); err != nil {
 		return err
 	}
+	next.Sort()
 	if err := config.SetFileValue(m.deps.ConfigPath, "silence", next); err != nil {
 		return err
 	}

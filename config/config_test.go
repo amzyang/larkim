@@ -36,7 +36,9 @@ func TestLoad_ParsesSilenceRules(t *testing.T) {
 	require.NoError(t, os.WriteFile(p, []byte("silence:\n  - chat: oc_quiet\n    sender: cli_c\n  - contains: nightly build\n"), 0o644))
 	cfg, err := Load(p)
 	require.NoError(t, err)
-	require.Equal(t, store.SilenceRules{{Chat: "oc_quiet", Sender: "cli_c"}, {Contains: "nightly build"}}, cfg.Silence)
+	// The file lists the chat rule first; the canonical order puts the rule
+	// with no chat before it.
+	require.Equal(t, store.SilenceRules{{Contains: "nightly build"}, {Chat: "oc_quiet", Sender: "cli_c"}}, cfg.Silence)
 }
 
 func TestLoad_RejectsASilenceRuleThatMatchesEverything(t *testing.T) {
