@@ -18,6 +18,7 @@ import (
 	"github.com/amzyang/larkim/config"
 	"github.com/amzyang/larkim/larkcli"
 	"github.com/amzyang/larkim/store"
+	"github.com/amzyang/larkim/store/storetest"
 	"github.com/amzyang/larkim/sync"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/stretchr/testify/require"
@@ -76,7 +77,7 @@ func (f *fakeAI) StreamChat(ctx context.Context, transcript, prompt string) <-ch
 // is.
 func aiFixture(t *testing.T, f *fakeAI) Model {
 	t.Helper()
-	st, err := store.Open(filepath.Join(t.TempDir(), "t.db"))
+	st, err := storetest.Open(t, filepath.Join(t.TempDir(), "t.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { st.Close() })
 	ctx := t.Context()
@@ -657,6 +658,39 @@ func TestAICardZones_HitAtTheEdgesMissBesideThem(t *testing.T) {
 	}
 }
 
+// A click answers the line the pane draws a row on, head lines included: the
+// three lines the column spends above its rows are not rows.
+func TestOnClick_ACardActionAnswersAtItsDrawnLine(t *testing.T) {
+	f := newFakeAI()
+	m := aiFixture(t, f)
+	m, t1 := ask(t, m, "帮我回复")
+	m = answerDone(t, m, t1, "<reply>\n今晚合。\n</reply>")
+	m.aiP.rebuild(m)
+
+	line, x := -1, -1
+	for i, r := range m.aiP.rows {
+		if strings.Contains(ansi.Strip(r.text), "Insert") {
+			line = i
+			for _, z := range r.zones {
+				if z.act.kind == actInsert {
+					x = z.x0
+					break
+				}
+			}
+			break
+		}
+	}
+	require.GreaterOrEqual(t, line, 0)
+	require.GreaterOrEqual(t, x, 0)
+	m.mode = modeNormal
+	m.areap().Blur()
+	out, _ := m.onClick(tea.Mouse{Button: tea.MouseLeft,
+		X: m.width - m.rightWidth() + 1 + x,
+		Y: headerHeight + 1 + aiHeadLines + line - m.aiP.top})
+	m = out.(Model)
+	require.Equal(t, "今晚合。", m.input.Value(), "the click lands on the foot it sees")
+}
+
 // Insert fills the chat's box with the card's text, quoting the anchor — in
 // its thread when the anchor is a reply of one — and never sends anything.
 func TestInsertCard_FillsTheChatBoxQuotingTheAnchor(t *testing.T) {
@@ -721,7 +755,7 @@ func TestInsertCard_TheFrameUnderThePanelTakesTheThreadAnswer(t *testing.T) {
 	m.deps.AI = f
 	// The fixture builds its model by hand; the ask needs a store to save
 	// its turn into, and an empty one answers.
-	st, err := store.Open(filepath.Join(t.TempDir(), "t.db"))
+	st, err := storetest.Open(t, filepath.Join(t.TempDir(), "t.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { st.Close() })
 	m.deps.Store = st

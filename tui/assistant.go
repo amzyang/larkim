@@ -49,6 +49,9 @@ type aiPanel struct {
 	stashed map[string][]*aiSession
 	loaded  map[string]bool
 	cur     int
+	// headZones are the session header's own click targets, one list per head
+	// line, laid out by the header the last time it was drawn.
+	headZones [aiHeadLines][]clickZone
 	// rows is the turn list as the pane draws it, rebuilt on every change,
 	// and top the first row of it on screen. rowAct names, for every row, the
 	// answer and card it belongs to, which is what the keys and the click
@@ -1478,6 +1481,25 @@ func (m Model) aiChips(w int) string {
 	}
 	chips = append(chips, fmt.Sprintf("▤ last %d", max(1, m.cfg.AI.Context)))
 	return fit(stDim.Render(truncate(strings.Join(chips, " · "), w)), w)
+}
+
+// aiHeadLines is what the column spends above its rows: the session header,
+// the context strip and the rule under it. A click below them is a click on a
+// row; a click on them is a click on the header's own targets.
+const aiHeadLines = 3
+
+// headZone is the click target at column x of one of the head lines, if the
+// header carries one there. x is in the pane's own content coordinates.
+func (p *aiPanel) headZone(line, x int) (clickZone, bool) {
+	if line < 0 || line >= aiHeadLines {
+		return clickZone{}, false
+	}
+	for _, z := range p.headZones[line] {
+		if z.hit(x) {
+			return z, true
+		}
+	}
+	return clickZone{}, false
 }
 
 // renderAI draws the column: header, the context strip, the turn list.

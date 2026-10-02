@@ -3070,8 +3070,18 @@ func (m Model) onClick(ms tea.Mouse) (tea.Model, tea.Cmd) {
 		// The assistant column draws over the frame: its rows are its own,
 		// and nothing under them may answer a click until it is uncovered.
 		if m.aiOpen() {
-			if z, ok := zoneAt(m.aiP.rows, m.aiP.top+row, ms.X-(m.width-m.rightWidth())-1); ok {
-				return m.pressZone(paneThread, m.aiP.rows, m.aiP.top+row, z)
+			// The head lines the column draws above its rows are not rows:
+			// they answer for themselves, and the rows answer from the first
+			// line one of them is drawn on.
+			if row < aiHeadLines {
+				if z, ok := m.aiP.headZone(row, ms.X-(m.width-m.rightWidth())-1); ok {
+					return m.pressZone(paneThread, nil, 0, z)
+				}
+				return m, nil
+			}
+			line := m.aiP.top + row - aiHeadLines
+			if z, ok := zoneAt(m.aiP.rows, line, ms.X-(m.width-m.rightWidth())-1); ok {
+				return m.pressZone(paneThread, m.aiP.rows, line, z)
 			}
 			return m, nil
 		}
