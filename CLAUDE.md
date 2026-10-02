@@ -5,6 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Design
 
 - using modern kitty terminal capability
+- TUI: assume kitty (or a multiplexer forwarding kitty graphics) with color; fixed client hex tints and Lipgloss styles are intentional. Do not honor `NO_COLOR` in the TUI or add monochrome/ASCII-only fallbacks unless explicitly requested — `./larkim tui` is not a supported target in no-color environments. (`larkcli` still sets `NO_COLOR=1` on lark-cli child processes for parseable output; that does not apply to Bubble Tea rendering.)
 - CLI: 设计参数时必须考虑 shell 自动补全（命令、子命令、flag、参数值）
 - TUI: 交互设计必须考虑补全（输入时的候选提示与选择）
 
