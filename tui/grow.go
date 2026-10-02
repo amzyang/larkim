@@ -34,14 +34,13 @@ func (m Model) historyFloorMs() int64 {
 
 // floorRow heads the page with why it stops here.
 func (m Model) floorRow(w int) msgRow {
-	label := floorLabel
 	switch {
 	case m.historyFloorMs() == 0:
-		label = startLabel
+		return msgRow{text: daySeparator(startLabel, w), plain: true}
 	case m.msgPullInFlight:
-		label = fetchingLabel
+		return msgRow{text: spinRule(m.spin.View(), fetchingLabel, w), plain: true}
 	}
-	return msgRow{text: daySeparator(label, w), plain: true}
+	return msgRow{text: daySeparator(floorLabel, w), plain: true}
 }
 
 // growMessages reaches for what lies above a page the reader has scrolled to

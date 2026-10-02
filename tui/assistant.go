@@ -406,7 +406,27 @@ func (m *Model) switchAI(d int) {
 // that keeps another question out of it.
 func (p *aiPanel) busy() bool {
 	s := p.session()
-	return s != nil && len(s.turns) > 0 && s.turns[len(s.turns)-1].streaming()
+	return s != nil && s.answering()
+}
+
+// answering says the session's last turn is still streaming.
+func (s *aiSession) answering() bool {
+	return len(s.turns) > 0 && s.turns[len(s.turns)-1].streaming()
+}
+
+// anyStreaming says some session's header tab carries the spinner.
+func (p *aiPanel) anyStreaming() bool {
+	return p != nil && slices.ContainsFunc(p.sess, (*aiSession).answering)
+}
+
+// placeholderShowing says the session on screen has a turn drawn as the
+// spinner alone: asked, nothing answered yet.
+func (p *aiPanel) placeholderShowing() bool {
+	if p == nil || !p.busy() {
+		return false
+	}
+	t := p.session().turns[len(p.session().turns)-1]
+	return strings.TrimSpace(t.answer) == ""
 }
 
 // stopAll cancels every answer in flight, which is what leaving the program
@@ -844,7 +864,7 @@ func (p *aiPanel) rebuild(m Model) {
 		// from the moment its card posts, asking or not.
 		if t.stream != nil {
 			if strings.TrimSpace(t.answer) == "" && t.state == aiAsking {
-				add(aiRowOf(stDim.Render("…"), w), none)
+				add(aiRowOf(m.spin.View(), w), none)
 			} else if t.state == aiFailed {
 				add(aiRowOf(stErr.Render(truncate(t.err, w)), w), none)
 			} else {
@@ -858,7 +878,7 @@ func (p *aiPanel) rebuild(m Model) {
 		switch t.state {
 		case aiAsking:
 			if strings.TrimSpace(t.answer) == "" {
-				add(aiRowOf(stDim.Render("…"), w), none)
+				add(aiRowOf(m.spin.View(), w), none)
 				continue
 			}
 			// Half an answer is commentary while it grows: the cards it
@@ -1422,14 +1442,14 @@ func (p *aiPanel) header(m Model, w int) string {
 	for i, s := range p.sess {
 		name := " " + truncate(cmp.Or(s.title, "new"), 12)
 		busy := ""
-		if n := len(s.turns); n > 0 && s.turns[n-1].streaming() {
-			busy = " …"
+		if s.answering() {
+			busy = " " + m.spin.View()
 		}
 		if i == p.cur {
-			b.WriteString(stBold.Render(name + busy))
+			b.WriteString(stBold.Render(name) + busy)
 			continue
 		}
-		b.WriteString(stDim.Render(name))
+		b.WriteString(stDim.Render(name) + busy)
 	}
 	if len(p.sess) > 1 {
 		b.WriteString(stDim.Render(fmt.Sprintf("  %d/%d", p.cur+1, len(p.sess))))

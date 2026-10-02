@@ -26,6 +26,7 @@ import (
 	"github.com/amzyang/larkim/markread"
 	"github.com/amzyang/larkim/store"
 	"github.com/amzyang/larkim/sync"
+	"github.com/amzyang/larkim/tui/component/spinner"
 	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -307,6 +308,10 @@ type Model struct {
 	// until the panel is first opened. See assistant.go.
 	aiP *aiPanel
 
+	// spin is the one loading/streaming indicator every busy row draws; see
+	// spin.go for what keeps it running.
+	spin spinner.Model
+
 	// roster is who is in the open chat: what @ completes against, and what
 	// turns the names it inserted into tags on the way out.
 	roster []store.Contact
@@ -421,7 +426,7 @@ func New(d Deps) Model {
 		d.ClearBadge = d.NewClearBadge(d.Config.MarkRead)
 	}
 	prunePasted(d.DataDir, time.Now())
-	m := Model{deps: d, input: newComposer(true), rightInput: newComposer(true), cmdline: ti,
+	m := Model{deps: d, input: newComposer(true), rightInput: newComposer(true), cmdline: ti, spin: newSpin(),
 		focus: paneChats, focused: true, previewOpen: true,
 		cfg:        d.Config,
 		ai:         d.AI,
@@ -499,6 +504,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var read tea.Cmd
 		nm, read = nm.takeRead(nm.chatID, nm.msgsBase)
 		cmd = tea.Batch(cmd, read)
+	}
+	if spin := nm.paceSpin(msg); spin != nil {
+		cmd = tea.Batch(cmd, spin)
 	}
 	if _, raw := msg.(tea.RawMsg); raw {
 		// The sequence the last round handed the terminal arrives back here.
