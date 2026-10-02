@@ -7,6 +7,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/amzyang/larkim/larkcli"
 	"github.com/amzyang/larkim/store"
+	"github.com/amzyang/larkim/store/storetest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -16,7 +17,7 @@ import (
 // window, which is what lets the cursor be walked off the bottom of it.
 func fwdModel(t *testing.T) (Model, *larkcli.Fake) {
 	t.Helper()
-	st, err := store.Open(filepath.Join(t.TempDir(), "t.db"))
+	st, err := storetest.Open(t, filepath.Join(t.TempDir(), "t.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { st.Close() })
 	ctx := t.Context()

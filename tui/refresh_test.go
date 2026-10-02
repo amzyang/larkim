@@ -7,13 +7,14 @@ import (
 
 	"github.com/amzyang/larkim/larkcli"
 	"github.com/amzyang/larkim/store"
+	"github.com/amzyang/larkim/store/storetest"
 	"github.com/amzyang/larkim/sync"
 	"github.com/stretchr/testify/require"
 )
 
 func newRefreshModel(t *testing.T) Model {
 	t.Helper()
-	st, err := store.Open(filepath.Join(t.TempDir(), "t.db"))
+	st, err := storetest.Open(t, filepath.Join(t.TempDir(), "t.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { st.Close() })
 	m := New(Deps{Store: st, Syncer: &sync.Syncer{Store: st}})
@@ -39,7 +40,7 @@ func TestOpenChat_ArmsTheChatRefresh(t *testing.T) {
 // reader did not ask for it, so a red banner is the wrong place for a gateway
 // that refused, and there is nothing to back off from it.
 func TestRideAlongRefresh_LogsAFailureInsteadOfRaisingIt(t *testing.T) {
-	st, err := store.Open(filepath.Join(t.TempDir(), "t.db"))
+	st, err := storetest.Open(t, filepath.Join(t.TempDir(), "t.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { st.Close() })
 	f := larkcli.NewFake()

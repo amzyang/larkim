@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/amzyang/larkim/store"
+	"github.com/amzyang/larkim/store/storetest"
 )
 
 const selfID = "ou_self"
@@ -20,7 +21,7 @@ const selfID = "ou_self"
 func unreadPageDeps(t *testing.T) Deps {
 	t.Helper()
 	dir := t.TempDir()
-	st, err := store.Open(filepath.Join(dir, "t.db"))
+	st, err := storetest.Open(t, filepath.Join(dir, "t.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { st.Close() })
 	ctx := t.Context()

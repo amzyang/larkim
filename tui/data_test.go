@@ -8,6 +8,7 @@ import (
 	"github.com/amzyang/larkim/applink"
 	"github.com/amzyang/larkim/larkcli"
 	"github.com/amzyang/larkim/store"
+	"github.com/amzyang/larkim/store/storetest"
 	"github.com/stretchr/testify/require"
 )
 
@@ -24,7 +25,7 @@ func TestFeishuChatLink_CarriesAMessagePosition(t *testing.T) {
 }
 
 func TestLoadMeta_NamesTheReactorsTheBlockOnlyHoldsIDsFor(t *testing.T) {
-	st, err := store.Open(filepath.Join(t.TempDir(), "t.db"))
+	st, err := storetest.Open(t, filepath.Join(t.TempDir(), "t.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { st.Close() })
 	ctx := t.Context()
@@ -39,7 +40,7 @@ func TestLoadMeta_NamesTheReactorsTheBlockOnlyHoldsIDsFor(t *testing.T) {
 }
 
 func TestLoadMeta_NamesTheAppsThatReacted(t *testing.T) {
-	st, err := store.Open(filepath.Join(t.TempDir(), "t.db"))
+	st, err := storetest.Open(t, filepath.Join(t.TempDir(), "t.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { st.Close() })
 	ctx := t.Context()
@@ -62,7 +63,7 @@ func TestLoadMeta_NamesTheAppsThatReacted(t *testing.T) {
 }
 
 func TestLoadMeta_NamesTheThreadReplierThePageNeverHeardFrom(t *testing.T) {
-	st, err := store.Open(filepath.Join(t.TempDir(), "t.db"))
+	st, err := storetest.Open(t, filepath.Join(t.TempDir(), "t.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { st.Close() })
 	ctx := t.Context()
@@ -110,7 +111,7 @@ func TestBeat_TakesTheBeatLane(t *testing.T) {
 // A recall is an event in the chat, not an absence: the client draws a notice
 // where the message stood, so the page has to be handed the row.
 func TestMessageQuery_KeepsARecallOnThePage(t *testing.T) {
-	st, err := store.Open(filepath.Join(t.TempDir(), "t.db"))
+	st, err := storetest.Open(t, filepath.Join(t.TempDir(), "t.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { st.Close() })
 	ctx := t.Context()
@@ -131,7 +132,7 @@ func TestMessageQuery_KeepsARecallOnThePage(t *testing.T) {
 }
 
 func TestThreadQuery_KeepsARecalledReply(t *testing.T) {
-	st, err := store.Open(filepath.Join(t.TempDir(), "t.db"))
+	st, err := storetest.Open(t, filepath.Join(t.TempDir(), "t.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { st.Close() })
 	ctx := t.Context()
@@ -150,7 +151,7 @@ func TestThreadQuery_KeepsARecalledReply(t *testing.T) {
 }
 
 func TestLoadMeta_CarriesTheWritingReadOutOfAPicture(t *testing.T) {
-	st, err := store.Open(filepath.Join(t.TempDir(), "t.db"))
+	st, err := storetest.Open(t, filepath.Join(t.TempDir(), "t.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { st.Close() })
 	ctx := t.Context()

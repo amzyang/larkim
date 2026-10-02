@@ -8,6 +8,7 @@ import (
 
 	"github.com/amzyang/larkim/config"
 	"github.com/amzyang/larkim/store"
+	"github.com/amzyang/larkim/store/storetest"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/stretchr/testify/require"
 )
@@ -17,7 +18,7 @@ import (
 func unreadApp(t *testing.T, jsonOut bool) (*App, *bytes.Buffer) {
 	t.Helper()
 	dir := t.TempDir()
-	st, err := store.Open(filepath.Join(dir, "larkim.db"))
+	st, err := storetest.Open(t, filepath.Join(dir, "larkim.db"))
 	require.NoError(t, err)
 	ctx := t.Context()
 	require.NoError(t, st.UpsertChats(ctx, []store.Chat{
@@ -86,7 +87,7 @@ func TestUnreadCmd_JSONAnswersWithTheMessages(t *testing.T) {
 
 func TestUnreadCmd_SaysSoWhenNothingIsWaiting(t *testing.T) {
 	dir := t.TempDir()
-	st, err := store.Open(filepath.Join(dir, "larkim.db"))
+	st, err := storetest.Open(t, filepath.Join(dir, "larkim.db"))
 	require.NoError(t, err)
 	require.NoError(t, st.Close())
 	var out bytes.Buffer

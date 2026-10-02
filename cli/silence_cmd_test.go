@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/amzyang/larkim/store"
+	"github.com/amzyang/larkim/store/storetest"
 	"github.com/stretchr/testify/require"
 )
 
@@ -26,7 +27,7 @@ func runCfg(t *testing.T, dir, cfgBody string, args ...string) (string, error) {
 
 func TestSilenceCmd_ReportsPerRuleMatches(t *testing.T) {
 	dir := t.TempDir()
-	st, err := store.Open(filepath.Join(dir, "larkim.db"))
+	st, err := storetest.Open(t, filepath.Join(dir, "larkim.db"))
 	require.NoError(t, err)
 	_, err = st.UpsertMessages(t.Context(), []store.Message{
 		{MessageID: "om_human", ChatID: "oc_quiet", MsgType: "text", SenderID: "ou_a", CreateMs: 100, MessagePosition: 1},

@@ -10,6 +10,7 @@ import (
 	"github.com/amzyang/larkim/config"
 	"github.com/amzyang/larkim/larkcli"
 	"github.com/amzyang/larkim/store"
+	"github.com/amzyang/larkim/store/storetest"
 	"github.com/stretchr/testify/require"
 )
 
@@ -17,7 +18,7 @@ import (
 // reports unseen, with the opener recorded instead of reaching macOS.
 func sweepModel(t *testing.T, n int) (Model, *store.Store, *[]openCall, *error) {
 	t.Helper()
-	st, err := store.Open(filepath.Join(t.TempDir(), "t.db"))
+	st, err := storetest.Open(t, filepath.Join(t.TempDir(), "t.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { st.Close() })
 	ctx := t.Context()

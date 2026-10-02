@@ -9,7 +9,7 @@ import (
 
 func aiStore(t *testing.T) *Store {
 	t.Helper()
-	st, err := Open(filepath.Join(t.TempDir(), "t.db"))
+	st, err := openAt(t, filepath.Join(t.TempDir(), "t.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { st.Close() })
 	return st

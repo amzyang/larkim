@@ -9,13 +9,14 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/amzyang/larkim/store"
+	"github.com/amzyang/larkim/store/storetest"
 )
 
 // feedStore is a store holding three chats with backlogs of different ages,
 // so the panel has something to order and something to freeze.
 func feedStore(t *testing.T) *store.Store {
 	t.Helper()
-	st, err := store.Open(filepath.Join(t.TempDir(), "t.db"))
+	st, err := storetest.Open(t, filepath.Join(t.TempDir(), "t.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { st.Close() })
 	return st

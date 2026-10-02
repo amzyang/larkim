@@ -59,7 +59,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - 新功能必须附带测试
 - 测试 in-package（白盒），用 testify `require`/`assert`
 - 飞书边界用 `larkcli.Fake`（非 _test 文件，可跨包导入）；时间用 `sync.Clock` 假时钟
-- 数据库不 fake：`store.Open(filepath.Join(t.TempDir(), "t.db"))` 打开真 SQLite，migration 自动执行
+- 数据库不 fake：`storetest.Open(t, filepath.Join(t.TempDir(), "t.db"))` 打开真 SQLite，新文件从已 migrate 的模板复制（-race 下每次跑全部 migration 要近 1 秒）；`store` 包自身的测试仍用 `store.Open`
 - 测试命名 `TestSubject_BehaviourDescription`
 
 ## Commits

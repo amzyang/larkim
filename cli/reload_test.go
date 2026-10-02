@@ -8,6 +8,7 @@ import (
 
 	"github.com/amzyang/larkim/config"
 	"github.com/amzyang/larkim/store"
+	"github.com/amzyang/larkim/store/storetest"
 	"github.com/stretchr/testify/require"
 )
 
@@ -21,7 +22,7 @@ func reloadApp(t *testing.T, body string, sets ...string) (*App, *store.Store) {
 	require.NoError(t, err)
 	cfg.DataDir = dir
 	a := &App{cfg: cfg, configPath: path, sets: sets}
-	st, err := store.Open(filepath.Join(dir, "t.db"))
+	st, err := storetest.Open(t, filepath.Join(dir, "t.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { st.Close() })
 	return a, st

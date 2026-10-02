@@ -10,6 +10,7 @@ import (
 
 	"github.com/amzyang/larkim/config"
 	"github.com/amzyang/larkim/store"
+	"github.com/amzyang/larkim/store/storetest"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
 )
@@ -19,7 +20,7 @@ import (
 func completionFixture(t *testing.T) *App {
 	t.Helper()
 	dir := t.TempDir()
-	st, err := store.Open(filepath.Join(dir, "larkim.db"))
+	st, err := storetest.Open(t, filepath.Join(dir, "larkim.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { st.Close() })
 	ctx := t.Context()

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/amzyang/larkim/store"
+	"github.com/amzyang/larkim/store/storetest"
 	"github.com/stretchr/testify/require"
 )
 
@@ -220,7 +221,7 @@ func TestJumpTo_AFoldedReplyIsReachedThroughItsThread(t *testing.T) {
 }
 
 func TestMessagesLoaded_AThreadReplyLandsInsideItsThreadFrame(t *testing.T) {
-	st, err := store.Open(filepath.Join(t.TempDir(), "t.db"))
+	st, err := storetest.Open(t, filepath.Join(t.TempDir(), "t.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { st.Close() })
 	m := sized(140, 36)
@@ -244,7 +245,7 @@ func TestMessagesLoaded_AThreadReplyLandsInsideItsThreadFrame(t *testing.T) {
 // reader is walking the list, and a row that pulled them into the column would
 // cost them the next j.
 func TestMessagesLoaded_AThreadRowOpensTheColumnWithoutTakingTheFocus(t *testing.T) {
-	st, err := store.Open(filepath.Join(t.TempDir(), "t.db"))
+	st, err := storetest.Open(t, filepath.Join(t.TempDir(), "t.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { st.Close() })
 	m := sized(140, 36)

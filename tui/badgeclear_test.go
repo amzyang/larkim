@@ -8,6 +8,7 @@ import (
 	"github.com/amzyang/larkim/config"
 	"github.com/amzyang/larkim/larkcli"
 	"github.com/amzyang/larkim/store"
+	"github.com/amzyang/larkim/store/storetest"
 	"github.com/stretchr/testify/require"
 )
 
@@ -60,7 +61,7 @@ func drain(t *testing.T, m Model, cmd tea.Cmd) Model {
 // would fire are recorded instead of reaching macOS.
 func badgeModel(t *testing.T) (Model, *store.Store, *[]openCall) {
 	t.Helper()
-	st, err := store.Open(filepath.Join(t.TempDir(), "t.db"))
+	st, err := storetest.Open(t, filepath.Join(t.TempDir(), "t.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { st.Close() })
 	ctx := t.Context()

@@ -195,7 +195,7 @@ func TestFrameDrafts_KeysByFrame(t *testing.T) {
 // have to come out as the chat's own box rather than as nobody's.
 func TestMigration0037_KeepsTheChatDraftsItFound(t *testing.T) {
 	dir := t.TempDir()
-	s, err := Open(filepath.Join(dir, "t.db"))
+	s, err := openAt(t, filepath.Join(dir, "t.db"))
 	require.NoError(t, err)
 	ctx := t.Context()
 

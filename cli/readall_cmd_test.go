@@ -9,6 +9,7 @@ import (
 
 	"github.com/amzyang/larkim/config"
 	"github.com/amzyang/larkim/store"
+	"github.com/amzyang/larkim/store/storetest"
 	"github.com/stretchr/testify/require"
 )
 
@@ -17,7 +18,7 @@ import (
 func readAllApp(t *testing.T, n int, openErr error) (*App, *[][]string, *error) {
 	t.Helper()
 	dir := t.TempDir()
-	st, err := store.Open(filepath.Join(dir, "larkim.db"))
+	st, err := storetest.Open(t, filepath.Join(dir, "larkim.db"))
 	require.NoError(t, err)
 	ctx := t.Context()
 	var msgs []store.Message
@@ -82,7 +83,7 @@ func TestReadAllCmd_SettlesTheLocalHalfEvenWhenOpenRefuses(t *testing.T) {
 	require.Len(t, *walked, 2, "the chat behind a refusal has a dot of its own")
 	require.Contains(t, out, `"failed": 2`)
 
-	st, err := store.Open(a.cfg.DBPath())
+	st, err := storetest.Open(t, a.cfg.DBPath())
 	require.NoError(t, err)
 	defer st.Close()
 	chats, err := st.ListChats(t.Context(), store.ChatQuery{})
@@ -119,7 +120,7 @@ func TestReadAllCmd_DryRunCountsAndWritesNothing(t *testing.T) {
 	require.Contains(t, out, `"chats": 2`)
 	require.Contains(t, out, `"messages": 0`)
 
-	st, err := store.Open(a.cfg.DBPath())
+	st, err := storetest.Open(t, a.cfg.DBPath())
 	require.NoError(t, err)
 	defer st.Close()
 	left, err := st.ChatsWithUnread(t.Context())

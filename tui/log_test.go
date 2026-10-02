@@ -11,6 +11,7 @@ import (
 	"github.com/amzyang/larkim/config"
 	"github.com/amzyang/larkim/markread"
 	"github.com/amzyang/larkim/store"
+	"github.com/amzyang/larkim/store/storetest"
 	"github.com/stretchr/testify/require"
 )
 
@@ -21,7 +22,7 @@ func TestNew_DefaultsTheLogger(t *testing.T) {
 }
 
 func TestMarkChatRead_ReportsAFailureTheBadgeCannotShow(t *testing.T) {
-	st, err := store.Open(filepath.Join(t.TempDir(), "t.db"))
+	st, err := storetest.Open(t, filepath.Join(t.TempDir(), "t.db"))
 	require.NoError(t, err)
 	require.NoError(t, st.Close())
 	var buf bytes.Buffer

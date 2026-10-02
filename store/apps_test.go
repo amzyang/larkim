@@ -71,7 +71,7 @@ func TestAppNames_ListsAnAppTheTenantWillNotShowUnnamed(t *testing.T) {
 func TestMigrate_EnrollsTheAppsAlreadyOnStoredReactions(t *testing.T) {
 	dir := t.TempDir()
 	ctx := t.Context()
-	s, err := Open(filepath.Join(dir, "t.db"))
+	s, err := openAt(t, filepath.Join(dir, "t.db"))
 	require.NoError(t, err)
 	_, err = s.UpsertMessages(ctx, []Message{msgAt("om_1", "oc_a", 100, 1, "hi"), msgAt("om_2", "oc_a", 200, 2, "yo")}, 1)
 	require.NoError(t, err)

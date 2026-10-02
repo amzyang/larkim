@@ -8,6 +8,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/amzyang/larkim/store"
+	"github.com/amzyang/larkim/store/storetest"
 	"github.com/stretchr/testify/require"
 )
 
@@ -30,7 +31,7 @@ func collect(cmd tea.Cmd) []string {
 }
 
 func TestUpdate_RevMsgReloadsEveryPane(t *testing.T) {
-	st, err := store.Open(filepath.Join(t.TempDir(), "t.db"))
+	st, err := storetest.Open(t, filepath.Join(t.TempDir(), "t.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { st.Close() })
 	_, err = st.UpsertMessages(t.Context(), []store.Message{{MessageID: "om_1", ChatID: "oc_1",

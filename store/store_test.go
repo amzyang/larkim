@@ -10,7 +10,7 @@ import (
 
 func openTest(t *testing.T) *Store {
 	t.Helper()
-	s, err := Open(filepath.Join(t.TempDir(), "t.db"))
+	s, err := openAt(t, filepath.Join(t.TempDir(), "t.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { s.Close() })
 	return s
@@ -30,7 +30,7 @@ func TestMigrate_IsIdempotentAndSchemaLists(t *testing.T) {
 func TestMigrate_RewindsResourceScanForCardImages(t *testing.T) {
 	dir := t.TempDir()
 	ctx := t.Context()
-	s, err := Open(filepath.Join(dir, "t.db"))
+	s, err := openAt(t, filepath.Join(dir, "t.db"))
 	require.NoError(t, err)
 	require.NoError(t, s.SetState(ctx, "resource_scan_id", "9720"))
 	// Pretend the database predates the card-image migration.
@@ -50,7 +50,7 @@ func TestMigrate_RewindsResourceScanForCardImages(t *testing.T) {
 func TestMigrate_QueuesCardImagesThatRanOutOfAttempts(t *testing.T) {
 	dir := t.TempDir()
 	ctx := t.Context()
-	s, err := Open(filepath.Join(dir, "t.db"))
+	s, err := openAt(t, filepath.Join(dir, "t.db"))
 	require.NoError(t, err)
 	require.NoError(t, s.AddPendingResources(ctx, []ResourceRef{
 		{MessageID: "om_card", FileKey: "img_card", Type: "image"},
@@ -421,7 +421,7 @@ func TestUpsertMessages_EditedAtIgnoresTypesFeishuCannotEdit(t *testing.T) {
 func TestMigrate_CollapsesResourcesOntoTheirKey(t *testing.T) {
 	dir := t.TempDir()
 	ctx := t.Context()
-	s, err := Open(filepath.Join(dir, "t.db"))
+	s, err := openAt(t, filepath.Join(dir, "t.db"))
 	require.NoError(t, err)
 	// Rebuild the shape the ledger had while it was keyed by (message, key),
 	// so the migration runs against the rows it was written for.
@@ -487,7 +487,7 @@ func TestMigrate_CollapsesResourcesOntoTheirKey(t *testing.T) {
 func TestMigrate_RerendersBodiesThatKeptTheirParagraphMarkup(t *testing.T) {
 	dir := t.TempDir()
 	ctx := t.Context()
-	s, err := Open(filepath.Join(dir, "t.db"))
+	s, err := openAt(t, filepath.Join(dir, "t.db"))
 	require.NoError(t, err)
 	bundle := msgAt("om_bundle", "oc_quiet", 300, 3, "hi")
 	bundle.MsgType = "merge_forward"

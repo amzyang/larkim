@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/amzyang/larkim/store"
+	"github.com/amzyang/larkim/store/storetest"
 	"github.com/stretchr/testify/require"
 )
 
@@ -15,7 +16,7 @@ import (
 // millisecond so the anchor can only be placed by the full sort key.
 func aroundFixture(t *testing.T) *store.Store {
 	t.Helper()
-	s, err := store.Open(filepath.Join(t.TempDir(), "t.db"))
+	s, err := storetest.Open(t, filepath.Join(t.TempDir(), "t.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { s.Close() })
 	msgs := []store.Message{

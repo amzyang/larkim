@@ -8,6 +8,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/amzyang/larkim/larkcli"
 	"github.com/amzyang/larkim/store"
+	"github.com/amzyang/larkim/store/storetest"
 	"github.com/amzyang/larkim/sync"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/stretchr/testify/require"
@@ -18,7 +19,7 @@ import (
 // be fetched by id, together with its sender's account suffix.
 func TestLoadMeta_LoadsTheQuotedParents(t *testing.T) {
 	ctx := t.Context()
-	st, err := store.Open(filepath.Join(t.TempDir(), "t.db"))
+	st, err := storetest.Open(t, filepath.Join(t.TempDir(), "t.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { st.Close() })
 
@@ -164,7 +165,7 @@ func TestJumpToQuoted_ParentOffThePageReopensTheChatAtIt(t *testing.T) {
 
 func TestJumpToQuoted_UnsyncedParentIsPulledThenOpened(t *testing.T) {
 	ctx := t.Context()
-	st, err := store.Open(filepath.Join(t.TempDir(), "t.db"))
+	st, err := storetest.Open(t, filepath.Join(t.TempDir(), "t.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { st.Close() })
 	require.NoError(t, st.EnsureChat(ctx, "oc_a", 1))

@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/amzyang/larkim/store"
+	"github.com/amzyang/larkim/store/storetest"
 	"github.com/amzyang/larkim/sync"
 	"github.com/stretchr/testify/require"
 )
@@ -13,7 +14,7 @@ import (
 // its own, all of them from a chat larkim never synced.
 func bundleStore(t *testing.T) *store.Store {
 	t.Helper()
-	st, err := store.Open(filepath.Join(t.TempDir(), "t.db"))
+	st, err := storetest.Open(t, filepath.Join(t.TempDir(), "t.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { st.Close() })
 	ctx := t.Context()

@@ -10,7 +10,7 @@ import (
 
 func eventStore(t *testing.T) *Store {
 	t.Helper()
-	s, err := Open(filepath.Join(t.TempDir(), "t.db"))
+	s, err := openAt(t, filepath.Join(t.TempDir(), "t.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { s.Close() })
 	return s

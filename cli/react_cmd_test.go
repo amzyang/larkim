@@ -10,6 +10,7 @@ import (
 	"github.com/amzyang/larkim/emoji"
 	"github.com/amzyang/larkim/larkcli"
 	"github.com/amzyang/larkim/store"
+	"github.com/amzyang/larkim/store/storetest"
 	"github.com/stretchr/testify/require"
 )
 
@@ -71,7 +72,7 @@ func reactApp(t *testing.T) (*App, *larkcli.Fake, *store.Store) {
 	f := larkcli.NewFake()
 	dir := t.TempDir()
 	a := &App{Out: &bytes.Buffer{}, Err: &bytes.Buffer{}, cfg: config.Config{DataDir: dir}, larkClient: f}
-	st, err := store.Open(filepath.Join(dir, "t.db"))
+	st, err := storetest.Open(t, filepath.Join(dir, "t.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { st.Close() })
 	return a, f, st
