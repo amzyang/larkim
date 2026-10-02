@@ -223,7 +223,7 @@ func Default() Config {
 		// that switching modes is one key rather than two.
 		MarkRead:  MarkRead{Mode: MarkReadApplink, Browser: "chrome"},
 		Resources: Resources{MaxBytes: 50 << 20},
-		AI: AI{Agent: "omp --mode acp", Model: "cursor/composer-2.5-fast", Context: 80,
+		AI: AI{Agent: "omp --mode acp", Model: "cursor/composer-2.5-fast", Context: 10,
 			JevKeyEnv: "TYPESAFE_API_KEY", JevEndpoint: jev.DefaultEndpoint},
 	}
 }

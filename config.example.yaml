@@ -77,7 +77,7 @@ ai:
   # names a single model. Empty keeps the agent's default.
   model: cursor/composer-2.5-fast
   # Recent messages handed to the assistant.
-  context: 80
+  context: 10
   # Environment variable holding the TypeSafe API key. The reaction picker
   # asks Jev which emoji fits the message under the cursor and lays what it
   # chose over the grid's first three rows; with no key there the picker

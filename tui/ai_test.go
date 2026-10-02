@@ -98,7 +98,6 @@ func aiFixture(t *testing.T, f *fakeAI) Model {
 	m.width, m.height = 130, 40
 	m.chatID = "oc_quiet"
 	m.focus = paneMessages
-	m.cfg.AI.Context = 80
 	m.chats = []store.Chat{{ChatID: "oc_quiet", Name: "平台组", ChatMode: "group"}}
 	msgs[0].Content, msgs[0].RenderedAt = "发布单合了吗", 2
 	msgs[1].Content, msgs[1].RenderedAt = "还没", 2

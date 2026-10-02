@@ -30,7 +30,7 @@ topic groups.
 
 ```
 ╭ AI · Summary · Draft 张三 · + ───────╮   header: this chat's sessions
-│ ↩ 张三: 发布单合了吗 · ▤ last 80       │   context chips for the next question
+│ ↩ 张三: 发布单合了吗 · ▤ last 10       │   context chips for the next question
 │ ─────────────────────────────────── │
 │ You 14:35  ↩ 张三 · ▤ 80              │   the question and what it carried
 │ 帮他们写个回复                         │
@@ -71,7 +71,7 @@ topic groups.
 
 - Enter asks. Each session has at most one answer in flight; sessions don't block each other.
 - Each turn the agent gets, all as data rather than instructions:
-  - the chat's latest `ai.context` messages (default 80), read from the store when you ask, so a follow-up sees
+  - the chat's latest `ai.context` messages (default 10), read from the store when you ask, so a follow-up sees
     messages that arrived since;
   - the text read out of pictures;
   - the turn's chips: the anchor, its thread replies, the anchor's composer draft, the VISUAL selection;
