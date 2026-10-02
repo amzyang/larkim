@@ -58,6 +58,23 @@ func TestMdRows_OrderedListKeepsItsStart(t *testing.T) {
 	require.Contains(t, out, "4. 四")
 }
 
+func TestMdRows_AnUnorderedMarkerWearsTheClientsBlue(t *testing.T) {
+	// The client colours the marker of an unordered item its own blue; the
+	// number of an ordered one stays dim with the words.
+	rows := renderRows(postWith("- 甲\n1. 乙"), baseStyle())
+	var bullet, number string
+	for _, r := range rows {
+		switch {
+		case strings.Contains(ansi.Strip(segText(r)), "•"):
+			bullet = segText(r)
+		case strings.Contains(ansi.Strip(segText(r)), "1."):
+			number = segText(r)
+		}
+	}
+	require.Contains(t, bullet, stBullet.Render("•"))
+	require.NotContains(t, number, stBullet.Render("1."), "an ordered marker stays dim")
+}
+
 func TestMdRows_BlockquoteGetsAGutter(t *testing.T) {
 	out := mdText(t, "> 引用一句\n\n正文")
 	require.Contains(t, out, "│ 引用一句")

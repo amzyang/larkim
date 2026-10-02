@@ -65,6 +65,9 @@ var (
 	colAccent = lipgloss.Color("4")
 	colDim    = lipgloss.Color("8")
 	colErr    = lipgloss.Color("1")
+	// colBullet is the client's own tint for the marker of an unordered list
+	// item, the one part of a list it colours.
+	colBullet = lipgloss.Color("#1c70f0")
 	// colWarn is what the badge paints a lint finding: the body still sends,
 	// so it cannot wear the colour a refused path does.
 	colWarn = lipgloss.Color("3")
@@ -77,6 +80,7 @@ var (
 	colChatSelText = lipgloss.Color("#1f2329")
 
 	stDim    = lipgloss.NewStyle().Foreground(colDim)
+	stBullet = lipgloss.NewStyle().Foreground(colBullet)
 	stAccent = lipgloss.NewStyle().Foreground(colAccent)
 	stBold   = lipgloss.NewStyle().Bold(true)
 	stErr    = lipgloss.NewStyle().Foreground(colErr)

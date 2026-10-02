@@ -179,9 +179,15 @@ func (d mdDoc) list(l *ast.List, depth, indent int) []msgRow {
 		inner := d.blocks(item, depth+1, indent+step)
 		if len(inner) > 0 {
 			// The marker takes the place of the first line's indent, so the
-			// text of every item starts at the same column.
+			// text of every item starts at the same column. An unordered
+			// marker wears the client's blue; the number of an ordered one
+			// stays dim, being words as much as a marker.
+			style := stBullet
+			if l.IsOrdered() {
+				style = stDim
+			}
 			inner[0].reindent(strings.Repeat(" ", indent+step),
-				strings.Repeat(" ", indent)+stDim.Render(marker)+
+				strings.Repeat(" ", indent)+style.Render(marker)+
 					strings.Repeat(" ", step-lipgloss.Width(marker)))
 		}
 		rows = append(rows, inner...)
