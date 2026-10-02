@@ -588,9 +588,8 @@ func (m Model) picturePrepare() string {
 	// summaries are a handful of icons that many rows draw from the same ids,
 	// and unlike the message bands below it reaches for nothing off screen.
 	vis := m.visibleRows()
-	pcs := m.chatPics()
 	for i := m.chatTop; i < len(vis) && i < m.chatTop+m.chatListHeight(); i++ {
-		g := m.gists.at(vis[i], m.deps.Self, pcs)
+		g := m.gistFor(vis[i])
 		for _, s := range g.chips {
 			claimed.take(s.pic)
 		}
@@ -737,6 +736,15 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.layout()
 		return m, nil
 	case candidateClearedMsg:
+		return m, nil
+	case draftSavedMsg:
+		// The drafts table sits outside data_rev on purpose, so no reload is
+		// owed to the write; without landing it here the row a switch just
+		// left holds its old gist until an unrelated sync bumps the revision.
+		if msg.err != nil {
+			return m, nil // logged by the write; the maps stay a refresh behind
+		}
+		m.landDraft(msg.draft)
 		return m, nil
 	case messagesLoadedMsg:
 		// A page for the chat the panel's cursor happens to rest in is not the
@@ -1281,24 +1289,58 @@ func (m *Model) openChatFrom(chatID string, sinceMs int64) tea.Cmd {
 }
 
 // draftForRow is the draft a chat's row draws its marker from. The open chat
-// answers from the composer rather than from the map: its row is beside the
-// text being typed, so a marker one refresh behind would visibly disagree with
-// what is on screen.
+// answers with nothing: its row sits beside the composer the draft lives in,
+// and the list leaves the conversation being typed in bare of its own draft.
 func (m Model) draftForRow(chatID string) store.Draft {
 	if chatID == m.chatID {
-		return store.Draft{ChatID: chatID, Text: m.input.Value()}
+		return store.Draft{}
 	}
 	return m.drafts[chatID]
 }
 
 // draftForThreadRow is draftForRow for the thread rows the list carries beside
-// the chats: the frame standing in the right column answers from the box it is
-// being typed into, every other from the map.
+// the chats: the frame standing in the right column answers with nothing for
+// the same reason, every other from the map.
 func (m Model) draftForThreadRow(threadID string) store.Draft {
 	if m.rightHasComposer() && threadID == m.threadID {
-		return store.Draft{ChatID: m.chatID, FrameID: threadID, Text: m.rightInput.Value()}
+		return store.Draft{}
 	}
 	return m.frameDrafts[threadID]
+}
+
+// gistFor is the gist a list row draws: the message's, or the draft the reader
+// saved over it — never on the row of what is open, whose draft is already on
+// screen in the composer beside it.
+func (m Model) gistFor(r listRow) rowGist {
+	g := m.gists.at(r, m.deps.Self, m.chatPics())
+	if r.isThread() {
+		if m.rightHasComposer() && r.thread.ThreadID == m.threadID {
+			return g
+		}
+		return g.withDraft(m.frameDrafts[r.thread.ThreadID])
+	}
+	if r.chatID() == m.chatID {
+		return g
+	}
+	return g.withDraft(m.drafts[r.chatID()])
+}
+
+// landDraft settles what a saved write did onto the row maps. An empty draft is
+// a delete — the same reading the store takes of one — so the gist it stood in
+// for falls back to the chat's last message.
+func (m *Model) landDraft(d store.Draft) {
+	which, key := &m.frameDrafts, d.FrameID
+	if key == "" {
+		which, key = &m.drafts, d.ChatID
+	}
+	if d.Empty() {
+		delete(*which, key)
+		return
+	}
+	if *which == nil {
+		*which = map[string]store.Draft{}
+	}
+	(*which)[key] = d
 }
 
 // saveComposer puts both boxes back under the chat and the frame they were

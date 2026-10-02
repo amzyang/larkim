@@ -57,12 +57,14 @@ TUI 左侧会话列表按飞书桌面端的信息密度重做：头像 + 两行�
 
 | 槽 | 令牌（按优先级） | 判据 |
 |---|---|---|
-| 自己的 | 发送失败 > 草稿 | `drafts.failed_at != 0` / `drafts.text != ''` |
+| 自己的 | 发送失败 > 草稿 | `drafts.failed_at != 0` / `drafts.text != ''`（当前打开的会话/话题不占位） |
 | 别人的 | @我 > 最新表情回复 | `mentions_json` 含 self open_id 且该消息未读 / `reactions_json` 最新一项 |
 
 **发件人前缀**：p2p 不显示对方名字；群聊显示 `发件人: `，该条 `sender_type = 'app'` 时名字后带 BOT 徽章（`Factory: `）。最新一条是自己发的时候，两种会话都显示 `你: `。
 
 **摘要**：优先用 `messages.content`（lark-cli 渲染过的人读文本）压成单行；纯媒体类型或 `content` 为空时回退到 `msg_type` 占位符（`[Image]` `[File]` `[Audio]` `[Card]` `[Chat History]`）。
+
+**草稿正文**：会话有已保存草稿（`drafts.text != ''`，落盘于切会话、失焦、退出）且不是当前打开的会话或话题时，`<摘要>` 换成草稿文本：无 `<发件人>: ` 前缀（自己的槽已表明归属），多行压成单行、按摘要同样的规则截断。当前打开的会话与话题的行完全不展示自己的草稿——正文与标记槽都不占位——composer 就在旁边。thread 行同理，取该话题 frame 的草稿。标记槽的铅笔以客户端草稿色（红色）加虚线下划线绘制。
 
 **mute 图标**：`is_muted` 为真时显示，淡色。`is_mute_at_all` 不单独表现。
 
@@ -123,7 +125,7 @@ TUI 左侧会话列表按飞书桌面端的信息密度重做：头像 + 两行�
 | 未读数 | `read_state.is_read_remote = 0` 且 `local_read_at = 0` 且 `messages.message_position >= 0` | 随同步轮询；打开会话时对该会话立即重查一次。会话页面摆到读者眼前时——进入会话、从历史滚回消息流末尾、或终端重新获得焦点——把该会话页面上的未读整批记为本地已读——主消息流上的每一条，静音的也算，它们同样摆在了读者眼前；thread 回复折在根消息那一行里，页面上一条都没有，由打开话题面板时结算。同时后台把飞书客户端导航到该会话，让它自己的红点也落下来（见 [read-sync](../read-sync/PRD.md)） |
 | mute | `lark-cli api POST /open-apis/im/v1/chat_user_setting/batch_get_mute_status --as user` | 随 chats 全量刷新 |
 | 个人状态 | `lark-cli contact user_profiles batch_query`，`query_option.include_personal_status = true` | 随联系人刷新 |
-| 草稿 / 发送失败 | `drafts` 表 | TUI 写入 |
+| 草稿 / 发送失败 | `drafts` 表 | TUI 写入；已保存草稿同时是第二行正文的来源（见「第二行」） |
 | thread 行 | `store.ListThreadFeed`，与会话列表同一次刷新 | 随同步轮询；回复本身由 sweep 按 thread 容器单取，见 [containers](../containers/TECH.md) |
 
 **mute** 单次最多 100 个 chat_id，user 身份；非成员与非法 id 走响应的 `invalid_id_list`，视为未知、不画图标。只查最近 30 天有消息的会话——再往下滚 mute 图标一律不画。
@@ -192,7 +194,7 @@ kitty 图形协议画真实头像，`VirtualPlacement` + Unicode placeholder（U
 - **过滤**：`/` 匹配会话名与 `chat_id`。拉丁查询走 fzf 子序列匹配，中文名同时答应它的全拼与首字母（`ptz` 找到「平台组」）；中文查询按整串匹配而非子序列——`年会` 是个词，落在「2026年高途新春启动会」的 年 和 会 上是没人问过的问题。`chat_id` 只认子串，十六进制上做模糊只会出噪音。命中行按名字里落点的字加下划线，拼音命中不加——按拼音偏移给汉字画线会指错字。过滤只决定谁进来，不决定谁在前：行序仍是列表自己的。找消息走 `ctrl+f`。
 - **`Unread` 行的打开**：和别的行一样，光标停上去就把那一页装进消息面板。差别只在焦点——按键或点击把焦点交给消息面板，光标走上去则留在列表里，下一个 `j` 仍是读者的。它是列表的第一行，走回它的唯一方式是在列表顶上按一次 `k`，不存在「路过」。
 - **TUI 打开时光标停在 `Unread` 行**：一进来先看见还有什么在等，而不是把最上面那个会话读掉——会话页摆在眼前就走 [read-sync](../read-sync/TECH.md) 的那条路径，把它的未读记为本地已读并投出 applink，客户端跟着导航过去，而读者还没看。这一页上的东西一条都不算读过，所以它是唯一能不动声色地开在这里的落点。焦点在列表，`j` 去第一个会话，`Esc` 把这一页放下、落到第一个会话。
-- **草稿**：切会话保留 composer 内容与 `replyTo` / `inThrd`，重开 TUI 仍在。发送成功后清除该会话的草稿行。
+- **草稿**：切会话保留 composer 内容与 `replyTo` / `inThrd`，重开 TUI 仍在。发送成功后清除该会话的草稿行；清空 composer 后离开会话同样落盘删除。当前打开的会话与话题在列表里完全不展示自己的草稿，离开后才出现。
 
 ## 终端要求
 

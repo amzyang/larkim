@@ -106,6 +106,30 @@ func TestGistCache_AThreadTakesItsOwnRepliesAndNoReactions(t *testing.T) {
 	require.Contains(t, v.text, "最后一条")
 }
 
+func TestRowGist_WithDraft_StandsInForTheSummary(t *testing.T) {
+	g := gistOf(listRow{chat: reactedP2P("THUMBSUP")}, "ou_me", chipPics(t, "THUMBSUP"))
+
+	over := g.withDraft(store.Draft{Text: "半句话"})
+	require.Contains(t, over.text, "半句话")
+	require.Equal(t, g.chips, over.chips, "the reactions stay with the row")
+	require.Nil(t, over.summary, "draft text is characters alone, so the pane draws it as one string")
+
+	require.Equal(t, g, g.withDraft(store.Draft{Text: "  "}), "blanks are not a draft")
+}
+
+// A draft is applied after the cache, never through it: the same row draws
+// two drafts in a row while the cache answers every ask with one summary.
+func TestGistCache_DraftDoesNotEnterTheCache(t *testing.T) {
+	g := newGistCache()
+	r := listRow{chat: store.Chat{ChatID: "oc_group", Name: "平台组", ChatMode: "group",
+		LastSenderName: "张三", LastContent: "发布计划定了吗", LastRenderedAt: 1}}
+	cached := g.at(r, "ou_me", emojiPics{})
+
+	require.Contains(t, g.at(r, "ou_me", emojiPics{}).withDraft(store.Draft{Text: "一"}).text, "一")
+	require.Contains(t, g.at(r, "ou_me", emojiPics{}).withDraft(store.Draft{Text: "二"}).text, "二")
+	require.Equal(t, cached, g.at(r, "ou_me", emojiPics{}), "the cache still holds the message's line")
+}
+
 // The pane can only draw a picture the terminal was handed first, so the two
 // walks over the chat list have to claim and draw the same set.
 func TestPicturePrepare_ClaimsThePicturesTheRowsDraw(t *testing.T) {

@@ -6,6 +6,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/amzyang/larkim/store"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -99,6 +100,57 @@ func TestCloseRight_KeepsTheThreadDraft(t *testing.T) {
 	assert.Equal(t, "我来看看", m.rightInput.Value(), "reopening the frame brings its draft back")
 }
 
+// The thread row's gist is the frame's own box: a draft typed into the right
+// column stands in for the last reply, with no replier's name before it.
+func TestThreadRowLine_FrameDraftIsTheGistLine(t *testing.T) {
+	row := listRow{chat: store.Chat{ChatID: "oc_group", Name: "平台组", ChatMode: "group"},
+		thread: store.ThreadFeed{ThreadID: "omt_1", ChatID: "oc_group", ChatMode: "group",
+			Root: spoke("om_root", "ou_a", "张三", "发布流程", 100),
+			Last: spoke("om_last", "ou_b", "李四", "周四", 200)}}
+	d := store.Draft{ChatID: "oc_group", FrameID: "omt_1", Text: "写给话题的"}
+	g := gistOf(row, "ou_me", emojiPics{}).withDraft(d)
+
+	text, _ := threadRowLine(row, d, g, 60)
+
+	stripped := ansi.Strip(text)
+	assert.Contains(t, stripped, "写给话题的")
+	assert.Contains(t, stripped, draftGlyph)
+	assert.NotContains(t, stripped, "李四:", "the frame's box is the reader's, not the last replier's")
+}
+
+// A frame draft lands under its thread, not under the chat the thread is in.
+func TestDraftSavedMsg_PatchesTheFrameDraftsMap(t *testing.T) {
+	m, _ := frameDraftModel(t)
+
+	next, _ := m.Update(draftSavedMsg{draft: store.Draft{ChatID: "oc_group", FrameID: "omt_1", Text: "写给话题的"}})
+	m = next.(Model)
+	assert.Equal(t, "写给话题的", m.frameDrafts["omt_1"].Text)
+
+	next, _ = m.Update(draftSavedMsg{draft: store.Draft{ChatID: "oc_group", FrameID: "omt_1"}})
+	m = next.(Model)
+	assert.NotContains(t, m.frameDrafts, "omt_1", "an empty write is a delete")
+}
+
+// The thread frame standing open in the right column draws no draft on its
+// row either: the box beside it is the draft.
+func TestRenderChats_TheOpenThreadRowStaysBare(t *testing.T) {
+	m, _ := frameDraftModel(t)
+	m = openThread(t, m, "omt_1")
+	m.rightInput.SetValue("写给话题的")
+	m = deliver(t, m, m.saveComposer())
+	m.chats = []store.Chat{{ChatID: "oc_group", Name: "平台组", ChatMode: "group",
+		LastMessageID: "om_other", LastSenderName: "张三", LastContent: "另一个话题", LastRenderedAt: 1}}
+	m.threads = []store.ThreadFeed{{ThreadID: "omt_1", ChatID: "oc_group", ChatMode: "group",
+		Root: spoke("om_root", "ou_a", "张三", "发布流程", 100),
+		Last: spoke("om_last", "ou_b", "李四", "周四", 200)}}
+
+	out := ansi.Strip(m.renderChats(m.chatsBodyHeight()))
+
+	assert.NotContains(t, out, "写给话题的")
+	assert.NotContains(t, out, draftGlyph)
+	assert.Contains(t, out, "周四", "the thread row keeps its last reply")
+}
+
 func TestShowRight_EachFrameGetsItsOwnDraftBack(t *testing.T) {
 	m, _ := frameDraftModel(t)
 	m = openThread(t, m, "omt_1")
@@ -144,14 +196,14 @@ func TestTakeRightDraft_AReloadLeavesTheBoxAlone(t *testing.T) {
 	assert.Empty(t, m.rightInput.Value(), "what the reader cleared stays cleared")
 }
 
-func TestDraftForThreadRow_ReadsTheLiveRightBox(t *testing.T) {
+func TestDraftForThreadRow_TheOpenFrameDrawsNoDraft(t *testing.T) {
 	m, _ := frameDraftModel(t)
 	m = openThread(t, m, "omt_1")
 	m.rightInput.SetValue("半句")
 	m.frameDrafts = map[string]store.Draft{"omt_2": {ChatID: "oc_group", FrameID: "omt_2", Text: "别处的"}}
 
-	assert.Equal(t, "半句", m.draftForThreadRow("omt_1").Text,
-		"the open frame answers from the box being typed into, not from the map")
+	assert.Empty(t, m.draftForThreadRow("omt_1"),
+		"the open frame leaves the box beside it to say the draft")
 	assert.Equal(t, "别处的", m.draftForThreadRow("omt_2").Text)
 	assert.True(t, m.draftForThreadRow("omt_3").Empty())
 }

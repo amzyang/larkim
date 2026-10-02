@@ -179,7 +179,8 @@ following the reader through. It is written when the reader leaves a chat or a
 frame, when the terminal loses focus and on quit — not on every keystroke. Two
 TUIs on one chat: last write wins, and nothing detects the conflict. Clearing a
 composer deletes its row rather than storing an empty one, so the chat list has
-nothing to draw a marker from.
+nothing to draw a marker from — and nothing to stand in the row's gist line,
+which falls back to the chat's last message.
 
 A send that Feishu refused is not kept here. It stays in the TUI's in-memory
 outbox as a `(failed)` bubble the reader resends with `.` or drops with `x`, so

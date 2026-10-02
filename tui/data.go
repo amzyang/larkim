@@ -202,9 +202,14 @@ type (
 	// candidateClearedMsg closes a fire-and-forget mirror clear. Nothing acts
 	// on it; the badge goes with the revision bump.
 	candidateClearedMsg struct{}
-	// draftSavedMsg closes a fire-and-forget draft write. Nothing acts on it;
-	// it exists because a tea.Cmd has to return a message.
-	draftSavedMsg   struct{}
+	// draftSavedMsg closes a fire-and-forget draft write and lands what was
+	// written: the row beside the box just saved redraws with it rather than
+	// waiting for the next listing, which no revision bump will bring — the
+	// drafts table sits outside data_rev.
+	draftSavedMsg struct {
+		draft store.Draft
+		err   error
+	}
 	threadLoadedMsg struct {
 		threadID string
 		msgs     []store.Message
@@ -1058,9 +1063,10 @@ func saveDraft(d Deps, draft store.Draft) tea.Cmd {
 		return nil
 	}
 	return func() tea.Msg {
-		if err := d.Store.SaveDraft(context.Background(), draft, time.Now().UnixMilli()); err != nil {
+		err := d.Store.SaveDraft(context.Background(), draft, time.Now().UnixMilli())
+		if err != nil {
 			d.log().Error("save draft", "chat_id", draft.ChatID, "frame_id", draft.FrameID, "err", err)
 		}
-		return draftSavedMsg{}
+		return draftSavedMsg{draft: draft, err: err}
 	}
 }

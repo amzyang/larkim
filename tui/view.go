@@ -89,6 +89,13 @@ var (
 	colMentionMe    = lipgloss.Color("#3370ff")
 	stMentionMe     = lipgloss.NewStyle().Foreground(lipgloss.Color("#ffffff")).Background(colMentionMe)
 	stMentionMeEdge = lipgloss.NewStyle().Foreground(colMentionMe)
+	// The draft wears what the client paints a conversation preview's draft
+	// with: red on a dotted underline, so the pencil reads as the reader's own
+	// words still to send rather than another mark the chat collected. Dots,
+	// not a straight line, keep it from reading as a filter hit on a name.
+	colDraft = lipgloss.Color("#f54a45")
+	stDraft  = lipgloss.NewStyle().Foreground(colDraft).Underline(true).
+			UnderlineStyle(lipgloss.UnderlineDotted).UnderlineColor(colDraft)
 	// stUnread is the terminal-palette stand-in for badgeRed, the disc stamped
 	// onto a picture: the header's count and the digits a row falls back to when
 	// no disc could be drawn both take it, so the three read as one signal.
@@ -936,11 +943,11 @@ func (m Model) renderChats(h int) string {
 			// A thread's title is the words its root opened with, not a name,
 			// so the filter has no rune positions there to underline.
 			r = renderThreadRow(m.avatars, row, m.draftForThreadRow(row.thread.ThreadID), m.deps.Self,
-				m.gists.at(row, m.deps.Self, m.chatPics()), now, w)
+				m.gistFor(row), now, w)
 		default:
 			mark, _ := m.chatIx.match(row.chat, m.chatFilter)
 			r = renderChatRow(m.avatars, row, m.draftForRow(row.chatID()), m.unread[row.chatID()],
-				m.cands[row.chatID()], m.gists.at(row, m.deps.Self, m.chatPics()), now, w, mark)
+				m.cands[row.chatID()], m.gistFor(row), now, w, mark)
 		}
 		sel := i == m.chatIdx
 		bottom := line(r.avatarBottom, r.bottom, sel)

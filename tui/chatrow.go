@@ -74,11 +74,17 @@ func botMark(senderType string) string {
 // which is what lets it sit dim behind the summary.
 const muteGlyph = "\uf1f6" + enSpace
 
+// draftPencil is the icon alone, so the marker can carry its underline on the
+// pencil and leave the cell after it plain: the style splits per cluster, and
+// a continuation cell re-asserts the underline straight — a line under the
+// gap, one cell off the pencil it belongs to.
+const draftPencil = "\uea73"
+
 // draftGlyph fills the row's own slot: what the reader left unsent in this
 // chat. The pencil comes from the Codicons block botBadge is from, so it takes
 // the colour it is given. A send Feishu refused is not drawn here — it keeps
 // its place in the message list as a (failed) bubble the outbox can resend.
-const draftGlyph = "\uea73" + enSpace
+const draftGlyph = draftPencil + enSpace
 
 // candGlyph is the row's own slot for replies someone else drafted: the
 // lightbulb says a suggestion is waiting, where the pencil above says the
@@ -104,7 +110,7 @@ func selfMark(d store.Draft) string {
 	if d.Empty() {
 		return ""
 	}
-	return stDim.Render(draftGlyph)
+	return stDraft.Render(draftPencil) + enSpace
 }
 
 // atMeMark is the other half of the row's marker pair: somebody in this chat

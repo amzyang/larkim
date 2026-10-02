@@ -1,5 +1,7 @@
 package tui
 
+import "github.com/amzyang/larkim/store"
+
 // rowGist is one chat-list row's second line before it is laid out: the
 // reactions it carries and the message behind them. It comes as segments only
 // when a picture stands in the line — the same shape the leaf functions
@@ -51,4 +53,17 @@ func (g *gistCache) at(r listRow, self string, pics emojiPics) rowGist {
 	}
 	g.rows[key] = v
 	return v
+}
+
+// withDraft stands the reader's saved draft in for the message a row was going
+// to summarise. It runs after the cache and never in it: a draft changes each
+// time its box is saved, and a save rebuilds no list, so a cached line would
+// hold the row against its own words. The pencil in the marker slot already
+// says whose they are, so they carry no sender prefix; the chips stay, as the
+// reactions on the message the draft stands in front of.
+func (g rowGist) withDraft(d store.Draft) rowGist {
+	if d.Empty() {
+		return g
+	}
+	return rowGist{chips: g.chips, text: stDim.Render(flatten(d.Text))}
 }
