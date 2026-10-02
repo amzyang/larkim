@@ -121,6 +121,8 @@ type clickZone struct {
 	// head's Regenerate or Stop — which are not places to open but things to
 	// do, naming the answer and the card within it.
 	act aiAct
+	// cand is a lark-watch reply draft offered under the message.
+	cand candZone
 	// label names the target the way the chooser lists it, and note is what
 	// the status bar says once it has been handed over. They differ because a
 	// list wants the thing and a status line wants the act.
@@ -130,7 +132,7 @@ type clickZone struct {
 
 // live reports whether the zone leads anywhere at all.
 func (z clickZone) live() bool {
-	return len(z.urls) > 0 || z.react != "" || z.jump != "" || z.open != "" || z.act.kind != actNone
+	return len(z.urls) > 0 || z.react != "" || z.jump != "" || z.open != "" || z.act.kind != actNone || z.cand.c.Mid != ""
 }
 
 func (z clickZone) hit(x int) bool { return z.live() && x >= z.x0 && x < z.x1 }
@@ -275,6 +277,8 @@ type msgStyle struct {
 	// peer is who the reader is talking to in such a chat, which is how far an
 	// @ in it carries: a name that is neither of theirs reaches nobody here.
 	peer string
+	// candidates are pending lark-watch drafts keyed by source message id.
+	candidates map[string][]store.Candidate
 }
 
 // emojiPics sizes the pictures cut out of the sprite sheet. The zero value
@@ -570,6 +574,7 @@ func renderRows(msgs []store.Message, st msgStyle) []msgRow {
 		}
 		rows = append(rows, bodyRows(x, i, st, &g)...)
 		rows = append(rows, reactionRows(x, i, st, &g)...)
+		rows = append(rows, candidateRows(x, i, st, &g)...)
 		// Outermost, past the reactions: those decorate the message itself,
 		// where these lines point away from it at the answers it drew.
 		if rs, ok := threadRows(x, i, st, &g); ok {

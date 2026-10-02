@@ -111,6 +111,10 @@ type Model struct {
 	// so the send that leaves the composer can drop the mirrored row. It does
 	// not follow the reader into another chat.
 	candFilled string
+	// chatCands are the mirrored drafts for the open chat's current page.
+	chatCands []store.Candidate
+	// candIgnored hides individual drafts for this session (see candidateKey).
+	candIgnored map[string]struct{}
 	// picker is the emoji chooser, open only in modeEmoji.
 	picker picker
 	// pum is the completion popup over the writing area, open only while
@@ -681,11 +685,12 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, open
 	case candidatesLoadedMsg:
-		if len(msg.rows) == 0 {
+		rows := m.visibleCandidates(msg.rows)
+		if len(rows) == 0 {
 			return m.notify("no pending reply drafts in this chat", true), nil
 		}
 		m.mode = modeCandidates
-		m.cand = fillMenu(msg.rows, candSpec)
+		m.cand = fillMenu(rows, candSpec)
 		m.layout()
 		return m, nil
 	case candidateClearedMsg:
@@ -731,6 +736,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// chat being left is the chat its frame belonged to.
 		infoCmd := entered
 		m.msgsBase, m.meta = msg.msgs, msg.meta
+		m.chatCands = msg.cands
 		m.metaGen++
 		m.applyOutbox()
 		// Only the page that opens the chat carries its draft back into the
@@ -1307,6 +1313,7 @@ func (m *Model) enterChat() tea.Cmd {
 		m.aiP.rebuild(*m)
 	}
 	m.replyTo, m.inThrd = nil, false
+	m.candIgnored = nil
 	m.selectCurrentChat()
 	return keep
 }
@@ -3012,6 +3019,16 @@ func (m Model) pressZone(p pane, rows []msgRow, line int, z clickZone) (tea.Mode
 	// The assistant panel's acts are things to do, not places to open.
 	if z.act.kind != actNone {
 		return m.aiPress(z.act)
+	}
+	if z.cand.c.Mid != "" {
+		x, ok := m.messageAt(p, rowAt(rows, line))
+		if !ok {
+			return m, nil
+		}
+		if z.cand.send {
+			return m.sendInlineCandidate(z.cand.c, x)
+		}
+		return m.ignoreInlineCandidate(z.cand.c)
 	}
 	if z.jump != "" {
 		return m.jumpToQuoted(p, z.jump)

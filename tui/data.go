@@ -187,6 +187,9 @@ type (
 		// roster is who is in the chat, for @ completion and for turning the
 		// names it inserted into tags on the way out.
 		roster []store.Contact
+		// cands are the lark-watch reply drafts mirrored for this chat, drawn
+		// under each message's reactions on the page.
+		cands []store.Candidate
 	}
 	candidatesLoadedMsg struct {
 		rows []store.Candidate
@@ -557,7 +560,12 @@ func loadMessages(d Deps, chatID string, sinceMs int64, limit int) tea.Cmd {
 			return errMsg{err}
 		}
 		draft, roster := chatSide(ctx, d, chatID)
-		return messagesLoadedMsg{chatID: chatID, msgs: rows, meta: meta, draft: draft, roster: roster}
+		cands, err := d.Store.ChatCandidates(ctx, chatID, d.Self)
+		if err != nil {
+			d.log().Error("load message candidates", "chat_id", chatID, "err", err)
+			cands = nil
+		}
+		return messagesLoadedMsg{chatID: chatID, msgs: rows, meta: meta, draft: draft, roster: roster, cands: cands}
 	}
 }
 

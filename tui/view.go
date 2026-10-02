@@ -353,6 +353,7 @@ func (m Model) msgStyleFor(width int, meta msgMeta) msgStyle {
 	if m.pics != nil {
 		st.place, st.disc = m.pics.place, m.pics.disc
 	}
+	st.candidates = m.candidatesForStyle()
 	return st
 }
 
