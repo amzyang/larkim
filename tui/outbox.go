@@ -61,7 +61,7 @@ func (it outboxItem) message(selfID, selfName string) store.Message {
 		MsgType: it.msgType, SenderID: selfID, SenderType: "user", SenderName: selfName,
 		Content: it.body, CreateMs: it.createMs, MessagePosition: position, RenderedAt: 1,
 	}
-	if it.msgType == "post" {
+	if _, card := larkmd.CardForm(it.body); it.msgType == "post" && !card {
 		x.ContentRaw = larkmd.PostContent(it.body)
 	}
 	return x

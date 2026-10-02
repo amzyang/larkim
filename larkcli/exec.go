@@ -1080,6 +1080,9 @@ func (o Outgoing) wire() (msgType, content string) {
 	case o.Markdown != "":
 		// Not lark-cli's --markdown: that rewrites H1-H3 into H4/H5 before
 		// sending, and the rewrite lands in what this client stores and draws.
+		if md, ok := larkmd.CardForm(o.Markdown); ok {
+			return "interactive", Card(md).Card
+		}
 		return "post", larkmd.PostContent(o.Markdown)
 	case o.ImageKey != "":
 		return "image", keyContent("image_key", o.ImageKey)

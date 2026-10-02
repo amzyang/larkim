@@ -86,9 +86,14 @@ func TestLint_BracketNameInsideMarkupIsReported(t *testing.T) {
 	require.Contains(t, got[0].Message, "[Done]")
 	require.Equal(t, 1+len("## 发布 "), got[0].Column, "the finding points at the opening bracket")
 
-	for _, draft := range []string{"> 上线 [Done]", "- 修复 A [Done]", "跑 `go test` [完成]"} {
+	for _, draft := range []string{"> 上线 [Done]", "跑 `go test` [完成]"} {
 		require.Equal(t, []string{"emoji_not_rendered"}, rules(Lint(draft)), "draft %q", draft)
 	}
+}
+
+func TestLint_EmojiNameInAListItemGoesAsACardAndIsNotReported(t *testing.T) {
+	require.Empty(t, Lint("- 修复 A [Done]"), "the draft goes as a card, whose markdown reads the name")
+	require.Empty(t, Lint("> 上线 [Done]\n\n- 修复 A [OK]"), "a card reads the name on the quote's line too")
 }
 
 func TestLint_ALinkLabelIsNotABracketedEmoji(t *testing.T) {

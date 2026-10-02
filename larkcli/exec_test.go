@@ -354,6 +354,14 @@ func wireOf(o Outgoing) []string {
 	return []string{msgType, content}
 }
 
+func TestOutgoing_WireSendsAListWithAnEmojiAsACard(t *testing.T) {
+	// A post moves an emotion out of its list item; a card's markdown keeps
+	// it in the item, spelled as its key.
+	require.Equal(t, []string{"interactive", Card("* :DONE:\n* :DONE:").Card}, wireOf(Markdown("* [Done]\n* [Done]")))
+	require.Equal(t, "post", wireOf(Markdown("* plain"))[0])
+	require.Equal(t, "post", wireOf(Markdown("收到 [Done]"))[0], "a line of words already carries the emotion")
+}
+
 func TestOutgoing_WirePicksTheMessageType(t *testing.T) {
 	require.Equal(t, []string{"text", `{"text":"hi"}`}, wireOf(Text("hi")))
 	require.Equal(t, []string{"post", `{"zh_cn":{"content":[[{"tag":"md","text":"## hi"}]]}}`}, wireOf(Markdown("## hi")))

@@ -36,6 +36,7 @@ func Lint(src string) []Finding {
 	parts := chunks(src)
 	cuts := paragraphCuts(parts)
 	sent := emojiLines(parts, lines)
+	_, card := CardForm(src)
 	var out []Finding
 	at := lines.at
 	_ = ast.Walk(Parser.Parse(b), func(n ast.Node, entering bool) (ast.WalkStatus, error) {
@@ -53,7 +54,7 @@ func Lint(src string) []Finding {
 			// The raw source is scanned rather than the decoded value, so an
 			// offset found here is an offset in what the sender wrote.
 			for _, idx := range c.Value.Indices() {
-				out = append(out, scanText(src, idx.Start, idx.Stop, label, sent, at)...)
+				out = append(out, scanText(src, idx.Start, idx.Stop, label, card, sent, at)...)
 			}
 		case *ast.List:
 			out = append(out, scanList(c, cuts, at)...)
@@ -108,8 +109,9 @@ func bracketFinding(e emoji.Emoji, spelling string, line, col int) Finding {
 }
 
 // scanText reports what one text node loses. sent is the lines the wire
-// carries an emoji name on as the emotion it names.
-func scanText(src string, start, stop int, label bool, sent map[int]bool, at func(int) (int, int)) []Finding {
+// carries an emoji name on as the emotion it names; card is whether the draft
+// goes as a card, whose markdown reads every name and :KEY: (CardForm).
+func scanText(src string, start, stop int, label, card bool, sent map[int]bool, at func(int) (int, int)) []Finding {
 	raw := src[start:stop]
 	var out []Finding
 	for i := range len(raw) {
@@ -134,7 +136,7 @@ func scanText(src string, start, stop int, label bool, sent map[int]bool, at fun
 		if start+m[0] > 0 && isAlnum(src[start+m[0]-1]) {
 			continue
 		}
-		if e, ok := emoji.ByKey(key); ok {
+		if e, ok := emoji.ByKey(key); ok && !card {
 			line, col := at(start + m[0])
 			out = append(out, shortcodeFinding(e, ":"+key+":", line, col))
 		}
@@ -145,7 +147,7 @@ func scanText(src string, start, stop int, label bool, sent map[int]bool, at fun
 	// node, so the source carries them.
 	if !label && start > 0 && stop < len(src) && src[start-1] == '[' && src[stop] == ']' {
 		if e, ok := emotionFor(raw); ok {
-			if line, col := at(start - 1); !sent[line] {
+			if line, col := at(start - 1); !card && !sent[line] {
 				out = append(out, bracketFinding(e, "["+raw+"]", line, col))
 			}
 		}

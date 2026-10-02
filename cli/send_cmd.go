@@ -111,7 +111,7 @@ type outgoingFlags struct {
 
 func (o *outgoingFlags) register(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&o.text, "text", "", "plain text to send, verbatim; @file reads a file, - reads stdin")
-	cmd.Flags().StringVar(&o.markdown, "markdown", "", "markdown to send as a rich-text post; @file reads a file, - reads stdin")
+	cmd.Flags().StringVar(&o.markdown, "markdown", "", "markdown to send as a rich-text post (a card when a list item names an emoji); @file reads a file, - reads stdin")
 	mustWire(cmd.RegisterFlagCompletionFunc("text", completeBodySource))
 	mustWire(cmd.RegisterFlagCompletionFunc("markdown", completeBodySource))
 	cmd.Flags().StringVar(&o.image, "image", "", "image to send: a path, or an img_… key Feishu already holds")

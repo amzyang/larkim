@@ -603,7 +603,11 @@ func (o Outgoing) body() (msgType, content, rendered string) {
 	case o.Card != "":
 		return "interactive", o.Card, CardMarkdown(o.Card)
 	case o.Markdown != "":
-		// Built by the same function the wire uses, so the two cannot drift.
+		// Built by the same functions the wire uses, so the two cannot drift.
+		if md, ok := larkmd.CardForm(o.Markdown); ok {
+			c := Card(md).Card
+			return "interactive", c, md
+		}
 		return "post", larkmd.PostContent(o.Markdown), o.Markdown
 	case o.ImageKey != "":
 		key, _ := json.Marshal(o.ImageKey)

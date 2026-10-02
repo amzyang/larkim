@@ -1189,7 +1189,7 @@ func (m Model) renderBadge(w int) string {
 	if m.side == sideAI {
 		return m.renderSnippetRow(w)
 	}
-	left := stChipEdge.Render(chipLeft) + stChip.Render(m.draft.kind.msgType()) + stChipEdge.Render(chipRight)
+	left := stChipEdge.Render(chipLeft) + stChip.Render(m.draft.badge()) + stChipEdge.Render(chipRight)
 	hint := stDim.Render(composerHint)
 	switch {
 	case m.mode == modeCandidates && m.candRows() > 0:

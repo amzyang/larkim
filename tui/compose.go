@@ -135,6 +135,19 @@ type draftPlan struct {
 	file draftFile
 }
 
+// badge is the type the composer names for the draft. It is the message type,
+// except that a post whose markdown goes as an interactive card says so: the
+// wire decides that from the markdown (larkmd.CardForm), and the reader
+// should know before Enter that the message arrives as a card.
+func (p draftPlan) badge() string {
+	if p.kind == kindPost && p.send.Markdown != "" {
+		if _, ok := larkmd.CardForm(p.send.Markdown); ok {
+			return "card"
+		}
+	}
+	return p.kind.msgType()
+}
+
 // draftFile is the attachment a draft names. local is the resolved absolute
 // path, empty when the draft named a key Feishu already holds.
 type draftFile struct {

@@ -137,9 +137,11 @@ func TestReply_CarriesTheDraftsType(t *testing.T) {
 func TestRenderInput_BadgeNamesTheResolvedType(t *testing.T) {
 	m, _ := newOutboxModel(t)
 	for draft, want := range map[string]string{
-		"好的":                 "text",
-		"## 发布说明":            "post",
-		"![截图](img_v3_shot)": "image",
+		"好的":                  "text",
+		"## 发布说明":             "post",
+		"![截图](img_v3_shot)":  "image",
+		"- 修复 A [Done]\n- 上线": "card",
+		"- 修复 A\n- 上线":        "post",
 	} {
 		mm, _ := m.startInsert(nil, false)
 		m = mm.(Model)
