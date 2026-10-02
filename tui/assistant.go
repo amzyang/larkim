@@ -119,6 +119,40 @@ type aiTurn struct {
 	traces []string
 	ch     <-chan ai.Chunk
 	cancel context.CancelFunc
+	// cache holds the turn's laid-out rows under their key. A rebuild runs
+	// on every chunk of an answer; the turns that did not move are the whole
+	// session, and re-rendering them at 20 chunks a second is what makes a
+	// long one heavy.
+	cache turnCache
+}
+
+// turnKey is everything a turn's laid-out rows depend on. metaGen is the
+// model's meta revision: a turn's rows quote senders and preview cards
+// through it, so a page that lands new names restyles them.
+type turnKey struct {
+	state                 aiTurnState
+	answerLen, traces     int
+	sent, w               int
+	last, anchored        bool
+	posted, failed, close bool
+	metaGen               int
+}
+
+// turnCache is a turn's rows under the key they were laid out for.
+type turnCache struct {
+	key  turnKey
+	rows []msgRow
+	acts []aiAct
+}
+
+// keyOf is what would make this turn's rows different now.
+func (t *aiTurn) keyOf(w int, last bool, metaGen int) turnKey {
+	k := turnKey{state: t.state, answerLen: len(t.answer), traces: len(t.traces),
+		sent: len(t.sentAt), w: w, last: last, anchored: t.anchor != nil, metaGen: metaGen}
+	if c := t.stream; c != nil {
+		k.posted, k.failed, k.close = c.messageID != "", c.err != "", c.closed
+	}
+	return k
 }
 
 type aiTurnState int
@@ -792,6 +826,12 @@ func (p *aiPanel) rebuild(m Model) {
 	}
 	for i, t := range s.turns {
 		last := i == len(s.turns)-1
+		if key := t.keyOf(w, last, m.metaGen); t.cache.key == key && t.cache.rows != nil {
+			p.rows = append(p.rows, t.cache.rows...)
+			p.rowAct = append(p.rowAct, t.cache.acts...)
+			continue
+		}
+		base := len(p.rows)
 		none := aiAct{turn: t.id, card: -1}
 		add(aiRowOf(m.aiTurnHead(t, w), w), none)
 		addAll(plainRows(wrap(t.ask, w), w), none)
@@ -849,6 +889,11 @@ func (p *aiPanel) rebuild(m Model) {
 			addAll(m.cardBodyRows(seg.Text, w), act)
 			add(aiCardFoot(w, act, t.anchor != nil, !sentWhen.IsZero(), sentWhen), act)
 		}
+		// Only a finished turn's rows are worth the cache: the turns that
+		// ended early draw a line or two, and the streaming tail moves with
+		// every chunk anyway.
+		t.cache = turnCache{key: t.keyOf(w, last, m.metaGen),
+			rows: slices.Clone(p.rows[base:]), acts: slices.Clone(p.rowAct[base:])}
 	}
 	p.sel = clamp(p.sel, 0, max(0, len(p.rows)-1))
 	if p.follow {

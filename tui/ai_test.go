@@ -1416,3 +1416,39 @@ func TestStreamToChat_TheCardIDIsPersistedWhenThePostLands(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, t1.stream.messageID, turns[0].CardID)
 }
+
+// A rebuild after a chunk re-lays-out only what moved: a finished turn's
+// rows are reused, and they are laid out again when their key moves with a
+// new page of names.
+func TestAIPanel_RebuildReusesTurnsThatDidNotMove(t *testing.T) {
+	f := newFakeAI()
+	m := aiFixture(t, f)
+	m = press(t, m, "a")
+	m, t1 := ask(t, m, "第一问")
+	m = answerDone(t, m, t1, "<reply>\n一\n</reply>")
+	aout, acmd := m.askAI("第二问", "", false)
+	m = aout.(Model)
+	astarted := askStarted(t, acmd)
+	asout, _ := m.onAIStarted(astarted)
+	m = asout.(Model)
+	t2 := m.aiP.session().turns[1]
+	m.aiP.rebuild(m)
+	require.NotNil(t, t1.cache.rows, "a finished turn's rows are kept")
+
+	// A marker row nobody would lay out: the next rebuild either reuses the
+	// cache — it shows — or re-renders and it does not.
+	t1.cache.rows = []msgRow{{text: "SENTINEL", plain: true}}
+	has := func(m Model) bool {
+		return slices.ContainsFunc(m.aiP.rows, func(r msgRow) bool { return r.text == "SENTINEL" })
+	}
+	out, _ := m.onAIChunk(aiChunkMsg{turn: t2.id, chunk: ai.Chunk{Text: "二"}})
+	m = out.(Model)
+	require.True(t, has(m), "a chunk that moves one turn reuses the others")
+
+	m.metaGen++
+	m.aiP.rebuild(m)
+	require.False(t, has(m), "a new page of names restyles every turn")
+
+	m.aiP.rebuild(m)
+	require.False(t, has(m), "and the re-laid-out turn is cached again under its new key")
+}

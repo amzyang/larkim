@@ -189,6 +189,10 @@ type Model struct {
 	msgs     []store.Message
 	msgsBase []store.Message
 	meta     msgMeta // detail for whatever the messages pane shows
+	// metaGen is meta's revision. Laid-out assistant turns quote senders and
+	// preview cards through meta, so a page that lands new names restyles
+	// them.
+	metaGen  int
 	msgIdx   int
 	msgTop   int // first visible line of the message pane
 	msgRows  []msgRow
@@ -727,6 +731,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// chat being left is the chat its frame belonged to.
 		infoCmd := entered
 		m.msgsBase, m.meta = msg.msgs, msg.meta
+		m.metaGen++
 		m.applyOutbox()
 		// Only the page that opens the chat carries its draft back into the
 		// composer; a reload would stomp whatever is being typed.
@@ -802,6 +807,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		anchor := topAnchor(m.msgRows, m.msgs, m.msgTop)
 		m.feed.sections = msg.sections
 		m.msgsBase, m.meta = msg.msgs, msg.meta
+		m.metaGen++
 		m.applyOutbox()
 		// Nothing here is taken as read, so every marker the page arrives with
 		// stands until the reader goes into the chat and reads it there.
