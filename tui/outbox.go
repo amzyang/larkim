@@ -84,6 +84,11 @@ func (m *Model) dropOutbox(localID string) {
 	m.outbox = slices.DeleteFunc(m.outbox, func(it outboxItem) bool { return it.localID == localID })
 }
 
+// onScreen reports whether either message list draws the row id names.
+func (m Model) onScreen(id string) bool {
+	return indexOfID(m.msgs, id) >= 0 || indexOfID(m.thread, id) >= 0
+}
+
 // outboxStates keys the pending sends by the id their rows carry, which is
 // how the renderer tells one apart from a message the store returned.
 func (m Model) outboxStates() map[string]outboxState {
@@ -102,6 +107,8 @@ func (m Model) outboxStates() map[string]outboxState {
 // put together, which is why the reaction presses are retired here too: this
 // runs exactly when a reload has brought Feishu's own answer in.
 func (m *Model) applyOutbox() {
+	m.settleOutbox()
+	msgsBase, threadBase := m.standIn(m.msgsBase), m.standIn(m.threadBase)
 	// A reply on its way belongs to the thread's pane alone. The chat's own
 	// flow no longer carries replies, so a bubble put there would show for a
 	// moment and vanish when the reload folds it away.
@@ -109,13 +116,13 @@ func (m *Model) applyOutbox() {
 	if m.feed != nil {
 		// Every section is a chat the panel shows, so a send waits under its
 		// own rather than at the foot of the page.
-		m.msgs = spliceBySection(m.msgsBase, m.pendingRows(m.msgsBase, inFlow))
+		m.msgs = spliceBySection(msgsBase, m.pendingRows(msgsBase, inFlow))
 	} else {
-		m.msgs = append(slices.Clone(m.msgsBase), m.pendingRows(m.msgsBase, func(it outboxItem) bool {
+		m.msgs = append(msgsBase, m.pendingRows(msgsBase, func(it outboxItem) bool {
 			return m.chatID != "" && it.chatID == m.chatID && inFlow(it)
 		})...)
 	}
-	m.thread = append(slices.Clone(m.threadBase), m.pendingRows(m.threadBase, func(it outboxItem) bool {
+	m.thread = append(threadBase, m.pendingRows(threadBase, func(it outboxItem) bool {
 		return m.threadID != "" && it.threadID == m.threadID
 	})...)
 	quotePending(&m.meta, m.msgsBase, m.outbox)
@@ -123,6 +130,36 @@ func (m *Model) applyOutbox() {
 	resPending(&m.meta, m.outbox)
 	resPending(&m.threadMeta, m.outbox)
 	m.reacts = settleReacts(m.reacts, time.Now())
+}
+
+// settleOutbox retires the sends whose message a pane's rows now carry
+// rendered. That is the one moment a bubble can go without leaving a gap or
+// a dim stand-in behind it: the row that replaces it is already on the page.
+func (m *Model) settleOutbox() {
+	m.outbox = slices.DeleteFunc(m.outbox, func(it outboxItem) bool {
+		return renderedIn(m.msgsBase, it.messageID) || renderedIn(m.threadBase, it.messageID)
+	})
+}
+
+func renderedIn(rows []store.Message, id string) bool {
+	i := indexOfID(rows, id)
+	return i >= 0 && rows[i].RenderedAt != 0
+}
+
+// standIn is a pane's stored rows, cloned, with a send that landed ahead of
+// its rendering drawing the body its bubble drew. The raw row and its
+// rendering are two writes, and a reload between them would otherwise swap
+// the text the sender just read for the dim stand-in of an unrendered row.
+func (m Model) standIn(rows []store.Message) []store.Message {
+	out := slices.Clone(rows)
+	for _, it := range m.outbox {
+		i := indexOfID(out, it.messageID)
+		if i < 0 || out[i].RenderedAt != 0 {
+			continue
+		}
+		out[i].Content, out[i].RenderedAt = it.body, 1
+	}
+	return out
 }
 
 // resPending lets a pending image draw the file the user picked. The download

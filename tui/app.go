@@ -1088,7 +1088,13 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			return m.notify("sent · not stored locally yet: "+msg.err.Error(), true), m.reloadCurrent()
 		}
-		m.dropOutbox(msg.localID)
+		// A bubble on screen waits for the reload below: dropped now, it would
+		// leave a gap until the page carrying its row lands, and applyOutbox
+		// retires it then. One no pane shows has nothing to hand over to.
+		if it := m.outboxAt(msg.localID); it != nil &&
+			!m.onScreen(it.localID) && !m.onScreen(it.messageID) {
+			m.dropOutbox(msg.localID)
+		}
 		m.refreshPanes()
 		var clear tea.Cmd
 		if m.candFilled != "" {

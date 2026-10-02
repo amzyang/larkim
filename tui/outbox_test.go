@@ -86,7 +86,7 @@ func TestUpdate_KeepsTheBubbleWhenTheIngestFails(t *testing.T) {
 	require.Len(t, m.msgs, 1)
 }
 
-func TestUpdate_RetiresTheBubbleOnceTheIngestWorked(t *testing.T) {
+func TestUpdate_KeepsTheBubbleUntilTheReloadBringsItsRow(t *testing.T) {
 	m, _ := newOutboxModel(t)
 	m.enqueue(outboxItem{localID: "local-1", chatID: "oc_1", msgType: "text", body: "hi", state: outSent, messageID: "om_1", createMs: 10})
 	m.applyOutbox()
@@ -94,8 +94,41 @@ func TestUpdate_RetiresTheBubbleOnceTheIngestWorked(t *testing.T) {
 	mm, _ := m.Update(ingestedMsg{localID: "local-1"})
 	m = mm.(Model)
 
+	require.Equal(t, []string{"hi"}, contents(m.msgs), "the page the reload brings has not landed yet")
+	require.Len(t, m.outbox, 1)
+
+	m.msgsBase = []store.Message{{MessageID: "om_1", ChatID: "oc_1", Content: "hi", RenderedAt: 2, CreateMs: 20}}
+	m.applyOutbox()
+
+	require.Empty(t, m.outbox)
+	require.Equal(t, "om_1", m.msgs[0].MessageID)
+}
+
+func TestUpdate_RetiresABubbleNoPaneShowsOnceTheIngestWorked(t *testing.T) {
+	m, _ := newOutboxModel(t)
+	m.enqueue(outboxItem{localID: "local-1", chatID: "oc_2", msgType: "text", body: "hi", state: outSent, messageID: "om_1", createMs: 10})
+	m.applyOutbox()
+
+	mm, _ := m.Update(ingestedMsg{localID: "local-1"})
+	m = mm.(Model)
+
 	require.Empty(t, m.outbox)
 	require.Empty(t, m.msgs)
+}
+
+func TestApplyOutbox_AnUnrenderedLandingDrawsTheBubblesBody(t *testing.T) {
+	m, _ := newOutboxModel(t)
+	m.enqueue(outboxItem{localID: "local-1", chatID: "oc_1", msgType: "text", body: "hi", state: outSent, messageID: "om_1", createMs: 10})
+	m.msgsBase = []store.Message{{MessageID: "om_1", ChatID: "oc_1", MsgType: "text", ContentRaw: `{"text":"hi"}`, CreateMs: 20}}
+
+	m.applyOutbox()
+
+	require.Len(t, m.msgs, 1)
+	require.Equal(t, "om_1", m.msgs[0].MessageID)
+	require.Equal(t, "hi", m.msgs[0].Content)
+	require.NotZero(t, m.msgs[0].RenderedAt, "not the dim stand-in an unrendered row draws")
+	require.Zero(t, m.msgsBase[0].RenderedAt, "the store's rows are left as the store returned them")
+	require.Len(t, m.outbox, 1, "the item lives on until the rendering lands")
 }
 
 func TestRetryFailed_ReusesTheIdempotencyKey(t *testing.T) {
@@ -187,9 +220,14 @@ func TestSubmit_HandsTheBubbleOverToTheStoredMessage(t *testing.T) {
 
 	ingested := firstOf[ingestedMsg](t, cmd)
 	require.NoError(t, ingested.err)
-	mm, _ = m.Update(ingested)
+	mm, cmd = m.Update(ingested)
+	m = mm.(Model)
+	require.Equal(t, []string{"hello"}, contents(m.msgs), "on screen across the wait for the reload")
+	mm, _ = m.Update(firstOf[messagesLoadedMsg](t, cmd))
 	m = mm.(Model)
 	require.Empty(t, m.outbox)
+	require.Len(t, m.msgs, 1)
+	require.Equal(t, "om_sent_1", m.msgs[0].MessageID)
 
 	rows, err := m.deps.Store.ListMessages(t.Context(), store.MessageQuery{ChatID: "oc_1"})
 	require.NoError(t, err)
