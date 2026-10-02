@@ -3139,13 +3139,6 @@ func (m Model) onClick(ms tea.Mouse) (tea.Model, tea.Cmd) {
 		if s, ok := m.bandAt(ms.X); ok {
 			m.side = s
 		}
-		// A snippet chip is not the box: pressing it puts the snippet in the
-		// box rather than the cursor.
-		if m.side == sideAI && row == m.composerHeight()-1 {
-			if i := m.aiChipAt(ms.X - m.bandLeft(sideAI) - 1); i >= 0 {
-				return m.insertSnippet(i)
-			}
-		}
 		return m.resumeInsert()
 	}
 	return m, nil

@@ -40,7 +40,7 @@ topic groups.
 │ └ Send · Reply · Insert · Copy ───┘ │
 ╰─────────────────────────────────────╯
 ╭─────────────────────────────────────╮
-│ 1 Summary 2 Draft 3 Options…        │   snippets
+│                         / snippets  │   snippet popup
 │ > Ask about this chat…              │   AI input
 ╰─────────────────────────────────────╯
 ```

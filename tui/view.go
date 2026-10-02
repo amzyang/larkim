@@ -230,6 +230,7 @@ func (m *Model) layout() {
 	rows := m.composerRows()
 	m.sized(sideMain, rows)
 	m.sized(sideRight, rows)
+	m.sized(sideAI, rows)
 	m.cmdline.SetWidth(max(10, m.bandWidth(m.cmdSide())-4))
 	m.rebuildPreview()
 	// A resize rewraps every row, so each pane is held by the message on its
@@ -1177,7 +1178,16 @@ func (m Model) renderInput(s composerSide) string {
 	}
 	content := strings.Join(append(m.composerAbove(s, w), ta.View()), "\n")
 	if s == m.side && m.composerRows().badge > 0 {
-		content += "\n" + m.renderBadge(w)
+		if s == sideAI {
+			lines := strings.Split(content, "\n")
+			for len(lines) < h-1 {
+				lines = append(lines, "")
+			}
+			lines = append(lines, m.renderBadge(w))
+			content = strings.Join(lines, "\n")
+		} else {
+			content += "\n" + m.renderBadge(w)
+		}
 	}
 	return paneStyle(m.focus == paneInput && s == m.side).Height(h).Render(fitBlock(content, w, h))
 }
@@ -1227,8 +1237,7 @@ const (
 // renderBadge names the message type the draft will be sent as, so the
 // composer's choice is never a surprise Enter springs on the reader. Outside
 // insert mode the row names the key that opens it instead of the keys that
-// send. The assistant's box asks rather than sends, so its row is the
-// snippet offers instead of a message type.
+// send. The assistant's box asks rather than sends, so its row names / snippets.
 func (m Model) renderBadge(w int) string {
 	if m.side == sideAI {
 		return m.renderSnippetRow(w)

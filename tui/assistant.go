@@ -2042,62 +2042,12 @@ func (m Model) insertSnippet(i int) (tea.Model, tea.Cmd) {
 	return m.enterAI()
 }
 
-// aiChip is one snippet chip of the AI band's badge row: its label — the
-// digit that reaches it and the snippet's name — and the columns it is drawn
-// over.
-type aiChip struct {
-	idx    int
-	label  string
-	x0, x1 int
-}
+// snippetHint names how to reach the snippet list from the AI box.
+const snippetHint = "/ snippets"
 
-// aiChipRow lays the chips out at the width the AI band has. The row the
-// reader sees and the click target the mouse answers come from the same
-// layout, so they cannot disagree.
-func (m Model) aiChipRow(w int) []aiChip {
-	room := w - lipgloss.Width(snippetHint) - 2
-	var out []aiChip
-	x := 0
-	for i, sn := range m.snippets() {
-		if i >= 9 {
-			break
-		}
-		chip := fmt.Sprintf("%d %s", i+1, sn.Name)
-		if x > 0 {
-			x += 2
-		}
-		if x+lipgloss.Width(chip) > room {
-			break
-		}
-		out = append(out, aiChip{idx: i, label: chip, x0: x, x1: x + lipgloss.Width(chip)})
-		x += lipgloss.Width(chip)
-	}
-	return out
-}
-
-// snippetHint names the other way in, beside the chips that fit.
-const snippetHint = "/ snippets · Enter ask"
-
-// renderSnippetRow is the AI band's badge row: the panel's snippet offers
-// under their digits, as far as they fit — the rest are reached with /.
+// renderSnippetRow is the AI band's badge row: one hint for the / popup.
 func (m Model) renderSnippetRow(w int) string {
-	chips := m.aiChipRow(w)
-	labels := make([]string, len(chips))
-	for i, c := range chips {
-		labels[i] = c.label
-	}
-	return padBetween(strings.Join(labels, "  "), stDim.Render(snippetHint), w)
-}
-
-// aiChipAt names the snippet chip at column x of the badge row's content, -1
-// for none.
-func (m Model) aiChipAt(x int) int {
-	for _, c := range m.aiChipRow(m.bandWidth(sideAI) - 2) {
-		if x >= c.x0 && x < c.x1 {
-			return c.idx
-		}
-	}
-	return -1
+	return padBetween("", stDim.Render(snippetHint), w)
 }
 
 // --- stream to chat --------------------------------------------------------

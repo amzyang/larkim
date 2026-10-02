@@ -559,7 +559,7 @@ func TestRenderAI_ShowsTheTurnsAndItsOwnBand(t *testing.T) {
 	// The column owns its band: the box under it holds the question input,
 	// named while it is empty.
 	band := ansi.Strip(m.renderBand(sideAI))
-	require.Contains(t, band, "Enter ask")
+	require.Contains(t, band, "/ snippets")
 	require.Contains(t, band, "Ask about this chat…")
 }
 
@@ -1151,11 +1151,9 @@ func TestSnippets_InsertWithoutAsking(t *testing.T) {
 	require.Equal(t, modeInsert, m.mode, "the keys land in the box")
 	require.Empty(t, f.asks, "inserting never asks")
 
-	// The band draws the offers under their digits.
 	band := ansi.Strip(m.renderBand(sideAI))
-	require.Contains(t, band, "1 Summary")
-	require.Contains(t, band, "2 Draft")
 	require.Contains(t, band, "/ snippets")
+	require.NotContains(t, band, "1 Summary", "snippets are reached with / and digits, not listed on the row")
 }
 
 // ai.snippets replaces the built-ins whole.
@@ -1171,8 +1169,8 @@ func TestSnippets_TheConfigListReplacesTheBuiltins(t *testing.T) {
 	m = out
 	require.Equal(t, "Summarize today's blockers.", m.aiP.input.Value())
 	band := ansi.Strip(m.renderBand(sideAI))
-	require.Contains(t, band, "1 Standup")
-	require.NotContains(t, band, "Summary", "the built-ins went with the list")
+	require.Contains(t, band, "/ snippets")
+	require.NotContains(t, band, "Standup", "the row names / only")
 
 	// And :ai names the replacement offer.
 	cout, cmd := m.askCommand("standup")
