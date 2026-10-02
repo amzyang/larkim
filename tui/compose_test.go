@@ -317,6 +317,33 @@ func TestSubmit_ImageDraftUploadsThenSends(t *testing.T) {
 	require.Equal(t, "[Image: img_local_0]", m.msgs[0].Content)
 }
 
+func TestSubmit_TheStoredRowDrawsThePictureThatWasSent(t *testing.T) {
+	m, _ := newOutboxModel(t)
+	dir := t.TempDir()
+	m.deps.Syncer.Opt().DataDir = dir
+	shot := filepath.Join(t.TempDir(), "shot.png")
+	require.NoError(t, os.WriteFile(shot, []byte("png"), 0o600))
+	m.files = fakeFiles(map[string]int64{shot: 3})
+	m.input.SetValue("![截图](" + shot + ")")
+
+	mm, cmd := m.submit()
+	m = mm.(Model)
+	sent := cmd().(sentMsg)
+	require.NoError(t, sent.ingestErr)
+	mm, cmd = m.Update(sent)
+	m = mm.(Model)
+	mm, _ = m.Update(firstOf[messagesLoadedMsg](t, cmd))
+	m = mm.(Model)
+
+	require.Empty(t, m.outbox, "the stored row took over")
+	rs := m.meta.res["om_sent_1"]
+	require.Len(t, rs, 1)
+	require.Equal(t, "done", rs[0].Status, "nothing is left for the downloader to fetch back")
+	b, err := os.ReadFile(filepath.Join(dir, rs[0].LocalPath))
+	require.NoError(t, err)
+	require.Equal(t, "png", string(b))
+}
+
 func TestSubmit_MarkdownWithLocalImageUploadsAndRewrites(t *testing.T) {
 	m, f := newOutboxModel(t)
 	m.files = fakeFiles(map[string]int64{"/Users/linlan/shot.png": 2048})

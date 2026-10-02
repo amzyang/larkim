@@ -283,6 +283,45 @@ func (s *Syncer) storeResource(ctx context.Context, p store.Resource, res larkcl
 	return true, s.Store.MarkResourceDone(ctx, p.FileKey, rel, st.Size())
 }
 
+// sentSubdir holds the files this process uploaded, each under the key Feishu
+// gave it.
+const sentSubdir = "resources/sent"
+
+// KeepSent files a picture or attachment just uploaded under its key, the way
+// a finished download is filed, so the message it goes out in draws it
+// straight away and the downloader finds nothing to fetch. It copies rather
+// than recording path: a paste lives in a scratch directory, and an original
+// is the user's to move. A file past resources.max_bytes is left to the
+// downloader, which skips it the way it skips anyone else's.
+func (s *Syncer) KeepSent(ctx context.Context, key, typ, path string) error {
+	dataDir := s.Opt().DataDir
+	if dataDir == "" {
+		return nil
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	if s.oversize(int64(len(b))) {
+		return nil
+	}
+	dir := filepath.Join(dataDir, sentSubdir)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	name := key + filepath.Ext(path)
+	// Written aside and renamed, so no reader ever opens half a file.
+	tmp := filepath.Join(dir, ".tmp-"+key)
+	defer os.Remove(tmp)
+	if err := os.WriteFile(tmp, b, 0o600); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, filepath.Join(dir, name)); err != nil {
+		return err
+	}
+	return s.Store.SeedResource(ctx, key, typ, filepath.Join(sentSubdir, name), int64(len(b)))
+}
+
 // oversize reports whether an attachment is past resources.max_bytes.
 func (s *Syncer) oversize(size int64) bool {
 	return s.Opt().MaxBytes > 0 && size > s.Opt().MaxBytes

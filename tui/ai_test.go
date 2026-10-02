@@ -805,7 +805,7 @@ func aiSendFixture(t *testing.T, f *fakeAI) (Model, *larkcli.Fake) {
 	t.Helper()
 	c := larkcli.NewFake()
 	m := aiFixture(t, f)
-	m.deps.Client = c
+	m.deps.Client, m.deps.Syncer.Client = c, c
 	return m, c
 }
 

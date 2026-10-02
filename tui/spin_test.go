@@ -1,14 +1,11 @@
 package tui
 
 import (
-	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/amzyang/larkim/store"
 )
 
 // firstOf runs a cmd, and every cmd of the batches it returns, and hands back
@@ -50,22 +47,11 @@ func TestPaceSpin_RunsExactlyWhileAnAnswerStreams(t *testing.T) {
 	assert.False(t, m.spin.Running(), "the spinner stops once nothing waits on it")
 }
 
-func TestRespin_SwapsOnlyThePendingSendsFrame(t *testing.T) {
-	msgs := []store.Message{{MessageID: "local-1", SenderID: "ou_me", SenderName: "林岚",
-		ChatID: "oc_1", Content: "在路上", CreateMs: msgAt(23, 9, 0), RenderedAt: 1}}
-	st := baseStyle()
-	st.outbox = map[string]outboxState{"local-1": outSending}
-	st.spin = "<f0>"
-	rows := renderRows(msgs, st)
-	require.True(t, spinning(rows), "a send on its way heads its block with the spinner")
-	before := rowText(rows)
+func TestPaceSpin_LeavesASendOnItsWayAlone(t *testing.T) {
+	m, _ := newOutboxModel(t)
+	m.enqueue(outboxItem{localID: "local-1", chatID: "oc_1", msgType: "text", body: "在路上", createMs: 10})
+	m.refreshPanes()
 
-	respin(rows, "<f1>")
-	after := rowText(rows)
-	assert.Contains(t, after, "<f1> sending")
-	assert.NotContains(t, after, "<f0>")
-	assert.Equal(t, strings.Replace(before, "<f0>", "<f1>", 1), after, "nothing but the frame moves")
-
-	st.outbox["local-1"] = outFailed
-	assert.False(t, spinning(renderRows(msgs, st)), "a failed send has nothing to wait on")
+	assert.Nil(t, m.paceSpin(nil), "a send is drawn as sent, so nothing on screen waits on the spinner")
+	assert.False(t, m.spin.Running())
 }

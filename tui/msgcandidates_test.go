@@ -67,7 +67,7 @@ func TestCandidateRows_SendPostsReply(t *testing.T) {
 	require.Equal(t, "放行话术", strings.TrimSpace(m.outbox[0].body))
 	require.Equal(t, "om_a", m.candFilled)
 	require.Empty(t, m.candidatesForStyle()["om_a"])
-	mm, _ := m.update(ingestedMsg{localID: m.outbox[0].localID})
+	mm, _ := m.update(sentMsg{localID: m.outbox[0].localID, messageID: "om_sent_1"})
 	m = mm.(Model)
 	require.Empty(t, m.candFilled)
 	clearCandidate(m.deps, "om_a")()

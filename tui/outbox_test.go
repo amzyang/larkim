@@ -76,22 +76,23 @@ func TestApplyOutbox_DropsTheRowOnceTheRealMessageLands(t *testing.T) {
 
 func TestUpdate_KeepsTheBubbleWhenTheIngestFails(t *testing.T) {
 	m, _ := newOutboxModel(t)
-	m.enqueue(outboxItem{localID: "local-1", chatID: "oc_1", msgType: "text", body: "hi", state: outSent, messageID: "om_1", createMs: 10})
+	m.enqueue(outboxItem{localID: "local-1", chatID: "oc_1", msgType: "text", body: "hi", createMs: 10})
 	m.applyOutbox()
 
-	mm, _ := m.Update(ingestedMsg{localID: "local-1", err: errors.New("mget failed")})
+	mm, _ := m.Update(sentMsg{localID: "local-1", messageID: "om_1", ingestErr: errors.New("mget failed")})
 	m = mm.(Model)
 
 	require.Len(t, m.outbox, 1, "the message is on Feishu; only the local row is missing")
+	require.Equal(t, outSent, m.outbox[0].state)
 	require.Len(t, m.msgs, 1)
 }
 
 func TestUpdate_KeepsTheBubbleUntilTheReloadBringsItsRow(t *testing.T) {
 	m, _ := newOutboxModel(t)
-	m.enqueue(outboxItem{localID: "local-1", chatID: "oc_1", msgType: "text", body: "hi", state: outSent, messageID: "om_1", createMs: 10})
+	m.enqueue(outboxItem{localID: "local-1", chatID: "oc_1", msgType: "text", body: "hi", createMs: 10})
 	m.applyOutbox()
 
-	mm, _ := m.Update(ingestedMsg{localID: "local-1"})
+	mm, _ := m.Update(sentMsg{localID: "local-1", messageID: "om_1"})
 	m = mm.(Model)
 
 	require.Equal(t, []string{"hi"}, contents(m.msgs), "the page the reload brings has not landed yet")
@@ -106,10 +107,10 @@ func TestUpdate_KeepsTheBubbleUntilTheReloadBringsItsRow(t *testing.T) {
 
 func TestUpdate_RetiresABubbleNoPaneShowsOnceTheIngestWorked(t *testing.T) {
 	m, _ := newOutboxModel(t)
-	m.enqueue(outboxItem{localID: "local-1", chatID: "oc_2", msgType: "text", body: "hi", state: outSent, messageID: "om_1", createMs: 10})
+	m.enqueue(outboxItem{localID: "local-1", chatID: "oc_2", msgType: "text", body: "hi", createMs: 10})
 	m.applyOutbox()
 
-	mm, _ := m.Update(ingestedMsg{localID: "local-1"})
+	mm, _ := m.Update(sentMsg{localID: "local-1", messageID: "om_1"})
 	m = mm.(Model)
 
 	require.Empty(t, m.outbox)
@@ -213,15 +214,12 @@ func TestSubmit_HandsTheBubbleOverToTheStoredMessage(t *testing.T) {
 
 	sent := cmd().(sentMsg)
 	require.NoError(t, sent.err)
+	require.NoError(t, sent.ingestErr)
 	require.Equal(t, "om_sent_1", sent.messageID)
+	require.NotContains(t, f.Calls, "mget", "the send's answer is the row; nothing is fetched back")
 	mm, cmd = m.Update(sent)
 	m = mm.(Model)
 	require.Equal(t, outSent, m.outbox[0].state)
-
-	ingested := firstOf[ingestedMsg](t, cmd)
-	require.NoError(t, ingested.err)
-	mm, cmd = m.Update(ingested)
-	m = mm.(Model)
 	require.Equal(t, []string{"hello"}, contents(m.msgs), "on screen across the wait for the reload")
 	mm, _ = m.Update(firstOf[messagesLoadedMsg](t, cmd))
 	m = mm.(Model)

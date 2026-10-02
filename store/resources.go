@@ -75,6 +75,19 @@ func (s *Store) AddPendingResources(ctx context.Context, refs []ResourceRef) err
 	return tx.Commit()
 }
 
+// SeedResource records a key whose bytes are already on disk before any
+// message references it: the file this process just uploaded. A key some
+// message already registered is settled too, unless its download finished.
+// The references come later, from the message's own ingest, and leave the
+// row as they find it.
+func (s *Store) SeedResource(ctx context.Context, fileKey, typ, localPath string, size int64) error {
+	_, err := s.db.ExecContext(ctx, `INSERT INTO resources (file_key, type, local_path, size_bytes, status) VALUES (?, ?, ?, ?, 'done')
+ ON CONFLICT(file_key) DO UPDATE SET status = 'done', local_path = excluded.local_path,
+   size_bytes = excluded.size_bytes, last_error = ''
+ WHERE resources.status <> 'done'`, fileKey, typ, localPath, size)
+	return err
+}
+
 // MarkResourceDone records a completed download.
 func (s *Store) MarkResourceDone(ctx context.Context, fileKey, localPath string, size int64) error {
 	_, err := s.db.ExecContext(ctx, `UPDATE resources SET status = 'done', local_path = ?, size_bytes = ?, last_error = '' WHERE file_key = ?`, localPath, size, fileKey)

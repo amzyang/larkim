@@ -234,17 +234,14 @@ type (
 		// so a retry is one more send rather than one more upload.
 		keys []string
 		err  error
+		// ingestErr is the store write that follows a send Feishu took. The
+		// message is out either way; this only says the row is not local yet.
+		ingestErr error
 	}
 	// pastedMsg answers a read of the clipboard.
 	pastedMsg struct {
 		clip clip
 		err  error
-	}
-	// ingestedMsg answers the fetch that follows a send, which is what puts
-	// the real row in the store.
-	ingestedMsg struct {
-		localID string
-		err     error
 	}
 	selfNameMsg   struct{ name string }
 	syncStatusMsg struct{ status, lastError string }
@@ -726,7 +723,7 @@ func sendMsg(d Deps, localID string, target larkcli.Target, msg larkcli.Outgoing
 		ctx, cancel := waited(sendTimeout)
 		defer cancel()
 		sent, err := d.Client.Send(ctx, target, msg, localID)
-		return sentMsg{localID: localID, messageID: sent.MessageID, keys: keys, err: err}
+		return stored(d, localID, keys, sent, err)
 	}
 }
 
@@ -739,8 +736,22 @@ func replyMsg(d Deps, localID, messageID string, msg larkcli.Outgoing, inThread 
 		ctx, cancel := waited(sendTimeout)
 		defer cancel()
 		sent, err := d.Client.Reply(ctx, messageID, msg, inThread, localID)
-		return sentMsg{localID: localID, messageID: sent.MessageID, keys: keys, err: err}
+		return stored(d, localID, keys, sent, err)
 	}
+}
+
+// stored puts a message Feishu just took into the store before the send is
+// answered, so the row the panes draw comes from the store like every other
+// and the bubble can hand over to it on the reload that write causes.
+func stored(d Deps, localID string, keys []string, sent larkcli.SentMessage, err error) sentMsg {
+	out := sentMsg{localID: localID, messageID: sent.MessageID, keys: keys, err: err}
+	if err != nil {
+		return out
+	}
+	ctx, cancel := waited(sendTimeout)
+	defer cancel()
+	out.ingestErr = d.Syncer.IngestSent(ctx, sent)
+	return out
 }
 
 // uploadImages puts a draft's files on Feishu and swaps the placeholders in
@@ -763,6 +774,7 @@ func uploadDraft(d Deps, msg larkcli.Outgoing, imgs []draftImage, file draftFile
 		if err != nil {
 			return msg, nil, fmt.Errorf("upload %s: %w", filepath.Base(file.local), err)
 		}
+		keepSent(d, key, "file", file.local)
 		msg.FileKey = key
 		return msg, []string{key}, nil
 	}
@@ -780,6 +792,7 @@ func uploadDraft(d Deps, msg larkcli.Outgoing, imgs []draftImage, file draftFile
 			if err != nil {
 				return msg, keys, err
 			}
+			keepSent(d, up, "image", img.local)
 			key = up
 		case img.url != "":
 			path, err := fetchRemote(d, img.url)
@@ -787,6 +800,9 @@ func uploadDraft(d Deps, msg larkcli.Outgoing, imgs []draftImage, file draftFile
 				return msg, keys, err
 			}
 			up, err := uploadOne(d, path)
+			if err == nil {
+				keepSent(d, up, "image", path)
+			}
 			os.Remove(path)
 			if err != nil {
 				return msg, keys, err
@@ -800,6 +816,14 @@ func uploadDraft(d Deps, msg larkcli.Outgoing, imgs []draftImage, file draftFile
 		}
 	}
 	return msg, keys, nil
+}
+
+// keepSent files what was just uploaded under its key. A failure costs only
+// the download the message would have had anyway, so the send goes on.
+func keepSent(d Deps, key, typ, path string) {
+	if err := d.Syncer.KeepSent(context.Background(), key, typ, path); err != nil {
+		d.Log.Warn("keep sent file", "key", key, "err", err)
+	}
 }
 
 // uploadOne puts one file on Feishu under a deadline of its own, rather than
@@ -829,14 +853,6 @@ func pasteClipboard(d Deps) tea.Cmd {
 	return func() tea.Msg {
 		c, err := d.Clipboard(filepath.Join(d.DataDir, pastedDir))
 		return pastedMsg{clip: c, err: err}
-	}
-}
-
-// ingestCmd fetches a just-sent message past the sync watermark, so the row
-// the panes draw comes from the store like every other.
-func ingestCmd(d Deps, localID, messageID string) tea.Cmd {
-	return func() tea.Msg {
-		return ingestedMsg{localID: localID, err: ingestMessage(d, messageID)}
 	}
 }
 

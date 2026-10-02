@@ -598,6 +598,8 @@ func (f *Fake) SearchChats(_ context.Context, query string) ([]RawChat, error) {
 // both here lets a test follow a send all the way through ingest.
 func (o Outgoing) body() (msgType, content, rendered string) {
 	switch {
+	case o.Post != "":
+		return "post", o.Post, o.Post
 	case o.Card != "":
 		return "interactive", o.Card, CardMarkdown(o.Card)
 	case o.Markdown != "":
@@ -660,7 +662,14 @@ func (f *Fake) Send(_ context.Context, target Target, msg Outgoing, idempotencyK
 	m.Raw, _ = json.Marshal(map[string]string{"message_id": id})
 	f.Messages[id] = m
 	f.Rendered[id] = RenderedMessage{MessageID: id, ChatID: chat, MsgType: msgType, Content: rendered, Raw: m.Raw}
-	return SentMessage{MessageID: id, ChatID: chat}, nil
+	return SentMessage{MessageID: id, ChatID: chat, Message: answered(m)}, nil
+}
+
+// answered is the message as a send's answer carries it: Feishu leaves the
+// position out.
+func answered(m RawMessage) *RawMessage {
+	m.MessagePosition = 0
+	return &m
 }
 
 // PatchMessage rewrites the stored card the way the wire does: the message's
@@ -719,8 +728,11 @@ func (f *Fake) Forward(ctx context.Context, messageID string, target Target, key
 		return SentMessage{}, fmt.Errorf("no such message %s", messageID)
 	}
 	// A forward lands as a new message carrying the original's body, which is
-	// what makes it ingestable like any other send.
-	return f.Send(ctx, target, Outgoing{Text: src.Body.Content}, key)
+	// what makes it ingestable like any other send. The forward command keeps
+	// only the ids of its answer.
+	s, err := f.Send(ctx, target, Outgoing{Text: src.Body.Content}, key)
+	s.Message = nil
+	return s, err
 }
 
 func (f *Fake) Reply(ctx context.Context, messageID string, msg Outgoing, inThread bool, key string) (SentMessage, error) {
@@ -743,6 +755,7 @@ func (f *Fake) Reply(ctx context.Context, messageID string, msg Outgoing, inThre
 	}
 	f.Messages[s.MessageID] = m
 	f.mu.Unlock()
+	s.Message = answered(m)
 	return s, nil
 }
 

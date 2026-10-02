@@ -1049,7 +1049,31 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.aiP != nil {
 			m.markAISent(msg.localID)
 		}
-		return m, ingestCmd(m.deps, msg.localID, msg.messageID)
+		// The message is on Feishu either way. A store write that failed only
+		// means the row is not local yet, so the bubble stays up and the next
+		// sync to bring the row in is what retires it.
+		if msg.ingestErr != nil {
+			return m.notify("sent · not stored locally yet: "+msg.ingestErr.Error(), true), m.reloadCurrent()
+		}
+		// A bubble on screen waits for the reload below: dropped now, it would
+		// leave a gap until the page carrying its row lands, and applyOutbox
+		// retires it then. One no pane shows has nothing to hand over to.
+		if it != nil && !m.onScreen(it.localID) && !m.onScreen(it.messageID) {
+			m.dropOutbox(msg.localID)
+		}
+		m.refreshPanes()
+		var clear tea.Cmd
+		if m.candFilled != "" {
+			clear = clearCandidate(m.deps, m.candFilled)
+			m.candFilled = ""
+		}
+		cmds := tea.Batch(m.reloadCurrent(), clear)
+		// A send that put a bubble up says nothing more: the bubble already
+		// said it went. :send has no bubble, so the notice is its answer.
+		if it == nil {
+			return m.notify("sent", false), cmds
+		}
+		return m, cmds
 	case pastedMsg:
 		if msg.err != nil {
 			return m.notify("paste: "+msg.err.Error(), true), nil
@@ -1102,27 +1126,6 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.pics.forget()
 		m.layout()
 		return m.notify("", false), nil
-	case ingestedMsg:
-		// The message is on Feishu either way. A fetch that failed only means
-		// the row is not local yet, so the bubble stays up and the next sync
-		// to bring the row in is what retires it.
-		if msg.err != nil {
-			return m.notify("sent · not stored locally yet: "+msg.err.Error(), true), m.reloadCurrent()
-		}
-		// A bubble on screen waits for the reload below: dropped now, it would
-		// leave a gap until the page carrying its row lands, and applyOutbox
-		// retires it then. One no pane shows has nothing to hand over to.
-		if it := m.outboxAt(msg.localID); it != nil &&
-			!m.onScreen(it.localID) && !m.onScreen(it.messageID) {
-			m.dropOutbox(msg.localID)
-		}
-		m.refreshPanes()
-		var clear tea.Cmd
-		if m.candFilled != "" {
-			clear = clearCandidate(m.deps, m.candFilled)
-			m.candFilled = ""
-		}
-		return m.notify("sent", false), tea.Batch(m.reloadCurrent(), clear)
 	case selfNameMsg:
 		m.selfName = msg.name
 		m.refreshPanes()

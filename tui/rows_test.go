@@ -343,18 +343,18 @@ func TestHeadLine_BadgesAnAppsTurn(t *testing.T) {
 	require.NotContains(t, ansi.Strip(headLine(human, st)), botBadge)
 }
 
-func TestHeadLine_MarksAMessageOnItsWayAndOneThatFailed(t *testing.T) {
+func TestHeadLine_MarksOnlyASendThatFailed(t *testing.T) {
 	pending := store.Message{MessageID: "local-1", SenderID: "ou_me", SenderName: "林岚"}
+	sent := store.Message{MessageID: "om_1", SenderID: "ou_me", SenderName: "林岚"}
 	st := msgStyle{width: 60, self: "ou_me", now: testNow,
 		outbox: map[string]outboxState{"local-1": outSending}}
 
-	require.Contains(t, ansi.Strip(headLine(pending, st)), "sending")
+	require.Equal(t, headLine(sent, st), headLine(pending, st), "a send on its way reads as sent")
+	st.outbox["local-1"] = outSent
+	require.Equal(t, headLine(sent, st), headLine(pending, st))
 
 	st.outbox["local-1"] = outFailed
 	require.Contains(t, headLine(pending, st), "(failed)")
-	require.NotContains(t, ansi.Strip(headLine(pending, st)), "sending")
-	require.NotContains(t, ansi.Strip(headLine(store.Message{MessageID: "om_1", SenderID: "ou_me"}, st)), "sending",
-		"a message the store returned carries no send state")
 }
 
 // markOf is the marker column a rendered row opens with, styles stripped.
@@ -492,16 +492,21 @@ func TestRenderRows_TheReadersOwnMessagesCarryNoMarkOfTheirOwn(t *testing.T) {
 	require.Equal(t, " ", markOf(rows[2]))
 }
 
-func TestRenderRows_ASendOnItsWaySaysSoOnALineOfItsOwn(t *testing.T) {
-	msgs := []store.Message{{MessageID: "local-1", SenderID: "ou_me", SenderName: "林岚",
-		ChatID: "oc_1", Content: "在路上", CreateMs: msgAt(23, 9, 0), RenderedAt: 1}}
+func TestRenderRows_ASendOnItsWayDrawsAsTheMessageItBecomes(t *testing.T) {
+	msgs := []store.Message{
+		{MessageID: "om_1", SenderID: "ou_me", SenderName: "林岚", ChatID: "oc_1",
+			Content: "第一条", CreateMs: msgAt(23, 9, 0), RenderedAt: 1},
+		{MessageID: "local-2", SenderID: "ou_me", SenderName: "林岚", ChatID: "oc_1",
+			Content: "在路上", CreateMs: msgAt(23, 9, 1), RenderedAt: 1},
+	}
 	st := baseStyle()
+	landed := rowText(renderRows(msgs, st))
 
-	st.outbox = map[string]outboxState{"local-1": outSending}
-	require.Contains(t, rowText(renderRows(msgs, st)), "sending",
-		"how far a send has got is spelled out, so it heads a block of its own")
+	st.outbox = map[string]outboxState{"local-2": outSending}
+	require.Equal(t, landed, rowText(renderRows(msgs, st)),
+		"the bubble joins the block before it, so the hand-over moves nothing")
 
-	st.outbox["local-1"] = outFailed
+	st.outbox["local-2"] = outFailed
 	require.Contains(t, rowText(renderRows(msgs, st)), "(failed)")
 }
 

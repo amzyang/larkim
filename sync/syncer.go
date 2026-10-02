@@ -677,29 +677,62 @@ func (s *Syncer) IngestIDs(ctx context.Context, ids []string) error {
 		if err != nil {
 			return err
 		}
-		if _, _, err := s.upsertRaw(ctx, msgs, now); err != nil {
+		if err := s.ingest(ctx, msgs, now); err != nil {
 			return err
 		}
-		// The types larkim renders itself are done here rather than asked
-		// about: the sender is waiting, and a call for a body already on disk
-		// would only slow that down.
-		if _, err := s.renderLocal(ctx, batch, len(msgs), now); err != nil {
-			return err
-		}
-		remote := make([]string, 0, len(msgs))
-		for _, m := range msgs {
-			if !store.LocallyRendered(m.MsgType) {
-				remote = append(remote, m.MessageID)
-			}
-		}
-		rendered, err := s.Client.MGetRendered(ctx, remote)
+	}
+	return nil
+}
+
+// IngestSent stores a message this process just sent from the answer the send
+// came back with, which saves the fetch IngestIDs makes. The answer carries no
+// position, so a root is stored at 0 until the next listing writes the real
+// one over it. A reply inside a thread is fetched after all: whether its
+// position is negative depends on the kind of chat, and the sign is what keeps
+// it out of the chat's own flow. A card is fetched too, since only a fetch
+// asks for its raw body.
+func (s *Syncer) IngestSent(ctx context.Context, sent larkcli.SentMessage) error {
+	m := sent.Message
+	if m == nil || m.MsgType == "interactive" || (m.ThreadID != "" && m.ParentID != "") {
+		return s.IngestIDs(ctx, []string{sent.MessageID})
+	}
+	// The answer names no sender either, and a row without a name draws its
+	// sender as an id and opens a block of its own.
+	if m.Sender.SenderName == "" {
+		people, err := s.Store.ContactsByIDs(ctx, []string{senderIDOf(*m)})
 		if err != nil {
 			return err
 		}
-		for _, r := range rendered {
-			if err := s.storeRendered(ctx, r, now); err != nil {
-				return err
-			}
+		m.Sender.SenderName = people[senderIDOf(*m)].Name
+	}
+	return s.ingest(ctx, []larkcli.RawMessage{*m}, s.now())
+}
+
+func (s *Syncer) ingest(ctx context.Context, msgs []larkcli.RawMessage, now time.Time) error {
+	if _, _, err := s.upsertRaw(ctx, msgs, now); err != nil {
+		return err
+	}
+	ids := make([]string, 0, len(msgs))
+	remote := make([]string, 0, len(msgs))
+	for _, m := range msgs {
+		ids = append(ids, m.MessageID)
+		if !store.LocallyRendered(m.MsgType) {
+			remote = append(remote, m.MessageID)
+		}
+	}
+	// The types larkim renders itself are done here rather than asked about:
+	// the sender is waiting, and a call for a body already on disk would only
+	// slow that down.
+	if _, err := s.renderLocal(ctx, ids, len(msgs), now); err != nil {
+		return err
+	}
+	rendered, err := s.Client.MGetRendered(ctx, remote)
+	if err != nil {
+		return err
+	}
+	for _, r := range rendered {
+		if err := s.storeRendered(ctx, r, now); err != nil {
+			return err
 		}
 	}
 	return nil

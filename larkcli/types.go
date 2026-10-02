@@ -165,10 +165,14 @@ type Identity struct {
 	UserOpenID string
 }
 
-// SentMessage is the result of `im +messages-send` / `+messages-reply`.
+// SentMessage is the result of a send, a reply or a forward. Message is the
+// whole message Feishu answered a send or a reply with, nil after a forward,
+// whose command keeps only the ids. It carries no message_position and no
+// sender name: Feishu leaves both out of the answer.
 type SentMessage struct {
-	MessageID string `json:"message_id"`
-	ChatID    string `json:"chat_id"`
+	MessageID string      `json:"message_id"`
+	ChatID    string      `json:"chat_id"`
+	Message   *RawMessage `json:"-"`
 }
 
 // Millis decodes a millisecond timestamp encoded as a JSON string.

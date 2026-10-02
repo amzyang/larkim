@@ -1069,28 +1069,30 @@ func (c *ExecClient) SearchChats(ctx context.Context, query string) ([]RawChat, 
 	return decodeItems[RawChat](data, "chats")
 }
 
-// flags is the content flag the body asks for. Send and Reply share it so the
-// two cannot drift apart on which field wins.
-func (o Outgoing) flags() []string {
+// wire is the msg_type and content the body goes out as. Send and Reply share
+// it so the two cannot drift apart on which field wins.
+func (o Outgoing) wire() (msgType, content string) {
 	switch {
 	case o.Post != "":
-		return []string{"--msg-type", "post", "--content", o.Post}
+		return "post", o.Post
 	case o.Card != "":
-		return []string{"--msg-type", "interactive", "--content", o.Card}
+		return "interactive", o.Card
 	case o.Markdown != "":
-		// Not --markdown: that flag rewrites H1-H3 into H4/H5 before sending,
-		// and the rewrite lands in what this client stores and draws.
-		return []string{"--msg-type", "post", "--content", larkmd.PostContent(o.Markdown)}
+		// Not lark-cli's --markdown: that rewrites H1-H3 into H4/H5 before
+		// sending, and the rewrite lands in what this client stores and draws.
+		return "post", larkmd.PostContent(o.Markdown)
 	case o.ImageKey != "":
-		return []string{"--image", o.ImageKey}
+		return "image", keyContent("image_key", o.ImageKey)
 	case o.FileKey != "":
-		return []string{"--file", o.FileKey}
+		return "file", keyContent("file_key", o.FileKey)
 	default:
-		// Not --text: lark-cli reads a value opening with @ as a file path and
-		// a lone - as stdin, so "@张三 看一下" would be looked up on disk. A
-		// content JSON always opens with {, which nothing reinterprets.
-		return []string{"--msg-type", "text", "--content", textContent(o.Text)}
+		return "text", textContent(o.Text)
 	}
+}
+
+func keyContent(field, key string) string {
+	body, _ := json.Marshal(map[string]string{field: key})
+	return string(body)
 }
 
 // textContent is the body Feishu stores for a plain text message, the form
@@ -1102,28 +1104,52 @@ func textContent(text string) string {
 	return string(body)
 }
 
+// Send and Reply walk the endpoint rather than +messages-send and
+// +messages-reply: those keep three fields of the message Feishu answers
+// with, and the whole message is what lets the sender store it without
+// fetching it back. The body stays in argv, which is what a failed send is
+// replayed from.
 func (c *ExecClient) Send(ctx context.Context, target Target, msg Outgoing, idempotencyKey string) (SentMessage, error) {
-	args := append([]string{"im", "+messages-send"}, msg.flags()...)
-	if target.ChatID != "" {
-		args = append(args, "--chat-id", target.ChatID)
-	} else {
-		args = append(args, "--user-id", target.UserID)
+	idType, receiveID := "chat_id", target.ChatID
+	if target.ChatID == "" {
+		idType, receiveID = "open_id", target.UserID
 	}
-	if idempotencyKey != "" {
-		args = append(args, "--idempotency-key", idempotencyKey)
-	}
-	return c.sent(ctx, args...)
+	body := msg.request(idempotencyKey)
+	body["receive_id"] = receiveID
+	return c.posted(ctx, "/open-apis/im/v1/messages", "--params", jsonArg(map[string]string{"receive_id_type": idType}),
+		"--data", jsonArg(body))
 }
 
 func (c *ExecClient) Reply(ctx context.Context, messageID string, msg Outgoing, inThread bool, idempotencyKey string) (SentMessage, error) {
-	args := append([]string{"im", "+messages-reply", "--message-id", messageID}, msg.flags()...)
+	body := msg.request(idempotencyKey)
 	if inThread {
-		args = append(args, "--reply-in-thread")
+		body["reply_in_thread"] = true
 	}
+	return c.posted(ctx, "/open-apis/im/v1/messages/"+messageID+"/reply", "--data", jsonArg(body))
+}
+
+// request is the body both endpoints share. uuid is the field the idempotency
+// key travels in.
+func (o Outgoing) request(idempotencyKey string) map[string]any {
+	msgType, content := o.wire()
+	body := map[string]any{"msg_type": msgType, "content": content}
 	if idempotencyKey != "" {
-		args = append(args, "--idempotency-key", idempotencyKey)
+		body["uuid"] = idempotencyKey
 	}
-	return c.sent(ctx, args...)
+	return body
+}
+
+func (c *ExecClient) posted(ctx context.Context, path string, flags ...string) (SentMessage, error) {
+	data, err := c.run(ctx, append([]string{"api", "POST", path}, flags...)...)
+	if err != nil {
+		return SentMessage{}, err
+	}
+	var m RawMessage
+	if err := json.Unmarshal(data, &m); err != nil {
+		return SentMessage{}, fmt.Errorf("decode send result: %w", err)
+	}
+	m.keepRaw(data)
+	return SentMessage{MessageID: m.MessageID, ChatID: m.ChatID, Message: &m}, nil
 }
 
 // PatchMessage replaces a message's content wholesale. The card rewrite path

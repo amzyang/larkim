@@ -105,12 +105,12 @@ func TestChatRow_DrawsTheCandidateMark(t *testing.T) {
 	require.NotContains(t, without.bottom, candGlyph)
 }
 
-func TestIngestedMsg_ClearsTheSeededCandidateRow(t *testing.T) {
+func TestSentMsg_ClearsTheSeededCandidateRow(t *testing.T) {
 	m, st := candModel(t)
 	m.candFilled = "om_b"
 	require.NoError(t, st.PutCandidates(t.Context(), "om_keep", "oc_elsewhere", []string{"x"}, "text", 1))
 
-	mm, _ := m.update(ingestedMsg{localID: "local"})
+	mm, _ := m.update(sentMsg{localID: "local"})
 	m = mm.(Model)
 	require.Empty(t, m.candFilled)
 	// The clear runs on its own schedule; the row it names is what has to go.

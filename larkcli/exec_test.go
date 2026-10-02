@@ -349,60 +349,74 @@ echo '{"ok":true,"identity":"user","data":{"items":[]}}'`)
 	require.Equal(t, 5, strings.Count(lines[1], ",")+1, "the last call holds the remainder")
 }
 
-func TestOutgoing_FlagsPickTheMessageType(t *testing.T) {
-	require.Equal(t, []string{"--msg-type", "text", "--content", `{"text":"hi"}`}, Text("hi").flags())
-	require.Equal(t,
-		[]string{"--msg-type", "post", "--content", `{"zh_cn":{"content":[[{"tag":"md","text":"## hi"}]]}}`},
-		Markdown("## hi").flags())
-	require.Equal(t, []string{"--image", "img_a"}, Image("img_a").flags())
-	// An empty body is still a text send, which is what an empty draft would be.
-	require.Equal(t, []string{"--msg-type", "text", "--content", `{"text":""}`}, Outgoing{}.flags())
+func wireOf(o Outgoing) []string {
+	msgType, content := o.wire()
+	return []string{msgType, content}
 }
 
-func TestExecClient_SendMarkdownUsesContentNotTheMarkdownFlag(t *testing.T) {
+func TestOutgoing_WirePicksTheMessageType(t *testing.T) {
+	require.Equal(t, []string{"text", `{"text":"hi"}`}, wireOf(Text("hi")))
+	require.Equal(t, []string{"post", `{"zh_cn":{"content":[[{"tag":"md","text":"## hi"}]]}}`}, wireOf(Markdown("## hi")))
+	require.Equal(t, []string{"image", `{"image_key":"img_a"}`}, wireOf(Image("img_a")))
+	require.Equal(t, []string{"file", `{"file_key":"file_a"}`}, wireOf(File("file_a")))
+	// An empty body is still a text send, which is what an empty draft would be.
+	require.Equal(t, []string{"text", `{"text":""}`}, wireOf(Outgoing{}))
+}
+
+func TestExecClient_SendPostsTheWholeBodyAndKeepsTheAnswer(t *testing.T) {
 	c := fakeBinary(t, `
-echo "$*" > "$(dirname "$0")/args"
-echo '{"ok":true,"identity":"user","data":{"message_id":"om_new","chat_id":"oc_quiet"}}'`)
+printf '%s\n' "$@" > "$(dirname "$0")/args"
+echo '{"ok":true,"identity":"user","data":{"message_id":"om_new","chat_id":"oc_quiet","msg_type":"post","create_time":"1700000000000","body":{"content":"{}"}}}'`)
 	sent, err := c.Send(t.Context(), Target{ChatID: "oc_quiet"}, Markdown("# 发布说明"), "cli_c")
 	require.NoError(t, err)
 	require.Equal(t, "om_new", sent.MessageID)
+	require.NotNil(t, sent.Message)
+	require.Equal(t, "post", sent.Message.MsgType)
+	require.EqualValues(t, 1700000000000, sent.Message.CreateTime)
+	require.Contains(t, string(sent.Message.Raw), `"om_new"`, "the answer is what raw_json stores")
 	args, err := os.ReadFile(filepath.Join(c.Dir, "args"))
 	require.NoError(t, err)
-	// --markdown would have demoted the heading to #### on the way out.
-	require.NotContains(t, string(args), "--markdown")
-	require.Equal(t,
-		`im +messages-send --msg-type post --content {"zh_cn":{"content":[[{"tag":"md","text":"# 发布说明"}]]}} `+
-			"--chat-id oc_quiet --idempotency-key cli_c --as user --json",
-		strings.TrimSpace(string(args)))
+	require.Equal(t, []string{
+		"api", "POST", "/open-apis/im/v1/messages", "--params", `{"receive_id_type":"chat_id"}`,
+		"--data", `{"content":"{\"zh_cn\":{\"content\":[[{\"tag\":\"md\",\"text\":\"# 发布说明\"}]]}}","msg_type":"post","receive_id":"oc_quiet","uuid":"cli_c"}`,
+		"--as", "user", "--json",
+	}, strings.Split(strings.TrimSpace(string(args)), "\n"), "the heading goes out as written, not demoted")
 }
 
 func TestExecClient_SendMarkdownCarriesAnEmojiNameAsItsEmotion(t *testing.T) {
 	require.Equal(t,
-		[]string{"--msg-type", "post", "--content", `{"zh_cn":{"content":[[{"tag":"text","text":"收到 "},{"tag":"emotion","emoji_type":"DONE"}]]}}`},
-		Markdown("收到 [Done]").flags())
+		[]string{"post", `{"zh_cn":{"content":[[{"tag":"text","text":"收到 "},{"tag":"emotion","emoji_type":"DONE"}]]}}`},
+		wireOf(Markdown("收到 [Done]")))
 }
 
-func TestExecClient_SendImageUsesTheImageFlag(t *testing.T) {
+func TestExecClient_SendToAPersonNamesThemByOpenID(t *testing.T) {
 	c := fakeBinary(t, `
-echo "$*" > "$(dirname "$0")/args"
+printf '%s\n' "$@" > "$(dirname "$0")/args"
 echo '{"ok":true,"identity":"user","data":{"message_id":"om_new","chat_id":"oc_p2p_ou_a"}}'`)
 	_, err := c.Send(t.Context(), Target{UserID: "ou_a"}, Image("img_shot"), "")
 	require.NoError(t, err)
 	args, err := os.ReadFile(filepath.Join(c.Dir, "args"))
 	require.NoError(t, err)
-	require.Equal(t, "im +messages-send --image img_shot --user-id ou_a --as user --json", strings.TrimSpace(string(args)))
+	require.Equal(t, []string{
+		"api", "POST", "/open-apis/im/v1/messages", "--params", `{"receive_id_type":"open_id"}`,
+		"--data", `{"content":"{\"image_key\":\"img_shot\"}","msg_type":"image","receive_id":"ou_a"}`,
+		"--as", "user", "--json",
+	}, strings.Split(strings.TrimSpace(string(args)), "\n"))
 }
 
-func TestExecClient_ReplyInThreadKeepsTheBodyFlag(t *testing.T) {
+func TestExecClient_ReplyInThreadPostsToTheReplyEndpoint(t *testing.T) {
 	c := fakeBinary(t, `
-echo "$*" > "$(dirname "$0")/args"
+printf '%s\n' "$@" > "$(dirname "$0")/args"
 echo '{"ok":true,"identity":"user","data":{"message_id":"om_new","chat_id":"oc_quiet"}}'`)
-	_, err := c.Reply(t.Context(), "om_elsewhere", Markdown("- a\n- b"), true, "cli_c")
+	_, err := c.Reply(t.Context(), "om_elsewhere", Text("ok"), true, "cli_c")
 	require.NoError(t, err)
 	args, err := os.ReadFile(filepath.Join(c.Dir, "args"))
 	require.NoError(t, err)
-	require.Contains(t, string(args), "im +messages-reply --message-id om_elsewhere --msg-type post --content")
-	require.Contains(t, string(args), "--reply-in-thread --idempotency-key cli_c")
+	require.Equal(t, []string{
+		"api", "POST", "/open-apis/im/v1/messages/om_elsewhere/reply",
+		"--data", `{"content":"{\"text\":\"ok\"}","msg_type":"text","reply_in_thread":true,"uuid":"cli_c"}`,
+		"--as", "user", "--json",
+	}, strings.Split(strings.TrimSpace(string(args)), "\n"))
 }
 
 func TestExecClient_UploadImagePassesTheAbsolutePath(t *testing.T) {
@@ -549,15 +563,15 @@ func TestUploadImage_SaysSoWhenThePictureIsGone(t *testing.T) {
 
 func TestEmotion_CarriesOneEmojiAsThePostElementFeishuSpellsItWith(t *testing.T) {
 	require.Equal(t,
-		[]string{"--msg-type", "post", "--content", `{"zh_cn":{"content":[[{"tag":"emotion","emoji_type":"PursueUltimate"}]]}}`},
-		Emotion("PursueUltimate").flags())
+		[]string{"post", `{"zh_cn":{"content":[[{"tag":"emotion","emoji_type":"PursueUltimate"}]]}}`},
+		wireOf(Emotion("PursueUltimate")))
 }
 
-func TestOutgoing_FlagsSendAPostBodyThroughUntouched(t *testing.T) {
+func TestOutgoing_WireSendsAPostBodyThroughUntouched(t *testing.T) {
 	// The markdown path wraps every paragraph in an md element; a body already
-	// in Feishu's own shape must reach lark-cli as it was written.
+	// in Feishu's own shape must reach Feishu as it was written.
 	body := `{"zh_cn":{"content":[[{"tag":"emotion","emoji_type":"Get"}]]}}`
-	require.Equal(t, []string{"--msg-type", "post", "--content", body}, Outgoing{Post: body}.flags())
+	require.Equal(t, []string{"post", body}, wireOf(Outgoing{Post: body}))
 }
 
 func TestOlderMessagesRaw_AsksOneDescendingPageEndingAtTheFloor(t *testing.T) {
@@ -617,12 +631,13 @@ esac`)
 
 // lark-cli 1.0.97 reads a flag value opening with @ as a file path and a lone
 // - as stdin, so a message that starts with a mention or is a single dash has
-// to travel as content JSON rather than as --text.
-func TestOutgoingFlags_SendsTextLarkCLIWouldReinterpret(t *testing.T) {
-	require.Equal(t, []string{"--msg-type", "text", "--content", `{"text":"@张三 看一下"}`},
-		Text("@张三 看一下").flags())
-	require.Equal(t, []string{"--msg-type", "text", "--content", `{"text":"-"}`},
-		Text("-").flags())
+// to travel inside the request JSON, which always opens with {.
+func TestSend_TextLarkCLIWouldReinterpretTravelsInsideTheBody(t *testing.T) {
+	for _, text := range []string{"@张三 看一下", "-"} {
+		data := jsonArg(Text(text).request(""))
+		require.True(t, strings.HasPrefix(data, "{"), data)
+		require.Contains(t, data, text)
+	}
 }
 
 func TestError_CarriesTheCallAndItsWholeOutput(t *testing.T) {
@@ -636,8 +651,9 @@ func TestError_CarriesTheCallAndItsWholeOutput(t *testing.T) {
 	require.Contains(t, e.Stderr, long, "the whole refusal is kept; nothing is clipped")
 	require.Contains(t, e.Error(), long)
 	require.Equal(t, []string{
-		"im", "+messages-send", "--msg-type", "text", "--content", `{"text":"@张三 看一下"}`,
-		"--chat-id", "oc_quiet", "--idempotency-key", "key-1", "--as", "user", "--json",
+		"api", "POST", "/open-apis/im/v1/messages", "--params", `{"receive_id_type":"chat_id"}`,
+		"--data", `{"content":"{\"text\":\"@张三 看一下\"}","msg_type":"text","receive_id":"oc_quiet","uuid":"key-1"}`,
+		"--as", "user", "--json",
 	}, e.Argv, "the call is what the failure is replayed from, message body included")
 }
 

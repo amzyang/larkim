@@ -45,9 +45,6 @@ type msgRow struct {
 	// section's rule over the pane, so it has to know when the row under the
 	// pin is that rule already.
 	rule bool
-	// spin is the spinner frame baked into a pending send's head line, kept
-	// so a tick can swap that one glyph without laying the pane out again.
-	spin string
 	// pic is set on the rows a picture occupies, picRow being which of its
 	// rows this one is. Those rows carry an image rather than text, so they
 	// are padded rather than fitted, and their cells are only known once the
@@ -225,7 +222,6 @@ type msgStyle struct {
 	res      map[string][]store.Resource // attachments, by message id
 	docs     map[string]store.DocLabel   // Feishu documents linked to, by store.DocRef.Key
 	outbox   map[string]outboxState      // the sends still on their way, by the id their rows carry
-	spin     string                      // the spinner frame a send on its way is drawn with
 	dots     map[string]bool             // the messages this visit draws the unread marker on
 	// reacts are the reaction presses Feishu has not answered yet, by message
 	// id then folded emoji key, laid over the stored summary so a press draws
@@ -562,11 +558,7 @@ func renderRows(msgs []store.Message, st msgStyle) []msgRow {
 			// A chat of two writes no head line unless the message carries a
 			// badge, so the disc lands on the first line of the body instead.
 			if head := headLine(x, st); head != "" {
-				r := msgRow{lead: g.take(), text: head, idx: i}
-				if st.sending(x) {
-					r.spin = st.spin
-				}
-				rows = append(rows, r)
+				rows = append(rows, msgRow{lead: g.take(), text: head, idx: i})
 			}
 		}
 		if q, ok := quoteRow(x, i, st, &g); ok {
@@ -608,16 +600,15 @@ func mergeable(head, x store.Message, st msgStyle) bool {
 }
 
 // solo reports whether a message carries something only a sender line of its
-// own can show. A send still on its way is one: how far it has got is spelled
-// out on that line and nowhere else.
+// own can show. A failed send is one: the failure is spelled out on that line
+// and nowhere else.
 func solo(x store.Message, st msgStyle) bool {
 	// A container brings a summary line of its own, which belongs under a
 	// sender line rather than inside somebody else's block.
 	if (x.ThreadID != "" && x.MessagePosition >= 0) || x.EditedAt > 0 || x.MsgType == "merge_forward" {
 		return true
 	}
-	_, ok := st.outbox[x.MessageID]
-	return ok
+	return st.outbox[x.MessageID] == outFailed
 }
 
 // quoteRow names the message a reply answers, above its body, the way the
@@ -698,22 +689,12 @@ func headLine(x store.Message, st msgStyle) string {
 	if x.EditedAt > 0 {
 		parts = append(parts, stFaint.Render("(Edited)"))
 	}
-	// Absent from the map is the ordinary case — a message the store
-	// returned — which no zero value may stand in for.
-	if state, ok := st.outbox[x.MessageID]; ok {
-		if state == outFailed {
-			parts = append(parts, stErr.Render("(failed)"))
-		} else {
-			parts = append(parts, st.spin+stFaint.Render(" sending"))
-		}
+	// A send on its way draws as the message it will be: failing is rare
+	// enough that only a failure is worth a word.
+	if st.outbox[x.MessageID] == outFailed {
+		parts = append(parts, stErr.Render("(failed)"))
 	}
 	return strings.Join(parts, " ")
-}
-
-// sending says the message's head line carries the spinner.
-func (st msgStyle) sending(x store.Message) bool {
-	state, ok := st.outbox[x.MessageID]
-	return ok && state != outFailed
 }
 
 // standsAlone reports whether a message is a notice rather than something
