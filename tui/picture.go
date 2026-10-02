@@ -63,6 +63,9 @@ func (p picture) key() string {
 type pictures struct {
 	dataDir      string
 	cellW, cellH int
+	// disp scales a file's pixels to the screen's, so a picture is drawn at
+	// the size the client shows it on a retina screen as well as a 1x one.
+	disp display
 	// size caches each file's pixel size, so laying a message out does not
 	// re-read the file every frame; a file that cannot be decoded is absent
 	// and recorded in failed.
@@ -103,6 +106,21 @@ func (p *pictures) setCellSize(w, h int) bool {
 	return true
 }
 
+// setDisplay records the screen's scale and, when it moved, drops every
+// placement the way setCellSize does. Returns whether the scale changed.
+func (p *pictures) setDisplay(d display) bool {
+	if p == nil || d.scale() == p.disp.scale() {
+		if p != nil {
+			p.disp = d
+		}
+		return false
+	}
+	p.disp = d
+	p.id = map[string]int{}
+	p.used = map[string]int64{}
+	return true
+}
+
 func (p *pictures) cell() (w, h int) {
 	if p.cellW <= 0 || p.cellH <= 0 {
 		return defCellW, defCellH
@@ -129,13 +147,16 @@ func (p *pictures) place(path string, maxCols, maxRows int) picture {
 	boxW, boxH := maxCols*cw, maxRows*ch
 	// A picture is never drawn past its own pixels: enlarging a sticker only
 	// spreads its edges. Each clamp takes the ratio from the source, so
-	// clamping twice does not compound the rounding.
-	w, h := px.X, px.Y
+	// clamping twice does not compound the rounding. Its own size is in
+	// screen pixels: on a 2x screen the client draws each file pixel as two.
+	s := p.disp.scale()
+	src := image.Point{X: max(1, int(float64(px.X)*s+0.5)), Y: max(1, int(float64(px.Y)*s+0.5))}
+	w, h := src.X, src.Y
 	if w > boxW {
-		w, h = boxW, max(1, px.Y*boxW/px.X)
+		w, h = boxW, max(1, src.Y*boxW/src.X)
 	}
 	if h > boxH {
-		w, h = max(1, px.X*boxH/px.Y), boxH
+		w, h = max(1, src.X*boxH/src.Y), boxH
 	}
 	// The cells are rounded to the nearest whole one and the picture is then
 	// fitted inside them, giving up at most half a cell of its own size.

@@ -71,6 +71,7 @@ func (a *App) unreadScreen() tui.UnreadScreen {
 		sc.Width, sc.Height = h.Width, h.Height
 	}
 	sc.CellW, sc.CellH = h.CellW, h.CellH
+	sc.Display = h.Display
 	sc.Dark = h.Dark
 	sc.Graphics = h.Graphics
 	return sc

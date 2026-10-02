@@ -150,6 +150,8 @@ type UnreadScreen struct {
 	Height int
 	// CellW, CellH are the terminal's cell size in pixels, zero until it says.
 	CellW, CellH int
+	// Display is the screen's scale as the handshake heard it.
+	Display display
 	// Dark says which way the terminal's background leans, which is what picks
 	// the palette a code block is coloured from.
 	Dark bool
@@ -225,5 +227,6 @@ func unreadPictures(d Deps, sc UnreadScreen) *pictures {
 	}
 	p := newPictures(d.DataDir, sc.Graphics)
 	p.setCellSize(sc.CellW, sc.CellH)
+	p.setDisplay(sc.Display)
 	return p
 }

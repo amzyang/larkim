@@ -179,7 +179,9 @@ type Model struct {
 	// cellW, cellH are the last cell size the terminal reported, kept for the
 	// renderers graphics swaps in after the answer came.
 	cellW, cellH int
-	chatFilter   string
+	// disp is the display scale as last reported, kept for the same reason.
+	disp       display
+	chatFilter string
 	// filterPin is what a cancelled filter puts back. Opening the filter takes
 	// the chat pane and typing into it renumbers the list, so a session that
 	// ends in nothing has to restore what it borrowed rather than leave the
@@ -448,12 +450,14 @@ func New(d Deps) Model {
 	if d.Term.CellW > 0 {
 		m.cellW, m.cellH = d.Term.CellW, d.Term.CellH
 	}
+	m.disp = d.Term.Display
 	if d.Term.Graphics && d.DataDir != "" {
 		k := newKittyAvatars(d.DataDir)
 		k.setCellSize(m.cellW, m.cellH)
 		m.avatars = k
 		m.pics = newPictures(d.DataDir, true)
 		m.pics.setCellSize(m.cellW, m.cellH)
+		m.pics.setDisplay(m.disp)
 	}
 	bg, dark := color.Color(color.Black), true
 	if d.Term.BG != nil {
@@ -638,8 +642,17 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// The terminal reports its cell size only when asked, and changing the
 		// font is what resizes the grid without resizing the window. Asking
 		// again here is the only way a stale cell size — every picture scaled
-		// for the wrong grid — gets corrected.
-		return m, tea.Raw(ansi.WindowOp(ansi.RequestCellSizeWinOp))
+		// for the wrong grid — gets corrected. Moving the window to another
+		// screen changes the cell size and the scale together, so the scale is
+		// asked again with it.
+		return m, tea.Raw(ansi.WindowOp(ansi.RequestCellSizeWinOp) + displayQuery)
+	case tea.CapabilityMsg:
+		if !m.disp.read(msg.Content) || !m.pics.setDisplay(m.disp) {
+			return m, nil
+		}
+		clear(m.gists.rows)
+		m.layout()
+		return m, nil
 	case tea.BackgroundColorMsg:
 		m.setBackground(msg, msg.IsDark())
 		return m, nil
@@ -651,6 +664,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		k.setCellSize(m.cellW, m.cellH)
 		m.avatars = k
 		m.pics = newPictures(m.deps.DataDir, true)
+		m.pics.setDisplay(m.disp)
 		m.pics.setCellSize(m.cellW, m.cellH)
 		clear(m.gists.rows)
 		m.layout()

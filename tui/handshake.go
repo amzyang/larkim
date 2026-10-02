@@ -27,6 +27,9 @@ type Handshake struct {
 	// size in pixels, zero until something says.
 	Width, Height int
 	CellW, CellH  int
+	// Display is the screen's scale as kitty states it, zero when it never
+	// said — a multiplexer swallows the query — which draws at scale 1.
+	Display display
 	// BG is the terminal's background colour, nil when it never said, which
 	// leaves the palette at Dark's fallback of dark.
 	BG   color.Color
@@ -46,13 +49,15 @@ const handshakeWait = 100 * time.Millisecond
 const graphicsQueryID = 31
 
 // handshakeQuery asks everything the first frame wants to know in one write:
-// graphics support, the cell size, the background colour, and last the
+// graphics support, the cell size, the display scale, the background colour,
+// and last the
 // device attributes. Every terminal answers the last one, and terminals
 // answer in the order they were asked, so its arrival closes the batch — a
 // reply that never came by then is one this terminal had no way to give, not
 // one still on its way.
 var handshakeQuery = fmt.Sprintf("\x1b_Gi=%d,s=1,v=1,a=q,t=d,f=24;AAAA\x1b\\", graphicsQueryID) +
 	ansi.WindowOp(ansi.RequestCellSizeWinOp) +
+	displayQuery +
 	"\x1b]11;?\x1b\\" +
 	"\x1b[c"
 
@@ -121,6 +126,8 @@ func collectHandshake(in io.Reader, h Handshake) Handshake {
 				if e.Width > 0 && e.Height > 0 {
 					h.CellW, h.CellH = e.Width, e.Height
 				}
+			case uv.CapabilityEvent:
+				h.Display.read(e.Content)
 			case uv.PrimaryDeviceAttributesEvent:
 				return h
 			}

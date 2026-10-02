@@ -501,8 +501,8 @@ func TestUpdate_AResizeAsksForTheCellSizeAgain(t *testing.T) {
 
 	_, cmd := m.update(tea.WindowSizeMsg{Width: 120, Height: 40})
 	require.NotNil(t, cmd, "a grid that resized may have resized because the font did")
-	require.Equal(t, tea.RawMsg{Msg: ansi.WindowOp(ansi.RequestCellSizeWinOp)}, cmd(),
-		"the terminal reports its cell size only when asked")
+	require.Equal(t, tea.RawMsg{Msg: ansi.WindowOp(ansi.RequestCellSizeWinOp) + displayQuery}, cmd(),
+		"the terminal reports its cell size and display scale only when asked")
 
 	k.setCellSize(10, 20)
 	m.pics.id["live"] = picIDBase
