@@ -1037,20 +1037,56 @@ func (m Model) renderHeader(w int) string {
 	if !ok {
 		return fit(stDim.Render("select a chat"), w)
 	}
+	dot := stDim.Render(" · ")
 	title := stBold.Render(cmp.Or(flatten(c.Name), "(unnamed)"))
 	if g := chatModeGlyph(c.ChatMode); g != "" {
 		title = stDim.Render(g) + title
 	}
-	parts := []string{title}
-	// The same tags the chat's own card carries, on the line that is always
-	// up: who you are talking to outside this tenant, and whether the room is
-	// still there, are answers the reader wants before they type, not after
-	// they think to press I.
-	parts = append(parts, chatTags(c)...)
+	// Error and tags stay readable before the title tail: the client marks
+	// external rooms and sync faults on the header for a reason.
+	var tailParts []string
 	if c.SyncError != "" {
-		parts = append(parts, stErr.Render("history unavailable"))
+		tailParts = append(tailParts, stErr.Render("history unavailable"))
 	}
-	return fit(strings.Join(parts, stDim.Render(" · ")), w)
+	tailParts = append(tailParts, chatTags(c)...)
+	kept := tailParts[:0]
+	for _, p := range tailParts {
+		if p == "" {
+			continue
+		}
+		trial := append(kept, p)
+		if lipgloss.Width(joinHeaderTail(trial, dot)) <= w {
+			kept = trial
+		}
+	}
+	tailSuffix := joinHeaderTail(kept, dot)
+	tailW := lipgloss.Width(tailSuffix)
+	sep := 0
+	if tailSuffix != "" {
+		sep = lipgloss.Width(dot)
+	}
+	title = truncate(title, max(0, w-tailW-sep))
+	if title == "" {
+		return fit(truncate(tailSuffix, w), w)
+	}
+	if tailSuffix == "" {
+		return fit(title, w)
+	}
+	return fit(title+dot+tailSuffix, w)
+}
+
+func joinHeaderTail(parts []string, dot string) string {
+	out := ""
+	for _, p := range parts {
+		if p == "" {
+			continue
+		}
+		if out != "" {
+			out += dot
+		}
+		out += p
+	}
+	return out
 }
 
 // chatModeGlyph says what kind of chat the header names. The glyphs come from

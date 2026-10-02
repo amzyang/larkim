@@ -98,6 +98,18 @@ func TestRenderHeader_AnOrdinaryChatCarriesNoTags(t *testing.T) {
 	require.NotContains(t, line, "external")
 }
 
+func TestRenderHeader_PriorityAtMinMessagesWidth(t *testing.T) {
+	longName := strings.Repeat("项目", 20)
+	line := msgHead(t, store.Chat{
+		ChatID: "oc_quiet", Name: longName, ChatMode: "group",
+		External: true, ChatStatus: "dissolved", SyncError: "boom",
+	}, 50)
+	require.Contains(t, line, "history unavailable")
+	require.Contains(t, line, "external")
+	require.Contains(t, line, "dissolved")
+	require.NotContains(t, line, longName, "the title yields before tags and sync error")
+}
+
 func TestRenderHeader_ExternalIsNotDrawnAsAFault(t *testing.T) {
 	m := New(Deps{Self: "ou_me"})
 	c := store.Chat{ChatID: "oc_quiet", Name: "项目协作群", ChatMode: "group", External: true}
