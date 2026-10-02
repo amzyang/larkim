@@ -1855,6 +1855,12 @@ func (m Model) onKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if s == "ctrl+c" {
 		return m, m.quit()
 	}
+	// A pending confirmation owns the next key in every mode: leaving it to
+	// INSERT or command would let y land in the box or :read-all fire while
+	// the question is still on screen.
+	if next, cmd, answered := m.answerConfirm(s); answered {
+		return next, cmd
+	}
 	if m.config.open {
 		return m.onConfigKey(k)
 	}
@@ -2045,12 +2051,6 @@ func (m Model) typeIntoChatFilter(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) onNormalKey(s string) (tea.Model, tea.Cmd) {
-	// A pending confirmation owns the next key, whatever it is: leaving the
-	// ordinary bindings live under a "recall this? y/n" would let one press
-	// both answer the question and do something else.
-	if next, cmd, answered := m.answerConfirm(s); answered {
-		return next, cmd
-	}
 	// The assistant column takes its own keys before the switch below can
 	// hand any of them to the frame hidden under it: a message nobody can see
 	// is not a message to act on.

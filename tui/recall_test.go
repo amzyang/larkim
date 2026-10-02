@@ -160,6 +160,23 @@ func TestOnKey_PendingConfirmationSwallowsTheNextKey(t *testing.T) {
 	assert.Equal(t, before, next2.(Model).msgIdx, "j answered the question, it did not move the cursor")
 }
 
+// INSERT mode is not an exception: the answer must not also reach the composer.
+func TestOnKey_PendingConfirmationSwallowsKeyInInsertMode(t *testing.T) {
+	m, f := recallModel(t)
+	next, _ := m.askRecall()
+	m = next.(Model)
+	m.mode, m.focus = modeInsert, paneInput
+	m.input.SetValue("draft")
+
+	next2, cmd := m.onKey(tea.KeyPressMsg{Code: 'y', Text: "y"})
+	m = next2.(Model)
+
+	require.NotNil(t, cmd)
+	cmd()
+	assert.Equal(t, []string{"om_mine"}, f.Recalled)
+	assert.Equal(t, "draft", m.input.Value(), "y answered the question, it did not land in the box")
+}
+
 // A recall leaves a notice the cursor can land on, so every action needing a
 // body has to say why it will not run.
 func TestStartInsert_RefusesToQuoteARecalledMessage(t *testing.T) {
