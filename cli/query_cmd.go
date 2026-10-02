@@ -181,6 +181,12 @@ func listAround(ctx context.Context, st *store.Store, q store.MessageQuery, id s
 	if err != nil {
 		return nil, err
 	}
+	// An explicit --chat is a scope, not a context filler: an anchor from
+	// another chat would be appended whole and read one message that scope
+	// never agreed to.
+	if q.ChatID != "" && anchor.ChatID != q.ChatID {
+		return nil, fmt.Errorf("--around %s is not a message of that chat", id)
+	}
 	if q.ChatID == "" {
 		q.ChatID = anchor.ChatID
 	}

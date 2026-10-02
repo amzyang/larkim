@@ -106,3 +106,11 @@ func TestPrintMessageTable_OnlyAPayloadIsMarkedUnrendered(t *testing.T) {
 	require.Contains(t, lines[2], "发布报告")
 	require.NotContains(t, lines[2], "(unrendered)", "a card reads as its document before any rendering lands")
 }
+
+func TestListAround_AnExplicitChatDoesNotAdoptAForeignAnchor(t *testing.T) {
+	// om_7 is oc_b's; --chat is a scope, so oc_a's window cannot be centred
+	// on a message that scope never agreed to.
+	s := aroundFixture(t)
+	_, err := listAround(t.Context(), s, store.MessageQuery{ChatID: "oc_a"}, "om_7", 3)
+	require.ErrorContains(t, err, "not a message of that chat")
+}
