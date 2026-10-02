@@ -413,7 +413,7 @@ func New(d Deps) Model {
 		d.ClearBadge = d.NewClearBadge(d.Config.MarkRead)
 	}
 	prunePasted(d.DataDir, time.Now())
-	m := Model{deps: d, input: newComposer(), rightInput: newComposer(), cmdline: ti,
+	m := Model{deps: d, input: newComposer(true), rightInput: newComposer(true), cmdline: ti,
 		focus: paneChats, focused: true, previewOpen: true,
 		cfg:        d.Config,
 		ai:         d.AI,
@@ -439,6 +439,9 @@ func (m *Model) setBackground(bg color.Color, dark bool) {
 	m.input.SetStyles(composerStyles(dark))
 	m.rightInput.SetStyles(composerStyles(dark))
 	m.cmdline.SetStyles(textinput.DefaultStyles(dark))
+	if m.aiP != nil {
+		m.aiP.input.SetStyles(composerStyles(dark))
+	}
 }
 
 // Run starts the program until quit or ctx is done.

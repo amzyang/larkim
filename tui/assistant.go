@@ -144,8 +144,8 @@ func (t *aiTurn) streaming() bool { return t.state == aiAsking }
 func (m Model) aiOpen() bool { return m.aiP != nil && m.aiP.open }
 
 // newAI builds the panel's state the first time it is opened.
-func newAI() *aiPanel {
-	in := newComposer()
+func newAI(dark bool) *aiPanel {
+	in := newComposer(dark)
 	in.Placeholder = aiPrompt
 	return &aiPanel{input: in, follow: true}
 }
@@ -256,7 +256,7 @@ func (m Model) openAI(chat string, fresh bool) (Model, tea.Cmd) {
 		return m.notify("open a chat first", true), nil
 	}
 	if m.aiP == nil {
-		m.aiP = newAI()
+		m.aiP = newAI(m.dark)
 	}
 	m.aiP.open = true
 	m.aiP.point(chat, m)

@@ -32,9 +32,13 @@ const threadPrompt = "Reply to thread"
 // thread there is no one word for where that is.
 const replyPrompt = "Reply to "
 
-// newComposer is the writing area both boxes are built from.
-func newComposer() textarea.Model {
+// newComposer is the writing area both boxes are built from. bubbles' own
+// default is the dark palette with a black cursor line, so the theme's
+// composer styles go on at birth: the assistant's box is built long after the
+// background was learned, and without this it would keep painting black.
+func newComposer(dark bool) textarea.Model {
 	ta := textarea.New()
+	ta.SetStyles(composerStyles(dark))
 	ta.Prompt = ""
 	ta.ShowLineNumbers = false
 	ta.KeyMap.InsertNewline = key.NewBinding(key.WithKeys("shift+enter", "alt+enter", "ctrl+j"))

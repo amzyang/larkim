@@ -9,7 +9,10 @@ import (
 	"testing"
 	"time"
 
+	"image/color"
+
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/amzyang/larkim/ai"
 	"github.com/amzyang/larkim/config"
 	"github.com/amzyang/larkim/larkcli"
@@ -149,7 +152,7 @@ func ask(t *testing.T, m Model, question string) (Model, *aiTurn) {
 // panel open on the chat, with a session to draw.
 func aiOpenOn(m Model) Model {
 	if m.aiP == nil {
-		m.aiP = newAI()
+		m.aiP = newAI(false)
 	}
 	m.aiP.open = true
 	m.aiP.chat = cmp.Or(m.chatID, "oc_1")
@@ -1332,4 +1335,19 @@ func TestStreamFoot_ZonesAnswerAtTheirLabels(t *testing.T) {
 		require.True(t, ok, "%s at column %d hits a zone", label, x)
 		require.Equal(t, kind, z.act.kind, label+" answers at its own label")
 	}
+}
+
+// The assistant's box is built after the background was learned, and bubbles'
+// own default paints its cursor line black; the box must carry the theme's
+// composer styles both at birth and after the background changes.
+func TestAIComposer_FollowsBackground(t *testing.T) {
+	m := Model{aiP: newAI(false), input: newComposer(true), rightInput: newComposer(true)}
+	st := m.aiP.input.Styles()
+	require.Equal(t, colDim, st.Focused.Placeholder.GetForeground())
+	require.Equal(t, lipgloss.NoColor{}, st.Focused.CursorLine.GetBackground())
+
+	m.setBackground(color.Black, true)
+	st = m.aiP.input.Styles()
+	require.Equal(t, colDim, st.Focused.Placeholder.GetForeground())
+	require.Equal(t, lipgloss.NoColor{}, st.Focused.CursorLine.GetBackground())
 }
