@@ -2010,7 +2010,7 @@ func (m *Model) pumpStreamCard(t *aiTurn) tea.Cmd {
 // the write that carries its final text lands; a failure leaves it at what it
 // last held and says so.
 func (m Model) onStreamWritten(msg streamWrittenMsg) (tea.Model, tea.Cmd) {
-	_, t := m.aiP.findTurn(msg.turn)
+	s, t := m.aiP.findTurn(msg.turn)
 	if t == nil || t.stream == nil {
 		return m, nil
 	}
@@ -2023,11 +2023,18 @@ func (m Model) onStreamWritten(msg streamWrittenMsg) (tea.Model, tea.Cmd) {
 		}
 		return m.notify("card write failed: "+c.err, true), nil
 	}
+	// The first post's answer is the card_id the turn row owes the store: the
+	// done-time save has usually gone out before the round trip came back,
+	// and without this write a restart loses the card the chat is holding.
+	firstCard := c.messageID == "" && msg.messageID != ""
 	c.messageID, c.wrote = msg.messageID, msg.wrote
 	if !t.streaming() && c.wrote == len(streamCardText(t)) {
 		c.closed = true
 	}
 	cmd := m.pumpStreamCard(t)
+	if firstCard {
+		cmd = tea.Batch(cmd, saveTurnCmd(m.deps, s, t))
+	}
 	if m.aiOpen() && m.aiP.chat == m.chatID {
 		m.aiP.rebuild(m)
 	}

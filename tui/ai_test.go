@@ -1391,3 +1391,28 @@ func TestRegenerate_TheNewAnswerCarriesNoSentMarks(t *testing.T) {
 	require.NotContains(t, ansi.Strip(m.renderAI(m.bodyHeight())), "✓ sent",
 		"the new answer's cards have not been sent")
 }
+
+// The card's message id reaches the store when the first post lands, which
+// is usually after the done-time save has already gone out.
+func TestStreamToChat_TheCardIDIsPersistedWhenThePostLands(t *testing.T) {
+	f := newFakeAI()
+	m, _ := aiSendFixture(t, f)
+	m = press(t, m, "a")
+	m, t1 := streamAsk(t, m, "说点什么")
+
+	// The answer finishes before the first post's round trip does.
+	out, cmd := m.onAIChunk(aiChunkMsg{turn: t1.id, chunk: ai.Chunk{Text: "回好了", Done: true}})
+	m = out.(Model)
+	w, ok := streamWritten(t, cmd)
+	require.True(t, ok)
+	turns, err := m.deps.Store.ListAITurns(t.Context(), m.aiP.session().id)
+	require.NoError(t, err)
+	require.Empty(t, turns[0].CardID, "the done-time save knew no card yet")
+
+	sout, wcmd := m.onStreamWritten(w)
+	m = sout.(Model)
+	m = drain(t, m, wcmd)
+	turns, err = m.deps.Store.ListAITurns(t.Context(), m.aiP.session().id)
+	require.NoError(t, err)
+	require.Equal(t, t1.stream.messageID, turns[0].CardID)
+}
