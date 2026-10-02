@@ -16,6 +16,8 @@ type Segment struct {
 // for: each block is one sendable option, and the rest is commentary. The
 // markers decide their own parsing:
 //
+//   - A marker counts wherever it stands on a line, outside inline code:
+//     models write <reply>text</reply> on one line as often as on three.
 //   - A <reply> inside a fenced code block is text the answer is quoting,
 //     not an option it is offering; outside a block, fences guard the
 //     opening marker and nothing else.
@@ -41,24 +43,35 @@ func SplitAnswer(text string) []Segment {
 		}
 		buf.Reset()
 	}
-	for _, line := range strings.Split(text, "\n") {
-		trimmed := strings.TrimSpace(line)
-		wasFenced := fence
-		if strings.HasPrefix(trimmed, "```") || strings.HasPrefix(trimmed, "~~~") {
-			fence = !fence
-		}
-		switch {
+	piece := func(line string) {
+		switch trimmed := strings.TrimSpace(line); {
 		case inCard && trimmed == "</reply>":
 			flush(true)
 			inCard, marked, fence = false, true, false
-		case !wasFenced && trimmed == "</reply>":
+		case !fence && trimmed == "</reply>":
 			marked = true
-		case !wasFenced && !inCard && trimmed == "<reply>":
+		case !fence && !inCard && trimmed == "<reply>":
 			flush(false)
 			inCard, marked = true, true
 		default:
 			buf.WriteString(line)
 			buf.WriteByte('\n')
+		}
+	}
+	for _, line := range strings.Split(text, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "```") || strings.HasPrefix(trimmed, "~~~") {
+			buf.WriteString(line)
+			buf.WriteByte('\n')
+			fence = !fence
+			continue
+		}
+		if fence && !inCard {
+			piece(line)
+			continue
+		}
+		for _, p := range splitMarkers(line) {
+			piece(p)
 		}
 	}
 	flush(inCard)
@@ -72,4 +85,36 @@ func SplitAnswer(text string) []Segment {
 		return []Segment{{Card: true, Text: strings.TrimSpace(text)}}
 	}
 	return segs
+}
+
+// splitMarkers cuts a line around each <reply> and </reply> in it, so a
+// block written on one line — <reply>text</reply> — parses as one written
+// across three. A marker inside `inline code` is quoted text and stays put.
+func splitMarkers(line string) []string {
+	var out []string
+	start, code := 0, false
+	for i := 0; i < len(line); i++ {
+		if line[i] == '`' {
+			code = !code
+			continue
+		}
+		if code || line[i] != '<' {
+			continue
+		}
+		for _, m := range []string{"<reply>", "</reply>"} {
+			if strings.HasPrefix(line[i:], m) {
+				if s := line[start:i]; strings.TrimSpace(s) != "" {
+					out = append(out, s)
+				}
+				out = append(out, m)
+				i += len(m) - 1
+				start = i + 1
+				break
+			}
+		}
+	}
+	if s := line[start:]; strings.TrimSpace(s) != "" || len(out) == 0 {
+		out = append(out, s)
+	}
+	return out
 }

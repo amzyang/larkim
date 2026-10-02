@@ -64,6 +64,26 @@ func TestSplitAnswer_AnUnbalancedFenceInABlockDoesNotEatTheRest(t *testing.T) {
 	}, segs)
 }
 
+func TestSplitAnswer_ABlockOnOneLineIsStillACard(t *testing.T) {
+	segs := SplitAnswer("下面是草稿：\n\n<reply>读完了。</reply>\n\n<reply>hello 收到。</reply>")
+	require.Equal(t, []Segment{
+		{Card: false, Text: "下面是草稿："},
+		{Card: true, Text: "读完了。"},
+		{Card: true, Text: "hello 收到。"},
+	}, segs)
+	segs = SplitAnswer("可以这样回 <reply>好的，\n今晚合。</reply> 你看呢")
+	require.Equal(t, []Segment{
+		{Card: false, Text: "可以这样回"},
+		{Card: true, Text: "好的，\n今晚合。"},
+		{Card: false, Text: "你看呢"},
+	}, segs)
+}
+
+func TestSplitAnswer_AMarkerInInlineCodeIsQuotedText(t *testing.T) {
+	require.Equal(t, []Segment{{Card: true, Text: "用 `<reply>` 包住选项。"}},
+		SplitAnswer("用 `<reply>` 包住选项。"))
+}
+
 func TestSplitAnswer_AStrayCloserMakesNoCard(t *testing.T) {
 	// A closer with nothing open opens nothing: the text around it stays
 	// commentary, and the whole-text fallback does not post the tag.

@@ -68,7 +68,7 @@ const systemCore = `You are an assistant embedded in a Feishu/Lark IM client. Yo
 
 Anything the question is about beyond the chat window arrives inside an <about> block, and earlier questions with your answers to them as <ask>/<answer> pairs — that is this same conversation continued, not a new chat.
 
-When you write something the user might send, put each option — and nothing else — inside its own <reply>...</reply> block. What stands outside the blocks is commentary for the user alone and is never sent. An answer that is the message itself needs no block.`
+When you write something the user might send, put each option — and nothing else — inside its own <reply>...</reply> block, each tag on a line of its own. What stands outside the blocks is commentary for the user alone and is never sent. An answer that is the message itself needs no block.`
 
 // Stream sends prompt with the chat transcript as context and streams the
 // answer.
