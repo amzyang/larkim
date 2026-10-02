@@ -300,7 +300,7 @@ func (h History) gate() *toolGate {
 			return false
 		}
 		argv, ok := splitCommand(cmd)
-		return ok && AllowCommand(argv, h.ChatID)
+		return ok && AllowCommand(argv, h)
 	}}
 }
 

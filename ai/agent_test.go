@@ -93,15 +93,15 @@ func (a *fakeAgent) Prompt(ctx context.Context, p acp.PromptRequest) (acp.Prompt
 	case "hist-ok":
 		// The taught command, answered as the shell would: the call runs, its
 		// result comes back, and the answer goes on.
-		cmd := "larkim messages list --chat oc_quiet --json --limit 40"
+		cmd := "larkim --config /Users/linlan/dev.yaml messages list --chat oc_quiet --json --limit 40"
 		say(acp.SessionUpdate{ToolCall: &acp.SessionUpdateToolCall{
 			ToolCallId: "t1", Title: "$ " + cmd, Kind: acp.ToolKindExecute,
-			RawInput:   map[string]any{"command": cmd, "timeout": 30},
-			Status:     acp.ToolCallStatusInProgress}})
+			RawInput: map[string]any{"command": cmd, "timeout": 30},
+			Status:   acp.ToolCallStatusInProgress}})
 		done := acp.ToolCallStatusCompleted
 		say(acp.SessionUpdate{ToolCallUpdate: &acp.SessionToolCallUpdate{
 			ToolCallId: "t1", Status: &done,
-			RawOutput:  map[string]any{"output": "[{},{},{},{}]"}}})
+			RawOutput: map[string]any{"output": "[{},{},{},{}]"}}})
 		say(acp.UpdateAgentMessageText("read four rows"))
 		return acp.PromptResponse{StopReason: acp.StopReasonEndTurn}, nil
 	case "hist-bad", "hist-otherchat", "hist-read", "hist-shell":
@@ -117,7 +117,7 @@ func (a *fakeAgent) Prompt(ctx context.Context, p acp.PromptRequest) (acp.Prompt
 		}
 		say(acp.SessionUpdate{ToolCall: &acp.SessionUpdateToolCall{
 			ToolCallId: "t1", Title: "$ " + cmd, Kind: kind,
-			RawInput:   map[string]any{"command": cmd}, Status: acp.ToolCallStatusInProgress}})
+			RawInput: map[string]any{"command": cmd}, Status: acp.ToolCallStatusInProgress}})
 		<-ctx.Done()
 		return acp.PromptResponse{}, ctx.Err()
 	}
@@ -346,7 +346,7 @@ func TestStreamHistory_TheTaughtCommandRunsAndTracesItsRows(t *testing.T) {
 		History{ChatID: "oc_quiet", ConfigPath: "/Users/linlan/dev.yaml"}))
 	require.NoError(t, end.Err)
 	require.Equal(t, "read four rows", text, "the turn was not cancelled by the call")
-	require.Equal(t, []string{"⌕ larkim messages list --chat oc_quiet --json --limit 40 · 4 rows"}, traces)
+	require.Equal(t, []string{"⌕ larkim --config /Users/linlan/dev.yaml messages list --chat oc_quiet --json --limit 40 · 4 rows"}, traces)
 }
 
 // The gate passes only the taught command for this chat: anything else —

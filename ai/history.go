@@ -64,21 +64,25 @@ func historyFlag(name string) bool {
 }
 
 // AllowCommand reports whether argv is one of the read-only larkim
-// invocations the history instructions teach, scoped to chatID. The gate
-// reads the parsed command rather than any permission question, because the
-// agent may never ask one — it can be configured to run its shell silently.
-func AllowCommand(argv []string, chatID string) bool {
+// invocations the history instructions teach, scoped to h's chat and spelled
+// with h's own config path when it taught one. The gate reads the parsed
+// command rather than any permission question, because the agent may never
+// ask one — it can be configured to run its shell silently.
+func AllowCommand(argv []string, h History) bool {
 	if len(argv) < 4 || argv[0] != "larkim" {
 		return false
 	}
 	i := 1
+	// The path picks the store the listing reads, so it is pinned to the one
+	// the prompt itself spells: present when the taught command carries it,
+	// absent when it does not.
 	if argv[i] == "--config" {
-		// The path is whatever the reader's own configuration lives at; the
-		// value is data, not a lever.
-		if len(argv) < i+3 {
+		if h.ConfigPath == "" || argv[i+1] != h.ConfigPath {
 			return false
 		}
 		i += 2
+	} else if h.ConfigPath != "" {
+		return false
 	}
 	if argv[i] != "messages" || len(argv) <= i+1 || argv[i+1] != "list" {
 		return false
@@ -107,7 +111,7 @@ func AllowCommand(argv []string, chatID string) bool {
 		}
 		i++
 	}
-	return haveChat && chat == chatID
+	return haveChat && chat == h.ChatID
 }
 
 // splitCommand splits a shell command into argv, honoring single and double
