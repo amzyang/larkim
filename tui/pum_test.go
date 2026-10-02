@@ -178,14 +178,20 @@ func TestPum_CtrlYAccepts(t *testing.T) {
 func TestForward_APasteInTheComposerRereadsThePopup(t *testing.T) {
 	m := typeInto(newPumModel(t), "@zs")
 	require.True(t, m.pum.open())
-	mm, _ := m.Update(tea.PasteMsg{Content: " 你好"})
+	m.deps.Clipboard = func(string) (clip, error) { return clip{kind: clipText, text: " 你好"}, nil }
+	mm, cmd := m.Update(tea.PasteMsg{Content: " 你好"})
+	require.NotNil(t, cmd)
+	mm, _ = mm.(Model).Update(cmd())
 	m = mm.(Model)
 	require.False(t, m.pum.open(), "the run the popup offered for is behind the cursor now")
 	mm, _ = m.onInsertKey(tea.KeyPressMsg{Code: tea.KeyEnter})
 	require.NotContains(t, mm.(Model).input.Value(), "张三", "Enter sends rather than accepting over the paste")
 
 	m = newPumModel(t)
-	mm, _ = m.Update(tea.PasteMsg{Content: "@zs"})
+	m.deps.Clipboard = func(string) (clip, error) { return clip{kind: clipText, text: "@zs"}, nil }
+	mm, cmd = m.Update(tea.PasteMsg{Content: "@zs"})
+	require.NotNil(t, cmd)
+	mm, _ = mm.(Model).Update(cmd())
 	require.True(t, mm.(Model).pum.open(), "a pasted trigger offers what a typed one does")
 }
 

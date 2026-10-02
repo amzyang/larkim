@@ -122,6 +122,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   走 `forward`。新增带输入框的 overlay 或 mode 时，`onKey` 与 `forward` 同步加分支、优先级一致（config → help → mode）；
   按键与粘贴共用一个 `typeIntoX`（更新输入框 + 刷新它驱动的搜索/补全/列表收窄），粘贴不经过键位分派，不能把粘贴文本当命令键；
   并在 `TestForward_EveryInputTakesAPaste` 的表里加一行
+- **例外**：composer 的 `modeInsert` 在 `update` 里把 `tea.PasteMsg` 交给 `pasteClipboard`（与 `ctrl+v`/`super+v` 同路），
+  不经过 `forward` 的 textarea 字面量插入；`:``、`/`、emoji 等仍走 `forward` 字面量粘贴
 - 错误用 `%w` 包装，`errors.AsType[T]` 分类；`*larkcli.Error` 提供 `IsAuth/IsNetwork/IsRateLimit/IsPermanent`
 - 写或改 Go 代码前先调用 skill `/modern-go-guidelines:use-modern-go`，用它的 `list` 取当前 Go 版本（go.mod 为 1.27）的惯用法清单并照做；与周边旧写法冲突时以清单为准，只有「编译不过 / 改变行为 / 明显不适用」才跳过（跳过前先 `explain` 该条）
 - 该清单里本仓库高频命中的：`errors.AsType[T]` 取代 `errors.As` 临时变量、`wg.Go`、`t.Context()`、`for i := range n`、`cmp.Or`、`slices`/`maps` 的迭代器版本（`SplitSeq`、`slices.Collect`、`slices.Sorted`、`maps.Keys`）、`min`/`max`/`clear`、typed atomics、`new(v)` 取代临时变量取址

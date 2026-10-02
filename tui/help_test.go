@@ -62,7 +62,7 @@ func TestHelp_FilterReachesAKeyByItsProse(t *testing.T) {
 	for _, h := range m.help.hits {
 		keys = append(keys, h.entry.keys)
 	}
-	require.Contains(t, keys, "Ctrl+v")
+	require.Contains(t, keys, "Ctrl+v / Cmd+v")
 }
 
 func TestHelp_FilteredRowsNameTheirOwnMode(t *testing.T) {

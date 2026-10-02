@@ -15,11 +15,7 @@ import (
 
 func TestForward_BracketedPasteReplansTheDraft(t *testing.T) {
 	m, _ := newOutboxModel(t)
-	mm, _ := m.startInsert(nil, false)
-	m = mm.(Model)
-
-	mm, _ = m.Update(tea.PasteMsg{Content: "- a\n- b"})
-	m = mm.(Model)
+	m = paste(t, press(t, pickerModel(t), "i"), "- a\n- b")
 
 	require.Equal(t, "- a\n- b", m.input.Value())
 	require.Equal(t, kindPost, m.draft.kind, "a paste changes the draft as surely as a keystroke")
@@ -32,8 +28,7 @@ func TestForward_BracketedPasteGrowsTheComposer(t *testing.T) {
 	m = mm.(Model)
 	require.Equal(t, inputHeight, m.composerRows().input)
 
-	mm, _ = m.Update(tea.PasteMsg{Content: strings.Repeat("line\n", 5) + "line"})
-	m = mm.(Model)
+	m = paste(t, m, strings.Repeat("line\n", 5)+"line")
 
 	require.Equal(t, 6, m.composerRows().input)
 	require.Equal(t, m.textHeight(sideMain, m.composerRows()), m.input.Height(), "the textarea was laid out again")
@@ -168,8 +163,12 @@ func TestImageRef_WrapsOnlyAPathThatNeedsIt(t *testing.T) {
 }
 
 // pasteInto drives one clipboard read into a composer already holding draft,
-// the way ctrl+v does.
+// the way ctrl+v or super+v (Cmd+V) does.
 func pasteInto(t *testing.T, m Model, draft string, c clip, err error) Model {
+	return pasteIntoKey(t, m, draft, c, err, tea.KeyPressMsg{Code: 'v', Mod: tea.ModCtrl}, "ctrl+v reads the clipboard")
+}
+
+func pasteIntoKey(t *testing.T, m Model, draft string, c clip, err error, key tea.KeyPressMsg, readLabel string) Model {
 	t.Helper()
 	m.deps.Clipboard = func(string) (clip, error) { return c, err }
 	mm, _ := m.startInsert(nil, false)
@@ -177,9 +176,9 @@ func pasteInto(t *testing.T, m Model, draft string, c clip, err error) Model {
 	m.input.SetValue(draft)
 	m.replan()
 
-	out, cmd := m.onInsertKey(tea.KeyPressMsg{Code: 'v', Mod: tea.ModCtrl})
+	out, cmd := m.onInsertKey(key)
 	m = out.(Model)
-	require.NotNil(t, cmd, "ctrl+v reads the clipboard")
+	require.NotNil(t, cmd, readLabel)
 	require.Equal(t, draft, m.input.Value(), "the textarea never saw the key")
 
 	out, _ = m.Update(cmd())
@@ -251,6 +250,27 @@ func TestPaste_PathWithSpacesIsWrappedInAngleBrackets(t *testing.T) {
 	require.Equal(t, kindImage, m.draft.kind, "the angle form still reads as one image")
 	require.NoError(t, m.draftErr, "and the path inside it still resolves")
 	require.Equal(t, shot, m.draft.images[0].local)
+}
+
+func TestPaste_SuperVReadsClipboard(t *testing.T) {
+	m, _ := newOutboxModel(t)
+	m = pasteIntoKey(t, m, "", clip{kind: clipText, text: "from cmd"}, nil,
+		tea.KeyPressMsg{Code: 'v', Mod: tea.ModSuper}, "super+v reads the clipboard")
+	require.Equal(t, "from cmd", m.input.Value())
+}
+
+func TestPaste_BracketedPasteReReadsPasteboard(t *testing.T) {
+	m, _ := newOutboxModel(t)
+	mm, _ := m.startInsert(nil, false)
+	m = mm.(Model)
+	m.deps.Clipboard = func(string) (clip, error) {
+		return clip{kind: clipText, text: "**bold**"}, nil
+	}
+	next, cmd := m.Update(tea.PasteMsg{Content: "plain from terminal"})
+	require.NotNil(t, cmd)
+	out, _ := next.(Model).Update(cmd())
+	m = out.(Model)
+	require.Equal(t, "**bold**", m.input.Value(), "the pasteboard wins over bracketed text")
 }
 
 func TestPaste_TextInsertsAtTheCursor(t *testing.T) {

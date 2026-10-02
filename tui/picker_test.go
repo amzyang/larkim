@@ -62,8 +62,18 @@ func press(t *testing.T, m Model, keys ...string) Model {
 // paste delivers s the way a bracketed paste from the terminal arrives.
 func paste(t *testing.T, m Model, s string) Model {
 	t.Helper()
-	next, _ := m.Update(tea.PasteMsg{Content: s})
-	return next.(Model)
+	if m.composerSmartPaste() {
+		m.deps.Clipboard = func(string) (clip, error) {
+			return clip{kind: clipText, text: s}, nil
+		}
+	}
+	next, cmd := m.Update(tea.PasteMsg{Content: s})
+	m = next.(Model)
+	if cmd != nil {
+		next, _ = m.Update(cmd())
+		m = next.(Model)
+	}
+	return m
 }
 
 // keyMsg spells a key the way the terminal delivers it under the kitty
@@ -80,6 +90,9 @@ func keyMsg(name string) tea.KeyPressMsg {
 			name = rest
 		} else if rest, ok := strings.CutPrefix(name, "shift+"); ok {
 			k.Mod |= tea.ModShift
+			name = rest
+		} else if rest, ok := strings.CutPrefix(name, "super+"); ok {
+			k.Mod |= tea.ModSuper
 			name = rest
 		} else {
 			break

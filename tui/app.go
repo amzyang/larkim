@@ -508,6 +508,9 @@ func (m Model) Init() tea.Cmd {
 	cmds := tea.Batch(tea.Raw(handshakeQuery),
 		loadChats(m.deps), readSyncStatus(m.deps.Store), pollSyncStatus(m.deps.Store), waitForRev(m.revs),
 		loadSelfName(m.deps), keychainStartup(m.deps))
+	if claim := kittyClaimPaste(); claim != nil {
+		cmds = tea.Batch(cmds, claim)
+	}
 	return tea.Batch(cmds, scheduleChatPoll())
 }
 
@@ -1211,13 +1214,18 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.onWheel(tea.Mouse(msg))
 	case tea.KeyPressMsg:
 		return m.onKey(msg)
+	case tea.PasteMsg:
+		if m.composerSmartPaste() {
+			return m, pasteClipboard(m.deps)
+		}
 	}
 	return m.forward(msg)
 }
 
 // forward passes a message to the focused text component. A paste arrives
-// this way — bracketed from the terminal, or as an input's own reply to
-// ctrl+v — so it picks the input in the order onKey picks the handler: the
+// this way — bracketed from the terminal into filters and command lines, or as
+// an input's own reply to ctrl+v — so it picks the input in the order onKey
+// picks the handler: the
 // overlays take the keys whatever the mode, and so the paste too. Each input
 // goes through the same typeInto step its keys do, so what its value drives
 // (the draft's badge and panes, a search, a completion list, a narrowed list)
@@ -1389,6 +1397,9 @@ func (m Model) quit() tea.Cmd {
 	if m.aiP != nil {
 		inner := m
 		cmds = append(cmds, m.aiP.stopAll(&inner)...)
+	}
+	if release := kittyReleasePaste(); release != nil {
+		cmds = append(cmds, release)
 	}
 	return tea.Sequence(append(cmds, tea.Quit)...)
 }
@@ -1925,9 +1936,10 @@ func (m Model) onInsertKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.previewOpen = !m.previewOpen
 		m.layout()
 		return m, nil
-	case "ctrl+v":
+	case "ctrl+v", "super+v":
 		// Intercepted before the textarea, whose own ctrl+v shells out to
-		// pbpaste and so can only ever see text.
+		// pbpaste and so can only ever see text. super+v is Cmd+V once kitty
+		// passthrough (in_larkim) delivers the key instead of paste_from_clipboard.
 		return m, pasteClipboard(m.deps)
 	case "ctrl+g":
 		// Intercepted before the textarea, which binds ctrl+g to select-all.

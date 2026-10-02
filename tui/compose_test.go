@@ -187,7 +187,7 @@ func TestHelp_DocumentsTheComposerTypes(t *testing.T) {
 	require.True(t, helpHas("the badge under the draft names the type"))
 	require.True(t, helpHas("Ctrl+o previews a post or an image"))
 	require.True(t, helpHas("Ctrl+g opens the draft in $VISUAL or $EDITOR"))
-	require.True(t, helpHas("Ctrl+v pastes an image, a file path or text from the clipboard"))
+	require.True(t, helpHas("Ctrl+v / Cmd+v pastes an image, a file path or text from the clipboard"))
 }
 
 // fakeFiles answers Stat for the paths named, so a test never touches the

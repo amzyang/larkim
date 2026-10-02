@@ -87,7 +87,7 @@ func buildHelpEntries() []helpEntry {
 		{"INSERT", "", "the badge under the draft names the type and the files it will upload"},
 		{"INSERT", "Ctrl+o", "previews a post or an image the way the message list will draw it"},
 		{"INSERT", "Ctrl+g", "opens the draft in $VISUAL or $EDITOR as a markdown file"},
-		{"INSERT", "Ctrl+v", "pastes an image, a file path or text from the clipboard"},
+		{"INSERT", "Ctrl+v / Cmd+v", "pastes an image, a file path or text from the clipboard"},
 		{"INSERT", "@", "completes anyone this chat reaches, its bots and you included"},
 		{"INSERT", ": or [", "completes an emoji, once two letters stand after it"},
 
@@ -210,8 +210,9 @@ func (m Model) closeHelp() Model {
 }
 
 // helpSearch narrows the table. Keys, prose and mode name are matched apart so
-// a query lands on whichever of them the reader had in mind — "insert", "ctrl"
-// and "clipboard" all reach the paste binding — and only the column it matched
+// a query lands on whichever of them the reader had in mind — "insert", "ctrl",
+// "cmd" and "clipboard" all reach the paste binding — and only the column it
+// matched
 // is underlined.
 func helpSearch(query string) []helpHit {
 	ix := fuzzy.NewIndex()
