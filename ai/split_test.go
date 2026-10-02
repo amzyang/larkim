@@ -51,3 +51,22 @@ func TestSplitAnswer_AnEmptyAnswerHasNothing(t *testing.T) {
 	require.Equal(t, []Segment{{Card: false, Text: "嗯。"}},
 		SplitAnswer("嗯。\n<reply>\n</reply>"))
 }
+
+func TestSplitAnswer_AnUnbalancedFenceInABlockDoesNotEatTheRest(t *testing.T) {
+	// The option's own ``` never balances; the closing marker still closes,
+	// and the second option behind it is still an option.
+	segs := SplitAnswer("两个：\n<reply>\n```\ncode\n</reply>\n或者：\n<reply>\n明早合。\n</reply>")
+	require.Equal(t, []Segment{
+		{Card: false, Text: "两个："},
+		{Card: true, Text: "```\ncode"},
+		{Card: false, Text: "或者："},
+		{Card: true, Text: "明早合。"},
+	}, segs)
+}
+
+func TestSplitAnswer_AStrayCloserMakesNoCard(t *testing.T) {
+	// A closer with nothing open opens nothing: the text around it stays
+	// commentary, and the whole-text fallback does not post the tag.
+	require.Equal(t, []Segment{{Card: false, Text: "foo\nbar"}},
+		SplitAnswer("foo\n</reply>\nbar"))
+}
