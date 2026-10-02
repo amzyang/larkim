@@ -16,11 +16,17 @@ import (
 
 // fakeBinary writes a shell script that plays lark-cli: it dispatches on the
 // first two arguments and prints canned stdout/stderr with an exit code.
+//
+// The lark-cli it hands out is a symlink to the one shim TestMain wrote, which
+// runs the script beside the link. macOS vets every new executable on its
+// first launch, a tenth of a second or more each, and a script sh only reads
+// is not one.
 func fakeBinary(t *testing.T, script string) *ExecClient {
 	t.Helper()
 	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "script"), []byte(script), 0o644))
 	path := filepath.Join(dir, "lark-cli")
-	require.NoError(t, os.WriteFile(path, []byte("#!/bin/sh\n"+script), 0o755))
+	require.NoError(t, os.Symlink(shimPath, path))
 	return &ExecClient{Path: path, Dir: dir, Timeout: 10 * time.Second}
 }
 
