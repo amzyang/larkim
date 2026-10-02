@@ -714,12 +714,31 @@ func TestRebuild_BlocksBecomeCardsWithActions(t *testing.T) {
 	require.Positive(t, cards)
 	require.Contains(t, ansi.Strip(m.renderAI(m.bodyHeight())), "今晚合。")
 
-	// While the answer streams there is nothing to act on yet.
+	// While the answer streams there is nothing to act on yet, but cards
+	// already open show without raw tags.
 	m2, t2 := ask(t, aiFixture(t, newFakeAI()), "帮我回复")
-	out, _ := m2.onAIChunk(aiChunkMsg{turn: t2.id, chunk: ai.Chunk{Text: "<reply>\n写到一半"}})
+	out, _ := m2.onAIChunk(aiChunkMsg{turn: t2.id, chunk: ai.Chunk{Text: "草稿：\n<reply>\n写到一半"}})
 	m2 = out.(Model)
-	require.NotContains(t, ansi.Strip(m2.renderAI(m2.bodyHeight())), "Insert",
+	rendered := ansi.Strip(m2.renderAI(m2.bodyHeight()))
+	require.NotContains(t, rendered, "<reply>", "markers are parsed while streaming")
+	require.Contains(t, rendered, "写到一半")
+	require.Contains(t, rendered, "writing")
+	require.NotContains(t, rendered, "Insert",
 		"actions wait for the answer to finish")
+}
+
+func TestRebuild_AStoppedAnswerKeepsItsPartialCards(t *testing.T) {
+	f := newFakeAI()
+	m := aiFixture(t, f)
+	m, t1 := ask(t, m, "帮我回复")
+	out, _ := m.onAIChunk(aiChunkMsg{turn: t1.id, chunk: ai.Chunk{Text: "两选一：\n<reply>\n今晚合。\n</reply>\n<reply>\n写到"}})
+	m = out.(Model)
+	out, _ = m.onAIChunk(aiChunkMsg{turn: t1.id, chunk: ai.Chunk{Stopped: true, Done: true}})
+	m = out.(Model)
+	m.aiP.rebuild(m)
+	require.Contains(t, ansi.Strip(m.renderAI(m.bodyHeight())), "今晚合。")
+	require.Contains(t, ansi.Strip(m.renderAI(m.bodyHeight())), "写到")
+	require.Contains(t, ansi.Strip(m.renderAI(m.bodyHeight())), "Insert")
 }
 
 // The action zones hit at their edges and miss the cells beside them.

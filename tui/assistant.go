@@ -901,34 +901,19 @@ func (p *aiPanel) rebuild(m Model) {
 				add(aiRowOf(m.spin.View(), w), none)
 				continue
 			}
-			// Half an answer is commentary while it grows: the cards it
-			// becomes are not there yet, and a card still being written is
-			// not a target to send.
-			var b block
-			g := leads{b: &b}
-			addAll(mdRows(t.answer, store.Message{}, 0, st, &g, mentions{}), none)
+			m.addAnswerSegments(t, w, st, true, add, addAll)
 			continue
 		case aiFailed:
 			add(aiRowOf(stErr.Render(truncate(t.err, w)), w), none)
 			continue
 		case aiStopped, aiInterrupted:
-			continue
-		}
-		cards := 0
-		for _, seg := range ai.SplitAnswer(t.answer) {
-			if !seg.Card {
-				var b block
-				g := leads{b: &b}
-				addAll(mdRows(seg.Text, store.Message{}, 0, st, &g, mentions{}), none)
+			if strings.TrimSpace(t.answer) == "" {
 				continue
 			}
-			act := aiAct{turn: t.id, card: cards}
-			cards++
-			sentWhen := t.sentAt[act.card]
-			add(aiRowOf(stDim.Render("┌─"), w), act)
-			addAll(m.cardBodyRows(seg.Text, w), act)
-			add(aiCardFoot(w, act, t.anchor != nil, !sentWhen.IsZero(), sentWhen), act)
+			m.addAnswerSegments(t, w, st, false, add, addAll)
+			continue
 		}
+		m.addAnswerSegments(t, w, st, false, add, addAll)
 		// Only a finished turn's rows are worth the cache: the turns that
 		// ended early draw a line or two, and the streaming tail moves with
 		// every chunk anyway.
@@ -1023,6 +1008,44 @@ func aiCardFoot(w int, a aiAct, anchored, sent bool, at time.Time) msgRow {
 		prefix = "✓ sent " + at.Format("15:04")
 	}
 	return footRow(w, "", prefix, parts)
+}
+
+// addAnswerSegments lays out SplitAnswer: commentary as markdown, each
+// option in a frame. While the answer streams, feet say writing and carry
+// no acts; a finished answer gets Send · Reply · Insert · Copy under each
+// card.
+func (m Model) addAnswerSegments(t *aiTurn, w int, st msgStyle, streaming bool, add func(msgRow, aiAct), addAll func([]msgRow, aiAct)) {
+	none := aiAct{turn: t.id, card: -1}
+	card := 0
+	for _, seg := range ai.SplitAnswer(t.answer) {
+		if !seg.Card {
+			var b block
+			g := leads{b: &b}
+			addAll(mdRows(seg.Text, store.Message{}, 0, st, &g, mentions{}), none)
+			continue
+		}
+		var act aiAct
+		if streaming {
+			act = none
+		} else {
+			act = aiAct{turn: t.id, card: card}
+			card++
+		}
+		add(aiRowOf(stDim.Render("┌─"), w), act)
+		addAll(m.cardBodyRows(seg.Text, w), act)
+		if streaming {
+			add(aiCardWritingFoot(w), none)
+		} else {
+			sentWhen := t.sentAt[act.card]
+			add(aiCardFoot(w, act, t.anchor != nil, !sentWhen.IsZero(), sentWhen), act)
+		}
+	}
+}
+
+// aiCardWritingFoot is the dim row under a card still being written: no
+// send target until the answer finishes.
+func aiCardWritingFoot(w int) msgRow {
+	return footRow(w, "", "writing…", nil)
 }
 
 // streamFoot is the action row a streamed answer draws: where its card
