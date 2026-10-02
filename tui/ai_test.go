@@ -415,8 +415,11 @@ func TestOnAIKey_SessionsSwitchAndStart(t *testing.T) {
 	require.Equal(t, 1, m.aiP.cur)
 	require.Equal(t, modeInsert, m.mode)
 
-	m = clickHeadZone(t, m, func(a aiAct) bool { return a.kind == actSess && a.sess == 0 })
-	require.Equal(t, 0, m.aiP.cur, "back to the first session")
+	m = clickHeadZone(t, m, func(a aiAct) bool { return a.kind == actSessMenu })
+	picked, _ := m.onClick(tea.Mouse{Button: tea.MouseLeft, X: m.width - m.rightWidth() + 2,
+		Y: 1 + aiHeadLines})
+	m = picked.(Model)
+	require.Equal(t, 0, m.aiP.cur, "back to the first session via menu")
 	require.Equal(t, aiAsking, first.state, "switching stopped nothing")
 }
 
@@ -452,8 +455,11 @@ func TestAIHeader_ClickStartsSwitchesAndPicks(t *testing.T) {
 
 	m.aiP.sess[0].title = "合并单"
 	m.aiP.sess[1].title = "回归"
+	head := ansi.Strip(m.aiP.header(m, m.rightWidth()-2))
+	require.Contains(t, head, "回归")
+	require.NotContains(t, head, "合并单", "inactive session stays out of the header")
 	m = clickHeadZone(t, m, func(a aiAct) bool { return a.kind == actSessMenu })
-	require.True(t, m.aiP.menu.open, "▾ opens the picker")
+	require.True(t, m.aiP.menu.open, "N/M ▾ opens the picker")
 	require.Equal(t, m.aiP.cur, m.aiP.menu.sel, "the cursor starts on the session on screen")
 	pane := ansi.Strip(m.renderAI(m.bodyHeight()))
 	require.Contains(t, pane, "合并单")

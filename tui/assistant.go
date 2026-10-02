@@ -1530,47 +1530,45 @@ func (m Model) aiTurnChips(t *aiTurn, w int) string {
 	return truncate(strings.Join(chips, " · "), w)
 }
 
-// aiHeader is the pane's title: the chat's sessions as tabs, the one on
-// screen bold, an answering one marked, ▾ for the lot of them and + for a new
-// one. Every piece but the counter is its own click target: switching is
-// reading the header, not remembering a key.
+// aiHeader is the pane title: AI and the session on screen only. With more
+// than one session, N/M ▾ at the right opens the picker (one click zone for
+// the whole counter); + starts a new session. Switching otherwise is the menu
+// or A, not inline tabs.
 func (p *aiPanel) header(m Model, w int) string {
 	p.headZones = [aiHeadLines][]clickZone{}
-	var b strings.Builder
-	x := 0
-	write := func(s string, a *aiAct) {
-		if a != nil {
-			z := clickZone{x0: x, x1: x + lipgloss.Width(s), act: *a}
-			p.headZones[0] = append(p.headZones[0], z)
-		}
-		b.WriteString(s)
-		x += lipgloss.Width(s)
+
+	plus := stDim.Render(" +")
+	var menu string
+	if len(p.sess) > 1 {
+		menu = stDim.Render(fmt.Sprintf("%d/%d ▾", p.cur+1, len(p.sess)))
 	}
-	write(stBold.Render("AI"), nil)
-	for i, s := range p.sess {
-		name := " " + truncate(cmp.Or(s.title, "new"), 12)
+	right := menu + plus
+
+	left := stBold.Render("AI")
+	if s := p.session(); s != nil {
 		busy := ""
 		if s.answering() {
 			busy = " " + m.spin.View()
 		}
-		// The session on screen is not a target: standing where it stands is
-		// what it already does.
-		var a *aiAct
-		if i != p.cur {
-			a = &aiAct{kind: actSess, sess: i}
-		}
-		if i == p.cur {
-			write(stBold.Render(name)+busy, a)
-			continue
-		}
-		write(stDim.Render(name)+busy, a)
+		prefix := stBold.Render("AI ")
+		titleRoom := w - lipgloss.Width(right) - lipgloss.Width(prefix) - lipgloss.Width(busy)
+		name := stBold.Render(" " + truncate(cmp.Or(s.title, "new"), max(1, titleRoom)))
+		left = prefix + name + busy
 	}
-	if len(p.sess) > 1 {
-		write(stDim.Render(fmt.Sprintf("  %d/%d", p.cur+1, len(p.sess))), nil)
-		write(stDim.Render(" ▾"), &aiAct{kind: actSessMenu})
+
+	line := padBetween(left, right, w)
+
+	if menu != "" {
+		rw := lipgloss.Width(right)
+		mw := lipgloss.Width(menu)
+		x0 := w - rw
+		p.headZones[0] = append(p.headZones[0], clickZone{x0: x0, x1: x0 + mw, act: aiAct{kind: actSessMenu}})
 	}
-	write(stDim.Render("  +"), &aiAct{kind: actNewSess})
-	return fit(b.String(), w)
+	pw := lipgloss.Width(plus)
+	x0 := w - pw
+	p.headZones[0] = append(p.headZones[0], clickZone{x0: x0, x1: x0 + pw, act: aiAct{kind: actNewSess}})
+
+	return line
 }
 
 // aiChips is the strip of context the next question carries, under the header
