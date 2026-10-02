@@ -706,11 +706,11 @@ func TestRebuild_BlocksBecomeCardsWithActions(t *testing.T) {
 		}
 	}
 	for _, r := range m.aiP.rows {
-		if strings.Contains(ansi.Strip(r.text), "Insert") {
+		if strings.Contains(ansi.Strip(r.text), "Send") {
 			feet++
 		}
 	}
-	require.Equal(t, 2, feet, "each card draws its own action row")
+	require.Equal(t, 2, feet, "each card draws its own send row")
 	require.Positive(t, cards)
 	require.Contains(t, ansi.Strip(m.renderAI(m.bodyHeight())), "今晚合。")
 
@@ -725,6 +725,18 @@ func TestRebuild_BlocksBecomeCardsWithActions(t *testing.T) {
 	require.Contains(t, rendered, "writing")
 	require.NotContains(t, rendered, "Insert",
 		"actions wait for the answer to finish")
+}
+
+func TestRebuild_AnAnswerWithNoBlockHasNoSend(t *testing.T) {
+	f := newFakeAI()
+	m := aiFixture(t, f)
+	m, t1 := ask(t, m, "总结一下")
+	m = answerDone(t, m, t1, "讨论了发布窗口和回归顺序，暂无结论。")
+	m.aiP.rebuild(m)
+	rendered := ansi.Strip(m.renderAI(m.bodyHeight()))
+	require.Contains(t, rendered, "讨论了发布")
+	require.Contains(t, rendered, "Insert")
+	require.NotContains(t, rendered, "Send ·", "commentary is not sendable")
 }
 
 func TestRebuild_AStoppedAnswerKeepsItsPartialCards(t *testing.T) {

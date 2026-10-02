@@ -6,8 +6,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestSplitAnswer_AnAnswerWithNoBlockIsOneCard(t *testing.T) {
-	require.Equal(t, []Segment{{Card: true, Text: "今晚合 #4412，风险已过。"}},
+func TestSplitAnswer_AnAnswerWithNoBlockIsCommentary(t *testing.T) {
+	require.Equal(t, []Segment{{Card: false, Text: "今晚合 #4412，风险已过。"}},
 		SplitAnswer("今晚合 #4412，风险已过。"))
 }
 
@@ -30,11 +30,10 @@ func TestSplitAnswer_AnUnclosedBlockStreamsAsTheCardItOpened(t *testing.T) {
 }
 
 func TestSplitAnswer_AMarkerInsideACodeFenceIsQuotedTextNotAnOption(t *testing.T) {
-	// The fenced pair opens no card, so the answer offers no option at all —
-	// which makes it the message itself, one card with the template inside.
+	// The fenced pair opens no card, so the answer is commentary only.
 	segs := SplitAnswer("模板长这样：\n```\n<reply>\n占位\n</reply>\n```\n按它填即可。")
 	require.Equal(t, []Segment{
-		{Card: true, Text: "模板长这样：\n```\n<reply>\n占位\n</reply>\n```\n按它填即可。"},
+		{Card: false, Text: "模板长这样：\n```\n<reply>\n占位\n</reply>\n```\n按它填即可。"},
 	}, segs)
 	// And with a real block after it, the fenced one stays quoted text.
 	segs = SplitAnswer("```\n<reply>\n</reply>\n```\n<reply>\n真选项\n</reply>")
@@ -80,7 +79,7 @@ func TestSplitAnswer_ABlockOnOneLineIsStillACard(t *testing.T) {
 }
 
 func TestSplitAnswer_AMarkerInInlineCodeIsQuotedText(t *testing.T) {
-	require.Equal(t, []Segment{{Card: true, Text: "用 `<reply>` 包住选项。"}},
+	require.Equal(t, []Segment{{Card: false, Text: "用 `<reply>` 包住选项。"}},
 		SplitAnswer("用 `<reply>` 包住选项。"))
 }
 

@@ -1016,12 +1016,18 @@ func aiCardFoot(w int, a aiAct, anchored, sent bool, at time.Time) msgRow {
 // card.
 func (m Model) addAnswerSegments(t *aiTurn, w int, st msgStyle, streaming bool, add func(msgRow, aiAct), addAll func([]msgRow, aiAct)) {
 	none := aiAct{turn: t.id, card: -1}
-	card := 0
+	card, commentary := 0, 0
 	for _, seg := range ai.SplitAnswer(t.answer) {
 		if !seg.Card {
 			var b block
 			g := leads{b: &b}
-			addAll(mdRows(seg.Text, store.Message{}, 0, st, &g, mentions{}), none)
+			act := none
+			addAll(mdRows(seg.Text, store.Message{}, 0, st, &g, mentions{}), act)
+			if !streaming {
+				ca := aiAct{turn: t.id, card: aiCommentaryCard(commentary)}
+				commentary++
+				add(aiCommentaryFoot(w, ca), ca)
+			}
 			continue
 		}
 		var act aiAct
@@ -1046,6 +1052,19 @@ func (m Model) addAnswerSegments(t *aiTurn, w int, st msgStyle, streaming bool, 
 // send target until the answer finishes.
 func aiCardWritingFoot(w int) msgRow {
 	return footRow(w, "", "writing…", nil)
+}
+
+// aiCommentaryCard names a commentary segment for Copy and Insert: card -1
+// means no segment, so commentary indices start at -2.
+func aiCommentaryCard(i int) int { return -(i + 2) }
+
+// aiCommentaryFoot is the action row under commentary: Insert and Copy
+// only — nothing here is offered for Send.
+func aiCommentaryFoot(w int, a aiAct) msgRow {
+	return footRow(w, "", "", []labelAct{
+		{"Insert", aiAct{kind: actInsert, turn: a.turn, card: a.card}},
+		{"Copy", aiAct{kind: actCopy, turn: a.turn, card: a.card}},
+	})
 }
 
 // streamFoot is the action row a streamed answer draws: where its card
@@ -1142,14 +1161,33 @@ func (m Model) cardText(a aiAct) (string, bool) {
 	if t.stream != nil {
 		return t.answer, true
 	}
-	if a.card < 0 {
-		return "", false
+	if a.card <= aiCommentaryCard(0) {
+		return commentaryText(t, a.card)
 	}
 	cards := cardsOf(t)
 	if a.card >= len(cards) {
 		return "", false
 	}
 	return cards[a.card], true
+}
+
+// commentaryText is one SplitAnswer commentary segment a negative card names.
+func commentaryText(t *aiTurn, card int) (string, bool) {
+	want := -card - 2
+	if want < 0 {
+		return "", false
+	}
+	n := 0
+	for _, seg := range ai.SplitAnswer(t.answer) {
+		if seg.Card {
+			continue
+		}
+		if n == want {
+			return seg.Text, true
+		}
+		n++
+	}
+	return "", false
 }
 
 // insertCard fills a composer with a card's text. The frame's box when the
@@ -1218,6 +1256,9 @@ type aiSendPending struct {
 // for a reply, to whom, shows its first line, and says when it mentions @All
 // or names a local file.
 func (m Model) askSendAI(a aiAct, reply bool) (tea.Model, tea.Cmd, bool) {
+	if a.card <= aiCommentaryCard(0) {
+		return m.notify("commentary is not sendable — pick a reply block", true), nil, true
+	}
 	text, ok := m.cardText(a)
 	if !ok {
 		return m.notify("no card here", true), nil, true

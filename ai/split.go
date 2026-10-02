@@ -28,9 +28,9 @@ type Segment struct {
 //   - A closer with no block to close is marker noise: swallowed rather than
 //     let the whole-text fallback post the tag itself.
 //
-// An answer with no block is the message itself, which is one card; a block
-// left unclosed while the answer streams is the card it opened, with
-// whatever has arrived.
+// An answer with no block is commentary for the reader alone — Copy and
+// Insert only, never Send. A block left unclosed while the answer streams
+// is the card it opened, with whatever has arrived.
 func SplitAnswer(text string) []Segment {
 	var segs []Segment
 	inCard, fence, marked := false, false, false
@@ -75,14 +75,13 @@ func SplitAnswer(text string) []Segment {
 		}
 	}
 	flush(inCard)
-	// No marker at all means the answer is the message itself, which is one
-	// card; markers that offered only empty blocks leave the commentary as
-	// commentary, with nothing to send.
+	// No marker at all is commentary only; markers that offered only empty
+	// blocks leave the commentary as commentary, with nothing to send.
 	if !marked {
 		if strings.TrimSpace(text) == "" {
 			return nil
 		}
-		return []Segment{{Card: true, Text: strings.TrimSpace(text)}}
+		return []Segment{{Card: false, Text: strings.TrimSpace(text)}}
 	}
 	return segs
 }
@@ -93,7 +92,7 @@ func SplitAnswer(text string) []Segment {
 func splitMarkers(line string) []string {
 	var out []string
 	start, code := 0, false
-	for i := 0; i < len(line); i++ {
+	for i := range len(line) {
 		if line[i] == '`' {
 			code = !code
 			continue

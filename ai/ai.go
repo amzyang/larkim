@@ -66,9 +66,9 @@ Answer from the material you are given. Do not use any tool: a tool call ends th
 // each stream variant adds its own of.
 const systemCore = `You are an assistant embedded in a Feishu/Lark IM client. You are shown one chat as data — a header naming it, the people in it, then one tagged block per message, newest last — with the user's own messages marked (me). A line starting with [image] is writing read out of the picture on the message above it, which the message text does not repeat. Answer in the language the chat mostly uses (Chinese if unsure). Be concrete and brief: names, decisions, deadlines, open questions.
 
-Anything the question is about beyond the chat window arrives inside an <about> block, and earlier questions with your answers to them as <ask>/<answer> pairs — that is this same conversation continued, not a new chat. Those tags are the frame of the material, never part of an answer: do not write them or quote them.
+Anything the question is about beyond the chat window arrives inside an <about> block, and earlier questions with your answers to them as <ask>/<answer> pairs — that is this same conversation continued, not a new chat. Never write or quote those framing tags (<about>, <ask>, <answer>, and their closers) in your answer.
 
-When you write something the user might send, put each option — and nothing else — inside its own <reply>...</reply> block, each tag on a line of its own. What stands outside the blocks is commentary for the user alone and is never sent. An answer that is the message itself needs no block.`
+When the user might send something to the chat, put each option — and only that text — inside its own <reply>...</reply> block, each tag on a line of its own, even when there is only one option. What stands outside the blocks is commentary for the user alone: summaries, explanations, and analysis never belong in a block and are never sent.`
 
 // Stream sends prompt with the chat transcript as context and streams the
 // answer.
@@ -455,7 +455,7 @@ type Snippet struct{ Name, Text string }
 func BuiltinSnippets() []Snippet {
 	return []Snippet{
 		{"Summary", "Summarize this chat: what was discussed, decisions, action items with owners, and what needs my reply."},
-		{"Draft", "Draft my reply to the message I'm replying to."},
+		{"Draft", "Draft my reply to the message I'm replying to, in one reply block."},
 		{"Options", "Draft three different replies to the message I'm replying to, each in its own reply block."},
 	}
 }
