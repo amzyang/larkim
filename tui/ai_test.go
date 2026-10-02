@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -1364,4 +1365,29 @@ func TestOpenAIKey_NoChatNotifies(t *testing.T) {
 	m = press(t, m, "a")
 	require.Contains(t, m.notice, "open a chat first")
 	require.Nil(t, m.aiP)
+}
+
+// Regenerate is a new answer: the sent marks belonged to the old one, and a
+// ✓ on a card that never went would skip the very send it fakes.
+func TestRegenerate_TheNewAnswerCarriesNoSentMarks(t *testing.T) {
+	f := newFakeAI()
+	m, _ := aiSendFixture(t, f)
+	m, t1 := ask(t, m, "帮我回")
+	m = answerDone(t, m, t1, "<reply>\n今晚合。\n</reply>")
+	m.mode = modeNormal
+	m.areap().Blur()
+	out, _, _ := m.onAIKey("s")
+	m = out
+	yout, ycmd, _ := m.answerConfirm("y")
+	m = yout.(Model)
+	res := ycmd()
+	next, _ := m.Update(res)
+	m = next.(Model)
+	require.Contains(t, ansi.Strip(m.renderAI(m.bodyHeight())), "✓ sent")
+
+	regen, _ := m.regenerateAI()
+	m = regen.(Model)
+	require.Empty(t, t1.sentAt, "the marks went with the answer they marked")
+	require.NotContains(t, ansi.Strip(m.renderAI(m.bodyHeight())), "✓ sent",
+		"the new answer's cards have not been sent")
 }

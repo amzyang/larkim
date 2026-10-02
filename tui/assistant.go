@@ -1252,6 +1252,7 @@ func (m Model) regenerateAI() (tea.Model, tea.Cmd) {
 	// notice rather than the key refusing to answer.
 	off := m.assistantOff()
 	t.answer, t.err, t.state, t.ch, t.cancel, t.traces = "", "", aiAsking, nil, nil, nil
+	t.sentAt = nil
 	p.follow = true
 	p.rebuild(m)
 	m.layout()
