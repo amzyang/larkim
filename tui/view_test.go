@@ -334,6 +334,35 @@ func TestRenderStatus_StaysOneLine(t *testing.T) {
 	require.Equal(t, m.width, lipgloss.Width(s))
 }
 
+func TestRenderStatus_ReservesHelpWithLongNotice(t *testing.T) {
+	m := sized(120, 36)
+	m = m.notify("notice: "+strings.Repeat("z", 200), false)
+	require.Contains(t, ansi.Strip(m.renderStatus()), "? help")
+}
+
+func TestView_AtMinWidth78_LayoutFits(t *testing.T) {
+	m := sized(minWidth, minHeight)
+	v := m.View()
+	require.NotContains(t, v.Content, "too small")
+	for line := range strings.SplitSeq(v.Content, "\n") {
+		require.LessOrEqual(t, lipgloss.Width(line), m.width, "%q", line)
+	}
+	require.Contains(t, ansi.Strip(v.Content), "Chats")
+}
+
+func TestRenderStatus_ConfirmHighlightsKeys(t *testing.T) {
+	m := sized(120, 36)
+	m.confirm = confirmation{kind: confirmRecall, messageID: "om_0"}
+	m = m.notify("recall this message? y/n", false)
+	s := ansi.Strip(m.renderStatus())
+	require.Contains(t, s, "recall this message")
+	require.Contains(t, s, "y/n")
+	st := confirmNoticeStyles()
+	rendered := formatConfirmNotice("recall this message? y/n", 80)
+	require.Contains(t, rendered, st.Affirm.Render("y"))
+	require.Contains(t, rendered, st.Deny.Render("n"))
+}
+
 func TestChatsLoaded_CursorFollowsItsOwnChat(t *testing.T) {
 	m := sized(120, 36)
 	m.chatID = "oc_3"

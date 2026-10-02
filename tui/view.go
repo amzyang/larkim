@@ -85,6 +85,8 @@ var (
 	stBold   = lipgloss.NewStyle().Bold(true)
 	stErr    = lipgloss.NewStyle().Foreground(colErr)
 	stWarn   = lipgloss.NewStyle().Foreground(colWarn)
+	// stConfirm is a decision waiting on y/n: not an error, not plain info.
+	stConfirm = lipgloss.NewStyle().Bold(true).Foreground(colWarn)
 	// The reader's own mention wears the filled badge the client paints it as:
 	// the brand blue it owns, closed by the same caps a chip is, and white on
 	// it. The fill is fixed rather than the terminal's blue because a badge
@@ -1263,18 +1265,32 @@ func (m Model) renderBadge(w int) string {
 	return padBetween(left, hint, w)
 }
 
+const statusHelpHint = "? help"
+
 func (m Model) renderStatus() string {
 	left := fmtStatus(m)
-	right := cmp.Or(m.notice, m.statusWarn, "? help")
-	right = truncate(right, max(0, m.width-lipgloss.Width(left)-3))
+	leftPart := " " + left
+	room := max(0, m.width-lipgloss.Width(leftPart)-lipgloss.Width(statusHelpHint)-2)
+	var mid string
 	switch {
 	case m.notice != "" && m.noticeErr:
-		right = stErr.Render(right)
-	case m.notice == "" && m.statusWarn != "":
-		right = stWarn.Render(right)
+		mid = stErr.Render(truncate(m.notice, room))
+	case m.confirm.kind != confirmNone && m.notice != "" && !m.noticeErr:
+		mid = formatConfirmNotice(m.notice, room)
+	case m.notice != "" && !m.noticeErr:
+		mid = truncateStatusNotice(m.notice, room)
+	case m.statusWarn != "":
+		mid = stWarn.Render(truncate(m.statusWarn, room))
 	}
-	gap := max(1, m.width-lipgloss.Width(left)-lipgloss.Width(right)-2)
-	return m.th.sel.Render(fit(" "+left+strings.Repeat(" ", gap)+right, m.width))
+	right := padBetween(mid, statusHelpHint, m.width-lipgloss.Width(leftPart))
+	return m.th.sel.Render(leftPart + right)
+}
+
+func truncateStatusNotice(notice string, room int) string {
+	if room <= 0 {
+		return ""
+	}
+	return truncate(notice, room)
 }
 
 // highlight paints the selected row, brighter when its pane has focus.

@@ -612,7 +612,7 @@ func (m Model) silenceDetail() string {
 		}
 		return fit(stDim.Render(truncate(help+" · every field set must match", w)), w)
 	case t.confirmDelete:
-		return fit(stErr.Render("delete this rule? y/n"), w)
+		return fit(formatConfirmNotice("delete this rule? y/n", w), w)
 	case len(m.cfg.Silence) == 0:
 		return fit(stDim.Render("no silence rules · a to add"), w)
 	}
