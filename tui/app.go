@@ -2872,6 +2872,14 @@ func (m Model) onClick(ms tea.Mouse) (tea.Model, tea.Cmd) {
 	if ms.Button != tea.MouseLeft {
 		return m, nil
 	}
+	if m.confirm.kind != confirmNone {
+		// A question on screen owns the next input, the mouse included: a
+		// click is not the answer, and acting on it would move the state the
+		// verdict was asked about — another chat, a regenerated answer. The
+		// y/n holds the screen until a key answers it, so the verdict binds
+		// to what was asked.
+		return m, nil
+	}
 	double := time.Since(m.lastClick) < 400*time.Millisecond && m.lastClickY == ms.Y
 	m.lastClick, m.lastClickY = time.Now(), ms.Y
 	p, row := m.hit(ms.X, ms.Y)

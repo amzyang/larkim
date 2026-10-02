@@ -1270,3 +1270,66 @@ func TestAskAI_HistoryOffIsThePlainStream(t *testing.T) {
 	require.Zero(t, f.asks[0].history)
 	require.NotContains(t, ansi.Strip(m.aiChips(m.rightWidth()-2)), "history")
 }
+
+// A pending y/n owns the mouse like it owns the keys: a click neither
+// answers it nor moves the state the verdict was asked about — clicking
+// another chat must not re-aim the stream the y is about to post.
+func TestConfirm_AClickWhilePendingChangesNothing(t *testing.T) {
+	f := newFakeAI()
+	m, _ := aiSendFixture(t, f)
+	m = press(t, m, "a")
+	m.chats = append(m.chats, store.Chat{ChatID: "oc_elsewhere", Name: "别的群", ChatMode: "group"})
+	m.layout()
+	m.aiP.input.SetValue("帮我回")
+	out, _ := m.askStreamConfirm()
+	m = out.(Model)
+	require.Equal(t, confirmAIStream, m.confirm.kind)
+
+	next, _ := m.onClick(tea.Mouse{Button: tea.MouseLeft, X: 4,
+		Y: 1 + headerHeight + rowOf(1)*chatRowStride})
+	m = next.(Model)
+	require.Equal(t, confirmAIStream, m.confirm.kind, "the question holds the screen")
+	require.Empty(t, m.pendingChat, "no chat was opened under it")
+	require.NotContains(t, m.notice, "oc_elsewhere")
+
+	// The y then asks what the question described: the chat it named.
+	yout, ycmd, _ := m.answerConfirm("y")
+	m = yout.(Model)
+	started := askStarted(t, ycmd)
+	sout, _ := m.onAIStarted(started)
+	m = sout.(Model)
+	require.Len(t, f.asks, 1)
+	t1 := m.aiP.session().turns[0]
+	require.Equal(t, "oc_quiet", t1.stream.chatID, "the stream goes to the chat the question was about")
+}
+
+// A turn that left before its stream's cancel arrived takes the cancel with
+// it: the agent stops here or nothing ever will.
+func TestOnAIStarted_ATurnGoneStopsTheAgent(t *testing.T) {
+	m := aiFixture(t, newFakeAI())
+	m = press(t, m, "a")
+	stopped := false
+	started := aiStartedMsg{turn: "at_gone", cancel: func() { stopped = true }}
+	out, _ := m.onAIStarted(started)
+	require.NotNil(t, out)
+	require.True(t, stopped)
+}
+
+// The stream foot's acts answer where their labels are drawn, the state text
+// at the head of the row included.
+func TestStreamFoot_ZonesAnswerAtTheirLabels(t *testing.T) {
+	t1 := &aiTurn{id: "at_1", state: aiDone, answer: "回好了",
+		stream: &aiStreamCard{chatID: "oc_quiet", messageID: "om_c", closed: true}}
+	row := streamFoot(t1, 60)
+	plain := ansi.Strip(row.text)
+	want := map[string]aiActKind{"Jump": actJump, "Copy": actCopy, "Recall": actRecall}
+	for label, kind := range want {
+		i := strings.Index(plain, label)
+		require.GreaterOrEqual(t, i, 0, label+" is drawn")
+		// Zones answer in columns; the box-drawing lead is bytes, not columns.
+		x := len([]rune(plain[:i]))
+		z, ok := zoneAt([]msgRow{row}, 0, x)
+		require.True(t, ok, "%s at column %d hits a zone", label, x)
+		require.Equal(t, kind, z.act.kind, label+" answers at its own label")
+	}
+}

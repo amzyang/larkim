@@ -26,11 +26,6 @@ type markAllDoneMsg struct {
 // one the local write settles are no longer the same, and only this one
 // decides who gets walked.
 func (m Model) startMarkAll() (tea.Model, tea.Cmd) {
-	// A question on screen owns the next key. A sweep's own notes would go
-	// over it and leave the reader answering a prompt they can no longer see.
-	if m.confirm.kind != confirmNone {
-		return m, nil
-	}
 	d := m.deps
 	return m, func() tea.Msg {
 		chats, err := d.Store.ChatsWithUnread(context.Background())

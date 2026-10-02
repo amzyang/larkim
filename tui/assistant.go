@@ -536,6 +536,11 @@ func errCh(c ai.Chunk) <-chan ai.Chunk {
 func (m Model) onAIStarted(msg aiStartedMsg) (tea.Model, tea.Cmd) {
 	_, t := m.aiP.findTurn(msg.turn)
 	if t == nil {
+		// The session left before the stream could hand its cancel over, and
+		// nobody else will ever read the channel: the agent stops here.
+		if msg.cancel != nil {
+			msg.cancel()
+		}
 		return m, nil
 	}
 	t.ch, t.cancel = msg.ch, msg.cancel
@@ -896,7 +901,7 @@ type labelAct struct {
 // its own click zone — and a dash tail to the width.
 func footRow(w int, head, prefix string, parts []labelAct) msgRow {
 	const lead = "└─ "
-	x, line := lipgloss.Width(lead), lead
+	x, line := lipgloss.Width(head+lead), lead
 	if prefix != "" {
 		line += prefix
 		x += lipgloss.Width(prefix)
