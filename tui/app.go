@@ -173,7 +173,8 @@ type Model struct {
 	// pane that draws them do not each summarise every visible row.
 	gists *gistCache
 	// pics draws message images. It stays nil, and the avatars colour blocks,
-	// until the terminal says yes to GraphicsQuery.
+	// until the terminal says it draws pictures: by the handshake when it
+	// answered before the first frame, by an event when it did not.
 	pics *pictures
 	// cellW, cellH are the last cell size the terminal reported, kept for the
 	// renderers graphics swaps in after the answer came.
@@ -441,7 +442,24 @@ func New(d Deps) Model {
 		files:      osDraftFiles()}
 	m.emoji.LoadUsed(d.DataDir)
 	m.emojiWrite.LoadUsed(d.DataDir)
-	m.setBackground(color.Black, true)
+	// The handshake settles the renderers before the first frame rather than
+	// after it: no colour blocks turning into avatars a blink later, no dark
+	// palette turning light.
+	if d.Term.CellW > 0 {
+		m.cellW, m.cellH = d.Term.CellW, d.Term.CellH
+	}
+	if d.Term.Graphics && d.DataDir != "" {
+		k := newKittyAvatars(d.DataDir)
+		k.setCellSize(m.cellW, m.cellH)
+		m.avatars = k
+		m.pics = newPictures(d.DataDir, true)
+		m.pics.setCellSize(m.cellW, m.cellH)
+	}
+	bg, dark := color.Color(color.Black), true
+	if d.Term.BG != nil {
+		bg, dark = d.Term.BG, d.Term.Dark
+	}
+	m.setBackground(bg, dark)
 	return m
 }
 
@@ -460,6 +478,9 @@ func (m *Model) setBackground(bg color.Color, dark bool) {
 // Run starts the program until quit or ctx is done.
 func Run(ctx context.Context, d Deps) error {
 	ctx, cancel := context.WithCancel(ctx)
+	// The handshake reads the terminal before tea owns its input, so the
+	// first frame is drawn the way the whole session keeps looking.
+	d.Term = Probe(os.Stdin, os.Stdout)
 	m := New(d)
 	m.cancel = cancel
 	m.revs = d.Store.WatchRev(ctx, watchEvery, d.Nudge)
@@ -469,10 +490,10 @@ func Run(ctx context.Context, d Deps) error {
 }
 
 func (m Model) Init() tea.Cmd {
-	// Asking for the cell size lets avatars be drawn at the exact pixels they
-	// will occupy; resampling is what makes small glyphs mushy.
-	cmds := tea.Batch(tea.RequestBackgroundColor, tea.Raw(ansi.WindowOp(ansi.RequestCellSizeWinOp)),
-		tea.Raw(GraphicsQuery),
+	// The handshake asked before the first frame; asking again covers the run
+	// that raced it out of its answers. Every reply lands as the event that
+	// re-syncs it, and one the handshake already had changes nothing.
+	cmds := tea.Batch(tea.Raw(handshakeQuery),
 		loadChats(m.deps), readSyncStatus(m.deps.Store), pollSyncStatus(m.deps.Store), waitForRev(m.revs),
 		loadSelfName(m.deps), keychainStartup(m.deps))
 	return tea.Batch(cmds, scheduleChatPoll())

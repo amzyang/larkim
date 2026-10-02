@@ -41,6 +41,11 @@ type Deps struct {
 	// optional: without them a copy keeps relative paths and omits --config.
 	DataDir    string
 	ConfigPath string
+	// Term is what the terminal answered about itself, the capability store
+	// the first frame is drawn from: the avatar renderer, the cell size, the
+	// palette. Run probes it before tea owns the input; a zero Term is every
+	// fallback, which is what a test or a terminal that said nothing wants.
+	Term Handshake
 	// AI is the assistant this run starts with; nil when the agent command is
 	// not installed. NewAI builds it again when :config changes ai.agent or
 	// ai.model, and returns nil when the new command is not found. A nil
