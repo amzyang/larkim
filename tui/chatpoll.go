@@ -13,8 +13,9 @@ import (
 // chatPollEvery paces the one chat the reader is looking at. Discovery for
 // every other chat goes through messages/search, whose index runs about seven
 // seconds behind; the listing this poll uses reads the message store and has
-// no such lag, so the beat is very nearly the latency the reader sees.
-const chatPollEvery = 1500 * time.Millisecond
+// no such lag, so the beat is very nearly the latency the reader sees. A var
+// so the tests, which run every command they are handed, need not wait it out.
+var chatPollEvery = 1500 * time.Millisecond
 
 // chatPollTimeout is generous because the beat, not the deadline, is what
 // bounds how often a call is made: a slow call costs a skipped beat.

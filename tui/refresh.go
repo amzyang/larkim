@@ -8,8 +8,9 @@ import (
 
 // chatRefreshDelay lets the cursor pass over a chat without spending a
 // lark-cli call on it: only the chat still open once it elapses is asked
-// about.
-const chatRefreshDelay = 400 * time.Millisecond
+// about. A var so the tests, which run every command they are handed, need not
+// wait it out.
+var chatRefreshDelay = 400 * time.Millisecond
 
 // chatRefreshDueMsg fires once a chat has stayed open past chatRefreshDelay.
 type chatRefreshDueMsg struct{ chatID string }

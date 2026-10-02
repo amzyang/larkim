@@ -92,13 +92,19 @@ func TestOpenURL_LogsTheArgvItBuilt(t *testing.T) {
 	var buf bytes.Buffer
 	log := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
-	applink.Open(log, []string{"lark://applink.feishu.cn/client/chat/open?openChatId=oc_quiet"}, true)
+	// A file that is not there: open refuses it after the line is logged, where
+	// a lark:// link would move the Feishu client of whoever runs the test.
+	target := filepath.Join(t.TempDir(), "open?openChatId=oc_quiet")
+	applink.Open(log, []string{target}, true)
 
-	require.Contains(t, buf.String(), `open -g 'lark://applink.feishu.cn/client/chat/open?openChatId=oc_quiet'`,
+	require.Contains(t, buf.String(), `open -g '`+target+`'`,
 		"-g is this function's own decision, so no caller can log it")
 }
 
 func TestNew_GivesTheDefaultOpenerTheLog(t *testing.T) {
+	saved := openApplink
+	openApplink = applink.Open
+	t.Cleanup(func() { openApplink = saved })
 	var buf bytes.Buffer
 	m := New(Deps{Log: slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))})
 

@@ -379,6 +379,14 @@ type Model struct {
 	cancel     context.CancelFunc
 }
 
+// openApplink and defaultApplinkPaceMS are what New gives a Deps that names
+// neither. The tests swap both: the real opener moves the Feishu client on the
+// machine running them, and the real pace is a second per chat drained.
+var (
+	openApplink          = applink.Open
+	defaultApplinkPaceMS = applink.DefaultPaceMS
+)
+
 // New builds the model.
 func New(d Deps) Model {
 	ti := textinput.New()
@@ -412,13 +420,13 @@ func New(d Deps) Model {
 	if d.OpenURL == nil {
 		log := d.Log
 		d.OpenURL = func(targets []string, background bool) error {
-			return applink.Open(log, targets, background)
+			return openApplink(log, targets, background)
 		}
 	}
 	if d.Config.ApplinkPaceMS <= 0 {
 		// A Deps built by hand carries no configuration, and a gap of nothing
 		// is the bug the pacing exists to fix.
-		d.Config.ApplinkPaceMS = applink.DefaultPaceMS
+		d.Config.ApplinkPaceMS = defaultApplinkPaceMS
 	}
 	// After OpenURL: applink mode clears a badge by handing it one.
 	if d.ClearBadge == nil && d.NewClearBadge == nil {
