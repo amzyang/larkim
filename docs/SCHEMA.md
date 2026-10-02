@@ -212,10 +212,10 @@ table here with a DELETE trigger.
 
 The assistant panel's own conversations: one session per chat per
 conversation, and one turn per question with its answer and the recorded
-context the question was asked in — the anchor, the window size, the draft,
-the selection. Later actions on an answer (Retry and Regenerate included)
-replay the recorded context rather than the live cursor, so that record is
-what an answer's meaning rests on.
+context the question was asked in — the anchor, the window size, the
+composer text, the selection. Later actions on an answer (Retry and
+Regenerate included) replay the recorded context rather than the live
+cursor, so that record is what an answer's meaning rests on.
 
 TUI-owned, like `drafts`: the daemon never writes these tables, and they sit
 outside the `data_rev` triggers — the process that writes a turn is the one

@@ -392,7 +392,7 @@ func TestAskAI_WithoutAnAgentTheQuestionStillLands(t *testing.T) {
 
 	m, turn := ask(t, m, "总结一下")
 	require.Equal(t, aiAsking, turn.state)
-	out, _ := m.onAIChunk(aiChunkMsg{turn: turn.id, chunk: ai.Chunk{Err: errAssistantOff, Done: true}})
+	out, _ := m.onAIChunk(aiChunkMsg{turn: turn.id, chunk: ai.Chunk{Err: m.assistantOff(), Done: true}})
 	m = out.(Model)
 	require.Equal(t, aiFailed, turn.state)
 	require.Contains(t, turn.err, "assistant off")
@@ -518,7 +518,7 @@ func TestAIPanel_ATurnStillAskingAtLoadIsInterrupted(t *testing.T) {
 	reborn.layout()
 	reborn = press(t, reborn, "a")
 
-	loaded := reborn.aiP.turn("at_kept")
+	_, loaded := reborn.aiP.findTurn("at_kept")
 	require.NotNil(t, loaded)
 	require.Equal(t, aiInterrupted, loaded.state)
 	require.Empty(t, reborn.aiP.session().turns[0].ch, "nobody owes this answer anymore")

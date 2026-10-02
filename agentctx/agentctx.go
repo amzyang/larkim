@@ -166,23 +166,30 @@ func body(in Input, m store.Message, text string) string {
 	// does it: a picture inside a post or a card is named nowhere the
 	// rendering spells out, and this reaches those too.
 	for _, t := range in.ImgText[m.MessageID] {
-		if t = excerpt(t); t != "" {
-			lines = append(lines, "    [image] "+t)
+		if t = Excerpt(t); t != "" {
+			lines = append(lines, ImageMark+" "+t)
 		}
 	}
 	return strings.Join(lines, "\n")
 }
 
-// imgTextMax bounds one picture's contribution in runes, the same cut ai.Line
-// makes: a guard against the screenshot of a whole document rather than a
-// summary.
-const imgTextMax = 1000
+// ImageMark opens the continuation line a picture's writing arrives on. Both
+// the clipboard export and ai.Line write it, so the model reads one and the
+// same convention everywhere.
+const ImageMark = "    [image]"
 
-// excerpt flattens a picture's regions onto one line and cuts it to length.
-func excerpt(s string) string {
+// ImageTextMax bounds one picture's contribution in runes. It is a guard
+// against the screenshot of a whole document rather than a summary: an
+// ordinary screenshot of a console or a schedule comes in well under it, and
+// cutting those to a headline would leave the model the window chrome the
+// recognizer reads first.
+const ImageTextMax = 1000
+
+// Excerpt flattens a picture's regions onto one line and cuts it to length.
+func Excerpt(s string) string {
 	s = strings.Join(strings.Fields(s), " ")
-	if r := []rune(s); len(r) > imgTextMax {
-		s = strings.TrimSpace(string(r[:imgTextMax])) + "…"
+	if r := []rune(s); len(r) > ImageTextMax {
+		s = strings.TrimSpace(string(r[:ImageTextMax])) + "…"
 	}
 	return s
 }

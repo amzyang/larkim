@@ -491,9 +491,6 @@ func searchRowText(h searchHit) string {
 	return line
 }
 
-// aiLines went with the one-shot pane; the column draws its turns as rows now
-// — see assistant.go.
-
 func (m *Model) rebuildThread() {
 	if !m.threadOpen() {
 		m.threadRows = nil

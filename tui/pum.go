@@ -166,29 +166,30 @@ func lineBeforeCursor(ta textarea.Model) string {
 // question, not a message: nothing in it completes the way a draft does, and
 // its snippet popup — a / at the very start of the question — is its own.
 func (m *Model) takePum() {
+	// The side names the run's shape and where its dismissal is anchored: the
+	// assistant's / stands at the very start of the whole question, the
+	// composer's triggers wherever the cursor is.
+	var run pumRun
+	var ok bool
+	var hits []pumHit
+	var dismissedAt string
 	if m.side == sideAI {
-		value := m.aiP.input.Value()
-		if m.pum.dismissed != "" && strings.HasPrefix(value, m.pum.dismissed) {
-			m.pum = pum{dismissed: m.pum.dismissed}
-			return
+		dismissedAt = m.aiP.input.Value()
+		run, ok = snippetRunAt(m.aiP.input)
+		if ok {
+			hits = m.snippetHits(run.query)
 		}
-		run, ok := snippetRunAt(m.aiP.input)
-		if !ok {
-			m.pum = pum{}
-			return
+	} else {
+		dismissedAt = lineBeforeCursor(m.area())
+		run, ok = pumRunAt(dismissedAt)
+		if ok {
+			hits = m.pumHits(run)
 		}
-		if m.pum.open() && run == m.pum.run {
-			return
-		}
-		m.pum = pum{run: run, menu: fillMenu(m.snippetHits(run.query), pumSpec)}
-		return
 	}
-	line := lineBeforeCursor(m.area())
-	if m.pum.dismissed != "" && strings.HasPrefix(line, m.pum.dismissed) {
+	if m.pum.dismissed != "" && strings.HasPrefix(dismissedAt, m.pum.dismissed) {
 		m.pum = pum{dismissed: m.pum.dismissed}
 		return
 	}
-	run, ok := pumRunAt(line)
 	if !ok {
 		m.pum = pum{}
 		return
@@ -198,14 +199,14 @@ func (m *Model) takePum() {
 	if m.pum.open() && run == m.pum.run {
 		return
 	}
-	m.pum = pum{run: run, menu: fillMenu(m.pumHits(run), pumSpec)}
+	m.pum = pum{run: run, menu: fillMenu(hits, pumSpec)}
 }
 
 // snippetRunAt is the assistant box's completion run: a / standing at the very
 // start of the question, with the query everything typed past it. A / anywhere
 // else — a path, a date — opens nothing.
 func snippetRunAt(ta textarea.Model) (pumRun, bool) {
-	if !strings.HasPrefix(ta.Value(), "/") || ta.Line() != 0 {
+	if ta.Line() != 0 {
 		return pumRun{}, false
 	}
 	line := lineBeforeCursor(ta)

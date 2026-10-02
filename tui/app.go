@@ -1273,7 +1273,6 @@ func (m Model) quit() tea.Cmd {
 		inner := m
 		cmds = append(cmds, m.aiP.stopAll(&inner)...)
 	}
-	cmds = slices.DeleteFunc(cmds, func(c tea.Cmd) bool { return c == nil })
 	return tea.Sequence(append(cmds, tea.Quit)...)
 }
 

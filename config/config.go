@@ -163,7 +163,8 @@ type AI struct {
 
 // SnippetList reads an empty list as unset, so a config that carries
 // `snippets: []` keeps the built-ins — the offers are replaced by what is
-// written, not by the fact of writing.
+// written, not by the fact of writing. The nil it normalizes to is also what
+// keeps an unset list round-tripping equal to itself.
 type SnippetList []AISnippet
 
 // UnmarshalYAML decodes the list and normalizes an empty one to nil.

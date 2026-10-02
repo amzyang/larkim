@@ -17,6 +17,7 @@ const (
 	argTarget                   // a chat or a person, the pair :send takes
 	argEmoji                    // the reaction set
 	argEnum                     // the fixed words in command.enum
+	argSnippet                  // the snippet offers, which is a live one
 	argSetting                  // an option :set reaches, which is a live one
 	argConfigKey                // any key of the configuration file
 )
@@ -65,7 +66,7 @@ var commands = []command{
 	{name: "q", aliases: []string{"quit"}, help: "quit"},
 	// The assistant's four forms need four rows, which the COMMAND list has no
 	// room for; the ASSISTANT section carries them.
-	{name: "ai", arg: argEnum, enum: []string{"summary", "draft"}, usage: "<snippet> or <question>", help: "ask about this chat", noPanel: true},
+	{name: "ai", arg: argSnippet, usage: "<snippet> or <question>", help: "ask about this chat", noPanel: true},
 }
 
 // resolveCommand reads a typed name the way vim does: an exact name or alias

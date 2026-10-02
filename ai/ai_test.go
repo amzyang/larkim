@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/amzyang/larkim/agentctx"
 	"github.com/amzyang/larkim/store"
 	"github.com/stretchr/testify/require"
 )
@@ -47,17 +48,17 @@ func TestLine_APictureBringsItsWritingWithIt(t *testing.T) {
 	line := Line(m, "ou_me", texts)
 	require.Contains(t, line, "[Image: img_a]")
 	require.Contains(t, line, "\n    [image] NullPointerException at Foo.java:42")
-	require.Equal(t, 1, strings.Count(line, imageMark), "a picture with nothing written in it adds no line")
+	require.Equal(t, 1, strings.Count(line, agentctx.ImageMark), "a picture with nothing written in it adds no line")
 
 	require.NotContains(t, Line(m, "ou_me", nil), "[image]")
 }
 
 func TestLine_ALongPictureIsCutToLength(t *testing.T) {
 	m := store.Message{MessageID: "om_a", SenderID: "ou_x", Content: "[Image: img_a]", RenderedAt: 5}
-	line := Line(m, "ou_me", map[string][]string{"om_a": {strings.Repeat("字", imageTextMax+50)}})
-	body, ok := strings.CutPrefix(strings.Split(line, "\n")[1], imageMark+" ")
+	line := Line(m, "ou_me", map[string][]string{"om_a": {strings.Repeat("字", agentctx.ImageTextMax+50)}})
+	body, ok := strings.CutPrefix(strings.Split(line, "\n")[1], agentctx.ImageMark+" ")
 	require.True(t, ok)
-	require.Equal(t, imageTextMax+1, len([]rune(body)), "the ellipsis is the one rune past the cut")
+	require.Equal(t, agentctx.ImageTextMax+1, len([]rune(body)), "the ellipsis is the one rune past the cut")
 	require.True(t, strings.HasSuffix(body, "…"))
 }
 

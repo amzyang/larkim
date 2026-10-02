@@ -16,6 +16,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/amzyang/larkim/agentctx"
 	"github.com/amzyang/larkim/card"
 	"github.com/amzyang/larkim/store"
 	acp "github.com/coder/acp-go-sdk"
@@ -335,13 +336,11 @@ func (h handler) SessionUpdate(_ context.Context, n acp.SessionNotification) err
 		}
 		title := cmp.Or(u.Title, "a tool")
 		h.tool.Store(&title)
-		if h.stop != nil {
-			h.stop()
-		}
+		h.stop()
 		return nil
 	}
 	if u := n.Update.ToolCallUpdate; u != nil && h.gate != nil && u.Status != nil &&
-		*u.Status == acp.ToolCallStatusCompleted && h.gate.trace != nil {
+		*u.Status == acp.ToolCallStatusCompleted {
 		h.gate.trace(traceLine(cmp.Or(deref(u.Title), h.gate.title), u.RawOutput))
 	}
 	if u := n.Update.AgentMessageChunk; u != nil && u.Content.Text != nil && u.Content.Text.Text != "" {
@@ -440,30 +439,11 @@ func Line(m store.Message, self string, imgText map[string][]string) string {
 	// a post, a card or a forwarded bundle is named nowhere the rendering
 	// spells out, and this reaches those too.
 	for _, t := range imgText[m.MessageID] {
-		if t = excerpt(t); t != "" {
-			line += "\n" + imageMark + " " + t
+		if t = agentctx.Excerpt(t); t != "" {
+			line += "\n" + agentctx.ImageMark + " " + t
 		}
 	}
 	return line
-}
-
-// imageMark opens the continuation line a picture's writing arrives on.
-const imageMark = "    [image]"
-
-// imageTextMax bounds one picture's contribution in runes. It is a guard
-// against the screenshot of a whole document rather than a summary: an
-// ordinary screenshot of a console or a schedule comes in well under it, and
-// cutting those to a headline would leave the model the window chrome the
-// recognizer reads first.
-const imageTextMax = 1000
-
-// excerpt flattens a picture's regions onto one line and cuts it to length.
-func excerpt(s string) string {
-	s = strings.Join(strings.Fields(s), " ")
-	if r := []rune(s); len(r) > imageTextMax {
-		s = strings.TrimSpace(string(r[:imageTextMax])) + "…"
-	}
-	return s
 }
 
 // Snippet is one scripted question the panel offers: a name the digits and

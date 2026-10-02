@@ -166,19 +166,17 @@ func bareDigit(s string) bool {
 }
 
 // digitKey takes a digit the digitQuery rule hands it: it goes into the query
-// first, and a query that still answers keeps it. One that answers nothing is
-// the reader pointing at a numbered row, so the digit comes back off the query
-// and picks it against the list as it stood.
+// first — asked of a copy of the input, so the chooser itself is untouched —
+// and a query that still answers keeps it. One that answers nothing is the
+// reader pointing at a numbered row, so the digit picks that row against the
+// list as it stands.
 func (m Model) digitKey(s string) (tea.Model, tea.Cmd) {
-	idx, top := m.picker.menu.idx, m.picker.menu.top
-	next, _ := m.typeIntoFilter(tea.KeyPressMsg{Code: rune(s[0]), Text: s})
-	m = next.(Model)
-	if len(m.picker.menu.items) > 0 {
-		return m, nil
+	key := tea.KeyPressMsg{Code: rune(s[0]), Text: s}
+	probe := m.picker.input
+	probe, _ = probe.Update(key)
+	if len(m.emoji.Search(probe.Value())) > 0 {
+		return m.typeIntoFilter(key)
 	}
-	m.picker.input, _ = m.picker.input.Update(tea.KeyPressMsg{Code: tea.KeyBackspace})
-	m.pickerGrid()
-	m.picker.menu.idx, m.picker.menu.top = idx, top
 	if i, ok := m.picker.menu.pick(s, m.reactRows()); ok {
 		return m.chooseAt(i)
 	}

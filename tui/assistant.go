@@ -3,10 +3,8 @@ package tui
 import (
 	"cmp"
 	"context"
-	"errors"
 	"fmt"
 	"path/filepath"
-	"unicode/utf8"
 	"slices"
 	"strings"
 	"time"
@@ -125,14 +123,17 @@ type aiTurn struct {
 
 type aiTurnState int
 
+// The states are the store's own numbers, so a turn persists as the state it
+// ran with — SaveAITurn writes State: int(t.state) and load casts back — and
+// neither side can drift from the other.
 const (
-	aiAsking aiTurnState = iota
-	aiDone
-	aiFailed
-	aiStopped
+	aiAsking  = aiTurnState(store.AITurnAsking)
+	aiDone    = aiTurnState(store.AITurnDone)
+	aiFailed  = aiTurnState(store.AITurnFailed)
+	aiStopped = aiTurnState(store.AITurnStopped)
 	// aiInterrupted is an answer that never finished because the program
 	// left: stopped on quit, asking at load.
-	aiInterrupted
+	aiInterrupted = aiTurnState(store.AITurnInterrupted)
 )
 
 // streaming reports an answer still arriving.
@@ -205,15 +206,11 @@ func (p *aiPanel) load(m Model) {
 				anchorID: tv.AnchorID, thread: tv.ThreadID, window: tv.Window,
 				compose: tv.Compose, sel: tv.Sel, answer: tv.Answer, err: tv.Err,
 				at: time.UnixMilli(tv.AtMs)}
-			switch tv.State {
-			case store.AITurnAsking, store.AITurnInterrupted:
+			t.state = aiTurnState(tv.State)
+			if t.state == aiAsking {
+				// An answer still asking when the store is read is one nobody
+				// finished: the program left mid-turn.
 				t.state = aiInterrupted
-			case store.AITurnFailed:
-				t.state = aiFailed
-			case store.AITurnStopped:
-				t.state = aiStopped
-			default:
-				t.state = aiDone
 			}
 			if tv.AnchorID != "" {
 				anchors = append(anchors, tv.AnchorID)
@@ -482,10 +479,9 @@ type aiStartedMsg struct {
 // under a keypress. off, when set, is the failure the turn ends with instead:
 // a panel without an agent takes the question and answers it with the notice.
 func askTurn(d Deps, client AIStreamer, off error, p *aiPanel, s *aiSession, t *aiTurn, h ai.History) tea.Cmd {
-	if off != nil || client == nil {
-		err := cmp.Or(off, errAssistantOff)
+	if off != nil {
 		return func() tea.Msg {
-			return aiStartedMsg{turn: t.id, ch: errCh(ai.Chunk{Err: err, Done: true})}
+			return aiStartedMsg{turn: t.id, ch: errCh(ai.Chunk{Err: off, Done: true})}
 		}
 	}
 	chatID := p.chat
@@ -538,7 +534,7 @@ func errCh(c ai.Chunk) <-chan ai.Chunk {
 
 // onAIStarted arms the reader of a stream the asking began.
 func (m Model) onAIStarted(msg aiStartedMsg) (tea.Model, tea.Cmd) {
-	t := m.aiP.turn(msg.turn)
+	_, t := m.aiP.findTurn(msg.turn)
 	if t == nil {
 		return m, nil
 	}
@@ -546,16 +542,10 @@ func (m Model) onAIStarted(msg aiStartedMsg) (tea.Model, tea.Cmd) {
 	return m, waitForAI(t.id, t.ch)
 }
 
-// turn finds a turn by id across the panel's sessions, the chat on screen's
-// and the stashed ones alike: an answer belongs to its session wherever the
-// reader has since gone.
-func (p *aiPanel) turn(id string) *aiTurn {
-	_, t := p.findTurn(id)
-	return t
-}
-
-// findTurn is turn with the session the turn belongs to, which is what
-// persisting one needs.
+// findTurn finds a turn by id across the panel's sessions, the chat on
+// screen's and the stashed ones alike: an answer belongs to its session
+// wherever the reader has since gone. The session it returns is what
+// persisting a turn needs.
 func (p *aiPanel) findTurn(id string) (*aiSession, *aiTurn) {
 	for _, s := range p.allSessions() {
 		for _, t := range s.turns {
@@ -601,9 +591,6 @@ func (m Model) onAIChunk(msg aiChunkMsg) (tea.Model, tea.Cmd) {
 	case c.Stopped:
 		t.state, t.cancel, done = aiStopped, nil, true
 	case !c.Done:
-		if m.aiP.follow {
-			m.aiP.toBottom(m.aiListHeight())
-		}
 		cmds = append(cmds, waitForAI(t.id, t.ch))
 	default:
 		t.state, t.cancel, done = aiDone, nil, true
@@ -612,8 +599,12 @@ func (m Model) onAIChunk(msg aiChunkMsg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, saveTurnCmd(m.deps, s, t))
 	}
 	cmds = append(cmds, m.pumpStreamCard(t))
-	m.aiP.rebuild(m)
-	m.layout()
+	// A chunk only moves the panel's own rows. The panes around it keep
+	// their layout, and a panel that is closed or on another chat shows
+	// nothing to redraw — every way back into view rebuilds it.
+	if m.aiOpen() && m.aiP.chat == m.chatID {
+		m.aiP.rebuild(m)
+	}
 	if done && !m.aiOpen() || done && m.aiP.chat != m.chatID {
 		return m.notify("assistant finished", false), tea.Batch(cmds...)
 	}
@@ -733,9 +724,14 @@ func peopleOf(in agentctx.Input, msgs []store.Message) []agentctx.Person {
 	return out
 }
 
-// errAssistantOff names the one question a panel without an agent always
-// answers with.
-var errAssistantOff = errors.New("assistant off: no agent found (config ai.agent)")
+// assistantOff is the failure a question ends with when no agent is
+// configured. nil means the assistant is on.
+func (m Model) assistantOff() error {
+	if m.ai != nil {
+		return nil
+	}
+	return fmt.Errorf("assistant off: %s not found (config ai.agent)", m.agentName())
+}
 
 // --- drawing ---------------------------------------------------------------
 
@@ -811,7 +807,7 @@ func (p *aiPanel) rebuild(m Model) {
 				g := leads{b: &b}
 				addAll(mdRows(t.answer, store.Message{}, 0, st, &g, mentions{}), none)
 			}
-			add(m.streamFoot(t, w), none)
+			add(streamFoot(t, w), none)
 			continue
 		}
 		switch t.state {
@@ -889,77 +885,22 @@ func (m Model) aiAnswerHeadRow(t *aiTurn, w int, last bool) msgRow {
 	return row
 }
 
-// aiCardFoot is the action row a finished card draws under itself: Send,
-// Reply (when its question had an anchor), Insert, Copy — the client's own
-// words — and the ✓ of a card that was sent, with the time it went at.
-func aiCardFoot(w int, a aiAct, anchored, sent bool, at time.Time) msgRow {
-	const lead = "└─ "
-	type actLabel struct {
-		label string
-		kind  aiActKind
-	}
-	parts := []actLabel{{"Send", actSend}}
-	if anchored {
-		parts = append(parts, actLabel{"Reply", actReply})
-	}
-	parts = append(parts, actLabel{"Insert", actInsert}, actLabel{"Copy", actCopy})
-	x, line := lipgloss.Width(lead), lead
-	if sent {
-		mark := "✓ sent " + at.Format("15:04")
-		line += mark
-		x += lipgloss.Width(mark)
-	}
-	var zones []clickZone
-	for _, p := range parts {
-		if len(line) > len(lead) {
-			line += " · "
-			x += 3
-		}
-		line += p.label
-		zones = append(zones, clickZone{x0: x, x1: x + len(p.label),
-			act: aiAct{kind: p.kind, turn: a.turn, card: a.card}})
-		x += len(p.label)
-	}
-	tail := strings.Repeat("─", max(1, w-lipgloss.Width(line)))
-	row := aiRowOf(stDim.Render(line)+stDim.Render(tail), w)
-	row.zones = zones
-	return row
+// labelAct is one labelled act of a foot row.
+type labelAct struct {
+	label string
+	act   aiAct
 }
 
-// streamFoot is the action row a streamed answer draws: where its card
-// stands in the chat, and what can be done with it — Jump, Copy, Recall,
-// Send when the first post never landed, Retry when a write failed. The
-// client's own words, the panel's own acts.
-func (m Model) streamFoot(t *aiTurn, w int) msgRow {
-	c := t.stream
+// footRow lays out the action row under a card: an optional head before the
+// └─ lead, an optional prefix after it, then the acts separated by · — each
+// its own click zone — and a dash tail to the width.
+func footRow(w int, head, prefix string, parts []labelAct) msgRow {
 	const lead = "└─ "
-	state := "● live in chat"
-	if c.messageID == "" && c.err != "" {
-		state = "not posted"
-	} else if c.err != "" {
-		state = "write failed"
-	} else if c.closed {
-		state = "sent"
-	}
-	type actLabel struct {
-		label string
-		act   aiAct
-	}
-	var parts []actLabel
-	if c.messageID == "" && c.err != "" {
-		parts = append(parts, actLabel{"Send", aiAct{kind: actSend, turn: t.id, card: 0}})
-	}
-	if c.err != "" && c.messageID != "" {
-		parts = append(parts, actLabel{"Retry", aiAct{kind: actStreamRetry, turn: t.id, card: -1}})
-	}
-	if c.messageID != "" {
-		parts = append(parts, actLabel{"Jump", aiAct{kind: actJump, turn: t.id, card: -1}})
-	}
-	parts = append(parts, actLabel{"Copy", aiAct{kind: actCopy, turn: t.id, card: -1}})
-	if c.messageID != "" {
-		parts = append(parts, actLabel{"Recall", aiAct{kind: actRecall, turn: t.id, card: -1}})
-	}
 	x, line := lipgloss.Width(lead), lead
+	if prefix != "" {
+		line += prefix
+		x += lipgloss.Width(prefix)
+	}
 	var zones []clickZone
 	for _, p := range parts {
 		if len(line) > len(lead) {
@@ -970,10 +911,59 @@ func (m Model) streamFoot(t *aiTurn, w int) msgRow {
 		zones = append(zones, clickZone{x0: x, x1: x + len(p.label), act: p.act})
 		x += len(p.label)
 	}
-	tail := strings.Repeat("─", max(1, w-lipgloss.Width(line)))
-	row := aiRowOf(stDim.Render(state)+stDim.Render("  ")+stDim.Render(line)+stDim.Render(tail), w)
+	tail := strings.Repeat("─", max(1, w-lipgloss.Width(head+line)))
+	row := aiRowOf(stDim.Render(head+line)+stDim.Render(tail), w)
 	row.zones = zones
 	return row
+}
+
+// aiCardFoot is the action row a finished card draws under itself: Send,
+// Reply (when its question had an anchor), Insert, Copy — the client's own
+// words — and the ✓ of a card that was sent, with the time it went at.
+func aiCardFoot(w int, a aiAct, anchored, sent bool, at time.Time) msgRow {
+	parts := []labelAct{{"Send", aiAct{kind: actSend, turn: a.turn, card: a.card}}}
+	if anchored {
+		parts = append(parts, labelAct{"Reply", aiAct{kind: actReply, turn: a.turn, card: a.card}})
+	}
+	parts = append(parts,
+		labelAct{"Insert", aiAct{kind: actInsert, turn: a.turn, card: a.card}},
+		labelAct{"Copy", aiAct{kind: actCopy, turn: a.turn, card: a.card}})
+	prefix := ""
+	if sent {
+		prefix = "✓ sent " + at.Format("15:04")
+	}
+	return footRow(w, "", prefix, parts)
+}
+
+// streamFoot is the action row a streamed answer draws: where its card
+// stands in the chat, and what can be done with it — Jump, Copy, Recall,
+// Send when the first post never landed, Retry when a write failed. The
+// client's own words, the panel's own acts.
+func streamFoot(t *aiTurn, w int) msgRow {
+	c := t.stream
+	state := "● live in chat"
+	if c.messageID == "" && c.err != "" {
+		state = "not posted"
+	} else if c.err != "" {
+		state = "write failed"
+	} else if c.closed {
+		state = "sent"
+	}
+	var parts []labelAct
+	if c.messageID == "" && c.err != "" {
+		parts = append(parts, labelAct{"Send", aiAct{kind: actSend, turn: t.id, card: 0}})
+	}
+	if c.err != "" && c.messageID != "" {
+		parts = append(parts, labelAct{"Retry", aiAct{kind: actStreamRetry, turn: t.id, card: -1}})
+	}
+	if c.messageID != "" {
+		parts = append(parts, labelAct{"Jump", aiAct{kind: actJump, turn: t.id, card: -1}})
+	}
+	parts = append(parts, labelAct{"Copy", aiAct{kind: actCopy, turn: t.id, card: -1}})
+	if c.messageID != "" {
+		parts = append(parts, labelAct{"Recall", aiAct{kind: actRecall, turn: t.id, card: -1}})
+	}
+	return footRow(w, state+"  ", "", parts)
 }
 
 // cardBodyRows draws a card's text the way Send would post it: the composer
@@ -1255,10 +1245,7 @@ func (m Model) regenerateAI() (tea.Model, tea.Cmd) {
 	}
 	// A panel with no agent still takes the retry: the turn fails with the
 	// notice rather than the key refusing to answer.
-	var off error
-	if m.ai == nil {
-		off = fmt.Errorf("assistant off: %s not found (config ai.agent)", m.agentName())
-	}
+	off := m.assistantOff()
 	t.answer, t.err, t.state, t.ch, t.cancel, t.traces = "", "", aiAsking, nil, nil, nil
 	p.follow = true
 	p.rebuild(m)
@@ -1367,7 +1354,7 @@ func (m Model) aiTurnChips(t *aiTurn, w int) string {
 		chips = append(chips, "↩ "+displaySender(*t.anchor, m.deps.Self, m.suffixOf(t.anchor.SenderID)))
 	}
 	if n := len(t.sel); n > 0 {
-		chips = append(chips, plural(n, "selected", "selected"))
+		chips = append(chips, fmt.Sprintf("%d selected", n))
 	}
 	if strings.TrimSpace(t.compose) != "" {
 		chips = append(chips, "✎ draft")
@@ -1410,7 +1397,7 @@ func (m Model) aiChips(w int) string {
 		chips = append(chips, "↩ "+who+": "+truncate(replyGist(*p.anchor), max(8, w-24)))
 	}
 	if n := len(p.selection); n > 0 {
-		chips = append(chips, "☰ "+plural(n, "selected", "selected"))
+		chips = append(chips, "☰ "+fmt.Sprintf("%d selected", n))
 	}
 	if strings.TrimSpace(m.aiDraftText()) != "" {
 		chips = append(chips, "✎ draft")
@@ -1481,9 +1468,6 @@ func (m Model) openAISelection() (tea.Model, tea.Cmd) {
 	if m.chatID == "" {
 		return m.notify("open a chat first", true), nil
 	}
-	if m.aiP == nil {
-		m.aiP = newAI()
-	}
 	list := m.focusedList()
 	lo, hi := m.selectionRange()
 	if lo < 0 || hi >= len(list) {
@@ -1493,10 +1477,9 @@ func (m Model) openAISelection() (tea.Model, tea.Cmd) {
 	for _, x := range list[lo : hi+1] {
 		sel = append(sel, x.MessageID)
 	}
-	m.aiP.anchor = nil
-	m.aiP.selection = sel
 	m.mode = modeNormal
 	next, cmd := m.openAI(m.chatID, false)
+	next.aiP.anchor, next.aiP.selection = nil, sel
 	out, enter := next.enterAI()
 	return out, tea.Batch(cmd, enter)
 }
@@ -1552,17 +1535,14 @@ func (m Model) askAI(ask, sent string, intoChat bool) (tea.Model, tea.Cmd) {
 	}
 	// A panel with no agent still takes the question: the turn fails with the
 	// notice rather than the pane refusing to open.
-	var off error
-	if m.ai == nil {
-		off = fmt.Errorf("assistant off: %s not found (config ai.agent)", m.agentName())
-	}
+	off := m.assistantOff()
 	anchor := cloneMsg(p.anchor)
 	t := &aiTurn{id: uuid.New().String(), ask: ask, sent: sent, seq: len(s.turns),
 		anchorID: msgIDOf(anchor), anchor: anchor, thread: m.threadID, window: m.cfg.AI.Context,
 		compose: m.aiDraftText(), sel: slices.Clone(p.selection), at: time.Now()}
 	if intoChat {
 		t.stream = &aiStreamCard{chatID: p.chat, replyTo: msgIDOf(anchor),
-			inThread: anchor != nil && anchor.ThreadID != "", threadID: threadIDOf(anchor)}
+			inThread: anchor != nil && anchor.ThreadID != ""}
 	}
 	if s.created == 0 {
 		s.created = t.at.UnixMilli()
@@ -1587,7 +1567,7 @@ func (m Model) aiHistory() ai.History {
 	return ai.History{ChatID: m.aiP.chat, ConfigPath: m.deps.ConfigPath}
 }
 
-// threadIDOf names the thread a message belongs to, '' for none.
+// threadIDOf names the thread a message belongs to, ” for none.
 func threadIDOf(x *store.Message) string {
 	if x == nil {
 		return ""
@@ -1798,10 +1778,12 @@ func (m Model) insertSnippet(i int) (tea.Model, tea.Cmd) {
 	return m.enterAI()
 }
 
-// aiChip is one snippet chip of the AI band's badge row: the digit that
-// reaches it, and the columns it is drawn over.
+// aiChip is one snippet chip of the AI band's badge row: its label — the
+// digit that reaches it and the snippet's name — and the columns it is drawn
+// over.
 type aiChip struct {
 	idx    int
+	label  string
 	x0, x1 int
 }
 
@@ -1823,7 +1805,7 @@ func (m Model) aiChipRow(w int) []aiChip {
 		if x+lipgloss.Width(chip) > room {
 			break
 		}
-		out = append(out, aiChip{idx: i, x0: x, x1: x + lipgloss.Width(chip)})
+		out = append(out, aiChip{idx: i, label: chip, x0: x, x1: x + lipgloss.Width(chip)})
 		x += lipgloss.Width(chip)
 	}
 	return out
@@ -1836,11 +1818,11 @@ const snippetHint = "/ snippets · Enter ask"
 // under their digits, as far as they fit — the rest are reached with /.
 func (m Model) renderSnippetRow(w int) string {
 	chips := m.aiChipRow(w)
-	var parts []string
-	for _, c := range chips {
-		parts = append(parts, fmt.Sprintf("%d %s", c.idx+1, m.snippets()[c.idx].Name))
+	labels := make([]string, len(chips))
+	for i, c := range chips {
+		labels[i] = c.label
 	}
-	return padBetween(strings.Join(parts, "  "), stDim.Render(snippetHint), w)
+	return padBetween(strings.Join(labels, "  "), stDim.Render(snippetHint), w)
 }
 
 // aiChipAt names the snippet chip at column x of the badge row's content, -1
@@ -1864,7 +1846,6 @@ func (m Model) aiChipAt(x int) int {
 type aiStreamCard struct {
 	chatID   string
 	replyTo  string
-	threadID string
 	inThread bool
 	// messageID is the card once the first post answered; until then nothing
 	// of this answer is on the wire.
@@ -1882,7 +1863,9 @@ type aiStreamCard struct {
 }
 
 // streamCardMax is where a streamed card closes: Feishu refuses a content
-// past 30 KB, and an answer longer than that is not one message anymore.
+// past 30 KB, and an answer longer than that is not one message anymore. The
+// budget is measured on the encoded card the wire carries, not the markdown
+// it is cut from: escaping inflates the payload past the bytes of the text.
 const streamCardMax = 30 << 10
 
 // streamCardNote closes a card cut at the cap, and streamInterrupted marks an
@@ -1894,22 +1877,34 @@ const (
 
 // streamCardText is what the card holds for the answer as it stands: the text
 // so far while it streams, the final text with its marker once it has ended.
+// A text whose card would pass the cap is cut on rune boundaries until the
+// card fits — a card that ends mid-character is a message nobody can read
+// the tail of.
 func streamCardText(t *aiTurn) string {
 	text, tail := t.answer, ""
 	if !t.streaming() && t.state != aiDone {
 		tail = streamStopped
 	}
-	if len(text)+len(tail) > streamCardMax {
-		// Cut on a rune boundary: a card that ends mid-character is a
-		// message nobody can read the tail of.
-		room := streamCardMax - len(streamCardNote) - len(tail)
-		for room > 0 && !utf8.RuneStart(text[room]) {
-			room--
-		}
-		text = text[:room] + streamCardNote
+	if cardLen(text+tail) <= streamCardMax {
+		return text + tail
 	}
-	return text + tail
+	// Encoding only grows with the text, so the largest fitting prefix can
+	// be searched for instead of walked.
+	runes := []rune(text)
+	lo, hi := 0, len(runes)
+	for lo < hi {
+		mid := (lo + hi + 1) / 2
+		if cardLen(string(runes[:mid])+streamCardNote+tail) <= streamCardMax {
+			lo = mid
+		} else {
+			hi = mid - 1
+		}
+	}
+	return string(runes[:lo]) + streamCardNote + tail
 }
+
+// cardLen is the size of the card the wire carries for text.
+func cardLen(text string) int { return len(larkcli.Card(text).Card) }
 
 // askStreamConfirm arms the y/n streaming into the chat asks for: the card is
 // on the wire the moment the answer starts growing, which no composer step
@@ -2012,8 +2007,9 @@ func (m Model) onStreamWritten(msg streamWrittenMsg) (tea.Model, tea.Cmd) {
 	c.busy = false
 	if msg.err != nil {
 		c.err = msg.err.Error()
-		m.aiP.rebuild(m)
-		m.layout()
+		if m.aiOpen() && m.aiP.chat == m.chatID {
+			m.aiP.rebuild(m)
+		}
 		return m.notify("card write failed: "+c.err, true), nil
 	}
 	c.messageID, c.wrote = msg.messageID, msg.wrote
@@ -2021,8 +2017,9 @@ func (m Model) onStreamWritten(msg streamWrittenMsg) (tea.Model, tea.Cmd) {
 		c.closed = true
 	}
 	cmd := m.pumpStreamCard(t)
-	m.aiP.rebuild(m)
-	m.layout()
+	if m.aiOpen() && m.aiP.chat == m.chatID {
+		m.aiP.rebuild(m)
+	}
 	return m, cmd
 }
 

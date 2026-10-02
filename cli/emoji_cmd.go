@@ -114,9 +114,9 @@ func (a *App) emojiRemoveCmd() *cobra.Command {
 // emojiRow is one emoji as a consumer outside larkim reads it: the names it
 // answers to, the picture it was cut to, and what Feishu will let it do.
 type emojiRow struct {
-	Key   string `json:"key"`
-	ZH    string `json:"zh"`
-	EN    string `json:"en"`
+	Key string `json:"key"`
+	ZH  string `json:"zh"`
+	EN  string `json:"en"`
 	// Terms is what a query is matched against: the names, their pinyin and
 	// pinyin initials, the aliases, and the key.
 	Terms []string `json:"terms"`

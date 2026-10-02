@@ -3,8 +3,10 @@ package ai
 import (
 	"encoding/json"
 	"fmt"
-	"strconv"
+	"slices"
 	"strings"
+
+	"github.com/amzyang/larkim/larkcli"
 )
 
 // History is the read-only reach into one chat's synced history an agent may
@@ -20,21 +22,45 @@ type History struct {
 func (h History) instructions() string {
 	cmd := "larkim"
 	if h.ConfigPath != "" {
-		cmd += " --config " + shellWord(h.ConfigPath)
+		cmd += " --config " + larkcli.ArgvLine([]string{h.ConfigPath})
+	}
+	flags := make([]string, len(HistoryFlags))
+	for i, f := range HistoryFlags {
+		flags[i] = "[" + f.Name + " " + f.Value + "]"
 	}
 	return fmt.Sprintf(`You may read this chat's synced history yourself, with your shell tool, using only this command:
 
-  %s messages list --chat %s --json [--before <message id>] [--limit <n>] [--order asc|desc] [--since <time>] [--until <time>] [--around <message id>] [--query <words>]
+  %s messages list --chat %s --json %s
 
---before pages from just before a message id you hold, oldest first by --limit; --around centres on one message id with its own --context <n>; --query full-text searches this chat's rendered text. Any other command, or any other tool, ends this answer.`, cmd, h.ChatID)
+--before pages from just before a message id you hold, oldest first by --limit; --after from just after one; --around centres on one message id with its own --context <n>; --query full-text searches this chat's rendered text. Any other command, or any other tool, ends this answer.`, cmd, h.ChatID, strings.Join(flags, " "))
 }
 
-// shellWord quotes s the way a shell reads one argument back.
-func shellWord(s string) string {
-	if !strings.ContainsAny(s, ` "'\`+"`") {
-		return s
-	}
-	return strconv.Quote(s)
+// HistoryFlag is one optional flag of the history command.
+type HistoryFlag struct {
+	Name  string // with its leading --
+	Value string // the placeholder the prompt shows after it
+}
+
+// HistoryFlags is the optional flag set of `larkim messages list` the agent
+// gets, in the order the prompt teaches them. The taught prompt and the
+// AllowCommand gate both read this list, so a flag cannot be accepted without
+// being taught or taught without being accepted. The structural --chat and
+// --json belong to the command itself, not this list.
+var HistoryFlags = []HistoryFlag{
+	{"--before", "<message id>"},
+	{"--after", "<message id>"},
+	{"--around", "<message id>"},
+	{"--context", "<n>"},
+	{"--limit", "<n>"},
+	{"--order", "asc|desc"},
+	{"--since", "<time>"},
+	{"--until", "<time>"},
+	{"--query", "<words>"},
+}
+
+// historyFlag reports whether name is one of HistoryFlags.
+func historyFlag(name string) bool {
+	return slices.ContainsFunc(HistoryFlags, func(f HistoryFlag) bool { return f.Name == name })
 }
 
 // AllowCommand reports whether argv is one of the read-only larkim
@@ -62,15 +88,12 @@ func AllowCommand(argv []string, chatID string) bool {
 	for i < len(argv) {
 		flag := argv[i]
 		i++
-		takesValue := map[string]bool{
-			"--before": true, "--after": true, "--around": true, "--context": true,
-			"--limit": true, "--order": true, "--since": true, "--until": true,
-			"--query": true, "--chat": true,
-		}
 		if flag == "--json" {
 			continue
 		}
-		if !takesValue[flag] {
+		// --chat is spelled into the taught command itself; every other value
+		// flag is one HistoryFlags names.
+		if flag != "--chat" && !historyFlag(flag) {
 			return false
 		}
 		if i >= len(argv) {
@@ -110,11 +133,18 @@ func splitCommand(cmd string) ([]string, bool) {
 			flush()
 		case '\'', '"':
 			// Quotes make one argument of what is inside them; the closing
-			// mark does not end it.
+			// mark does not end it. Inside double quotes a shell still runs
+			// substitutions, and keeps a backslash only before $ ` " \ and
+			// a newline: this parser must never read the command as tamer
+			// than the shell that will run it.
 			q := c
 			i++
 			for i < len(cmd) && cmd[i] != q {
-				if q == '"' && cmd[i] == '\\' && i+1 < len(cmd) {
+				if q == '"' && (cmd[i] == '$' || cmd[i] == '`') {
+					return nil, false
+				}
+				if q == '"' && cmd[i] == '\\' && i+1 < len(cmd) &&
+					strings.IndexByte("$`\"\\n", cmd[i+1]) >= 0 {
 					i++
 				}
 				cur.WriteByte(cmd[i])

@@ -32,17 +32,17 @@ type AISession struct {
 // cursor, so what the reader asked about when they asked is the only record
 // that says what an answer to it was about.
 type AITurn struct {
-	ID, SessionID  string
-	Seq            int
-	Ask, Sent      string
-	AnchorID       string // the message the question was about, '' for none
-	ThreadID       string // the frame standing under the panel, '' for none
-	Window         int    // chat messages the question carried, 0 for the default
-	Compose        string // the anchor's composer text at ask time
-	Sel            []string
-	State          int
-	Answer, Err    string
-	AtMs           int64
+	ID, SessionID string
+	Seq           int
+	Ask, Sent     string
+	AnchorID      string // the message the question was about, '' for none
+	ThreadID      string // the frame standing under the panel, '' for none
+	Window        int    // chat messages the question carried, 0 for the default
+	Compose       string // the anchor's composer text at ask time
+	Sel           []string
+	State         int
+	Answer, Err   string
+	AtMs          int64
 	// CardID is the message an answer streamed into the chat as, '' when the
 	// answer stayed in the panel.
 	CardID string

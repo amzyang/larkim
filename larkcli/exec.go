@@ -77,7 +77,7 @@ type ExecClient struct {
 	// pair at debug level. Nil discards.
 	Log *slog.Logger
 
-	once                    sync.Once
+	once                          sync.Once
 	bg, beat, fg, discovery, card lane
 	// calls numbers the invocations so a request line and its response line
 	// can be paired, which the lanes make necessary: several calls are in
