@@ -45,6 +45,9 @@ type msgRow struct {
 	// section's rule over the pane, so it has to know when the row under the
 	// pin is that rule already.
 	rule bool
+	// spin is the spinner frame baked into a pending send's head line, kept
+	// so a tick can swap that one glyph without laying the pane out again.
+	spin string
 	// pic is set on the rows a picture occupies, picRow being which of its
 	// rows this one is. Those rows carry an image rather than text, so they
 	// are padded rather than fitted, and their cells are only known once the
@@ -222,6 +225,7 @@ type msgStyle struct {
 	res      map[string][]store.Resource // attachments, by message id
 	docs     map[string]store.DocLabel   // Feishu documents linked to, by store.DocRef.Key
 	outbox   map[string]outboxState      // the sends still on their way, by the id their rows carry
+	spin     string                      // the spinner frame a send on its way is drawn with
 	dots     map[string]bool             // the messages this visit draws the unread marker on
 	// reacts are the reaction presses Feishu has not answered yet, by message
 	// id then folded emoji key, laid over the stored summary so a press draws
@@ -558,7 +562,11 @@ func renderRows(msgs []store.Message, st msgStyle) []msgRow {
 			// A chat of two writes no head line unless the message carries a
 			// badge, so the disc lands on the first line of the body instead.
 			if head := headLine(x, st); head != "" {
-				rows = append(rows, msgRow{lead: g.take(), text: head, idx: i})
+				r := msgRow{lead: g.take(), text: head, idx: i}
+				if st.sending(x) {
+					r.spin = st.spin
+				}
+				rows = append(rows, r)
 			}
 		}
 		if q, ok := quoteRow(x, i, st, &g); ok {
@@ -696,10 +704,16 @@ func headLine(x store.Message, st msgStyle) string {
 		if state == outFailed {
 			parts = append(parts, stErr.Render("(failed)"))
 		} else {
-			parts = append(parts, stFaint.Render("(sending)"))
+			parts = append(parts, st.spin+stFaint.Render(" sending"))
 		}
 	}
 	return strings.Join(parts, " ")
+}
+
+// sending says the message's head line carries the spinner.
+func (st msgStyle) sending(x store.Message) bool {
+	state, ok := st.outbox[x.MessageID]
+	return ok && state != outFailed
 }
 
 // standsAlone reports whether a message is a notice rather than something

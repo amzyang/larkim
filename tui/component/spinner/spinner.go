@@ -41,7 +41,7 @@ type TickMsg struct {
 	tag uint64
 }
 
-// Model is a spinner. The zero value is not usable; build one with New.
+// Model is a spinner; build one with New. The zero value draws nothing.
 type Model struct {
 	glyphs  []string
 	palette []lipgloss.Style
@@ -99,6 +99,9 @@ func (m *Model) tick() tea.Cmd {
 // spinner draws its first glyph at full brightness, so a caller that forgot
 // to Start still shows something honest rather than a blank.
 func (m Model) View() string {
+	if len(m.glyphs) == 0 || len(m.palette) == 0 {
+		return ""
+	}
 	if !m.on {
 		return m.palette[len(m.palette)-1].Render(m.glyphs[0])
 	}

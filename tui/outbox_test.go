@@ -185,7 +185,7 @@ func TestSubmit_HandsTheBubbleOverToTheStoredMessage(t *testing.T) {
 	m = mm.(Model)
 	require.Equal(t, outSent, m.outbox[0].state)
 
-	ingested := cmd().(ingestedMsg)
+	ingested := firstOf[ingestedMsg](t, cmd)
 	require.NoError(t, ingested.err)
 	mm, _ = m.Update(ingested)
 	m = mm.(Model)

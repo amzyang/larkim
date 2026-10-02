@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"slices"
 	"strings"
 	"time"
 
@@ -37,7 +38,22 @@ func (m *Model) paceSpin(msg tea.Msg) tea.Cmd {
 
 // spinBusy reports a row on screen that draws the spinner.
 func (m Model) spinBusy() bool {
-	return m.fetchingOlder() || m.aiP.anyStreaming()
+	return m.fetchingOlder() || m.aiP.anyStreaming() || spinning(m.msgRows) || spinning(m.threadRows)
+}
+
+// spinning says a pane holds a pending send's head line.
+func spinning(rows []msgRow) bool {
+	return slices.ContainsFunc(rows, func(r msgRow) bool { return r.spin != "" })
+}
+
+// respin swaps the frame in each pending send's head line for the current one.
+func respin(rows []msgRow, frame string) {
+	for i := range rows {
+		if r := &rows[i]; r.spin != "" && r.spin != frame {
+			r.text = strings.Replace(r.text, r.spin, frame, 1)
+			r.spin = frame
+		}
+	}
 }
 
 // fetchingOlder is the floor row saying older messages are on their way.
@@ -46,13 +62,17 @@ func (m Model) fetchingOlder() bool {
 		m.atLocalFloor() && m.historyFloorMs() != 0
 }
 
-// redrawSpin repaints only the rows baked with a frame: the floor row in place,
-// and the assistant's turns when a placeholder is showing. The panel header is
-// drawn at View time and needs nothing.
+// redrawSpin repaints only the rows baked with a frame: the floor row and the
+// head lines of sends on their way in place, and the assistant's turns when a
+// placeholder is showing. The panel header is drawn at View time and needs
+// nothing.
 func (m *Model) redrawSpin() {
 	if m.fetchingOlder() {
 		m.msgRows[0] = m.floorRow(m.messagesWidth() - 2)
 	}
+	frame := m.spin.View()
+	respin(m.msgRows, frame)
+	respin(m.threadRows, frame)
 	if m.aiP.placeholderShowing() {
 		m.aiP.rebuild(*m)
 	}

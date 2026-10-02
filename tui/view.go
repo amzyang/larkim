@@ -338,7 +338,7 @@ func (m Model) msgStyleFor(width int, meta msgMeta) msgStyle {
 	st := meta.style()
 	st.width, st.height, st.self, st.selfName, st.now = width, m.picHeight(), m.deps.Self, m.selfName, time.Now()
 	st.dataDir, st.dots, st.dark = m.deps.DataDir, m.dots, m.dark
-	st.outbox, st.reacts = m.outboxStates(), m.reactStates()
+	st.outbox, st.reacts, st.spin = m.outboxStates(), m.reactStates(), m.spin.View()
 	// The Unread panel runs across chats, so the chat the cursor happens to
 	// sit in says nothing about the messages above and below it.
 	if c, ok := m.currentChat(); ok && m.feed == nil {

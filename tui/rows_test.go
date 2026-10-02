@@ -348,11 +348,12 @@ func TestHeadLine_MarksAMessageOnItsWayAndOneThatFailed(t *testing.T) {
 	st := msgStyle{width: 60, self: "ou_me", now: testNow,
 		outbox: map[string]outboxState{"local-1": outSending}}
 
-	require.Contains(t, headLine(pending, st), "(sending)")
+	require.Contains(t, ansi.Strip(headLine(pending, st)), "sending")
 
 	st.outbox["local-1"] = outFailed
 	require.Contains(t, headLine(pending, st), "(failed)")
-	require.NotContains(t, headLine(store.Message{MessageID: "om_1", SenderID: "ou_me"}, st), "(sending)",
+	require.NotContains(t, ansi.Strip(headLine(pending, st)), "sending")
+	require.NotContains(t, ansi.Strip(headLine(store.Message{MessageID: "om_1", SenderID: "ou_me"}, st)), "sending",
 		"a message the store returned carries no send state")
 }
 
@@ -497,7 +498,7 @@ func TestRenderRows_ASendOnItsWaySaysSoOnALineOfItsOwn(t *testing.T) {
 	st := baseStyle()
 
 	st.outbox = map[string]outboxState{"local-1": outSending}
-	require.Contains(t, rowText(renderRows(msgs, st)), "(sending)",
+	require.Contains(t, rowText(renderRows(msgs, st)), "sending",
 		"how far a send has got is spelled out, so it heads a block of its own")
 
 	st.outbox["local-1"] = outFailed
