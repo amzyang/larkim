@@ -2909,6 +2909,8 @@ func (m Model) runCommand(line string) (tea.Model, tea.Cmd) {
 		return m.runCopy(rest)
 	case "react":
 		return m.runReact(rest)
+	case "todoist":
+		return m.todoistTask()
 	case "ai":
 		return m.askCommand(rest)
 	case "sync":

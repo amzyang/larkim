@@ -17,6 +17,7 @@ func TestResolveCommand_AUniquePrefixReachesTheWholeName(t *testing.T) {
 		"sy":       "sync",
 		"me":       "mentions",
 		"reac":     "react",
+		"tod":      "todoist",
 		"read":     "read-all",
 		"read-all": "read-all",
 	} {

@@ -53,6 +53,7 @@ var commands = []command{
 	{name: "copy", arg: argEnum, enum: []string{"200", "7d", "all"}, usage: "<200|7d|all>", help: "put that much of the chat on the clipboard as agent context"},
 	{name: "goto", aliases: []string{"chat"}, arg: argChat, usage: "<chat>", help: "open a chat by name or id"},
 	{name: "react", arg: argEmoji, usage: "<emoji>", help: "react to the selected message"},
+	{name: "todoist", help: "file the selected message (the chat under the cursor, in the list) as a Todoist task"},
 	{name: "send", arg: argTarget, usage: "<chat|ou_> <text>", help: "send without opening the chat"},
 	{name: "search", aliases: []string{"s"}, usage: "<text>", help: "the panel Ctrl+f opens, with the text already in it"},
 	{name: "mentions", aliases: []string{"at"}, help: "every message that named you"},

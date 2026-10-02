@@ -44,6 +44,23 @@ func fileTask(msg store.Message) store.Message {
 	return msg
 }
 
+func TestRunCommand_TodoistFilesTheSelectedMessage(t *testing.T) {
+	f := &fakeTasks{}
+	m := taskPage(t, f, fileTask(store.Message{MsgType: "post",
+		Content: "发布单合了吗\n还没", RenderedAt: 1}))
+
+	out, cmd := m.runCommand("todoist")
+
+	msg := cmd()
+	require.IsType(t, noticeMsg{}, msg)
+	require.Equal(t, noticeMsg{"todoist: 发布单合了吗"}, msg)
+	require.Equal(t, paneMessages, out.(Model).focus)
+	require.Equal(t, []todoist.Task{{
+		Content:     "发布单合了吗",
+		Description: applink.ChatLink("oc_a", "om_1", 227),
+	}}, f.got)
+}
+
 func TestTodoistTask_FilesTheSelectedMessage(t *testing.T) {
 	f := &fakeTasks{}
 	m := taskPage(t, f, fileTask(store.Message{MsgType: "post",
