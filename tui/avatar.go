@@ -57,7 +57,7 @@ const (
 	// cell's foreground colour as a 256-colour index, and indices under 16
 	// are named colours a palette downgrade could fold together.
 	kittyIDBase = 16
-	kittyIDs    = 64
+	kittyIDs    = 96
 	// avatarPixCache bounds the composited pictures kept between passes. One is
 	// the few kilobytes a row's cells hold, and the list this opens is a few
 	// hundred chats, so the whole of it fits.

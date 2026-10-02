@@ -11,9 +11,10 @@ import (
 
 const (
 	// picIDBase and picIDs bound the image ids message pictures take. They sit
-	// above the avatars' range so the two never evict each other.
+	// above the avatars' range so the two never evict each other, and together
+	// they end the id space at 255, the last index a foreground colour carries.
 	picIDBase = kittyIDBase + kittyIDs
-	picIDs    = 120
+	picIDs    = 144
 
 	// defCellW and defCellH stand in until the terminal reports its cell size.
 	// Only the ratio matters here, and 1:2 is what a terminal cell usually is.

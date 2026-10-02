@@ -113,7 +113,7 @@ func TestPictures_PrepareTransmitsOnceAndThenPlaces(t *testing.T) {
 func TestPictures_IDsDoNotCollideWithTheAvatars(t *testing.T) {
 	p := testPictures(t)
 	require.GreaterOrEqual(t, picIDBase, kittyIDBase+kittyIDs)
-	require.Less(t, picIDBase+picIDs, 256, "the id travels in a 256-colour index")
+	require.LessOrEqual(t, picIDBase+picIDs, 256, "the id travels in a 256-colour index, whose last index is 255")
 
 	for i := range picIDs + 5 {
 		p.take(fmt.Sprintf("pic-%d", i))

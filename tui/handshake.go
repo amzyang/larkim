@@ -40,7 +40,9 @@ type Handshake struct {
 const handshakeWait = 100 * time.Millisecond
 
 // graphicsQueryID is the image id the capability query asks about. It sits
-// below every id the avatars and pictures take, so the reply is never theirs.
+// inside the avatars' range, which is safe because the probe completes before
+// any image is transmitted and every later transmission is quiet (q=2), so no
+// other reply can carry this id.
 const graphicsQueryID = 31
 
 // handshakeQuery asks everything the first frame wants to know in one write:
