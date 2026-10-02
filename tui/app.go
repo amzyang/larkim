@@ -663,8 +663,8 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		k.setCellSize(m.cellW, m.cellH)
 		m.avatars = k
 		m.pics = newPictures(m.deps.DataDir, true)
-		m.pics.setDisplay(m.disp)
 		m.pics.setCellSize(m.cellW, m.cellH)
+		m.pics.setDisplay(m.disp)
 		clear(m.gists.rows)
 		m.layout()
 		return m, nil
