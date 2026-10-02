@@ -70,7 +70,7 @@ func (s *Syncer) resolveDocLinks(ctx context.Context, now time.Time) (int, error
 	if err := s.registerExistingDocLinks(ctx); err != nil {
 		return 0, err
 	}
-	due, err := s.Store.DocLinksDue(ctx, now.UnixMilli(), s.Opt.DocLinksPerTick*larkcli.MaxDocTokensPerBatch)
+	due, err := s.Store.DocLinksDue(ctx, now.UnixMilli(), s.Opt().DocLinksPerTick*larkcli.MaxDocTokensPerBatch)
 	if err != nil {
 		return 0, err
 	}

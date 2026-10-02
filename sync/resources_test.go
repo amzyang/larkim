@@ -40,7 +40,7 @@ func TestTick_DownloadsResourcesAndAppliesSizeCap(t *testing.T) {
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	dir := t.TempDir()
-	s.Opt.DataDir, s.Opt.MaxBytes, s.Opt.DownloadPerTick = dir, 100, 1
+	s.Opt().DataDir, s.Opt().MaxBytes, s.Opt().DownloadPerTick = dir, 100, 1
 	resDir := filepath.Join(dir, "resources", "lark-im-resources")
 	require.NoError(t, os.MkdirAll(resDir, 0o755))
 	small := filepath.Join(resDir, "img_small.jpg")
@@ -83,7 +83,7 @@ func TestTick_FetchesAVideoCoverOnItsOwn(t *testing.T) {
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	dir := t.TempDir()
-	s.Opt.DataDir, s.Opt.DownloadPerTick = dir, 1
+	s.Opt().DataDir, s.Opt().DownloadPerTick = dir, 1
 	resDir := filepath.Join(dir, "resources", "lark-im-resources")
 	require.NoError(t, os.MkdirAll(resDir, 0o755))
 	clip := filepath.Join(resDir, "file_clip.mp4")
@@ -116,7 +116,7 @@ func TestTick_FetchesAVideoCoverOnItsOwn(t *testing.T) {
 func TestTick_ACoverFeishuRefusesStopsRetryingLikeAnyOtherResource(t *testing.T) {
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
-	s.Opt.DataDir, s.Opt.DownloadPerTick = t.TempDir(), 1
+	s.Opt().DataDir, s.Opt().DownloadPerTick = t.TempDir(), 1
 
 	f.Chats = []larkcli.RawChat{{ChatID: "oc_a", Name: "A", ChatMode: "group"}}
 	vid := msg("om_vid", "oc_a", clk.t.Add(-time.Minute), "")
@@ -177,7 +177,7 @@ func TestTick_PollsReadStatusOnSchedule(t *testing.T) {
 func TestRegisterExistingResources_BackScansOldRows(t *testing.T) {
 	s, _, _ := newSyncer(t)
 	ctx := t.Context()
-	s.Opt.DataDir = t.TempDir()
+	s.Opt().DataDir = t.TempDir()
 	_, err := s.Store.UpsertMessages(ctx, []store.Message{
 		{MessageID: "om_old_img", ChatID: "oc", MsgType: "image", ContentRaw: `{"image_key":"img_old"}`, CreateMs: 1, RawJSON: "{}"},
 		{MessageID: "om_old_txt", ChatID: "oc", MsgType: "text", ContentRaw: `{"text":"x"}`, CreateMs: 2, RawJSON: "{}"},
@@ -238,7 +238,7 @@ func TestTick_DownloadsAPostImageTheBatchLeftOut(t *testing.T) {
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	dir := t.TempDir()
-	s.Opt.DataDir, s.Opt.DownloadPerTick = dir, 1
+	s.Opt().DataDir, s.Opt().DownloadPerTick = dir, 1
 	resDir := filepath.Join(dir, "resources", "lark-im-resources")
 	require.NoError(t, os.MkdirAll(resDir, 0o755))
 	shot := filepath.Join(resDir, "img_p.png")
@@ -274,14 +274,14 @@ func TestAPIType_MapsEveryStoredTypeOntoTheTwoTheEndpointTakes(t *testing.T) {
 func TestTick_AFailureThatMightPassNextTimeKeepsItsRetries(t *testing.T) {
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
-	s.Opt.DataDir, s.Opt.DownloadPerTick = t.TempDir(), 1
+	s.Opt().DataDir, s.Opt().DownloadPerTick = t.TempDir(), 1
 
 	f.Chats = []larkcli.RawChat{{ChatID: "oc_a", Name: "A", ChatMode: "group"}}
 	vid := msg("om_vid", "oc_a", clk.t.Add(-time.Minute), "")
 	vid.MsgType, vid.Body.Content = "media", `{"file_key":"file_clip","image_key":"img_cover"}`
 	f.AddMessage(vid)
 	f.Resources["om_vid/file_clip"] = larkcli.Resource{
-		LocalPath: filepath.Join(s.Opt.DataDir, "resources", "lark-im-resources", "gone.mp4")}
+		LocalPath: filepath.Join(s.Opt().DataDir, "resources", "lark-im-resources", "gone.mp4")}
 
 	_, err := s.Tick(ctx)
 	require.NoError(t, err)
@@ -374,7 +374,7 @@ func TestTick_AMessageArrivesUnreadWithItsRow(t *testing.T) {
 func TestTick_AnArrivalReadElsewhereIsSettledBeforeTheSweeps(t *testing.T) {
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
-	s.Opt.RepairEvery = 0
+	s.Opt().RepairEvery = 0
 	f.Chats = []larkcli.RawChat{{ChatID: "oc_a", Name: "平台组", ChatMode: "group"}}
 	f.AddMessage(msg("om_seed", "oc_a", clk.t.Add(-time.Hour), "seed"))
 	_, err := s.EnsureIdentity(ctx)
@@ -392,7 +392,7 @@ func TestTick_AnArrivalReadElsewhereIsSettledBeforeTheSweeps(t *testing.T) {
 	f.AddMessage(raw)
 	f.Read["om_seen"] = true
 	f.SearchHidden = []string{"om_seen"}
-	clk.t = clk.t.Add(s.Opt.ChatsRefreshEvery) // a round with the full listing in it
+	clk.t = clk.t.Add(s.Opt().ChatsRefreshEvery) // a round with the full listing in it
 	f.Calls = nil
 
 	_, err = s.Tick(ctx)
@@ -458,7 +458,7 @@ func TestTick_ADownloadNeverRendersItsMessage(t *testing.T) {
 	// attachment had not landed re-rendered on each tick it waited.
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
-	s.Opt.DataDir, s.Opt.DownloadPerTick = t.TempDir(), 1
+	s.Opt().DataDir, s.Opt().DownloadPerTick = t.TempDir(), 1
 
 	f.Chats = []larkcli.RawChat{{ChatID: "oc_a", Name: "平台组", ChatMode: "group"}}
 	cd := msg("om_card", "oc_a", clk.t.Add(-time.Minute), "")
@@ -468,7 +468,7 @@ func TestTick_ADownloadNeverRendersItsMessage(t *testing.T) {
 	// failure worth another tick.
 	for _, key := range []string{"img_a", "img_b"} {
 		f.Resources["om_card/"+key] = larkcli.Resource{
-			LocalPath: filepath.Join(s.Opt.DataDir, "resources", "lark-im-resources", "gone.png")}
+			LocalPath: filepath.Join(s.Opt().DataDir, "resources", "lark-im-resources", "gone.png")}
 	}
 
 	_, err := s.Tick(ctx)
@@ -493,7 +493,7 @@ func TestTick_AKeyTwoMessagesNameIsFetchedOnce(t *testing.T) {
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	dir := t.TempDir()
-	s.Opt.DataDir, s.Opt.DownloadPerTick = dir, 1
+	s.Opt().DataDir, s.Opt().DownloadPerTick = dir, 1
 	resDir := filepath.Join(dir, "resources", "lark-im-resources")
 	require.NoError(t, os.MkdirAll(resDir, 0o755))
 	shot := filepath.Join(resDir, "img_shared.png")

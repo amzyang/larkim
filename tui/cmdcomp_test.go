@@ -241,8 +241,8 @@ func TestCmdComp_CompletesASettingWithItsEqualsAlready(t *testing.T) {
 	// reader's next keystroke is the value.
 	m := press(t, cmdModel(t), "s", "e", "t", " ")
 	require.Equal(t, []string{"applink_pace_ms", "mark_read.mode", "mark_read.browser", "ai.agent", "ai.model", "ai.context",
-		"ai.jev_key_env", "ai.jev_endpoint", "ai.history"}, offers(m),
-		":set reaches only the keys a change takes effect on")
+		"ai.jev_key_env", "ai.jev_endpoint", "ai.history", "todoist.token", "todoist.project_id"}, offers(m),
+		":set reaches only the keys a change takes effect on, which with a daemon owning the sweep excludes the sweep's own")
 
 	m = press(t, m, "tab")
 	require.Equal(t, "set applink_pace_ms=", typed(m))

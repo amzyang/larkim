@@ -27,7 +27,7 @@ func TestTick_RebuildsSilenceWhenTheRulesChange(t *testing.T) {
 	require.False(t, m.Silenced)
 	require.Equal(t, m.CreateMs, chatOf(t, s, "oc_quiet").LastUnsilencedMs)
 
-	s.Store.Silence = store.SilenceRules{{Sender: "cli_c"}}
+	s.Store.SetSilence(store.SilenceRules{{Sender: "cli_c"}})
 	clk.t = now.Add(10 * time.Second)
 	_, err = s.Tick(ctx)
 	require.NoError(t, err)
@@ -43,7 +43,7 @@ func TestTick_RebuildsSilenceWhenTheRulesChange(t *testing.T) {
 func TestTick_LeavesSilenceAloneWhenTheRulesHold(t *testing.T) {
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
-	s.Store.Silence = store.SilenceRules{{Sender: "cli_c"}}
+	s.Store.SetSilence(store.SilenceRules{{Sender: "cli_c"}})
 	f.AddMessage(msg("om_a", "oc_quiet", clk.t.Add(-30*time.Second), "morning"))
 	_, err := s.Tick(ctx)
 	require.NoError(t, err)
@@ -83,9 +83,9 @@ func (r *settleRecorder) Clear(_ context.Context, chat store.ChatUnread) error {
 func TestTick_SettlesSilencedUnreadOnTheServer(t *testing.T) {
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
-	s.Store.Silence = store.SilenceRules{{Sender: "cli_c"}}
+	s.Store.SetSilence(store.SilenceRules{{Sender: "cli_c"}})
 	rec := &settleRecorder{}
-	s.SettleSilenced = rec.Clear
+	s.SetSettleSilenced(rec.Clear)
 	require.NoError(t, func() error { _, err := s.EnsureIdentity(ctx); return err }())
 	f.Chats = []larkcli.RawChat{{ChatID: "oc_quiet", Name: "Platform", ChatMode: "group"}}
 	at := clk.t.Add(-30 * time.Second)
@@ -124,9 +124,9 @@ func TestTick_SettlesSilencedUnreadOnTheServer(t *testing.T) {
 func TestTick_KeepsAQueuedChatWhenTheSettleFails(t *testing.T) {
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
-	s.Store.Silence = store.SilenceRules{{Sender: "cli_c"}}
+	s.Store.SetSilence(store.SilenceRules{{Sender: "cli_c"}})
 	rec := &settleRecorder{err: errors.New("gateway refused")}
-	s.SettleSilenced = rec.Clear
+	s.SetSettleSilenced(rec.Clear)
 	_, err0 := s.EnsureIdentity(ctx)
 	require.NoError(t, err0)
 	f.Chats = []larkcli.RawChat{{ChatID: "oc_quiet", Name: "Platform", ChatMode: "group"}}
@@ -145,7 +145,7 @@ func TestTick_KeepsAQueuedChatWhenTheSettleFails(t *testing.T) {
 func TestTick_SkipsTheSilenceSettleWhenNoLever(t *testing.T) {
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
-	s.Store.Silence = store.SilenceRules{{Sender: "cli_c"}}
+	s.Store.SetSilence(store.SilenceRules{{Sender: "cli_c"}})
 	_, err0 := s.EnsureIdentity(ctx)
 	require.NoError(t, err0)
 	f.Chats = []larkcli.RawChat{{ChatID: "oc_quiet", Name: "Platform", ChatMode: "group"}}
@@ -160,4 +160,39 @@ func TestTick_SkipsTheSilenceSettleWhenNoLever(t *testing.T) {
 	pending, err := s.Store.PendingSilenceSettle(ctx, 10)
 	require.NoError(t, err)
 	require.Len(t, pending, 1, "with no lever the queue only fills")
+}
+
+func TestTick_StopsSettlingWhenTheLeverIsTakenAwayMidRun(t *testing.T) {
+	// silence_sync turned off under a running sweep: the queue goes back to
+	// only filling, without the loop being restarted.
+	s, f, clk := newSyncer(t)
+	ctx := t.Context()
+	s.Store.SetSilence(store.SilenceRules{{Sender: "cli_c"}})
+	rec := &settleRecorder{}
+	s.SetSettleSilenced(rec.Clear)
+	_, err0 := s.EnsureIdentity(ctx)
+	require.NoError(t, err0)
+	f.Chats = []larkcli.RawChat{{ChatID: "oc_quiet", Name: "Platform", ChatMode: "group"}}
+	noise := msg("om_noise", "oc_quiet", clk.t.Add(-30*time.Second), "nightly build #418 passed")
+	noise.MessagePosition = 1
+	noise.Sender = larkcli.RawSender{ID: "cli_c", SenderType: "app", SenderName: "Build bot"}
+	f.AddMessage(noise)
+	rep, err := s.Tick(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1, rep.Settled)
+
+	s.SetSettleSilenced(nil)
+	clk.t = clk.t.Add(10 * time.Second)
+	later := msg("om_later", "oc_quiet", clk.t.Add(-time.Second), "nightly build #419 passed")
+	later.MessagePosition = 2
+	later.Sender = noise.Sender
+	f.AddMessage(later)
+
+	rep, err = s.Tick(ctx)
+	require.NoError(t, err)
+	require.Zero(t, rep.Settled)
+	require.Len(t, rec.calls, 1, "the lever taken away is not asked again")
+	pending, err := s.Store.PendingSilenceSettle(ctx, 10)
+	require.NoError(t, err)
+	require.Len(t, pending, 1, "and the queue goes back to only filling")
 }

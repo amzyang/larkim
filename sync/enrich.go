@@ -97,20 +97,20 @@ const (
 // repairSlice re-lists a few active chats per pass so edits and recalls of
 // the last week are picked up; a pass starts every RepairEvery.
 func (s *Syncer) repairSlice(ctx context.Context, now time.Time) (int, error) {
-	if s.Opt.RepairEvery <= 0 {
+	if s.Opt().RepairEvery <= 0 {
 		return 0, nil
 	}
 	started, err := s.stateTime(ctx, KeyRepairAt)
 	if err != nil {
 		return 0, err
 	}
-	if Due(started, s.Opt.RepairEvery, now) {
+	if Due(started, s.Opt().RepairEvery, now) {
 		if err := s.setStateTime(ctx, KeyRepairAt, now); err != nil {
 			return 0, err
 		}
 		started = now
 	}
-	chats, err := s.Store.ChatsForRepair(ctx, now.Add(-repairHorizon).UnixMilli(), started.UnixMilli(), s.Opt.RepairPerTick)
+	chats, err := s.Store.ChatsForRepair(ctx, now.Add(-repairHorizon).UnixMilli(), started.UnixMilli(), s.Opt().RepairPerTick)
 	if err != nil {
 		return 0, err
 	}
@@ -134,7 +134,7 @@ func (s *Syncer) repairSlice(ctx context.Context, now time.Time) (int, error) {
 // membersSlice refreshes member lists for a few chats whose list is stale,
 // and records the members as contacts.
 func (s *Syncer) membersSlice(ctx context.Context, now time.Time) (int, error) {
-	chats, err := s.Store.ChatsNeedingMembers(ctx, now.Add(-membersRefreshEvery).UnixMilli(), s.Opt.MembersPerTick)
+	chats, err := s.Store.ChatsNeedingMembers(ctx, now.Add(-membersRefreshEvery).UnixMilli(), s.Opt().MembersPerTick)
 	if err != nil {
 		return 0, err
 	}
@@ -185,10 +185,10 @@ func senderContacts(msgs []larkcli.RawMessage) []store.Contact {
 // through `contact +search-user` rather than the batch user lookup that
 // avatarsSlice uses: only the search carries the enterprise address.
 func (s *Syncer) contactDetailsSlice(ctx context.Context, now time.Time) (int, error) {
-	if s.Opt.ContactDetailsPerTick <= 0 {
+	if s.Opt().ContactDetailsPerTick <= 0 {
 		return 0, nil
 	}
-	need, err := s.Store.ContactsNeedingDetail(ctx, s.Opt.ContactDetailsPerTick)
+	need, err := s.Store.ContactsNeedingDetail(ctx, s.Opt().ContactDetailsPerTick)
 	if err != nil || len(need) == 0 {
 		return 0, err
 	}
@@ -220,7 +220,7 @@ func (s *Syncer) contactDetailsSlice(ctx context.Context, now time.Time) (int, e
 // resolveBotAvatarURLs fills in bot pictures, which come from the app behind
 // each bot rather than the directory: a bot open id is not a user id.
 func (s *Syncer) resolveBotAvatarURLs(ctx context.Context, now time.Time) error {
-	bots, err := s.Store.BotsNeedingAvatar(ctx, s.Opt.AvatarsPerTick)
+	bots, err := s.Store.BotsNeedingAvatar(ctx, s.Opt().AvatarsPerTick)
 	if err != nil {
 		return err
 	}
@@ -250,7 +250,7 @@ func (s *Syncer) resolveBotAvatarURLs(ctx context.Context, now time.Time) error 
 // app by its app id alone, which no contact carries, so these are asked
 // about on their own; like a bot's picture, the name comes from the app.
 func (s *Syncer) resolveApps(ctx context.Context, now time.Time) error {
-	ids, err := s.Store.AppsToResolve(ctx, s.Opt.AvatarsPerTick)
+	ids, err := s.Store.AppsToResolve(ctx, s.Opt().AvatarsPerTick)
 	if err != nil {
 		return err
 	}
@@ -271,7 +271,7 @@ func (s *Syncer) resolveApps(ctx context.Context, now time.Time) error {
 // avatarsSlice resolves avatar URLs for contacts and downloads a few chat and
 // contact avatars per tick into resources/avatars/.
 func (s *Syncer) avatarsSlice(ctx context.Context, now time.Time) (int, error) {
-	if s.Fetch == nil || s.Opt.DataDir == "" {
+	if s.Fetch == nil || s.Opt().DataDir == "" {
 		return 0, nil
 	}
 	if err := s.resolveAvatarURLs(ctx, now); err != nil {
@@ -280,7 +280,7 @@ func (s *Syncer) avatarsSlice(ctx context.Context, now time.Time) (int, error) {
 	if err := s.resolveBotAvatarURLs(ctx, now); err != nil {
 		return 0, err
 	}
-	chats, contacts, err := s.Store.AvatarsToDownload(ctx, s.Opt.AvatarsPerTick)
+	chats, contacts, err := s.Store.AvatarsToDownload(ctx, s.Opt().AvatarsPerTick)
 	if err != nil {
 		return 0, err
 	}
@@ -378,7 +378,7 @@ func (s *Syncer) downloadAvatar(ctx context.Context, kind, id, url string) strin
 		}
 	}
 	rel := filepath.Join("resources", "avatars", kind, id+ext)
-	abs := filepath.Join(s.Opt.DataDir, rel)
+	abs := filepath.Join(s.Opt().DataDir, rel)
 	if err := os.MkdirAll(filepath.Dir(abs), 0o700); err != nil {
 		return store.AvatarFailed
 	}

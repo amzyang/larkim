@@ -207,13 +207,13 @@ func (s *Syncer) registerExistingResources(ctx context.Context) error {
 // carrying them in one call had every message in the batch re-rendered on each
 // tick its attachment had not landed yet.
 func (s *Syncer) downloadPending(ctx context.Context, now time.Time) (int, error) {
-	if s.Opt.DataDir == "" {
+	if s.Opt().DataDir == "" {
 		return 0, nil
 	}
 	if err := s.registerExistingResources(ctx); err != nil {
 		return 0, err
 	}
-	due, err := s.Store.ResourcesDue(ctx, now.UnixMilli(), s.Opt.DownloadPerTick*50)
+	due, err := s.Store.ResourcesDue(ctx, now.UnixMilli(), s.Opt().DownloadPerTick*50)
 	if err != nil {
 		return 0, err
 	}
@@ -266,7 +266,7 @@ func apiType(t string) string {
 func (s *Syncer) storeResource(ctx context.Context, p store.Resource, res larkcli.Resource, now time.Time) (bool, error) {
 	abs := res.LocalPath
 	if !filepath.IsAbs(abs) {
-		abs = filepath.Join(s.Opt.DataDir, "resources", abs)
+		abs = filepath.Join(s.Opt().DataDir, "resources", abs)
 	}
 	st, err := os.Stat(abs)
 	if err != nil {
@@ -276,7 +276,7 @@ func (s *Syncer) storeResource(ctx context.Context, p store.Resource, res larkcl
 		_ = os.Remove(abs)
 		return false, s.skipResource(ctx, p, st.Size())
 	}
-	rel, err := filepath.Rel(s.Opt.DataDir, abs)
+	rel, err := filepath.Rel(s.Opt().DataDir, abs)
 	if err != nil {
 		rel = abs
 	}
@@ -285,12 +285,12 @@ func (s *Syncer) storeResource(ctx context.Context, p store.Resource, res larkcl
 
 // oversize reports whether an attachment is past resources.max_bytes.
 func (s *Syncer) oversize(size int64) bool {
-	return s.Opt.MaxBytes > 0 && size > s.Opt.MaxBytes
+	return s.Opt().MaxBytes > 0 && size > s.Opt().MaxBytes
 }
 
 // skipResource records an attachment deliberately not kept for its size.
 func (s *Syncer) skipResource(ctx context.Context, p store.Resource, size int64) error {
-	return s.Store.MarkResourceSkipped(ctx, p.FileKey, size, fmt.Sprintf("larger than %d bytes", s.Opt.MaxBytes))
+	return s.Store.MarkResourceSkipped(ctx, p.FileKey, size, fmt.Sprintf("larger than %d bytes", s.Opt().MaxBytes))
 }
 
 // failResource records a failed attempt and when to retry. A failure the
@@ -328,7 +328,7 @@ func (s *Syncer) pollReadStatus(ctx context.Context, now time.Time) (int, error)
 	if _, err := s.Store.ExpireReadStatus(ctx, now.Add(-readStatusHorizon).UnixMilli()); err != nil {
 		return 0, err
 	}
-	return s.checkReadStatus(ctx, now, store.ReadCheckQuery{DueAt: now.UnixMilli(), Limit: s.Opt.ReadStatusPerTick * readStatusBatch})
+	return s.checkReadStatus(ctx, now, store.ReadCheckQuery{DueAt: now.UnixMilli(), Limit: s.Opt().ReadStatusPerTick * readStatusBatch})
 }
 
 // readStatusBatch is how many message ids one read_status call carries, which

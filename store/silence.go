@@ -98,7 +98,7 @@ func (rs SilenceRules) match() (pred string, args []any, ok bool) {
 // it. Both statements skip rows already carrying the value they would write,
 // which keeps data_rev — and with it every consumer's reload — quiet.
 func (s *Store) applySilence(ctx context.Context, tx *sql.Tx, ids []string) error {
-	pred, pargs, ok := s.Silence.match()
+	pred, pargs, ok := s.Silence().match()
 	for chunk := range slices.Chunk(ids, 500) {
 		in := inClause(len(chunk))
 		clear := `UPDATE messages AS m SET silenced = 0 WHERE m.message_id IN ` + in + ` AND m.silenced = 1`
@@ -129,7 +129,11 @@ func (s *Store) applySilence(ctx context.Context, tx *sql.Tx, ids []string) erro
 // only thing that makes an edited config reach messages already stored; it is
 // gated on the fingerprint because it walks the whole table.
 func (s *Store) ReapplySilence(ctx context.Context) (int64, error) {
-	want := s.Silence.Fingerprint()
+	// Read once: the fingerprint stamped at the end must be that of the
+	// rules the rebuild ran on, or a set replaced mid-rebuild would be taken
+	// as already applied.
+	rules := s.Silence()
+	want := rules.Fingerprint()
 	have, _, err := s.GetState(ctx, KeySilenceRev)
 	if err != nil {
 		return 0, err
@@ -143,7 +147,7 @@ func (s *Store) ReapplySilence(ctx context.Context) (int64, error) {
 	}
 	defer tx.Rollback()
 
-	pred, pargs, ok := s.Silence.match()
+	pred, pargs, ok := rules.match()
 	clear := `UPDATE messages AS m SET silenced = 0 WHERE m.silenced = 1`
 	var clearArgs []any
 	if ok {

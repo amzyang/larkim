@@ -34,7 +34,7 @@ func TestSilenceRules_FingerprintFollowsTheRules(t *testing.T) {
 
 func TestUpsertMessages_SilencesAMatchingSender(t *testing.T) {
 	s := openTest(t)
-	s.Silence = SilenceRules{{Chat: "oc_quiet", Sender: "cli_c"}}
+	s.SetSilence(SilenceRules{{Chat: "oc_quiet", Sender: "cli_c"}})
 	ctx := t.Context()
 	_, err := s.UpsertMessages(ctx, []Message{
 		fromBot("om_noise", "oc_quiet", 200, "nightly build #418 passed"),
@@ -48,7 +48,7 @@ func TestUpsertMessages_SilencesAMatchingSender(t *testing.T) {
 
 func TestUpsertMessages_LeavesAnUnmatchedFieldAlone(t *testing.T) {
 	s := openTest(t)
-	s.Silence = SilenceRules{{Chat: "oc_quiet", Sender: "cli_c"}}
+	s.SetSilence(SilenceRules{{Chat: "oc_quiet", Sender: "cli_c"}})
 	ctx := t.Context()
 	_, err := s.UpsertMessages(ctx, []Message{fromBot("om_elsewhere", "oc_loud", 200, "nightly build #418 passed")}, 1)
 	require.NoError(t, err)
@@ -58,7 +58,7 @@ func TestUpsertMessages_LeavesAnUnmatchedFieldAlone(t *testing.T) {
 
 func TestUpsertMessages_SilencesOnTheRawBodyBeforeRendering(t *testing.T) {
 	s := openTest(t)
-	s.Silence = SilenceRules{{Contains: "nightly build"}}
+	s.SetSilence(SilenceRules{{Contains: "nightly build"}})
 	ctx := t.Context()
 	_, err := s.UpsertMessages(ctx, []Message{msgAt("om_noise", "oc_quiet", 200, 1, "nightly build #418 passed")}, 1)
 	require.NoError(t, err)
@@ -68,7 +68,7 @@ func TestUpsertMessages_SilencesOnTheRawBodyBeforeRendering(t *testing.T) {
 
 func TestUpdateRendered_SilencesOnTheRenderedBody(t *testing.T) {
 	s := openTest(t)
-	s.Silence = SilenceRules{{Contains: "nightly build"}}
+	s.SetSilence(SilenceRules{{Contains: "nightly build"}})
 	ctx := t.Context()
 	card := Message{MessageID: "om_card", ChatID: "oc_quiet", MsgType: "interactive", SenderID: "cli_c",
 		SenderType: "app", ContentRaw: `{"elements":[{"tag":"div"}]}`, CreateMs: 200, UpdateMs: 200, MessagePosition: 1}
@@ -82,7 +82,7 @@ func TestUpdateRendered_SilencesOnTheRenderedBody(t *testing.T) {
 
 func TestUpdateRendered_ClearsSilenceWhenTheRenderingStopsMatching(t *testing.T) {
 	s := openTest(t)
-	s.Silence = SilenceRules{{Contains: "nightly build"}}
+	s.SetSilence(SilenceRules{{Contains: "nightly build"}})
 	ctx := t.Context()
 	_, err := s.UpsertMessages(ctx, []Message{msgAt("om_a", "oc_quiet", 200, 1, "nightly build")}, 1)
 	require.NoError(t, err)
@@ -94,7 +94,7 @@ func TestUpdateRendered_ClearsSilenceWhenTheRenderingStopsMatching(t *testing.T)
 
 func TestUpdateRendered_RefreshesTheSummaryWhenSilenceFlips(t *testing.T) {
 	s := openTest(t)
-	s.Silence = SilenceRules{{Contains: "nightly build"}}
+	s.SetSilence(SilenceRules{{Contains: "nightly build"}})
 	ctx := t.Context()
 	card := Message{MessageID: "om_card", ChatID: "oc_quiet", MsgType: "interactive", SenderID: "cli_c",
 		SenderType: "app", ContentRaw: `{"elements":[]}`, CreateMs: 200, UpdateMs: 200, MessagePosition: 2}
@@ -120,14 +120,14 @@ func TestReapplySilence_RewritesEveryMessageWhenTheRulesChange(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, silencedOf(t, s, "om_noise"))
 
-	s.Silence = SilenceRules{{Sender: "cli_c"}}
+	s.SetSilence(SilenceRules{{Sender: "cli_c"}})
 	n, err := s.ReapplySilence(ctx)
 	require.NoError(t, err)
 	require.Equal(t, int64(1), n)
 	require.True(t, silencedOf(t, s, "om_noise"))
 	require.Equal(t, int64(100), summaryOf(t, s, "oc_quiet").LastUnsilencedMs, "the sort key follows the rescan")
 
-	s.Silence = nil
+	s.SetSilence(nil)
 	n, err = s.ReapplySilence(ctx)
 	require.NoError(t, err)
 	require.Equal(t, int64(1), n)
@@ -137,7 +137,7 @@ func TestReapplySilence_RewritesEveryMessageWhenTheRulesChange(t *testing.T) {
 
 func TestReapplySilence_WritesNothingWhenTheFingerprintMatches(t *testing.T) {
 	s := openTest(t)
-	s.Silence = SilenceRules{{Sender: "cli_c"}}
+	s.SetSilence(SilenceRules{{Sender: "cli_c"}})
 	ctx := t.Context()
 	_, err := s.UpsertMessages(ctx, []Message{fromBot("om_noise", "oc_quiet", 200, "nightly build")}, 1)
 	require.NoError(t, err)
@@ -156,7 +156,7 @@ func TestReapplySilence_WritesNothingWhenTheFingerprintMatches(t *testing.T) {
 
 func TestRefreshChatSummary_KeepsTheNewestMessageAndSinksTheSortKey(t *testing.T) {
 	s := openTest(t)
-	s.Silence = SilenceRules{{Sender: "cli_c"}}
+	s.SetSilence(SilenceRules{{Sender: "cli_c"}})
 	ctx := t.Context()
 	require.NoError(t, s.EnsureChat(ctx, "oc_quiet", 1))
 	_, err := s.UpsertMessages(ctx, []Message{
@@ -173,7 +173,7 @@ func TestRefreshChatSummary_KeepsTheNewestMessageAndSinksTheSortKey(t *testing.T
 
 func TestListChats_SinksAFullySilencedChat(t *testing.T) {
 	s := openTest(t)
-	s.Silence = SilenceRules{{Chat: "oc_quiet"}}
+	s.SetSilence(SilenceRules{{Chat: "oc_quiet"}})
 	ctx := t.Context()
 	require.NoError(t, s.EnsureChat(ctx, "oc_quiet", 1))
 	require.NoError(t, s.EnsureChat(ctx, "oc_loud", 1))
@@ -191,7 +191,7 @@ func TestListChats_SinksAFullySilencedChat(t *testing.T) {
 
 func TestMarkChatRead_MarksSilencedMessagesToo(t *testing.T) {
 	s := openTest(t)
-	s.Silence = SilenceRules{{Sender: "cli_c"}}
+	s.SetSilence(SilenceRules{{Sender: "cli_c"}})
 	ctx := t.Context()
 	_, err := s.UpsertMessages(ctx, []Message{fromBot("om_noise", "oc_quiet", 200, "nightly build")}, 1)
 	require.NoError(t, err)

@@ -10,6 +10,7 @@ import (
 
 	"github.com/amzyang/larkim/config"
 	"github.com/amzyang/larkim/markread"
+	"github.com/amzyang/larkim/sync"
 )
 
 // setting is one key of the configuration as the TUI presents it: the line of
@@ -22,9 +23,13 @@ type setting struct {
 	key  string
 	help string
 	// live marks a key a change reaches this session on. The rest are read
-	// once at startup by the store or the syncer, so a change to one waits for
-	// the next run — :config writes it, :set will not pretend to.
+	// once at startup by the store or the client, so a change to one waits
+	// for the next run — :config writes it, :set will not pretend to.
 	live bool
+	// sweep narrows live to the process that owns the sweep: the options are
+	// read per tick, so a change reaches a loop running here, while a daemon
+	// that holds daemon.lock keeps its own set and picks the file up itself.
+	sweep bool
 	// check judges what the reader typed ahead of the decoder, for a key whose
 	// spelling is easy to get wrong in a way yaml's own message would not
 	// name. Nil leaves the decoder as the only judge.
@@ -51,25 +56,43 @@ var settings = []setting{{
 }, {
 	key:   "poll_interval_ms",
 	help:  "pause between sweep ticks, and between discovery cycles while larkim is unfocused, in milliseconds; under 100 is raised to 100",
+	live:  true,
+	sweep: true,
 	check: positiveMS,
+	apply: retuneSweep,
 }, {
-	key:  "overlap",
-	help: "how far each search window reaches behind the watermark",
+	key:   "overlap",
+	help:  "how far each search window reaches behind the watermark",
+	live:  true,
+	sweep: true,
+	apply: retuneSweep,
 }, {
 	key:  "backfill_days",
-	help: "bound on the initial history pull per chat",
+	help: "bound on the initial history pull per chat; it bounds the chats not yet backfilled, so lengthening it does not re-pull the ones already done",
 }, {
-	key:  "active_top_k",
-	help: "how many of the most active chats the slow path reconciles",
+	key:   "active_top_k",
+	help:  "how many of the most active chats the slow path reconciles",
+	live:  true,
+	sweep: true,
+	apply: retuneSweep,
 }, {
-	key:  "chats_refresh_every",
-	help: "interval of the full chat listing, per-chat mute settings included",
+	key:   "chats_refresh_every",
+	help:  "interval of the full chat listing, per-chat mute settings included",
+	live:  true,
+	sweep: true,
+	apply: retuneSweep,
 }, {
-	key:  "slow_path_every",
-	help: "interval of the active chats' reconciliation from their cursors",
+	key:   "slow_path_every",
+	help:  "interval of the active chats' reconciliation from their cursors",
+	live:  true,
+	sweep: true,
+	apply: retuneSweep,
 }, {
-	key:  "repair_every",
-	help: "interval of the re-listing that lands edits and recalls",
+	key:   "repair_every",
+	help:  "interval of the re-listing that lands edits and recalls",
+	live:  true,
+	sweep: true,
+	apply: retuneSweep,
 }, {
 	key:   "applink_pace_ms",
 	help:  "gap between two Feishu navigations, in milliseconds",
@@ -89,7 +112,7 @@ var settings = []setting{{
 	apply: rebuildClearBadge,
 }, {
 	key:  "resources.max_bytes",
-	help: "skip attachments larger than this; 0 means unlimited",
+	help: "skip attachments larger than this; 0 means unlimited. A raised cap does not reach the attachments already marked too large",
 }, {
 	key:   "ai.agent",
 	help:  "the command that starts the ACP agent the assistant asks",
@@ -125,19 +148,26 @@ var settings = []setting{{
 	help: "let the agent read this chat's synced history itself, through the read-only larkim commands the prompt teaches; anything else it runs stops the answer. Run the agent with --tools bash when on, --no-tools when off",
 	live: true,
 }, {
-	key:  "todoist.token",
-	help: "the Todoist API token behind the T key; empty leaves the key answering that it is not configured",
+	key:   "todoist.token",
+	help:  "the Todoist API token behind the T key; empty leaves the key answering that it is not configured",
+	live:  true,
+	apply: rebuildTodoist,
 }, {
-	key:  "todoist.project_id",
-	help: "the project T files tasks into; empty is Todoist's Inbox",
+	key:   "todoist.project_id",
+	help:  "the project T files tasks into; empty is Todoist's Inbox",
+	live:  true,
+	apply: rebuildTodoist,
 }, {
 	key:      "silence",
 	help:     "rules whose messages carry no unread badge; enter edits them in the Silence tab",
 	readOnly: true,
 	summary:  func(c config.Config) string { return plural(len(c.Silence), "rule", "rules") },
 }, {
-	key:  "silence_sync",
-	help: "settle Feishu's own read watermark past silenced messages, so every client's dot follows the same rules; needs mark_read.mode: web",
+	key:   "silence_sync",
+	help:  "settle Feishu's own read watermark past silenced messages, so every client's dot follows the same rules; needs mark_read.mode: web",
+	live:  true,
+	sweep: true,
+	apply: rebuildSettle,
 }}
 
 // nonEmpty judges a key with no default to fall back on: an empty command
@@ -189,6 +219,44 @@ func rebuildClearBadge(m *Model) {
 	m.deps.ClearBadge = m.deps.NewClearBadge(m.cfg.MarkRead)
 }
 
+// rebuildTodoist builds the task filer again from the token and project now
+// in m.cfg, so a token pasted into :config answers the next T rather than the
+// next session. An empty token leaves the key reporting that it is not
+// configured, which is what nil here means. Deps without a builder keeps what
+// it was given.
+func rebuildTodoist(m *Model) {
+	if m.deps.NewTodoist == nil {
+		return
+	}
+	m.deps.Todoist = m.deps.NewTodoist(m.cfg.Todoist.Token, m.cfg.Todoist.ProjectID)
+}
+
+// retuneSweep hands the sweep the options m.cfg now spells. Every option is
+// read where it is used rather than captured when the loop starts, so this
+// reaches a tick already running; a pause already underway still waits itself
+// out. A sweep owned by a daemon is another process's and is not reached from
+// here at all, which is what the sweep flag says on the key.
+func retuneSweep(m *Model) {
+	if !m.deps.Embedded || m.deps.Syncer == nil {
+		return
+	}
+	m.deps.Syncer.SetOptions(sync.OptionsFrom(m.cfg))
+}
+
+// rebuildSettle puts the silenced-unread settle lever on the sweep, or takes
+// it off, as silence_sync now says. It is the same lever mark_read names, so
+// it is built through the same factory the badge clearer is.
+func rebuildSettle(m *Model) {
+	if !m.deps.Embedded || m.deps.Syncer == nil || m.deps.NewClearBadge == nil {
+		return
+	}
+	var settle markread.Clear
+	if m.cfg.SilenceSync {
+		settle = m.deps.NewClearBadge(m.cfg.MarkRead)
+	}
+	m.deps.Syncer.SetSettleSilenced(settle)
+}
+
 func lookupSetting(key string) (setting, bool) {
 	i := slices.IndexFunc(settings, func(s setting) bool { return s.key == key })
 	if i < 0 {
@@ -210,25 +278,35 @@ func (m Model) settingValue(s setting) string {
 	return v
 }
 
+// isLive is whether a change to the key reaches this session. A sweep key
+// only does where the sweep runs: a daemon holding daemon.lock keeps options
+// of its own and reloads them from the file itself, so nothing typed here
+// moves them.
+func (m Model) isLive(s setting) bool {
+	return s.live && (!s.sweep || (m.deps.Embedded && m.deps.Syncer != nil))
+}
+
 // settingReach is how far a change to the key goes.
-func settingReach(s setting) string {
+func (m Model) settingReach(s setting) string {
 	switch {
 	case s.readOnly:
 		return "Silence tab"
-	case s.live:
+	case m.isLive(s):
 		return "takes effect now"
+	case s.sweep:
+		return "the daemon rereads it"
 	}
 	return "next start"
 }
 
 // settingInfo is what the box beside the : line's list says about a key: what
 // it is for, then what it is set to under cfg and how far a change reaches.
-func settingInfo(cfg config.Config, s setting) []string {
-	value := settingCell(cfg, s)
+func (m Model) settingInfo(s setting) []string {
+	value := settingCell(m.cfg, s)
 	if value != "" {
 		value += " · "
 	}
-	return infoLines(s.help, value+settingReach(s))
+	return infoLines(s.help, value+m.settingReach(s))
 }
 
 // settingCell is what the General tab draws for a key under cfg.
@@ -252,8 +330,15 @@ func nextValue(cfg config.Config, s setting, value string) (config.Config, error
 			return cfg, err
 		}
 	}
-	err := cfg.Set(s.key, strings.TrimSpace(value))
-	return cfg, err
+	if err := cfg.Set(s.key, strings.TrimSpace(value)); err != nil {
+		return cfg, err
+	}
+	// The same floors and cross-key rules the file goes through, so a value
+	// this session runs on is one the next start would load, and a pair that
+	// only breaks together — silence_sync without web mode — is refused at
+	// the key that breaks it rather than at the next start.
+	cfg.Normalize()
+	return cfg, cfg.Validate()
 }
 
 // setValue puts a value in the session's configuration without writing the
@@ -273,8 +358,9 @@ func setValue(m *Model, s setting, value string) error {
 // runSet reads or retunes one option, in vim's four forms: a bare :set lists
 // them, name? reports one, name& restores its default and name=value sets it.
 //
-// It reaches only the keys a change takes effect mid-session on. A key the
-// store or the syncer read once at startup would parse here and change
+// It reaches only the keys a change takes effect mid-session on, this session
+// included: a sweep key is out of reach where a daemon owns the sweep. A key
+// the store or the client read once at startup would parse here and change
 // nothing, and an option that answers a reader's keystroke with silence is
 // worse than no option; :config is where every key is reachable, because what
 // it writes is what the next run reads.
@@ -285,7 +371,7 @@ func (m Model) runSet(rest string) Model {
 	if rest == "" {
 		var parts []string
 		for _, s := range settings {
-			if s.live {
+			if m.isLive(s) {
 				parts = append(parts, s.key+"="+m.settingValue(s))
 			}
 		}
@@ -299,7 +385,7 @@ func (m Model) runSet(rest string) Model {
 		name = name[:len(name)-1]
 	}
 	s, ok := lookupSetting(name)
-	if !ok || !s.live {
+	if !ok || !m.isLive(s) {
 		return m.notify("unknown option "+name, true)
 	}
 	switch {

@@ -26,10 +26,11 @@ func newSyncer(t *testing.T) (*Syncer, *larkcli.Fake, *fakeClock) {
 	t.Cleanup(func() { st.Close() })
 	f := larkcli.NewFake()
 	clk := &fakeClock{t: time.Date(2026, 9, 22, 12, 0, 0, 0, time.UTC)}
-	s := &Syncer{Client: f, Store: st, Clock: clk, Opt: Options{
+	s := &Syncer{Client: f, Store: st, Clock: clk}
+	s.SetOptions(Options{
 		PollInterval: time.Second, Overlap: 2 * time.Minute, ChatsRefreshEvery: 10 * time.Minute,
 		SlowPathEvery: 10 * time.Minute, BackfillDays: 30, ActiveTopK: 30, BackfillPerTick: 5, RenderPerTick: 4, DownloadPerTick: 1, ForwardsPerTick: 3, ReadStatusPerTick: 4, RepairEvery: 6 * time.Hour, RepairPerTick: 3, MembersPerTick: 2, AvatarsPerTick: 5, ContactDetailsPerTick: larkcli.MaxUserIDsPerSearch, DocLinksPerTick: 1, ImageTextPerTick: 4,
-	}}
+	})
 	return s, f, clk
 }
 
@@ -102,9 +103,9 @@ func TestHistorySlice_WalksDayByDayUntilLive(t *testing.T) {
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	now := clk.t
-	s.Opt.BackfillDays = 2
-	s.Opt.BackfillPerTick = 0 // isolate the search-based history
-	s.Opt.RepairEvery = 0
+	s.Opt().BackfillDays = 2
+	s.Opt().BackfillPerTick = 0 // isolate the search-based history
+	s.Opt().RepairEvery = 0
 	f.AddMessage(msg("om_d1", "oc_a", now.Add(-40*time.Hour), "day1"))
 	f.AddMessage(msg("om_d2", "oc_a", now.Add(-20*time.Hour), "day2"))
 
@@ -186,7 +187,7 @@ func TestDelayFor_RateLimitHonoursRetryAfter(t *testing.T) {
 
 func TestDelayFor_KeepsASubSecondPollIntervalOutOfTheBackoff(t *testing.T) {
 	s, _, _ := newSyncer(t)
-	s.Opt.PollInterval = 100 * time.Millisecond
+	s.Opt().PollInterval = 100 * time.Millisecond
 	err := &larkcli.Error{ExitCode: 1, Subtype: "internal"}
 	require.Equal(t, time.Second, s.delayFor(err, 1), "a tick pace is not a retry pace")
 	require.Equal(t, 4*time.Second, s.delayFor(err, 3))
@@ -219,7 +220,7 @@ func TestSlowPath_ReconcilesActiveChatsFromCursor(t *testing.T) {
 	f.AddMessage(msg("om_hidden", "oc_a", now.Add(-30*time.Minute), "hidden"))
 
 	f.Calls = nil
-	s.Opt.ActiveTopK = 20
+	s.Opt().ActiveTopK = 20
 	clk.t = now.Add(11 * time.Minute) // slow path due; fast window [wm-2m, now] misses -30m
 	rep, err := s.Tick(ctx)
 	require.NoError(t, err)
@@ -501,9 +502,9 @@ func TestTick_NudgesAsEachStageLands(t *testing.T) {
 func TestHistorySlice_StopsSearchingOnceCaughtUp(t *testing.T) {
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
-	s.Opt.BackfillDays = 1
-	s.Opt.BackfillPerTick = 0 // isolate the search-based history
-	s.Opt.RepairEvery = 0
+	s.Opt().BackfillDays = 1
+	s.Opt().BackfillPerTick = 0 // isolate the search-based history
+	s.Opt().RepairEvery = 0
 
 	// Warm up until history reaches the live window, advancing the clock the
 	// way Run does: a frozen clock freezes liveStart with it and hides the bug.
@@ -526,9 +527,9 @@ func TestHistorySlice_StopsSearchingOnceCaughtUp(t *testing.T) {
 func TestHistorySlice_LiveWindowCoversAnOutageWithoutHistory(t *testing.T) {
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
-	s.Opt.BackfillDays = 1
-	s.Opt.BackfillPerTick = 0
-	s.Opt.RepairEvery = 0
+	s.Opt().BackfillDays = 1
+	s.Opt().BackfillPerTick = 0
+	s.Opt().RepairEvery = 0
 
 	for range 3 {
 		_, err := s.Tick(ctx)
@@ -554,8 +555,8 @@ func TestHistorySlice_LiveWindowCoversAnOutageWithoutHistory(t *testing.T) {
 func TestActiveProbe_NamesChatsThatMovedUp(t *testing.T) {
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
-	s.Opt.BackfillPerTick = 0
-	s.Opt.RepairEvery = 0
+	s.Opt().BackfillPerTick = 0
+	s.Opt().RepairEvery = 0
 	f.Chats = []larkcli.RawChat{
 		{ChatID: "oc_a", Name: "平台组", ChatMode: "group"},
 		{ChatID: "oc_b", Name: "项目协作群", ChatMode: "group"},
@@ -589,8 +590,8 @@ func TestActiveProbe_NamesChatsThatMovedUp(t *testing.T) {
 func TestActiveProbe_UnreadableOrderCountsAsAFirstRun(t *testing.T) {
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
-	s.Opt.BackfillPerTick = 0
-	s.Opt.RepairEvery = 0
+	s.Opt().BackfillPerTick = 0
+	s.Opt().RepairEvery = 0
 	f.Chats = []larkcli.RawChat{{ChatID: "oc_a", ChatMode: "group"}, {ChatID: "oc_b", ChatMode: "group"}}
 	require.NoError(t, s.Store.SetState(ctx, KeyActiveOrder, "not json"))
 
@@ -608,7 +609,7 @@ func TestActiveProbe_UnreadableOrderCountsAsAFirstRun(t *testing.T) {
 func TestActiveProbe_ReachesAMessageBeforeTheSearchDoes(t *testing.T) {
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
-	s.Opt.RepairEvery = 0
+	s.Opt().RepairEvery = 0
 	f.Chats = []larkcli.RawChat{
 		{ChatID: "oc_a", Name: "平台组", ChatMode: "group"},
 		{ChatID: "oc_b", Name: "项目协作群", ChatMode: "group"},
@@ -650,7 +651,7 @@ func TestActiveProbe_ReachesAMessageBeforeTheSearchDoes(t *testing.T) {
 func TestActiveProbe_ReachesASecondMessageInTheChatAlreadyAtTheHead(t *testing.T) {
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
-	s.Opt.RepairEvery = 0
+	s.Opt().RepairEvery = 0
 	f.Chats = []larkcli.RawChat{
 		{ChatID: "oc_a", Name: "平台组", ChatMode: "group"},
 		{ChatID: "oc_b", Name: "项目协作群", ChatMode: "group"},
@@ -680,7 +681,7 @@ func TestActiveProbe_ReachesASecondMessageInTheChatAlreadyAtTheHead(t *testing.T
 func TestActiveProbe_ReachesAMessageInAChatThatKeptItsPlace(t *testing.T) {
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
-	s.Opt.RepairEvery = 0
+	s.Opt().RepairEvery = 0
 	f.Chats = []larkcli.RawChat{
 		{ChatID: "oc_a", Name: "平台组", ChatMode: "group"},
 		{ChatID: "oc_b", Name: "项目协作群", ChatMode: "group"},
@@ -712,9 +713,9 @@ func TestActiveProbe_ReachesAMessageInAChatThatKeptItsPlace(t *testing.T) {
 func TestTick_SearchIsASafetyNetOnItsOwnInterval(t *testing.T) {
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
-	s.Opt.BackfillPerTick = 0
-	s.Opt.RepairEvery = 0
-	s.Opt.BackfillDays = 0 // history caught up from the start, so only the live search counts
+	s.Opt().BackfillPerTick = 0
+	s.Opt().RepairEvery = 0
+	s.Opt().BackfillDays = 0 // history caught up from the start, so only the live search counts
 	f.Chats = []larkcli.RawChat{{ChatID: "oc_a", Name: "平台组", ChatMode: "group"}}
 	f.AddMessage(msg("om_seed", "oc_a", clk.t.Add(-time.Hour), "seed"))
 
@@ -742,8 +743,8 @@ func TestTick_SearchIsASafetyNetOnItsOwnInterval(t *testing.T) {
 func TestActiveProbe_AFailedPullLeavesTheMovedChatsNamedNextTick(t *testing.T) {
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
-	s.Opt.BackfillPerTick = 0
-	s.Opt.RepairEvery = 0
+	s.Opt().BackfillPerTick = 0
+	s.Opt().RepairEvery = 0
 	f.Chats = []larkcli.RawChat{
 		{ChatID: "oc_a", Name: "平台组", ChatMode: "group"},
 		{ChatID: "oc_b", Name: "项目协作群", ChatMode: "group"},

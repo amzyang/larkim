@@ -144,8 +144,8 @@ func TestReactionsSlice_AsksNoMoreThanOneBatchPerTick(t *testing.T) {
 func TestReactionsSlice_AsksNoMoreOftenThanItsInterval(t *testing.T) {
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
-	s.Opt.BackfillPerTick = 0
-	s.Opt.RepairEvery = 0
+	s.Opt().BackfillPerTick = 0
+	s.Opt().RepairEvery = 0
 	p2pChats(t, s, f, clk, 1)
 
 	reactionCalls := func() int {

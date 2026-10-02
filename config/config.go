@@ -273,22 +273,39 @@ func LoadWith(path string, sets []string) (Config, error) {
 	if err := applySets(&cfg, sets); err != nil {
 		return cfg, err
 	}
-	cfg.DataDir = expandHome(cfg.DataDir)
-	cfg.LarkCLIPath = expandHome(cfg.LarkCLIPath)
+	cfg.Normalize()
+	if err := cfg.Validate(); err != nil {
+		return cfg, fmt.Errorf("%s: %w", path, err)
+	}
+	return cfg, nil
+}
+
+// Normalize puts a value into the shape the running code expects, so a key
+// retuned mid-session passes through the same floors and expansions the file
+// does rather than only the ones the decoder applies.
+func (c *Config) Normalize() {
+	c.DataDir = expandHome(c.DataDir)
+	c.LarkCLIPath = expandHome(c.LarkCLIPath)
 	// A tick's own work measures in hundreds of milliseconds, so the floor is
 	// not a rate limit — it only keeps 0 from turning the loop into a busy
 	// spin over lark-cli.
-	cfg.PollIntervalMS = max(cfg.PollIntervalMS, minPollIntervalMS)
-	if err := cfg.Silence.Validate(); err != nil {
-		return cfg, fmt.Errorf("%s: %w", path, err)
+	c.PollIntervalMS = max(c.PollIntervalMS, minPollIntervalMS)
+}
+
+// Validate refuses a configuration no run could honour, including the rules
+// that span two keys: :config judges a value through this before it writes
+// it, so a pair the next start would refuse is refused where it is typed.
+func (c Config) Validate() error {
+	if err := c.Silence.Validate(); err != nil {
+		return err
 	}
-	if err := cfg.MarkRead.Validate(); err != nil {
-		return cfg, fmt.Errorf("%s: %w", path, err)
+	if err := c.MarkRead.Validate(); err != nil {
+		return err
 	}
-	if cfg.SilenceSync && cfg.MarkRead.Mode != MarkReadWeb {
-		return cfg, fmt.Errorf("%s: silence_sync needs mark_read.mode: %s", path, MarkReadWeb)
+	if c.SilenceSync && c.MarkRead.Mode != MarkReadWeb {
+		return fmt.Errorf("silence_sync needs mark_read.mode: %s", MarkReadWeb)
 	}
-	return cfg, nil
+	return nil
 }
 
 func applySets(cfg *Config, sets []string) error {

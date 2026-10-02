@@ -82,7 +82,7 @@ func TestIngestIDs_SpendsNoRenderCallOnABodyLarkimReadsItself(t *testing.T) {
 func TestTick_AStickerIsRenderedWithoutACall(t *testing.T) {
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
-	s.Opt.DataDir = t.TempDir()
+	s.Opt().DataDir = t.TempDir()
 	f.Chats = []larkcli.RawChat{{ChatID: "oc_a", Name: "平台组", ChatMode: "group"}}
 	st := msg("om_st", "oc_a", clk.t.Add(-time.Minute), "")
 	st.MsgType, st.Body.Content = "sticker", `{"file_key":"v3_face"}`

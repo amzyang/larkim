@@ -38,7 +38,7 @@ var errStickerNotCached = errors.New("not in the Lark client's sticker storage")
 // Unauthorized) whatever identity asks, so lark-cli never returns one and the
 // Lark client's own storage is the only place the picture exists here.
 func (s *Syncer) copyStickers(ctx context.Context, now time.Time) (int, error) {
-	if s.Opt.DataDir == "" || s.Opt.ClientDir == "" {
+	if s.Opt().DataDir == "" || s.Opt().ClientDir == "" {
 		return 0, nil
 	}
 	due, err := s.Store.StickerResourcesDue(ctx, now.UnixMilli(), stickerCopyPerTick)
@@ -47,7 +47,7 @@ func (s *Syncer) copyStickers(ctx context.Context, now time.Time) (int, error) {
 	}
 	done := 0
 	for _, p := range due {
-		src, size := findSticker(s.Opt.ClientDir, p.FileKey)
+		src, size := findSticker(s.Opt().ClientDir, p.FileKey)
 		if src == "" {
 			if err := s.failResource(ctx, p, errStickerNotCached, now); err != nil {
 				return done, err
@@ -60,7 +60,7 @@ func (s *Syncer) copyStickers(ctx context.Context, now time.Time) (int, error) {
 			}
 			continue
 		}
-		rel, size, err := copySticker(src, s.Opt.DataDir, p.FileKey)
+		rel, size, err := copySticker(src, s.Opt().DataDir, p.FileKey)
 		if err != nil {
 			if err := s.failResource(ctx, p, err, now); err != nil {
 				return done, err

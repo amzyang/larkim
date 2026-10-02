@@ -18,7 +18,7 @@ import (
 func TestTick_MembersContactsAndAvatars(t *testing.T) {
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
-	s.Opt.DataDir = t.TempDir()
+	s.Opt().DataDir = t.TempDir()
 	s.Fetch = func(_ context.Context, url string) ([]byte, string, error) {
 		return []byte("png-bytes"), "image/png", nil
 	}
@@ -39,7 +39,7 @@ func TestTick_MembersContactsAndAvatars(t *testing.T) {
 
 	chat, _ := s.Store.GetChat(ctx, "oc_g")
 	require.Equal(t, filepath.Join("resources", "avatars", "chats", "oc_g.png"), chat.AvatarPath)
-	_, statErr := os.Stat(filepath.Join(s.Opt.DataDir, chat.AvatarPath))
+	_, statErr := os.Stat(filepath.Join(s.Opt().DataDir, chat.AvatarPath))
 	require.NoError(t, statErr)
 	a, _ := s.Store.GetContact(ctx, "ou_a")
 	require.Equal(t, "https://cdn/a.png", a.AvatarURL)
@@ -120,7 +120,7 @@ func TestTick_DoesNotReAskForContactsTheSearchOmitted(t *testing.T) {
 func TestTick_MarksWithheldContactsAsHavingNoAvatar(t *testing.T) {
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
-	s.Opt.DataDir = t.TempDir()
+	s.Opt().DataDir = t.TempDir()
 	s.Fetch = func(_ context.Context, url string) ([]byte, string, error) {
 		return []byte("png-bytes"), "image/png", nil
 	}
@@ -151,7 +151,7 @@ func TestTick_MarksWithheldContactsAsHavingNoAvatar(t *testing.T) {
 func TestTick_APermanentAvatarRejectionDoesNotWedgeLaterSlices(t *testing.T) {
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
-	s.Opt.DataDir = t.TempDir()
+	s.Opt().DataDir = t.TempDir()
 	s.Fetch = func(_ context.Context, url string) ([]byte, string, error) {
 		return []byte("png-bytes"), "image/png", nil
 	}
@@ -178,7 +178,7 @@ func TestTick_APermanentAvatarRejectionDoesNotWedgeLaterSlices(t *testing.T) {
 func TestTick_ATransientAvatarFailureStillFailsTheTick(t *testing.T) {
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
-	s.Opt.DataDir = t.TempDir()
+	s.Opt().DataDir = t.TempDir()
 	s.Fetch = func(_ context.Context, url string) ([]byte, string, error) { return nil, "", nil }
 	f.Chats = []larkcli.RawChat{{ChatID: "oc_p", Name: "P", ChatMode: "p2p", P2PTargetID: "ou_a", P2PTargetType: "user"}}
 	f.DetailsErr = &larkcli.Error{ExitCode: larkcli.ExitNetwork, Type: "network"}
@@ -214,7 +214,7 @@ func botMsg(id, chatID, botOpenID, appID string, at time.Time) larkcli.RawMessag
 func TestTick_ResolvesBotAvatarsThroughTheirApp(t *testing.T) {
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
-	s.Opt.DataDir = t.TempDir()
+	s.Opt().DataDir = t.TempDir()
 	s.Fetch = func(_ context.Context, url string) ([]byte, string, error) {
 		return []byte("png-bytes"), "image/png", nil
 	}
@@ -237,7 +237,7 @@ func TestTick_ResolvesBotAvatarsThroughTheirApp(t *testing.T) {
 func TestBotsNeedingAvatar_SkipsBotsThatNeverSpoke(t *testing.T) {
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
-	s.Opt.DataDir = t.TempDir()
+	s.Opt().DataDir = t.TempDir()
 	s.Fetch = func(_ context.Context, url string) ([]byte, string, error) {
 		return []byte("png-bytes"), "image/png", nil
 	}
@@ -256,7 +256,7 @@ func TestBotsNeedingAvatar_SkipsBotsThatNeverSpoke(t *testing.T) {
 func TestTick_SettlesABotWhoseAppTheTenantWillNotShow(t *testing.T) {
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
-	s.Opt.DataDir = t.TempDir()
+	s.Opt().DataDir = t.TempDir()
 	s.Fetch = func(_ context.Context, url string) ([]byte, string, error) {
 		return []byte("png-bytes"), "image/png", nil
 	}

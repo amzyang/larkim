@@ -280,7 +280,7 @@ func (s *Syncer) discoveryPause(loggedOut bool, err error, failures int) time.Du
 	case err != nil:
 		return s.delayFor(err, failures)
 	case loggedOut || !s.attended.Load():
-		return s.Opt.PollInterval
+		return s.Opt().PollInterval
 	}
 	return 0
 }
@@ -320,6 +320,12 @@ func (s *Syncer) wakeSweep() {
 	default:
 	}
 }
+
+// Wake ends the sweep's pause from outside, for a change the next tick is
+// what applies — a silence rule edited in the TUI the sweep runs in. A sweep
+// backing off after a failure is not woken: its pause is waiting on the API,
+// not on the reader.
+func (s *Syncer) Wake() { s.wakeSweep() }
 
 // signals makes the channels the two loops wake each other on. It runs on
 // first use rather than in a constructor, so a Syncer built as a literal has

@@ -811,7 +811,7 @@ func TestUnreadAnchors_CountTheBadgesOwnSet(t *testing.T) {
 	root.ThreadID = "omt_1"
 	reply := msgAt("om_reply", "oc_a", 50, -3, "a reply, older than the root")
 	reply.ThreadID = "omt_1"
-	s.Silence = SilenceRules{{Sender: "cli_c"}}
+	s.SetSilence(SilenceRules{{Sender: "cli_c"}})
 	hushed := fromBot("om_hushed", "oc_a", 60, "nightly build #418 passed")
 	_, err := s.UpsertMessages(ctx, []Message{root, reply, hushed}, 1)
 	require.NoError(t, err)

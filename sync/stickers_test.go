@@ -36,7 +36,7 @@ func TestTick_StickerPicturesComeFromTheLarkClient(t *testing.T) {
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	data, client := t.TempDir(), t.TempDir()
-	s.Opt.DataDir, s.Opt.ClientDir = data, client
+	s.Opt().DataDir, s.Opt().ClientDir = data, client
 	pic := clientSticker(t, filepath.Join(client, "LarkShell", "sdk_storage", "u1", "resources", "stickers"), "v3_recv.png")
 	clientSticker(t, filepath.Join(client, "LarkShell-ka-x", "sdk_storage", "u2", "sticker_sets", "7543"), "v3_mine")
 
@@ -77,7 +77,7 @@ func TestTick_StickerPicturesOverTheSizeLimitAreSkipped(t *testing.T) {
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	data, client := t.TempDir(), t.TempDir()
-	s.Opt.DataDir, s.Opt.ClientDir, s.Opt.MaxBytes = data, client, 1
+	s.Opt().DataDir, s.Opt().ClientDir, s.Opt().MaxBytes = data, client, 1
 	clientSticker(t, filepath.Join(client, "LarkShell", "sdk_storage", "u1", "resources", "stickers"), "v3_big.png")
 
 	f.Chats = []larkcli.RawChat{{ChatID: "oc_a", Name: "平台组", ChatMode: "group"}}

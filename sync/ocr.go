@@ -20,10 +20,10 @@ import (
 // Keyed by resource rather than by message, like the download it follows: the
 // same screenshot forwarded into four chats is one picture and one reading.
 func (s *Syncer) readImageText(ctx context.Context, now time.Time) (int, error) {
-	if s.Opt.DataDir == "" {
+	if s.Opt().DataDir == "" {
 		return 0, nil
 	}
-	due, err := s.Store.ImagesForTextDue(ctx, now.UnixMilli(), s.Opt.ImageTextPerTick)
+	due, err := s.Store.ImagesForTextDue(ctx, now.UnixMilli(), s.Opt().ImageTextPerTick)
 	if err != nil {
 		return 0, err
 	}
@@ -37,7 +37,7 @@ func (s *Syncer) readImageText(ctx context.Context, now time.Time) (int, error) 
 		if d.SizeBytes > larkcli.MaxOCRBytes {
 			continue
 		}
-		wg.Go(func() { text[i], errs[i] = s.Client.RecognizeText(ctx, filepath.Join(s.Opt.DataDir, d.LocalPath)) })
+		wg.Go(func() { text[i], errs[i] = s.Client.RecognizeText(ctx, filepath.Join(s.Opt().DataDir, d.LocalPath)) })
 	}
 	wg.Wait()
 	done := 0

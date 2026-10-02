@@ -117,7 +117,7 @@ func TestListChats_TiebreaksOnChatID(t *testing.T) {
 
 func TestListChats_CarriesTheUnreadCount(t *testing.T) {
 	s := openTest(t)
-	s.Silence = SilenceRules{{Sender: "cli_c"}}
+	s.SetSilence(SilenceRules{{Sender: "cli_c"}})
 	ctx := t.Context()
 	require.NoError(t, s.EnsureChat(ctx, "oc_loud", 1))
 	_, err := s.UpsertMessages(ctx, []Message{

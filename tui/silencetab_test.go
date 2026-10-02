@@ -56,12 +56,31 @@ func TestSilenceTab_AddsARuleThroughThePickersAndWritesTheFile(t *testing.T) {
 	require.False(t, m.config.silence.form.open)
 	require.Equal(t, want, m.cfg.Silence)
 	require.Equal(t, want, configFile(t, m).Silence)
-	require.Equal(t, "silence · 1 rule · next start", m.notice)
+	require.Equal(t, "silence · 1 rule · the daemon rereads it", m.notice)
 	require.False(t, m.noticeErr)
+	require.Equal(t, want, m.deps.Store.Silence(),
+		"the messages this process pulls itself are stamped from the new rules")
 	text, err := os.ReadFile(m.deps.ConfigPath)
 	require.NoError(t, err)
 	require.Contains(t, string(text), "silence:\n  - chat: oc_quiet\n    sender: cli_c\n    contains: nightly build\n",
 		"written as a block list")
+}
+
+func TestSilenceTab_ARuleReachesTheStoredMessagesWhereTheSweepRunsHere(t *testing.T) {
+	m := silenceModel(t)
+	m.deps.Embedded = true
+	ctx := t.Context()
+
+	require.NoError(t, m.writeSilence(store.SilenceRules{{Sender: "ou_a"}}))
+
+	require.Equal(t, "silence · 1 rule · takes effect now", m.notice)
+	n, err := m.deps.Store.ReapplySilence(ctx)
+	require.NoError(t, err)
+	require.EqualValues(t, 1, n, "the tick the edit woke rebuilds the flag on the message already stored")
+	var silenced bool
+	require.NoError(t, m.deps.Store.DB().QueryRowContext(ctx,
+		`SELECT silenced FROM messages WHERE message_id = 'om_a'`).Scan(&silenced))
+	require.True(t, silenced)
 }
 
 func TestSilenceTab_AFieldLeftUnsetIsNotWritten(t *testing.T) {

@@ -19,7 +19,7 @@ func picturesOnDisk(t *testing.T, s *Syncer, sizes map[string]int64) string {
 	t.Helper()
 	ctx := t.Context()
 	dir := t.TempDir()
-	s.Opt.DataDir = dir
+	s.Opt().DataDir = dir
 	resDir := filepath.Join(dir, "resources", "lark-im-resources")
 	require.NoError(t, os.MkdirAll(resDir, 0o755))
 	_, err := s.Store.UpsertMessages(ctx, []store.Message{
@@ -112,7 +112,7 @@ func TestReadImageText_APermanentRefusalSettlesOnTheFirstAttempt(t *testing.T) {
 func TestReadImageText_NothingToDoWithoutADataDir(t *testing.T) {
 	s, f, clk := newSyncer(t)
 	picturesOnDisk(t, s, map[string]int64{"img_a": 100})
-	s.Opt.DataDir = ""
+	s.Opt().DataDir = ""
 
 	n, err := s.readImageText(t.Context(), clk.Now())
 	require.NoError(t, err)
@@ -124,7 +124,7 @@ func TestTick_ReadsTheWritingInPicturesItDownloaded(t *testing.T) {
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	dir := t.TempDir()
-	s.Opt.DataDir = dir
+	s.Opt().DataDir = dir
 	resDir := filepath.Join(dir, "resources", "lark-im-resources")
 	require.NoError(t, os.MkdirAll(resDir, 0o755))
 	shot := filepath.Join(resDir, "img_shot.png")

@@ -13,6 +13,7 @@ import (
 	"io/fs"
 	"slices"
 	"strings"
+	"sync/atomic"
 
 	_ "modernc.org/sqlite"
 )
@@ -26,11 +27,29 @@ var ErrNotFound = errors.New("not found")
 // Store wraps one SQLite database.
 type Store struct {
 	db *sql.DB
-	// Silence is the configured rule set; the process holding daemon.lock
-	// is the only one whose writes it reaches, since it is the only one
-	// that writes messages. Readers take the stored flag as given.
-	Silence SilenceRules
+	// silence is the configured rule set every message this process writes
+	// is stamped from. ReapplySilence, which rebuilds the whole table from
+	// it, runs only in the process holding daemon.lock, so another process
+	// changing its own set reaches only the messages it writes itself.
+	//
+	// Behind an atomic because the sweep stamps from it on its own goroutine
+	// while :config and the daemon's config reload replace it.
+	silence atomic.Pointer[SilenceRules]
 }
+
+// Silence is the rule set this process stamps messages from.
+func (s *Store) Silence() SilenceRules {
+	if rs := s.silence.Load(); rs != nil {
+		return *rs
+	}
+	return nil
+}
+
+// SetSilence replaces the rule set. In the process holding daemon.lock the
+// next tick's ReapplySilence sees the new fingerprint and rebuilds every
+// flag; anywhere else it reaches the messages this process writes from now
+// on.
+func (s *Store) SetSilence(rs SilenceRules) { s.silence.Store(&rs) }
 
 // Open opens (creating if needed) the database at path and applies migrations.
 func Open(path string) (*Store, error) {

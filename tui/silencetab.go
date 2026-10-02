@@ -23,10 +23,11 @@ type silenceCount struct{ matched, lastMs int64 }
 // silenceTab is the Silence page of :config: the configured rules, each named
 // by the chat and the sender it points at, and the form a rule is written in.
 //
-// It edits m.cfg.Silence and the file together, never the store's own rules:
-// the process holding daemon.lock stamps the flags from the rules it started
-// with, and every other writer has to stamp from the same ones until it
-// restarts.
+// It edits m.cfg.Silence, the file and the store's own rules together. Only
+// the process holding daemon.lock rebuilds the stored flags, so there is one
+// writer of the whole table: the sweep here when it runs here, or the daemon
+// once it rereads the file. The store's rules here are what the messages this
+// process pulls itself are stamped from, so they follow the file too.
 type silenceTab struct {
 	idx, top int
 	// counts is keyed by each rule's own fingerprint, so a reply that lands
@@ -425,7 +426,17 @@ func (m *Model) writeSilence(next store.SilenceRules) error {
 		return err
 	}
 	m.cfg.Silence = next
-	*m = m.notify("silence · "+plural(len(next), "rule", "rules")+" · next start", false)
+	reach := "the daemon rereads it"
+	if m.deps.Store != nil {
+		m.deps.Store.SetSilence(next)
+	}
+	if m.deps.Embedded && m.deps.Syncer != nil {
+		// The tick opens on ReapplySilence, so waking it is what takes the
+		// new rules across the messages already stored.
+		m.deps.Syncer.Wake()
+		reach = "takes effect now"
+	}
+	*m = m.notify("silence · "+plural(len(next), "rule", "rules")+" · "+reach, false)
 	return nil
 }
 

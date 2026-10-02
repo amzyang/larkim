@@ -60,7 +60,7 @@ func humanAt(id string, position int64, text string) Message {
 
 func TestUpsertMessages_QueuesAChatWhoseArrivalWasSilenced(t *testing.T) {
 	s := openTest(t)
-	s.Silence = SilenceRules{{Chat: "oc_quiet", Sender: "cli_c"}}
+	s.SetSilence(SilenceRules{{Chat: "oc_quiet", Sender: "cli_c"}})
 	ctx := t.Context()
 	_, err := s.UpsertMessagesArriving(ctx,
 		[]Message{botAt("om_noise", 1, "nightly build #418 passed")},
@@ -76,7 +76,7 @@ func TestUpsertMessages_QueuesAChatWhoseArrivalWasSilenced(t *testing.T) {
 
 func TestUpsertMessages_DoesNotQueueAReadSilencedMessage(t *testing.T) {
 	s := openTest(t)
-	s.Silence = SilenceRules{{Chat: "oc_quiet", Sender: "cli_c"}}
+	s.SetSilence(SilenceRules{{Chat: "oc_quiet", Sender: "cli_c"}})
 	ctx := t.Context()
 	_, err := s.UpsertMessages(ctx, []Message{botAt("om_read", 1, "nightly build #418 passed")}, 1)
 	require.NoError(t, err)
@@ -98,7 +98,7 @@ func TestReapplySilence_QueuesChatsAcrossARuleChange(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, queueOf(t, s, 10))
 
-	s.Silence = SilenceRules{{Sender: "cli_c"}}
+	s.SetSilence(SilenceRules{{Sender: "cli_c"}})
 	_, err = s.ReapplySilence(ctx)
 	require.NoError(t, err)
 
@@ -109,7 +109,7 @@ func TestReapplySilence_QueuesChatsAcrossARuleChange(t *testing.T) {
 
 func TestPendingSilenceSettle_AnswersTheWatermarkBelowTheFirstUnsilenced(t *testing.T) {
 	s := openTest(t)
-	s.Silence = SilenceRules{{Chat: "oc_quiet", Sender: "cli_c"}}
+	s.SetSilence(SilenceRules{{Chat: "oc_quiet", Sender: "cli_c"}})
 	ctx := t.Context()
 	_, err := s.UpsertMessagesArriving(ctx, []Message{
 		botAt("om_a", 1, "nightly build #418"),
@@ -127,7 +127,7 @@ func TestPendingSilenceSettle_AnswersTheWatermarkBelowTheFirstUnsilenced(t *test
 
 func TestPendingSilenceSettle_PlansNoActionForAChatReadElsewhere(t *testing.T) {
 	s := openTest(t)
-	s.Silence = SilenceRules{{Chat: "oc_quiet", Sender: "cli_c"}}
+	s.SetSilence(SilenceRules{{Chat: "oc_quiet", Sender: "cli_c"}})
 	ctx := t.Context()
 	_, err := s.UpsertMessagesArriving(ctx,
 		[]Message{botAt("om_noise", 1, "nightly build #418 passed")},
@@ -143,7 +143,7 @@ func TestPendingSilenceSettle_PlansNoActionForAChatReadElsewhere(t *testing.T) {
 
 func TestSilenceSettleDone_DropsTheRowAndRemembersTheWatermark(t *testing.T) {
 	s := openTest(t)
-	s.Silence = SilenceRules{{Chat: "oc_quiet", Sender: "cli_c"}}
+	s.SetSilence(SilenceRules{{Chat: "oc_quiet", Sender: "cli_c"}})
 	ctx := t.Context()
 	_, err := s.db.ExecContext(ctx, `INSERT INTO silence_settle_queue (chat_id) VALUES ('oc_quiet')`)
 	require.NoError(t, err)

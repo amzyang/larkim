@@ -391,7 +391,7 @@ func New(d Deps) Model {
 			// Web mode only (silence_sync is validated to it), which is the
 			// lever that never calls the opener the block below has not
 			// defaulted yet.
-			s.SettleSilenced = markread.New(d.Config.MarkRead, d.Log, d.Store, nil)
+			s.SetSettleSilenced(markread.New(d.Config.MarkRead, d.Log, d.Store, nil))
 		}
 		d.Syncer = s
 	}

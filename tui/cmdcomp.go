@@ -202,12 +202,12 @@ func (m Model) argHits(cmd command, stem string) []cmdHit {
 			break
 		}
 		for _, st := range settings {
-			if cmd.arg == argSetting && !st.live {
+			if cmd.arg == argSetting && !m.isLive(st) {
 				continue
 			}
 			if strings.HasPrefix(st.key, stem) {
 				out = append(out, cmdHit{insert: st.key + eq, name: st.key, mark: prefixMark(stem),
-					setting: st, info: settingInfo(m.cfg, st)})
+					setting: st, info: m.settingInfo(st)})
 			}
 		}
 	case argChat, argTarget:

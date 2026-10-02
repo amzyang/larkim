@@ -31,7 +31,7 @@ func TestTick_DownloadsThePicturesInsideAForwardedBundle(t *testing.T) {
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	dir := t.TempDir()
-	s.Opt.DataDir = dir
+	s.Opt().DataDir = dir
 	resDir := filepath.Join(dir, "resources", "lark-im-resources")
 	require.NoError(t, os.MkdirAll(resDir, 0o755))
 	shot := filepath.Join(resDir, "img_fwd.png")
@@ -253,7 +253,7 @@ func TestExpandForwards_ATimeoutIsRetriedAfterItsBackoff(t *testing.T) {
 
 func TestExpandForwards_TakesTheNewestBundlesFirst(t *testing.T) {
 	s, f, clk := newSyncer(t)
-	s.Opt.ForwardsPerTick = 1
+	s.Opt().ForwardsPerTick = 1
 	storeBundle(t, s, "om_old", "oc_a", clk.t.Add(-2*time.Hour))
 	storeBundle(t, s, "om_new", "oc_a", clk.t.Add(-time.Minute))
 
@@ -266,7 +266,7 @@ func TestExpandForwards_TakesTheNewestBundlesFirst(t *testing.T) {
 func TestExpandForwards_RegistersAChildAttachmentUnderTheBundle(t *testing.T) {
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
-	s.Opt.DataDir = t.TempDir()
+	s.Opt().DataDir = t.TempDir()
 	storeBundle(t, s, "om_fwd", "oc_a", clk.t.Add(-time.Minute))
 	f.Bundles["om_fwd"] = []larkcli.RawForwarded{
 		child("om_pic", "om_fwd", "oc_src", "image", `{"image_key":"img_inside"}`, clk.t.Add(-2*time.Hour)),

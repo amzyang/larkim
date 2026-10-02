@@ -57,8 +57,12 @@ type Deps struct {
 	NewSuggest func(keyEnv, endpoint string) ReactSuggester
 	// Todoist files the selected message or chat as a task; nil when no
 	// token is configured, which leaves the T key answering a notice instead
-	// of failing a request that cannot land.
-	Todoist TaskAdder
+	// of failing a request that cannot land. NewTodoist builds it again when
+	// :config changes the token or the project, and returns nil for an empty
+	// token. A nil NewTodoist leaves it as it was, which is what a test that
+	// injects a fake wants.
+	Todoist    TaskAdder
+	NewTodoist func(token, projectID string) TaskAdder
 	// Nudge signals that the store changed, so the watch checks without
 	// waiting out its interval. It carries this process's own writes, the
 	// sweep's too when the sweep runs here; a daemon's land on the interval.

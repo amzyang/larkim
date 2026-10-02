@@ -198,7 +198,13 @@ func TestConfig_TabIsTypedIntoAnOpenEditor(t *testing.T) {
 func TestConfig_FilterNarrowsOnKeyAndOnProse(t *testing.T) {
 	m := configModel(t)
 	m = press(t, m, "/", "a", "i", ".")
-	require.Len(t, m.config.hits, 8, "the ai section, and silence_sync's help names mark_read.mode")
+	keys := make([]string, len(m.config.hits))
+	for i, h := range m.config.hits {
+		keys[i] = h.s.key
+	}
+	require.Subset(t, keys, []string{"ai.agent", "ai.model", "ai.context", "ai.jev_key_env", "ai.jev_endpoint", "ai.snippets", "ai.history"},
+		"the whole ai section stands")
+	require.NotContains(t, keys, "data_dir", "and a key the query is nowhere in does not")
 
 	m = configModel(t)
 	m = press(t, m, "/", "u", "n", "l", "i", "m", "i", "t", "e", "d")

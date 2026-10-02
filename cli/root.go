@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"strconv"
 	gosync "sync"
 	"time"
 
@@ -152,7 +153,7 @@ func (a *App) openStore() (*store.Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	st.Silence = a.cfg.Silence
+	st.SetSilence(a.cfg.Silence)
 	return st, nil
 }
 
@@ -174,15 +175,91 @@ func (a *App) client() larkcli.Client {
 }
 
 func (a *App) syncer(st *store.Store) *sync.Syncer {
-	// silence_sync is validated to web mode, the one lever that settles a
-	// position rather than a whole chat.
-	var settle markread.Clear
-	if a.cfg.SilenceSync {
-		settle = markread.New(a.cfg.MarkRead, a.logger(), st, a.open)
+	s := &sync.Syncer{Client: a.client(), Store: st, Clock: sync.RealClock{},
+		Log: a.logger(), OnError: captureError, Fetch: sync.HTTPFetch, Recover: sentryRecoverRepanic}
+	s.SetOptions(sync.OptionsFrom(a.cfg))
+	s.SetSettleSilenced(a.settle(a.cfg, st))
+	return s
+}
+
+// settle is the silenced-unread settle lever cfg asks for, nil when
+// silence_sync is off. cfg is a parameter rather than a.cfg because a reload
+// asks this of a configuration it has not installed anywhere yet.
+//
+// silence_sync is validated to web mode, the one lever that settles a
+// position rather than a whole chat.
+func (a *App) settle(cfg config.Config, st *store.Store) markread.Clear {
+	if !cfg.SilenceSync {
+		return nil
 	}
-	return &sync.Syncer{Client: a.client(), Store: st, Clock: sync.RealClock{}, Opt: sync.OptionsFrom(a.cfg),
-		Log: a.logger(), OnError: captureError, Fetch: sync.HTTPFetch, Recover: sentryRecoverRepanic,
-		SettleSilenced: settle}
+	return markread.New(cfg.MarkRead, a.logger(), st, a.open)
+}
+
+// reloadOnChange watches the configuration file and hands the sweep what it
+// now says, which is how a key retuned under a running daemon takes effect
+// without one. It returns a sync.Syncer's BeforeTick, so the reread happens
+// between two ticks on the sweep's own goroutine rather than inside one.
+//
+// The file's modification time is what it watches: the daemon already wakes
+// every poll interval, so a stat per tick costs nothing, and writeDoc renames
+// a whole file over the old one — there is no half-written version to read.
+// A file that fails to load leaves the daemon on the configuration it has.
+//
+// --set still wins: the overrides are applied over the reread file the same
+// way they were over the first read, so a flag is not undone by an edit.
+func (a *App) reloadOnChange(s *sync.Syncer, st *store.Store) func() {
+	path := config.Resolve(a.configPath)
+	stamp, started := configStamp(path), a.cfg
+	return func() {
+		now := configStamp(path)
+		if now == stamp {
+			return
+		}
+		stamp = now
+		cfg, err := config.LoadWith(a.configPath, a.sets)
+		if err != nil {
+			a.logger().Warn("config reload refused", "path", path, "err", err)
+			return
+		}
+		opt := sync.OptionsFrom(cfg)
+		// data_dir names the database this process opened, the lock it holds
+		// and the directory lark-cli is already writing into, so the reload
+		// keeps the one it started on and says it did.
+		opt.DataDir = started.DataDir
+		s.SetOptions(opt)
+		s.SetSettleSilenced(a.settle(cfg, st))
+		// The tick this runs before opens on ReapplySilence, which sees the
+		// new fingerprint and rebuilds every flag from these rules.
+		st.SetSilence(cfg.Silence)
+		a.logger().Info("config reloaded", "path", path, "poll_interval_ms", cfg.PollIntervalMS)
+		for _, k := range frozenKeys(started, cfg) {
+			a.logger().Warn("config key needs a restart", "key", k)
+		}
+	}
+}
+
+// frozenKeys names the keys the reread file changed that a running process
+// cannot honour: the database and lock live under data_dir, and lark-cli's
+// lanes are built around its path.
+func frozenKeys(was, now config.Config) []string {
+	var out []string
+	if was.DataDir != now.DataDir {
+		out = append(out, "data_dir")
+	}
+	if was.LarkCLIPath != now.LarkCLIPath {
+		out = append(out, "lark_cli_path")
+	}
+	return out
+}
+
+// configStamp is what a write to the file changes. A missing file stamps
+// empty, so creating or deleting one is a change like any other.
+func configStamp(path string) string {
+	fi, err := os.Stat(path)
+	if err != nil {
+		return ""
+	}
+	return strconv.FormatInt(fi.ModTime().UnixNano(), 10) + ":" + strconv.FormatInt(fi.Size(), 10)
 }
 
 // parseTime accepts YYYY-MM-DD, RFC 3339, or a duration such as 24h (relative to now).

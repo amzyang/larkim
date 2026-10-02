@@ -79,8 +79,9 @@ func TestRunSet_RestoresTheDefault(t *testing.T) {
 func TestRunSet_ListsEveryOptionWhenGivenNothing(t *testing.T) {
 	m := setModel(t).runSet("")
 	require.Equal(t, "applink_pace_ms=40  mark_read.mode=applink  mark_read.browser=chrome  ai.agent=omp --mode acp  ai.model=cursor/composer-2.5-fast  ai.context=80"+
-		"  ai.jev_key_env=TYPESAFE_API_KEY  ai.jev_endpoint=https://api.typesafe.ai/v1/systemone  ai.history=false", m.notice)
-	require.NotContains(t, m.notice, "poll_interval_ms", "a key read once at startup is not listed here")
+		"  ai.jev_key_env=TYPESAFE_API_KEY  ai.jev_endpoint=https://api.typesafe.ai/v1/systemone  ai.history=false  todoist.token=  todoist.project_id=", m.notice)
+	require.NotContains(t, m.notice, "poll_interval_ms", "a sweep key is out of reach while a daemon owns the sweep")
+	require.NotContains(t, m.notice, "data_dir", "and a key read once at startup never comes into reach")
 }
 
 func TestRunSet_RebuildsTheAssistantOnANewModel(t *testing.T) {
@@ -132,10 +133,75 @@ func TestRunSet_RefusesAGapOfNothing(t *testing.T) {
 	require.Equal(t, 40*time.Millisecond, m.applinkPace())
 }
 
-func TestRunSet_NamesAnOptionItHasNot(t *testing.T) {
-	m := setModel(t).runSet("poll_interval_ms=5000")
+func TestRunSet_LeavesASweepKeyAloneWhereADaemonOwnsTheSweep(t *testing.T) {
+	// The options the daemon ticks on are another process's; answering the
+	// keystroke with a value that reaches nothing is worse than refusing it.
+	m := setModel(t)
+	require.False(t, m.deps.Embedded)
+	was := m.deps.Syncer.Opt().PollInterval
+	m = m.runSet("poll_interval_ms=5000")
 	require.True(t, m.noticeErr)
-	require.Contains(t, m.notice, "poll_interval_ms", "a config key that takes effect only at startup is not an option here")
+	require.Contains(t, m.notice, "poll_interval_ms")
+	require.Equal(t, was, m.deps.Syncer.Opt().PollInterval)
+}
+
+func TestRunSet_RetunesTheSweepRunningHere(t *testing.T) {
+	m := setModel(t)
+	m.deps.Embedded = true
+	m = m.runSet("poll_interval_ms=5000")
+	require.False(t, m.noticeErr, m.notice)
+	require.Equal(t, 5*time.Second, m.deps.Syncer.Opt().PollInterval)
+	require.Equal(t, 5000, m.cfg.PollIntervalMS)
+}
+
+func TestRunSet_RaisesAPaceUnderTheFloorTheFileWouldRaise(t *testing.T) {
+	// The floor is what keeps the loop from spinning over lark-cli, so a
+	// session value has to pass through it like a written one.
+	m := setModel(t)
+	m.deps.Embedded = true
+	m = m.runSet("poll_interval_ms=1")
+	require.Equal(t, 100, m.cfg.PollIntervalMS)
+	require.Equal(t, 100*time.Millisecond, m.deps.Syncer.Opt().PollInterval)
+}
+
+func TestRunSet_RebuildsTheTaskFilerOnANewToken(t *testing.T) {
+	m := setModel(t)
+	var asked []string
+	m.deps.NewTodoist = func(token, projectID string) TaskAdder {
+		asked = append(asked, token+" "+projectID)
+		return nil
+	}
+	m = m.runSet("todoist.token=tok_a")
+	require.Equal(t, []string{"tok_a "}, asked)
+	require.Equal(t, "tok_a", m.cfg.Todoist.Token)
+}
+
+func TestRunSet_RefusesSilenceSyncWithoutTheLeverThatCanSettle(t *testing.T) {
+	// The pair is what the next start would refuse, so it is refused here
+	// rather than written into a file that will not load.
+	m := setModel(t)
+	m.deps.Embedded = true
+	m = m.runSet("silence_sync=true")
+	require.True(t, m.noticeErr)
+	require.Contains(t, m.notice, "mark_read.mode: web")
+	require.False(t, m.cfg.SilenceSync)
+}
+
+func TestRunSet_PutsTheSettleLeverOnTheSweepRunningHere(t *testing.T) {
+	m := setModel(t)
+	m.deps.Embedded = true
+	m.deps.NewClearBadge = func(config.MarkRead) markread.Clear {
+		return func(context.Context, store.ChatUnread) error { return nil }
+	}
+	m = m.runSet("mark_read.mode=web")
+	require.Nil(t, m.deps.Syncer.SettleSilenced(), "silence_sync is still off")
+
+	m = m.runSet("silence_sync=true")
+	require.False(t, m.noticeErr, m.notice)
+	require.NotNil(t, m.deps.Syncer.SettleSilenced())
+
+	m = m.runSet("silence_sync=false")
+	require.Nil(t, m.deps.Syncer.SettleSilenced(), "and off again takes it back off")
 }
 
 func TestSettings_NameEveryConfigKeyInOrder(t *testing.T) {

@@ -28,7 +28,7 @@ type threadRow struct {
 func stakeStore(t *testing.T, chatID string, rows []threadRow) (*Store, context.Context) {
 	t.Helper()
 	s, ctx := openTest(t), t.Context()
-	s.Silence = SilenceRules{{Sender: "cli_c"}}
+	s.SetSilence(SilenceRules{{Sender: "cli_c"}})
 	require.NoError(t, s.EnsureChat(ctx, chatID, 1))
 	msgs := make([]Message, 0, len(rows))
 	for _, r := range rows {

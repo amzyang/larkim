@@ -356,8 +356,8 @@ func (m Model) commitConfig(value string) Model {
 	m.config.editing, m.config.err = false, ""
 	m.config.editor.Blur()
 	note := s.key + "=" + m.settingValue(s)
-	if !s.live {
-		note += " · next start"
+	if !m.isLive(s) {
+		note += " · " + m.settingReach(s)
 	}
 	return m.notify(note, false)
 }
@@ -432,7 +432,7 @@ func (m Model) configDetail() string {
 	if !ok {
 		return fit(stDim.Render("nothing matches "+m.config.input.Value()), w)
 	}
-	return fit(stDim.Render(truncate(s.help+" · "+settingReach(s), w)), w)
+	return fit(stDim.Render(truncate(s.help+" · "+m.settingReach(s), w)), w)
 }
 
 func (m Model) renderConfig() string {

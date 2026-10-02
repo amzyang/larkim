@@ -106,7 +106,7 @@ func TestDiscover_AsksForARenderingAtOnceAndWakesTheSweep(t *testing.T) {
 
 func TestDiscoveryPause_RestsOnlyWhileNobodyIsLooking(t *testing.T) {
 	s, _, _ := newSyncer(t)
-	s.Opt.PollInterval = 2 * time.Second
+	s.Opt().PollInterval = 2 * time.Second
 	s.SetAttended(true)
 	require.Zero(t, s.discoveryPause(false, nil, 0), "a reader is waiting on the next message")
 	require.Equal(t, 2*time.Second, s.discoveryPause(true, nil, 0), "without a login there is nothing to call with")
@@ -136,7 +136,7 @@ func TestSetAttended_ComingBackEndsThePause(t *testing.T) {
 func TestRun_DiscoveryLandsAMessageWhileTheSweepRests(t *testing.T) {
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
-	s.Opt.PollInterval = time.Hour
+	s.Opt().PollInterval = time.Hour
 	f.Chats = []larkcli.RawChat{{ChatID: "oc_a", ChatMode: "group"}}
 	discovering(t, s, f, clk.t)
 	s.SetAttended(true)
@@ -190,7 +190,7 @@ func TestRunDiscovery_MakesNoCallWhileLoggedOut(t *testing.T) {
 	f.Chats = []larkcli.RawChat{{ChatID: "oc_a", ChatMode: "group"}}
 	discovering(t, s, f, clk.t)
 	require.NoError(t, s.Store.SetState(t.Context(), KeyStatus, StatusNeedsLogin))
-	s.Opt.PollInterval = 5 * time.Millisecond
+	s.Opt().PollInterval = 5 * time.Millisecond
 	s.SetAttended(true)
 	var calls atomic.Int64
 	f.Enter = func(string) { calls.Add(1) }
@@ -285,7 +285,7 @@ func TestScoutOnce_AChatThatKeepsFailingIsAskedAgainLessOften(t *testing.T) {
 		sc.wg.Wait()
 	}
 
-	base := s.Opt.PollInterval
+	base := s.Opt().PollInterval
 	cycle()
 	require.Equal(t, 1, callsTo(f, "list:chat:oc_a"))
 	for i, gap := range []time.Duration{base, 2 * base, 4 * base} {

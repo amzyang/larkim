@@ -71,12 +71,15 @@ func (a *App) runTUI(_ *cobra.Command, _ []string) error {
 		return jev.New(key, endpoint)
 	}
 	deps.Suggest = deps.NewSuggest(a.cfg.AI.JevKeyEnv, a.cfg.AI.JevEndpoint)
-	// No rebuild path, unlike Suggest and AI: the token is pasted into the
-	// file once and a restart after editing it is the honest contract. The
-	// key stays off without one rather than failing a request that cannot land.
-	if a.cfg.Todoist.Token != "" {
-		deps.Todoist = todoist.New(a.cfg.Todoist.Token, a.cfg.Todoist.ProjectID, "")
+	deps.NewTodoist = func(token, projectID string) tui.TaskAdder {
+		// An empty token leaves the key reporting that it is not configured
+		// rather than failing a request that cannot land.
+		if token == "" {
+			return nil
+		}
+		return todoist.New(token, projectID, "")
 	}
+	deps.Todoist = deps.NewTodoist(a.cfg.Todoist.Token, a.cfg.Todoist.ProjectID)
 	deps.Self = selfOpenID(ctx, st)
 	// Every process pulls what the reader asks for: each of those
 	// calls names ids Feishu just answered for and upserts them, so

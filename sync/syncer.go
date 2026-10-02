@@ -134,7 +134,11 @@ type Syncer struct {
 	Client larkcli.Client
 	Store  *store.Store
 	Clock  Clock
-	Opt    Options
+	// opts is the loop's tuning, held behind a pointer because the sweep
+	// goroutine reads it every tick while :config and the daemon's own
+	// config reload replace it from another one. Opt/SetOptions are the
+	// only way in.
+	opts atomic.Pointer[Options]
 	Log    *slog.Logger
 	// OnError, when set, observes every failed tick (for crash reporting).
 	OnError func(error)
@@ -146,16 +150,24 @@ type Syncer struct {
 	OnChange func()
 	// Fetch downloads avatars; nil disables avatar files.
 	Fetch Fetcher
-	// SettleSilenced, when set, settles a chat's server-side read watermark
+	// settle, when set, settles a chat's server-side read watermark
 	// at a position the silence rules chose, so the Feishu clients' dots
 	// follow them too; nil disables the settle step. It is the lever
 	// mark_read.mode names (markread.Clear), the same one a read settles
 	// through, so the two writes reach Feishu the same way.
-	SettleSilenced markread.Clear
+	//
+	// Behind an atomic for the same reason opts is: silence_sync and
+	// mark_read.mode retune it mid-run.
+	settle atomic.Pointer[markread.Clear]
 	// Recover, when set, is deferred at the top of the goroutine Run starts for
 	// discovery, so a panic there is reported the way one in Run's own
 	// goroutine is. It must call recover itself and re-panic.
 	Recover func()
+	// BeforeTick, when set, runs on the sweep's own goroutine just before
+	// every tick, which is where the daemon rereads its configuration and
+	// calls SetOptions: a swap landing between two ticks rather than inside
+	// one is what keeps a tick reading one generation of the options.
+	BeforeTick func()
 
 	// attended is whether somebody is looking at what discovery finds; see
 	// SetAttended.
@@ -166,6 +178,42 @@ type Syncer struct {
 	// ends discovery's pause when somebody comes back to look.
 	wake, attend chan struct{}
 }
+
+// zeroOptions is what a Syncer built without SetOptions runs under, so the
+// accessor never answers nil. Every field's zero disables the step it paces.
+var zeroOptions Options
+
+// Opt is the tuning this tick runs under. The pointer is handed back rather
+// than a copy because a tick reads a dozen fields off it; SetOptions replaces
+// the set whole rather than writing through it, so a reader holding one sees
+// a coherent set however long it holds it.
+func (s *Syncer) Opt() *Options {
+	if o := s.opts.Load(); o != nil {
+		return o
+	}
+	return &zeroOptions
+}
+
+// SetOptions replaces the tuning. The next field a tick reads is the new
+// one's: every option is read where it is used rather than captured when the
+// loop starts, so a reload reaches a sweep already running.
+//
+// A pause already underway is not cut short — a shortened poll_interval_ms
+// takes effect one pause late, which is the whole of what the swap costs.
+func (s *Syncer) SetOptions(o Options) { s.opts.Store(&o) }
+
+// SettleSilenced returns the silenced-unread settle lever, nil when the
+// step is off.
+func (s *Syncer) SettleSilenced() markread.Clear {
+	if c := s.settle.Load(); c != nil {
+		return *c
+	}
+	return nil
+}
+
+// SetSettleSilenced replaces the lever; nil turns the step off, which is what
+// silence_sync going false means.
+func (s *Syncer) SetSettleSilenced(c markread.Clear) { s.settle.Store(&c) }
 
 // Report summarizes one tick.
 type Report struct {
@@ -317,7 +365,7 @@ func (s *Syncer) tick(ctx context.Context, now time.Time, discover bool) (Report
 	if err != nil {
 		return rep, err
 	}
-	rep.Window = FastWindow(watermark, now, s.Opt.Overlap)
+	rep.Window = FastWindow(watermark, now, s.Opt().Overlap)
 	searchedAt, err := s.stateTime(ctx, KeySearchAt)
 	if err != nil {
 		return rep, err
@@ -354,7 +402,7 @@ func (s *Syncer) tick(ctx context.Context, now time.Time, discover bool) (Report
 	// one when it does, so the step runs on every sweep rather than on the
 	// sweep's own finds: the renders and downloads cost nothing when nothing
 	// is pending, and the read probe is the one every sweep asks anyway.
-	if rep.Rendered, err = s.renderPending(ctx, "", s.Opt.RenderPerTick*50, now); err != nil {
+	if rep.Rendered, err = s.renderPending(ctx, "", s.Opt().RenderPerTick*50, now); err != nil {
 		return rep, fmt.Errorf("render: %w", err)
 	}
 	s.changed(rep.Rendered)
@@ -389,7 +437,7 @@ func (s *Syncer) tick(ctx context.Context, now time.Time, discover bool) (Report
 	if err != nil {
 		return rep, err
 	}
-	if Due(chatsRefreshed, s.Opt.ChatsRefreshEvery, now) {
+	if Due(chatsRefreshed, s.Opt().ChatsRefreshEvery, now) {
 		n, err := s.refreshChats(ctx, now)
 		if err != nil {
 			return rep, fmt.Errorf("chats: %w", err)
@@ -406,7 +454,7 @@ func (s *Syncer) tick(ctx context.Context, now time.Time, discover bool) (Report
 	if err != nil {
 		return rep, err
 	}
-	if Due(slowPathAt, s.Opt.SlowPathEvery, now) {
+	if Due(slowPathAt, s.Opt().SlowPathEvery, now) {
 		n, err := s.slowPath(ctx, now)
 		if err != nil {
 			return rep, fmt.Errorf("slow path: %w", err)
@@ -425,7 +473,7 @@ func (s *Syncer) tick(ctx context.Context, now time.Time, discover bool) (Report
 	rep.Backfilled = n
 
 	// 9. Render and fetch whatever the sweeps above added.
-	n, err = s.renderPending(ctx, "", s.Opt.RenderPerTick*50, now)
+	n, err = s.renderPending(ctx, "", s.Opt().RenderPerTick*50, now)
 	if err != nil {
 		return rep, fmt.Errorf("render: %w", err)
 	}
@@ -520,7 +568,11 @@ const silenceSettlePerTick = 10
 // retires it. larkweb is not under lark-cli's lanes, so the pace between two
 // posts is its own.
 func (s *Syncer) settleSilenced(ctx context.Context) (int, error) {
-	if s.SettleSilenced == nil {
+	// Taken once: the step either runs this tick or it does not, and a
+	// silence_sync turned off mid-drain would otherwise strand the rows it
+	// had already dequeued.
+	settle := s.SettleSilenced()
+	if settle == nil {
 		return 0, nil
 	}
 	pending, err := s.Store.PendingSilenceSettle(ctx, silenceSettlePerTick)
@@ -538,7 +590,7 @@ func (s *Syncer) settleSilenced(ctx context.Context) (int, error) {
 		if settled > 0 {
 			time.Sleep(larkweb.Pace)
 		}
-		if err := s.SettleSilenced(ctx, store.ChatUnread{ChatID: p.ChatID, Position: p.Position}); err != nil {
+		if err := settle(ctx, store.ChatUnread{ChatID: p.ChatID, Position: p.Position}); err != nil {
 			s.log().Warn("silence settle failed", "chat_id", p.ChatID, "err", err)
 			if serr := s.Store.SilenceSettleFailed(ctx, p.ChatID); serr != nil {
 				s.log().Warn("count silence settle failure", "chat_id", p.ChatID, "err", serr)
@@ -591,7 +643,7 @@ func (s *Syncer) historySlice(ctx context.Context, liveStart, now time.Time) (in
 		return 0, err
 	}
 	if cur.IsZero() {
-		cur = now.AddDate(0, 0, -s.Opt.BackfillDays)
+		cur = now.AddDate(0, 0, -s.Opt().BackfillDays)
 	}
 	if !cur.Before(liveStart) {
 		// The live window advances every tick, so a cursor left on its edge is
@@ -734,7 +786,7 @@ func (s *Syncer) upsertRaw(ctx context.Context, msgs []larkcli.RawMessage, now t
 	if err := s.Store.AddForwardRoots(ctx, bundles); err != nil {
 		return n, fresh, err
 	}
-	if s.Opt.DataDir != "" {
+	if s.Opt().DataDir != "" {
 		if err := s.Store.AddPendingResources(ctx, resources); err != nil {
 			return n, fresh, err
 		}
@@ -767,7 +819,7 @@ const muteActiveDays = 30
 // single round trip; chats beyond it come round on the next refresh.
 func (s *Syncer) muteSlice(ctx context.Context, now time.Time) (int, error) {
 	active := now.AddDate(0, 0, -muteActiveDays).UnixMilli()
-	chats, err := s.Store.ChatsNeedingMute(ctx, active, now.Add(-s.Opt.ChatsRefreshEvery).UnixMilli(), larkcli.MaxChatIDsPerMuteCall)
+	chats, err := s.Store.ChatsNeedingMute(ctx, active, now.Add(-s.Opt().ChatsRefreshEvery).UnixMilli(), larkcli.MaxChatIDsPerMuteCall)
 	if err != nil || len(chats) == 0 {
 		return 0, err
 	}
@@ -813,7 +865,7 @@ const maxActivePage = 100
 // ordering itself rather than taking discovery's: discovery keeps its page
 // short for speed, and active_top_k may ask for more than that.
 func (s *Syncer) slowPath(ctx context.Context, now time.Time) (int, error) {
-	chats, err := s.Client.ActiveChats(ctx, min(s.Opt.ActiveTopK, maxActivePage))
+	chats, err := s.Client.ActiveChats(ctx, min(s.Opt().ActiveTopK, maxActivePage))
 	if err != nil {
 		return 0, err
 	}
@@ -847,7 +899,7 @@ func (s *Syncer) pullFromCursor(ctx context.Context, chatIDs []string, why strin
 			continue
 		}
 		ids = append(ids, id)
-		since[id] = time.UnixMilli(local.CursorMs).Add(-s.Opt.Overlap)
+		since[id] = time.UnixMilli(local.CursorMs).Add(-s.Opt().Overlap)
 	}
 	return s.pullChats(ctx, ids, now, func(ctx context.Context, id string) (int, int, error) {
 		n, fresh, err := s.pullChat(ctx, id, since[id], time.Time{}, now)
@@ -856,18 +908,18 @@ func (s *Syncer) pullFromCursor(ctx context.Context, chatIDs []string, why strin
 		}
 		// Local only: nothing it can fail with is a refusal pullChats would
 		// pin on the chat.
-		_, err = s.renderLocal(ctx, nil, s.Opt.RenderPerTick*50, now)
+		_, err = s.renderLocal(ctx, nil, s.Opt().RenderPerTick*50, now)
 		s.changed(fresh)
 		return n, fresh, err
 	})
 }
 
 func (s *Syncer) backfillSlice(ctx context.Context, now time.Time) (int, error) {
-	chats, err := s.Store.ChatsNeedingBackfill(ctx, s.Opt.BackfillPerTick)
+	chats, err := s.Store.ChatsNeedingBackfill(ctx, s.Opt().BackfillPerTick)
 	if err != nil {
 		return 0, err
 	}
-	since := now.AddDate(0, 0, -s.Opt.BackfillDays)
+	since := now.AddDate(0, 0, -s.Opt().BackfillDays)
 	ids := make([]string, len(chats))
 	for i, c := range chats {
 		ids[i] = c.ChatID
@@ -1051,7 +1103,7 @@ func (s *Syncer) pullChat(ctx context.Context, chatID string, since, until, now 
 // somebody is reading names itself, so its own arrivals are not stuck behind a
 // backlog elsewhere.
 func (s *Syncer) renderPending(ctx context.Context, chatID string, limit int, now time.Time) (int, error) {
-	local, err := s.renderLocal(ctx, nil, s.Opt.RenderPerTick*50, now)
+	local, err := s.renderLocal(ctx, nil, s.Opt().RenderPerTick*50, now)
 	if err != nil {
 		return local, err
 	}
@@ -1194,8 +1246,11 @@ func (s *Syncer) Run(ctx context.Context) error {
 	})
 	failures := 0
 	for {
+		if s.BeforeTick != nil {
+			s.BeforeTick()
+		}
 		rep, err := s.pass(ctx, false)
-		delay := s.Opt.PollInterval
+		delay := s.Opt().PollInterval
 		wake := s.wake
 		if err != nil {
 			failures++
@@ -1256,7 +1311,7 @@ func (s *Syncer) delayFor(err error, failures int) time.Duration {
 	}
 	// The poll interval can be set below a second, which is a pace for ticks
 	// that succeed, not for retrying an API that just failed.
-	return Backoff(failures, max(s.Opt.PollInterval, time.Second), 5*time.Minute)
+	return Backoff(failures, max(s.Opt().PollInterval, time.Second), 5*time.Minute)
 }
 
 // SetStatus records the outcome of the last tick in sync_state.

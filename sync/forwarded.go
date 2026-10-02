@@ -33,7 +33,7 @@ func forwardRetryDelay(attempts int) time.Duration {
 // background lane: fanning out on the beat lane would starve the chat the
 // reader has open, which is what that lane exists for.
 func (s *Syncer) expandForwards(ctx context.Context, now time.Time) (int, error) {
-	due, err := s.Store.ForwardRootsDue(ctx, now.UnixMilli(), s.Opt.ForwardsPerTick)
+	due, err := s.Store.ForwardRootsDue(ctx, now.UnixMilli(), s.Opt().ForwardsPerTick)
 	if err != nil || len(due) == 0 {
 		return 0, err
 	}
@@ -81,7 +81,7 @@ func (s *Syncer) expandForward(ctx context.Context, root store.ForwardRoot, now 
 	if _, err := s.renderLocal(ctx, []string{root.RootMessageID}, 1, now); err != nil {
 		return false, err
 	}
-	if s.Opt.DataDir == "" {
+	if s.Opt().DataDir == "" {
 		return true, nil
 	}
 	// The pictures inside a bundle download under the bundle's own id: the
