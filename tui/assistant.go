@@ -71,6 +71,9 @@ type aiPanel struct {
 	follow bool
 	// input is the panel's own box, the one sideAI names.
 	input textarea.Model
+	// menu is the session picker the header's ▾ opens. It is drawn over the
+	// pane's first rows and owns the keys and the clicks while it is open.
+	menu aiMenu
 	// anchor is the message the next question is about, selection the ids a
 	// VISUAL range left, both dropped with ctrl+r and re-taken with a.
 	anchor    *store.Message
@@ -392,14 +395,22 @@ func (p *aiPanel) session() *aiSession {
 	return p.sess[p.cur]
 }
 
-// switchAI moves between the chat's sessions, hiding nothing and stopping
-// nothing: another session's answer keeps streaming into its own place.
-func (m *Model) switchAI(d int) {
+// aiMenu is the session picker's state: open whether it stands over the pane,
+// sel the session its cursor is on.
+type aiMenu struct {
+	open bool
+	sel  int
+}
+
+// pickAI stands the pane on one of the chat's sessions, hiding nothing and
+// stopping nothing: another session's answer keeps streaming into its own
+// place.
+func (m *Model) pickAI(i int) {
 	p := m.aiP
-	if len(p.sess) < 2 {
+	if i < 0 || i >= len(p.sess) || i == p.cur {
 		return
 	}
-	p.cur = (p.cur + d + len(p.sess)) % len(p.sess)
+	p.cur = i
 	p.top, p.follow = 0, true
 	p.rebuild(*m)
 	m.layout()
@@ -814,14 +825,20 @@ const (
 	actJump
 	actRecall
 	actStreamRetry
+	actNewSess
+	actSess
+	actSessMenu
 )
 
 // aiAct names what an act runs on: the answer's turn, and which card of it
-// (-1 for the acts that take the whole answer).
+// (-1 for the acts that take the whole answer). The header's own acts name a
+// session instead: which of the chat's to stand on, or -1 for the ones that
+// are about the lot of them.
 type aiAct struct {
 	kind aiActKind
 	turn string
 	card int
+	sess int
 }
 
 // rebuild lays the turn list out for the width the pane has now. The head
@@ -1369,6 +1386,18 @@ func (m Model) aiPress(a aiAct) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		return m.retryStreamCard(t)
+	case actNewSess:
+		// The header's + is the A key: a new session, with the keys.
+		next, cmd := m.openAI(m.aiP.chat, true)
+		out, enter := next.enterAI()
+		return out, tea.Batch(cmd, enter)
+	case actSess:
+		m.pickAI(a.sess)
+		return m, nil
+	case actSessMenu:
+		m.aiP.menu.open = true
+		m.aiP.menu.sel = m.aiP.cur
+		return m, nil
 	}
 	return m, nil
 }
@@ -1438,26 +1467,45 @@ func (m Model) aiTurnChips(t *aiTurn, w int) string {
 }
 
 // aiHeader is the pane's title: the chat's sessions as tabs, the one on
-// screen bold, an answering one marked, and + for a new one.
+// screen bold, an answering one marked, ▾ for the lot of them and + for a new
+// one. Every piece but the counter is its own click target: switching is
+// reading the header, not remembering a key.
 func (p *aiPanel) header(m Model, w int) string {
+	p.headZones = [aiHeadLines][]clickZone{}
 	var b strings.Builder
-	b.WriteString(stBold.Render("AI"))
+	x := 0
+	write := func(s string, a *aiAct) {
+		if a != nil {
+			z := clickZone{x0: x, x1: x + lipgloss.Width(s), act: *a}
+			p.headZones[0] = append(p.headZones[0], z)
+		}
+		b.WriteString(s)
+		x += lipgloss.Width(s)
+	}
+	write(stBold.Render("AI"), nil)
 	for i, s := range p.sess {
 		name := " " + truncate(cmp.Or(s.title, "new"), 12)
 		busy := ""
 		if s.answering() {
 			busy = " " + m.spin.View()
 		}
+		// The session on screen is not a target: standing where it stands is
+		// what it already does.
+		var a *aiAct
+		if i != p.cur {
+			a = &aiAct{kind: actSess, sess: i}
+		}
 		if i == p.cur {
-			b.WriteString(stBold.Render(name) + busy)
+			write(stBold.Render(name)+busy, a)
 			continue
 		}
-		b.WriteString(stDim.Render(name) + busy)
+		write(stDim.Render(name)+busy, a)
 	}
 	if len(p.sess) > 1 {
-		b.WriteString(stDim.Render(fmt.Sprintf("  %d/%d", p.cur+1, len(p.sess))))
+		write(stDim.Render(fmt.Sprintf("  %d/%d", p.cur+1, len(p.sess))), nil)
+		write(stDim.Render(" ▾"), &aiAct{kind: actSessMenu})
 	}
-	b.WriteString(stDim.Render("  +"))
+	write(stDim.Render("  +"), &aiAct{kind: actNewSess})
 	return fit(b.String(), w)
 }
 
@@ -1502,12 +1550,19 @@ func (p *aiPanel) headZone(line, x int) (clickZone, bool) {
 	return clickZone{}, false
 }
 
-// renderAI draws the column: header, the context strip, the turn list.
+// renderAI draws the column: header, the context strip, the turn list — the
+// session picker, when open, standing over the turns' first rows.
 func (p *aiPanel) renderAI(m Model, h int) string {
 	w := m.rightWidth() - 2
 	lines := make([]string, 0, h)
 	lines = append(lines, p.header(m, w), m.aiChips(w), paneRule(w))
-	for i := p.top; i < len(p.rows) && len(lines) < h; i++ {
+	skip := 0
+	if p.menu.open {
+		menu := p.menuLines(m, w, h)
+		lines = append(lines, menu...)
+		skip = len(menu)
+	}
+	for i := p.top + skip; i < len(p.rows) && len(lines) < h; i++ {
 		line, _ := m.rowLine(p.rows[i], w)
 		lines = append(lines, line)
 	}
@@ -1515,6 +1570,42 @@ func (p *aiPanel) renderAI(m Model, h int) string {
 		lines = append(lines, fit("", w))
 	}
 	return paneStyle(m.focus == paneThread).Height(h).Render(strings.Join(lines, "\n"))
+}
+
+// menuRows is how many of the picker's rows the pane has room to draw, so the
+// rows a click can pick and the rows the pane draws are the same set.
+func (p *aiPanel) menuRows(h int) int {
+	return min(len(p.sess), max(0, h-aiHeadLines-1))
+}
+
+// menuLines is the session picker: every session of the chat, the one the pane
+// stands on bold, an answering one marked, the cursor's row tinted, and a rule
+// under the last item to close the list against the turns it stands over.
+func (p *aiPanel) menuLines(m Model, w, h int) []string {
+	n := p.menuRows(h)
+	out := make([]string, 0, n+1)
+	for i := range n {
+		s := p.sess[i]
+		title := stDim.Render(truncate(cmp.Or(s.title, "new"), w-16))
+		if i == p.cur {
+			title = stBold.Render(truncate(cmp.Or(s.title, "new"), w-16))
+		}
+		mark := "  "
+		if i == p.menu.sel {
+			mark = "▸ "
+		}
+		busy := ""
+		if s.answering() {
+			busy = " " + m.spin.View()
+		}
+		when := stDim.Render(" " + time.UnixMilli(s.created).Format("Jan 2 15:04"))
+		line := mark + title + busy + when
+		if i == p.menu.sel {
+			line = paint(stChatSelBG, line)
+		}
+		out = append(out, fit(line, w))
+	}
+	return append(out, paneRule(w))
 }
 
 // --- keys ------------------------------------------------------------------
@@ -1735,6 +1826,25 @@ func (m Model) deleteAI(id string) (tea.Model, tea.Cmd) {
 // panel's list is its own, so its movement keys are too.
 func (m Model) onAIKey(s string) (Model, tea.Cmd, bool) {
 	p := m.aiP
+	// The session picker owns the keys while it stands over the pane. A key it
+	// neither moves nor answers closes it and goes on to whatever the key was.
+	if p.menu.open {
+		switch s {
+		case "j", "down", "ctrl+n":
+			p.menu.sel = min(p.menu.sel+1, len(p.sess)-1)
+		case "k", "up", "ctrl+p":
+			p.menu.sel = max(p.menu.sel-1, 0)
+		case "enter":
+			p.menu.open = false
+			m.pickAI(p.menu.sel)
+		case "esc", "q", "ctrl+[":
+			p.menu.open = false
+		default:
+			p.menu.open = false
+			return m, nil, false
+		}
+		return m, nil, true
+	}
 	// gg is the panel's own pair while it owns the keys.
 	if p.pG {
 		p.pG = false
@@ -1766,12 +1876,6 @@ func (m Model) onAIKey(s string) (Model, tea.Cmd, bool) {
 		next, cmd := m.openAI(m.aiP.chat, true)
 		out, enter := next.enterAI()
 		return out.(Model), tea.Batch(cmd, enter), true
-	case "[":
-		m.switchAI(-1)
-		return m, nil, true
-	case "]":
-		m.switchAI(1)
-		return m, nil, true
 	case "x":
 		next, cmd := m.stopAI()
 		return next.(Model), cmd, true

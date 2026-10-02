@@ -416,10 +416,104 @@ func TestOnAIKey_SessionsSwitchAndStart(t *testing.T) {
 	require.Equal(t, 1, m.aiP.cur)
 	require.Equal(t, modeInsert, m.mode)
 
-	out, _, _ = m.onAIKey("[")
-	m = out
+	m = clickHeadZone(t, m, func(a aiAct) bool { return a.kind == actSess && a.sess == 0 })
 	require.Equal(t, 0, m.aiP.cur, "back to the first session")
 	require.Equal(t, aiAsking, first.state, "switching stopped nothing")
+}
+
+// clickHeadZone presses the head-line target the predicate names, at the cell
+// the pane drew it on. The header must have been drawn first: its targets are
+// laid out by the drawing.
+func clickHeadZone(t *testing.T, m Model, want func(aiAct) bool) Model {
+	t.Helper()
+	m.renderAI(m.bodyHeight())
+	for _, z := range m.aiP.headZones[0] {
+		if want(z.act) {
+			out, _ := m.onClick(tea.Mouse{Button: tea.MouseLeft,
+				X: m.width - m.rightWidth() + 1 + z.x0, Y: headerHeight + 1})
+			return out.(Model)
+		}
+	}
+	t.Fatal("no head zone matches")
+	return m
+}
+
+// The header's + is the A key, and a tab stands the pane on its session. The
+// ▾ that opens the picker comes only with a second session.
+func TestAIHeader_ClickStartsSwitchesAndPicks(t *testing.T) {
+	f := newFakeAI()
+	m := aiFixture(t, f)
+	m = press(t, m, "a")
+	require.NotContains(t, ansi.Strip(m.renderAI(m.bodyHeight())), "▾", "one session is no picker")
+
+	m = clickHeadZone(t, m, func(a aiAct) bool { return a.kind == actNewSess })
+	require.Len(t, m.aiP.sess, 2, "the + starts a session")
+	require.Equal(t, 1, m.aiP.cur)
+	require.Equal(t, modeInsert, m.mode, "the keys go with it")
+
+	m.aiP.sess[0].title = "合并单"
+	m.aiP.sess[1].title = "回归"
+	m = clickHeadZone(t, m, func(a aiAct) bool { return a.kind == actSessMenu })
+	require.True(t, m.aiP.menu.open, "▾ opens the picker")
+	require.Equal(t, m.aiP.cur, m.aiP.menu.sel, "the cursor starts on the session on screen")
+	pane := ansi.Strip(m.renderAI(m.bodyHeight()))
+	require.Contains(t, pane, "合并单")
+	require.Contains(t, pane, "回归")
+	require.Contains(t, pane, "▸")
+
+	// The picker's rows pick: the first menu row stands the pane on the first
+	// session and puts the picker away.
+	out, _ := m.onClick(tea.Mouse{Button: tea.MouseLeft, X: m.width - m.rightWidth() + 2,
+		Y: headerHeight + 1 + aiHeadLines})
+	m = out.(Model)
+	require.False(t, m.aiP.menu.open)
+	require.Equal(t, 0, m.aiP.cur)
+
+	// A click anywhere else in the pane closes the picker without picking.
+	m = clickHeadZone(t, m, func(a aiAct) bool { return a.kind == actSessMenu })
+	out, _ = m.onClick(tea.Mouse{Button: tea.MouseLeft, X: m.width - m.rightWidth() + 2,
+		Y: m.height - 2})
+	m = out.(Model)
+	require.False(t, m.aiP.menu.open)
+	require.Equal(t, 0, m.aiP.cur)
+}
+
+// The picker owns the keys while it is open: j/k walk it, Enter picks, Esc and
+// q close, and any other key closes it and falls through.
+func TestAISessionMenu_KeysMovePickAndClose(t *testing.T) {
+	f := newFakeAI()
+	m := aiFixture(t, f)
+	m, _ = ask(t, m, "总结一下")
+	out, _, _ := m.onAIKey("A")
+	m = out
+
+	m = clickHeadZone(t, m, func(a aiAct) bool { return a.kind == actSessMenu })
+	out, _, took := m.onAIKey("k")
+	m = out
+	require.True(t, took)
+	require.Equal(t, 0, m.aiP.menu.sel)
+	out, _, _ = m.onAIKey("j")
+	m = out
+	require.Equal(t, 1, m.aiP.menu.sel)
+
+	out, _, took = m.onAIKey("esc")
+	m = out
+	require.True(t, took)
+	require.False(t, m.aiP.menu.open)
+
+	m = clickHeadZone(t, m, func(a aiAct) bool { return a.kind == actSessMenu })
+	out, _, _ = m.onAIKey("k")
+	m = out
+	out, _, _ = m.onAIKey("enter")
+	m = out
+	require.False(t, m.aiP.menu.open)
+	require.Equal(t, 0, m.aiP.cur)
+
+	m = clickHeadZone(t, m, func(a aiAct) bool { return a.kind == actSessMenu })
+	out, _, took = m.onAIKey("x")
+	m = out
+	require.False(t, took, "a key the picker does not know closes it and goes on")
+	require.False(t, m.aiP.menu.open)
 }
 
 func TestAskAI_VISUALSelectionBecomesContext(t *testing.T) {

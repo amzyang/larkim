@@ -2993,6 +2993,22 @@ func (m Model) onClick(ms tea.Mouse) (tea.Model, tea.Cmd) {
 	double := time.Since(m.lastClick) < 400*time.Millisecond && m.lastClickY == ms.Y
 	m.lastClick, m.lastClickY = time.Now(), ms.Y
 	p, row := m.hit(ms.X, ms.Y)
+	// The session picker owns the clicks while it stands open: a click on its
+	// rows picks, and any other click — wherever it went — closes it.
+	if m.aiOpen() && m.aiP.menu.open {
+		m.aiP.menu.open = false
+		if p == paneThread {
+			if r := row - aiHeadLines; r >= 0 && r < m.aiP.menuRows(m.bodyHeight()) {
+				return m.aiPress(aiAct{kind: actSess, sess: r})
+			}
+			if row < aiHeadLines {
+				if z, ok := m.aiP.headZone(row, ms.X-(m.width-m.rightWidth())-1); ok {
+					return m.pressZone(paneThread, nil, 0, z)
+				}
+			}
+		}
+		return m, nil
+	}
 	if p == paneChats || p == paneMessages || p == paneThread {
 		m.mode = modeNormal
 		m.areap().Blur()

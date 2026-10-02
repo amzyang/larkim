@@ -138,7 +138,6 @@ func buildHelpEntries() []helpEntry {
 		{"ASSISTANT", ".", "redo the last answer from its own record — Retry, on one that failed or stopped"},
 		{"ASSISTANT", "D", "delete this session, after a y/n"},
 		{"ASSISTANT", "o", "open the link in the card under the cursor"},
-		{"ASSISTANT", "[ / ]", "the chat's other sessions"},
 		{"ASSISTANT", "x", "stop the answer in flight"},
 		{"ASSISTANT", ":ai <form>", "a new session that asks at once: a snippet's name, or a question"},
 		{"ASSISTANT", "Esc", "close the panel; the frame it covered comes back, answers keep streaming"},
