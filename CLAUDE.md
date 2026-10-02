@@ -51,7 +51,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 - Build: `just build`（输出 `./larkim`）；Test: `just test`；Vet: `just vet`
 - 本地验证用 `go test -race ./...`（CI 不带 -race，但代码有真实并发）
-- 提交门槛仅 `go vet` + `go test`，不引入 golangci-lint / gofumpt
+- 提交门槛仅 `just fmt`（gofmt）+ `go vet` + `go test`，不引入 golangci-lint / gofumpt
 - 本地跑 sync 需自建 `dev.yaml`（不在仓库中）：`./larkim --config ./dev.yaml sync`
 
 ## Tests
