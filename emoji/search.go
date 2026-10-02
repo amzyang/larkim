@@ -31,6 +31,10 @@ type Hit struct {
 // per-keystroke work to the matching itself.
 type Index struct {
 	items []Emoji
+	// terms is each item's spellings in the matcher's tokenized form, spelled
+	// on first match rather than at construction: the empty query never
+	// reaches them, and a session that never searches emoji never pays for
+	// them. A nil entry is one not spelled yet.
 	terms [][]util.Chars
 	mt    *fuzzy.Matcher
 	// used is the emoji this reader reaches for, most used first, which is
@@ -69,14 +73,25 @@ func NewComposerIndex() *Index {
 // newIndex prepares the items that pass keep. A nil keep takes all of them.
 func newIndex(file string, items []Emoji, keep func(Emoji) bool) *Index {
 	ix := &Index{mt: fuzzy.NewMatcher(), file: file}
+	ix.items = make([]Emoji, 0, len(items))
 	for _, e := range items {
 		if keep != nil && !keep(e) {
 			continue
 		}
 		ix.items = append(ix.items, e)
-		ix.terms = append(ix.terms, fuzzy.Chars(e.Terms))
 	}
+	ix.terms = make([][]util.Chars, len(ix.items))
 	return ix
+}
+
+// chars is item i's spellings in the matcher's tokenized form, spelled once
+// on first use so a filter that runs on every keystroke spells each name
+// once rather than once per keystroke.
+func (ix *Index) chars(i int) []util.Chars {
+	if ix.terms[i] == nil {
+		ix.terms[i] = fuzzy.Chars(ix.items[i].Terms)
+	}
+	return ix.terms[i]
 }
 
 // Len is how many emoji the index holds, which is the denominator the picker
@@ -172,7 +187,7 @@ func (ix *Index) Search(query string) []Hit {
 	}
 	var hits []Hit
 	for i, e := range ix.items {
-		j, score, pos := ix.mt.Best(ix.terms[i], query)
+		j, score, pos := ix.mt.Best(ix.chars(i), query)
 		if score <= 0 {
 			continue
 		}
@@ -271,7 +286,8 @@ func (ix *Index) WithCustom(dataDir string) *Index {
 	for _, c := range all {
 		e := c.Emoji()
 		ix.items = append(ix.items, e)
-		ix.terms = append(ix.terms, fuzzy.Chars(e.Terms))
+		// nil keeps terms parallel to items; chars spells it on first use.
+		ix.terms = append(ix.terms, nil)
 	}
 	return ix
 }

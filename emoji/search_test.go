@@ -191,3 +191,18 @@ func TestSearch_KeepsAUsedEmojiAheadOfAShorterSpelling(t *testing.T) {
 	require.Equal(t, "NOSEPICK", first(t, ix.Search("no")).Key,
 		"what this reader reaches for outranks what the query spells more exactly")
 }
+
+func TestIndex_SpellsTermsOnFirstQuery(t *testing.T) {
+	ix := NewComposerIndex()
+	for i := range ix.terms {
+		require.Nil(t, ix.terms[i], "building the index spells nothing: a session that never queries the picker never pays for it")
+	}
+	ix.Search("")
+	for i := range ix.terms {
+		require.Nil(t, ix.terms[i], "the unqueried panel answers from the items alone")
+	}
+	ix.Search("clap")
+	for i := range ix.terms {
+		require.NotNil(t, ix.terms[i], "a first query spells the whole table once and keeps it spelled")
+	}
+}
