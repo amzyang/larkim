@@ -122,8 +122,11 @@ func TestFloater_KeepsItsWidthWhileTheListScrolls(t *testing.T) {
 	require.Greater(t, len(m.pum.menu.items), pumMaxRows)
 	f, ok := m.floater()
 	require.True(t, ok)
-	for range len(m.pum.menu.items) {
-		m.pum.menu.move(1, m.pumRows())
+	// A window's worth per step still shows every row in some window, and the
+	// list holds thousands of them.
+	rows := m.pumRows()
+	for range len(m.pum.menu.items)/rows + 1 {
+		m.pum.menu.move(rows, rows)
 		g, ok := m.floater()
 		require.True(t, ok)
 		require.Equal(t, f.w, g.w, "row %d", m.pum.menu.idx)

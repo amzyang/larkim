@@ -95,6 +95,7 @@ type kittyAvatars struct {
 	// eviction.
 	pix      map[string]*image.RGBA
 	pixUsed  map[string]int64
+	pixCap   int
 	fallback textAvatars
 	// cellW, cellH are the terminal's cell size in pixels, zero until it
 	// reports one.
@@ -136,6 +137,7 @@ func newKittyAvatars(dataDir string) *kittyAvatars {
 		failed:  map[string]bool{},
 		pix:     map[string]*image.RGBA{},
 		pixUsed: map[string]int64{},
+		pixCap:  avatarPixCache,
 	}
 }
 
@@ -229,7 +231,7 @@ func (k *kittyAvatars) cachedPicture(r listRow) *image.RGBA {
 		return nil
 	}
 	k.pix[key], k.pixUsed[key] = img, k.clock
-	if len(k.pix) > avatarPixCache {
+	if len(k.pix) > k.pixCap {
 		old := oldestKey(k.pixUsed)
 		delete(k.pix, old)
 		delete(k.pixUsed, old)

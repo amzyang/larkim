@@ -655,19 +655,22 @@ func TestKittyAvatars_EvictsTheLeastRecentlyDrawnComposite(t *testing.T) {
 	dir := t.TempDir()
 	name := writePNG(t, dir, "a.png", 8, 8)
 	k := newKittyAvatars(dir)
+	require.Equal(t, avatarPixCache, k.pixCap)
+	// Filling the real bound is hundreds of composites, seconds under -race.
+	k.pixCap = 4
 	chat := func(i int) store.Chat {
 		return store.Chat{ChatID: fmt.Sprintf("oc_%d", i), Name: "平台组", ChatMode: "group", AvatarPath: name}
 	}
 
 	first := pixKey(listRow{chat: chat(0)})
-	for i := range avatarPixCache {
+	for i := range k.pixCap {
 		k.prepare(rowsOf([]store.Chat{chat(i)}), nil)
 	}
-	require.Len(t, k.pix, avatarPixCache, "the cache fills")
+	require.Len(t, k.pix, k.pixCap, "the cache fills")
 	require.Contains(t, k.pix, first)
 
-	k.prepare(rowsOf([]store.Chat{chat(avatarPixCache)}), nil)
-	require.Len(t, k.pix, avatarPixCache, "and never grows past its bound")
+	k.prepare(rowsOf([]store.Chat{chat(k.pixCap)}), nil)
+	require.Len(t, k.pix, k.pixCap, "and never grows past its bound")
 	require.NotContains(t, k.pix, first, "the oldest composite is the one that goes")
 }
 
