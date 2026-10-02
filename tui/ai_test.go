@@ -1351,3 +1351,17 @@ func TestAIComposer_FollowsBackground(t *testing.T) {
 	require.Equal(t, colDim, st.Focused.Placeholder.GetForeground())
 	require.Equal(t, lipgloss.NoColor{}, st.Focused.CursorLine.GetBackground())
 }
+
+// a with no chat to open on is answered with a notice; it used to dereference
+// the panel openAI never built.
+func TestOpenAIKey_NoChatNotifies(t *testing.T) {
+	m := aiFixture(t, newFakeAI())
+	m.chatID, m.pendingChat = "", ""
+	m.chats, m.msgs, m.msgsBase = nil, nil, nil
+	m.focus = paneChats
+	m.layout()
+
+	m = press(t, m, "a")
+	require.Contains(t, m.notice, "open a chat first")
+	require.Nil(t, m.aiP)
+}

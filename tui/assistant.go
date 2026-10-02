@@ -1462,6 +1462,11 @@ func (m Model) openAIKey(fresh bool) (tea.Model, tea.Cmd) {
 		openPage = m.openChat(chat)
 	}
 	next, cmd := m.openAI(chat, fresh)
+	if next.aiP == nil {
+		// No chat to open on: openAI answered with a notice, and there is no
+		// panel to anchor or hand the keys to.
+		return next, cmd
+	}
 	next.aiP.anchor, next.aiP.selection = anchor, selection
 	out, enter := next.enterAI()
 	return out, tea.Batch(cmd, enter, openPage)
