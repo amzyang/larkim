@@ -3006,11 +3006,14 @@ func (m Model) onClick(ms tea.Mouse) (tea.Model, tea.Cmd) {
 	if m.aiOpen() && m.aiP.menu.open {
 		m.aiP.menu.open = false
 		if p == paneThread {
-			if r := row - aiHeadLines; r >= 0 && r < m.aiP.menuRows(m.bodyHeight()) {
-				return m.aiPress(aiAct{kind: actSess, sess: r})
+			if row >= 0 && row < m.aiP.menuRows(m.bodyHeight()) {
+				return m.aiPress(aiAct{kind: actSess, sess: row})
 			}
-			if row < aiHeadLines {
-				if z, ok := m.aiP.headZone(row, ms.X-(m.width-m.rightWidth())-1); ok {
+			// The head lines all collapse into row -1; which one the click
+			// landed on is read off the screen, the way the messages pane
+			// reads its rule's line.
+			if line := ms.Y - 1; line >= 0 && line < aiHeadLines {
+				if z, ok := m.aiP.headZone(line, ms.X-(m.width-m.rightWidth())-1); ok {
 					return m.pressZone(paneThread, nil, 0, z)
 				}
 			}
@@ -3034,6 +3037,13 @@ func (m Model) onClick(ms tea.Mouse) (tea.Model, tea.Cmd) {
 			if p == paneMessages && m.inFeed() && ms.Y == 1+headerHeight {
 				if w := m.messagesWidth() - 2; inMarkChat(ms.X-chatsWidth-1, w) {
 					return m.markSectionRead(m.feedTopChat())
+				}
+			}
+			// The session header's tabs, ▾ and + sit on the column's title
+			// line, another head line that stands at row -1.
+			if p == paneThread && m.aiOpen() {
+				if z, ok := m.aiP.headZone(ms.Y-1, ms.X-(m.width-m.rightWidth())-1); ok {
+					return m.pressZone(paneThread, nil, 0, z)
 				}
 			}
 			return m, nil
@@ -3094,16 +3104,7 @@ func (m Model) onClick(ms tea.Mouse) (tea.Model, tea.Cmd) {
 		// The assistant column draws over the frame: its rows are its own,
 		// and nothing under them may answer a click until it is uncovered.
 		if m.aiOpen() {
-			// The head lines the column draws above its rows are not rows:
-			// they answer for themselves, and the rows answer from the first
-			// line one of them is drawn on.
-			if row < aiHeadLines {
-				if z, ok := m.aiP.headZone(row, ms.X-(m.width-m.rightWidth())-1); ok {
-					return m.pressZone(paneThread, nil, 0, z)
-				}
-				return m, nil
-			}
-			line := m.aiP.top + row - aiHeadLines
+			line := m.aiP.top + row
 			if z, ok := zoneAt(m.aiP.rows, line, ms.X-(m.width-m.rightWidth())-1); ok {
 				return m.pressZone(paneThread, m.aiP.rows, line, z)
 			}

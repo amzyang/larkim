@@ -430,7 +430,7 @@ func clickHeadZone(t *testing.T, m Model, want func(aiAct) bool) Model {
 	for _, z := range m.aiP.headZones[0] {
 		if want(z.act) {
 			out, _ := m.onClick(tea.Mouse{Button: tea.MouseLeft,
-				X: m.width - m.rightWidth() + 1 + z.x0, Y: headerHeight + 1})
+				X: m.width - m.rightWidth() + 1 + z.x0, Y: 1})
 			return out.(Model)
 		}
 	}
@@ -464,7 +464,7 @@ func TestAIHeader_ClickStartsSwitchesAndPicks(t *testing.T) {
 	// The picker's rows pick: the first menu row stands the pane on the first
 	// session and puts the picker away.
 	out, _ := m.onClick(tea.Mouse{Button: tea.MouseLeft, X: m.width - m.rightWidth() + 2,
-		Y: headerHeight + 1 + aiHeadLines})
+		Y: 1 + aiHeadLines})
 	m = out.(Model)
 	require.False(t, m.aiP.menu.open)
 	require.Equal(t, 0, m.aiP.cur)
@@ -780,7 +780,7 @@ func TestOnClick_ACardActionAnswersAtItsDrawnLine(t *testing.T) {
 	m.areap().Blur()
 	out, _ := m.onClick(tea.Mouse{Button: tea.MouseLeft,
 		X: m.width - m.rightWidth() + 1 + x,
-		Y: headerHeight + 1 + aiHeadLines + line - m.aiP.top})
+		Y: 1 + aiHeadLines + line - m.aiP.top})
 	m = out.(Model)
 	require.Equal(t, "今晚合。", m.input.Value(), "the click lands on the foot it sees")
 }

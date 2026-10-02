@@ -739,9 +739,9 @@ func scrollTo(rows []msgRow, idx, top, h int) int {
 }
 
 // hit maps screen coordinates to a pane and the row inside its list. A row of
-// -1 is the pane's own head — its title, and the rule the messages pane draws
-// under one — which indexes nothing: added to a scrolled offset it would land
-// on a real row.
+// -1 is the pane's own head — its title, the rule the messages pane draws
+// under one, the three lines the assistant column draws — which indexes
+// nothing: added to a scrolled offset it would land on a real row.
 func (m Model) hit(x, y int) (pane, int) {
 	body := m.bodyHeight()
 	listRow := func(head int) int {
@@ -779,6 +779,12 @@ func (m Model) hit(x, y int) (pane, int) {
 		return -1, 0
 	}
 	if inRight {
+		// The assistant column draws a taller head over its rows than the
+		// thread pane's title; hit must charge the head on screen or every
+		// row of the pane answers one line low.
+		if m.aiOpen() {
+			return paneThread, listRow(aiHeadLines)
+		}
 		return paneThread, listRow(headerHeight)
 	}
 	return paneMessages, listRow(msgHeaderHeight)
