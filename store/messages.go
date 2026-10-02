@@ -123,6 +123,7 @@ func (s *Store) UpsertMessagesArriving(ctx context.Context, msgs []Message, now 
    rendered_at = CASE WHEN excluded.update_ms <> messages.update_ms THEN 0 ELSE messages.rendered_at END,
    edited_at = CASE WHEN excluded.msg_type IN ('text', 'post') AND messages.content_raw <> ''
                      AND excluded.content_raw <> '' AND excluded.content_raw <> messages.content_raw
+                     AND excluded.update_ms <> messages.update_ms
                 THEN excluded.last_seen_at ELSE messages.edited_at END,
    last_seen_at = excluded.last_seen_at`)
 	if err != nil {

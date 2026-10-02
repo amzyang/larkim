@@ -66,7 +66,7 @@ One row per message id, from the raw message API (`create_ms` is millisecond pre
 | `message_position` | per-chat monotonic position; negative for thread replies (the API picks the sentinel, `-3` in current data) |
 | `updated`, `deleted` | the API's own flags; `updated` also covers Feishu's post-send patches (mention resolution, link and time-phrase enrichment), so it is not an edit badge |
 | `silenced` | a configured silence rule matched; the message is stored, listed and read like any other, but carries no badge and does not move its chat up the list |
-| `edited_at` | when a sync first saw the body of a `text`/`post` message change; 0 means never observed changing, which is also every backfilled message |
+| `edited_at` | when a sync first saw the body of a `text`/`post` message change alongside an `update_ms` change; 0 means never observed changing, which is also every backfilled message. The `update_ms` rider keeps a text send's answer (which echoes the request body) from reading as an edit when the stored body is Feishu's normalized one |
 | `deleted_seen_at` | when the recall was first observed; `content_raw` keeps the last known body |
 | `thread_id` | `omt_…` for thread roots and replies |
 | `reply_to` | parent message of a direct reply |

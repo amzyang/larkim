@@ -380,6 +380,26 @@ func TestUpsertMessages_EditedAtOnlyTracksObservedContentChange(t *testing.T) {
 	require.Equal(t, int64(3000), got.EditedAt)
 }
 
+func TestUpsertMessages_EditedAtIgnoresABodyChangeWithoutAnUpdateTimeBump(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	m := Message{MessageID: "om_e", ChatID: "oc_a", MsgType: "text", ContentRaw: `{"text":"[Done]"}`, CreateMs: 100, UpdateMs: 100, RawJSON: "{}"}
+	_, err := s.UpsertMessages(ctx, []Message{m}, 1000)
+	require.NoError(t, err)
+
+	// A text send's answer echoes the request body, while Feishu stores a
+	// normalized one: a bracketed emoji shortname turns into its localized
+	// name. The next pull hands back the stored body with the update_ms the
+	// message was created with — that flip is not an edit.
+	m.ContentRaw = `{"text":"[完成]"}`
+	_, err = s.UpsertMessages(ctx, []Message{m}, 2000)
+	require.NoError(t, err)
+	got, err := s.GetMessage(ctx, "om_e")
+	require.NoError(t, err)
+	require.Zero(t, got.EditedAt, "an untouched update_ms means the body flip is the send answer meeting the stored body")
+	require.Equal(t, `{"text":"[完成]"}`, got.ContentRaw, "the stored body still wins")
+}
+
 func TestUpsertMessages_EditedAtIgnoresTypesFeishuCannotEdit(t *testing.T) {
 	s := openTest(t)
 	ctx := t.Context()
