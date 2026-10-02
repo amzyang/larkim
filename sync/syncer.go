@@ -139,7 +139,7 @@ type Syncer struct {
 	// config reload replace it from another one. Opt/SetOptions are the
 	// only way in.
 	opts atomic.Pointer[Options]
-	Log    *slog.Logger
+	Log  *slog.Logger
 	// OnError, when set, observes every failed tick (for crash reporting).
 	OnError func(error)
 	// OnChange, when set, fires whenever a tick has written something a

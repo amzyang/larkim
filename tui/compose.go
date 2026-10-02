@@ -10,8 +10,8 @@ import (
 	"strings"
 
 	"github.com/amzyang/larkim/larkcli"
-	"github.com/amzyang/larkim/store"
 	"github.com/amzyang/larkim/larkmd"
+	"github.com/amzyang/larkim/store"
 )
 
 // draftKind is the Feishu message type a draft will be sent as. The composer
