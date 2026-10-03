@@ -10,6 +10,7 @@ import (
 
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/amzyang/larkim/emoji"
 	"github.com/amzyang/larkim/jev"
 	"github.com/amzyang/larkim/larkcli"
@@ -315,10 +316,6 @@ func react(d Deps, p reactPending) tea.Cmd {
 // placed past it, so its width cannot be measured in two places.
 func pickerPrompt() string { return stBold.Render("react") + stAccent.Render(" › ") }
 
-// reactHint names the keys the chooser owns while it is open, on the row the
-// badge has in every mode.
-const reactHint = "Enter react · 1-9 pick · Esc cancel"
-
 // renderReactHint draws that row: where in the list the cursor stands, and the
 // keys that move it.
 func (m Model) renderReactHint(w int) string {
@@ -326,7 +323,8 @@ func (m Model) renderReactHint(w int) string {
 	if m.picker.menu.idx >= 0 {
 		where = strconv.Itoa(m.picker.menu.idx+1) + "/" + where
 	}
-	return padBetween("", stDim.Render(where+" · "+reactHint), w)
+	budget := max(0, w-lipgloss.Width(stDim.Render(where+" · ")))
+	return padBetween("", stDim.Render(where+" · ")+renderKeyHintBar(reactHintBar, budget), w)
 }
 
 // renderPicker draws the chooser's own box: the query its offers are narrowed

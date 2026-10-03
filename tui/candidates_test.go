@@ -162,7 +162,7 @@ func TestCandidates_StandOverThePaneNumbered(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, m.bandLeft(m.side), f.x, "the list lines up with the box a pick fills")
 	require.Equal(t, m.bodyHeight()+2, f.y+f.h)
-	require.Contains(t, m.renderBadge(m.width-2), candHint)
+	require.Contains(t, ansi.Strip(m.renderBadge(m.width-2)), "fill")
 }
 
 func TestCandidates_TheBoxBesideTheListReadsTheWholeDraft(t *testing.T) {

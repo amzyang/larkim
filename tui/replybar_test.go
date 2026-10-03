@@ -143,5 +143,5 @@ func TestOnInsertKey_EscLeavesTheBoxAtItsRestingHeight(t *testing.T) {
 	require.Equal(t, restingComposer, m.composerHeight(), "insert is over, so the box is back at rest")
 	box := m.renderInput(sideMain)
 	require.Equal(t, m.composerHeight()+2, lipgloss.Height(box), "the box is exactly as tall as it claims")
-	require.Contains(t, ansi.Strip(box), replyBarHint, "the quote row was not clipped off the top")
+	require.Contains(t, ansi.Strip(box), "drops the quote", "the quote row was not clipped off the top")
 }

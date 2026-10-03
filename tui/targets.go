@@ -116,8 +116,8 @@ func (m Model) renderTargets() string {
 	w := m.bandWidth(m.side) - 2
 	rows := m.targetRows()
 	count := stDim.Render(strconv.Itoa(m.targets.idx+1) + "/" + strconv.Itoa(len(m.targets.zones)))
-	lines := []string{padBetween(stBold.Render("open")+stAccent.Render(" › ")+
-		stDim.Render("j/k move · enter open · digits jump · esc cancel"), count, w)}
+	head := stBold.Render("open") + stAccent.Render(" › ") + renderKeyHintBar(targetsHintBar, w)
+	lines := []string{padBetween(head, count, w)}
 	for i, z := range m.targetsVisible() {
 		lines = append(lines, m.targetLine(z, m.targets.top+i, w))
 	}

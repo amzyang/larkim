@@ -131,9 +131,6 @@ func (m Model) candRows() int {
 	return m.floatRoom(len(m.cand.items), m.cand.maxRows())
 }
 
-// candHint names the keys the picker owns, on the badge row under it.
-const candHint = "Enter fill · 1-9 pick · Esc cancel"
-
 // firstDisplayLine is the whole of a single-line draft and the opening of a
 // longer one — enough to tell the candidates apart, which is all a row is for.
 func firstDisplayLine(s string) string {

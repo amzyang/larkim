@@ -636,17 +636,23 @@ func (m Model) silenceDetail() string {
 	return fit(stDim.Render(truncate(strings.Join(parts, " · "), w)), w)
 }
 
-func (m Model) silenceHint() string {
+func (m Model) silenceHintBar() []KeyBinding {
 	f := m.config.silence.form
 	switch {
 	case f.pick.open:
-		return "enter choose · esc back"
+		return []KeyBinding{{Keys: "enter", Desc: "choose"}, {Keys: "esc", Desc: "back"}}
 	case f.open && f.field == fieldContains:
-		return "enter save · tab field · esc cancel"
+		return []KeyBinding{{Keys: "enter", Desc: "save"}, {Keys: "tab", Desc: "field"}, {Keys: "esc", Desc: "cancel"}}
 	case f.open:
-		return "enter pick · backspace clear · tab field · esc cancel"
+		return []KeyBinding{{Keys: "enter", Desc: "pick"}, {Keys: "backspace", Desc: "clear"}, {Keys: "tab", Desc: "field"}, {Keys: "esc", Desc: "cancel"}}
 	}
-	return "a add · enter edit · d delete · tab General · esc close"
+	return []KeyBinding{
+		{Keys: "a", Desc: "add"},
+		{Keys: "enter", Desc: "edit"},
+		{Keys: "d", Desc: "delete"},
+		{Keys: "tab", Desc: "General"},
+		{Keys: "esc", Desc: "close"},
+	}
 }
 
 // silenceCursor puts the caret in the form's live input, counted from the

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/amzyang/larkim/config"
 	"github.com/amzyang/larkim/emoji"
 )
@@ -290,10 +291,6 @@ func (m Model) cmdCompRows() int {
 	return m.floatRoom(len(m.cmdcomp.menu.items), m.cmdcomp.menu.maxRows())
 }
 
-// cmdCompHint names the keys the list owns while it is open, since it takes
-// three the : line otherwise has.
-const cmdCompHint = "Tab/^n/^p match · Esc dismiss"
-
 // renderCmdCompHint draws the row the badge has in every other mode: where in
 // the list the reader stands, and the keys that move them. It is blank while
 // nothing is open, which is every row the filter and the search ever draw.
@@ -305,5 +302,6 @@ func (m Model) renderCmdCompHint(w int) string {
 	if m.cmdcomp.menu.idx >= 0 {
 		where = strconv.Itoa(m.cmdcomp.menu.idx+1) + "/" + where
 	}
-	return padBetween("", stDim.Render(where+" · "+cmdCompHint), w)
+	budget := max(0, w-lipgloss.Width(stDim.Render(where+" · ")))
+	return padBetween("", stDim.Render(where+" · ")+renderKeyHintBar(cmdCompHintBar, budget), w)
 }

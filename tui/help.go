@@ -220,13 +220,17 @@ func helpSearch(query string) []helpHit {
 	var near, far []helpHit
 	for i, e := range helpEntries {
 		id := strconv.Itoa(i)
-		km, keyOK := ix.Match(id+"k", e.keys, query)
+		_, keyOK := ix.Match(id+"k", e.keys, query)
 		dm, descOK := ix.Match(id+"d", e.desc, query)
 		_, modeOK := ix.Match(id+"m", e.mode, query)
 		if !keyOK && !descOK && !modeOK {
 			continue
 		}
-		h := helpHit{entry: e, keyMark: km, descMark: dm}
+		var keyMark []int
+		if keyOK {
+			keyMark, _ = ix.Match(id+"km", macKeys(e.keys), query)
+		}
+		h := helpHit{entry: e, keyMark: keyMark, descMark: dm}
 		// A row the query is literally in is the one the reader meant. fzf
 		// spells "recall" out of "the call it invites to" as well, and that
 		// answer belongs under the real one rather than over it.
@@ -325,7 +329,7 @@ func (m Model) onHelpKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 func helpKeyWidth(hits []helpHit) int {
 	w := 0
 	for _, h := range hits {
-		w = max(w, lipgloss.Width(h.entry.keys))
+		w = max(w, lipgloss.Width(macKeys(h.entry.keys)))
 	}
 	return w
 }
@@ -361,7 +365,15 @@ func helpWrap(s string, mark []int, style lipgloss.Style, limit int) []string {
 func helpRow(lead string, h helpHit, keyw, w int) []string {
 	const gap = "  "
 	style := stHelpDesc
-	keys := markName(h.entry.keys, h.keyMark, stHelpKey)
+	var keys string
+	if h.entry.keys != "" {
+		keysStr := macKeys(h.entry.keys)
+		if len(h.keyMark) > 0 {
+			keys = markName(keysStr, h.keyMark, stHelpKey)
+		} else {
+			keys = renderKey(h.entry.keys)
+		}
+	}
 	if h.entry.keys == "" {
 		// A note belongs to the binding above it, so it is dimmed and left to
 		// stand in the prose column with nothing in the key one.
@@ -429,7 +441,7 @@ const helpLeft = 4
 func (m Model) renderHelp() string {
 	w, rows := m.helpWidth(), m.helpRows()
 	head := padBetween(stHelpSection.Render("help"),
-		stDim.Render("/ filter · j/k scroll · esc close"), w)
+		renderKeyHintBar(helpOverlayHintBar, w), w)
 	if m.help.filtering || strings.TrimSpace(m.help.input.Value()) != "" {
 		head = padBetween(helpPrompt()+m.help.input.View(),
 			stDim.Render(strconv.Itoa(len(m.help.hits))+"/"+strconv.Itoa(len(helpEntries))), w)

@@ -232,7 +232,7 @@ func TestRenderInput_TheBoxWithoutTheKeysDrawsItsOwnDraft(t *testing.T) {
 
 	right := ansi.Strip(m.renderInput(sideRight))
 	require.Contains(t, right, "写给话题的")
-	require.NotContains(t, right, composerHint, "the send hint belongs to the box being typed in")
+	require.NotContains(t, right, "send", "the send hint belongs to the box being typed in")
 	require.Equal(t, m.composerHeight()+2, lipgloss.Height(right), "both boxes are one height")
 	require.Equal(t, m.rightWidth(), lipgloss.Width(right))
 }
@@ -288,7 +288,7 @@ func TestOnInsertKey_CtrlRDropsTheQuoteInADetailsFrame(t *testing.T) {
 	require.Nil(t, m.rightReply)
 	_, ok = m.quotedOn(sideRight)
 	require.False(t, ok, "the bar the key names is gone")
-	require.NotContains(t, ansi.Strip(m.renderInput(sideRight)), replyBarHint)
+	require.NotContains(t, ansi.Strip(m.renderInput(sideRight)), "drops the quote")
 	require.Equal(t, "写到一半", m.rightInput.Value(), "dropping the quote leaves the draft alone")
 
 	x, ok := m.rightTarget()

@@ -1240,11 +1240,6 @@ func (m Model) rightColumn(render func(int) string) string {
 // the one key that reaches that mode. They sit on the badge row rather than in
 // the placeholder, which a draft covers up and which would go on telling a
 // reader already in insert mode to start writing.
-const (
-	composerHint = "Enter send · Shift+Enter newline"
-	writeHint    = "i to write"
-)
-
 // renderBadge names the message type the draft will be sent as, so the
 // composer's choice is never a surprise Enter springs on the reader. Outside
 // insert mode the row names the key that opens it instead of the keys that
@@ -1254,17 +1249,23 @@ func (m Model) renderBadge(w int) string {
 		return m.renderSnippetRow(w)
 	}
 	left := stChipEdge.Render(chipLeft) + stChip.Render(m.draft.badge()) + stChipEdge.Render(chipRight)
-	hint := stDim.Render(composerHint)
+	var hint string
 	switch {
 	case m.mode == modeCandidates && m.candRows() > 0:
-		hint = stDim.Render(strconv.Itoa(m.cand.idx+1) + "/" + strconv.Itoa(len(m.cand.items)) + " · " + candHint)
+		count := stDim.Render(strconv.Itoa(m.cand.idx+1) + "/" + strconv.Itoa(len(m.cand.items)))
+		budget := max(0, w-lipgloss.Width(left)-lipgloss.Width(count)-lipgloss.Width(stDim.Render(" · "))-2)
+		hint = count + stDim.Render(" · ") + renderKeyHintBar(candHintBar, budget)
 	case m.mode != modeInsert:
-		hint = stDim.Render(writeHint)
+		hint = renderKeyDesc(writeHintBinding)
 	case m.pumShowing():
 		// The popup has taken Enter, so the row says so rather than going on
 		// promising a send. Its count rides here too, which is what keeps the
 		// popup itself to offers alone.
-		hint = stDim.Render(strconv.Itoa(m.pum.menu.idx+1) + "/" + strconv.Itoa(len(m.pum.menu.items)) + " · " + pumHint)
+		count := stDim.Render(strconv.Itoa(m.pum.menu.idx+1) + "/" + strconv.Itoa(len(m.pum.menu.items)))
+		budget := max(0, w-lipgloss.Width(left)-lipgloss.Width(count)-lipgloss.Width(stDim.Render(" · "))-2)
+		hint = count + stDim.Render(" · ") + renderKeyHintBar(pumHintBar, budget)
+	default:
+		hint = renderKeyHintBar(composerHintBar, max(0, w-lipgloss.Width(left)-2))
 	}
 	room := max(0, w-lipgloss.Width(left)-lipgloss.Width(hint)-2)
 	if m.draftErr != nil {
@@ -1337,65 +1338,52 @@ func (m Model) styledSyncGlyph() string {
 }
 
 func (m Model) statusKeyHints(availWidth int) string {
-	var pool []string
+	var pool []KeyBinding
 	switch m.mode {
 	case modeInsert:
-		pool = []string{"↩ send", "⌥↩ ⏎", "⎋ normal"}
+		pool = []KeyBinding{
+			{Keys: "Enter", Desc: "send"},
+			{Keys: "Opt+Enter", Desc: "newline"},
+			{Keys: "Esc", Desc: "normal"},
+		}
 	case modeVisual:
-		pool = []string{"y yank", "f fwd", "t thread", "⎋ cancel"}
+		pool = []KeyBinding{
+			{Keys: "y", Desc: "yank"},
+			{Keys: "f", Desc: "fwd"},
+			{Keys: "t", Desc: "thread"},
+			{Keys: "Esc", Desc: "cancel"},
+		}
 	case modeEmoji:
-		pool = []string{"↩ pick", "⎋ cancel"}
+		pool = []KeyBinding{
+			{Keys: "Enter", Desc: "pick"},
+			{Keys: "Esc", Desc: "cancel"},
+		}
 	case modeSearch, modeFilter:
-		pool = []string{"↩ select", "⎋ cancel"}
+		pool = []KeyBinding{
+			{Keys: "Enter", Desc: "select"},
+			{Keys: "Esc", Desc: "cancel"},
+		}
 	case modeTarget:
-		pool = []string{"↩ open", "⎋ cancel"}
+		pool = []KeyBinding{
+			{Keys: "Enter", Desc: "open"},
+			{Keys: "Esc", Desc: "cancel"},
+		}
 	default:
-		// Normal mode key candidates in priority order
-		pool = []string{
-			"r reply",
-			"t thread",
-			"e react",
-			"o open",
-			"n unread",
-			"v select",
-			"y copy",
+		pool = []KeyBinding{
+			{Keys: "r", Desc: "reply"},
+			{Keys: "t", Desc: "thread"},
+			{Keys: "e", Desc: "react"},
+			{Keys: "o", Desc: "open"},
+			{Keys: "n", Desc: "unread"},
+			{Keys: "v", Desc: "select"},
+			{Keys: "y", Desc: "copy"},
 		}
 	}
 
 	if m.mode == modeNormal {
-		// Always ensure "? help" is included at the end if possible
-		help := "? help"
-		if availWidth < lipgloss.Width(help) {
-			return ""
-		}
-		chosen := []string{help}
-		rem := availWidth - lipgloss.Width(help)
-		// Greedily prepend items from pool
-		var front []string
-		for _, item := range pool {
-			cost := lipgloss.Width(item) + 2
-			if rem >= cost {
-				front = append(front, item)
-				rem -= cost
-			}
-		}
-		return strings.Join(append(front, chosen...), "  ")
+		pool = append(pool, KeyBinding{Keys: "?", Desc: "help"})
 	}
-
-	// Non-normal modes: greedily pack from start to end
-	var chosen []string
-	rem := availWidth
-	for _, item := range pool {
-		cost := lipgloss.Width(item)
-		if len(chosen) > 0 {
-			cost += 2
-		}
-		if rem >= cost {
-			chosen = append(chosen, item)
-			rem -= cost
-		}
-	}
-	return strings.Join(chosen, "  ")
+	return packKeyHints(pool, availWidth, "  ")
 }
 
 func (m Model) renderStatus() string {

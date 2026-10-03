@@ -9,10 +9,6 @@ import (
 	"github.com/amzyang/larkim/store"
 )
 
-// replyBarHint names the key that drops the quote, since nothing else on
-// screen says a draft can outlive its target.
-const replyBarHint = "^r drops the quote"
-
 const (
 	// composerMaxRows is as tall as the writing area grows. Past this the
 	// message panes are giving up more than the draft is worth.
@@ -173,7 +169,7 @@ func (m Model) composerAbove(s composerSide, w int) []string {
 // Feishu client does — who wrote it and how it reads — because a message id
 // is not something a person recognises a message by.
 func (m Model) renderReplyBar(s composerSide, x store.Message, w int) string {
-	hint := stDim.Render(replyBarHint)
+	hint := renderKeyDesc(replyBarHintBinding)
 	head, gist, room := m.replyBarParts(s, x, w)
 	line, used := "", 0
 	if segs := gistSegs(head, gist, room, spellOf(x.MsgType), stDim, m.chatPics().gist); segs != nil {
@@ -195,7 +191,7 @@ func (m Model) replyBarParts(s composerSide, x store.Message, w int) (head, gist
 		mark, kind = "⤷", "reply in thread to "
 	}
 	head = stAccent.Render(mark+" "+kind) + stBold.Render(displaySender(x, m.deps.Self, m.suffixOf(x.SenderID))) + stDim.Render(": ")
-	return head, replyGist(x), w - lipgloss.Width(stDim.Render(replyBarHint)) - 1
+	return head, replyGist(x), w - lipgloss.Width(renderKeyDesc(replyBarHintBinding)) - 1
 }
 
 // replyGist is the quoted message on one line, styles stripped so it can be

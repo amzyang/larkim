@@ -358,7 +358,7 @@ func TestPum_TakesNoKeysOnATerminalWithNoRoomToDrawIt(t *testing.T) {
 	mm, cmd := m.onInsertKey(tea.KeyPressMsg{Code: tea.KeyEnter})
 	require.NotNil(t, cmd)
 	require.Len(t, mm.(Model).msgs, 1)
-	require.NotContains(t, m.renderBadge(m.width-2), pumHint)
+	require.NotContains(t, ansi.Strip(m.renderBadge(m.width-2)), "accept")
 }
 
 func TestRenderInput_BoxStandsStillWhenThePopupOpens(t *testing.T) {

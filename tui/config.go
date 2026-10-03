@@ -440,13 +440,16 @@ func (m Model) renderConfig() string {
 	title := configTabStrip(m.config.tab)
 	idx, n := m.config.idx, len(m.config.hits)
 	body, detail := m.configLines, m.configDetail
-	hint := "enter edit · & default · / filter · tab Silence · esc close"
+	var hintBar []KeyBinding
 	if m.config.editing {
-		hint = "enter save · esc cancel"
+		hintBar = configEditHintBar
+	} else {
+		hintBar = configHintBar
 	}
 	if m.config.tab == tabSilence {
 		idx, n = m.config.silence.idx, len(m.cfg.Silence)
-		body, detail, hint = m.silenceLines, m.silenceDetail, m.silenceHint()
+		body, detail = m.silenceLines, m.silenceDetail
+		hintBar = m.silenceHintBar()
 	}
 	where := strconv.Itoa(min(idx+1, n)) + "/" + strconv.Itoa(n)
 	path := shortPath(underHome(m.deps.ConfigPath), max(8, w-lipgloss.Width(title)-len(where)-4))
@@ -460,7 +463,7 @@ func (m Model) renderConfig() string {
 		lines = append(lines, fit("", w))
 	}
 	lines = append([]string{head, fit("", w)}, lines...)
-	lines = append(lines, fit("", w), detail(), fit(stDim.Render(hint), w))
+	lines = append(lines, fit("", w), detail(), fit(renderKeyHintBar(hintBar, w), w))
 	return paneStyle(true).Padding(0, 1).Render(strings.Join(lines, "\n"))
 }
 

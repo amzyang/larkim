@@ -398,7 +398,3 @@ func (m Model) pumRows() int {
 	}
 	return m.floatRoom(len(m.pum.menu.items), m.pum.menu.maxRows())
 }
-
-// pumHint names the keys the popup owns while it is open, since it takes two
-// the composer otherwise has.
-const pumHint = "Tab/Enter accept · ^n/^p move · Esc dismiss"

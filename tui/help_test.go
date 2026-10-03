@@ -114,7 +114,7 @@ func TestHelp_RenderFillsTheBoxAtEveryWidth(t *testing.T) {
 func TestHelp_KeysAreStyledApartFromTheirProse(t *testing.T) {
 	m := helpModel(100, 30)
 	out := m.renderHelp()
-	require.Contains(t, out, stHelpKey.Render("Ctrl+d/Ctrl+u"))
+	require.Contains(t, out, stHelpKey.Render("⌃D/⌃U"))
 }
 
 // normalKeys reads the keys onNormalKey actually answers to out of the source,

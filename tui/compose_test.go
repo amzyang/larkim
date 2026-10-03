@@ -150,7 +150,8 @@ func TestRenderInput_BadgeNamesTheResolvedType(t *testing.T) {
 
 		badge := ansi.Strip(m.renderBadge(m.width - 2))
 		require.Contains(t, badge, want, "draft %q", draft)
-		require.Contains(t, badge, composerHint)
+		require.Contains(t, badge, "send")
+		require.Contains(t, badge, "newline")
 	}
 }
 
@@ -172,13 +173,13 @@ func TestComposerHeight_StandsStillWhateverModeTheReaderIsIn(t *testing.T) {
 func TestRenderBadge_NamesTheKeyThatFitsTheMode(t *testing.T) {
 	m, _ := newOutboxModel(t)
 	out := ansi.Strip(m.renderBadge(m.width - 2))
-	require.Contains(t, out, writeHint, "outside insert mode the row says how to get in")
-	require.NotContains(t, out, "Enter send")
+	require.Contains(t, out, "write", "outside insert mode the row says how to get in")
+	require.NotContains(t, out, "send")
 
 	mm, _ := m.startInsert(nil, false)
 	out = ansi.Strip(mm.(Model).renderBadge(m.width - 2))
-	require.Contains(t, out, composerHint)
-	require.NotContains(t, out, writeHint, "a reader already writing is not told to start")
+	require.Contains(t, out, "send")
+	require.NotContains(t, out, "to write", "a reader already writing is not told to start")
 }
 
 func TestHelp_DocumentsTheComposerTypes(t *testing.T) {
