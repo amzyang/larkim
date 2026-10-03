@@ -1285,31 +1285,118 @@ func (m Model) renderBadge(w int) string {
 	return padBetween(left, hint, w)
 }
 
-func (m Model) statusKeyHints() string {
+func (m Model) modeBadge() string {
+	var bg color.Color
+	var fg color.Color = inkLight
 	switch m.mode {
 	case modeInsert:
-		return "↩ send  ⌥↩ ⏎  ⎋"
+		bg = lipgloss.Color("#2ea121") // green
 	case modeVisual:
-		return "y yank  f fwd  ⎋"
+		bg = lipgloss.Color("#ff8800") // orange
+	case modeCommand:
+		bg = lipgloss.Color("#3370ff") // blue
+	case modeFilter, modeSearch:
+		bg = lipgloss.Color("#f5c400") // yellow
+		fg = inkDark
 	case modeEmoji:
-		return "↩ pick  ⎋"
-	case modeSearch, modeFilter:
-		return "↩ pick  ⎋"
+		bg = lipgloss.Color("#b147cc") // violet
 	case modeTarget:
-		return "↩ open  ⎋"
+		bg = lipgloss.Color("#04b49c") // turquoise
+	case modeForward:
+		bg = lipgloss.Color("#7f3bf5") // purple
 	default:
-		if m.width < 90 {
-			return "r reply  ? help"
-		}
-		return "r reply  t thread  e react  ? help"
+		bg = lipgloss.Color("#4954e6") // indigo
 	}
+
+	label := modeAbbr(m.mode)
+	if m.mode == modeVisual {
+		lo, hi := m.selectionRange()
+		label += " " + plural(hi-lo+1, "msg", "msgs")
+	}
+	badgeStyle := lipgloss.NewStyle().
+		Background(bg).
+		Foreground(fg).
+		Bold(true).
+		Padding(0, 1)
+	return badgeStyle.Render(label)
+}
+
+func (m Model) statusKeyHints(availWidth int) string {
+	var pool []string
+	switch m.mode {
+	case modeInsert:
+		pool = []string{"↩ send", "⌥↩ ⏎", "⎋ normal"}
+	case modeVisual:
+		pool = []string{"y yank", "f fwd", "t thread", "⎋ cancel"}
+	case modeEmoji:
+		pool = []string{"↩ pick", "⎋ cancel"}
+	case modeSearch, modeFilter:
+		pool = []string{"↩ select", "⎋ cancel"}
+	case modeTarget:
+		pool = []string{"↩ open", "⎋ cancel"}
+	default:
+		// Normal mode key candidates in priority order
+		pool = []string{
+			"r reply",
+			"t thread",
+			"e react",
+			"o open",
+			"n unread",
+			"v select",
+			"y copy",
+		}
+	}
+
+	if m.mode == modeNormal {
+		// Always ensure "? help" is included at the end if possible
+		help := "? help"
+		if availWidth < lipgloss.Width(help) {
+			return ""
+		}
+		chosen := []string{help}
+		rem := availWidth - lipgloss.Width(help)
+		// Greedily prepend items from pool
+		var front []string
+		for _, item := range pool {
+			cost := lipgloss.Width(item) + 2
+			if rem >= cost {
+				front = append(front, item)
+				rem -= cost
+			}
+		}
+		return strings.Join(append(front, chosen...), "  ")
+	}
+
+	// Non-normal modes: greedily pack from start to end
+	var chosen []string
+	rem := availWidth
+	for _, item := range pool {
+		cost := lipgloss.Width(item)
+		if len(chosen) > 0 {
+			cost += 2
+		}
+		if rem >= cost {
+			chosen = append(chosen, item)
+			rem -= cost
+		}
+	}
+	return strings.Join(chosen, "  ")
 }
 
 func (m Model) renderStatus() string {
-	left := fmtStatus(m)
-	leftPart := " " + left
-	hint := m.statusKeyHints()
-	room := max(0, m.width-lipgloss.Width(leftPart)-lipgloss.Width(hint)-2)
+	badge := m.modeBadge()
+	syncGlyph := m.syncGlyph()
+	left := badge
+	if syncGlyph != "" {
+		left += " " + stDim.Render(syncGlyph)
+	}
+
+	// Budget for right hints: allocate remaining width after left and safety padding
+	leftW := lipgloss.Width(left)
+	rightBudget := max(0, m.width-leftW-2)
+	hint := m.statusKeyHints(rightBudget)
+
+	room := max(0, m.width-leftW-lipgloss.Width(hint)-2)
 	var mid string
 	switch {
 	case m.notice != "" && m.noticeErr:
@@ -1321,8 +1408,9 @@ func (m Model) renderStatus() string {
 	case m.statusWarn != "":
 		mid = stWarn.Render(truncate(m.statusWarn, room))
 	}
-	right := padBetween(mid, hint, m.width-lipgloss.Width(leftPart))
-	return m.th.sel.Render(leftPart + right)
+
+	rightPart := padBetween(mid, hint, m.width-leftW)
+	return left + rightPart
 }
 
 func truncateStatusNotice(notice string, room int) string {
