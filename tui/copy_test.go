@@ -62,11 +62,11 @@ func TestStartVisual_AnchorsAtTheCursorAndExtends(t *testing.T) {
 	}
 	require.Equal(t, 7, m.msgIdx)
 	require.Equal(t, []int{4, 5, 6, 7}, highlighted(m), "the whole range is painted, not just the cursor")
-	require.Contains(t, fmtStatus(m), "VISUAL 4 msgs")
+	require.Contains(t, fmtStatus(m), "V 4 msgs")
 
 	mm, _ = m.onVisualKey("k")
 	m = mm.(Model)
-	require.Contains(t, fmtStatus(m), "VISUAL 3 msgs", "the count follows the selection live")
+	require.Contains(t, fmtStatus(m), "V 3 msgs", "the count follows the selection live")
 }
 
 func TestOnVisualKey_ExtendsBackwardsFromTheAnchor(t *testing.T) {

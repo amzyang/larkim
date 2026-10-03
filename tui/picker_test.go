@@ -364,7 +364,7 @@ func TestOpenPicker_RefusesASendStillOnItsWay(t *testing.T) {
 
 func TestStatus_NamesThePickerWhileItIsOpen(t *testing.T) {
 	m := press(t, pickerModel(t), "e")
-	require.Contains(t, fmtStatus(m), "REACT", "the mode line says which keys are live")
+	require.Contains(t, fmtStatus(m), "☺", "the mode line says which keys are live")
 }
 
 func TestPicker_FilterErasesTheWayReadlineDoes(t *testing.T) {

@@ -390,20 +390,21 @@ func TestSelection_TheSelectedMessageShowsItsTime(t *testing.T) {
 	m.focus, m.msgIdx = paneMessages, 0
 	m.rebuildMessages()
 	stamp := msgTime(m.msgs[3].CreateMs, time.Now())
-	require.NotContains(t, fmtStatus(m), stamp)
+	require.NotContains(t, m.renderHeader(80), stamp)
 
 	mm, _ := m.move(3)
 	m = mm.(Model)
-	require.Contains(t, fmtStatus(m), stamp, "moving the cursor spells out the new time")
-	require.NotContains(t, ansi.Strip(m.renderMessages(m.bodyHeight())), stamp,
-		"no row carries a clock, so the rows do not move as the cursor does")
+	require.Contains(t, m.renderHeader(80), stamp, "moving the cursor spells out the new time in the header")
+	for _, row := range m.msgRows {
+		require.NotContains(t, ansi.Strip(row.text), stamp,
+			"no row carries a clock, so the rows do not move as the cursor does")
+	}
 
 	mm, _ = m.onClick(tea.Mouse{Button: tea.MouseLeft, X: chatsWidth + 5, Y: 2})
 	m = mm.(Model)
-	require.Contains(t, fmtStatus(m), msgTime(m.msgs[m.msgIdx].CreateMs, time.Now()),
-		"clicking a message spells out its time too")
+	require.Contains(t, m.renderHeader(80), msgTime(m.msgs[m.msgIdx].CreateMs, time.Now()),
+		"clicking a message spells out its time in the header too")
 }
-
 func TestMove_StepsThroughEveryMessageAcrossMergedBlocks(t *testing.T) {
 	m := sized(120, 24)
 	m.focus, m.msgIdx = paneMessages, 0

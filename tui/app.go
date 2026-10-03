@@ -3262,49 +3262,62 @@ func clamp(v, lo, hi int) int {
 }
 
 func fmtStatus(m Model) string {
-	sync := "daemon"
-	if m.deps.Embedded {
-		sync = "embedded"
-	}
-	st := cmp.Or(m.syncStatus, "never_synced")
-	label := modeLabel(m.mode)
+	label := modeAbbr(m.mode)
 	if m.mode == modeVisual {
 		lo, hi := m.selectionRange()
 		label += " " + plural(hi-lo+1, "msg", "msgs")
 	}
-	stamp := ""
-	if x, ok := m.selected(); ok {
-		// No row spells a time out any more: a merged message has no sender
-		// line of its own to put one on, so the cursor answers for all alike.
-		stamp = msgTime(x.CreateMs, time.Now()) + " · "
+	syncIcon := m.syncGlyph()
+	if syncIcon != "" {
+		return fmt.Sprintf("%s · %s", label, syncIcon)
 	}
-	out := fmt.Sprintf("%s · %ssync:%s/%s", label, stamp, sync, st)
-	if st == "needs_login" {
-		out += " → lark-cli auth login"
+	return label
+}
+
+func (m Model) syncGlyph() string {
+	st := cmp.Or(m.syncStatus, "never_synced")
+	prefix := "⚡"
+	if m.deps.Embedded {
+		prefix = "⚙"
 	}
-	return out
+	switch st {
+	case "running", "synced":
+		return prefix + "●"
+	case "needs_login":
+		return prefix + "! auth"
+	case "error":
+		return prefix + "✗"
+	case "syncing", "fetching":
+		return prefix + "○"
+	default:
+		return prefix + "○"
+	}
+}
+
+func modeAbbr(md mode) string {
+	switch md {
+	case modeInsert:
+		return "I"
+	case modeCommand:
+		return ":"
+	case modeFilter:
+		return "F"
+	case modeVisual:
+		return "V"
+	case modeEmoji:
+		return "☺"
+	case modeForward:
+		return ">"
+	case modeSearch:
+		return "/"
+	case modeTarget:
+		return "O"
+	case modeCandidates:
+		return "D"
+	}
+	return "N"
 }
 
 func modeLabel(md mode) string {
-	switch md {
-	case modeInsert:
-		return "INSERT"
-	case modeCommand:
-		return "COMMAND"
-	case modeFilter:
-		return "FILTER"
-	case modeVisual:
-		return "VISUAL"
-	case modeEmoji:
-		return "REACT"
-	case modeForward:
-		return "FORWARD"
-	case modeSearch:
-		return "SEARCH"
-	case modeTarget:
-		return "OPEN"
-	case modeCandidates:
-		return "DRAFTS"
-	}
-	return "NORMAL"
+	return modeAbbr(md)
 }

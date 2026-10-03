@@ -1060,6 +1060,9 @@ func (m Model) renderHeader(w int) string {
 		tailParts = append(tailParts, stErr.Render("history unavailable"))
 	}
 	tailParts = append(tailParts, chatTags(c)...)
+	if x, ok := m.selected(); ok {
+		tailParts = append(tailParts, stDim.Render(msgTime(x.CreateMs, time.Now())))
+	}
 	kept := tailParts[:0]
 	for _, p := range tailParts {
 		if p == "" {
@@ -1282,12 +1285,31 @@ func (m Model) renderBadge(w int) string {
 	return padBetween(left, hint, w)
 }
 
-const statusHelpHint = "? help"
+func (m Model) statusKeyHints() string {
+	switch m.mode {
+	case modeInsert:
+		return "↩ send  ⌥↩ ⏎  ⎋"
+	case modeVisual:
+		return "y yank  f fwd  ⎋"
+	case modeEmoji:
+		return "↩ pick  ⎋"
+	case modeSearch, modeFilter:
+		return "↩ pick  ⎋"
+	case modeTarget:
+		return "↩ open  ⎋"
+	default:
+		if m.width < 90 {
+			return "r reply  ? help"
+		}
+		return "r reply  t thread  e react  ? help"
+	}
+}
 
 func (m Model) renderStatus() string {
 	left := fmtStatus(m)
 	leftPart := " " + left
-	room := max(0, m.width-lipgloss.Width(leftPart)-lipgloss.Width(statusHelpHint)-2)
+	hint := m.statusKeyHints()
+	room := max(0, m.width-lipgloss.Width(leftPart)-lipgloss.Width(hint)-2)
 	var mid string
 	switch {
 	case m.notice != "" && m.noticeErr:
@@ -1299,7 +1321,7 @@ func (m Model) renderStatus() string {
 	case m.statusWarn != "":
 		mid = stWarn.Render(truncate(m.statusWarn, room))
 	}
-	right := padBetween(mid, statusHelpHint, m.width-lipgloss.Width(leftPart))
+	right := padBetween(mid, hint, m.width-lipgloss.Width(leftPart))
 	return m.th.sel.Render(leftPart + right)
 }
 
