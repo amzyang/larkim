@@ -279,7 +279,7 @@ func TestFeed_AnEmptiedPageStillSaysNothingIsOnIt(t *testing.T) {
 	m.rebuildMessages()
 
 	out := paneText(m)
-	require.Contains(t, out, "nothing waiting here")
+	require.Contains(t, out, "All caught up · nothing waiting")
 	require.Contains(t, out, "1 more chat waiting")
 }
 
@@ -325,7 +325,7 @@ func TestFeed_AChatThatStartsWaitingLandsOnThePage(t *testing.T) {
 	m = next.(Model)
 	m.layout()
 	m = applyAll(t, m, cmd)
-	require.Contains(t, paneText(m), "nothing waiting here")
+	require.Contains(t, paneText(m), "All caught up · nothing waiting")
 
 	require.NoError(t, st.EnsureChat(t.Context(), "oc_late", 1))
 	say(t, st, "om_l1", "oc_late", 100, "新消息")
@@ -336,7 +336,7 @@ func TestFeed_AChatThatStartsWaitingLandsOnThePage(t *testing.T) {
 	out := paneText(m)
 	require.Contains(t, out, "新消息")
 	require.Contains(t, out, "1 in 1 chats")
-	require.NotContains(t, out, "nothing waiting here")
+	require.NotContains(t, out, "All caught up · nothing waiting")
 	require.NotContains(t, out, "more chat waiting")
 }
 
