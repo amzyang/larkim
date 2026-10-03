@@ -15,7 +15,7 @@ var (
 		{Keys: "Shift+Enter", Desc: "newline"},
 	}
 	writeHintBinding = KeyBinding{Keys: "i", Desc: "to write"}
-	candHintBar = []KeyBinding{
+	candHintBar      = []KeyBinding{
 		{Keys: "Enter", Desc: "fill"},
 		{Keys: "1-9", Desc: "pick"},
 		{Keys: "Esc", Desc: "cancel"},
