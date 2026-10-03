@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -24,17 +25,10 @@ import (
 // the reader has already put 👍 on.
 func pickerModel(t *testing.T) Model {
 	t.Helper()
-	st, err := storetest.Open(t, filepath.Join(t.TempDir(), "t.db"))
+	st, err := storetest.OpenSeed(t, filepath.Join(t.TempDir(), "t.db"), "tui.picker", seedPicker)
 	require.NoError(t, err)
 	t.Cleanup(func() { st.Close() })
 	ctx := t.Context()
-	require.NoError(t, st.EnsureChat(ctx, "oc_team", 1))
-	_, err = st.UpsertMessages(ctx, []store.Message{{MessageID: "om_a", ChatID: "oc_team", MsgType: "text",
-		SenderID: "ou_a", SenderName: "张三", ContentRaw: `{"text":"下周一发版"}`, CreateMs: 100, UpdateMs: 100}}, 1)
-	require.NoError(t, err)
-	require.NoError(t, st.UpdateRendered(ctx, "om_a", "下周一发版", "", 2))
-	require.NoError(t, st.UpdateReactions(ctx, "om_a",
-		`{"counts":[{"reaction_type":"THUMBSUP","count":"1"}],"details":[{"emoji_type":"THUMBSUP","operator":{"operator_id":"ou_me"}}]}`))
 
 	m := New(Deps{Store: st, Self: "ou_me", DataDir: t.TempDir(), Syncer: &sync.Syncer{Store: st},
 		Config: config.Default()})
@@ -48,6 +42,22 @@ func pickerModel(t *testing.T) Model {
 	m.msgIdx = 0
 	m.layout()
 	return m
+}
+
+func seedPicker(st *store.Store) error {
+	ctx := context.Background()
+	if err := st.EnsureChat(ctx, "oc_team", 1); err != nil {
+		return err
+	}
+	if _, err := st.UpsertMessages(ctx, []store.Message{{MessageID: "om_a", ChatID: "oc_team", MsgType: "text",
+		SenderID: "ou_a", SenderName: "张三", ContentRaw: `{"text":"下周一发版"}`, CreateMs: 100, UpdateMs: 100}}, 1); err != nil {
+		return err
+	}
+	if err := st.UpdateRendered(ctx, "om_a", "下周一发版", "", 2); err != nil {
+		return err
+	}
+	return st.UpdateReactions(ctx, "om_a",
+		`{"counts":[{"reaction_type":"THUMBSUP","count":"1"}],"details":[{"emoji_type":"THUMBSUP","operator":{"operator_id":"ou_me"}}]}`)
 }
 
 func press(t *testing.T, m Model, keys ...string) Model {

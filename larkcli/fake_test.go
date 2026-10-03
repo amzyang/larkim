@@ -8,6 +8,7 @@ import (
 )
 
 func TestFake_SendEscapesTheContentJSON(t *testing.T) {
+	t.Parallel()
 	f := NewFake()
 	sent, err := f.Send(t.Context(), Target{ChatID: "oc_quiet"}, Text("他说\"好\"\n然后走了"), "cli_c")
 	require.NoError(t, err)
@@ -20,6 +21,7 @@ func TestFake_SendEscapesTheContentJSON(t *testing.T) {
 }
 
 func TestFake_SendMarkdownStoresAPostBody(t *testing.T) {
+	t.Parallel()
 	f := NewFake()
 	sent, err := f.Send(t.Context(), Target{ChatID: "oc_quiet"}, Markdown("## 发布说明\n\n- 修复了 A"), "cli_c")
 	require.NoError(t, err)
@@ -34,6 +36,7 @@ func TestFake_SendMarkdownStoresAPostBody(t *testing.T) {
 }
 
 func TestFake_SendImageStoresAnImageBody(t *testing.T) {
+	t.Parallel()
 	f := NewFake()
 	sent, err := f.Send(t.Context(), Target{UserID: "ou_a"}, Image("img_shot"), "cli_c")
 	require.NoError(t, err)
@@ -46,6 +49,7 @@ func TestFake_SendImageStoresAnImageBody(t *testing.T) {
 }
 
 func TestFake_SendRecordsEveryBodyBesideItsKey(t *testing.T) {
+	t.Parallel()
 	f := NewFake()
 	_, err := f.Send(t.Context(), Target{ChatID: "oc_quiet"}, Text("好的"), "cli_c")
 	require.NoError(t, err)
@@ -57,6 +61,7 @@ func TestFake_SendRecordsEveryBodyBesideItsKey(t *testing.T) {
 }
 
 func TestFake_ReplyInThreadHangsOffItsParent(t *testing.T) {
+	t.Parallel()
 	f := NewFake()
 	f.AddMessage(RawMessage{MessageID: "om_elsewhere", ChatID: "oc_quiet", MsgType: "text"})
 
@@ -71,6 +76,7 @@ func TestFake_ReplyInThreadHangsOffItsParent(t *testing.T) {
 }
 
 func TestFake_UploadImageRecordsThePath(t *testing.T) {
+	t.Parallel()
 	f := NewFake()
 	key, err := f.UploadImage(t.Context(), "/Users/linlan/Desktop/shot.png")
 	require.NoError(t, err)
@@ -83,6 +89,7 @@ func TestFake_UploadImageRecordsThePath(t *testing.T) {
 }
 
 func TestFake_UploadImageHonoursInjectedErrors(t *testing.T) {
+	t.Parallel()
 	f := NewFake()
 	f.Err = &Error{ExitCode: ExitAPI, Type: "api", Message: "nope"}
 	_, err := f.UploadImage(t.Context(), "/Users/linlan/Desktop/shot.png")

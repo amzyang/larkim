@@ -21,6 +21,7 @@ echo '{"ok":true,"data":{}}'`)
 }
 
 func TestLane_AcquireReturnsWhenContextEnds(t *testing.T) {
+	t.Parallel()
 	l := make(lane, 1)
 	require.NoError(t, l.acquire(t.Context()))
 
@@ -34,6 +35,7 @@ func TestLane_AcquireReturnsWhenContextEnds(t *testing.T) {
 }
 
 func TestLane_AcquireAdmitsUpToCapacity(t *testing.T) {
+	t.Parallel()
 	l := make(lane, 2)
 	require.NoError(t, l.acquire(t.Context()))
 	require.NoError(t, l.acquire(t.Context()))
@@ -44,6 +46,7 @@ func TestLane_AcquireAdmitsUpToCapacity(t *testing.T) {
 }
 
 func TestLaneOf_DefaultsToBackground(t *testing.T) {
+	t.Parallel()
 	require.Equal(t, LaneBackground, LaneOf(t.Context()))
 	require.Equal(t, LaneInteractive, LaneOf(WithLane(t.Context(), LaneInteractive)))
 	require.Equal(t, LaneBeat, LaneOf(WithLane(t.Context(), LaneBeat)))
@@ -52,6 +55,7 @@ func TestLaneOf_DefaultsToBackground(t *testing.T) {
 }
 
 func TestExec_InteractiveDoesNotQueueBehindBackground(t *testing.T) {
+	t.Parallel()
 	c := slowBinary(t, "2")
 	occupy(t, c, LaneBackground)
 
@@ -63,6 +67,7 @@ func TestExec_InteractiveDoesNotQueueBehindBackground(t *testing.T) {
 }
 
 func TestExec_BeatDoesNotQueueBehindBackground(t *testing.T) {
+	t.Parallel()
 	c := slowBinary(t, "2")
 	occupy(t, c, LaneBackground)
 
@@ -74,6 +79,7 @@ func TestExec_BeatDoesNotQueueBehindBackground(t *testing.T) {
 }
 
 func TestExec_DiscoveryDoesNotQueueBehindBackground(t *testing.T) {
+	t.Parallel()
 	c := slowBinary(t, "2")
 	occupy(t, c, LaneBackground)
 
@@ -85,6 +91,7 @@ func TestExec_DiscoveryDoesNotQueueBehindBackground(t *testing.T) {
 }
 
 func TestExec_InteractiveDoesNotQueueBehindTheBeat(t *testing.T) {
+	t.Parallel()
 	c := slowBinary(t, "2")
 	occupy(t, c, LaneBeat)
 
@@ -96,6 +103,7 @@ func TestExec_InteractiveDoesNotQueueBehindTheBeat(t *testing.T) {
 }
 
 func TestExec_BackgroundCallsStillQueue(t *testing.T) {
+	t.Parallel()
 	c := slowBinary(t, "1")
 	occupy(t, c, LaneBackground)
 
@@ -107,6 +115,7 @@ func TestExec_BackgroundCallsStillQueue(t *testing.T) {
 }
 
 func TestExec_TimeoutStartsAfterTheLaneIsFree(t *testing.T) {
+	t.Parallel()
 	c := slowBinary(t, "1")
 	// Shorter than the wait the next call is about to sit through, so a
 	// timeout clock started before the lane was free would expire on it.
@@ -118,6 +127,7 @@ func TestExec_TimeoutStartsAfterTheLaneIsFree(t *testing.T) {
 }
 
 func TestExec_CancelledCallGivesUpItsPlaceInLine(t *testing.T) {
+	t.Parallel()
 	c := slowBinary(t, "2")
 	occupy(t, c, LaneBackground)
 
@@ -134,6 +144,7 @@ func TestExec_CancelledCallGivesUpItsPlaceInLine(t *testing.T) {
 }
 
 func TestExec_ResolvePathFailsBeforeTakingALane(t *testing.T) {
+	t.Parallel()
 	c := &ExecClient{Path: filepath.Join(t.TempDir(), "nope")}
 	_, err := c.run(t.Context(), "api", "GET", "/x")
 	require.Error(t, err)
@@ -165,6 +176,7 @@ func occupy(t *testing.T, c *ExecClient, l Lane) {
 }
 
 func TestSearchMessages_SendsTheQueryAndOnePage(t *testing.T) {
+	t.Parallel()
 	c := fakeBinary(t, `
 echo "$@" >&2
 cat <<'JSON'
@@ -183,6 +195,7 @@ JSON`)
 }
 
 func TestSearchMessages_AsksForNoMoreThanOnePage(t *testing.T) {
+	t.Parallel()
 	c := fakeBinary(t, `echo "$*" > "$(dirname "$0")/argv"; echo '{"ok":true,"data":{"items":[]}}'`)
 	_, err := c.SearchMessages(t.Context(), "预算", 500)
 	require.NoError(t, err)
@@ -194,6 +207,7 @@ func TestSearchMessages_AsksForNoMoreThanOnePage(t *testing.T) {
 }
 
 func TestSearchMessages_EmptyQueryAsksNothing(t *testing.T) {
+	t.Parallel()
 	c := fakeBinary(t, `exit 9`)
 	hits, err := c.SearchMessages(t.Context(), "  ", 10)
 	require.NoError(t, err)

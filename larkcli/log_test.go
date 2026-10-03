@@ -29,6 +29,7 @@ func lines(buf *bytes.Buffer, msg string) []string {
 }
 
 func TestExec_LogsARequestAndAResponseForEveryCall(t *testing.T) {
+	t.Parallel()
 	c := fakeBinary(t, `echo '{"ok":true,"identity":"user","data":{"items":[]}}'`)
 	buf := logged(c, slog.LevelDebug)
 
@@ -49,6 +50,7 @@ func TestExec_LogsARequestAndAResponseForEveryCall(t *testing.T) {
 }
 
 func TestExec_LogsARefusalWhenDebugIsOff(t *testing.T) {
+	t.Parallel()
 	c := fakeBinary(t, `
 cat >&2 <<'JSON'
 {"ok":false,"identity":"user","error":{"type":"api","subtype":"rate_limit","code":99991400,"message":"too many requests","log_id":"lg_1","retry_after_seconds":30}}
@@ -73,6 +75,7 @@ exit 1`)
 }
 
 func TestExec_LogsTheLarkLogIDOntoTheError(t *testing.T) {
+	t.Parallel()
 	c := fakeBinary(t, `
 cat >&2 <<'JSON'
 {"ok":false,"identity":"user","error":{"type":"api","subtype":"unknown","code":231203,"message":"nope","log_id":"lg_2"}}
@@ -85,6 +88,7 @@ exit 1`)
 }
 
 func TestExec_CountsThePagesLarkCLIReports(t *testing.T) {
+	t.Parallel()
 	c := fakeBinary(t, `
 echo "[page 1] fetching..." >&2
 echo "[page 2] fetching..." >&2
@@ -98,6 +102,7 @@ echo '{"ok":true,"identity":"user","data":{"items":[]}}'`)
 }
 
 func TestExec_LogsAMissingBinaryWithoutTakingALane(t *testing.T) {
+	t.Parallel()
 	c := &ExecClient{Path: "/nonexistent/lark-cli"}
 	buf := logged(c, slog.LevelInfo)
 
@@ -109,6 +114,7 @@ func TestExec_LogsAMissingBinaryWithoutTakingALane(t *testing.T) {
 }
 
 func TestExec_KeepsACancelledCallOutOfTheWarnings(t *testing.T) {
+	t.Parallel()
 	c := fakeBinary(t, `sleep 5`)
 	buf := logged(c, slog.LevelInfo)
 	// Hold every background slot so the next call can do nothing but wait.
@@ -125,12 +131,14 @@ func TestExec_KeepsACancelledCallOutOfTheWarnings(t *testing.T) {
 }
 
 func TestExec_NilLoggerDiscards(t *testing.T) {
+	t.Parallel()
 	c := fakeBinary(t, `echo '{"ok":true,"identity":"user","data":{"items":[]}}'`)
 	_, err := c.ListChats(t.Context())
 	require.NoError(t, err)
 }
 
 func TestArgvLine_QuotesWhatAShellWouldNeedQuoted(t *testing.T) {
+	t.Parallel()
 	require.Equal(t, `api GET /open-apis/im/v1/messages`,
 		ArgvLine([]string{"api", "GET", "/open-apis/im/v1/messages"}))
 	require.Equal(t, `im +messages-send --text 'hello there'`,
@@ -140,17 +148,20 @@ func TestArgvLine_QuotesWhatAShellWouldNeedQuoted(t *testing.T) {
 }
 
 func TestPages_IgnoresTheOtherProgressLines(t *testing.T) {
+	t.Parallel()
 	require.Equal(t, 0, pages(nil))
 	require.Equal(t, 2, pages([]byte("[page 1] fetching...\n[page 2] fetching...\n[pagination] streamed 2 pages\n")))
 }
 
 func TestLane_Stringer(t *testing.T) {
+	t.Parallel()
 	require.Equal(t, "background", LaneBackground.String())
 	require.Equal(t, "beat", LaneBeat.String())
 	require.Equal(t, "interactive", LaneInteractive.String())
 }
 
 func TestIsPermanent_CoversBothWaysLarkCLIReportsARefusal(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name string
 		err  *Error
@@ -177,6 +188,7 @@ func TestIsPermanent_CoversBothWaysLarkCLIReportsARefusal(t *testing.T) {
 }
 
 func TestDecodeError_LiftsFeishuCodeOutOfADownloadFailure(t *testing.T) {
+	t.Parallel()
 	// What lark-cli prints when a resource is served outside the API
 	// envelope: a transport error carrying the raw HTTP body.
 	stderr := []byte(`{"ok":false,"identity":"user","error":{"type":"network","subtype":"transport","code":400,` +
@@ -192,6 +204,7 @@ func TestDecodeError_LiftsFeishuCodeOutOfADownloadFailure(t *testing.T) {
 }
 
 func TestDecodeError_LeavesAnOrdinaryEnvelopeAlone(t *testing.T) {
+	t.Parallel()
 	stderr := []byte(`{"ok":false,"identity":"user","error":{"type":"api","subtype":"unknown","code":231203,` +
 		`"message":"The chat type is not supported","log_id":"lg_1"}}`)
 
@@ -203,6 +216,7 @@ func TestDecodeError_LeavesAnOrdinaryEnvelopeAlone(t *testing.T) {
 }
 
 func TestDecodeError_SurvivesABodyLarkCLITruncated(t *testing.T) {
+	t.Parallel()
 	stderr := []byte(`{"ok":false,"identity":"user","error":{"type":"network","subtype":"transport","code":400,` +
 		`"message":"HTTP 400: {\"code\":14005,\"msg\":\"Resource Has Be"}}`)
 
@@ -212,6 +226,7 @@ func TestDecodeError_SurvivesABodyLarkCLITruncated(t *testing.T) {
 }
 
 func TestExec_LogsTheFeishuCodeOnADownloadFailure(t *testing.T) {
+	t.Parallel()
 	c := fakeBinary(t, `
 cat >&2 <<'JSON'
 {"ok":false,"identity":"user","error":{"type":"network","subtype":"transport","code":400,"message":"HTTP 400: {\"code\":14005,\"error\":{\"log_id\":\"lg_9\"},\"msg\":\"Resource Has Been Deleted\"}"}}

@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"path/filepath"
 	"testing"
 
@@ -16,20 +17,10 @@ import (
 // else did, with the cursor on the reader's own.
 func recallModel(t *testing.T) (Model, *larkcli.Fake) {
 	t.Helper()
-	st, err := storetest.Open(t, filepath.Join(t.TempDir(), "t.db"))
+	st, err := storetest.OpenSeed(t, filepath.Join(t.TempDir(), "t.db"), "tui.recall", seedRecall)
 	require.NoError(t, err)
 	t.Cleanup(func() { st.Close() })
 	ctx := t.Context()
-	require.NoError(t, st.EnsureChat(ctx, "oc_group", 1))
-	_, err = st.UpsertMessages(ctx, []store.Message{
-		{MessageID: "om_mine", ChatID: "oc_group", MsgType: "text", SenderID: "ou_me",
-			SenderName: "林岚", ContentRaw: `{"text":"发错了"}`, CreateMs: 100, UpdateMs: 100},
-		{MessageID: "om_theirs", ChatID: "oc_group", MsgType: "text", SenderID: "ou_a",
-			SenderName: "张三", ContentRaw: `{"text":"收到"}`, CreateMs: 200, UpdateMs: 200},
-	}, 1)
-	require.NoError(t, err)
-	require.NoError(t, st.UpdateRendered(ctx, "om_mine", "发错了", "", 1))
-	require.NoError(t, st.UpdateRendered(ctx, "om_theirs", "收到", "", 1))
 
 	f := larkcli.NewFake()
 	f.Messages["om_mine"] = larkcli.RawMessage{MessageID: "om_mine", ChatID: "oc_group"}
@@ -42,6 +33,25 @@ func recallModel(t *testing.T) (Model, *larkcli.Fake) {
 	m.msgs, m.msgsBase = msgs, msgs
 	m.msgIdx = 0
 	return m, f
+}
+
+func seedRecall(st *store.Store) error {
+	ctx := context.Background()
+	if err := st.EnsureChat(ctx, "oc_group", 1); err != nil {
+		return err
+	}
+	if _, err := st.UpsertMessages(ctx, []store.Message{
+		{MessageID: "om_mine", ChatID: "oc_group", MsgType: "text", SenderID: "ou_me",
+			SenderName: "林岚", ContentRaw: `{"text":"发错了"}`, CreateMs: 100, UpdateMs: 100},
+		{MessageID: "om_theirs", ChatID: "oc_group", MsgType: "text", SenderID: "ou_a",
+			SenderName: "张三", ContentRaw: `{"text":"收到"}`, CreateMs: 200, UpdateMs: 200},
+	}, 1); err != nil {
+		return err
+	}
+	if err := st.UpdateRendered(ctx, "om_mine", "发错了", "", 1); err != nil {
+		return err
+	}
+	return st.UpdateRendered(ctx, "om_theirs", "收到", "", 1)
 }
 
 // A recall is visible to everybody who was in the chat and cannot be undone,

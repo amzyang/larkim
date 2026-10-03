@@ -61,16 +61,9 @@ func drain(t *testing.T, m Model, cmd tea.Cmd) Model {
 // would fire are recorded instead of reaching macOS.
 func badgeModel(t *testing.T) (Model, *store.Store, *[]openCall) {
 	t.Helper()
-	st, err := storetest.Open(t, filepath.Join(t.TempDir(), "t.db"))
+	st, err := storetest.OpenSeed(t, filepath.Join(t.TempDir(), "t.db"), "tui.unreadone", seedUnreadOne)
 	require.NoError(t, err)
 	t.Cleanup(func() { st.Close() })
-	ctx := t.Context()
-	require.NoError(t, st.EnsureChat(ctx, "oc_a", 1))
-	_, err = st.UpsertMessages(ctx, []store.Message{{MessageID: "om_a", ChatID: "oc_a", MsgType: "text",
-		SenderID: "ou_x", SenderName: "孙琪", ContentRaw: `{"text":"在吗"}`, CreateMs: 100, UpdateMs: 100}}, 1)
-	require.NoError(t, err)
-	unread := false
-	require.NoError(t, st.SetReadStatus(ctx, "om_a", &unread, 100, 0))
 
 	var calls []openCall
 	m := New(Deps{Store: st, Self: "ou_me", Client: larkcli.NewFake(), Config: config.Config{ApplinkPaceMS: testPace}, OpenURL: func(targets []string, background bool) error {

@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"path/filepath"
 	"testing"
 
@@ -14,17 +15,24 @@ import (
 // its own, all of them from a chat larkim never synced.
 func bundleStore(t *testing.T) *store.Store {
 	t.Helper()
-	st, err := storetest.Open(t, filepath.Join(t.TempDir(), "t.db"))
+	st, err := storetest.OpenSeed(t, filepath.Join(t.TempDir(), "t.db"), "tui.bundle", seedBundle)
 	require.NoError(t, err)
 	t.Cleanup(func() { st.Close() })
-	ctx := t.Context()
-	_, err = st.UpsertMessages(ctx, []store.Message{
+	return st
+}
+
+func seedBundle(st *store.Store) error {
+	ctx := context.Background()
+	if _, err := st.UpsertMessages(ctx, []store.Message{
 		{MessageID: "om_fwd", ChatID: "oc_a", MsgType: "merge_forward", CreateMs: 100,
 			ContentRaw: `{"text":"Merged and Forwarded Message"}`, RawJSON: "{}"},
-	}, 1)
-	require.NoError(t, err)
-	require.NoError(t, st.AddForwardRoots(ctx, []string{"om_fwd"}))
-	require.NoError(t, st.SaveForwarded(ctx, "om_fwd", []store.Forwarded{
+	}, 1); err != nil {
+		return err
+	}
+	if err := st.AddForwardRoots(ctx, []string{"om_fwd"}); err != nil {
+		return err
+	}
+	return st.SaveForwarded(ctx, "om_fwd", []store.Forwarded{
 		{UpperMessageID: "om_fwd", MessageID: "om_a", ChatID: "oc_src", MsgType: "text",
 			SenderID: "ou_a", SenderName: "张三", CreateMs: 10, ContentRaw: `{"text":"预算定了"}`},
 		{UpperMessageID: "om_fwd", MessageID: "om_pic", ChatID: "oc_src", MsgType: "image", Seq: 1,
@@ -33,8 +41,7 @@ func bundleStore(t *testing.T) *store.Store {
 			SenderID: "ou_b", SenderName: "李四", CreateMs: 30, ContentRaw: `{"text":"Merged and Forwarded Message"}`},
 		{UpperMessageID: "om_inner", MessageID: "om_deep", ChatID: "oc_other", MsgType: "text",
 			SenderID: "ou_a", SenderName: "张三", CreateMs: 5, ContentRaw: `{"text":"里面那条"}`},
-	}, 200))
-	return st
+	}, 200)
 }
 
 func TestLoadForward_ListsOneLevelAndLeavesTheNestedBundleAsARow(t *testing.T) {

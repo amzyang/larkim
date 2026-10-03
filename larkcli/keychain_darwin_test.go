@@ -22,6 +22,7 @@ func TestMasterKeyMissing(t *testing.T) {
 }
 
 func TestKeychainDowngrade_InvokesConfigSubcommand(t *testing.T) {
+	t.Parallel()
 	c := fakeBinary(t, `
 case "$1 $2" in
 "config keychain-downgrade") exit 0 ;;

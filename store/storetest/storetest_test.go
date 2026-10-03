@@ -51,3 +51,27 @@ func TestOpen_AnExistingDatabaseKeepsWhatItHolds(t *testing.T) {
 	require.NoError(t, st.DB().QueryRow(`SELECT name FROM chats WHERE chat_id = 'oc_a'`).Scan(&name))
 	require.Equal(t, "发布群", name, "a reopen is not a fresh copy")
 }
+
+func TestOpenSeed_CopiesTheSeedAndKeepsLaterWritesApart(t *testing.T) {
+	t.Parallel()
+	seed := func(st *store.Store) error {
+		return st.EnsureChat(t.Context(), "oc_seed", 1)
+	}
+	open := func() *store.Store {
+		t.Helper()
+		st, err := OpenSeed(t, filepath.Join(t.TempDir(), "t.db"), t.Name(), seed)
+		require.NoError(t, err)
+		t.Cleanup(func() { st.Close() })
+		return st
+	}
+
+	first := open()
+	require.NoError(t, first.EnsureChat(t.Context(), "oc_extra", 1))
+	second := open()
+
+	var n int
+	require.NoError(t, second.DB().QueryRow(`SELECT count(*) FROM chats WHERE chat_id = 'oc_seed'`).Scan(&n))
+	require.Equal(t, 1, n)
+	require.NoError(t, second.DB().QueryRow(`SELECT count(*) FROM chats WHERE chat_id = 'oc_extra'`).Scan(&n))
+	require.Zero(t, n, "a write lands in that test's copy, not the seed")
+}

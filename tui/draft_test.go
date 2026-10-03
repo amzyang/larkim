@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"errors"
 	"path/filepath"
 	"strings"
@@ -18,24 +19,31 @@ import (
 // message, so a draft can be watched across a switch between them.
 func draftModel(t *testing.T) (Model, *store.Store) {
 	t.Helper()
-	st, err := storetest.Open(t, filepath.Join(t.TempDir(), "t.db"))
+	st, err := storetest.OpenSeed(t, filepath.Join(t.TempDir(), "t.db"), "tui.draft", seedDraft)
 	require.NoError(t, err)
 	t.Cleanup(func() { st.Close() })
-	ctx := t.Context()
+	m := New(Deps{Store: st, Self: "ou_me"})
+	m.width, m.height = 120, 36
+	return m, st
+}
+
+func seedDraft(st *store.Store) error {
+	ctx := context.Background()
 	for _, c := range []struct{ id, name, body string }{
 		{"oc_group", "平台组", "发布计划定了吗"},
 		{"oc_peer", "张三", "在吗"},
 	} {
-		require.NoError(t, st.EnsureChat(ctx, c.id, 1))
-		_, err = st.UpsertMessages(ctx, []store.Message{{
+		if err := st.EnsureChat(ctx, c.id, 1); err != nil {
+			return err
+		}
+		if _, err := st.UpsertMessages(ctx, []store.Message{{
 			MessageID: "om_" + c.id, ChatID: c.id, MsgType: "text", SenderID: "ou_x",
 			SenderName: c.name, ContentRaw: `{"text":"` + c.body + `"}`, CreateMs: 100, UpdateMs: 100,
-		}}, 1)
-		require.NoError(t, err)
+		}}, 1); err != nil {
+			return err
+		}
 	}
-	m := New(Deps{Store: st, Self: "ou_me"})
-	m.width, m.height = 120, 36
-	return m, st
+	return nil
 }
 
 // enter walks the model into a chat the way a cursor move does: ask for the

@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"path/filepath"
 	"testing"
 
@@ -16,24 +17,32 @@ import (
 // talked past.
 func mentionModel(t *testing.T) (Model, *store.Store) {
 	t.Helper()
-	st, err := storetest.Open(t, filepath.Join(t.TempDir(), "t.db"))
+	st, err := storetest.OpenSeed(t, filepath.Join(t.TempDir(), "t.db"), "tui.mention", seedMention)
 	require.NoError(t, err)
 	t.Cleanup(func() { st.Close() })
-	ctx := t.Context()
-	require.NoError(t, st.EnsureChat(ctx, "oc_group", 1))
-	_, err = st.UpsertMessages(ctx, []store.Message{
-		{MessageID: "om_at", ChatID: "oc_group", MsgType: "text", SenderID: "ou_a", SenderName: "张三",
-			MentionsJSON: `[{"id":"ou_me","key":"@_user_1","name":"林岚"}]`, CreateMs: 100, UpdateMs: 100},
-		{MessageID: "om_after", ChatID: "oc_group", MsgType: "text", SenderID: "ou_a",
-			SenderName: "张三", CreateMs: 200, UpdateMs: 200},
-	}, 1)
-	require.NoError(t, err)
-	require.NoError(t, st.UpdateRendered(ctx, "om_at", "@林岚 看下发布计划", "", 1))
-	require.NoError(t, st.UpdateRendered(ctx, "om_after", "另外一件事", "", 1))
 
 	m := New(Deps{Store: st, Self: "ou_me"})
 	m.width, m.height = 120, 36
 	return m, st
+}
+
+func seedMention(st *store.Store) error {
+	ctx := context.Background()
+	if err := st.EnsureChat(ctx, "oc_group", 1); err != nil {
+		return err
+	}
+	if _, err := st.UpsertMessages(ctx, []store.Message{
+		{MessageID: "om_at", ChatID: "oc_group", MsgType: "text", SenderID: "ou_a", SenderName: "张三",
+			MentionsJSON: `[{"id":"ou_me","key":"@_user_1","name":"林岚"}]`, CreateMs: 100, UpdateMs: 100},
+		{MessageID: "om_after", ChatID: "oc_group", MsgType: "text", SenderID: "ou_a",
+			SenderName: "张三", CreateMs: 200, UpdateMs: 200},
+	}, 1); err != nil {
+		return err
+	}
+	if err := st.UpdateRendered(ctx, "om_at", "@林岚 看下发布计划", "", 1); err != nil {
+		return err
+	}
+	return st.UpdateRendered(ctx, "om_after", "另外一件事", "", 1)
 }
 
 func TestOpenMentions_ListsWhatNamedTheReader(t *testing.T) {

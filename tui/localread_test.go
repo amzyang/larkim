@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -15,20 +16,26 @@ import (
 // Feishu still reports as unread.
 func readModel(t *testing.T) (Model, *store.Store) {
 	t.Helper()
-	st, err := storetest.Open(t, filepath.Join(t.TempDir(), "t.db"))
+	st, err := storetest.OpenSeed(t, filepath.Join(t.TempDir(), "t.db"), "tui.unreadone", seedUnreadOne)
 	require.NoError(t, err)
 	t.Cleanup(func() { st.Close() })
-	ctx := t.Context()
-	require.NoError(t, st.EnsureChat(ctx, "oc_a", 1))
-	_, err = st.UpsertMessages(ctx, []store.Message{{MessageID: "om_a", ChatID: "oc_a", MsgType: "text",
-		SenderID: "ou_x", SenderName: "孙琪", ContentRaw: `{"text":"在吗"}`, CreateMs: 100, UpdateMs: 100}}, 1)
-	require.NoError(t, err)
-	unread := false
-	require.NoError(t, st.SetReadStatus(ctx, "om_a", &unread, 100, 0))
 
 	m := New(Deps{Store: st, Self: "ou_me"})
 	m.width, m.height = 120, 36
 	return m, st
+}
+
+func seedUnreadOne(st *store.Store) error {
+	ctx := context.Background()
+	if err := st.EnsureChat(ctx, "oc_a", 1); err != nil {
+		return err
+	}
+	if _, err := st.UpsertMessages(ctx, []store.Message{{MessageID: "om_a", ChatID: "oc_a", MsgType: "text",
+		SenderID: "ou_x", SenderName: "孙琪", ContentRaw: `{"text":"在吗"}`, CreateMs: 100, UpdateMs: 100}}, 1); err != nil {
+		return err
+	}
+	unread := false
+	return st.SetReadStatus(ctx, "om_a", &unread, 100, 0)
 }
 
 // arrive plays one page of a chat into the model the way the load command

@@ -60,11 +60,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - 新功能必须附带测试
 - 测试 in-package（白盒），用 testify `require`/`assert`
 - 飞书边界用 `larkcli.Fake`（非 _test 文件，可跨包导入）；时间用 `sync.Clock` 假时钟
-- 数据库不 fake：`storetest.Open(t, filepath.Join(t.TempDir(), "t.db"))` 打开真 SQLite，新文件从已 migrate 的模板复制（-race 下每次跑全部 migration 要近 1 秒）；`store` 包自身的测试仍用 `store.Open`
+- 数据库不 fake：`storetest.Open(t, filepath.Join(t.TempDir(), "t.db"))` 打开真 SQLite，新文件从已 migrate 的模板复制（-race 下每次跑全部 migration 要近 1 秒）；一份每个测试都相同的种子用 `storetest.OpenSeed`，种一次再复制，写入仍落在该测试自己的副本上；`store` 包自身的测试仍用 `store.Open`
 - 测试命名 `TestSubject_BehaviourDescription`
-- `tui` 与 `sync` 的顶层测试第一行写 `t.Parallel()`：两包合计近 1800 个测试，串行时 `-race` 下 `tui` 单包 70 秒；
-  例外是动了进程级状态的测试——`t.Setenv`（与 `t.Parallel` 同用会 panic）、替换包级变量（`lexerFor`、`openApplink`），
-  以及调用了这类 helper（如 `countingLexers`）的测试，它们保持串行；testing 包保证串行测试跑完才放行并行测试
+- `tui`、`sync` 与 `larkcli` 的顶层测试第一行写 `t.Parallel()`：三包串行时 `-race` 下 `tui` 单包就要 70 秒；
+  例外是动了进程级状态的测试——`t.Setenv`（与 `t.Parallel` 同用会 panic）、替换包级变量（`lexerFor`、`openApplink`）、
+  以及断言共享目录为空的测试（`TestUploadImage_StagesAFileLarkCLIMayNotRead` 看 `/tmp/larkim-upload-*`），
+  还有调用了这类 helper（如 `countingLexers`）的测试，它们保持串行；testing 包保证串行测试跑完才放行并行测试
 
 ## Commits
 

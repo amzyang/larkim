@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"path/filepath"
 	"testing"
 
@@ -17,15 +18,9 @@ import (
 // window, which is what lets the cursor be walked off the bottom of it.
 func fwdModel(t *testing.T) (Model, *larkcli.Fake) {
 	t.Helper()
-	st, err := storetest.Open(t, filepath.Join(t.TempDir(), "t.db"))
+	st, err := storetest.OpenSeed(t, filepath.Join(t.TempDir(), "t.db"), "tui.forward", seedForward)
 	require.NoError(t, err)
 	t.Cleanup(func() { st.Close() })
-	ctx := t.Context()
-	require.NoError(t, st.EnsureChat(ctx, "oc_group", 1))
-	_, err = st.UpsertMessages(ctx, []store.Message{{MessageID: "om_a", ChatID: "oc_group",
-		MsgType: "text", SenderID: "ou_a", SenderName: "张三",
-		ContentRaw: `{"text":"发布计划"}`, CreateMs: 100, UpdateMs: 100}}, 1)
-	require.NoError(t, err)
 
 	f := larkcli.NewFake()
 	f.Messages["om_a"] = larkcli.RawMessage{MessageID: "om_a", ChatID: "oc_group",
@@ -44,10 +39,21 @@ func fwdModel(t *testing.T) (Model, *larkcli.Fake) {
 		{OpenID: "ou_c", Name: "王五"},
 		{OpenID: "ou_me", Name: "林岚"},
 	}
-	msgs, err := st.ListMessages(ctx, store.MessageQuery{ChatID: "oc_group"})
+	msgs, err := st.ListMessages(t.Context(), store.MessageQuery{ChatID: "oc_group"})
 	require.NoError(t, err)
 	m.msgs, m.msgsBase = msgs, msgs
 	return m, f
+}
+
+func seedForward(st *store.Store) error {
+	ctx := context.Background()
+	if err := st.EnsureChat(ctx, "oc_group", 1); err != nil {
+		return err
+	}
+	_, err := st.UpsertMessages(ctx, []store.Message{{MessageID: "om_a", ChatID: "oc_group",
+		MsgType: "text", SenderID: "ou_a", SenderName: "张三",
+		ContentRaw: `{"text":"发布计划"}`, CreateMs: 100, UpdateMs: 100}}, 1)
+	return err
 }
 
 func fwdNames(hits []fwdTarget) []string {

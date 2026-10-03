@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"path/filepath"
 	"slices"
 	"testing"
@@ -25,12 +26,16 @@ func feedStore(t *testing.T) *store.Store {
 // say puts one message in a chat, rendered so the rows have something to draw.
 func say(t *testing.T, st *store.Store, id, chatID string, ms int64, text string) store.Message {
 	t.Helper()
-	m := store.Message{MessageID: id, ChatID: chatID, MsgType: "text", SenderID: "ou_a",
-		SenderType: "user", SenderName: "张三", ContentRaw: `{"text":"` + text + `"}`,
-		Content: text, RenderedAt: 1, CreateMs: ms, UpdateMs: ms, MessagePosition: ms}
+	m := sayMsg(id, chatID, ms, text)
 	_, err := st.UpsertMessages(t.Context(), []store.Message{m}, 1)
 	require.NoError(t, err)
 	return m
+}
+
+func sayMsg(id, chatID string, ms int64, text string) store.Message {
+	return store.Message{MessageID: id, ChatID: chatID, MsgType: "text", SenderID: "ou_a",
+		SenderType: "user", SenderName: "张三", ContentRaw: `{"text":"` + text + `"}`,
+		Content: text, RenderedAt: 1, CreateMs: ms, UpdateMs: ms, MessagePosition: ms}
 }
 
 func owing(t *testing.T, st *store.Store, ids ...string) {
@@ -45,21 +50,43 @@ func owing(t *testing.T, st *store.Store, ids ...string) {
 // 项目协作群 since 300, with one message in 平台组 already read behind its anchor.
 func backlog(t *testing.T) (*store.Store, []store.Chat) {
 	t.Helper()
-	st := feedStore(t)
-	ctx := t.Context()
-	chats := []store.Chat{
+	st, err := storetest.OpenSeed(t, filepath.Join(t.TempDir(), "t.db"), "tui.backlog", seedBacklog)
+	require.NoError(t, err)
+	t.Cleanup(func() { st.Close() })
+	return st, []store.Chat{
 		{ChatID: "oc_platform", Name: "平台组", ChatMode: "group", UnreadCount: 2},
 		{ChatID: "oc_project", Name: "项目协作群", ChatMode: "group", UnreadCount: 1},
 	}
-	require.NoError(t, st.UpsertChats(ctx, chats, 1))
-	say(t, st, "om_p0", "oc_platform", 50, "已经看过了")
-	say(t, st, "om_p1", "oc_platform", 100, "接口什么时候好")
-	say(t, st, "om_p2", "oc_platform", 200, "还有一个问题")
-	say(t, st, "om_j1", "oc_project", 300, "发布推迟到周四")
+}
+
+func seedBacklog(st *store.Store) error {
+	ctx := context.Background()
+	if err := st.UpsertChats(ctx, []store.Chat{
+		{ChatID: "oc_platform", Name: "平台组", ChatMode: "group", UnreadCount: 2},
+		{ChatID: "oc_project", Name: "项目协作群", ChatMode: "group", UnreadCount: 1},
+	}, 1); err != nil {
+		return err
+	}
+	msgs := []store.Message{
+		sayMsg("om_p0", "oc_platform", 50, "已经看过了"),
+		sayMsg("om_p1", "oc_platform", 100, "接口什么时候好"),
+		sayMsg("om_p2", "oc_platform", 200, "还有一个问题"),
+		sayMsg("om_j1", "oc_project", 300, "发布推迟到周四"),
+	}
+	if _, err := st.UpsertMessages(ctx, msgs, 1); err != nil {
+		return err
+	}
 	read := true
-	require.NoError(t, st.SetReadStatus(ctx, "om_p0", &read, 100, 0))
-	owing(t, st, "om_p1", "om_p2", "om_j1")
-	return st, chats
+	if err := st.SetReadStatus(ctx, "om_p0", &read, 100, 0); err != nil {
+		return err
+	}
+	unread := false
+	for _, id := range []string{"om_p1", "om_p2", "om_j1"} {
+		if err := st.SetReadStatus(ctx, id, &unread, 100, 0); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func TestGatherUnread_OrdersSectionsByTheOldestBacklog(t *testing.T) {

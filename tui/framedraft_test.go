@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"path/filepath"
 	"testing"
 
@@ -17,12 +18,23 @@ import (
 // change and a restart.
 func frameDraftModel(t *testing.T) (Model, *store.Store) {
 	t.Helper()
-	st, err := storetest.Open(t, filepath.Join(t.TempDir(), "t.db"))
+	st, err := storetest.OpenSeed(t, filepath.Join(t.TempDir(), "t.db"), "tui.framedraft", seedFrameDraft)
 	require.NoError(t, err)
 	t.Cleanup(func() { st.Close() })
-	ctx := t.Context()
-	require.NoError(t, st.EnsureChat(ctx, "oc_group", 1))
-	_, err = st.UpsertMessages(ctx, []store.Message{
+
+	m := New(Deps{Store: st, Self: "ou_me"})
+	m.width, m.height = 130, 36
+	m.chatID = "oc_group"
+	m.layout()
+	return m, st
+}
+
+func seedFrameDraft(st *store.Store) error {
+	ctx := context.Background()
+	if err := st.EnsureChat(ctx, "oc_group", 1); err != nil {
+		return err
+	}
+	_, err := st.UpsertMessages(ctx, []store.Message{
 		{MessageID: "om_root", ChatID: "oc_group", ThreadID: "omt_1", MsgType: "text",
 			SenderID: "ou_a", SenderName: "张三", ContentRaw: `{"text":"发布计划定了吗"}`,
 			CreateMs: 100, UpdateMs: 100},
@@ -33,13 +45,7 @@ func frameDraftModel(t *testing.T) (Model, *store.Store) {
 			SenderID: "ou_a", SenderName: "张三", ContentRaw: `{"text":"另一个话题"}`,
 			CreateMs: 300, UpdateMs: 300},
 	}, 1)
-	require.NoError(t, err)
-
-	m := New(Deps{Store: st, Self: "ou_me"})
-	m.width, m.height = 130, 36
-	m.chatID = "oc_group"
-	m.layout()
-	return m, st
+	return err
 }
 
 // deliver runs a command tree to completion and plays every message it

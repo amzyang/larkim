@@ -31,6 +31,7 @@ func fakeBinary(t *testing.T, script string) *ExecClient {
 }
 
 func TestActiveChats_AsksForOnePageOfThatSize(t *testing.T) {
+	t.Parallel()
 	c := fakeBinary(t, `echo "$*" > "$(dirname "$0")/argv"; echo '{"ok":true,"data":{"items":[]}}'`)
 	_, err := c.ActiveChats(t.Context(), 30)
 	require.NoError(t, err)
@@ -42,6 +43,7 @@ func TestActiveChats_AsksForOnePageOfThatSize(t *testing.T) {
 }
 
 func TestListChats_ListsEveryChat(t *testing.T) {
+	t.Parallel()
 	c := fakeBinary(t, `echo "$*" > "$(dirname "$0")/argv"; echo '{"ok":true,"data":{"items":[]}}'`)
 	_, err := c.ListChats(t.Context())
 	require.NoError(t, err)
@@ -53,6 +55,7 @@ func TestListChats_ListsEveryChat(t *testing.T) {
 }
 
 func TestExec_AnAPIErrorOnALaterPageFailsTheCall(t *testing.T) {
+	t.Parallel()
 	c := fakeBinary(t, `
 echo "[page 1] fetching..." >&2
 echo "[page 2] fetching..." >&2
@@ -69,6 +72,7 @@ echo '{"ok":true,"identity":"user","data":{"items":[{"message_id":"om_1"}],"has_
 }
 
 func TestExec_ATransportErrorOnALaterPageIsANetworkError(t *testing.T) {
+	t.Parallel()
 	c := fakeBinary(t, `
 echo "[page 1] fetching..." >&2
 echo "[page 2] fetching..." >&2
@@ -83,6 +87,7 @@ echo '{"ok":true,"identity":"user","data":{"items":[{"chat_id":"oc_a"}],"has_mor
 }
 
 func TestSearchMessageIDs_DecodesMetaAndTruncation(t *testing.T) {
+	t.Parallel()
 	c := fakeBinary(t, `
 case "$1 $2" in
 "api POST") cat <<'JSON'
@@ -106,6 +111,7 @@ esac`)
 }
 
 func TestMGetRaw_ParsesMillisecondTimesAndKeepsRaw(t *testing.T) {
+	t.Parallel()
 	c := fakeBinary(t, `cat <<'JSON'
 {"ok":true,"identity":"user","data":{"items":[{"message_id":"om_1","chat_id":"oc_a","msg_type":"text","create_time":"1790078010746","update_time":"1790078010746","message_position":"4745","deleted":false,"updated":false,"sender":{"id":"ou_x","id_type":"open_id","sender_type":"user","sender_name":"Alice"},"body":{"content":"{\"text\":\"hi\"}"},"mentions":[{"key":"@_user_1","id":"ou_y","name":"Bob"}]}]}}
 JSON`)
@@ -122,6 +128,7 @@ JSON`)
 }
 
 func TestRun_DecodesErrorEnvelopeAfterProgressLines(t *testing.T) {
+	t.Parallel()
 	c := fakeBinary(t, `
 echo "[page 1] fetching..." >&2
 echo '{"ok":false,"identity":"user","error":{"type":"api","subtype":"rate_limit","code":99991400,"message":"too many requests","retry_after_seconds":4}}' >&2
@@ -136,6 +143,7 @@ exit 1`)
 }
 
 func TestRun_DecodesPrettyPrintedErrorEnvelope(t *testing.T) {
+	t.Parallel()
 	c := fakeBinary(t, `
 echo "[page 1] fetching..." >&2
 cat >&2 <<'JSON'
@@ -161,6 +169,7 @@ exit 1`)
 }
 
 func TestRun_AuthExitCode(t *testing.T) {
+	t.Parallel()
 	c := fakeBinary(t, `
 echo '{"ok":false,"identity":"user","error":{"type":"auth","subtype":"token_missing","message":"no token"}}' >&2
 exit 3`)
@@ -172,6 +181,7 @@ exit 3`)
 }
 
 func TestWhoami_UserIdentity(t *testing.T) {
+	t.Parallel()
 	c := fakeBinary(t, `cat <<'JSON'
 {"profile":"cli_x","appId":"cli_x","identity":"user","available":true,"tokenStatus":"ready","onBehalfOf":{"userName":"A","openId":"ou_me"}}
 JSON`)
@@ -181,6 +191,7 @@ JSON`)
 }
 
 func TestWhoami_BotFallbackIsAuthError(t *testing.T) {
+	t.Parallel()
 	c := fakeBinary(t, `echo '{"appId":"cli_x","identity":"bot","available":true}'`)
 	_, err := c.Whoami(t.Context())
 	var lerr *Error
@@ -189,6 +200,7 @@ func TestWhoami_BotFallbackIsAuthError(t *testing.T) {
 }
 
 func TestListMessagesRaw_PassesEpochSecondsAndContainer(t *testing.T) {
+	t.Parallel()
 	c := fakeBinary(t, `
 echo "$*" > "$(dirname "$0")/args.txt"
 echo '{"ok":true,"identity":"user","data":{"items":[]}}'`)
@@ -204,10 +216,12 @@ echo '{"ok":true,"identity":"user","data":{"items":[]}}'`)
 }
 
 func TestLarkTimeLayout_NeverRendersZ(t *testing.T) {
+	t.Parallel()
 	require.Equal(t, "2026-09-22T12:00:00+00:00", time.Date(2026, 9, 22, 12, 0, 0, 0, time.UTC).Format(larkTimeLayout))
 }
 
 func TestRealBinary_PrefersGoBinaryBehindNpmWrapper(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	pkg := filepath.Join(root, "lib", "node_modules", "@larksuite", "cli")
 	require.NoError(t, os.MkdirAll(filepath.Join(pkg, "scripts"), 0o755))
@@ -232,6 +246,7 @@ func TestRealBinary_PrefersGoBinaryBehindNpmWrapper(t *testing.T) {
 }
 
 func TestChildEnv_PrependsHomebrewPath(t *testing.T) {
+	t.Parallel()
 	env := childEnv([]string{"HOME=/x", "PATH=/usr/bin"})
 	require.Contains(t, env, "PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin")
 	env = childEnv([]string{"HOME=/x"})
@@ -239,6 +254,7 @@ func TestChildEnv_PrependsHomebrewPath(t *testing.T) {
 }
 
 func TestSearchUsers_SplitsIDsIntoServerSizedBatches(t *testing.T) {
+	t.Parallel()
 	c := fakeBinary(t, `
 echo "$*" >> "$(dirname "$0")/calls"
 n=0
@@ -268,6 +284,7 @@ printf '{"ok":true,"identity":"user","data":{"users":[%s]}}' "$(cat "$(dirname "
 }
 
 func TestSearchUsers_QueryModeSendsOneCall(t *testing.T) {
+	t.Parallel()
 	c := fakeBinary(t, `
 echo "$*" >> "$(dirname "$0")/calls"
 echo '{"ok":true,"identity":"user","data":{"users":[{"open_id":"ou_1","localized_name":"李明","enterprise_email":"liming01@example.com","department":"产品部"}]}}'`)
@@ -282,6 +299,7 @@ echo '{"ok":true,"identity":"user","data":{"users":[{"open_id":"ou_1","localized
 }
 
 func TestUserDetails_RepeatsUserIDsAndDropsWithheldUsers(t *testing.T) {
+	t.Parallel()
 	c := fakeBinary(t, `
 echo "$*" >> "$(dirname "$0")/calls"
 echo '{"ok":true,"identity":"user","data":{"items":[
@@ -302,6 +320,7 @@ echo '{"ok":true,"identity":"user","data":{"items":[
 }
 
 func TestUserDetails_SplitsIntoBatches(t *testing.T) {
+	t.Parallel()
 	c := fakeBinary(t, `
 echo "$*" >> "$(dirname "$0")/calls"
 echo '{"ok":true,"identity":"user","data":{"items":[]}}'`)
@@ -319,6 +338,7 @@ echo '{"ok":true,"identity":"user","data":{"items":[]}}'`)
 }
 
 func TestMuteStatus_KeepsUnansweredChatsApartFromUnmutedOnes(t *testing.T) {
+	t.Parallel()
 	c := fakeBinary(t, `
 echo "$*" >> "$(dirname "$0")/calls"
 echo '{"ok":true,"identity":"user","data":{"items":[{"chat_id":"oc_a","is_muted":true},{"chat_id":"oc_b","is_muted":false}],"invalid_id_list":[{"id":"oc_x","msg":"not a member"}]}}'`)
@@ -336,6 +356,7 @@ echo '{"ok":true,"identity":"user","data":{"items":[{"chat_id":"oc_a","is_muted"
 }
 
 func TestMuteStatus_SplitsIDsIntoServerSizedBatches(t *testing.T) {
+	t.Parallel()
 	c := fakeBinary(t, `
 echo "$*" >> "$(dirname "$0")/calls"
 echo '{"ok":true,"identity":"user","data":{"items":[]}}'`)
@@ -361,6 +382,7 @@ func wireOf(o Outgoing) []string {
 }
 
 func TestOutgoing_WireSendsAListWithAnEmojiAsACard(t *testing.T) {
+	t.Parallel()
 	// A post moves an emotion out of its list item; a card's markdown keeps
 	// it in the item, spelled as its key.
 	require.Equal(t, []string{"interactive", Card("* :DONE:\n* :DONE:").Card}, wireOf(Markdown("* [Done]\n* [Done]")))
@@ -369,6 +391,7 @@ func TestOutgoing_WireSendsAListWithAnEmojiAsACard(t *testing.T) {
 }
 
 func TestOutgoing_WirePicksTheMessageType(t *testing.T) {
+	t.Parallel()
 	require.Equal(t, []string{"text", `{"text":"hi"}`}, wireOf(Text("hi")))
 	require.Equal(t, []string{"post", `{"zh_cn":{"content":[[{"tag":"md","text":"## hi"}]]}}`}, wireOf(Markdown("## hi")))
 	require.Equal(t, []string{"image", `{"image_key":"img_a"}`}, wireOf(Image("img_a")))
@@ -378,6 +401,7 @@ func TestOutgoing_WirePicksTheMessageType(t *testing.T) {
 }
 
 func TestExecClient_SendPostsTheWholeBodyAndKeepsTheAnswer(t *testing.T) {
+	t.Parallel()
 	c := fakeBinary(t, `
 printf '%s\n' "$@" > "$(dirname "$0")/args"
 echo '{"ok":true,"identity":"user","data":{"message_id":"om_new","chat_id":"oc_quiet","msg_type":"post","create_time":"1700000000000","body":{"content":"{}"}}}'`)
@@ -398,12 +422,14 @@ echo '{"ok":true,"identity":"user","data":{"message_id":"om_new","chat_id":"oc_q
 }
 
 func TestExecClient_SendMarkdownCarriesAnEmojiNameAsItsEmotion(t *testing.T) {
+	t.Parallel()
 	require.Equal(t,
 		[]string{"post", `{"zh_cn":{"content":[[{"tag":"text","text":"收到 "},{"tag":"emotion","emoji_type":"DONE"}]]}}`},
 		wireOf(Markdown("收到 [Done]")))
 }
 
 func TestExecClient_SendToAPersonNamesThemByOpenID(t *testing.T) {
+	t.Parallel()
 	c := fakeBinary(t, `
 printf '%s\n' "$@" > "$(dirname "$0")/args"
 echo '{"ok":true,"identity":"user","data":{"message_id":"om_new","chat_id":"oc_p2p_ou_a"}}'`)
@@ -419,6 +445,7 @@ echo '{"ok":true,"identity":"user","data":{"message_id":"om_new","chat_id":"oc_p
 }
 
 func TestExecClient_ReplyInThreadPostsToTheReplyEndpoint(t *testing.T) {
+	t.Parallel()
 	c := fakeBinary(t, `
 printf '%s\n' "$@" > "$(dirname "$0")/args"
 echo '{"ok":true,"identity":"user","data":{"message_id":"om_new","chat_id":"oc_quiet"}}'`)
@@ -434,6 +461,7 @@ echo '{"ok":true,"identity":"user","data":{"message_id":"om_new","chat_id":"oc_q
 }
 
 func TestExecClient_UploadImagePassesTheAbsolutePath(t *testing.T) {
+	t.Parallel()
 	c := fakeBinary(t, `
 echo "$*" > "$(dirname "$0")/args"
 echo '{"ok":true,"identity":"user","data":{"image_key":"img_v3_shot"}}'`)
@@ -452,6 +480,7 @@ echo '{"ok":true,"identity":"user","data":{"image_key":"img_v3_shot"}}'`)
 }
 
 func TestExecClient_UploadImageRefusesAnEmptyKey(t *testing.T) {
+	t.Parallel()
 	c := fakeBinary(t, `echo '{"ok":true,"identity":"user","data":{}}'`)
 	shot := filepath.Join(c.Dir, "shot.png")
 	require.NoError(t, os.WriteFile(shot, []byte("png"), 0o600))
@@ -460,6 +489,7 @@ func TestExecClient_UploadImageRefusesAnEmptyKey(t *testing.T) {
 }
 
 func TestMGetRaw_AsksForTheRealCardBody(t *testing.T) {
+	t.Parallel()
 	c := fakeBinary(t, `
 echo "$*" > "$(dirname "$0")/args"
 echo '{"ok":true,"identity":"user","data":{"items":[]}}'`)
@@ -474,6 +504,7 @@ echo '{"ok":true,"identity":"user","data":{"items":[]}}'`)
 }
 
 func TestChatMembers_SplitsUsersFromBots(t *testing.T) {
+	t.Parallel()
 	c := fakeBinary(t, `
 echo "$*" > "$(dirname "$0")/argv"
 echo "[page 1] fetching..." >&2
@@ -501,6 +532,7 @@ JSON`)
 // The shortcut exists to report the cap, so dropping truncations[] would let a
 // capped roster pass for a complete one.
 func TestChatMembers_ReportsAServerCappedRoster(t *testing.T) {
+	t.Parallel()
 	c := fakeBinary(t, `
 cat <<'JSON'
 {"ok":true,"identity":"user","data":{"chat_id":"oc_team",
@@ -533,6 +565,8 @@ echo "{\"ok\":true,\"identity\":\"user\",\"data\":{\"image_key\":\"img_v3_x\",\"
 `
 
 func TestUploadImage_StagesAFileLarkCLIMayNotRead(t *testing.T) {
+	// Serial: it asserts the shared upload directory is empty, and the tests
+	// that stage a copy there run in parallel.
 	c := fakeBinary(t, echoFile)
 	// ~/.larkim holds the pasted pictures, the fetched ones and the emoji cut
 	// out of the sprite; none of them sit under the resources directory.
@@ -549,6 +583,7 @@ func TestUploadImage_StagesAFileLarkCLIMayNotRead(t *testing.T) {
 }
 
 func TestUploadImage_HandsOverAFileInsideTheWorkingDirectoryAsItStands(t *testing.T) {
+	t.Parallel()
 	c := fakeBinary(t, echoFile)
 	inside := filepath.Join(c.Dir, "shot.png")
 	require.NoError(t, os.WriteFile(inside, []byte("png"), 0o600))
@@ -560,6 +595,7 @@ func TestUploadImage_HandsOverAFileInsideTheWorkingDirectoryAsItStands(t *testin
 }
 
 func TestUploadFile_StagesTheContentButKeepsTheReadersName(t *testing.T) {
+	t.Parallel()
 	c := fakeBinary(t, echoFile)
 	outside := filepath.Join(t.TempDir(), "季度复盘.pdf")
 	require.NoError(t, os.WriteFile(outside, []byte("pdf"), 0o600))
@@ -570,18 +606,21 @@ func TestUploadFile_StagesTheContentButKeepsTheReadersName(t *testing.T) {
 }
 
 func TestUploadImage_SaysSoWhenThePictureIsGone(t *testing.T) {
+	t.Parallel()
 	c := fakeBinary(t, echoFile)
 	_, err := c.UploadImage(t.Context(), filepath.Join(t.TempDir(), "missing.png"))
 	require.ErrorIs(t, err, os.ErrNotExist)
 }
 
 func TestEmotion_CarriesOneEmojiAsThePostElementFeishuSpellsItWith(t *testing.T) {
+	t.Parallel()
 	require.Equal(t,
 		[]string{"post", `{"zh_cn":{"content":[[{"tag":"emotion","emoji_type":"PursueUltimate"}]]}}`},
 		wireOf(Emotion("PursueUltimate")))
 }
 
 func TestOutgoing_WireSendsAPostBodyThroughUntouched(t *testing.T) {
+	t.Parallel()
 	// The markdown path wraps every paragraph in an md element; a body already
 	// in Feishu's own shape must reach Feishu as it was written.
 	body := `{"zh_cn":{"content":[[{"tag":"emotion","emoji_type":"Get"}]]}}`
@@ -589,6 +628,7 @@ func TestOutgoing_WireSendsAPostBodyThroughUntouched(t *testing.T) {
 }
 
 func TestOlderMessagesRaw_AsksOneDescendingPageEndingAtTheFloor(t *testing.T) {
+	t.Parallel()
 	c := fakeBinary(t, `
 echo "$*" > "$(dirname "$0")/args.txt"
 echo '{"ok":true,"identity":"user","data":{"items":[{"message_id":"om_1","chat_id":"oc_a","create_time":"1700000000000"}],"has_more":true}}'`)
@@ -606,6 +646,7 @@ echo '{"ok":true,"identity":"user","data":{"items":[{"message_id":"om_1","chat_i
 }
 
 func TestOlderMessagesRaw_ExhaustedHistoryReportsNoMore(t *testing.T) {
+	t.Parallel()
 	c := fakeBinary(t, `echo '{"ok":true,"identity":"user","data":{"items":[],"has_more":false}}'`)
 	msgs, more, err := c.OlderMessagesRaw(t.Context(), "oc_a", time.Unix(1700000000, 0))
 	require.NoError(t, err)
@@ -614,6 +655,7 @@ func TestOlderMessagesRaw_ExhaustedHistoryReportsNoMore(t *testing.T) {
 }
 
 func TestFormTitleAndMinuteTitle_AskTheEndpointsTheBatchQueryCannot(t *testing.T) {
+	t.Parallel()
 	c := fakeBinary(t, `
 echo "$*" > "$(dirname "$0")/argv.$1"
 case "$1" in
@@ -647,6 +689,7 @@ esac`)
 // - as stdin, so a message that starts with a mention or is a single dash has
 // to travel inside the request JSON, which always opens with {.
 func TestSend_TextLarkCLIWouldReinterpretTravelsInsideTheBody(t *testing.T) {
+	t.Parallel()
 	for _, text := range []string{"@张三 看一下", "-"} {
 		data := jsonArg(Text(text).request(""))
 		require.True(t, strings.HasPrefix(data, "{"), data)
@@ -655,6 +698,7 @@ func TestSend_TextLarkCLIWouldReinterpretTravelsInsideTheBody(t *testing.T) {
 }
 
 func TestError_CarriesTheCallAndItsWholeOutput(t *testing.T) {
+	t.Parallel()
 	long := strings.Repeat("lark-cli said so. ", 40)
 	c := fakeBinary(t, `echo '`+long+`' >&2; exit 1`)
 
@@ -674,6 +718,7 @@ func TestError_CarriesTheCallAndItsWholeOutput(t *testing.T) {
 // lark-cli rates the recall high-risk and refuses it without --yes; the flag
 // has to be on the wire or every recall comes back as exit 10.
 func TestExecClient_RecallConfirmsTheHighRiskCall(t *testing.T) {
+	t.Parallel()
 	c := fakeBinary(t, `
 echo "$*" > "$(dirname "$0")/args"
 echo '{"ok":true,"identity":"user","data":{}}'`)
@@ -714,6 +759,7 @@ JSON`)
 }
 
 func TestRecognizeText_APictureWithNothingInItIsNotAFailure(t *testing.T) {
+	t.Parallel()
 	c := fakeBinary(t, `cat > /dev/null
 echo '{"ok":true,"identity":"bot","data":{"text_list":[]}}'`)
 	img := filepath.Join(t.TempDir(), "photo.jpg")
@@ -725,6 +771,7 @@ echo '{"ok":true,"identity":"bot","data":{"text_list":[]}}'`)
 }
 
 func TestRecognizeText_AMissingFileNeverSpendsACall(t *testing.T) {
+	t.Parallel()
 	c := fakeBinary(t, `echo "called" >&2; exit 5`)
 	_, err := c.RecognizeText(t.Context(), filepath.Join(t.TempDir(), "gone.png"))
 	require.ErrorIs(t, err, os.ErrNotExist)
