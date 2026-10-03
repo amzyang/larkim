@@ -10,6 +10,7 @@ import (
 )
 
 func TestRefreshChat_ListsTheOpenChatWithoutSearching(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	f.AddMessage(msg("om_fresh", "oc_a", clk.Now().Add(-2*time.Second), "just sent"))
@@ -30,6 +31,7 @@ func TestRefreshChat_ListsTheOpenChatWithoutSearching(t *testing.T) {
 }
 
 func TestRefreshChat_CostsOneCallAndNoRepaintWhenNothingIsNew(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	m := msg("om_fresh", "oc_a", clk.Now().Add(-2*time.Second), "just sent")
@@ -56,6 +58,7 @@ func TestRefreshChat_CostsOneCallAndNoRepaintWhenNothingIsNew(t *testing.T) {
 }
 
 func TestRefreshChat_FollowsTheOpenThread(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	// The root predates the window, so pullChat never sees it and would miss
@@ -78,6 +81,7 @@ func TestRefreshChat_FollowsTheOpenThread(t *testing.T) {
 }
 
 func TestRefreshChat_LeavesTheSearchCursorsAlone(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	f.AddMessage(msg("om_fresh", "oc_a", clk.Now().Add(-2*time.Second), "just sent"))
@@ -97,6 +101,7 @@ func TestRefreshChat_LeavesTheSearchCursorsAlone(t *testing.T) {
 }
 
 func TestRefreshChat_NudgesBeforeTheRenderingLands(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	nudges := 0
@@ -112,6 +117,7 @@ func TestRefreshChat_NudgesBeforeTheRenderingLands(t *testing.T) {
 }
 
 func TestRefreshChat_RunsAlongsideATick(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	f.AddMessage(msg("om_fresh", "oc_a", clk.Now().Add(-2*time.Second), "just sent"))

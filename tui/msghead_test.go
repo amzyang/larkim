@@ -23,6 +23,7 @@ func msgHead(t *testing.T, c store.Chat, w int) string {
 }
 
 func TestRenderHeader_NamesTheChatWithoutItsID(t *testing.T) {
+	t.Parallel()
 	line := msgHead(t, store.Chat{ChatID: "oc_quiet", Name: "平台组", ChatMode: "group"}, 40)
 	require.Contains(t, line, "平台组")
 	require.NotContains(t, line, "oc_", "the id is for machines, not for the header")
@@ -30,6 +31,7 @@ func TestRenderHeader_NamesTheChatWithoutItsID(t *testing.T) {
 }
 
 func TestRenderHeader_MarksTheChatMode(t *testing.T) {
+	t.Parallel()
 	for mode, glyph := range map[string]string{"p2p": "\uf007", "group": "\uf0c0", "topic": "\uf075"} {
 		line := msgHead(t, store.Chat{ChatID: "oc_quiet", Name: "平台组", ChatMode: mode}, 40)
 		require.Equal(t, glyph+enSpace+"平台组", strings.TrimRight(line, " "), "mode %q", mode)
@@ -37,21 +39,25 @@ func TestRenderHeader_MarksTheChatMode(t *testing.T) {
 }
 
 func TestRenderHeader_UnknownModeTakesNoColumn(t *testing.T) {
+	t.Parallel()
 	line := msgHead(t, store.Chat{ChatID: "oc_quiet", Name: "平台组"}, 40)
 	require.Equal(t, "平台组", strings.TrimRight(line, " "), "no glyph means no leading gap")
 }
 
 func TestRenderHeader_KeepsTheSyncError(t *testing.T) {
+	t.Parallel()
 	line := msgHead(t, store.Chat{ChatID: "oc_quiet", Name: "平台组", ChatMode: "group", SyncError: "boom"}, 40)
 	require.Contains(t, line, "history unavailable")
 }
 
 func TestRenderHeader_UnnamedChatStillReads(t *testing.T) {
+	t.Parallel()
 	line := msgHead(t, store.Chat{ChatID: "oc_quiet", ChatMode: "p2p"}, 40)
 	require.Contains(t, line, "(unnamed)")
 }
 
 func TestRenderMessages_RulesOffTheHeader(t *testing.T) {
+	t.Parallel()
 	m := sized(120, 30)
 	w := m.messagesWidth() - 2
 	lines := strings.Split(m.renderMessages(m.bodyHeight()), "\n")
@@ -61,6 +67,7 @@ func TestRenderMessages_RulesOffTheHeader(t *testing.T) {
 }
 
 func TestHit_TheHeaderAndItsRuleAreNotRows(t *testing.T) {
+	t.Parallel()
 	m := sized(120, 30)
 	m.msgIdx = len(m.msgs) - 1
 	m.layout()
@@ -76,6 +83,7 @@ func TestHit_TheHeaderAndItsRuleAreNotRows(t *testing.T) {
 }
 
 func TestDaySeparator_ReachesBothPaneEdges(t *testing.T) {
+	t.Parallel()
 	for w := 40; w < 48; w++ {
 		line := daySeparator("Today", w)
 		require.Equal(t, w, lipgloss.Width(line), "width %d", w)
@@ -86,6 +94,7 @@ func TestDaySeparator_ReachesBothPaneEdges(t *testing.T) {
 }
 
 func TestRenderHeader_CarriesTheTagsTheChatsCardWould(t *testing.T) {
+	t.Parallel()
 	line := msgHead(t, store.Chat{ChatID: "oc_quiet", Name: "项目协作群", ChatMode: "group",
 		External: true, ChatStatus: "dissolved"}, 60)
 	require.Contains(t, line, "external", "who you are talking to outside this tenant is worth knowing before you type")
@@ -93,12 +102,14 @@ func TestRenderHeader_CarriesTheTagsTheChatsCardWould(t *testing.T) {
 }
 
 func TestRenderHeader_AnOrdinaryChatCarriesNoTags(t *testing.T) {
+	t.Parallel()
 	line := msgHead(t, store.Chat{ChatID: "oc_quiet", Name: "平台组", ChatMode: "group", ChatStatus: "normal"}, 60)
 	require.NotContains(t, line, "normal", "the ordinary state is not news")
 	require.NotContains(t, line, "external")
 }
 
 func TestRenderHeader_PriorityAtMinMessagesWidth(t *testing.T) {
+	t.Parallel()
 	longName := strings.Repeat("项目", 20)
 	line := msgHead(t, store.Chat{
 		ChatID: "oc_quiet", Name: longName, ChatMode: "group",
@@ -111,6 +122,7 @@ func TestRenderHeader_PriorityAtMinMessagesWidth(t *testing.T) {
 }
 
 func TestRenderHeader_ExternalIsNotDrawnAsAFault(t *testing.T) {
+	t.Parallel()
 	m := New(Deps{Self: "ou_me"})
 	c := store.Chat{ChatID: "oc_quiet", Name: "项目协作群", ChatMode: "group", External: true}
 	m.chats, m.chatID = []store.Chat{c}, c.ChatID

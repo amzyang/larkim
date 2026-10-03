@@ -48,6 +48,7 @@ func focusedInfo(m Model) []string {
 }
 
 func TestCmdComp_OpensOnTheFirstRuneAndNotOnABareColon(t *testing.T) {
+	t.Parallel()
 	m := cmdModel(t)
 	require.Equal(t, modeCommand, m.mode)
 	require.False(t, m.cmdcomp.open(), "a bare : is a bare :, not the whole table")
@@ -59,6 +60,7 @@ func TestCmdComp_OpensOnTheFirstRuneAndNotOnABareColon(t *testing.T) {
 }
 
 func TestCmdComp_OffersEveryCommandAPrefixReaches(t *testing.T) {
+	t.Parallel()
 	m := press(t, cmdModel(t), "c")
 
 	// goto is reached through its alias chat, and is offered under the name
@@ -67,6 +69,7 @@ func TestCmdComp_OffersEveryCommandAPrefixReaches(t *testing.T) {
 }
 
 func TestCmdComp_UsageAndHelpAreTheFocusedRowsInfoNotItsName(t *testing.T) {
+	t.Parallel()
 	m := press(t, cmdModel(t), "c")
 	require.Empty(t, focusedInfo(m), "nothing is focused until the reader walks onto a row")
 
@@ -80,6 +83,7 @@ func TestCmdComp_UsageAndHelpAreTheFocusedRowsInfoNotItsName(t *testing.T) {
 }
 
 func TestCmdComp_ATargetsIDIsItsInfo(t *testing.T) {
+	t.Parallel()
 	m := press(t, cmdModel(t), "s", "e", "n", "d", " ")
 	require.Equal(t, []string{"平台组", "项目协作群", "张三"}, offers(m), "the rows name; the id they write is not on them")
 
@@ -92,6 +96,7 @@ func TestCmdComp_ATargetsIDIsItsInfo(t *testing.T) {
 }
 
 func TestCmdComp_ASettingsInfoIsItsHelpValueAndReach(t *testing.T) {
+	t.Parallel()
 	m := press(t, cmdModel(t), "s", "e", "t", " ", "tab")
 	require.Equal(t, "set applink_pace_ms=", typed(m))
 	info := focusedInfo(m)
@@ -100,6 +105,7 @@ func TestCmdComp_ASettingsInfoIsItsHelpValueAndReach(t *testing.T) {
 }
 
 func TestCmdComp_AnEnumWordHasNothingMoreToSay(t *testing.T) {
+	t.Parallel()
 	m := press(t, cmdModel(t), "c", "o", "p", "y", " ", "tab")
 	require.Equal(t, "copy 200", typed(m))
 	require.Empty(t, focusedInfo(m))
@@ -110,6 +116,7 @@ func TestCmdComp_AnEnumWordHasNothingMoreToSay(t *testing.T) {
 }
 
 func TestCmdComp_WalkingWritesTheOfferIntoTheLine(t *testing.T) {
+	t.Parallel()
 	m := press(t, cmdModel(t), "c")
 	require.Equal(t, "c", typed(m))
 
@@ -123,6 +130,7 @@ func TestCmdComp_WalkingWritesTheOfferIntoTheLine(t *testing.T) {
 }
 
 func TestCmdComp_WalkingBackPastTheTopRestoresWhatWasTyped(t *testing.T) {
+	t.Parallel()
 	m := press(t, cmdModel(t), "c", "tab", "ctrl+p")
 
 	require.Equal(t, "c", typed(m), "the stem is the only way back off a list that overwrote it")
@@ -131,6 +139,7 @@ func TestCmdComp_WalkingBackPastTheTopRestoresWhatWasTyped(t *testing.T) {
 }
 
 func TestCmdComp_KeepsItsOffersWhileWalking(t *testing.T) {
+	t.Parallel()
 	m := press(t, cmdModel(t), "c")
 	want := offers(m)
 
@@ -140,6 +149,7 @@ func TestCmdComp_KeepsItsOffersWhileWalking(t *testing.T) {
 }
 
 func TestCmdComp_ClosesOnceTheLineNamesOneCommandWithNoArgument(t *testing.T) {
+	t.Parallel()
 	m := press(t, cmdModel(t), "s", "y", "n", "c")
 	require.Equal(t, []string{"sync"}, offers(m))
 
@@ -148,6 +158,7 @@ func TestCmdComp_ClosesOnceTheLineNamesOneCommandWithNoArgument(t *testing.T) {
 }
 
 func TestCmdComp_CompletesAChatNameForGotoAndAnOpenIDForSend(t *testing.T) {
+	t.Parallel()
 	// :goto reads its whole rest and folds it, so it takes the readable name.
 	m := press(t, cmdModel(t), "g", "o", "t", "o", " ")
 	require.Equal(t, []string{"平台组", "项目协作群"}, offers(m))
@@ -165,12 +176,14 @@ func TestCmdComp_CompletesAChatNameForGotoAndAnOpenIDForSend(t *testing.T) {
 }
 
 func TestCmdComp_OffersOnlyChatsToGoto(t *testing.T) {
+	t.Parallel()
 	m := press(t, cmdModel(t), "g", "o", " ", "张")
 
 	require.Empty(t, offers(m), "a person is not a chat the reader can be taken to")
 }
 
 func TestCmdComp_CompletesAnEmojiKeyForReact(t *testing.T) {
+	t.Parallel()
 	m := press(t, cmdModel(t), "r", "e", "a", "c", "t", " ", "z", "a", "n")
 	require.NotEmpty(t, m.cmdcomp.menu.items, "the pinyin reaches the emoji the picker reaches")
 	require.Equal(t, "THUMBSUP", m.cmdcomp.menu.items[0].insert)
@@ -186,6 +199,7 @@ func TestCmdComp_CompletesAnEmojiKeyForReact(t *testing.T) {
 }
 
 func TestCmdComp_CompletesTheFixedWordsOfAnEnumArgument(t *testing.T) {
+	t.Parallel()
 	m := press(t, cmdModel(t), "c", "o", "p", "y", " ")
 	require.Equal(t, []string{"200", "7d", "all"}, offers(m))
 
@@ -194,6 +208,7 @@ func TestCmdComp_CompletesTheFixedWordsOfAnEnumArgument(t *testing.T) {
 }
 
 func TestCmdComp_StopsPastTheFirstArgument(t *testing.T) {
+	t.Parallel()
 	m := press(t, cmdModel(t), "s", "e", "n", "d", " ", "tab", " ", "h", "i")
 
 	require.Equal(t, "send oc_team hi", typed(m))
@@ -201,6 +216,7 @@ func TestCmdComp_StopsPastTheFirstArgument(t *testing.T) {
 }
 
 func TestCmdComp_EscClosesTheListThenLeavesCommandMode(t *testing.T) {
+	t.Parallel()
 	m := press(t, cmdModel(t), "c", "esc")
 	require.False(t, m.cmdcomp.open())
 	require.Equal(t, modeCommand, m.mode, "dismissing a menu and leaving the line are two presses")
@@ -215,6 +231,7 @@ func TestCmdComp_EscClosesTheListThenLeavesCommandMode(t *testing.T) {
 }
 
 func TestCmdComp_TheColonLineStandsStillAsTheListGrows(t *testing.T) {
+	t.Parallel()
 	m := press(t, cmdModel(t), "c")
 	one := m.cmdCompRows()
 	require.Positive(t, one)
@@ -229,6 +246,7 @@ func TestCmdComp_TheColonLineStandsStillAsTheListGrows(t *testing.T) {
 }
 
 func TestRunCommand_RunsWhatTheListWroteIntoTheLine(t *testing.T) {
+	t.Parallel()
 	m := press(t, cmdModel(t), "c", "tab", "enter")
 
 	require.Equal(t, modeNormal, m.mode)
@@ -237,6 +255,7 @@ func TestRunCommand_RunsWhatTheListWroteIntoTheLine(t *testing.T) {
 }
 
 func TestCmdComp_CompletesASettingWithItsEqualsAlready(t *testing.T) {
+	t.Parallel()
 	// An option only ever reads as a pair, so the = comes along and the
 	// reader's next keystroke is the value.
 	m := press(t, cmdModel(t), "s", "e", "t", " ")
@@ -249,6 +268,7 @@ func TestCmdComp_CompletesASettingWithItsEqualsAlready(t *testing.T) {
 }
 
 func TestCmdComp_CompletesAModeWithTheWordsItTakes(t *testing.T) {
+	t.Parallel()
 	// mark_read.mode takes one of two words; offering them is what spares the
 	// reader a round trip through the refusal.
 	m := press(t, cmdModel(t), []string{"s", "e", "t", " ", "m", "a", "r", "k", "_", "r", "e", "a", "d", ".", "m", "o", "d", "e", "="}...)
@@ -259,6 +279,7 @@ func TestCmdComp_CompletesAModeWithTheWordsItTakes(t *testing.T) {
 }
 
 func TestCmdComp_CompletesAConfigKeyBare(t *testing.T) {
+	t.Parallel()
 	// :config opens the panel on the row; the value is typed into the row
 	// rather than into the line, so no = comes along.
 	m := press(t, cmdModel(t), "c", "o", "n", "f", "i", "g", " ")
@@ -269,6 +290,7 @@ func TestCmdComp_CompletesAConfigKeyBare(t *testing.T) {
 }
 
 func TestFloater_StandsUnderTheFieldOnTheCommandLine(t *testing.T) {
+	t.Parallel()
 	m := press(t, cmdModel(t), "c")
 	f, ok := m.floater()
 	require.True(t, ok)
@@ -286,6 +308,7 @@ func TestFloater_StandsUnderTheFieldOnTheCommandLine(t *testing.T) {
 }
 
 func TestFloater_FollowsTheFieldNotTheLineTheListWrites(t *testing.T) {
+	t.Parallel()
 	m := press(t, cmdModel(t), "c")
 	f, _ := m.floater()
 
@@ -297,6 +320,7 @@ func TestFloater_FollowsTheFieldNotTheLineTheListWrites(t *testing.T) {
 }
 
 func TestCursorAt_StaysOnTheCommandLinesOwnRow(t *testing.T) {
+	t.Parallel()
 	m := press(t, cmdModel(t), "c")
 	require.True(t, m.cmdcomp.open())
 	// The first inner row of the box: the panes with their border, then the
@@ -305,6 +329,7 @@ func TestCursorAt_StaysOnTheCommandLinesOwnRow(t *testing.T) {
 }
 
 func TestModelPicturePrepare_ClaimsWhatTheReactListOffers(t *testing.T) {
+	t.Parallel()
 	m := cmdModel(t)
 	writeTestEmoji(t, m.deps.DataDir, "DONE")
 	m.pics = picturesIn(m.deps.DataDir)
@@ -318,6 +343,7 @@ func TestModelPicturePrepare_ClaimsWhatTheReactListOffers(t *testing.T) {
 }
 
 func TestCmdComp_ATargetWearsItsFace(t *testing.T) {
+	t.Parallel()
 	m := press(t, cmdModel(t), "s", "e", "n", "d", " ")
 	require.True(t, m.cmdcomp.menu.cols.icon)
 	chat := m.cmdcomp.menu.rows[0].icon

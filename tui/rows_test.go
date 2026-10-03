@@ -53,6 +53,7 @@ func baseStyle() msgStyle {
 }
 
 func TestRenderRows_SplitsDaysAndDropsMessageIDs(t *testing.T) {
+	t.Parallel()
 	msgs := []store.Message{
 		{MessageID: "om_1", SenderName: "孙琪", Content: "前天", CreateMs: msgAt(21, 9, 0), RenderedAt: 1},
 		{MessageID: "om_2", SenderName: "孙琪", Content: "昨天上午", CreateMs: msgAt(22, 9, 0), RenderedAt: 1},
@@ -66,6 +67,7 @@ func TestRenderRows_SplitsDaysAndDropsMessageIDs(t *testing.T) {
 }
 
 func TestRenderRows_ADayRuleNeedsNoAirAroundIt(t *testing.T) {
+	t.Parallel()
 	msgs := []store.Message{
 		{MessageID: "om_1", SenderName: "张三", Content: "前天", CreateMs: msgAt(21, 9, 0), RenderedAt: 1},
 		{MessageID: "om_2", SenderName: "张三", Content: "Yesterday", CreateMs: msgAt(22, 9, 0), RenderedAt: 1},
@@ -86,6 +88,7 @@ func TestRenderRows_ADayRuleNeedsNoAirAroundIt(t *testing.T) {
 }
 
 func TestRenderRows_LeavesTheClockToTheStatusBar(t *testing.T) {
+	t.Parallel()
 	msgs := []store.Message{
 		{MessageID: "om_1", SenderName: "孙琪", Content: "a", CreateMs: msgAt(23, 9, 5), RenderedAt: 1},
 		{MessageID: "om_2", SenderName: "孙琪", Content: "b", CreateMs: msgAt(23, 9, 30), RenderedAt: 1},
@@ -96,6 +99,7 @@ func TestRenderRows_LeavesTheClockToTheStatusBar(t *testing.T) {
 }
 
 func TestRenderRows_SystemMessageHasNoSenderAndSitsCentred(t *testing.T) {
+	t.Parallel()
 	msgs := []store.Message{{MessageID: "om_1", MsgType: "system", SenderName: "孙琪",
 		Content: "林岚 invited Factory to the group.", CreateMs: msgAt(23, 9, 0), RenderedAt: 1}}
 	rows := renderRows(msgs, baseStyle())
@@ -111,6 +115,7 @@ func TestRenderRows_SystemMessageHasNoSenderAndSitsCentred(t *testing.T) {
 }
 
 func TestRenderRows_SenderCarriesTheAccountSuffix(t *testing.T) {
+	t.Parallel()
 	msgs := []store.Message{{MessageID: "om_1", SenderID: "ou_x", SenderName: "李明", Content: "a", CreateMs: msgAt(23, 9, 0), RenderedAt: 1}}
 	st := baseStyle()
 	st.suffix = map[string]string{"ou_x": "01"}
@@ -118,6 +123,7 @@ func TestRenderRows_SenderCarriesTheAccountSuffix(t *testing.T) {
 }
 
 func TestRenderRows_UnrenderedAndRecalledStaySpelledOut(t *testing.T) {
+	t.Parallel()
 	msgs := []store.Message{
 		{MessageID: "om_1", SenderName: "孙琪", MsgType: "text", ContentRaw: `{"text":"x"}`, CreateMs: msgAt(23, 9, 0)},
 		{MessageID: "om_2", SenderName: "孙琪", MsgType: "interactive", ContentRaw: `{"json_card":"{}"}`, CreateMs: msgAt(23, 9, 1)},
@@ -134,6 +140,7 @@ func TestRenderRows_UnrenderedAndRecalledStaySpelledOut(t *testing.T) {
 // The client draws a recall the way it draws a system notice: centred, with
 // the sender named in the line rather than above it.
 func TestRenderRows_ARecallOfTheReadersOwnSaysYou(t *testing.T) {
+	t.Parallel()
 	st := baseStyle()
 	msgs := []store.Message{{MessageID: "om_1", SenderID: st.self, SenderName: "林岚",
 		Content: "gone", Deleted: true, CreateMs: msgAt(23, 9, 0), RenderedAt: 1}}
@@ -145,6 +152,7 @@ func TestRenderRows_ARecallOfTheReadersOwnSaysYou(t *testing.T) {
 // A notice between two of one sender's messages ends the block above it, so
 // the sender coming back after it introduces themselves again.
 func TestRenderRows_ARecallSplitsTheBlockAroundIt(t *testing.T) {
+	t.Parallel()
 	msgs := []store.Message{
 		{MessageID: "om_1", SenderID: "ou_a", SenderName: "孙琪", MsgType: "text",
 			ContentRaw: `{"text":"before"}`, CreateMs: msgAt(23, 9, 0)},
@@ -159,6 +167,7 @@ func TestRenderRows_ARecallSplitsTheBlockAroundIt(t *testing.T) {
 }
 
 func TestRenderRows_BadgesOnlyAnObservedEdit(t *testing.T) {
+	t.Parallel()
 	// Feishu sets updated on its own post-send patches (mention resolution,
 	// link and time-phrase enrichment), which the client never badges.
 	msgs := []store.Message{
@@ -170,12 +179,14 @@ func TestRenderRows_BadgesOnlyAnObservedEdit(t *testing.T) {
 }
 
 func TestBodyRows_ImageWithoutGraphicsFallsBackToAStandIn(t *testing.T) {
+	t.Parallel()
 	msgs := []store.Message{{MessageID: "om_1", MsgType: "image", SenderName: "孙琪",
 		Content: "[Image: img_v3_abc]", CreateMs: msgAt(23, 9, 0), RenderedAt: 1}}
 	require.Contains(t, rowText(renderRows(msgs, baseStyle())), "[Image]")
 }
 
 func TestBodyRows_ImageReservesTheCellsItWillFill(t *testing.T) {
+	t.Parallel()
 	msgs := []store.Message{{MessageID: "om_1", MsgType: "post", SenderName: "孙琪",
 		Content: "看这个\n![Image](img_v3_abc)", CreateMs: msgAt(23, 9, 0), RenderedAt: 1}}
 	st := baseStyle()
@@ -202,6 +213,7 @@ func TestBodyRows_ImageReservesTheCellsItWillFill(t *testing.T) {
 // A screenshot drawn at its own pixels is a whole screenful, so a picture in
 // the message flow gets a box rather than the room the body has.
 func TestPicBox_LeavesRoomAroundThePicture(t *testing.T) {
+	t.Parallel()
 	st := baseStyle()
 
 	cols, rows := st.picBox()
@@ -216,6 +228,7 @@ func TestPicBox_LeavesRoomAroundThePicture(t *testing.T) {
 }
 
 func TestSplitImages_KeepsTheTextAroundTheReference(t *testing.T) {
+	t.Parallel()
 	keys, rest := splitImages("before ![Image](img_a) after")
 	require.Equal(t, []string{"img_a"}, keys)
 	require.Equal(t, "before  after", rest)
@@ -229,6 +242,7 @@ func TestSplitImages_KeepsTheTextAroundTheReference(t *testing.T) {
 }
 
 func TestMsgDay_BucketsLikeTheChatList(t *testing.T) {
+	t.Parallel()
 	require.Equal(t, "Today", msgDay(msgAt(23, 0, 1), testNow))
 	require.Equal(t, "Yesterday", msgDay(msgAt(22, 23, 59), testNow))
 	require.Equal(t, "Fri", msgDay(msgAt(18, 9, 0), testNow))
@@ -239,6 +253,7 @@ func TestMsgDay_BucketsLikeTheChatList(t *testing.T) {
 }
 
 func TestRenderRows_QuotesTheMessageAReplyAnswers(t *testing.T) {
+	t.Parallel()
 	parent := store.Message{MessageID: "om_1", SenderID: "ou_her", SenderName: "孙琪",
 		Content: "失败任务链接发一下，我看看", CreateMs: msgAt(23, 9, 0), RenderedAt: 1}
 	msgs := []store.Message{
@@ -257,6 +272,7 @@ func TestRenderRows_QuotesTheMessageAReplyAnswers(t *testing.T) {
 }
 
 func TestRenderRows_QuotesTheMessageJustAboveToo(t *testing.T) {
+	t.Parallel()
 	// The client quotes it, and without the line a reply to the message above
 	// reads as the next thing said rather than an answer to it.
 	parent := store.Message{MessageID: "om_1", SenderName: "孙琪", Content: "问题", CreateMs: msgAt(23, 9, 0), RenderedAt: 1}
@@ -272,6 +288,7 @@ func TestRenderRows_QuotesTheMessageJustAboveToo(t *testing.T) {
 }
 
 func TestRenderRows_QuoteSaysWhenTheParentIsMissing(t *testing.T) {
+	t.Parallel()
 	msgs := []store.Message{
 		{MessageID: "om_a", SenderName: "孙琪", Content: "无关", CreateMs: msgAt(23, 9, 0), RenderedAt: 1},
 		{MessageID: "om_b", SenderName: "沈知远", Content: "答案", ReplyTo: "om_old", CreateMs: msgAt(23, 9, 1), RenderedAt: 1},
@@ -281,6 +298,7 @@ func TestRenderRows_QuoteSaysWhenTheParentIsMissing(t *testing.T) {
 }
 
 func TestRenderRows_QuoteIsCutToTheWidth(t *testing.T) {
+	t.Parallel()
 	parent := store.Message{MessageID: "om_1", SenderName: "孙琪", Content: strings.Repeat("很长的原文 ", 20),
 		CreateMs: msgAt(23, 9, 0), RenderedAt: 1}
 	msgs := []store.Message{
@@ -306,6 +324,7 @@ func cardMessage() []store.Message {
 }
 
 func TestBodyRows_CardPictureDrawsInsideTheFrame(t *testing.T) {
+	t.Parallel()
 	st := baseStyle()
 	st.res = map[string][]store.Resource{"om_1": {{FileKey: "img_v3_notice", LocalPath: "a.png", Status: "done"}}}
 	st.place = func(path string, maxCols, maxRows int) picture {
@@ -328,12 +347,14 @@ func TestBodyRows_CardPictureDrawsInsideTheFrame(t *testing.T) {
 }
 
 func TestBodyRows_CardPictureStandsInWhenItCannotBeDrawn(t *testing.T) {
+	t.Parallel()
 	out := rowText(renderRows(cardMessage(), baseStyle()))
 	require.Contains(t, out, "[Image]")
 	require.NotContains(t, out, "img_key:")
 }
 
 func TestHeadLine_BadgesAnAppsTurn(t *testing.T) {
+	t.Parallel()
 	st := msgStyle{width: 60, self: "ou_me", now: testNow}
 
 	bot := store.Message{MessageID: "om_1", SenderID: "ou_bot", SenderName: "Factory", SenderType: "app"}
@@ -344,6 +365,7 @@ func TestHeadLine_BadgesAnAppsTurn(t *testing.T) {
 }
 
 func TestHeadLine_MarksOnlyASendThatFailed(t *testing.T) {
+	t.Parallel()
 	pending := store.Message{MessageID: "local-1", SenderID: "ou_me", SenderName: "林岚"}
 	sent := store.Message{MessageID: "om_1", SenderID: "ou_me", SenderName: "林岚"}
 	st := msgStyle{width: 60, self: "ou_me", now: testNow,
@@ -390,6 +412,7 @@ func said(id, sender, body string, day, hour, minute int) store.Message {
 }
 
 func TestRenderRows_MergesAConsecutiveSenderWithinTheDay(t *testing.T) {
+	t.Parallel()
 	msgs := []store.Message{
 		said("om_1", "孙琪", "早", 23, 9, 0),
 		said("om_2", "孙琪", "方案我看了", 23, 9, 1),
@@ -403,6 +426,7 @@ func TestRenderRows_MergesAConsecutiveSenderWithinTheDay(t *testing.T) {
 }
 
 func TestRenderRows_SplitsABlockAfterAQuietGap(t *testing.T) {
+	t.Parallel()
 	msgs := []store.Message{
 		said("om_1", "孙琪", "早", 23, 9, 0),
 		said("om_2", "孙琪", "在吗", 23, 9, 4),
@@ -413,6 +437,7 @@ func TestRenderRows_SplitsABlockAfterAQuietGap(t *testing.T) {
 }
 
 func TestRenderRows_SplitsABlockAtASystemMessage(t *testing.T) {
+	t.Parallel()
 	sys := said("om_2", "孙琪", "林岚 invited Factory to the group.", 23, 9, 1)
 	sys.MsgType = "system"
 	msgs := []store.Message{said("om_1", "孙琪", "早", 23, 9, 0), sys, said("om_3", "孙琪", "回来了", 23, 9, 2)}
@@ -421,6 +446,7 @@ func TestRenderRows_SplitsABlockAtASystemMessage(t *testing.T) {
 }
 
 func TestRenderRows_HoldsEachSectionOffTheOneAbove(t *testing.T) {
+	t.Parallel()
 	sys := said("om_2", "孙琪", "林岚 invited 张三 to the group.", 23, 9, 1)
 	sys.MsgType = "system"
 	msgs := []store.Message{
@@ -445,6 +471,7 @@ func TestRenderRows_HoldsEachSectionOffTheOneAbove(t *testing.T) {
 }
 
 func TestRenderRows_PutsTheBodyRightUnderTheSenderLine(t *testing.T) {
+	t.Parallel()
 	mine := said("om_1", "me", "好的", 23, 9, 0)
 	mine.SenderID = "ou_me"
 	rows := drawn(renderRows([]store.Message{mine, said("om_2", "孙琪", "收到", 23, 9, 1)}, baseStyle()))
@@ -455,6 +482,7 @@ func TestRenderRows_PutsTheBodyRightUnderTheSenderLine(t *testing.T) {
 }
 
 func TestRenderRows_SplitsABlockWhenTheReadStateDiffers(t *testing.T) {
+	t.Parallel()
 	msgs := []store.Message{said("om_1", "孙琪", "早", 23, 9, 0), said("om_2", "孙琪", "在吗", 23, 9, 1)}
 	st := baseStyle()
 	st.dots = map[string]bool{"om_2": true}
@@ -464,6 +492,7 @@ func TestRenderRows_SplitsABlockWhenTheReadStateDiffers(t *testing.T) {
 }
 
 func TestRenderRows_SplitsABlockForAMessageCarryingItsOwnBadge(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name  string
 		badge func(*store.Message)
@@ -483,6 +512,7 @@ func TestRenderRows_SplitsABlockForAMessageCarryingItsOwnBadge(t *testing.T) {
 }
 
 func TestRenderRows_TheReadersOwnMessagesCarryNoMarkOfTheirOwn(t *testing.T) {
+	t.Parallel()
 	mine := said("om_1", "me", "好的", 23, 9, 0)
 	mine.SenderID = "ou_me"
 	msgs := []store.Message{mine, said("om_2", "孙琪", "收到", 23, 9, 1)}
@@ -493,6 +523,7 @@ func TestRenderRows_TheReadersOwnMessagesCarryNoMarkOfTheirOwn(t *testing.T) {
 }
 
 func TestRenderRows_ASendOnItsWayDrawsAsTheMessageItBecomes(t *testing.T) {
+	t.Parallel()
 	msgs := []store.Message{
 		{MessageID: "om_1", SenderID: "ou_me", SenderName: "林岚", ChatID: "oc_1",
 			Content: "第一条", CreateMs: msgAt(23, 9, 0), RenderedAt: 1},
@@ -511,6 +542,7 @@ func TestRenderRows_ASendOnItsWayDrawsAsTheMessageItBecomes(t *testing.T) {
 }
 
 func TestRenderRows_SplitsABlockForAFailedSend(t *testing.T) {
+	t.Parallel()
 	msgs := []store.Message{
 		{MessageID: "local-1", SenderID: "ou_me", SenderName: "林岚", ChatID: "oc_1",
 			Content: "第一条", CreateMs: msgAt(23, 9, 0), RenderedAt: 1},
@@ -523,6 +555,7 @@ func TestRenderRows_SplitsABlockForAFailedSend(t *testing.T) {
 }
 
 func TestRenderRows_MarksTheReplyTargetInTheLead(t *testing.T) {
+	t.Parallel()
 	msgs := []store.Message{said("om_1", "孙琪", "早", 23, 9, 0), said("om_2", "孙琪", "在吗", 23, 9, 1)}
 	st := baseStyle()
 	st.quoted = "om_2"
@@ -533,6 +566,7 @@ func TestRenderRows_MarksTheReplyTargetInTheLead(t *testing.T) {
 }
 
 func TestRenderRows_NamesTheReaderAsYou(t *testing.T) {
+	t.Parallel()
 	mine := said("om_1", "me", "好的", 23, 9, 0)
 	mine.SenderID, mine.SenderName = "ou_me", "林岚"
 	out := rowText(renderRows([]store.Message{mine}, baseStyle()))
@@ -541,6 +575,7 @@ func TestRenderRows_NamesTheReaderAsYou(t *testing.T) {
 }
 
 func TestRenderRows_QuoteNamesTheReaderAsYou(t *testing.T) {
+	t.Parallel()
 	parent := said("om_1", "me", "原文", 23, 9, 0)
 	parent.SenderID = "ou_me"
 	msgs := []store.Message{parent, said("om_2", "孙琪", "无关", 23, 9, 1),
@@ -551,6 +586,7 @@ func TestRenderRows_QuoteNamesTheReaderAsYou(t *testing.T) {
 }
 
 func TestRenderSearchRows_KeepsABlockInsideOneChat(t *testing.T) {
+	t.Parallel()
 	a := said("om_1", "孙琪", "命中一", 23, 9, 0)
 	b := said("om_2", "孙琪", "命中二", 23, 9, 1)
 	b.ChatID = "oc_2"
@@ -563,6 +599,7 @@ func TestRenderSearchRows_KeepsABlockInsideOneChat(t *testing.T) {
 }
 
 func TestRenderSearchRows_SplitsABlockWhenHitsAreHoursApart(t *testing.T) {
+	t.Parallel()
 	// The search pane lists hits newest first, so the gap from a block's head
 	// to the next hit runs backwards.
 	newer := said("om_2", "孙琪", "命中二", 23, 15, 0)
@@ -573,6 +610,7 @@ func TestRenderSearchRows_SplitsABlockWhenHitsAreHoursApart(t *testing.T) {
 }
 
 func TestRenderRows_EveryMessageOwnsARow(t *testing.T) {
+	t.Parallel()
 	// j and k step through messages, not blocks, so a merged message still
 	// needs a row of its own to select and scroll to.
 	msgs := []store.Message{
@@ -590,6 +628,7 @@ func TestRenderRows_EveryMessageOwnsARow(t *testing.T) {
 }
 
 func TestRenderRows_DotsTheBlockRatherThanEveryUnreadMessage(t *testing.T) {
+	t.Parallel()
 	msgs := []store.Message{said("om_1", "孙琪", "会推迟了", 23, 9, 0), said("om_2", "孙琪", "改到三点", 23, 9, 1)}
 	st := baseStyle()
 	st.dots = map[string]bool{"om_1": true, "om_2": true}
@@ -599,6 +638,7 @@ func TestRenderRows_DotsTheBlockRatherThanEveryUnreadMessage(t *testing.T) {
 }
 
 func TestRenderRows_BadgesAMentionOfTheReader(t *testing.T) {
+	t.Parallel()
 	msgs := []store.Message{
 		{MessageID: "om_1", SenderID: "ou_x", SenderName: "孙琪", Content: "@林岚 reachable",
 			MentionsJSON: `[{"id":"ou_me","key":"@_user_1","name":"林岚"}]`, CreateMs: msgAt(23, 9, 0), RenderedAt: 1},
@@ -619,6 +659,7 @@ func TestRenderRows_BadgesAMentionOfTheReader(t *testing.T) {
 }
 
 func TestRenderRows_DimsAMentionAChatOfTwoCannotReach(t *testing.T) {
+	t.Parallel()
 	msgs := []store.Message{{MessageID: "om_1", SenderID: "ou_peer", SenderName: "张三", Content: "@李四 看下",
 		MentionsJSON: `[{"id":"ou_a","key":"@_user_1","name":"李四"}]`, CreateMs: msgAt(23, 9, 0), RenderedAt: 1}}
 
@@ -641,6 +682,7 @@ func TestRenderRows_DimsAMentionAChatOfTwoCannotReach(t *testing.T) {
 }
 
 func TestBodyRows_StickerDrawsThePictureInsteadOfItsPlaceholder(t *testing.T) {
+	t.Parallel()
 	msgs := []store.Message{{MessageID: "om_1", MsgType: "sticker", SenderName: "张三",
 		Content: "[Sticker]", ContentRaw: `{"file_key":"v3_shrug"}`, CreateMs: msgAt(23, 9, 0), RenderedAt: 1}}
 	st := baseStyle()
@@ -665,6 +707,7 @@ func TestBodyRows_StickerDrawsThePictureInsteadOfItsPlaceholder(t *testing.T) {
 }
 
 func TestBodyRows_StickerWithoutItsPictureStandsIn(t *testing.T) {
+	t.Parallel()
 	msgs := []store.Message{{MessageID: "om_1", MsgType: "sticker", SenderName: "张三",
 		Content: "[ShrugSticker]", ContentRaw: `{"file_key":"v3_shrug"}`, CreateMs: msgAt(23, 9, 0), RenderedAt: 1}}
 	out := rowText(renderRows(msgs, baseStyle()))
@@ -677,6 +720,7 @@ func TestBodyRows_StickerWithoutItsPictureStandsIn(t *testing.T) {
 }
 
 func TestRenderRows_AChatOfTwoNamesNobody(t *testing.T) {
+	t.Parallel()
 	msgs := []store.Message{said("om_1", "孙琪", "今天的构建挂了", 23, 9, 0)}
 	st := baseStyle()
 	st.p2p = true
@@ -688,6 +732,7 @@ func TestRenderRows_AChatOfTwoNamesNobody(t *testing.T) {
 }
 
 func TestRenderRows_AGroupNamesTheSender(t *testing.T) {
+	t.Parallel()
 	msgs := []store.Message{said("om_1", "孙琪", "今天的构建挂了", 23, 9, 0)}
 	rows := drawn(renderRows(msgs, baseStyle()))
 
@@ -697,6 +742,7 @@ func TestRenderRows_AGroupNamesTheSender(t *testing.T) {
 }
 
 func TestRenderRows_AChatOfTwoStillDrawsALineForABadge(t *testing.T) {
+	t.Parallel()
 	msgs := []store.Message{said("om_1", "孙琪", "改好了", 23, 9, 0)}
 	msgs[0].EditedAt = 7
 	st := baseStyle()
@@ -708,6 +754,7 @@ func TestRenderRows_AChatOfTwoStillDrawsALineForABadge(t *testing.T) {
 }
 
 func TestRenderSearchRows_NamesTheSenderInsideAChatOfTwo(t *testing.T) {
+	t.Parallel()
 	msgs := []store.Message{said("om_1", "孙琪", "今天的构建挂了", 23, 9, 0)}
 	st := baseStyle()
 	st.p2p = true // the cursor happens to sit on a p2p chat
@@ -718,6 +765,7 @@ func TestRenderSearchRows_NamesTheSenderInsideAChatOfTwo(t *testing.T) {
 }
 
 func TestRenderRows_TheBlockOpenerCarriesTheSendersDisc(t *testing.T) {
+	t.Parallel()
 	msgs := []store.Message{
 		said("om_1", "孙琪", "早", 23, 9, 0),
 		said("om_2", "孙琪", "方案我看了", 23, 9, 1),
@@ -745,6 +793,7 @@ func TestRenderRows_TheBlockOpenerCarriesTheSendersDisc(t *testing.T) {
 }
 
 func TestRenderRows_AShortBlockStillDrawsTheWholeDisc(t *testing.T) {
+	t.Parallel()
 	msgs := []store.Message{said("om_1", "孙琪", "早", 23, 9, 0)}
 	st := baseStyle()
 	st.p2p = true // one line, no head line: the block is shorter than the disc
@@ -761,6 +810,7 @@ func TestRenderRows_AShortBlockStillDrawsTheWholeDisc(t *testing.T) {
 }
 
 func TestRenderRows_SenderWithNoPictureFallsBackToTheColourBlock(t *testing.T) {
+	t.Parallel()
 	msgs := []store.Message{said("om_1", "孙琪", "早", 23, 9, 0)}
 	rows := drawn(renderRows(msgs, baseStyle()))
 
@@ -771,6 +821,7 @@ func TestRenderRows_SenderWithNoPictureFallsBackToTheColourBlock(t *testing.T) {
 }
 
 func TestBlockHeads_SplitsOnDaySenderAndMarker(t *testing.T) {
+	t.Parallel()
 	msgs := []store.Message{
 		{MessageID: "om_1", SenderID: "ou_a", SenderName: "张三", CreateMs: msgAt(22, 9, 0)},
 		{MessageID: "om_2", SenderID: "ou_a", SenderName: "张三", CreateMs: msgAt(22, 9, 1)},
@@ -786,6 +837,7 @@ func TestBlockHeads_SplitsOnDaySenderAndMarker(t *testing.T) {
 }
 
 func TestBlockHeads_ASystemNoticeEndsTheBlockAboveIt(t *testing.T) {
+	t.Parallel()
 	msgs := []store.Message{
 		{MessageID: "om_1", SenderID: "ou_a", SenderName: "张三", CreateMs: msgAt(22, 9, 0)},
 		{MessageID: "om_2", MsgType: "system", CreateMs: msgAt(22, 9, 1)},
@@ -797,6 +849,7 @@ func TestBlockHeads_ASystemNoticeEndsTheBlockAboveIt(t *testing.T) {
 }
 
 func TestRenderRows_MarksTheWordsASearchWasLookingFor(t *testing.T) {
+	t.Parallel()
 	st := baseStyle()
 	st.hits = []string{"发布"}
 	rows := renderRows([]store.Message{{MessageID: "om_1", SenderID: "ou_a", SenderName: "张三",
@@ -814,6 +867,7 @@ func TestRenderRows_MarksTheWordsASearchWasLookingFor(t *testing.T) {
 }
 
 func TestRenderRows_MarksASenderNameASearchMatched(t *testing.T) {
+	t.Parallel()
 	st := baseStyle()
 	st.hits = []string{"张"}
 	rows := renderRows([]store.Message{{MessageID: "om_1", SenderID: "ou_a", SenderName: "张三",
@@ -825,6 +879,7 @@ func TestRenderRows_MarksASenderNameASearchMatched(t *testing.T) {
 }
 
 func TestRenderRows_NoSearchLeavesTheWordsUnmarked(t *testing.T) {
+	t.Parallel()
 	rows := renderRows([]store.Message{{MessageID: "om_1", SenderID: "ou_a", SenderName: "张三",
 		MsgType: "text", Content: "发布推迟到周四", CreateMs: msgAt(23, 9, 0), RenderedAt: 1}}, baseStyle())
 	for _, r := range rows {
@@ -833,6 +888,7 @@ func TestRenderRows_NoSearchLeavesTheWordsUnmarked(t *testing.T) {
 }
 
 func TestHeadLine_TheBadgesAreFainterThanTheNameTheyFollow(t *testing.T) {
+	t.Parallel()
 	rows := renderRows([]store.Message{{MessageID: "om_1", SenderID: "ou_a", SenderName: "张三",
 		MsgType: "text", Content: "好的", CreateMs: msgAt(23, 9, 0), EditedAt: msgAt(23, 9, 5),
 		RenderedAt: 1}}, baseStyle())
@@ -841,6 +897,7 @@ func TestHeadLine_TheBadgesAreFainterThanTheNameTheyFollow(t *testing.T) {
 }
 
 func TestBodyRows_AStickerDrawsBeforeItsRenderingLands(t *testing.T) {
+	t.Parallel()
 	// The picture key is in the body, and the rendering only ever says
 	// "[Sticker]", so there is nothing to wait for.
 	msgs := []store.Message{{MessageID: "om_1", MsgType: "sticker", SenderName: "张三",
@@ -861,6 +918,7 @@ func TestBodyRows_AStickerDrawsBeforeItsRenderingLands(t *testing.T) {
 }
 
 func TestBodyRows_AnImageDrawsBeforeItsRenderingLands(t *testing.T) {
+	t.Parallel()
 	// The key is in the body; the rendering only spells it back out.
 	msgs := []store.Message{{MessageID: "om_1", MsgType: "image", SenderName: "张三",
 		ContentRaw: `{"image_key":"img_a"}`, CreateMs: msgAt(23, 9, 0)}}

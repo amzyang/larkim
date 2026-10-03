@@ -9,6 +9,7 @@ import (
 )
 
 func TestMiscText_SpellsEachKindTheWayLarkCLIDoes(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct{ name, msgType, raw, want string }{
 		{"shared chat", "share_chat", `{"chat_id":"oc_quiet"}`, "[Chat card: oc_quiet]"},
 		{"shared chat with no id", "share_chat", `{}`, "[Chat card]"},
@@ -53,6 +54,7 @@ func TestMiscText_SpellsEachKindTheWayLarkCLIDoes(t *testing.T) {
 }
 
 func TestTodoText_DatesTheDeadlineInTheGivenZone(t *testing.T) {
+	t.Parallel()
 	loc := time.FixedZone("CST", 8*60*60)
 	// Seconds and milliseconds arrive in the same field, told apart by length.
 	require.Equal(t, "<todo>\n写周报\nDue: 2026-09-29 18:00:00\n</todo>",
@@ -68,6 +70,7 @@ func TestTodoText_DatesTheDeadlineInTheGivenZone(t *testing.T) {
 }
 
 func TestLocalMisc_CoversTheTypesMiscTextRenders(t *testing.T) {
+	t.Parallel()
 	for _, m := range []string{"share_chat", "share_user", "location", "folder", "vote", "hongbao", "todo"} {
 		require.True(t, LocalMisc(m), m)
 		require.True(t, store.LocallyRendered(m), m)
@@ -77,6 +80,7 @@ func TestLocalMisc_CoversTheTypesMiscTextRenders(t *testing.T) {
 }
 
 func TestLocalText_NamesATypeNothingRenders(t *testing.T) {
+	t.Parallel()
 	// The render queue is split on one list, so a type added to it without a
 	// renderer below would otherwise be stored as an empty rendering.
 	require.Equal(t, "[brand_new]", localText(store.PendingLocalMessage{MessageID: "om_elsewhere", MsgType: "brand_new"}))

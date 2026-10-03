@@ -30,6 +30,7 @@ func picturePost(n int) ([]store.Message, msgStyle) {
 }
 
 func TestBodyRows_APictureOpensTheFileItWasDrawnFrom(t *testing.T) {
+	t.Parallel()
 	msgs, st := picturePost(1)
 	zones := rowZones(renderRows(msgs, st))
 	require.NotEmpty(t, zones)
@@ -38,6 +39,7 @@ func TestBodyRows_APictureOpensTheFileItWasDrawnFrom(t *testing.T) {
 }
 
 func TestBodyRows_EveryPictureOfAMessageOpensTheWholeSet(t *testing.T) {
+	t.Parallel()
 	msgs, st := picturePost(3)
 	byFirst := map[string][]string{}
 	for _, z := range rowZones(renderRows(msgs, st)) {
@@ -57,6 +59,7 @@ func TestBodyRows_EveryPictureOfAMessageOpensTheWholeSet(t *testing.T) {
 }
 
 func TestBodyRows_AStickerOpensNothing(t *testing.T) {
+	t.Parallel()
 	st := baseStyle()
 	st.dataDir = "/data"
 	st.res = map[string][]store.Resource{"om_1": {{FileKey: "img_s", Type: "image",
@@ -71,6 +74,7 @@ func TestBodyRows_AStickerOpensNothing(t *testing.T) {
 }
 
 func TestBodyRows_AnUndownloadedPictureHasNothingToOpen(t *testing.T) {
+	t.Parallel()
 	msgs, st := picturePost(1)
 	st.res = map[string][]store.Resource{"om_1": {{FileKey: "img_a", Type: "image", Status: "pending"}}}
 	st.place = func(string, int, int) picture { return picture{} }
@@ -105,6 +109,7 @@ func linkMessage(content string) store.Message {
 }
 
 func TestOnNormalKey_OOpensTheOneTargetWithoutAsking(t *testing.T) {
+	t.Parallel()
 	m, calls := targetPage(t, linkMessage("[了解](https://example.com/x)"), nil)
 	model, cmd := m.onNormalKey("o")
 	require.Equal(t, modeNormal, model.(Model).mode, "one target needs no chooser")
@@ -113,6 +118,7 @@ func TestOnNormalKey_OOpensTheOneTargetWithoutAsking(t *testing.T) {
 }
 
 func TestOnNormalKey_OOffersAChooserWhenAMessageLeadsSeveralWays(t *testing.T) {
+	t.Parallel()
 	m, _ := targetPage(t, linkMessage("[甲](https://a.example.com/1) [乙](https://b.example.com/2)"), nil)
 	got := press(t, m, "o")
 	require.Equal(t, modeTarget, got.mode)
@@ -123,6 +129,7 @@ func TestOnNormalKey_OOffersAChooserWhenAMessageLeadsSeveralWays(t *testing.T) {
 }
 
 func TestOpenTargets_TheMessageItselfClosesTheList(t *testing.T) {
+	t.Parallel()
 	m, calls := targetPage(t, linkMessage("[甲](https://a.example.com/1) [乙](https://b.example.com/2)"), nil)
 	m = press(t, m, "o")
 	require.Len(t, m.targets.zones, 3, "what larkim cannot hand over is still reachable through the client")
@@ -136,6 +143,7 @@ func TestOpenTargets_TheMessageItselfClosesTheList(t *testing.T) {
 }
 
 func TestOpenTargets_TheMessageIsNotListedTwice(t *testing.T) {
+	t.Parallel()
 	msg := cardOf(cardActionRow(
 		cardButton("详情", `{"type":"open_url","action":{"url":"https://example.com/run/1"}}`),
 		cardButton("同意", cardCallback)), nil)
@@ -147,11 +155,13 @@ func TestOpenTargets_TheMessageIsNotListedTwice(t *testing.T) {
 }
 
 func TestSelectedZones_ListsTheSamePlaceOnce(t *testing.T) {
+	t.Parallel()
 	m, _ := targetPage(t, linkMessage("[甲](https://example.com/x) [乙](https://example.com/x)"), nil)
 	require.Len(t, m.selectedZones(), 1, "the same place twice would read as two different ones")
 }
 
 func TestSelectedZones_CountsAWrappedLinkOnce(t *testing.T) {
+	t.Parallel()
 	m, _ := targetPage(t, linkMessage("["+"long label to wrap "+"](https://example.com/x)"), nil)
 	m.width = 30
 	m.layout()
@@ -160,6 +170,7 @@ func TestSelectedZones_CountsAWrappedLinkOnce(t *testing.T) {
 }
 
 func TestOnTargetKey_EnterOpensTheHighlightedTarget(t *testing.T) {
+	t.Parallel()
 	m, calls := targetPage(t, linkMessage("[甲](https://a.example.com/1) [乙](https://b.example.com/2)"), nil)
 	m = press(t, m, "o", "j")
 	require.Equal(t, modeTarget, m.mode)
@@ -170,6 +181,7 @@ func TestOnTargetKey_EnterOpensTheHighlightedTarget(t *testing.T) {
 }
 
 func TestOnTargetKey_ADigitReachesATargetStraightOff(t *testing.T) {
+	t.Parallel()
 	m, calls := targetPage(t, linkMessage("[甲](https://a.example.com/1) [乙](https://b.example.com/2)"), nil)
 	m = press(t, m, "o")
 	_, cmd := m.onTargetKey(keyMsg("2"))
@@ -178,12 +190,14 @@ func TestOnTargetKey_ADigitReachesATargetStraightOff(t *testing.T) {
 }
 
 func TestOnTargetKey_EscLeavesEverythingClosed(t *testing.T) {
+	t.Parallel()
 	m, calls := targetPage(t, linkMessage("[甲](https://a.example.com/1) [乙](https://b.example.com/2)"), nil)
 	require.Equal(t, modeNormal, press(t, m, "o", "esc").mode)
 	require.Empty(t, *calls)
 }
 
 func TestOnNormalKey_OStillOpensTheMessageWhenItLeadsNowhere(t *testing.T) {
+	t.Parallel()
 	m, calls := targetPage(t, linkMessage("没有链接"), nil)
 	_, cmd := m.onNormalKey("o")
 	collect(cmd)
@@ -192,6 +206,7 @@ func TestOnNormalKey_OStillOpensTheMessageWhenItLeadsNowhere(t *testing.T) {
 }
 
 func TestTargetHint_SaysWhereEachKindLeads(t *testing.T) {
+	t.Parallel()
 	require.Equal(t, "git.example.com", targetHint([]string{"https://git.example.com/a/b"}))
 	require.Equal(t, "Feishu", targetHint([]string{"lark://vc.feishu.cn/j/100000000"}))
 	require.Equal(t, "docx", targetHint([]string{"https://example.feishu.cn/docx/AbC123"}),
@@ -206,6 +221,7 @@ func TestTargetHint_SaysWhereEachKindLeads(t *testing.T) {
 }
 
 func TestOnClick_ALinkOpensFromTheColumnsItsLabelIsDrawnIn(t *testing.T) {
+	t.Parallel()
 	m, calls := targetPage(t, linkMessage("前面 [了解详情](https://example.com/x) 后面"), nil)
 	var row, x0, x1 int
 	for i, r := range m.msgRows {
@@ -227,6 +243,7 @@ func TestOnClick_ALinkOpensFromTheColumnsItsLabelIsDrawnIn(t *testing.T) {
 }
 
 func TestComposerRows_TheChooserGrowsToItsList(t *testing.T) {
+	t.Parallel()
 	var body string
 	for i := range 6 {
 		body += "[链接" + string(rune('a'+i)) + "](https://example.com/" + string(rune('a'+i)) + ") "
@@ -241,6 +258,7 @@ func TestComposerRows_TheChooserGrowsToItsList(t *testing.T) {
 }
 
 func TestComposerRows_TheChooserNeverGrowsPastWhatItNeeds(t *testing.T) {
+	t.Parallel()
 	m, _ := targetPage(t, linkMessage("[甲](https://a.example.com/1) [乙](https://b.example.com/2)"), nil)
 	rest := m.composerHeight()
 	open := press(t, m, "o")
@@ -251,6 +269,7 @@ func TestComposerRows_TheChooserNeverGrowsPastWhatItNeeds(t *testing.T) {
 }
 
 func TestOnTargetKey_ADigitMeansTheLineItIsDrawnOn(t *testing.T) {
+	t.Parallel()
 	var body string
 	for i := range 20 {
 		body += "[链接" + string(rune('a'+i)) + "](https://example.com/" + string(rune('a'+i)) + ") "
@@ -270,6 +289,7 @@ func TestOnTargetKey_ADigitMeansTheLineItIsDrawnOn(t *testing.T) {
 }
 
 func TestOnTargetKey_ZeroMeansTheTenthLine(t *testing.T) {
+	t.Parallel()
 	var body string
 	for i := range 20 {
 		body += "[链接" + string(rune('a'+i)) + "](https://example.com/" + string(rune('a'+i)) + ") "

@@ -12,6 +12,7 @@ import (
 // A lone link whose target is a file on this machine is an attachment, which
 // is what a PDF copied in Finder was meant to be.
 func TestPlanDraft_LoneLinkToALocalFileIsAFileMessage(t *testing.T) {
+	t.Parallel()
 	f := fakeFiles(map[string]int64{"/Users/linlan/发布说明.pdf": 2048})
 
 	p, err := f.planDraft("[发布说明.pdf](~/发布说明.pdf)")
@@ -26,6 +27,7 @@ func TestPlanDraft_LoneLinkToALocalFileIsAFileMessage(t *testing.T) {
 // The disk is what tells an attachment from a link, so an ordinary link in a
 // message is untouched.
 func TestPlanDraft_LinkToAURLStaysAPost(t *testing.T) {
+	t.Parallel()
 	f := fakeFiles(nil)
 
 	p, err := f.planDraft("[点这里](https://example.com/a.pdf)")
@@ -36,6 +38,7 @@ func TestPlanDraft_LinkToAURLStaysAPost(t *testing.T) {
 }
 
 func TestPlanDraft_LinkToAMissingPathStaysAPost(t *testing.T) {
+	t.Parallel()
 	f := fakeFiles(nil)
 
 	p, err := f.planDraft("[没有](~/nowhere.pdf)")
@@ -47,6 +50,7 @@ func TestPlanDraft_LinkToAMissingPathStaysAPost(t *testing.T) {
 // Only a draft that is nothing but the link is an attachment; a link inside a
 // sentence is a post about that link.
 func TestPlanDraft_LinkWithTextAroundItStaysAPost(t *testing.T) {
+	t.Parallel()
 	f := fakeFiles(map[string]int64{"/Users/linlan/发布说明.pdf": 2048})
 
 	p, err := f.planDraft("看下 [发布说明.pdf](~/发布说明.pdf)")
@@ -56,6 +60,7 @@ func TestPlanDraft_LinkWithTextAroundItStaysAPost(t *testing.T) {
 }
 
 func TestPlanDraft_FileKeyFeishuAlreadyHoldsNeedsNoUpload(t *testing.T) {
+	t.Parallel()
 	f := fakeFiles(nil)
 
 	p, err := f.planDraft("[旧文件](file_v3_00abcdef)")
@@ -69,6 +74,7 @@ func TestPlanDraft_FileKeyFeishuAlreadyHoldsNeedsNoUpload(t *testing.T) {
 // The reader meant to attach it, so the badge says why it will not go rather
 // than quietly turning the draft back into a link.
 func TestPlanDraft_FileOverTheLimitIsRefusedAsAFile(t *testing.T) {
+	t.Parallel()
 	f := fakeFiles(map[string]int64{"/Users/linlan/big.zip": maxFileBytes + 1})
 
 	p, err := f.planDraft("[big.zip](~/big.zip)")
@@ -81,6 +87,7 @@ func TestPlanDraft_FileOverTheLimitIsRefusedAsAFile(t *testing.T) {
 // A picture keeps the image path: it draws in the message list, which a file
 // card does not.
 func TestPlanDraft_ImageReferenceIsStillAnImage(t *testing.T) {
+	t.Parallel()
 	f := fakeFiles(map[string]int64{"/Users/linlan/shot.png": 1024})
 
 	p, err := f.planDraft("![](~/shot.png)")
@@ -90,6 +97,7 @@ func TestPlanDraft_ImageReferenceIsStillAnImage(t *testing.T) {
 }
 
 func TestDetail_NamesTheFileAndItsSize(t *testing.T) {
+	t.Parallel()
 	f := fakeFiles(map[string]int64{"/Users/linlan/发布说明.pdf": 2048})
 	p, err := f.planDraft("[发布说明.pdf](~/发布说明.pdf)")
 	require.NoError(t, err)
@@ -100,11 +108,13 @@ func TestDetail_NamesTheFileAndItsSize(t *testing.T) {
 // A path holding a space takes markdown's angle-bracket form, the only one
 // that survives being read back.
 func TestFileRef_WrapsAPathHoldingSpaces(t *testing.T) {
+	t.Parallel()
 	assert.Equal(t, "[a.pdf](/tmp/a.pdf)", fileRef("/tmp/a.pdf"))
 	assert.Equal(t, "[my report.pdf](</tmp/my report.pdf>)", fileRef("/tmp/my report.pdf"))
 }
 
 func TestSubmit_FileDraftUploadsThenSends(t *testing.T) {
+	t.Parallel()
 	m, f := newOutboxModel(t)
 	m.files = fakeFiles(map[string]int64{"/Users/linlan/Desktop/发布说明.pdf": 2048})
 	m.input.SetValue("[发布说明.pdf](~/Desktop/发布说明.pdf)")
@@ -124,6 +134,7 @@ func TestSubmit_FileDraftUploadsThenSends(t *testing.T) {
 
 // A retry is one more send, not one more upload leaving an orphan key behind.
 func TestUploadDraft_RetryReusesTheKeyItAlreadyUploaded(t *testing.T) {
+	t.Parallel()
 	m, f := newOutboxModel(t)
 	file := draftFile{ref: "~/a.pdf", local: "/Users/linlan/a.pdf"}
 

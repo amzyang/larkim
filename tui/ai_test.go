@@ -162,6 +162,7 @@ func aiOpenOn(m Model) Model {
 }
 
 func TestOpenAI_NothingIsGenerated(t *testing.T) {
+	t.Parallel()
 	f := newFakeAI()
 	m := aiFixture(t, f)
 
@@ -175,6 +176,7 @@ func TestOpenAI_NothingIsGenerated(t *testing.T) {
 }
 
 func TestOpenAI_KeepsTheFrameUnderItAndEscUncoversIt(t *testing.T) {
+	t.Parallel()
 	f := newFakeAI()
 	m := threadFrame(130, 30)
 	m.rightInput.SetValue("回复草稿")
@@ -193,6 +195,7 @@ func TestOpenAI_KeepsTheFrameUnderItAndEscUncoversIt(t *testing.T) {
 }
 
 func TestAskAI_ReadsTheWindowFromTheStoreAndCarriesHistory(t *testing.T) {
+	t.Parallel()
 	f := newFakeAI()
 	m := aiFixture(t, f)
 	// A message the model's page never saw: the window is the store's, not
@@ -230,6 +233,7 @@ func TestAskAI_ReadsTheWindowFromTheStoreAndCarriesHistory(t *testing.T) {
 }
 
 func TestAskAI_AnchorAndDraftRideInTheAboutBlock(t *testing.T) {
+	t.Parallel()
 	f := newFakeAI()
 	m := aiFixture(t, f)
 
@@ -251,6 +255,7 @@ func TestAskAI_AnchorAndDraftRideInTheAboutBlock(t *testing.T) {
 }
 
 func TestOnAIChunk_EscKeepsTheAnswerComing(t *testing.T) {
+	t.Parallel()
 	f := newFakeAI()
 	m := aiFixture(t, f)
 	m, t1 := ask(t, m, "总结一下")
@@ -273,6 +278,7 @@ func TestOnAIChunk_EscKeepsTheAnswerComing(t *testing.T) {
 }
 
 func TestOnAIChunk_ATurnNobodyHoldsIsDropped(t *testing.T) {
+	t.Parallel()
 	f := newFakeAI()
 	m := aiFixture(t, f)
 	m, _ = ask(t, m, "总结一下")
@@ -287,6 +293,7 @@ func TestOnAIChunk_ATurnNobodyHoldsIsDropped(t *testing.T) {
 }
 
 func TestAskAI_AChatSwitchKeepsTheOldChatSession(t *testing.T) {
+	t.Parallel()
 	f := newFakeAI()
 	m := aiFixture(t, f)
 	m, t1 := ask(t, m, "总结一下")
@@ -305,6 +312,7 @@ func TestAskAI_AChatSwitchKeepsTheOldChatSession(t *testing.T) {
 }
 
 func TestAskAI_StopCancelsTheAnswer(t *testing.T) {
+	t.Parallel()
 	f := newFakeAI()
 	m := aiFixture(t, f)
 	m, _ = ask(t, m, "总结一下")
@@ -327,6 +335,7 @@ func TestAskAI_StopCancelsTheAnswer(t *testing.T) {
 // The frame hidden under the panel keeps its fields but not its keys: a
 // message nobody can see is not a message to act on.
 func TestOnAIKey_TheHiddenFrameGetsNoKeys(t *testing.T) {
+	t.Parallel()
 	f := newFakeAI()
 	m := threadFrame(130, 30)
 	m.deps.AI = f
@@ -354,6 +363,7 @@ func TestOnAIKey_TheHiddenFrameGetsNoKeys(t *testing.T) {
 }
 
 func TestOnAIKey_EnterMovesToTheInput(t *testing.T) {
+	t.Parallel()
 	f := newFakeAI()
 	m := aiFixture(t, f)
 	m = press(t, m, "a")
@@ -371,6 +381,7 @@ func TestOnAIKey_EnterMovesToTheInput(t *testing.T) {
 // :ai with a snippet's name asks the snippet's text, and no composer is
 // touched by an answer: Insert is the only path that writes into one.
 func TestAskAI_ASnippetNameAsksTheSnippet(t *testing.T) {
+	t.Parallel()
 	f := newFakeAI()
 	m := aiFixture(t, f)
 
@@ -391,6 +402,7 @@ func TestAskAI_ASnippetNameAsksTheSnippet(t *testing.T) {
 }
 
 func TestAskAI_WithoutAnAgentTheQuestionStillLands(t *testing.T) {
+	t.Parallel()
 	m := aiFixture(t, nil)
 	m.ai = nil
 
@@ -405,6 +417,7 @@ func TestAskAI_WithoutAnAgentTheQuestionStillLands(t *testing.T) {
 // Sessions switch without stopping anything, and A starts a fresh one with
 // the keys already in it.
 func TestOnAIKey_SessionsSwitchAndStart(t *testing.T) {
+	t.Parallel()
 	f := newFakeAI()
 	m := aiFixture(t, f)
 	m, first := ask(t, m, "总结一下")
@@ -443,6 +456,7 @@ func clickHeadZone(t *testing.T, m Model, want func(aiAct) bool) Model {
 // The header's + is the A key, and a tab stands the pane on its session. The
 // ▾ that opens the picker comes only with a second session.
 func TestAIHeader_ClickStartsSwitchesAndPicks(t *testing.T) {
+	t.Parallel()
 	f := newFakeAI()
 	m := aiFixture(t, f)
 	m = press(t, m, "a")
@@ -486,6 +500,7 @@ func TestAIHeader_ClickStartsSwitchesAndPicks(t *testing.T) {
 // The picker owns the keys while it is open: j/k walk it, Enter picks, Esc and
 // q close, and any other key closes it and falls through.
 func TestAISessionMenu_KeysMovePickAndClose(t *testing.T) {
+	t.Parallel()
 	f := newFakeAI()
 	m := aiFixture(t, f)
 	m, _ = ask(t, m, "总结一下")
@@ -522,6 +537,7 @@ func TestAISessionMenu_KeysMovePickAndClose(t *testing.T) {
 }
 
 func TestAskAI_VISUALSelectionBecomesContext(t *testing.T) {
+	t.Parallel()
 	f := newFakeAI()
 	m := aiFixture(t, f)
 	m.msgIdx = 1
@@ -544,6 +560,7 @@ func TestAskAI_VISUALSelectionBecomesContext(t *testing.T) {
 }
 
 func TestRenderAI_ShowsTheTurnsAndItsOwnBand(t *testing.T) {
+	t.Parallel()
 	f := newFakeAI()
 	m := aiFixture(t, f)
 	m, t1 := ask(t, m, "发布单怎么回？")
@@ -566,6 +583,7 @@ func TestRenderAI_ShowsTheTurnsAndItsOwnBand(t *testing.T) {
 // A restart finds the chat's conversations where they were left, and another
 // chat's header does not list them.
 func TestAIPanel_ARestartFindsTheSessionsWhereTheyWereLeft(t *testing.T) {
+	t.Parallel()
 	f := newFakeAI()
 	m := aiFixture(t, f)
 	m, t1 := ask(t, m, "发布单怎么回？")
@@ -603,6 +621,7 @@ func TestAIPanel_ARestartFindsTheSessionsWhereTheyWereLeft(t *testing.T) {
 // A turn still asking at load is an answer nobody finished: it reads as
 // interrupted, not as one still owed.
 func TestAIPanel_ATurnStillAskingAtLoadIsInterrupted(t *testing.T) {
+	t.Parallel()
 	m := aiFixture(t, newFakeAI())
 	// The row an ask writes before any answer arrives, left behind by a run
 	// that died mid-stream.
@@ -631,6 +650,7 @@ func TestAIPanel_ATurnStillAskingAtLoadIsInterrupted(t *testing.T) {
 // D asks first, and y drops the session and its turns from the panel and the
 // store.
 func TestDeleteAI_AsksFirstAndDropsTheStoredRows(t *testing.T) {
+	t.Parallel()
 	f := newFakeAI()
 	m := aiFixture(t, f)
 	m, t1 := ask(t, m, "总结一下")
@@ -698,6 +718,7 @@ func answerDone(t *testing.T, m Model, t1 *aiTurn, text string) Model {
 // rendering, with their actions under them; a streaming answer shows none of
 // that yet.
 func TestRebuild_BlocksBecomeCardsWithActions(t *testing.T) {
+	t.Parallel()
 	f := newFakeAI()
 	m := aiFixture(t, f)
 	m, t1 := ask(t, m, "帮我回复")
@@ -733,6 +754,7 @@ func TestRebuild_BlocksBecomeCardsWithActions(t *testing.T) {
 }
 
 func TestRebuild_AnAnswerWithNoBlockHasNoSend(t *testing.T) {
+	t.Parallel()
 	f := newFakeAI()
 	m := aiFixture(t, f)
 	m, t1 := ask(t, m, "总结一下")
@@ -745,6 +767,7 @@ func TestRebuild_AnAnswerWithNoBlockHasNoSend(t *testing.T) {
 }
 
 func TestRebuild_AStoppedAnswerKeepsItsPartialCards(t *testing.T) {
+	t.Parallel()
 	f := newFakeAI()
 	m := aiFixture(t, f)
 	m, t1 := ask(t, m, "帮我回复")
@@ -760,6 +783,7 @@ func TestRebuild_AStoppedAnswerKeepsItsPartialCards(t *testing.T) {
 
 // The action zones hit at their edges and miss the cells beside them.
 func TestAICardZones_HitAtTheEdgesMissBesideThem(t *testing.T) {
+	t.Parallel()
 	f := newFakeAI()
 	m := aiFixture(t, f)
 	m, t1 := ask(t, m, "帮我回复")
@@ -791,6 +815,7 @@ func TestAICardZones_HitAtTheEdgesMissBesideThem(t *testing.T) {
 // A click answers the line the pane draws a row on, head lines included: the
 // three lines the column spends above its rows are not rows.
 func TestOnClick_ACardActionAnswersAtItsDrawnLine(t *testing.T) {
+	t.Parallel()
 	f := newFakeAI()
 	m := aiFixture(t, f)
 	m, t1 := ask(t, m, "帮我回复")
@@ -824,6 +849,7 @@ func TestOnClick_ACardActionAnswersAtItsDrawnLine(t *testing.T) {
 // Insert fills the chat's box with the card's text, quoting the anchor — in
 // its thread when the anchor is a reply of one — and never sends anything.
 func TestInsertCard_FillsTheChatBoxQuotingTheAnchor(t *testing.T) {
+	t.Parallel()
 	f := newFakeAI()
 	m := aiFixture(t, f)
 	anchor := store.Message{MessageID: "om_r", ChatID: "oc_quiet", ThreadID: "omt_9",
@@ -848,6 +874,7 @@ func TestInsertCard_FillsTheChatBoxQuotingTheAnchor(t *testing.T) {
 // Insert into an empty box fills it; a box that already holds text gets the
 // card at the cursor; and the question's draft chip turns it into Replace.
 func TestInsertCard_ReplacesWhenTheQuestionCarriedTheDraft(t *testing.T) {
+	t.Parallel()
 	f := newFakeAI()
 	m := aiFixture(t, f)
 	m.input.SetValue("旧草稿")
@@ -862,6 +889,7 @@ func TestInsertCard_ReplacesWhenTheQuestionCarriedTheDraft(t *testing.T) {
 }
 
 func TestInsertCard_ATypedBoxGetsTheCardAtTheCursor(t *testing.T) {
+	t.Parallel()
 	f := newFakeAI()
 	m := aiFixture(t, f)
 	m, t1 := ask(t, m, "给个措辞")
@@ -880,6 +908,7 @@ func TestInsertCard_ATypedBoxGetsTheCardAtTheCursor(t *testing.T) {
 // The thread frame's own box is used when the anchor's thread is the frame
 // standing under the panel.
 func TestInsertCard_TheFrameUnderThePanelTakesTheThreadAnswer(t *testing.T) {
+	t.Parallel()
 	f := newFakeAI()
 	m := threadFrame(130, 30)
 	m.deps.AI = f
@@ -909,6 +938,7 @@ func TestInsertCard_TheFrameUnderThePanelTakesTheThreadAnswer(t *testing.T) {
 
 // yy copies the card under the cursor, Y the whole answer.
 func TestCopy_CardAndAnswer(t *testing.T) {
+	t.Parallel()
 	f := newFakeAI()
 	m := aiFixture(t, f)
 	m, t1 := ask(t, m, "给个措辞")
@@ -933,6 +963,7 @@ func TestCopy_CardAndAnswer(t *testing.T) {
 // time the question was asked, and the answer being replaced does not ride
 // along as history.
 func TestRegenerate_RebuildsThePromptWithTheWindowCutAtAskTime(t *testing.T) {
+	t.Parallel()
 	f := newFakeAI()
 	m := aiFixture(t, f)
 	st := m.deps.Store
@@ -976,6 +1007,7 @@ func aiSendFixture(t *testing.T, f *fakeAI) (Model, *larkcli.Fake) {
 // s asks first, naming the chat, the first line of the text and its @All; y
 // posts exactly one message to the panel's chat, and the card earns its ✓.
 func TestSendCard_AsksFirstAndYPostsOnce(t *testing.T) {
+	t.Parallel()
 	f := newFakeAI()
 	m, c := aiSendFixture(t, f)
 	m, t1 := ask(t, m, "帮我回")
@@ -1011,6 +1043,7 @@ func TestSendCard_AsksFirstAndYPostsOnce(t *testing.T) {
 
 // n and Esc record no send at all.
 func TestSendCard_NAndEscSendNothing(t *testing.T) {
+	t.Parallel()
 	f := newFakeAI()
 	m, c := aiSendFixture(t, f)
 	m, t1 := ask(t, m, "帮我回")
@@ -1036,6 +1069,7 @@ func TestSendCard_NAndEscSendNothing(t *testing.T) {
 
 // S replies to the question's anchor, inside its thread when it is in one.
 func TestReplyCard_RepliesToTheAnchorInItsThread(t *testing.T) {
+	t.Parallel()
 	f := newFakeAI()
 	m, c := aiSendFixture(t, f)
 	c.Messages["om_r"] = larkcli.RawMessage{MessageID: "om_r", ChatID: "oc_quiet"}
@@ -1072,6 +1106,7 @@ func TestReplyCard_RepliesToTheAnchorInItsThread(t *testing.T) {
 // y sends it with the upload, n leaves the reference as text, and nothing
 // uploads without the y.
 func TestSendCard_ALocalFileIsTheReadersChoice(t *testing.T) {
+	t.Parallel()
 	f := newFakeAI()
 	m, c := aiSendFixture(t, f)
 	m.files = fakeFiles(map[string]int64{"/Users/linlan/发布说明.pdf": 2048})
@@ -1113,6 +1148,7 @@ func TestSendCard_ALocalFileIsTheReadersChoice(t *testing.T) {
 // A name resolves only when the destination is the open chat; anywhere else
 // it stays the text the reader can read.
 func TestSendCard_AnAtNameOutsideTheOpenChatStaysText(t *testing.T) {
+	t.Parallel()
 	f := newFakeAI()
 	m, c := aiSendFixture(t, f)
 	m, t1 := ask(t, m, "帮我回")
@@ -1138,6 +1174,7 @@ func TestSendCard_AnAtNameOutsideTheOpenChatStaysText(t *testing.T) {
 
 // The digits and the chips insert a snippet without asking anything.
 func TestSnippets_InsertWithoutAsking(t *testing.T) {
+	t.Parallel()
 	f := newFakeAI()
 	m := aiFixture(t, f)
 	m = press(t, m, "a")
@@ -1158,6 +1195,7 @@ func TestSnippets_InsertWithoutAsking(t *testing.T) {
 
 // ai.snippets replaces the built-ins whole.
 func TestSnippets_TheConfigListReplacesTheBuiltins(t *testing.T) {
+	t.Parallel()
 	f := newFakeAI()
 	m := aiFixture(t, f)
 	m.cfg.AI.Snippets = config.SnippetList{{Name: "Standup", Text: "Summarize today's blockers."}}
@@ -1184,6 +1222,7 @@ func TestSnippets_TheConfigListReplacesTheBuiltins(t *testing.T) {
 // The / popup offers the snippets, filters as typed, and writes the chosen
 // text in the box.
 func TestSnippets_TheSlashPopupFillsTheBox(t *testing.T) {
+	t.Parallel()
 	f := newFakeAI()
 	m := aiFixture(t, f)
 	m = press(t, m, "a")
@@ -1259,6 +1298,7 @@ func streamAsk(t *testing.T, m Model, question string) (Model, *aiTurn) {
 // One post puts the card up, every rewrite carries the full text so far, and
 // the last write is the final text.
 func TestStreamToChat_OnePostThenWholeCardRewrites(t *testing.T) {
+	t.Parallel()
 	f := newFakeAI()
 	m, c := aiSendFixture(t, f)
 	m = press(t, m, "a")
@@ -1313,6 +1353,7 @@ func lastPatch(t *testing.T, c *larkcli.Fake) string {
 
 // x stops the answer and the card is marked interrupted, half-written no more.
 func TestStreamToChat_StopLeavesTheCardMarkedInterrupted(t *testing.T) {
+	t.Parallel()
 	f := newFakeAI()
 	m, c := aiSendFixture(t, f)
 	m = press(t, m, "a")
@@ -1341,6 +1382,7 @@ func TestStreamToChat_StopLeavesTheCardMarkedInterrupted(t *testing.T) {
 
 // A first post that fails keeps the answer in the panel, marked not posted.
 func TestStreamToChat_AFailedSendKeepsTheAnswerInThePanel(t *testing.T) {
+	t.Parallel()
 	f := newFakeAI()
 	m, c := aiSendFixture(t, f)
 	c.SendErr = errors.New("boom")
@@ -1365,6 +1407,7 @@ func TestStreamToChat_AFailedSendKeepsTheAnswerInThePanel(t *testing.T) {
 
 // With an anchor the card is a reply, inside its thread when it is in one.
 func TestStreamToChat_AnAnchoredAnswerRepliesIntoTheThread(t *testing.T) {
+	t.Parallel()
 	f := newFakeAI()
 	m, c := aiSendFixture(t, f)
 	c.Messages["om_r"] = larkcli.RawMessage{MessageID: "om_r", ChatID: "oc_quiet"}
@@ -1406,6 +1449,7 @@ func TestStreamToChat_AnAnchoredAnswerRepliesIntoTheThread(t *testing.T) {
 // With ai.history on the ask goes out through the history variant, the chip
 // says so, and the trace lines a call leaves render dim.
 func TestAskAI_HistoryOnTeachesAndTraces(t *testing.T) {
+	t.Parallel()
 	f := newFakeAI()
 	m := aiFixture(t, f)
 	m.cfg.AI.History = true
@@ -1429,6 +1473,7 @@ func TestAskAI_HistoryOnTeachesAndTraces(t *testing.T) {
 
 // Off means no history reach at all: the plain stream is what asks.
 func TestAskAI_HistoryOffIsThePlainStream(t *testing.T) {
+	t.Parallel()
 	f := newFakeAI()
 	m := aiFixture(t, f)
 	m, _ = ask(t, m, "总结一下")
@@ -1441,6 +1486,7 @@ func TestAskAI_HistoryOffIsThePlainStream(t *testing.T) {
 // answers it nor moves the state the verdict was asked about — clicking
 // another chat must not re-aim the stream the y is about to post.
 func TestConfirm_AClickWhilePendingChangesNothing(t *testing.T) {
+	t.Parallel()
 	f := newFakeAI()
 	m, _ := aiSendFixture(t, f)
 	m = press(t, m, "a")
@@ -1472,6 +1518,7 @@ func TestConfirm_AClickWhilePendingChangesNothing(t *testing.T) {
 // A turn that left before its stream's cancel arrived takes the cancel with
 // it: the agent stops here or nothing ever will.
 func TestOnAIStarted_ATurnGoneStopsTheAgent(t *testing.T) {
+	t.Parallel()
 	m := aiFixture(t, newFakeAI())
 	m = press(t, m, "a")
 	stopped := false
@@ -1484,6 +1531,7 @@ func TestOnAIStarted_ATurnGoneStopsTheAgent(t *testing.T) {
 // The stream foot's acts answer where their labels are drawn, the state text
 // at the head of the row included.
 func TestStreamFoot_ZonesAnswerAtTheirLabels(t *testing.T) {
+	t.Parallel()
 	t1 := &aiTurn{id: "at_1", state: aiDone, answer: "回好了",
 		stream: &aiStreamCard{chatID: "oc_quiet", messageID: "om_c", closed: true}}
 	row := streamFoot(t1, 60)
@@ -1504,6 +1552,7 @@ func TestStreamFoot_ZonesAnswerAtTheirLabels(t *testing.T) {
 // own default paints its cursor line black; the box must carry the theme's
 // composer styles both at birth and after the background changes.
 func TestAIComposer_FollowsBackground(t *testing.T) {
+	t.Parallel()
 	m := Model{aiP: newAI(false), input: newComposer(true), rightInput: newComposer(true)}
 	st := m.aiP.input.Styles()
 	require.Equal(t, colDim, st.Focused.Placeholder.GetForeground())
@@ -1518,6 +1567,7 @@ func TestAIComposer_FollowsBackground(t *testing.T) {
 // a with no chat to open on is answered with a notice; it used to dereference
 // the panel openAI never built.
 func TestOpenAIKey_NoChatNotifies(t *testing.T) {
+	t.Parallel()
 	m := aiFixture(t, newFakeAI())
 	m.chatID, m.pendingChat = "", ""
 	m.chats, m.msgs, m.msgsBase = nil, nil, nil
@@ -1532,6 +1582,7 @@ func TestOpenAIKey_NoChatNotifies(t *testing.T) {
 // Regenerate is a new answer: the sent marks belonged to the old one, and a
 // ✓ on a card that never went would skip the very send it fakes.
 func TestRegenerate_TheNewAnswerCarriesNoSentMarks(t *testing.T) {
+	t.Parallel()
 	f := newFakeAI()
 	m, _ := aiSendFixture(t, f)
 	m, t1 := ask(t, m, "帮我回")
@@ -1557,6 +1608,7 @@ func TestRegenerate_TheNewAnswerCarriesNoSentMarks(t *testing.T) {
 // The card's message id reaches the store when the first post lands, which
 // is usually after the done-time save has already gone out.
 func TestStreamToChat_TheCardIDIsPersistedWhenThePostLands(t *testing.T) {
+	t.Parallel()
 	f := newFakeAI()
 	m, _ := aiSendFixture(t, f)
 	m = press(t, m, "a")
@@ -1583,6 +1635,7 @@ func TestStreamToChat_TheCardIDIsPersistedWhenThePostLands(t *testing.T) {
 // rows are reused, and they are laid out again when their key moves with a
 // new page of names.
 func TestAIPanel_RebuildReusesTurnsThatDidNotMove(t *testing.T) {
+	t.Parallel()
 	f := newFakeAI()
 	m := aiFixture(t, f)
 	m = press(t, m, "a")

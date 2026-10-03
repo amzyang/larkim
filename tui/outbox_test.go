@@ -34,6 +34,7 @@ func contents(msgs []store.Message) []string {
 }
 
 func TestSubmit_ShowsTheMessageBeforeFeishuAnswers(t *testing.T) {
+	t.Parallel()
 	m, _ := newOutboxModel(t)
 	m.input.SetValue("hello")
 
@@ -52,6 +53,7 @@ func TestSubmit_ShowsTheMessageBeforeFeishuAnswers(t *testing.T) {
 }
 
 func TestSubmit_AcceptsASecondMessageWhileTheFirstIsInFlight(t *testing.T) {
+	t.Parallel()
 	m, _ := newOutboxModel(t)
 	m.input.SetValue("one")
 	mm, _ := m.submit()
@@ -65,6 +67,7 @@ func TestSubmit_AcceptsASecondMessageWhileTheFirstIsInFlight(t *testing.T) {
 }
 
 func TestApplyOutbox_DropsTheRowOnceTheRealMessageLands(t *testing.T) {
+	t.Parallel()
 	m, _ := newOutboxModel(t)
 	m.enqueue(outboxItem{localID: "local-1", chatID: "oc_1", msgType: "text", body: "hi", state: outSent, messageID: "om_1", createMs: 10})
 	m.msgsBase = []store.Message{{MessageID: "om_1", ChatID: "oc_1", Content: "hi", RenderedAt: 1, CreateMs: 20}}
@@ -76,6 +79,7 @@ func TestApplyOutbox_DropsTheRowOnceTheRealMessageLands(t *testing.T) {
 }
 
 func TestUpdate_KeepsTheBubbleWhenTheIngestFails(t *testing.T) {
+	t.Parallel()
 	m, _ := newOutboxModel(t)
 	m.enqueue(outboxItem{localID: "local-1", chatID: "oc_1", msgType: "text", body: "hi", createMs: 10})
 	m.applyOutbox()
@@ -89,6 +93,7 @@ func TestUpdate_KeepsTheBubbleWhenTheIngestFails(t *testing.T) {
 }
 
 func TestUpdate_KeepsTheBubbleUntilTheReloadBringsItsRow(t *testing.T) {
+	t.Parallel()
 	m, _ := newOutboxModel(t)
 	m.enqueue(outboxItem{localID: "local-1", chatID: "oc_1", msgType: "text", body: "hi", createMs: 10})
 	m.applyOutbox()
@@ -107,6 +112,7 @@ func TestUpdate_KeepsTheBubbleUntilTheReloadBringsItsRow(t *testing.T) {
 }
 
 func TestUpdate_RetiresABubbleNoPaneShowsOnceTheIngestWorked(t *testing.T) {
+	t.Parallel()
 	m, _ := newOutboxModel(t)
 	m.enqueue(outboxItem{localID: "local-1", chatID: "oc_2", msgType: "text", body: "hi", createMs: 10})
 	m.applyOutbox()
@@ -119,6 +125,7 @@ func TestUpdate_RetiresABubbleNoPaneShowsOnceTheIngestWorked(t *testing.T) {
 }
 
 func TestApplyOutbox_AnUnrenderedLandingDrawsTheBubblesBody(t *testing.T) {
+	t.Parallel()
 	m, _ := newOutboxModel(t)
 	m.enqueue(outboxItem{localID: "local-1", chatID: "oc_1", msgType: "text", body: "hi", state: outSent, messageID: "om_1", createMs: 10})
 	m.msgsBase = []store.Message{{MessageID: "om_1", ChatID: "oc_1", MsgType: "text", ContentRaw: `{"text":"hi"}`, CreateMs: 20}}
@@ -134,6 +141,7 @@ func TestApplyOutbox_AnUnrenderedLandingDrawsTheBubblesBody(t *testing.T) {
 }
 
 func TestRetryFailed_ReusesTheIdempotencyKey(t *testing.T) {
+	t.Parallel()
 	m, f := newOutboxModel(t)
 	f.Err = errors.New("network down")
 	m.input.SetValue("hi")
@@ -158,6 +166,7 @@ func TestRetryFailed_ReusesTheIdempotencyKey(t *testing.T) {
 }
 
 func TestDiscardFailed_DropsTheRowUnderTheCursor(t *testing.T) {
+	t.Parallel()
 	m, _ := newOutboxModel(t)
 	m.enqueue(outboxItem{localID: "local-1", chatID: "oc_1", msgType: "text", body: "hi", state: outFailed, createMs: 10})
 	m.applyOutbox()
@@ -171,6 +180,7 @@ func TestDiscardFailed_DropsTheRowUnderTheCursor(t *testing.T) {
 }
 
 func TestDiscardFailed_LeavesAMessageStillOnItsWay(t *testing.T) {
+	t.Parallel()
 	m, _ := newOutboxModel(t)
 	m.enqueue(outboxItem{localID: "local-1", chatID: "oc_1", msgType: "text", body: "hi", state: outSending, createMs: 10})
 	m.applyOutbox()
@@ -183,6 +193,7 @@ func TestDiscardFailed_LeavesAMessageStillOnItsWay(t *testing.T) {
 }
 
 func TestApplyOutbox_QuotesAParentAlreadyOnThePage(t *testing.T) {
+	t.Parallel()
 	m, _ := newOutboxModel(t)
 	m.msgsBase = []store.Message{{MessageID: "om_1", ChatID: "oc_1", Content: "question", RenderedAt: 1, CreateMs: 10}}
 	m.enqueue(outboxItem{localID: "local-1", chatID: "oc_1", replyTo: "om_1", msgType: "text", body: "answer", createMs: 20})
@@ -193,6 +204,7 @@ func TestApplyOutbox_QuotesAParentAlreadyOnThePage(t *testing.T) {
 }
 
 func TestApplyOutbox_PutsAThreadReplyInTheThreadPaneOnly(t *testing.T) {
+	t.Parallel()
 	m, _ := newOutboxModel(t)
 	m.rightKind, m.threadID = rightThread, "omt_1"
 	m.enqueue(outboxItem{localID: "local-1", chatID: "oc_1", threadID: "omt_1", replyTo: "om_1",
@@ -208,6 +220,7 @@ func TestApplyOutbox_PutsAThreadReplyInTheThreadPaneOnly(t *testing.T) {
 }
 
 func TestSubmit_HandsTheBubbleOverToTheStoredMessage(t *testing.T) {
+	t.Parallel()
 	m, f := newOutboxModel(t)
 	m.input.SetValue("hello")
 	mm, cmd := m.submit()
@@ -236,6 +249,7 @@ func TestSubmit_HandsTheBubbleOverToTheStoredMessage(t *testing.T) {
 }
 
 func TestSubmit_TheBubbleDrawsTheEmojiThePostCarries(t *testing.T) {
+	t.Parallel()
 	m, _ := newOutboxModel(t)
 	m.input.SetValue("**收到** [赞]")
 	mm, _ := m.submit()
@@ -248,6 +262,7 @@ func TestSubmit_TheBubbleDrawsTheEmojiThePostCarries(t *testing.T) {
 }
 
 func TestEnterChat_DropsTheRowsTheOldChatOwned(t *testing.T) {
+	t.Parallel()
 	m, _ := newOutboxModel(t)
 	m.msgsBase = []store.Message{{MessageID: "om_1", ChatID: "oc_1", Content: "old chat"}}
 	m.rightKind, m.threadID = rightThread, "om_1"

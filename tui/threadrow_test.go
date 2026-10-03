@@ -31,6 +31,7 @@ func threadLines(t store.ThreadFeed, w int) (string, string, string) {
 }
 
 func TestRenderThreadRow_TitledByTheRootAndAnsweredByTheNewest(t *testing.T) {
+	t.Parallel()
 	feed := threadFeed("group",
 		spoke("om_root", "ou_a", "张三", "发版流程", 100),
 		spoke("om_last", "ou_b", "李四", "收到", 200))
@@ -43,6 +44,7 @@ func TestRenderThreadRow_TitledByTheRootAndAnsweredByTheNewest(t *testing.T) {
 }
 
 func TestRenderThreadRow_TellsSameNamedSendersApart(t *testing.T) {
+	t.Parallel()
 	feed := threadFeed("group",
 		spoke("om_root", "ou_a", "张三", "发版流程", 100),
 		spoke("om_last", "ou_b", "张三", "收到", 200))
@@ -57,6 +59,7 @@ func TestRenderThreadRow_TellsSameNamedSendersApart(t *testing.T) {
 // The clock is the newest reply's: where the thread stands is when it was
 // last answered, not when it was opened.
 func TestRenderThreadRow_CountsTheUnreadRepliesAndClocksTheLastOne(t *testing.T) {
+	t.Parallel()
 	feed := threadFeed("group",
 		spoke("om_root", "ou_a", "张三", "发版流程", 100),
 		spoke("om_last", "ou_b", "李四", "收到", testNow.Add(-2*time.Hour).UnixMilli()))
@@ -70,6 +73,7 @@ func TestRenderThreadRow_CountsTheUnreadRepliesAndClocksTheLastOne(t *testing.T)
 
 // A chat of two names nobody on the summary, the way its own row does.
 func TestRenderThreadRow_AChatOfTwoNamesNobody(t *testing.T) {
+	t.Parallel()
 	feed := threadFeed("p2p",
 		spoke("om_root", "ou_a", "张三", "在吗", 100),
 		spoke("om_last", "ou_a", "张三", "好的", 200))
@@ -81,6 +85,7 @@ func TestRenderThreadRow_AChatOfTwoNamesNobody(t *testing.T) {
 }
 
 func TestRenderThreadRow_TheReadersOwnTurnReadsAsYou(t *testing.T) {
+	t.Parallel()
 	feed := threadFeed("group",
 		spoke("om_root", "ou_a", "张三", "发版流程", 100),
 		spoke("om_last", "ou_me", "林岚", "我来", 200))
@@ -91,6 +96,7 @@ func TestRenderThreadRow_TheReadersOwnTurnReadsAsYou(t *testing.T) {
 }
 
 func TestRenderThreadRow_MarksARepliesThatCallsTheReaderByName(t *testing.T) {
+	t.Parallel()
 	feed := threadFeed("group",
 		spoke("om_root", "ou_a", "张三", "发版流程", 100),
 		spoke("om_last", "ou_a", "张三", "@林岚 看下", 200))
@@ -104,6 +110,7 @@ func TestRenderThreadRow_MarksARepliesThatCallsTheReaderByName(t *testing.T) {
 // A recall keeps the row where it was and says what happened, the way a
 // chat's own summary line does.
 func TestRenderThreadRow_ARecalledLastReplySaysSo(t *testing.T) {
+	t.Parallel()
 	last := spoke("om_last", "ou_b", "李四", "收到", 200)
 	last.Deleted = true
 	feed := threadFeed("group", spoke("om_root", "ou_a", "张三", "发版流程", 100), last)
@@ -114,6 +121,7 @@ func TestRenderThreadRow_ARecalledLastReplySaysSo(t *testing.T) {
 }
 
 func TestRenderThreadRow_AMutedChatKeepsItsMark(t *testing.T) {
+	t.Parallel()
 	feed := threadFeed("group",
 		spoke("om_root", "ou_a", "张三", "发版流程", 100),
 		spoke("om_last", "ou_b", "李四", "收到", 200))
@@ -127,6 +135,7 @@ func TestRenderThreadRow_AMutedChatKeepsItsMark(t *testing.T) {
 
 // The right edge stays put however long the root's first words are.
 func TestRenderThreadRow_TheTitleTakesTheTruncation(t *testing.T) {
+	t.Parallel()
 	feed := threadFeed("group",
 		spoke("om_root", "ou_a", "张三", "发版流程改到周五下午三点，所有人都要到场", 100),
 		spoke("om_last", "ou_b", "李四", "收到", testNow.UnixMilli()))

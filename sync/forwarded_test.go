@@ -13,6 +13,7 @@ import (
 )
 
 func TestExtractRendered_TakesPicturesOnlyFromAForwardedBundle(t *testing.T) {
+	t.Parallel()
 	const body = "张三: 见附图\n![Image](img_fwd_a)\n李四: [Image: img_fwd_b]"
 
 	require.Equal(t, []store.ResourceRef{
@@ -28,6 +29,7 @@ func TestExtractRendered_TakesPicturesOnlyFromAForwardedBundle(t *testing.T) {
 }
 
 func TestTick_DownloadsThePicturesInsideAForwardedBundle(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	dir := t.TempDir()
@@ -68,6 +70,7 @@ func TestTick_DownloadsThePicturesInsideAForwardedBundle(t *testing.T) {
 }
 
 func TestRegisterExistingResources_ReadsAStoredBundlesRendering(t *testing.T) {
+	t.Parallel()
 	s, _, clk := newSyncer(t)
 	ctx := t.Context()
 	now := clk.t.UnixMilli()
@@ -118,6 +121,7 @@ func storeBundle(t *testing.T, s *Syncer, id, chatID string, at time.Time) {
 }
 
 func TestToForwarded_TellsTheContainerFromItsChildrenByID(t *testing.T) {
+	t.Parallel()
 	base := time.Date(2026, 9, 22, 12, 0, 0, 0, time.UTC)
 	// The bundle comes back among its own items, and its message_position is
 	// a real one. A child's is absent, which decodes to 0 — so the id is the
@@ -135,6 +139,7 @@ func TestToForwarded_TellsTheContainerFromItsChildrenByID(t *testing.T) {
 }
 
 func TestToForwarded_NumbersSiblingsByWhenTheyWereSaid(t *testing.T) {
+	t.Parallel()
 	base := time.Date(2026, 9, 22, 12, 0, 0, 0, time.UTC)
 	kids := toForwarded("om_fwd", []larkcli.RawForwarded{
 		child("om_late", "om_fwd", "oc_src", "text", `{"text":"后"}`, base.Add(time.Minute)),
@@ -146,6 +151,7 @@ func TestToForwarded_NumbersSiblingsByWhenTheyWereSaid(t *testing.T) {
 }
 
 func TestExpandForwards_GroupsChildrenByUpperMessageID(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	storeBundle(t, s, "om_fwd", "oc_a", clk.t.Add(-time.Minute))
@@ -166,6 +172,7 @@ func TestExpandForwards_GroupsChildrenByUpperMessageID(t *testing.T) {
 }
 
 func TestExpandForwards_ANestedBundleKeepsItsOwnChildren(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	storeBundle(t, s, "om_fwd", "oc_a", clk.t.Add(-time.Minute))
@@ -190,6 +197,7 @@ func TestExpandForwards_ANestedBundleKeepsItsOwnChildren(t *testing.T) {
 }
 
 func TestExpandForwards_CountsOnlyTheTopLevelChildren(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	storeBundle(t, s, "om_fwd", "oc_a", clk.t.Add(-time.Minute))
@@ -209,6 +217,7 @@ func TestExpandForwards_CountsOnlyTheTopLevelChildren(t *testing.T) {
 }
 
 func TestExpandForwards_ARefusedBundleIsStampedAndNotRetried(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	storeBundle(t, s, "om_gone", "oc_a", clk.t.Add(-time.Minute))
@@ -230,6 +239,7 @@ func TestExpandForwards_ARefusedBundleIsStampedAndNotRetried(t *testing.T) {
 }
 
 func TestExpandForwards_ATimeoutIsRetriedAfterItsBackoff(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	storeBundle(t, s, "om_fwd", "oc_a", clk.t.Add(-time.Minute))
@@ -252,6 +262,7 @@ func TestExpandForwards_ATimeoutIsRetriedAfterItsBackoff(t *testing.T) {
 }
 
 func TestExpandForwards_TakesTheNewestBundlesFirst(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	s.Opt().ForwardsPerTick = 1
 	storeBundle(t, s, "om_old", "oc_a", clk.t.Add(-2*time.Hour))
@@ -264,6 +275,7 @@ func TestExpandForwards_TakesTheNewestBundlesFirst(t *testing.T) {
 }
 
 func TestExpandForwards_RegistersAChildAttachmentUnderTheBundle(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	s.Opt().DataDir = t.TempDir()
@@ -292,6 +304,7 @@ func TestExpandForwards_RegistersAChildAttachmentUnderTheBundle(t *testing.T) {
 }
 
 func TestUpsertRaw_QueuesEveryBundleItStores(t *testing.T) {
+	t.Parallel()
 	s, _, clk := newSyncer(t)
 	ctx := t.Context()
 	_, _, err := s.upsertRaw(ctx, []larkcli.RawMessage{
@@ -307,6 +320,7 @@ func TestUpsertRaw_QueuesEveryBundleItStores(t *testing.T) {
 }
 
 func TestExpandForwards_AsksWhoReactedToTheChildren(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	storeBundle(t, s, "om_fwd", "oc_a", clk.t.Add(-time.Minute))
@@ -334,6 +348,7 @@ func TestExpandForwards_AsksWhoReactedToTheChildren(t *testing.T) {
 }
 
 func TestExpandForwards_AChildFeishuWontShowReactionsForStillLands(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	storeBundle(t, s, "om_fwd", "oc_a", clk.t.Add(-time.Minute))
@@ -358,6 +373,7 @@ func TestExpandForwards_AChildFeishuWontShowReactionsForStillLands(t *testing.T)
 }
 
 func TestRenderLocal_LeavesABundleUnrenderedUntilItsChildrenLand(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	storeBundle(t, s, "om_fwd", "oc_a", clk.t.Add(-time.Minute))
@@ -380,6 +396,7 @@ func TestRenderLocal_LeavesABundleUnrenderedUntilItsChildrenLand(t *testing.T) {
 }
 
 func TestExpandForwards_RendersTheBundleFromItsChildren(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	at := clk.t.Add(-time.Minute)
@@ -404,6 +421,7 @@ func TestExpandForwards_RendersTheBundleFromItsChildren(t *testing.T) {
 }
 
 func TestRenderLocal_ARefusedBundleRendersEmptyAndSettles(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	storeBundle(t, s, "om_gone", "oc_a", clk.t.Add(-time.Minute))
@@ -428,6 +446,7 @@ func TestRenderLocal_ARefusedBundleRendersEmptyAndSettles(t *testing.T) {
 }
 
 func TestRenderLocal_ABundleStillOwedAnotherTryIsNotRendered(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	at := clk.t.Add(-time.Minute)

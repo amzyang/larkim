@@ -27,6 +27,7 @@ func onSection(t *testing.T, m Model, chatID string) Model {
 }
 
 func TestFeed_ReplyGoesToTheChatUnderTheCursor(t *testing.T) {
+	t.Parallel()
 	m := feedModel(t)
 	require.Equal(t, "oc_platform", m.chatID)
 
@@ -39,6 +40,7 @@ func TestFeed_ReplyGoesToTheChatUnderTheCursor(t *testing.T) {
 // Sections are short and a border is one j away, so a composer holding words
 // keeps the chat they were written for.
 func TestFeed_TheReplyTargetHoldsWhileTheComposerHasText(t *testing.T) {
+	t.Parallel()
 	m := feedModel(t)
 	m.input.SetValue("等我看一下")
 
@@ -53,6 +55,7 @@ func TestFeed_TheReplyTargetHoldsWhileTheComposerHasText(t *testing.T) {
 }
 
 func TestFeed_MovingAcrossASectionCarriesTheDraftWithIt(t *testing.T) {
+	t.Parallel()
 	m := feedModel(t)
 	require.NoError(t, m.deps.Store.SaveDraft(t.Context(), store.Draft{ChatID: "oc_project", Text: "周四没问题"}, 900))
 
@@ -64,6 +67,7 @@ func TestFeed_MovingAcrossASectionCarriesTheDraftWithIt(t *testing.T) {
 // r puts a quote up without a word being typed, and the cursor is free to walk
 // away to read while it stands. Retargeting there would take the quote away.
 func TestFeed_AQuotePinsTheTargetTheCursorWalksAwayFrom(t *testing.T) {
+	t.Parallel()
 	m := feedModel(t)
 	m = onSection(t, m, "oc_project")
 	sel, ok := m.selected()
@@ -82,6 +86,7 @@ func TestFeed_AQuotePinsTheTargetTheCursorWalksAwayFrom(t *testing.T) {
 }
 
 func TestFeed_EnterOpensTheChatAnchoredOnTheMessage(t *testing.T) {
+	t.Parallel()
 	m := feedModel(t)
 	m.focus = paneMessages
 	m = onSection(t, m, "oc_project")
@@ -98,6 +103,7 @@ func TestFeed_EnterOpensTheChatAnchoredOnTheMessage(t *testing.T) {
 }
 
 func TestFeed_NAndNWalkTheSections(t *testing.T) {
+	t.Parallel()
 	m := feedModel(t)
 
 	next, _ := m.jumpSection(1)
@@ -110,6 +116,7 @@ func TestFeed_NAndNWalkTheSections(t *testing.T) {
 }
 
 func TestFeed_EscGoesBackToTheChatThatWasOpen(t *testing.T) {
+	t.Parallel()
 	st, chats := backlog(t)
 	m := New(Deps{Store: st, Self: "ou_me"})
 	m.width, m.height, m.chats, m.chatID = 120, 40, chats, "oc_project"
@@ -131,6 +138,7 @@ func TestFeed_EscGoesBackToTheChatThatWasOpen(t *testing.T) {
 // Nothing here is taken as read: the reader is looking at a page of many
 // chats, and none of them has been opened.
 func TestFeed_TakesNothingRead(t *testing.T) {
+	t.Parallel()
 	m := feedModel(t)
 	var opened [][]string
 	m.deps.OpenURL = func(targets []string, _ bool) error { opened = append(opened, targets); return nil }
@@ -150,6 +158,7 @@ func TestFeed_TakesNothingRead(t *testing.T) {
 // The marker is all that says a row is still waiting, the chats it names being
 // ones the reader has not opened.
 func TestFeed_TheUnreadMarkersSurviveTheCursor(t *testing.T) {
+	t.Parallel()
 	m := feedModel(t)
 	require.Len(t, m.dots, 3)
 
@@ -160,6 +169,7 @@ func TestFeed_TheUnreadMarkersSurviveTheCursor(t *testing.T) {
 }
 
 func TestFeed_ASendWaitsUnderItsOwnSection(t *testing.T) {
+	t.Parallel()
 	m := feedModel(t)
 	m.selfName = "林岚"
 	m.outbox = []outboxItem{{localID: "cli_c", chatID: "oc_platform", msgType: "text",
@@ -171,6 +181,7 @@ func TestFeed_ASendWaitsUnderItsOwnSection(t *testing.T) {
 }
 
 func TestFeed_ADataRevReloadDropsAChatReadElsewhere(t *testing.T) {
+	t.Parallel()
 	m := feedModel(t)
 	require.NoError(t, m.deps.Store.MarkChatRead(t.Context(), "oc_platform", 900))
 
@@ -183,6 +194,7 @@ func TestFeed_ADataRevReloadDropsAChatReadElsewhere(t *testing.T) {
 }
 
 func TestFeed_GrowingIsOffInThePanel(t *testing.T) {
+	t.Parallel()
 	m := feedModel(t)
 	m.msgTop = 0
 	require.Nil(t, m.growMessages(), "the sections are anchored where the backlog starts")
@@ -191,6 +203,7 @@ func TestFeed_GrowingIsOffInThePanel(t *testing.T) {
 // Ctrl+f draws over the panel through the same rows and the same cursor, so
 // while it is up every key that reads m.msgs has to leave them alone.
 func TestFeed_TheSearchPanelDrawsOverIt(t *testing.T) {
+	t.Parallel()
 	m := feedModel(t)
 	next, _ := m.openSearch("接口")
 	m = next.(Model)
@@ -211,6 +224,7 @@ func TestFeed_TheSearchPanelDrawsOverIt(t *testing.T) {
 // A section dropping out renumbers every row behind it, so the cursor is held
 // by the message it was on rather than by its place.
 func TestFeed_AReloadHoldsTheCursorOnItsMessage(t *testing.T) {
+	t.Parallel()
 	m := feedModel(t)
 	m = onSection(t, m, "oc_project")
 	require.Equal(t, "om_j1", m.msgs[m.msgIdx].MessageID)
@@ -232,6 +246,7 @@ func TestFeed_AReloadHoldsTheCursorOnItsMessage(t *testing.T) {
 }
 
 func TestOnClick_TheUnreadRowOpensThePanel(t *testing.T) {
+	t.Parallel()
 	m := feedModel(t)
 	m.feed, m.focus, m.chatIdx, m.chatTop = nil, paneChats, 0, 0
 
@@ -255,6 +270,7 @@ func draftOf(t *testing.T, m Model, chatID string) string {
 // empty draft over the one the panel had just saved, which SaveDraft reads as
 // a delete.
 func TestFeed_OpeningThePanelKeepsTheDraftOfTheChatItLeaves(t *testing.T) {
+	t.Parallel()
 	st, chats := backlog(t)
 	m := New(Deps{Store: st, Self: "ou_me"})
 	m.width, m.height, m.chats, m.chatID = 120, 40, chats, "oc_project"
@@ -271,6 +287,7 @@ func TestFeed_OpeningThePanelKeepsTheDraftOfTheChatItLeaves(t *testing.T) {
 // Walking across a border faster than the side load answers leaves the
 // composer empty under a chat whose own draft has not been shown yet.
 func TestFeed_WalkingPastAChatKeepsItsDraft(t *testing.T) {
+	t.Parallel()
 	m := feedModel(t)
 	require.NoError(t, m.deps.Store.SaveDraft(t.Context(), store.Draft{ChatID: "oc_project", Text: "周四没问题"}, 900))
 
@@ -295,6 +312,7 @@ func TestFeed_WalkingPastAChatKeepsItsDraft(t *testing.T) {
 // Words the reader typed are theirs whatever the side load has done, so they
 // go back under the chat they were written for.
 func TestFeed_LeavingThePanelKeepsWhatWasTyped(t *testing.T) {
+	t.Parallel()
 	m := feedModel(t)
 	m = onSection(t, m, "oc_project")
 	m.input.SetValue("我看一下")
@@ -307,6 +325,7 @@ func TestFeed_LeavingThePanelKeepsWhatWasTyped(t *testing.T) {
 // n has to move the composer with the cursor, or the title names one chat
 // while i, r and submit send to another.
 func TestFeed_NCarriesTheReplyTargetWithTheCursor(t *testing.T) {
+	t.Parallel()
 	m := feedModel(t)
 	require.Equal(t, "oc_platform", m.chatID)
 
@@ -323,6 +342,7 @@ func TestFeed_NCarriesTheReplyTargetWithTheCursor(t *testing.T) {
 // submit would send under replyTo.ChatID while the only chat name on screen
 // was the one the words were begun in.
 func TestFeed_AnsweringAcrossASectionCarriesTheWordsAndTheTitle(t *testing.T) {
+	t.Parallel()
 	m := feedModel(t)
 	m.input.SetValue("我这边看一下接口")
 	m = onSection(t, m, "oc_project")
@@ -344,6 +364,7 @@ func TestFeed_AnsweringAcrossASectionCarriesTheWordsAndTheTitle(t *testing.T) {
 // A loadMessages still in flight when the panel goes up would put one chat's
 // whole history under the frozen section rules.
 func TestFeed_APageForTheCursorsChatDoesNotOverwriteThePanel(t *testing.T) {
+	t.Parallel()
 	m := feedModel(t)
 	require.Equal(t, "oc_platform", m.chatID)
 	before := idsOf(m.msgs)
@@ -359,6 +380,7 @@ func TestFeed_APageForTheCursorsChatDoesNotOverwriteThePanel(t *testing.T) {
 // Nothing waiting leaves the panel with no chat open, and the pane must not
 // read that as an empty screen to fill with the first chat in the list.
 func TestFeed_AnEmptyPanelDoesNotCloseItself(t *testing.T) {
+	t.Parallel()
 	st := feedStore(t)
 	require.NoError(t, st.EnsureChat(t.Context(), "oc_platform", 1))
 	m := New(Deps{Store: st, Self: "ou_me"})
@@ -407,6 +429,7 @@ func pointedAtProject(t *testing.T) Model {
 
 // The reader goes to another window while the panel is up.
 func TestFeed_BlurKeepsTheDraftOfAChatOnlyPointedAt(t *testing.T) {
+	t.Parallel()
 	m := pointedAtProject(t)
 
 	next, cmd := m.Update(tea.BlurMsg{})
@@ -417,6 +440,7 @@ func TestFeed_BlurKeepsTheDraftOfAChatOnlyPointedAt(t *testing.T) {
 
 // Enter on a message leaves the panel for that message's chat.
 func TestFeed_OpeningAHitKeepsTheDraftOfAChatOnlyPointedAt(t *testing.T) {
+	t.Parallel()
 	m := pointedAtProject(t)
 
 	next, cmd := m.openFeedHit()
@@ -427,6 +451,7 @@ func TestFeed_OpeningAHitKeepsTheDraftOfAChatOnlyPointedAt(t *testing.T) {
 
 // q from inside the panel.
 func TestFeed_QuitKeepsTheDraftOfAChatOnlyPointedAt(t *testing.T) {
+	t.Parallel()
 	m := pointedAtProject(t)
 
 	m = applyAll(t, m, m.quit())
@@ -435,6 +460,7 @@ func TestFeed_QuitKeepsTheDraftOfAChatOnlyPointedAt(t *testing.T) {
 }
 
 func TestChatsLoaded_TheFirstListingOpensTheUnreadRow(t *testing.T) {
+	t.Parallel()
 	m := sized(120, 36)
 	// A cold start: the model has been built but no listing has landed yet,
 	// so nothing is open and nothing has been asked for.
@@ -451,6 +477,7 @@ func TestChatsLoaded_TheFirstListingOpensTheUnreadRow(t *testing.T) {
 }
 
 func TestChatsLoaded_ALaterListingLeavesTheOpenChatAlone(t *testing.T) {
+	t.Parallel()
 	m := sized(120, 36)
 	mm, _ := m.update(chatsLoadedMsg{chats: m.chats})
 	m = mm.(Model)
@@ -460,6 +487,7 @@ func TestChatsLoaded_ALaterListingLeavesTheOpenChatAlone(t *testing.T) {
 }
 
 func TestCloseUnread_WithNothingBehindItFallsBackToTheFirstChat(t *testing.T) {
+	t.Parallel()
 	m := sized(120, 36)
 	m.chatID, m.feed = "", &unreadFeed{}
 
@@ -469,6 +497,7 @@ func TestCloseUnread_WithNothingBehindItFallsBackToTheFirstChat(t *testing.T) {
 }
 
 func TestCloseUnread_WithNoChatsLeavesThePaneEmpty(t *testing.T) {
+	t.Parallel()
 	m := sized(120, 36)
 	m.chats, m.chatID, m.feed = nil, "", &unreadFeed{}
 
@@ -515,6 +544,7 @@ func clickPane(m Model, col, line int) (tea.Model, tea.Cmd) {
 func markChatPress(m Model) int { return m.messagesWidth() - 2 - 1 }
 
 func TestFeed_MTakesTheChatUnderTheCursorAsRead(t *testing.T) {
+	t.Parallel()
 	m := feedModel(t)
 	m = onSection(t, m, "oc_platform")
 	require.ElementsMatch(t, []string{"oc_platform", "oc_project"}, waitingChats(t, m))
@@ -557,6 +587,7 @@ func loudFeed(t *testing.T) (Model, *[]store.ChatUnread) {
 // watermark handed to Feishu is the chat's newest waiting message, so the
 // client's dot falls with larkim's own badge rather than 80 messages short.
 func TestFeed_MClearsTheWholeChatInFeishuPastACutSection(t *testing.T) {
+	t.Parallel()
 	m, cleared := loudFeed(t)
 
 	next, cmd := m.Update(tea.KeyPressMsg{Code: 'm', Text: "m"})
@@ -569,6 +600,7 @@ func TestFeed_MClearsTheWholeChatInFeishuPastACutSection(t *testing.T) {
 // Everywhere else a chat is read by being gone into, so m carries no meaning
 // there and the act refuses to run off the page it belongs to.
 func TestMarkSectionRead_RefusesOffThePage(t *testing.T) {
+	t.Parallel()
 	m := feedModel(t)
 	m.feed = nil
 
@@ -579,6 +611,7 @@ func TestMarkSectionRead_RefusesOffThePage(t *testing.T) {
 }
 
 func TestFeed_ClickingTheCheckOnARuleTakesThatChatAsRead(t *testing.T) {
+	t.Parallel()
 	m := feedModel(t)
 	line := ruleLineOf(t, m, "oc_project")
 	require.NotEqual(t, m.msgTop, line, "the second section's rule is not the pinned one")
@@ -592,6 +625,7 @@ func TestFeed_ClickingTheCheckOnARuleTakesThatChatAsRead(t *testing.T) {
 // The pinned rule is the only copy drawn while the reader is at the top of a
 // section, so its own check has to answer.
 func TestFeed_ClickingTheCheckOnThePinnedRuleTakesTheTopChatAsRead(t *testing.T) {
+	t.Parallel()
 	m := feedModel(t)
 	_, pinned := m.feedRuleLine(m.messagesWidth() - 2)
 	require.True(t, pinned, "the page opens on a section's rule")
@@ -607,6 +641,7 @@ func TestFeed_ClickingTheCheckOnThePinnedRuleTakesTheTopChatAsRead(t *testing.T)
 // The row under the pin is held blank, so the columns the button would have
 // occupied there draw nothing and press nothing.
 func TestFeed_ClickingTheHeldOpenLineUnderThePinTakesNothing(t *testing.T) {
+	t.Parallel()
 	m := feedModel(t)
 	require.True(t, m.msgRows[m.msgTop].rule)
 
@@ -634,6 +669,7 @@ func coldPanel(t *testing.T) (Model, *store.Store, *[]openCall) {
 // cursor walking onto its row still opens it — and reading it there clears
 // the client's dot, as opening any other chat does.
 func TestMove_TheRowOfTheChatThePanelPointsAtOpensIt(t *testing.T) {
+	t.Parallel()
 	m, st, calls := coldPanel(t)
 
 	next, _ := m.move(1)
@@ -647,6 +683,7 @@ func TestMove_TheRowOfTheChatThePanelPointsAtOpensIt(t *testing.T) {
 }
 
 func TestOnClick_TheRowOfTheChatThePanelPointsAtOpensIt(t *testing.T) {
+	t.Parallel()
 	m, _, _ := coldPanel(t)
 
 	next, _ := m.onClick(tea.Mouse{Button: tea.MouseLeft, X: 4, Y: 1 + headerHeight + rowOf(0)*chatRowStride})

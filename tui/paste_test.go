@@ -14,6 +14,7 @@ import (
 )
 
 func TestForward_BracketedPasteReplansTheDraft(t *testing.T) {
+	t.Parallel()
 	m, _ := newOutboxModel(t)
 	m = paste(t, press(t, pickerModel(t), "i"), "- a\n- b")
 
@@ -23,6 +24,7 @@ func TestForward_BracketedPasteReplansTheDraft(t *testing.T) {
 }
 
 func TestForward_BracketedPasteGrowsTheComposer(t *testing.T) {
+	t.Parallel()
 	m, _ := newOutboxModel(t)
 	mm, _ := m.startInsert(nil, false)
 	m = mm.(Model)
@@ -35,6 +37,7 @@ func TestForward_BracketedPasteGrowsTheComposer(t *testing.T) {
 }
 
 func TestForward_LeavesOtherModesAlone(t *testing.T) {
+	t.Parallel()
 	m, _ := newOutboxModel(t)
 	require.Equal(t, modeNormal, m.mode)
 
@@ -49,6 +52,7 @@ func TestForward_LeavesOtherModesAlone(t *testing.T) {
 // forward has to reach the same input onKey does, and whatever the input's
 // value drives has to move with it.
 func TestForward_EveryInputTakesAPaste(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name  string
 		open  func(t *testing.T) Model
@@ -118,6 +122,7 @@ func TestForward_EveryInputTakesAPaste(t *testing.T) {
 }
 
 func TestForward_APasteOnTheCommandLineOpensItsCompletions(t *testing.T) {
+	t.Parallel()
 	m := paste(t, cmdModel(t), "goto 平台")
 	require.Equal(t, []string{"平台组"}, offers(m))
 }
@@ -125,6 +130,7 @@ func TestForward_APasteOnTheCommandLineOpensItsCompletions(t *testing.T) {
 // The flavour lists below are what `osascript -e 'clipboard info'` actually
 // printed on macOS for each case.
 func TestClipFlavour_DispatchesOnWhatTheClipboardNames(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name string
 		info string
@@ -142,12 +148,14 @@ func TestClipFlavour_DispatchesOnWhatTheClipboardNames(t *testing.T) {
 }
 
 func TestClipFlavour_TextIsNeverAFile(t *testing.T) {
+	t.Parallel()
 	// Asking the clipboard for a file URL succeeds on plain text and returns
 	// "/hello" for the text "hello". Text must never reach that coercion.
 	require.Equal(t, clipText, clipFlavour("«class utf8», 5, «class ut16», 12, string, 5, Unicode text, 10"))
 }
 
 func TestIsImagePath_KnowsWhatFeishuDraws(t *testing.T) {
+	t.Parallel()
 	for _, p := range []string{"/a/shot.png", "/a/shot.JPG", "/a/b.jpeg", "/a/b.gif", "/a/b.webp", "/a/b.bmp"} {
 		require.True(t, isImagePath(p), p)
 	}
@@ -157,6 +165,7 @@ func TestIsImagePath_KnowsWhatFeishuDraws(t *testing.T) {
 }
 
 func TestImageRef_WrapsOnlyAPathThatNeedsIt(t *testing.T) {
+	t.Parallel()
 	require.Equal(t, "![](/Users/linlan/shot.png)", imageRef("/Users/linlan/shot.png"))
 	require.Equal(t, "![](</Users/linlan/Screenshot 2026-09-25 at 08.25.13.png>)",
 		imageRef("/Users/linlan/Screenshot 2026-09-25 at 08.25.13.png"))
@@ -186,6 +195,7 @@ func pasteIntoKey(t *testing.T, m Model, draft string, c clip, err error, key te
 }
 
 func TestPaste_ImageStagesAndInsertsAReference(t *testing.T) {
+	t.Parallel()
 	m, _ := newOutboxModel(t)
 	staged := filepath.Join(t.TempDir(), "paste-1758790000000.png")
 	require.NoError(t, os.WriteFile(staged, []byte("png"), 0o600))
@@ -200,6 +210,7 @@ func TestPaste_ImageStagesAndInsertsAReference(t *testing.T) {
 }
 
 func TestPaste_ImageIntoProseBecomesAPost(t *testing.T) {
+	t.Parallel()
 	m, _ := newOutboxModel(t)
 	staged := filepath.Join(t.TempDir(), "paste-1.png")
 	require.NoError(t, os.WriteFile(staged, []byte("png"), 0o600))
@@ -212,6 +223,7 @@ func TestPaste_ImageIntoProseBecomesAPost(t *testing.T) {
 }
 
 func TestPaste_FileGoesInAsAPictureOrAnAttachment(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	shot := filepath.Join(dir, "shot.png")
 	pdf := filepath.Join(dir, "合同.pdf")
@@ -239,6 +251,7 @@ func TestPaste_FileGoesInAsAPictureOrAnAttachment(t *testing.T) {
 }
 
 func TestPaste_PathWithSpacesIsWrappedInAngleBrackets(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	shot := filepath.Join(dir, "Screenshot 2026-09-25 at 08.25.13.png")
 	require.NoError(t, os.WriteFile(shot, []byte("png"), 0o600))
@@ -253,6 +266,7 @@ func TestPaste_PathWithSpacesIsWrappedInAngleBrackets(t *testing.T) {
 }
 
 func TestPaste_SuperVReadsClipboard(t *testing.T) {
+	t.Parallel()
 	m, _ := newOutboxModel(t)
 	m = pasteIntoKey(t, m, "", clip{kind: clipText, text: "from cmd"}, nil,
 		tea.KeyPressMsg{Code: 'v', Mod: tea.ModSuper}, "super+v reads the clipboard")
@@ -271,6 +285,7 @@ func pasteFromClipboardKey(t *testing.T, m Model, c clip, key tea.KeyPressMsg) M
 }
 
 func TestSilenceContains_SuperVReadsClipboard(t *testing.T) {
+	t.Parallel()
 	m := press(t, silenceModel(t), "a", "tab", "tab")
 	m = pasteFromClipboardKey(t, m, clip{kind: clipText, text: "nightly build"},
 		tea.KeyPressMsg{Code: 'v', Mod: tea.ModSuper})
@@ -278,6 +293,7 @@ func TestSilenceContains_SuperVReadsClipboard(t *testing.T) {
 }
 
 func TestConfigEditor_SuperVReadsClipboard(t *testing.T) {
+	t.Parallel()
 	m := press(t, configModel(t).openConfig("ai.model"), "enter", "ctrl+u")
 	m = pasteFromClipboardKey(t, m, clip{kind: clipText, text: "gpt-4"},
 		tea.KeyPressMsg{Code: 'v', Mod: tea.ModSuper})
@@ -285,6 +301,7 @@ func TestConfigEditor_SuperVReadsClipboard(t *testing.T) {
 }
 
 func TestPaste_BracketedPasteReReadsPasteboard(t *testing.T) {
+	t.Parallel()
 	m, _ := newOutboxModel(t)
 	mm, _ := m.startInsert(nil, false)
 	m = mm.(Model)
@@ -299,6 +316,7 @@ func TestPaste_BracketedPasteReReadsPasteboard(t *testing.T) {
 }
 
 func TestPaste_TextInsertsAtTheCursor(t *testing.T) {
+	t.Parallel()
 	m, _ := newOutboxModel(t)
 	m = pasteInto(t, m, "看这个 ", clip{kind: clipText, text: "**重点**"}, nil)
 
@@ -307,6 +325,7 @@ func TestPaste_TextInsertsAtTheCursor(t *testing.T) {
 }
 
 func TestPaste_EmptyClipboardSaysSo(t *testing.T) {
+	t.Parallel()
 	m, _ := newOutboxModel(t)
 	m = pasteInto(t, m, "好的", clip{}, nil)
 
@@ -316,6 +335,7 @@ func TestPaste_EmptyClipboardSaysSo(t *testing.T) {
 }
 
 func TestPaste_FailureKeepsTheDraft(t *testing.T) {
+	t.Parallel()
 	m, _ := newOutboxModel(t)
 	m = pasteInto(t, m, "好的", clip{}, errors.New("osascript: exit status 1"))
 
@@ -325,11 +345,13 @@ func TestPaste_FailureKeepsTheDraft(t *testing.T) {
 }
 
 func TestClassify_AngleBracketImageIsStillAnImage(t *testing.T) {
+	t.Parallel()
 	require.Equal(t, kindImage, classify("![](</Users/linlan/a b.png>)"))
 	require.Equal(t, kindPost, classify("看 ![](</Users/linlan/a b.png>)"))
 }
 
 func TestPrunePasted_DropsOnlyWhatIsStale(t *testing.T) {
+	t.Parallel()
 	data := t.TempDir()
 	dir := filepath.Join(data, pastedDir)
 	require.NoError(t, os.MkdirAll(dir, 0o700))
@@ -351,6 +373,7 @@ func TestPrunePasted_DropsOnlyWhatIsStale(t *testing.T) {
 }
 
 func TestClipFlavour_WebSelectionIsHTMLBeforeItIsText(t *testing.T) {
+	t.Parallel()
 	// A browser puts the rich flavour on the pasteboard beside the plain one,
 	// so utf8 alone is not what decides.
 	require.Equal(t, clipHTML, clipFlavour("«class HTML», 138, «class utf8», 24, string, 24, Unicode text, 48"))

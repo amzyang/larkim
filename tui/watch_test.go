@@ -31,6 +31,7 @@ func collect(cmd tea.Cmd) []string {
 }
 
 func TestUpdate_RevMsgReloadsEveryPane(t *testing.T) {
+	t.Parallel()
 	st, err := storetest.Open(t, filepath.Join(t.TempDir(), "t.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { st.Close() })
@@ -57,6 +58,7 @@ func TestUpdate_RevMsgReloadsEveryPane(t *testing.T) {
 }
 
 func TestUpdate_MessagesLoadedKeepsSearchCursor(t *testing.T) {
+	t.Parallel()
 	m := sized(120, 36)
 	m.searching, m.focus = true, paneMessages
 	m.searchHits = messageHits(
@@ -81,6 +83,7 @@ func grown(m Model, id string) []store.Message {
 }
 
 func TestUpdate_MessagesLoadedKeepsCursorOffTheEnd(t *testing.T) {
+	t.Parallel()
 	m := shortMsgs(sized(120, 36), 6)
 	m.focus, m.msgIdx = paneMessages, 2
 	was := idAt(m.msgs, m.msgIdx)
@@ -92,6 +95,7 @@ func TestUpdate_MessagesLoadedKeepsCursorOffTheEnd(t *testing.T) {
 }
 
 func TestUpdate_MessagesLoadedFollowsTheEnd(t *testing.T) {
+	t.Parallel()
 	m := shortMsgs(sized(120, 36), 6)
 	m.focus, m.msgIdx = paneMessages, len(m.msgs)-1
 
@@ -102,6 +106,7 @@ func TestUpdate_MessagesLoadedFollowsTheEnd(t *testing.T) {
 }
 
 func TestUpdate_MessagesLoadedEntersChatAtTheEnd(t *testing.T) {
+	t.Parallel()
 	m := shortMsgs(sized(120, 36), 6)
 	m.focus, m.msgIdx = paneMessages, 2
 	m.pendingChat = "oc_7"
@@ -125,6 +130,7 @@ func slide(msgs []store.Message, drop int) []store.Message {
 }
 
 func TestMessagesLoaded_AScrolledUpViewHoldsTheMessageOnItsTopRow(t *testing.T) {
+	t.Parallel()
 	m := shortMsgs(sized(120, 36), 40)
 	m.focus, m.msgIdx = paneMessages, 30
 	m.rebuildMessages()
@@ -144,6 +150,7 @@ func TestMessagesLoaded_AScrolledUpViewHoldsTheMessageOnItsTopRow(t *testing.T) 
 }
 
 func TestMessagesLoaded_AViewOnTheTailFollowsTheArrivingMessage(t *testing.T) {
+	t.Parallel()
 	m := shortMsgs(sized(120, 36), 40)
 	m.focus, m.msgIdx = paneMessages, len(m.msgs)-1
 	m.rebuildMessages()
@@ -158,6 +165,7 @@ func TestMessagesLoaded_AViewOnTheTailFollowsTheArrivingMessage(t *testing.T) {
 }
 
 func TestMessagesLoaded_ACursorLeftOnTheTailDoesNotDragAScrolledView(t *testing.T) {
+	t.Parallel()
 	m := shortMsgs(sized(120, 36), 40)
 	m.focus, m.msgIdx = paneMessages, len(m.msgs)-1
 	m.rebuildMessages()
@@ -180,6 +188,7 @@ func TestMessagesLoaded_ACursorLeftOnTheTailDoesNotDragAScrolledView(t *testing.
 }
 
 func TestOnWheel_MessagesKeepsItsScrollAndItsCursor(t *testing.T) {
+	t.Parallel()
 	m := shortMsgs(sized(120, 36), 40)
 	m.focus, m.msgIdx = paneMessages, len(m.msgs)-1
 	m.rebuildMessages()
@@ -202,6 +211,7 @@ func TestOnWheel_MessagesKeepsItsScrollAndItsCursor(t *testing.T) {
 }
 
 func TestLayout_AResizeHoldsTheMessageOnTheTopRow(t *testing.T) {
+	t.Parallel()
 	m := shortMsgs(sized(120, 36), 40)
 	m.focus, m.msgIdx = paneMessages, 30
 	m.rebuildMessages()
@@ -230,6 +240,7 @@ func threaded(m Model) Model {
 }
 
 func TestThreadLoaded_AScrolledUpViewHoldsTheMessageOnItsTopRow(t *testing.T) {
+	t.Parallel()
 	m := threaded(shortMsgs(sized(120, 36), 40))
 	m.focus, m.threadIdx = paneThread, len(m.thread)-1
 	m.rebuildThread()

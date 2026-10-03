@@ -10,6 +10,7 @@ import (
 )
 
 func TestPendingText_PrefersTheBodyItCanRead(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name, msgType, raw, want string
 	}{
@@ -27,11 +28,13 @@ func TestPendingText_PrefersTheBodyItCanRead(t *testing.T) {
 }
 
 func TestPendingSummary_IsOneLine(t *testing.T) {
+	t.Parallel()
 	c := store.Chat{LastMsgType: "text", LastContentRaw: `{"text":"line1\nline2"}`}
 	require.Equal(t, "line1 line2", pendingSummary(c))
 }
 
 func TestPendingText_NamesWhoAMentionStandsFor(t *testing.T) {
+	t.Parallel()
 	// The mention list arrives with the body, so a message waiting on its
 	// rendering already knows whose name the placeholder is.
 	require.Equal(t, "@林岚 看下", pendingText("text", `{"text":"@_user_1 看下"}`,
@@ -39,10 +42,12 @@ func TestPendingText_NamesWhoAMentionStandsFor(t *testing.T) {
 }
 
 func TestPendingText_FlattensARichTextBody(t *testing.T) {
+	t.Parallel()
 	require.Equal(t, "abc\ndef", pendingText("text", `{"text":"<p>abc</p><p>def</p>"}`, ""))
 }
 
 func TestPendingText_PostReadsItsBody(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct{ name, raw, want string }{
 		{"the title leads the paragraphs",
 			`{"title":"发布说明","content":[[{"tag":"text","text":"今天上线"}],[{"tag":"text","text":"明天回滚"}]]}`,
@@ -79,6 +84,7 @@ func TestPendingText_PostReadsItsBody(t *testing.T) {
 }
 
 func TestPendingText_NamesAnEventBeforeItIsRendered(t *testing.T) {
+	t.Parallel()
 	// A calendar body carries everything its rendering will say, so the chat
 	// list names the event rather than its type while the render pass catches
 	// up.

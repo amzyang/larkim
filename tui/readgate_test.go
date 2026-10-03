@@ -54,6 +54,7 @@ func unreadOf(t *testing.T, st *store.Store, chatID string) int64 {
 }
 
 func TestUpdate_AMessageLandingBelowTheFoldLeavesTheChatUnread(t *testing.T) {
+	t.Parallel()
 	m, st, calls := scrolledBack(t)
 	lands(t, st, "om_new", "ou_b", "李四", "刚发现一个问题", 900)
 
@@ -65,6 +66,7 @@ func TestUpdate_AMessageLandingBelowTheFoldLeavesTheChatUnread(t *testing.T) {
 }
 
 func TestUpdate_ScrollingBackToTheTailTakesWhatWasWaiting(t *testing.T) {
+	t.Parallel()
 	m, st, calls := scrolledBack(t)
 	lands(t, st, "om_new", "ou_b", "李四", "刚发现一个问题", 900)
 	m = arrive(t, m, st, "oc_a")
@@ -77,6 +79,7 @@ func TestUpdate_ScrollingBackToTheTailTakesWhatWasWaiting(t *testing.T) {
 }
 
 func TestUpdate_ScrollingWithinTheHistoryTakesNothing(t *testing.T) {
+	t.Parallel()
 	m, st, calls := scrolledBack(t)
 	lands(t, st, "om_new", "ou_b", "李四", "刚发现一个问题", 900)
 	m = arrive(t, m, st, "oc_a")
@@ -90,6 +93,7 @@ func TestUpdate_ScrollingWithinTheHistoryTakesNothing(t *testing.T) {
 }
 
 func TestUpdate_LeavingTheTailAndComingBackFiresOneApplink(t *testing.T) {
+	t.Parallel()
 	m, st, calls := scrolledBack(t)
 	lands(t, st, "om_new", "ou_b", "李四", "刚发现一个问题", 900)
 	m = arrive(t, m, st, "oc_a")
@@ -102,6 +106,7 @@ func TestUpdate_LeavingTheTailAndComingBackFiresOneApplink(t *testing.T) {
 }
 
 func TestUpdate_TheReadFlagLandingLateStillTakesTheChatRead(t *testing.T) {
+	t.Parallel()
 	m, st, calls := badgeModel(t)
 	m.pendingChat = "oc_a"
 	m = arrive(t, m, st, "oc_a")
@@ -125,6 +130,7 @@ func TestUpdate_TheReadFlagLandingLateStillTakesTheChatRead(t *testing.T) {
 }
 
 func TestUpdate_ABlurredTerminalLeavesTheChatUnread(t *testing.T) {
+	t.Parallel()
 	m, st, calls := badgeModel(t)
 	m.pendingChat = "oc_a"
 	m = watching(t, m, st)
@@ -147,6 +153,7 @@ func TestUpdate_ABlurredTerminalLeavesTheChatUnread(t *testing.T) {
 }
 
 func TestUpdate_TheHelpOverlayLeavesTheChatUnread(t *testing.T) {
+	t.Parallel()
 	m, st, calls := badgeModel(t)
 	m.pendingChat = "oc_a"
 	m = watching(t, m, st)
@@ -166,6 +173,7 @@ func TestUpdate_TheHelpOverlayLeavesTheChatUnread(t *testing.T) {
 }
 
 func TestReadKey_IsEmptyWhileTheSearchPanelIsOpen(t *testing.T) {
+	t.Parallel()
 	m, st, _ := badgeModel(t)
 	m.pendingChat = "oc_a"
 	lands(t, st, "om_b", "ou_b", "李四", "改到下午", 300)
@@ -180,6 +188,7 @@ func TestReadKey_IsEmptyWhileTheSearchPanelIsOpen(t *testing.T) {
 }
 
 func TestUpdate_AReadFlagOnAnOlderMessageStillTakesTheChatRead(t *testing.T) {
+	t.Parallel()
 	m, st, calls := badgeModel(t)
 	m.pendingChat = "oc_a"
 	m = arrive(t, m, st, "oc_a")
@@ -209,6 +218,7 @@ func TestUpdate_AReadFlagOnAnOlderMessageStillTakesTheChatRead(t *testing.T) {
 }
 
 func TestUpdate_AFoldedAwayMessagePaneLeavesTheChatUnread(t *testing.T) {
+	t.Parallel()
 	m, st, calls := badgeModel(t)
 	m.pendingChat = "oc_a"
 	m = watching(t, m, st)
@@ -233,6 +243,7 @@ func TestUpdate_AFoldedAwayMessagePaneLeavesTheChatUnread(t *testing.T) {
 }
 
 func TestUpdate_AJumpIntoHistoryLeavesWhatIsBelowItUnread(t *testing.T) {
+	t.Parallel()
 	m, st, calls := scrolledBack(t)
 	lands(t, st, "om_new", "ou_b", "李四", "刚发现一个问题", 900)
 	m = arrive(t, m, st, "oc_a")

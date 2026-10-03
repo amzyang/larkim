@@ -97,6 +97,7 @@ const (
 // the schema for: every block element in one body, each of which has to land
 // on a line of its own.
 func TestCardRows_BlocksDoNotRunTogether(t *testing.T) {
+	t.Parallel()
 	out := cardText(t, strings.Join([]string{
 		elHeading, elList, elQuote, elCodeSpan, elCodeBlock, elTable, elRule, elLink,
 	}, ","))
@@ -123,6 +124,7 @@ func TestCardRows_BlocksDoNotRunTogether(t *testing.T) {
 }
 
 func TestCardRows_TextStyleIsStylingNotText(t *testing.T) {
+	t.Parallel()
 	out := cardText(t, `{"tag":"plain_text","property":{"content":"粗","textStyle":{"attributes":["bold"]}}},`+
 		`{"tag":"plain_text","property":{"content":"删","textStyle":{"attributes":["strikethrough"]}}}`)
 	require.Contains(t, out, "粗删")
@@ -154,12 +156,14 @@ func rowZones(rows []msgRow) []clickZone {
 }
 
 func TestCardRows_ButtonsShareTheRowTheClientDraws(t *testing.T) {
+	t.Parallel()
 	out := cardText(t, cardActionRow(cardButton("认领", cardCallback), cardButton("忽略", cardCallback)))
 	require.Regexp(t, `认领 +忽略`, out, "an action row is one row of pills")
 	require.NotContains(t, out, "act_v1_1", "a button shows its label, not what it fires")
 }
 
 func TestCardRows_EachButtonOpensWhatItsPressWouldReach(t *testing.T) {
+	t.Parallel()
 	msg := cardOf(cardActionRow(
 		cardButton("详情", `{"type":"open_url","action":{"url":"https://example.com/run/1"}}`),
 		cardButton("同意", cardCallback)), nil)
@@ -173,6 +177,7 @@ func TestCardRows_EachButtonOpensWhatItsPressWouldReach(t *testing.T) {
 }
 
 func TestCardRows_APillMovesToTheNextLineWhole(t *testing.T) {
+	t.Parallel()
 	buttons := make([]string, 0, 8)
 	for i := range 8 {
 		buttons = append(buttons, cardButton("选项"+strconv.Itoa(i),
@@ -195,12 +200,14 @@ func TestCardRows_APillMovesToTheNextLineWhole(t *testing.T) {
 }
 
 func TestCardRows_PictureHoldsItsPlaceUntilItLands(t *testing.T) {
+	t.Parallel()
 	msg := cardOf(`{"tag":"img","property":{"imageID":"19","alt":{"tag":"plain_text","property":{"content":"image"}}}}`,
 		cardPictures(map[string]string{"19": "img_card"}))
 	require.Contains(t, rowText(renderRows([]store.Message{msg}, baseStyle())), "[Image]")
 }
 
 func TestCardRows_MentionNamesThePersonTheCardCarries(t *testing.T) {
+	t.Parallel()
 	// A card @s by an id of the sending app's own, so the name comes from the
 	// table beside the body, and the key there is what pairs the mention with
 	// the open id this reader knows the person by.
@@ -226,12 +233,14 @@ func TestCardRows_MentionNamesThePersonTheCardCarries(t *testing.T) {
 
 // A card that names nobody the message knows still says who it @s.
 func TestCardRows_MentionWithoutAKeyKeepsTheName(t *testing.T) {
+	t.Parallel()
 	att := map[string]any{"at_users": map[string]any{"ou_app": map[string]any{"content": "王五"}}}
 	msg := cardOf(`{"tag":"at","property":{"userID":"ou_app"}}`, att)
 	require.Contains(t, rowText(renderRows([]store.Message{msg}, baseStyle())), "@王五")
 }
 
 func TestCardRows_DrawsBeforeARenderingArrives(t *testing.T) {
+	t.Parallel()
 	msg := weeklyCard
 	msg.Content, msg.RenderedAt = "", 0
 	out := rowText(renderRows([]store.Message{msg}, baseStyle()))
@@ -240,6 +249,7 @@ func TestCardRows_DrawsBeforeARenderingArrives(t *testing.T) {
 }
 
 func TestCardGist_SaysWhatTheCardSays(t *testing.T) {
+	t.Parallel()
 	c, ok := card.Parse(weeklyCard.ContentRaw)
 	require.True(t, ok)
 	require.Equal(t, "设备版本周报 「兜底」", cardGist(c))
@@ -254,6 +264,7 @@ func TestCardGist_SaysWhatTheCardSays(t *testing.T) {
 // A bot that opens with a greeting says nothing on its first line; the words
 // after it are what the one-line views have room for.
 func TestCardGist_HeadlessCardRunsItsBodyOntoOneLine(t *testing.T) {
+	t.Parallel()
 	c, ok := card.Parse(cardOf(`{"tag":"plain_text","property":{"content":"Hey"}},`+
 		`{"tag":"br","property":{}},{"tag":"br","property":{}},`+
 		`{"tag":"plain_text","property":{"content":"排查有结论了："}},`+
@@ -263,6 +274,7 @@ func TestCardGist_HeadlessCardRunsItsBodyOntoOneLine(t *testing.T) {
 }
 
 func TestCardGist_PictureOnlyCardIsNamedByItsPicture(t *testing.T) {
+	t.Parallel()
 	require.Equal(t, "[Image]", cardGist(card.Card{Blocks: []card.Block{{ImageKey: "img_a"}}}),
 		"a card with nothing but a picture is still a card that said something")
 }
@@ -270,12 +282,14 @@ func TestCardGist_PictureOnlyCardIsNamedByItsPicture(t *testing.T) {
 // An alarm bot puts the same band on every card it posts and says which alarm
 // this one is in the summary, which is the line the client shows as well.
 func TestCardGist_TakesTheSummaryOverTheBand(t *testing.T) {
+	t.Parallel()
 	c, ok := card.Parse(summarisedCard("应用 order-api 普通预警"))
 	require.True(t, ok)
 	require.Equal(t, "应用 order-api 普通预警", cardGist(c))
 }
 
 func TestZoneAt_AClickPicksTheButtonItLandsOn(t *testing.T) {
+	t.Parallel()
 	row := msgRow{zones: []clickZone{
 		{x0: 2, x1: 8, urls: []string{"https://example.com/run/1"}},
 		{x0: 9, x1: 15, urls: []string{"lark://applink.feishu.cn/client/chat/open?openChatId=oc_ops"}},
@@ -290,6 +304,7 @@ func TestZoneAt_AClickPicksTheButtonItLandsOn(t *testing.T) {
 }
 
 func TestCardRows_EachPillIsALinkToWhereItLeads(t *testing.T) {
+	t.Parallel()
 	msg := cardOf(cardActionRow(
 		cardButton("详情", `{"type":"open_url","action":{"url":"https://example.com/run/1"}}`),
 		cardButton("同意", cardCallback)), nil)
@@ -350,6 +365,7 @@ func bodyLines(rows []msgRow) []string {
 // bot streams: an answer run through with code, a line naming the session, a
 // rule, and a footer.
 func TestCardRows_AStreamingReplyLaysOutTheWayTheClientDoes(t *testing.T) {
+	t.Parallel()
 	st := baseStyle()
 	m := bodyCard(
 		mdComponent(plainEl("收到，状态已确认。"), `{"tag":"br","property":{}}`, `{"tag":"br","property":{}}`,
@@ -407,6 +423,7 @@ func lineOf(t *testing.T, rows []msgRow, text string) (msgRow, int) {
 }
 
 func TestCardRows_AFooterThatFitsSharesOneRow(t *testing.T) {
+	t.Parallel()
 	st := baseStyle()
 	rows := renderRows([]store.Message{footerCard}, st)
 	row, i := lineOf(t, rows, "完成")
@@ -424,6 +441,7 @@ func TestCardRows_AFooterThatFitsSharesOneRow(t *testing.T) {
 }
 
 func TestCardRows_AFooterTooWideForThePaneStacks(t *testing.T) {
+	t.Parallel()
 	st := baseStyle()
 	st.width = leadWidth + 16
 	rows := renderRows([]store.Message{footerCard}, st)
@@ -449,6 +467,7 @@ var alarmActions = bodyCard(`{"tag":"column_set","property":{"columns":[` +
 	cardColumn("weighted", fillButton("排查", "https://example.com/triage")) + `]}}`)
 
 func TestCardRows_FillButtonsShareTheirColumnsRow(t *testing.T) {
+	t.Parallel()
 	st := baseStyle()
 	rows := renderRows([]store.Message{alarmActions}, st)
 	row, _ := lineOf(t, rows, "详情")
@@ -475,6 +494,7 @@ func TestCardRows_FillButtonsShareTheirColumnsRow(t *testing.T) {
 }
 
 func TestCardRows_FillButtonsTooWideForThePaneStack(t *testing.T) {
+	t.Parallel()
 	st := baseStyle()
 	st.width = leadWidth + 12
 	rows := renderRows([]store.Message{alarmActions}, st)
@@ -488,6 +508,7 @@ func TestCardRows_FillButtonsTooWideForThePaneStack(t *testing.T) {
 }
 
 func TestRenderInline_AFontTagColoursItsText(t *testing.T) {
+	t.Parallel()
 	ms := mentionsIn("", "")
 	out := renderInline(`<font color="red">**告警**</font> 已恢复`, ms)
 	require.Equal(t, "告警 已恢复", ansi.Strip(out), "the tag is drawn, not spelled")
@@ -498,6 +519,7 @@ func TestRenderInline_AFontTagColoursItsText(t *testing.T) {
 }
 
 func TestCardRows_ACentredBlockSitsInTheMiddle(t *testing.T) {
+	t.Parallel()
 	st := baseStyle()
 	title := `{"tag":"markdown","property":{"textAlign":"center","textStyle":{"size":"heading"},` +
 		`"elements":[{"tag":"plain_text","property":{"content":"每日巡检"}}]}}`
@@ -510,6 +532,7 @@ func TestCardRows_ACentredBlockSitsInTheMiddle(t *testing.T) {
 }
 
 func TestCardHead_PaintsTheTemplateAcrossTheRow(t *testing.T) {
+	t.Parallel()
 	st := baseStyle()
 	rows := renderRows([]store.Message{weeklyCard}, st)
 	row, _ := lineOf(t, rows, "设备版本周报")
@@ -518,6 +541,7 @@ func TestCardHead_PaintsTheTemplateAcrossTheRow(t *testing.T) {
 }
 
 func TestCardButtons_EachTypeHasItsOwnPill(t *testing.T) {
+	t.Parallel()
 	pill := func(typ string) string {
 		return cardButtons([]card.Button{{Label: "停止", Type: typ}}, 40, "")[0].text
 	}
@@ -528,6 +552,7 @@ func TestCardButtons_EachTypeHasItsOwnPill(t *testing.T) {
 }
 
 func TestCardButtons_AFillButtonSpansTheLine(t *testing.T) {
+	t.Parallel()
 	lines := cardButtons([]card.Button{{Label: "停止", Type: "danger", Fill: true}}, 30, applink.ChatLink("oc_ops", "", 1))
 	require.Len(t, lines, 1)
 	require.Equal(t, 30, ansi.StringWidth(lines[0].text))
@@ -539,6 +564,7 @@ func TestCardButtons_AFillButtonSpansTheLine(t *testing.T) {
 }
 
 func TestRowLine_TheSelectionCoversAPanel(t *testing.T) {
+	t.Parallel()
 	m := Model{th: themeFor(lipgloss.Color("#ffffff"), false)}
 	row := msgRow{text: "状态", panel: true}
 	plain := m.paneLine(row, 20, false, false)

@@ -51,6 +51,7 @@ func writeFilledPNG(t *testing.T, dir, name string, w, h int) string {
 }
 
 func TestKittyAvatars_PlaceholderCellsSpanTheAvatarColumn(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	k := newKittyAvatars(dir)
 	c := store.Chat{ChatID: "oc_1", Name: "群", ChatMode: "group", AvatarPath: writePNG(t, dir, "a.png", 8, 8)}
@@ -67,6 +68,7 @@ func TestKittyAvatars_PlaceholderCellsSpanTheAvatarColumn(t *testing.T) {
 }
 
 func TestKittyAvatars_DrawsAPictureWhenThereIsNoFile(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	k := newKittyAvatars(dir)
 	for _, tc := range []struct {
@@ -87,6 +89,7 @@ func TestKittyAvatars_DrawsAPictureWhenThereIsNoFile(t *testing.T) {
 }
 
 func TestKittyAvatars_TransmitsEachChatOnlyOnce(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "bad.png"), []byte("not a png"), 0o644))
 	k := newKittyAvatars(dir)
@@ -98,6 +101,7 @@ func TestKittyAvatars_TransmitsEachChatOnlyOnce(t *testing.T) {
 }
 
 func TestKittyAvatars_ReclaimsTheLeastRecentlyShownID(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	name := writePNG(t, dir, "a.png", 8, 8)
 	k := newKittyAvatars(dir)
@@ -122,6 +126,7 @@ func TestKittyAvatars_ReclaimsTheLeastRecentlyShownID(t *testing.T) {
 }
 
 func TestModelAvatarPrepare_OnlyCoversWhatIsOnScreen(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	name := writePNG(t, dir, "a.png", 8, 8)
 	m := sized(130, 30)
@@ -138,6 +143,7 @@ func TestModelAvatarPrepare_OnlyCoversWhatIsOnScreen(t *testing.T) {
 }
 
 func TestInitials_SkipsTheDecorationGroupNamesOpenWith(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct{ name, want string }{
 		{"程序化养号", "程序化养"},
 		{"【语言】示例问题及需求沟通群", "语言示例"},
@@ -152,6 +158,7 @@ func TestInitials_SkipsTheDecorationGroupNamesOpenWith(t *testing.T) {
 }
 
 func TestGlyphCell_PacksTheGlyphsIntoACentredBlock(t *testing.T) {
+	t.Parallel()
 	const w, h, em = 80, 40, 12 // an oblong box, as real terminal cells give
 	require.Equal(t, image.Rect(34, 14, 46, 26), glyphCell(1, 0, w, h, em),
 		"one glyph sits in the middle, not spread over the whole box")
@@ -171,6 +178,7 @@ func TestGlyphCell_PacksTheGlyphsIntoACentredBlock(t *testing.T) {
 }
 
 func TestKittyAvatars_DrawsAtTheCellSizeTheTerminalReports(t *testing.T) {
+	t.Parallel()
 	k := newKittyAvatars(t.TempDir())
 	w, h := k.box()
 	require.Equal(t, avatarPixels, w, "a square guess until the terminal says")
@@ -186,6 +194,7 @@ func TestKittyAvatars_DrawsAtTheCellSizeTheTerminalReports(t *testing.T) {
 }
 
 func TestKittyAvatars_ANewCellSizeRedrawsEverything(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	k := newKittyAvatars(dir)
 	c := store.Chat{ChatID: "oc_1", Name: "程序化养号"}
@@ -220,6 +229,7 @@ func countPix(m *image.RGBA, c color.RGBA) int {
 func bodyPixel(side int) (int, int) { return side/2 + side*35/100, side / 2 }
 
 func TestGenerateAvatar_FillsTheDiscAndInksItInWhite(t *testing.T) {
+	t.Parallel()
 	if avatarFont() == nil {
 		t.Skip("no system font on this machine")
 	}
@@ -237,6 +247,7 @@ func TestGenerateAvatar_FillsTheDiscAndInksItInWhite(t *testing.T) {
 }
 
 func TestGenerateAvatar_OutlinesAWhiteDiscInTheAccentItInksWith(t *testing.T) {
+	t.Parallel()
 	if avatarFont() == nil {
 		t.Skip("no system font on this machine")
 	}
@@ -256,6 +267,7 @@ func TestGenerateAvatar_OutlinesAWhiteDiscInTheAccentItInksWith(t *testing.T) {
 }
 
 func TestMaskDisc_ClearsEverythingOutsideTheCircle(t *testing.T) {
+	t.Parallel()
 	if avatarFont() == nil {
 		t.Skip("no system font on this machine")
 	}
@@ -298,6 +310,7 @@ func TestMaskDisc_ClearsEverythingOutsideTheCircle(t *testing.T) {
 }
 
 func TestKittyAvatars_MasksTheFileAvatarToADisc(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	k := newKittyAvatars(dir)
 	c := store.Chat{ChatID: "oc_1", Name: "群", ChatMode: "group",
@@ -315,6 +328,7 @@ func TestKittyAvatars_MasksTheFileAvatarToADisc(t *testing.T) {
 }
 
 func TestKittyAvatars_OutlinesAGroupAndFillsAPerson(t *testing.T) {
+	t.Parallel()
 	if avatarFont() == nil {
 		t.Skip("no system font on this machine")
 	}
@@ -332,6 +346,7 @@ func TestKittyAvatars_OutlinesAGroupAndFillsAPerson(t *testing.T) {
 }
 
 func TestBadgeLabel_CapsAtNinetyNinePlus(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		n    int64
 		want string
@@ -341,6 +356,7 @@ func TestBadgeLabel_CapsAtNinetyNinePlus(t *testing.T) {
 }
 
 func TestDrawBadge_StampsTheTopRightInTheColourTheChatCallsFor(t *testing.T) {
+	t.Parallel()
 	if avatarFont() == nil {
 		t.Skip("no system font on this machine")
 	}
@@ -379,6 +395,7 @@ func TestDrawBadge_StampsTheTopRightInTheColourTheChatCallsFor(t *testing.T) {
 }
 
 func TestKittyAvatars_RedrawsWhenTheUnreadCountMoves(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	k := newKittyAvatars(dir)
 	c := store.Chat{ChatID: "oc_1", Name: "群", AvatarPath: writePNG(t, dir, "a.png", 8, 8)}
@@ -394,6 +411,7 @@ func TestKittyAvatars_RedrawsWhenTheUnreadCountMoves(t *testing.T) {
 }
 
 func TestKittyAvatars_CellsClaimTheCountOnlyOnceTheyCarryIt(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	k := newKittyAvatars(dir)
 	c := store.Chat{ChatID: "oc_1", Name: "群", AvatarPath: writePNG(t, dir, "a.png", 8, 8)}
@@ -428,6 +446,7 @@ func tallModel(t *testing.T) (Model, *kittyAvatars) {
 }
 
 func TestModelAvatarPrepare_SettlesOnATallTerminal(t *testing.T) {
+	t.Parallel()
 	m, k := tallModel(t)
 
 	require.NotEmpty(t, m.avatarPrepare(), "the first pass fills the window")
@@ -436,6 +455,7 @@ func TestModelAvatarPrepare_SettlesOnATallTerminal(t *testing.T) {
 }
 
 func TestModelAvatarPrepare_CoversEveryRowOnScreen(t *testing.T) {
+	t.Parallel()
 	m, k := tallModel(t)
 	m.avatarPrepare()
 
@@ -446,6 +466,7 @@ func TestModelAvatarPrepare_CoversEveryRowOnScreen(t *testing.T) {
 }
 
 func TestKittyAvatars_EvictsOnlyWhatLeftTheWindow(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	name := writePNG(t, dir, "a.png", 8, 8)
 	k := newKittyAvatars(dir)
@@ -472,6 +493,7 @@ func TestKittyAvatars_EvictsOnlyWhatLeftTheWindow(t *testing.T) {
 func transmitted(seq string) int { return strings.Count(seq, "\x1b_G") }
 
 func TestUpdate_DoesNotAnswerItsOwnRawSequence(t *testing.T) {
+	t.Parallel()
 	m, _ := tallModel(t)
 
 	_, cmd := m.Update(tea.RawMsg{})
@@ -479,6 +501,7 @@ func TestUpdate_DoesNotAnswerItsOwnRawSequence(t *testing.T) {
 }
 
 func TestFitImage_PadsTheRoundingInsteadOfStretchingIntoIt(t *testing.T) {
+	t.Parallel()
 	// Two stacked bands, so a picture stretched to fill the box shows it: the
 	// seam between them moves.
 	src := image.NewRGBA(image.Rect(0, 0, 4, 2))
@@ -496,6 +519,7 @@ func TestFitImage_PadsTheRoundingInsteadOfStretchingIntoIt(t *testing.T) {
 }
 
 func TestUpdate_AResizeAsksForTheCellSizeAgain(t *testing.T) {
+	t.Parallel()
 	m, k := tallModel(t)
 	m.pics = testPictures(t)
 
@@ -515,6 +539,7 @@ func TestUpdate_AResizeAsksForTheCellSizeAgain(t *testing.T) {
 }
 
 func TestKittyAvatars_DrawsAP2PPeerInTheColourTheirMessagesTake(t *testing.T) {
+	t.Parallel()
 	if avatarFont() == nil {
 		t.Skip("no system font on this machine")
 	}
@@ -537,6 +562,7 @@ func threadRowOf(c store.Chat, threadID string, unread int64) listRow {
 }
 
 func TestTextAvatars_AThreadRowCarriesTheGlyph(t *testing.T) {
+	t.Parallel()
 	c := store.Chat{ChatID: "oc_1", Name: "平台组", ChatMode: "group"}
 
 	top, bottom, _ := textAvatars{}.cells(threadRowOf(c, "omt_x", 0), 0)
@@ -548,6 +574,7 @@ func TestTextAvatars_AThreadRowCarriesTheGlyph(t *testing.T) {
 
 // The mark is the client's own, and the chat rides its corner.
 func TestThreadAvatar_PutsTheChatOnTheMarksCorner(t *testing.T) {
+	t.Parallel()
 	mark := threadMark()
 	require.NotNil(t, mark, "the mark ships with the binary")
 	badge := image.NewRGBA(image.Rect(0, 0, 30, 30))
@@ -568,6 +595,7 @@ func TestThreadAvatar_PutsTheChatOnTheMarksCorner(t *testing.T) {
 }
 
 func TestThreadAvatar_WithoutAPictureTheMarkStandsAlone(t *testing.T) {
+	t.Parallel()
 	m := threadAvatar(threadMark(), nil, 72, 76)
 
 	require.Equal(t, image.Rect(0, 0, 72, 76), m.Bounds())
@@ -583,6 +611,7 @@ func TestThreadAvatar_WithoutAPictureTheMarkStandsAlone(t *testing.T) {
 // A chat and a thread inside it are two rows carrying two different counters,
 // so they cannot share one picture.
 func TestKittyAvatars_AThreadKeepsItsOwnPicture(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	k := newKittyAvatars(dir)
 	c := store.Chat{ChatID: "oc_1", Name: "平台组", ChatMode: "group", AvatarPath: writeFilledPNG(t, dir, "a.png", 8, 8)}
@@ -598,6 +627,7 @@ func TestKittyAvatars_AThreadKeepsItsOwnPicture(t *testing.T) {
 }
 
 func TestKittyAvatars_ReusesTheCompositeWhenTheCountMoves(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	k := newKittyAvatars(dir)
 	c := store.Chat{ChatID: "oc_1", Name: "平台组", ChatMode: "group",
@@ -620,6 +650,7 @@ func TestKittyAvatars_ReusesTheCompositeWhenTheCountMoves(t *testing.T) {
 }
 
 func TestKittyAvatars_TheCounterDoesNotSpoilTheCompositeUnderIt(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	k := newKittyAvatars(dir)
 	c := store.Chat{ChatID: "oc_1", Name: "平台组", ChatMode: "group",
@@ -634,6 +665,7 @@ func TestKittyAvatars_TheCounterDoesNotSpoilTheCompositeUnderIt(t *testing.T) {
 }
 
 func TestPixKey_MissesWhenWhatIsDrawnChanges(t *testing.T) {
+	t.Parallel()
 	c := store.Chat{ChatID: "oc_1", Name: "平台组", ChatMode: "group", AvatarPath: "a.png"}
 	base := pixKey(listRow{chat: c})
 
@@ -652,6 +684,7 @@ func TestPixKey_MissesWhenWhatIsDrawnChanges(t *testing.T) {
 }
 
 func TestKittyAvatars_EvictsTheLeastRecentlyDrawnComposite(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	name := writePNG(t, dir, "a.png", 8, 8)
 	k := newKittyAvatars(dir)
@@ -675,6 +708,7 @@ func TestKittyAvatars_EvictsTheLeastRecentlyDrawnComposite(t *testing.T) {
 }
 
 func TestKittyAvatars_ANewCellSizeDropsTheComposites(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	k := newKittyAvatars(dir)
 	c := store.Chat{ChatID: "oc_1", Name: "平台组", ChatMode: "group", AvatarPath: writePNG(t, dir, "a.png", 8, 8)}

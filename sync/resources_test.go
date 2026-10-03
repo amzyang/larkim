@@ -13,6 +13,7 @@ import (
 )
 
 func TestExtractResources(t *testing.T) {
+	t.Parallel()
 	require.Equal(t, "img_1", ExtractResources("om", "image", `{"image_key":"img_1"}`)[0].FileKey)
 	rs := ExtractResources("om", "file", `{"file_key":"file_1","file_name":"a.pdf"}`)
 	require.Equal(t, "file", rs[0].Type)
@@ -30,6 +31,7 @@ func TestExtractResources(t *testing.T) {
 }
 
 func TestSchedules(t *testing.T) {
+	t.Parallel()
 	require.Equal(t, time.Minute, ReadCheckDelay(1))
 	require.Equal(t, 6*time.Hour, ReadCheckDelay(9))
 	require.Equal(t, 5*time.Minute, ResourceRetryDelay(2))
@@ -37,6 +39,7 @@ func TestSchedules(t *testing.T) {
 }
 
 func TestTick_DownloadsResourcesAndAppliesSizeCap(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	dir := t.TempDir()
@@ -80,6 +83,7 @@ func TestTick_DownloadsResourcesAndAppliesSizeCap(t *testing.T) {
 }
 
 func TestTick_FetchesAVideoCoverOnItsOwn(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	dir := t.TempDir()
@@ -114,6 +118,7 @@ func TestTick_FetchesAVideoCoverOnItsOwn(t *testing.T) {
 }
 
 func TestTick_ACoverFeishuRefusesStopsRetryingLikeAnyOtherResource(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	s.Opt().DataDir, s.Opt().DownloadPerTick = t.TempDir(), 1
@@ -141,6 +146,7 @@ func TestTick_ACoverFeishuRefusesStopsRetryingLikeAnyOtherResource(t *testing.T)
 }
 
 func TestTick_PollsReadStatusOnSchedule(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	f.Chats = []larkcli.RawChat{{ChatID: "oc_a", Name: "A", ChatMode: "group"}}
@@ -175,6 +181,7 @@ func TestTick_PollsReadStatusOnSchedule(t *testing.T) {
 }
 
 func TestRegisterExistingResources_BackScansOldRows(t *testing.T) {
+	t.Parallel()
 	s, _, _ := newSyncer(t)
 	ctx := t.Context()
 	s.Opt().DataDir = t.TempDir()
@@ -198,6 +205,7 @@ const cardAttachment = `{"json_card":"{\"body\":{\"elements\":[{\"tag\":\"img\",
 	`"json_attachment":{"images":{"1":{"origin_key":"img_a"},"2":{"origin_key":"img_b","token":"tok"}}},"card_schema":1}`
 
 func TestExtractResources_CardImagesComeFromTheAttachmentTable(t *testing.T) {
+	t.Parallel()
 	require.Equal(t, []store.ResourceRef{
 		{MessageID: "om", FileKey: "img_a", Type: "image"},
 		{MessageID: "om", FileKey: "img_b", Type: "image"},
@@ -205,6 +213,7 @@ func TestExtractResources_CardImagesComeFromTheAttachmentTable(t *testing.T) {
 }
 
 func TestExtractResources_CardAttachmentAlsoArrivesAsAString(t *testing.T) {
+	t.Parallel()
 	raw := `{"json_card":"{}","json_attachment":"{\"images\":{\"1\":{\"origin_key\":\"img_a\"}}}"}`
 	rs := ExtractResources("om", "interactive", raw)
 	require.Len(t, rs, 1)
@@ -215,6 +224,7 @@ func TestExtractResources_CardAttachmentAlsoArrivesAsAString(t *testing.T) {
 }
 
 func TestExtractResources_FindsImagesInsideAnMdPostTag(t *testing.T) {
+	t.Parallel()
 	// The shape lark-cli's --markdown builds: one md element holding the
 	// whole body, so the image key is named nowhere else.
 	post := `{"zh_cn":{"content":[[{"tag":"md","text":"## 周报\n\n![截图](img_p)\n\n见图"}]]}}`
@@ -229,12 +239,14 @@ func TestExtractResources_FindsImagesInsideAnMdPostTag(t *testing.T) {
 }
 
 func TestExtractResources_IgnoresANonImgRefInsideMd(t *testing.T) {
+	t.Parallel()
 	// Only an uploaded key is downloadable; a path or a URL never became one.
 	post := `{"zh_cn":{"content":[[{"tag":"md","text":"![x](./a.png) ![y](https://example.com/b.png)"}]]}}`
 	require.Empty(t, ExtractResources("om", "post", post))
 }
 
 func TestTick_DownloadsAPostImageTheBatchLeftOut(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	dir := t.TempDir()
@@ -265,6 +277,7 @@ func TestTick_DownloadsAPostImageTheBatchLeftOut(t *testing.T) {
 }
 
 func TestAPIType_MapsEveryStoredTypeOntoTheTwoTheEndpointTakes(t *testing.T) {
+	t.Parallel()
 	// A video's cover is an image of its own, whatever the clip beside it is.
 	require.Equal(t, "image", apiType("image"))
 	require.Equal(t, "image", apiType("cover"))
@@ -272,6 +285,7 @@ func TestAPIType_MapsEveryStoredTypeOntoTheTwoTheEndpointTakes(t *testing.T) {
 }
 
 func TestTick_AFailureThatMightPassNextTimeKeepsItsRetries(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	s.Opt().DataDir, s.Opt().DownloadPerTick = t.TempDir(), 1
@@ -305,6 +319,7 @@ func TestTick_AFailureThatMightPassNextTimeKeepsItsRetries(t *testing.T) {
 }
 
 func TestTick_ReadProbeOvertakesTheBackoff(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	f.Chats = []larkcli.RawChat{
@@ -342,6 +357,7 @@ func TestTick_ReadProbeOvertakesTheBackoff(t *testing.T) {
 }
 
 func TestTick_AMessageArrivesUnreadWithItsRow(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	f.Chats = []larkcli.RawChat{{ChatID: "oc_a", Name: "平台组", ChatMode: "group"}}
@@ -372,6 +388,7 @@ func TestTick_AMessageArrivesUnreadWithItsRow(t *testing.T) {
 }
 
 func TestTick_AnArrivalReadElsewhereIsSettledBeforeTheSweeps(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	s.Opt().RepairEvery = 0
@@ -407,6 +424,7 @@ func TestTick_AnArrivalReadElsewhereIsSettledBeforeTheSweeps(t *testing.T) {
 }
 
 func TestTick_ReadProbeRecordsAnUncheckedMessageInOneCall(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	f.Chats = []larkcli.RawChat{{ChatID: "oc_a", Name: "平台组", ChatMode: "group"}}
@@ -454,6 +472,7 @@ func TestTick_ReadProbeRecordsAnUncheckedMessageInOneCall(t *testing.T) {
 }
 
 func TestTick_ADownloadNeverRendersItsMessage(t *testing.T) {
+	t.Parallel()
 	// Two errands. Carrying them in one lark-cli call had every message whose
 	// attachment had not landed re-rendered on each tick it waited.
 	s, f, clk := newSyncer(t)
@@ -488,6 +507,7 @@ func TestTick_ADownloadNeverRendersItsMessage(t *testing.T) {
 }
 
 func TestTick_AKeyTwoMessagesNameIsFetchedOnce(t *testing.T) {
+	t.Parallel()
 	// A bot reuses one card header across thousands of messages; the bytes are
 	// the same bytes, so the queue is keyed by resource rather than by message.
 	s, f, clk := newSyncer(t)

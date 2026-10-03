@@ -37,6 +37,7 @@ func downloaded(rs ...store.Resource) msgStyle {
 }
 
 func TestBodyRows_AVideoDrawsItsCoverUnderAPlayBadge(t *testing.T) {
+	t.Parallel()
 	st := downloaded(
 		store.Resource{FileKey: "file_clip", Type: "file", LocalPath: "resources/file_clip.mp4", Status: "done", SizeBytes: 900000},
 		store.Resource{FileKey: "img_cover", Type: "cover", LocalPath: "resources/img_cover.png", Status: "done"})
@@ -60,12 +61,14 @@ func TestBodyRows_AVideoDrawsItsCoverUnderAPlayBadge(t *testing.T) {
 }
 
 func TestBodyRows_AVideoWithoutItsCoverIsStillAClip(t *testing.T) {
+	t.Parallel()
 	out := rowText(renderRows(videoMessage(), baseStyle()))
 	require.Contains(t, out, "🎬 00:26")
 	require.NotContains(t, out, "<video")
 }
 
 func TestBodyRows_AVideoOpensTheFileItBroughtDown(t *testing.T) {
+	t.Parallel()
 	st := downloaded(
 		store.Resource{FileKey: "file_clip", Type: "file", LocalPath: "resources/file_clip.mp4", Status: "done"},
 		store.Resource{FileKey: "img_cover", Type: "cover", LocalPath: "resources/img_cover.png", Status: "done"})
@@ -88,6 +91,7 @@ func TestBodyRows_AVideoOpensTheFileItBroughtDown(t *testing.T) {
 }
 
 func TestBodyRows_AnUndownloadedClipHasNothingToOpen(t *testing.T) {
+	t.Parallel()
 	st := downloaded(store.Resource{FileKey: "file_clip", Type: "file", Status: "pending"})
 	for _, r := range renderRows(videoMessage(), st) {
 		require.Empty(t, r.zones, "the file is not on this machine yet")
@@ -95,6 +99,7 @@ func TestBodyRows_AnUndownloadedClipHasNothingToOpen(t *testing.T) {
 }
 
 func TestBodyRows_AFileCardsItsNameBesideItsSize(t *testing.T) {
+	t.Parallel()
 	st := downloaded(store.Resource{FileKey: "file_conf", Type: "file",
 		LocalPath: "resources/file_conf.yaml", Status: "done", SizeBytes: 525})
 	rows := renderRows(fileMessage(), st)
@@ -109,6 +114,7 @@ func TestBodyRows_AFileCardsItsNameBesideItsSize(t *testing.T) {
 }
 
 func TestBodyRows_AFileKeepsItsSizeAfterBeingSkipped(t *testing.T) {
+	t.Parallel()
 	st := downloaded(store.Resource{FileKey: "file_conf", Type: "file", Status: "skipped", SizeBytes: 12 * 1024 * 1024})
 	rows := renderRows(fileMessage(), st)
 	require.Contains(t, rowText(rows), "12.0 MB", "what was too large to keep is still worth naming")
@@ -117,6 +123,7 @@ func TestBodyRows_AFileKeepsItsSizeAfterBeingSkipped(t *testing.T) {
 }
 
 func TestBodyRows_AVoiceMessageReadsAsItsLength(t *testing.T) {
+	t.Parallel()
 	msgs := []store.Message{{MessageID: "om_1", SenderName: "张三", MsgType: "audio",
 		ContentRaw: `{"file_key":"file_voice","duration":21000}`,
 		Content:    `<audio key="file_voice" duration="21s"/>`,
@@ -127,6 +134,7 @@ func TestBodyRows_AVoiceMessageReadsAsItsLength(t *testing.T) {
 }
 
 func TestBodyRows_ADownloadedVoiceMessageStillOpensNothing(t *testing.T) {
+	t.Parallel()
 	st := downloaded(store.Resource{FileKey: "file_voice", Type: "file",
 		LocalPath: "resources/file_voice", Status: "done", SizeBytes: 47515})
 	msgs := []store.Message{{MessageID: "om_1", SenderName: "张三", MsgType: "audio",
@@ -140,6 +148,7 @@ func TestBodyRows_ADownloadedVoiceMessageStillOpensNothing(t *testing.T) {
 }
 
 func TestBodyRows_AnAttachmentCardsBeforeItsRenderingLands(t *testing.T) {
+	t.Parallel()
 	msgs := fileMessage()
 	msgs[0].Content, msgs[0].RenderedAt = "", 0
 	require.Contains(t, rowText(renderRows(msgs, baseStyle())), "dev.yaml",
@@ -147,12 +156,14 @@ func TestBodyRows_AnAttachmentCardsBeforeItsRenderingLands(t *testing.T) {
 }
 
 func TestBodyRows_AnUnreadableAttachmentBodyKeepsTheRendering(t *testing.T) {
+	t.Parallel()
 	msgs := fileMessage()
 	msgs[0].ContentRaw = "not json"
 	require.Contains(t, rowText(renderRows(msgs, baseStyle())), "<file")
 }
 
 func TestBodyRows_ALongFileNameStaysOnOneLine(t *testing.T) {
+	t.Parallel()
 	msgs := fileMessage()
 	msgs[0].ContentRaw = `{"file_key":"file_conf","file_name":"` + strings.Repeat("长", 80) + `.pdf"}`
 	rows := renderRows(msgs, baseStyle())
@@ -166,6 +177,7 @@ func TestBodyRows_ALongFileNameStaysOnOneLine(t *testing.T) {
 }
 
 func TestChatSummary_NamesAnAttachmentRatherThanItsMarkup(t *testing.T) {
+	t.Parallel()
 	c := store.Chat{ChatID: "oc_1", Name: "平台组", LastMessageID: "om_1", LastSenderName: "张三",
 		LastMsgType: "file", LastContentRaw: `{"file_key":"file_conf","file_name":"dev.yaml"}`,
 		LastContent: `<file key="file_conf" name="dev.yaml"/>`, LastRenderedAt: 1}
@@ -177,12 +189,14 @@ func TestChatSummary_NamesAnAttachmentRatherThanItsMarkup(t *testing.T) {
 }
 
 func TestReplyGist_NamesAnAttachmentRatherThanItsMarkup(t *testing.T) {
+	t.Parallel()
 	require.Equal(t, "[File] dev.yaml", replyGist(store.Message{MsgType: "file", RenderedAt: 1,
 		ContentRaw: `{"file_key":"file_conf","file_name":"dev.yaml"}`,
 		Content:    `<file key="file_conf" name="dev.yaml"/>`}))
 }
 
 func TestClipLength_SpellsThePlayersBadge(t *testing.T) {
+	t.Parallel()
 	require.Equal(t, "00:26", clipLength(25046), "a part second still has to play")
 	require.Equal(t, "10:08", clipLength(608000))
 	require.Equal(t, "1:02:05", clipLength(3725000))
@@ -209,6 +223,7 @@ func firstZone(r msgRow) clickZone {
 }
 
 func TestAttachRows_TheCardLeadsToTheDownloadedFile(t *testing.T) {
+	t.Parallel()
 	st := downloaded(store.Resource{FileKey: "file_conf", Type: "file",
 		LocalPath: "resources/dev.yaml", Status: "done", SizeBytes: 2048})
 	rows := renderRows(fileMessage(), st)
@@ -226,6 +241,7 @@ func TestAttachRows_TheCardLeadsToTheDownloadedFile(t *testing.T) {
 }
 
 func TestAttachRows_ACardWithNothingToOpenIsNotALink(t *testing.T) {
+	t.Parallel()
 	st := downloaded(store.Resource{FileKey: "file_conf", Type: "file", Status: "pending"})
 	rows := renderRows(fileMessage(), st)
 	for _, r := range rows {

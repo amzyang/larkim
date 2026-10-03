@@ -13,6 +13,7 @@ import (
 var cst = time.FixedZone("CST", 8*60*60)
 
 func TestParseCalendar_ReadsTheFieldsEveryCalendarBodyCarries(t *testing.T) {
+	t.Parallel()
 	c, ok := ParseCalendar(`{"summary":"平台组周会","start_time":"1788143400000","end_time":"1788148800000",` +
 		`"open_calendar_id":"cal_team","open_event_id":"evt_a_0"}`)
 	require.True(t, ok)
@@ -26,6 +27,7 @@ func TestParseCalendar_ReadsTheFieldsEveryCalendarBodyCarries(t *testing.T) {
 }
 
 func TestParseCalendar_TakesSecondsAndMilliseconds(t *testing.T) {
+	t.Parallel()
 	// lark-cli's converter reads both, and a body read one way here and the
 	// other way there would be off by a factor of a thousand.
 	ms, ok := ParseCalendar(`{"summary":"平台组周会","start_time":"1788143400000"}`)
@@ -36,12 +38,14 @@ func TestParseCalendar_TakesSecondsAndMilliseconds(t *testing.T) {
 }
 
 func TestParseCalendar_FoldsAMultiLineSummaryOntoOneLine(t *testing.T) {
+	t.Parallel()
 	c, ok := ParseCalendar(`{"summary":"改会议室 \n项目对齐","start_time":"1788143400000"}`)
 	require.True(t, ok)
 	require.Equal(t, "改会议室 项目对齐", c.Summary)
 }
 
 func TestParseCalendar_RefusesABodyNamingNeitherEventNorTime(t *testing.T) {
+	t.Parallel()
 	for _, raw := range []string{"", "{}", "not json", `{"summary":"  "}`, `{"start_time":"0"}`} {
 		_, ok := ParseCalendar(raw)
 		require.False(t, ok, "%q", raw)
@@ -49,21 +53,25 @@ func TestParseCalendar_RefusesABodyNamingNeitherEventNorTime(t *testing.T) {
 }
 
 func TestCalendarSpan_DropsTheDateOnTheClosingHalfWithinOneDay(t *testing.T) {
+	t.Parallel()
 	c := Calendar{StartMs: 1788143400000, EndMs: 1788148800000}
 	require.Equal(t, "2026-08-31 10:30 ~ 12:00", c.Span(cst))
 }
 
 func TestCalendarSpan_KeepsBothDatesAcrossMidnight(t *testing.T) {
+	t.Parallel()
 	c := Calendar{StartMs: 1788143400000, EndMs: 1788143400000 + 20*60*60*1000}
 	require.Equal(t, "2026-08-31 10:30 ~ 2026-09-01 06:30", c.Span(cst))
 }
 
 func TestCalendarSpan_IsJustTheStartWithoutAnEnd(t *testing.T) {
+	t.Parallel()
 	require.Equal(t, "2026-08-31 10:30", Calendar{StartMs: 1788143400000}.Span(cst))
 	require.Empty(t, Calendar{EndMs: 1788148800000}.Span(cst))
 }
 
 func TestCalendarText_NamesTheEventTheWayTheChatListDoes(t *testing.T) {
+	t.Parallel()
 	c := Calendar{Summary: "平台组周会", StartMs: 1788143400000, EndMs: 1788148800000}
 	require.Equal(t, "[Event] 平台组周会 · 2026-08-31 10:30 ~ 12:00", c.Text("calendar", cst))
 	require.Equal(t, "[Shared Event] 平台组周会 · 2026-08-31 10:30 ~ 12:00", c.Text("share_calendar_event", cst))
@@ -71,11 +79,13 @@ func TestCalendarText_NamesTheEventTheWayTheChatListDoes(t *testing.T) {
 }
 
 func TestCalendarText_IsTheBareLabelWithNothingToSay(t *testing.T) {
+	t.Parallel()
 	require.Equal(t, "[Shared Event]", Calendar{}.Text("share_calendar_event", cst))
 	require.Equal(t, "[Event]", CalendarText("calendar", "not json"))
 }
 
 func TestCalendarText_LeavesTheShareTokenOut(t *testing.T) {
+	t.Parallel()
 	// share_token is the only way into an event, so it must not reach
 	// content, the search index or the screen.
 	const raw = `{"summary":"项目对齐","start_time":"1788143400000","end_time":"1788145200000",` +
@@ -87,6 +97,7 @@ func TestCalendarText_LeavesTheShareTokenOut(t *testing.T) {
 }
 
 func TestLocalCalendar_CoversTheThreeTypesRenderedInProcess(t *testing.T) {
+	t.Parallel()
 	for _, mt := range []string{"calendar", "share_calendar_event", "general_calendar"} {
 		require.True(t, LocalCalendar(mt), mt)
 	}

@@ -29,6 +29,7 @@ func keysOf(rows []listRow) []string {
 }
 
 func TestListRows_InterleavesThreadsWithChatsByTime(t *testing.T) {
+	t.Parallel()
 	chats := []store.Chat{chatAt("oc_new", 300), chatAt("oc_old", 100)}
 	threads := []store.ThreadFeed{feedAt("omt_a", "oc_old", 200), feedAt("omt_b", "oc_old", 50)}
 
@@ -39,6 +40,7 @@ func TestListRows_InterleavesThreadsWithChatsByTime(t *testing.T) {
 
 // A thread's root is a message of the chat, so the chat is where it came from.
 func TestListRows_AChatComesFirstAtTheSameMoment(t *testing.T) {
+	t.Parallel()
 	rows := listRows([]store.Chat{chatAt("oc_a", 200)}, []store.ThreadFeed{feedAt("omt_a", "oc_a", 200)})
 
 	assert.Equal(t, []string{"oc_a", "omt_a"}, keysOf(rows))
@@ -47,6 +49,7 @@ func TestListRows_AChatComesFirstAtTheSameMoment(t *testing.T) {
 // A thread and the chat it happens in are two rows leading to the same chat,
 // which is why the cursor is carried by a key rather than by a chat id.
 func TestListRow_AThreadLeadsIntoItsChatButKeysItself(t *testing.T) {
+	t.Parallel()
 	r := listRows(nil, []store.ThreadFeed{feedAt("omt_a", "oc_a", 200)})[0]
 
 	assert.True(t, r.isThread())
@@ -57,6 +60,7 @@ func TestListRow_AThreadLeadsIntoItsChatButKeysItself(t *testing.T) {
 }
 
 func TestListRows_WithoutThreadsTheListIsTheChats(t *testing.T) {
+	t.Parallel()
 	chats := []store.Chat{chatAt("oc_a", 300), chatAt("oc_b", 100)}
 
 	assert.Equal(t, []string{"oc_a", "oc_b"}, keysOf(listRows(chats, nil)))
@@ -65,6 +69,7 @@ func TestListRows_WithoutThreadsTheListIsTheChats(t *testing.T) {
 // The filter is a lens on the list: a thread answers through its chat, so a
 // query naming the chat keeps both rows.
 func TestVisibleRows_AFilterKeepsAThreadWithItsChat(t *testing.T) {
+	t.Parallel()
 	m := New(Deps{Self: "ou_me"})
 	m.chats = []store.Chat{chat("oc_1", "平台组"), chat("oc_2", "财务组")}
 	feed := feedAt("omt_a", "oc_1", 200)
@@ -81,6 +86,7 @@ func TestVisibleRows_AFilterKeepsAThreadWithItsChat(t *testing.T) {
 // A thread row is titled by the words its root opened with, so those are what
 // the reader has to type at.
 func TestVisibleRows_AThreadAnswersToItsRootsOwnWords(t *testing.T) {
+	t.Parallel()
 	m := New(Deps{Self: "ou_me"})
 	m.chats = []store.Chat{chat("oc_1", "平台组")}
 	feed := feedAt("omt_a", "oc_1", 200)
@@ -95,6 +101,7 @@ func TestVisibleRows_AThreadAnswersToItsRootsOwnWords(t *testing.T) {
 // Opening a thread row opens the chat under it and lands on its newest reply:
 // the reader asked for the conversation, not for the word it started with.
 func TestOpenRow_AThreadOpensItsChatAndLandsOnTheNewestReply(t *testing.T) {
+	t.Parallel()
 	m := cursorModel(t)
 	r := listRows(nil, []store.ThreadFeed{feedAt("omt_a", "oc_a", 200)})[0]
 
@@ -105,6 +112,7 @@ func TestOpenRow_AThreadOpensItsChatAndLandsOnTheNewestReply(t *testing.T) {
 }
 
 func TestOpenRow_AChatPinsNothingInsideIt(t *testing.T) {
+	t.Parallel()
 	m := cursorModel(t)
 
 	require.NotNil(t, m.openRow(listRow{chat: chatAt("oc_a", 200)}, false))
@@ -116,6 +124,7 @@ func TestOpenRow_AChatPinsNothingInsideIt(t *testing.T) {
 // The chat under a thread is often the open one, and the thread over it still
 // has to be opened.
 func TestHighlightedRow_AThreadOverTheOpenChatIsStillWorthOpening(t *testing.T) {
+	t.Parallel()
 	m := cursorModel(t)
 	m.chats = []store.Chat{chatAt("oc_0", 300)}
 	m.threads = []store.ThreadFeed{feedAt("omt_a", "oc_0", 200)}
@@ -128,6 +137,7 @@ func TestHighlightedRow_AThreadOverTheOpenChatIsStillWorthOpening(t *testing.T) 
 }
 
 func TestHighlightedRow_AThreadAlreadyInTheRightColumnIsNot(t *testing.T) {
+	t.Parallel()
 	m := cursorModel(t)
 	m.chats = []store.Chat{chatAt("oc_0", 300)}
 	m.threads = []store.ThreadFeed{feedAt("omt_a", "oc_0", 200)}
@@ -142,6 +152,7 @@ func TestHighlightedRow_AThreadAlreadyInTheRightColumnIsNot(t *testing.T) {
 // The open came from the cursor, so the cursor stays: re-pinning would hand
 // it straight back to the chat the thread happens in.
 func TestOpenRow_LeavesTheCursorOnTheThreadRow(t *testing.T) {
+	t.Parallel()
 	m := cursorModel(t)
 	m.chats = []store.Chat{chatAt("oc_0", 300)}
 	m.threads = []store.ThreadFeed{feedAt("omt_a", "oc_0", 200)}
@@ -156,6 +167,7 @@ func TestOpenRow_LeavesTheCursorOnTheThreadRow(t *testing.T) {
 // A thread is drawn in its chat's own colours, picture and all, so the row
 // takes the chat the listing already answered with rather than rebuilding one.
 func TestListRows_AThreadTakesItsChatFromTheListing(t *testing.T) {
+	t.Parallel()
 	c := chatAt("oc_1", 300)
 	c.Name, c.ChatMode, c.AvatarPath = "平台组", "group", "resources/avatars/chats/oc_1.png"
 
@@ -169,6 +181,7 @@ func TestListRows_AThreadTakesItsChatFromTheListing(t *testing.T) {
 // A p2p thread's picture is the peer's, which only the listing's contact join
 // knows about.
 func TestListRows_AThreadOfTwoTakesThePeersPicture(t *testing.T) {
+	t.Parallel()
 	c := chatAt("oc_1", 300)
 	c.ChatMode, c.P2PTargetID, c.PeerAvatarPath = "p2p", "ou_a", "resources/avatars/users/ou_a.png"
 
@@ -181,6 +194,7 @@ func TestListRows_AThreadOfTwoTakesThePeersPicture(t *testing.T) {
 
 // A thread in a chat past the end of the listing still draws and still opens.
 func TestListRows_AThreadPastTheListingKeepsWhatItCarries(t *testing.T) {
+	t.Parallel()
 	feed := feedAt("omt_a", "oc_far", 200)
 	feed.ChatName = "财务组"
 
@@ -192,6 +206,7 @@ func TestListRows_AThreadPastTheListingKeepsWhatItCarries(t *testing.T) {
 }
 
 func TestRowsCache_HoldsTheInterleaveUntilTheListIsReplaced(t *testing.T) {
+	t.Parallel()
 	c := newRowsCache()
 	chats := []store.Chat{chat("oc_1", "平台组"), chat("oc_2", "财务组")}
 
@@ -206,6 +221,7 @@ func TestRowsCache_HoldsTheInterleaveUntilTheListIsReplaced(t *testing.T) {
 }
 
 func TestRowsCache_AThreadArrivingRebuildsIt(t *testing.T) {
+	t.Parallel()
 	c := newRowsCache()
 	chats := []store.Chat{chat("oc_1", "平台组")}
 	require.Len(t, c.all(chats, nil), rowOf(1))
@@ -217,6 +233,7 @@ func TestRowsCache_AThreadArrivingRebuildsIt(t *testing.T) {
 }
 
 func TestRowsCache_EachFilterIsNarrowedOnce(t *testing.T) {
+	t.Parallel()
 	c := newRowsCache()
 	rows := c.all([]store.Chat{chat("oc_1", "平台组"), chat("oc_2", "财务组")}, nil)
 	require.Len(t, rows, rowOf(2))
@@ -233,6 +250,7 @@ func TestRowsCache_EachFilterIsNarrowedOnce(t *testing.T) {
 }
 
 func TestRowsCache_AFilterThatAnswersNothingIsStillAnAnswer(t *testing.T) {
+	t.Parallel()
 	c := newRowsCache()
 	c.all([]store.Chat{chat("oc_1", "平台组")}, nil)
 

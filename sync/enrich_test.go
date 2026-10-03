@@ -16,6 +16,7 @@ import (
 )
 
 func TestTick_MembersContactsAndAvatars(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	s.Opt().DataDir = t.TempDir()
@@ -57,6 +58,7 @@ func TestTick_MembersContactsAndAvatars(t *testing.T) {
 }
 
 func TestTick_RepairPassRelistsActiveChats(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	f.Chats = []larkcli.RawChat{{ChatID: "oc_a", Name: "A", ChatMode: "group"}}
@@ -80,6 +82,7 @@ func TestTick_RepairPassRelistsActiveChats(t *testing.T) {
 }
 
 func TestTick_ResolvesContactDetailsForP2PPartners(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	f.Chats = []larkcli.RawChat{{ChatID: "oc_p", Name: "李明", ChatMode: "p2p", P2PTargetID: "ou_lm", P2PTargetType: "user"}}
@@ -102,6 +105,7 @@ func TestTick_ResolvesContactDetailsForP2PPartners(t *testing.T) {
 }
 
 func TestTick_DoesNotReAskForContactsTheSearchOmitted(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	f.Chats = []larkcli.RawChat{{ChatID: "oc_p", Name: "Gone", ChatMode: "p2p", P2PTargetID: "ou_gone", P2PTargetType: "user"}}
@@ -118,6 +122,7 @@ func TestTick_DoesNotReAskForContactsTheSearchOmitted(t *testing.T) {
 }
 
 func TestTick_MarksWithheldContactsAsHavingNoAvatar(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	s.Opt().DataDir = t.TempDir()
@@ -149,6 +154,7 @@ func TestTick_MarksWithheldContactsAsHavingNoAvatar(t *testing.T) {
 }
 
 func TestTick_APermanentAvatarRejectionDoesNotWedgeLaterSlices(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	s.Opt().DataDir = t.TempDir()
@@ -176,6 +182,7 @@ func TestTick_APermanentAvatarRejectionDoesNotWedgeLaterSlices(t *testing.T) {
 }
 
 func TestTick_ATransientAvatarFailureStillFailsTheTick(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	s.Opt().DataDir = t.TempDir()
@@ -212,6 +219,7 @@ func botMsg(id, chatID, botOpenID, appID string, at time.Time) larkcli.RawMessag
 }
 
 func TestTick_ResolvesBotAvatarsThroughTheirApp(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	s.Opt().DataDir = t.TempDir()
@@ -235,6 +243,7 @@ func TestTick_ResolvesBotAvatarsThroughTheirApp(t *testing.T) {
 }
 
 func TestBotsNeedingAvatar_SkipsBotsThatNeverSpoke(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	s.Opt().DataDir = t.TempDir()
@@ -254,6 +263,7 @@ func TestBotsNeedingAvatar_SkipsBotsThatNeverSpoke(t *testing.T) {
 }
 
 func TestTick_SettlesABotWhoseAppTheTenantWillNotShow(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	s.Opt().DataDir = t.TempDir()
@@ -295,6 +305,7 @@ func reactedByApps(t *testing.T, s *Syncer, appIDs ...string) {
 }
 
 func TestTick_NamesTheAppsThatReacted(t *testing.T) {
+	t.Parallel()
 	s, f, _ := newSyncer(t)
 	ctx := t.Context()
 	f.Apps["cli_c"] = larkcli.AppDetail{AppID: "cli_c", Name: "构建机器人"}
@@ -314,6 +325,7 @@ func TestTick_NamesTheAppsThatReacted(t *testing.T) {
 // A bot only sees the message that names it, so a roster has to record which
 // members are bots for @ to be able to offer them.
 func TestTick_MembersFileABotAsABot(t *testing.T) {
+	t.Parallel()
 	s, f, _ := newSyncer(t)
 	ctx := t.Context()
 	f.Chats = []larkcli.RawChat{{ChatID: "oc_g", Name: "平台组", ChatMode: "group"}}
@@ -336,6 +348,7 @@ func TestTick_MembersFileABotAsABot(t *testing.T) {
 // The cap rides with the roster into the database, so the reader is told the
 // list is partial rather than shown a short one as the whole chat.
 func TestTick_RecordsAServerCappedRoster(t *testing.T) {
+	t.Parallel()
 	s, f, _ := newSyncer(t)
 	ctx := t.Context()
 	f.Chats = []larkcli.RawChat{{ChatID: "oc_g", Name: "G", ChatMode: "group"}}
@@ -351,6 +364,7 @@ func TestTick_RecordsAServerCappedRoster(t *testing.T) {
 }
 
 func TestRemoteExt_NamesTheFileAfterTheContentType(t *testing.T) {
+	t.Parallel()
 	require.Equal(t, ".jpg", remoteExt("image/jpeg"))
 	require.Equal(t, ".gif", remoteExt("image/gif"))
 	require.Equal(t, ".webp", remoteExt("image/webp"))
@@ -359,6 +373,7 @@ func TestRemoteExt_NamesTheFileAfterTheContentType(t *testing.T) {
 }
 
 func TestFetchToTemp_WritesTheBodyWhereAnUploadCanTakeIt(t *testing.T) {
+	t.Parallel()
 	path, err := FetchToTemp(t.Context(), func(context.Context, string) ([]byte, string, error) {
 		return []byte("png bytes"), "image/png", nil
 	}, "https://example.com/a.png")
@@ -371,6 +386,7 @@ func TestFetchToTemp_WritesTheBodyWhereAnUploadCanTakeIt(t *testing.T) {
 }
 
 func TestFetchToTemp_RefusesAnEmptyOrTruncatedBody(t *testing.T) {
+	t.Parallel()
 	reply := func(body []byte) Fetcher {
 		return func(context.Context, string) ([]byte, string, error) { return body, "image/png", nil }
 	}

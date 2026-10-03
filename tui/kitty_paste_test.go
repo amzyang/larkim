@@ -8,6 +8,7 @@ import (
 )
 
 func TestClipboardPasteTarget_SilenceContainsNotGeneralBrowse(t *testing.T) {
+	t.Parallel()
 	m := silenceModel(t)
 	require.False(t, m.clipboardPasteTarget(), "browsing the rule list has no text field")
 
@@ -16,6 +17,7 @@ func TestClipboardPasteTarget_SilenceContainsNotGeneralBrowse(t *testing.T) {
 }
 
 func TestPastedMsg_RoutesToSilenceContains(t *testing.T) {
+	t.Parallel()
 	m := press(t, silenceModel(t), "a", "tab", "tab")
 	m.deps.Clipboard = func(string) (clip, error) {
 		return clip{kind: clipText, text: "unused"}, nil
@@ -26,6 +28,7 @@ func TestPastedMsg_RoutesToSilenceContains(t *testing.T) {
 }
 
 func TestPastedMsg_ComposerStillUsesTextarea(t *testing.T) {
+	t.Parallel()
 	m, _ := newOutboxModel(t)
 	mm, _ := m.startInsert(nil, false)
 	m = mm.(Model)
@@ -35,12 +38,14 @@ func TestPastedMsg_ComposerStillUsesTextarea(t *testing.T) {
 }
 
 func TestIsClipboardPasteKey(t *testing.T) {
+	t.Parallel()
 	require.True(t, isClipboardPasteKey("ctrl+v"))
 	require.True(t, isClipboardPasteKey("super+v"))
 	require.False(t, isClipboardPasteKey("v"))
 }
 
 func TestPasteFromClipboardKey_UsesOnKeyPath(t *testing.T) {
+	t.Parallel()
 	m := press(t, helpModel(100, 30), "/")
 	key := tea.KeyPressMsg{Code: 'v', Mod: tea.ModSuper}
 	require.True(t, isClipboardPasteKey(key.String()))

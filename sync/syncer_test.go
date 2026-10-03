@@ -57,6 +57,7 @@ func callsTo(f *larkcli.Fake, name string) int {
 }
 
 func TestTick_FirstRunDiscoversRendersAndBackfills(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	now := clk.t
@@ -101,6 +102,7 @@ func TestTick_FirstRunDiscoversRendersAndBackfills(t *testing.T) {
 }
 
 func TestHistorySlice_WalksDayByDayUntilLive(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	now := clk.t
@@ -124,6 +126,7 @@ func TestHistorySlice_WalksDayByDayUntilLive(t *testing.T) {
 }
 
 func TestTick_BisectsTruncatedWindowAndPullsThreads(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	now := clk.t
@@ -153,6 +156,7 @@ func TestTick_BisectsTruncatedWindowAndPullsThreads(t *testing.T) {
 }
 
 func TestTick_AuthErrorSetsNeedsLoginAndProbesBeforeRetry(t *testing.T) {
+	t.Parallel()
 	s, f, _ := newSyncer(t)
 	ctx := t.Context()
 	f.Err = &larkcli.Error{ExitCode: larkcli.ExitAuth, Type: "auth", Subtype: "token_missing"}
@@ -179,6 +183,7 @@ func TestTick_AuthErrorSetsNeedsLoginAndProbesBeforeRetry(t *testing.T) {
 }
 
 func TestDelayFor_RateLimitHonoursRetryAfter(t *testing.T) {
+	t.Parallel()
 	s, _, _ := newSyncer(t)
 	err := &larkcli.Error{ExitCode: 1, Subtype: "rate_limit", RetryAfter: 45 * time.Second}
 	require.Equal(t, 45*time.Second, s.delayFor(err, 1))
@@ -187,6 +192,7 @@ func TestDelayFor_RateLimitHonoursRetryAfter(t *testing.T) {
 }
 
 func TestDelayFor_KeepsASubSecondPollIntervalOutOfTheBackoff(t *testing.T) {
+	t.Parallel()
 	s, _, _ := newSyncer(t)
 	s.Opt().PollInterval = 100 * time.Millisecond
 	err := &larkcli.Error{ExitCode: 1, Subtype: "internal"}
@@ -195,12 +201,14 @@ func TestDelayFor_KeepsASubSecondPollIntervalOutOfTheBackoff(t *testing.T) {
 }
 
 func TestOptionsFrom_ReadsThePollIntervalAsMilliseconds(t *testing.T) {
+	t.Parallel()
 	cfg := config.Default()
 	cfg.PollIntervalMS = 250
 	require.Equal(t, 250*time.Millisecond, OptionsFrom(cfg).PollInterval)
 }
 
 func TestSlowPath_ReconcilesActiveChatsFromCursor(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	now := clk.t
@@ -252,6 +260,7 @@ func countCalls(calls []string, name string) int {
 }
 
 func TestBackfill_PermanentChatErrorIsRecordedAndSkipped(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	f.Chats = []larkcli.RawChat{{ChatID: "oc_restricted", Name: "R", ChatMode: "group"}, {ChatID: "oc_ok", Name: "OK", ChatMode: "group"}}
@@ -275,6 +284,7 @@ func TestBackfill_PermanentChatErrorIsRecordedAndSkipped(t *testing.T) {
 }
 
 func TestTick_MuteRidesTheChatRefresh(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	now := clk.t
@@ -307,6 +317,7 @@ func TestTick_MuteRidesTheChatRefresh(t *testing.T) {
 }
 
 func TestTick_FiresOnChangeIncludingOnFailure(t *testing.T) {
+	t.Parallel()
 	s, f, _ := newSyncer(t)
 	ctx := t.Context()
 	fired := 0
@@ -323,6 +334,7 @@ func TestTick_FiresOnChangeIncludingOnFailure(t *testing.T) {
 }
 
 func TestRefreshReadStatus_OvertakesTheBackoff(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	now := clk.t
@@ -355,6 +367,7 @@ func TestRefreshReadStatus_OvertakesTheBackoff(t *testing.T) {
 }
 
 func TestRefreshReadStatus_SpendsNoCallWhenNothingIsUnread(t *testing.T) {
+	t.Parallel()
 	s, f, _ := newSyncer(t)
 	ctx := t.Context()
 	require.NoError(t, s.Store.SetState(ctx, KeySelfOpenID, "ou_me"))
@@ -366,6 +379,7 @@ func TestRefreshReadStatus_SpendsNoCallWhenNothingIsUnread(t *testing.T) {
 }
 
 func TestPollReadStatus_DropsUnreadPastTheHorizon(t *testing.T) {
+	t.Parallel()
 	s, _, clk := newSyncer(t)
 	ctx := t.Context()
 	now := clk.t
@@ -388,6 +402,7 @@ func TestPollReadStatus_DropsUnreadPastTheHorizon(t *testing.T) {
 }
 
 func TestTick_SystemMessagesRenderInProcess(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	now := clk.t
@@ -407,6 +422,7 @@ func TestTick_SystemMessagesRenderInProcess(t *testing.T) {
 }
 
 func TestRenderLocal_NamesTheCallInBothPanes(t *testing.T) {
+	t.Parallel()
 	// A call still running is the chat's last message until the marker that
 	// closes it arrives, so the list has to say which meeting it was.
 	s, _, clk := newSyncer(t)
@@ -435,6 +451,7 @@ func TestRenderLocal_NamesTheCallInBothPanes(t *testing.T) {
 }
 
 func TestRenderLocal_TimesTheCallItsMarkerClosesForBothPanes(t *testing.T) {
+	t.Parallel()
 	s, _, clk := newSyncer(t)
 	ctx := t.Context()
 	start := clk.t.UnixMilli()
@@ -463,6 +480,7 @@ func TestRenderLocal_TimesTheCallItsMarkerClosesForBothPanes(t *testing.T) {
 }
 
 func TestTick_RendersNewMessagesBeforeSweeps(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	f.Chats = []larkcli.RawChat{{ChatID: "oc_a", Name: "平台组", ChatMode: "group"}}
@@ -488,6 +506,7 @@ func TestTick_RendersNewMessagesBeforeSweeps(t *testing.T) {
 }
 
 func TestTick_NudgesAsEachStageLands(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	var nudges int
@@ -501,6 +520,7 @@ func TestTick_NudgesAsEachStageLands(t *testing.T) {
 }
 
 func TestHistorySlice_StopsSearchingOnceCaughtUp(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	s.Opt().BackfillDays = 1
@@ -526,6 +546,7 @@ func TestHistorySlice_StopsSearchingOnceCaughtUp(t *testing.T) {
 }
 
 func TestHistorySlice_LiveWindowCoversAnOutageWithoutHistory(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	s.Opt().BackfillDays = 1
@@ -554,6 +575,7 @@ func TestHistorySlice_LiveWindowCoversAnOutageWithoutHistory(t *testing.T) {
 }
 
 func TestActiveProbe_NamesChatsThatMovedUp(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	s.Opt().BackfillPerTick = 0
@@ -589,6 +611,7 @@ func TestActiveProbe_NamesChatsThatMovedUp(t *testing.T) {
 }
 
 func TestActiveProbe_UnreadableOrderCountsAsAFirstRun(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	s.Opt().BackfillPerTick = 0
@@ -608,6 +631,7 @@ func TestActiveProbe_UnreadableOrderCountsAsAFirstRun(t *testing.T) {
 }
 
 func TestActiveProbe_ReachesAMessageBeforeTheSearchDoes(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	s.Opt().RepairEvery = 0
@@ -650,6 +674,7 @@ func TestActiveProbe_ReachesAMessageBeforeTheSearchDoes(t *testing.T) {
 }
 
 func TestActiveProbe_ReachesASecondMessageInTheChatAlreadyAtTheHead(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	s.Opt().RepairEvery = 0
@@ -680,6 +705,7 @@ func TestActiveProbe_ReachesASecondMessageInTheChatAlreadyAtTheHead(t *testing.T
 }
 
 func TestActiveProbe_ReachesAMessageInAChatThatKeptItsPlace(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	s.Opt().RepairEvery = 0
@@ -712,6 +738,7 @@ func TestActiveProbe_ReachesAMessageInAChatThatKeptItsPlace(t *testing.T) {
 }
 
 func TestTick_SearchIsASafetyNetOnItsOwnInterval(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	s.Opt().BackfillPerTick = 0
@@ -742,6 +769,7 @@ func TestTick_SearchIsASafetyNetOnItsOwnInterval(t *testing.T) {
 }
 
 func TestActiveProbe_AFailedPullLeavesTheMovedChatsNamedNextTick(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	s.Opt().BackfillPerTick = 0
@@ -780,6 +808,7 @@ func TestActiveProbe_AFailedPullLeavesTheMovedChatsNamedNextTick(t *testing.T) {
 }
 
 func TestProbeReadStatus_TakesAChatOutOfTheSweepOnceTheClientAnswers(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	now := clk.t

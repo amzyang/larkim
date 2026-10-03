@@ -37,6 +37,7 @@ func mentionModel(t *testing.T) (Model, *store.Store) {
 }
 
 func TestOpenMentions_ListsWhatNamedTheReader(t *testing.T) {
+	t.Parallel()
 	m, _ := mentionModel(t)
 
 	next, cmd := m.openMentions()
@@ -54,6 +55,7 @@ func TestOpenMentions_ListsWhatNamedTheReader(t *testing.T) {
 // Without a self id nothing can be measured, so the panel says so rather than
 // opening on an empty list that looks like an answer.
 func TestOpenMentions_WithoutASelfIdSaysSo(t *testing.T) {
+	t.Parallel()
 	m, st := mentionModel(t)
 	m.deps.Self = ""
 	_ = st
@@ -68,6 +70,7 @@ func TestOpenMentions_WithoutASelfIdSaysSo(t *testing.T) {
 // The list answers a fixed question, so a keystroke that would narrow a search
 // does nothing rather than narrowing something the reader cannot see.
 func TestOnSearchKey_MentionsListHasNoQueryToType(t *testing.T) {
+	t.Parallel()
 	m, _ := mentionModel(t)
 	next, cmd := m.openMentions()
 	m = next.(Model)
@@ -83,6 +86,7 @@ func TestOnSearchKey_MentionsListHasNoQueryToType(t *testing.T) {
 }
 
 func TestCloseSearch_LeavesTheMentionsList(t *testing.T) {
+	t.Parallel()
 	m, _ := mentionModel(t)
 	next, _ := m.openMentions()
 	m = next.(Model)

@@ -9,6 +9,7 @@ import (
 )
 
 func TestAttachText_SpellsEachKindTheWayItsReadersMatchIt(t *testing.T) {
+	t.Parallel()
 	// gistBody, splitImages and the resource scan all read a rendering back by
 	// matching these shapes, so they are lark-cli's to the character.
 	for _, tc := range []struct{ name, msgType, raw, want string }{
@@ -36,11 +37,13 @@ func TestAttachText_SpellsEachKindTheWayItsReadersMatchIt(t *testing.T) {
 }
 
 func TestSeconds_RoundsToTheNearestSecond(t *testing.T) {
+	t.Parallel()
 	require.Equal(t, "7s", seconds(6961))
 	require.Equal(t, "21s", seconds(21000))
 }
 
 func TestTick_AnAttachmentIsRenderedWithoutACall(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	f.Chats = []larkcli.RawChat{{ChatID: "oc_a", Name: "平台组", ChatMode: "group"}}

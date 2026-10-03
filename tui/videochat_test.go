@@ -25,6 +25,7 @@ func callMessage(contentRaw string, renderedAt int64) []store.Message {
 }
 
 func TestBodyRows_ALiveCallCardsTheMeetingWithAJoinButton(t *testing.T) {
+	t.Parallel()
 	rows := renderRows(callMessage(liveCall, 1), baseStyle())
 	out := rowText(rows)
 	require.Contains(t, out, "项目协作群 - 张三的视频会议")
@@ -42,6 +43,7 @@ func TestBodyRows_ALiveCallCardsTheMeetingWithAJoinButton(t *testing.T) {
 }
 
 func TestBodyRows_AnEndedCallShowsItsLengthAndNoWayIn(t *testing.T) {
+	t.Parallel()
 	rows := renderRows(callMessage(endedCall, 1), baseStyle())
 	out := rowText(rows)
 	require.Contains(t, out, "项目协作群 - 张三的视频会议")
@@ -53,6 +55,7 @@ func TestBodyRows_AnEndedCallShowsItsLengthAndNoWayIn(t *testing.T) {
 }
 
 func TestBodyRows_ACallCardsBeforeItsRenderingLands(t *testing.T) {
+	t.Parallel()
 	// The body carries the whole invite, so the card costs no render call —
 	// which matters, because a call is worth joining in its first seconds.
 	rows := renderRows(callMessage(liveCall, 0), baseStyle())
@@ -63,6 +66,7 @@ func TestBodyRows_ACallCardsBeforeItsRenderingLands(t *testing.T) {
 }
 
 func TestBodyRows_ACallBodyLarkimCannotReadKeepsTheRendering(t *testing.T) {
+	t.Parallel()
 	rows := renderRows(callMessage("not json", 1), baseStyle())
 	require.Contains(t, rowText(rows), "[Video call]")
 	_, ok := zoneRow(rows)
@@ -70,6 +74,7 @@ func TestBodyRows_ACallBodyLarkimCannotReadKeepsTheRendering(t *testing.T) {
 }
 
 func TestBodyRows_ACallWithoutAMeetingNumberOffersNoJoin(t *testing.T) {
+	t.Parallel()
 	rows := renderRows(callMessage(`{"topic":"项目协作群 - 张三的视频会议","start_time":"1000"}`, 1), baseStyle())
 	out := rowText(rows)
 	require.Contains(t, out, "项目协作群 - 张三的视频会议")
@@ -79,6 +84,7 @@ func TestBodyRows_ACallWithoutAMeetingNumberOffersNoJoin(t *testing.T) {
 }
 
 func TestBodyRows_ALongTopicWrapsInsideTheCard(t *testing.T) {
+	t.Parallel()
 	topic := strings.Repeat("长", 80)
 	rows := renderRows(callMessage(`{"topic":"`+topic+`","meet_number":"100000000","start_time":"1000"}`, 1), baseStyle())
 	out := rowText(rows)
@@ -89,12 +95,14 @@ func TestBodyRows_ALongTopicWrapsInsideTheCard(t *testing.T) {
 }
 
 func TestSpacedMeetNumber_GroupsInThrees(t *testing.T) {
+	t.Parallel()
 	require.Equal(t, "100 000 000", spacedMeetNumber("100000000"))
 	require.Equal(t, "1 000", spacedMeetNumber("1000"))
 	require.Equal(t, "10", spacedMeetNumber("10"))
 }
 
 func TestFeishuMeetingLink_ReachesTheClientWithoutABrowser(t *testing.T) {
+	t.Parallel()
 	require.Equal(t, "lark://vc.feishu.cn/j/100000000", applink.MeetingLink("100000000"))
 }
 
@@ -138,6 +146,7 @@ func joinRowIndex(t *testing.T, m Model) int {
 }
 
 func TestOnClick_TheJoinButtonEntersTheMeeting(t *testing.T) {
+	t.Parallel()
 	m, calls := callPage(t, liveCall)
 	i := joinRowIndex(t, m)
 	collect(clickAt(m, i, firstZone(m.msgRows[i]).x0))
@@ -146,6 +155,7 @@ func TestOnClick_TheJoinButtonEntersTheMeeting(t *testing.T) {
 }
 
 func TestOnClick_OnlyTheButtonItselfJoins(t *testing.T) {
+	t.Parallel()
 	m, calls := callPage(t, liveCall)
 	i := joinRowIndex(t, m)
 	z := firstZone(m.msgRows[i])
@@ -156,12 +166,14 @@ func TestOnClick_OnlyTheButtonItselfJoins(t *testing.T) {
 }
 
 func TestOnNormalKey_OOpensALiveCallByJoiningIt(t *testing.T) {
+	t.Parallel()
 	m, calls := callPage(t, liveCall)
 	collect(mustCmd(m.onNormalKey("o")))
 	require.Equal(t, []openCall{opened("lark://vc.feishu.cn/j/100000000", false)}, *calls)
 }
 
 func TestOnNormalKey_OOnAnEndedCallOpensTheMessage(t *testing.T) {
+	t.Parallel()
 	m, calls := callPage(t, endedCall)
 	collect(mustCmd(m.onNormalKey("o")))
 	require.Equal(t, []openCall{opened("lark://applink.feishu.cn/client/chat/open?openChatId=oc_a&position=227&messageId=om_1", false)}, *calls,
@@ -171,6 +183,7 @@ func TestOnNormalKey_OOnAnEndedCallOpensTheMessage(t *testing.T) {
 func mustCmd(_ tea.Model, cmd tea.Cmd) tea.Cmd { return cmd }
 
 func TestBodyRows_TheJoinButtonIsALinkToTheMeeting(t *testing.T) {
+	t.Parallel()
 	rows := renderRows(callMessage(liveCall, 1), baseStyle())
 	join, ok := zoneRow(rows)
 	require.True(t, ok)

@@ -14,6 +14,7 @@ import (
 )
 
 func TestUnreadMark_IsTheBubbleOnNothing(t *testing.T) {
+	t.Parallel()
 	m := unreadMark(40, 40)
 
 	alphaAt := func(x, y int) uint8 { return m.Pix[m.PixOffset(x, y)+3] }
@@ -25,6 +26,7 @@ func TestUnreadMark_IsTheBubbleOnNothing(t *testing.T) {
 }
 
 func TestUnreadMark_BandIsTheClientsProportion(t *testing.T) {
+	t.Parallel()
 	m := unreadMark(100, 100)
 	// One crossing of the band, along the row through the middle. The count
 	// runs a half-pixel over the share either side, that being the edge the
@@ -39,6 +41,7 @@ func TestUnreadMark_BandIsTheClientsProportion(t *testing.T) {
 }
 
 func TestUnreadMark_CarriesTheDotInItsGap(t *testing.T) {
+	t.Parallel()
 	m := unreadMark(100, 100)
 
 	alphaAt := func(x, y int) uint8 { return m.Pix[m.PixOffset(x, y)+3] }
@@ -50,6 +53,7 @@ func TestUnreadMark_CarriesTheDotInItsGap(t *testing.T) {
 }
 
 func TestTextAvatars_TheUnreadRowTakesTheRing(t *testing.T) {
+	t.Parallel()
 	row := listRow{chat: store.Chat{ChatID: unreadFeedRowID}}
 	top, bottom, badged := textAvatars{}.cells(row, 0)
 
@@ -62,6 +66,7 @@ func TestTextAvatars_TheUnreadRowTakesTheRing(t *testing.T) {
 }
 
 func TestKittyAvatars_TheUnreadRowGetsAPicture(t *testing.T) {
+	t.Parallel()
 	k := newKittyAvatars(t.TempDir())
 	row := listRow{chat: store.Chat{ChatID: unreadFeedRowID}}
 
@@ -74,6 +79,7 @@ func TestKittyAvatars_TheUnreadRowGetsAPicture(t *testing.T) {
 }
 
 func TestKittyAvatars_TheUnreadRowsPictureIsNotAChats(t *testing.T) {
+	t.Parallel()
 	feed := listRow{chat: store.Chat{ChatID: unreadFeedRowID}}
 	chat := listRow{chat: store.Chat{ChatID: "oc_platform", Name: "平台组", ChatMode: "group"}}
 	require.NotEqual(t, pixKey(feed), pixKey(chat))
@@ -83,6 +89,7 @@ func TestKittyAvatars_TheUnreadRowsPictureIsNotAChats(t *testing.T) {
 }
 
 func TestModelAvatarPrepare_ReachesTheUnreadRow(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	name := writePNG(t, dir, "a.png", 8, 8)
 	m := sized(130, 30)

@@ -8,16 +8,19 @@ import (
 )
 
 func TestWindowTitle_PlainWhenNothingUnread(t *testing.T) {
+	t.Parallel()
 	rows, unread := headRows("uu")
 	unread["a"], unread["b"] = 0, 0
 	require.Equal(t, "larkim", windowTitle(rows, unread))
 }
 
 func TestWindowTitle_PlainBeforeTheChatsLoad(t *testing.T) {
+	t.Parallel()
 	require.Equal(t, "larkim", windowTitle(nil, nil))
 }
 
 func TestWindowTitle_LeadsWithTheCount(t *testing.T) {
+	t.Parallel()
 	rows, unread := headRows("uuu")
 	unread["a"] = 5
 	require.Equal(t, "(7) larkim", windowTitle(rows, unread),
@@ -25,11 +28,13 @@ func TestWindowTitle_LeadsWithTheCount(t *testing.T) {
 }
 
 func TestWindowTitle_LeavesMutedChatsOut(t *testing.T) {
+	t.Parallel()
 	rows, unread := headRows("mm")
 	require.Equal(t, "larkim", windowTitle(rows, unread))
 }
 
 func TestWindowTitle_CapsTheCount(t *testing.T) {
+	t.Parallel()
 	rows, unread := headRows(strings.Repeat("u", 120))
 	require.Equal(t, "(99+) larkim", windowTitle(rows, unread))
 }

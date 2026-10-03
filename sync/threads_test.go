@@ -36,6 +36,7 @@ func stakedThreadTick(t *testing.T, rootFrom string) (*Syncer, *larkcli.Fake, co
 // sweep follows only the threads it saw a root for. Answering an old topic is
 // what a thread is for, so the reader's own threads are asked after by name.
 func TestTick_AsksAfterAStakedThreadWhoseRootIsOutOfEveryWindow(t *testing.T) {
+	t.Parallel()
 	s, f, ctx := stakedThreadTick(t, "ou_me")
 
 	rep, err := s.Tick(ctx)
@@ -50,6 +51,7 @@ func TestTick_AsksAfterAStakedThreadWhoseRootIsOutOfEveryWindow(t *testing.T) {
 
 // A thread nobody asked the reader about is somebody else's conversation.
 func TestTick_LeavesAThreadTheReaderHasNoStakeInAlone(t *testing.T) {
+	t.Parallel()
 	s, f, ctx := stakedThreadTick(t, "ou_a")
 
 	rep, err := s.Tick(ctx)

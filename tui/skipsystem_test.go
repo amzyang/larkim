@@ -26,6 +26,7 @@ func kinds(p string) []store.Message {
 }
 
 func TestStepCursor_PassesOverNotices(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name    string
 		pattern string
@@ -52,6 +53,7 @@ func TestStepCursor_PassesOverNotices(t *testing.T) {
 }
 
 func TestNewestSelectable_SkipsTrailingNotices(t *testing.T) {
+	t.Parallel()
 	require.Equal(t, 1, newestSelectable(kinds("mmss")))
 	require.Equal(t, 2, newestSelectable(kinds("mmm")))
 	require.Equal(t, 1, newestSelectable(kinds("ss")), "a list of notices alone keeps its last row")
@@ -59,6 +61,7 @@ func TestNewestSelectable_SkipsTrailingNotices(t *testing.T) {
 }
 
 func TestMove_SkipsNoticesInMessages(t *testing.T) {
+	t.Parallel()
 	m := sized(120, 36)
 	m.msgs = kinds("msrm")
 	m.layout()
@@ -74,6 +77,7 @@ func TestMove_SkipsNoticesInMessages(t *testing.T) {
 }
 
 func TestMove_SkipsNoticesInThread(t *testing.T) {
+	t.Parallel()
 	m := sized(120, 36)
 	m.thread = kinds("msrm")
 	m.focus, m.threadIdx = paneThread, 0
@@ -85,6 +89,7 @@ func TestMove_SkipsNoticesInThread(t *testing.T) {
 }
 
 func TestMove_UpAgainstLeadingNoticesShowsTheTop(t *testing.T) {
+	t.Parallel()
 	m := sized(120, 36)
 	m.msgs = kinds("sssssssssssssssssssssssssssssm")
 	m.layout()
@@ -99,6 +104,7 @@ func TestMove_UpAgainstLeadingNoticesShowsTheTop(t *testing.T) {
 }
 
 func TestMessagesLoaded_LandsOnTheNewestMessageAboveNotices(t *testing.T) {
+	t.Parallel()
 	m := sized(120, 36)
 	m.pendingChat = "oc_1"
 	mm, _ := m.Update(messagesLoadedMsg{chatID: "oc_1", msgs: kinds("mms")})

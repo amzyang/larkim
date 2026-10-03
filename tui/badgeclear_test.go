@@ -89,6 +89,7 @@ func unreadPage() []store.Message {
 }
 
 func TestUpdate_OpeningAChatWithUnreadClearsTheFeishuBadge(t *testing.T) {
+	t.Parallel()
 	m, st, calls := badgeModel(t)
 	m.pendingChat = "oc_a"
 
@@ -99,6 +100,7 @@ func TestUpdate_OpeningAChatWithUnreadClearsTheFeishuBadge(t *testing.T) {
 }
 
 func TestTakeRead_SendsNoApplinkWhenNothingWasWaiting(t *testing.T) {
+	t.Parallel()
 	m, _, calls := badgeModel(t)
 	read := true
 	next, cmd := m.takeRead("oc_a", []store.Message{{MessageID: "om_a", IsReadRemote: &read}})
@@ -108,6 +110,7 @@ func TestTakeRead_SendsNoApplinkWhenNothingWasWaiting(t *testing.T) {
 }
 
 func TestTakeRead_SendsNoApplinkForAPageAlreadyReadHere(t *testing.T) {
+	t.Parallel()
 	m, _, calls := badgeModel(t)
 	unread := false
 	page := []store.Message{{MessageID: "om_a", IsReadRemote: &unread, LocalReadAt: 900}}
@@ -118,6 +121,7 @@ func TestTakeRead_SendsNoApplinkForAPageAlreadyReadHere(t *testing.T) {
 }
 
 func TestTakeRead_StaysOffAChatTheSweepWouldStillWalk(t *testing.T) {
+	t.Parallel()
 	m, st, calls := badgeModel(t)
 	require.NoError(t, st.MarkChatRead(t.Context(), "oc_a", 900))
 
@@ -131,6 +135,7 @@ func TestTakeRead_StaysOffAChatTheSweepWouldStillWalk(t *testing.T) {
 }
 
 func TestTakeRead_ClearsAgainForAMessageLandingInTheOpenChat(t *testing.T) {
+	t.Parallel()
 	m, _, calls := badgeModel(t)
 	next, cmd := m.takeRead("oc_a", unreadPage())
 	m = drain(t, next, cmd)
@@ -141,6 +146,7 @@ func TestTakeRead_ClearsAgainForAMessageLandingInTheOpenChat(t *testing.T) {
 }
 
 func TestTakeRead_IgnoresUnreadTheChatBadgeLeavesOut(t *testing.T) {
+	t.Parallel()
 	m, _, calls := badgeModel(t)
 	unread := false
 	next, cmd := m.takeRead("oc_a", []store.Message{
@@ -153,6 +159,7 @@ func TestTakeRead_IgnoresUnreadTheChatBadgeLeavesOut(t *testing.T) {
 }
 
 func TestOpenInFeishu_TakesTheScreen(t *testing.T) {
+	t.Parallel()
 	m, _, calls := badgeModel(t)
 	collect(openInFeishu(m.deps, "oc_a", "", 227))
 
@@ -160,6 +167,7 @@ func TestOpenInFeishu_TakesTheScreen(t *testing.T) {
 }
 
 func TestUpdate_AMessageLandingInTheOpenChatClearsTheBadgeAgain(t *testing.T) {
+	t.Parallel()
 	m, st, calls := badgeModel(t)
 	m.pendingChat = "oc_a"
 	m = arrive(t, m, st, "oc_a")
@@ -180,6 +188,7 @@ func TestUpdate_AMessageLandingInTheOpenChatClearsTheBadgeAgain(t *testing.T) {
 }
 
 func TestUpdate_EscapeLeavesTheReadGatesOwnApplinkQueued(t *testing.T) {
+	t.Parallel()
 	m, _, calls := badgeModel(t)
 	next, cmd := m.takeRead("oc_a", unreadPage())
 

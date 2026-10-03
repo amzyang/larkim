@@ -20,6 +20,7 @@ func candMsgModel(t *testing.T) (Model, *store.Store) {
 }
 
 func TestCandidateRows_DrawUnderReactions(t *testing.T) {
+	t.Parallel()
 	m, _ := candMsgModel(t)
 	msgs := []store.Message{{MessageID: "om_a", ChatID: "oc_team", SenderID: "ou_a", SenderName: "李四",
 		Content: "接口什么时候好", CreateMs: msgAt(23, 9, 0), RenderedAt: 1,
@@ -36,6 +37,7 @@ func TestCandidateRows_DrawUnderReactions(t *testing.T) {
 }
 
 func TestCandidateRows_IgnoreHidesDraft(t *testing.T) {
+	t.Parallel()
 	m, st := candMsgModel(t)
 	c0 := m.chatCands[0]
 	m, cmd := m.ignoreInlineCandidate(c0)
@@ -57,6 +59,7 @@ func TestCandidateRows_IgnoreHidesDraft(t *testing.T) {
 }
 
 func TestCandidateRows_SendPostsReply(t *testing.T) {
+	t.Parallel()
 	m, st := candMsgModel(t)
 	c := m.chatCands[1]
 	msg := m.msgs[0]
@@ -79,6 +82,7 @@ func TestCandidateRows_SendPostsReply(t *testing.T) {
 }
 
 func TestVisibleCandidates_FiltersReplied(t *testing.T) {
+	t.Parallel()
 	m, _ := candMsgModel(t)
 	m.chatCands[0].Replied = true
 	require.Len(t, m.visibleCandidates(m.chatCands), 1)

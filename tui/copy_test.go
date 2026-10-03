@@ -46,6 +46,7 @@ func highlighted(m Model) []int {
 }
 
 func TestStartVisual_AnchorsAtTheCursorAndExtends(t *testing.T) {
+	t.Parallel()
 	m := shortMsgs(sized(120, 36), 12)
 	m.focus, m.msgIdx = paneMessages, 4
 	m.scrollMessagesToSelection()
@@ -70,6 +71,7 @@ func TestStartVisual_AnchorsAtTheCursorAndExtends(t *testing.T) {
 }
 
 func TestOnVisualKey_ExtendsBackwardsFromTheAnchor(t *testing.T) {
+	t.Parallel()
 	m := shortMsgs(sized(120, 36), 12)
 	m.focus, m.msgIdx = paneMessages, 6
 	mm, _ := m.onNormalKey("v")
@@ -83,6 +85,7 @@ func TestOnVisualKey_ExtendsBackwardsFromTheAnchor(t *testing.T) {
 }
 
 func TestOnVisualKey_EscCancelsAndShiftYLeavesVisual(t *testing.T) {
+	t.Parallel()
 	m := sized(120, 36)
 	m.focus = paneMessages
 	mm, _ := m.onNormalKey("v")
@@ -96,6 +99,7 @@ func TestOnVisualKey_EscCancelsAndShiftYLeavesVisual(t *testing.T) {
 }
 
 func TestStartVisual_UnsupportedWhereThereIsNothingToSelect(t *testing.T) {
+	t.Parallel()
 	base := sized(120, 36)
 	for _, tc := range []struct {
 		name  string
@@ -125,6 +129,7 @@ func TestStartVisual_UnsupportedWhereThereIsNothingToSelect(t *testing.T) {
 }
 
 func TestCopySelection_RefusesWhereThereIsNoContext(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name  string
 		model func() Model
@@ -151,6 +156,7 @@ func TestCopySelection_RefusesWhereThereIsNoContext(t *testing.T) {
 }
 
 func TestRunCopy_RejectsAnUnparsableRange(t *testing.T) {
+	t.Parallel()
 	m := sized(120, 36)
 	mm, cmd := m.runCommand("copy whenever")
 	require.Nil(t, cmd)
@@ -163,6 +169,7 @@ func TestRunCopy_RejectsAnUnparsableRange(t *testing.T) {
 }
 
 func TestCopyQuery_CountsWalkBackFromTheNewest(t *testing.T) {
+	t.Parallel()
 	now := time.Unix(1_700_000_000, 0)
 	q := copyQuery("oc_a", agentctx.Range{Limit: 200}, now)
 	require.True(t, q.Desc, "a count is taken from the newest end and flipped afterwards")
@@ -184,6 +191,7 @@ func TestCopyQuery_CountsWalkBackFromTheNewest(t *testing.T) {
 }
 
 func TestFollowUp_NamesTheOldestMessageOfTheRange(t *testing.T) {
+	t.Parallel()
 	msgs := []store.Message{{MessageID: "om_old"}, {MessageID: "om_new"}}
 	got := followUp(Deps{ConfigPath: "/home/z/.larkim/config.yaml"}, "oc_a", msgs)
 	require.Equal(t, "larkim --config /home/z/.larkim/config.yaml messages list \\\n"+
@@ -242,6 +250,7 @@ func runCopy(t *testing.T, d Deps, spec copySpec) contextMsg {
 }
 
 func TestCopyContext_RangeDropsThreadRepliesAndResolvesEveryone(t *testing.T) {
+	t.Parallel()
 	d := copyFixture(t)
 	got := runCopy(t, d, copySpec{chatID: "oc_a", rng: agentctx.Range{All: true}})
 
@@ -257,6 +266,7 @@ func TestCopyContext_RangeDropsThreadRepliesAndResolvesEveryone(t *testing.T) {
 }
 
 func TestCopyContext_ThreadSelectionKeepsItsReplies(t *testing.T) {
+	t.Parallel()
 	d := copyFixture(t)
 	ctx := t.Context()
 	thread, err := d.Store.ListMessages(ctx, store.MessageQuery{ThreadID: "omt_1", Limit: 10})
@@ -269,6 +279,7 @@ func TestCopyContext_ThreadSelectionKeepsItsReplies(t *testing.T) {
 }
 
 func TestCopyContext_CountIsOfKeptMessages(t *testing.T) {
+	t.Parallel()
 	d := copyFixture(t)
 	ctx := t.Context()
 	// Bury the chat in thread replies: a limit that counted rows before
@@ -288,6 +299,7 @@ func TestCopyContext_CountIsOfKeptMessages(t *testing.T) {
 }
 
 func TestCopyContext_ChatsPaneCoversTheLastDayOnly(t *testing.T) {
+	t.Parallel()
 	d := copyFixture(t)
 	got := runCopy(t, d, copySpec{chatID: "oc_a", rng: agentctx.Range{Since: chatsCopyAge, Limit: chatsCopyLimit}})
 	require.Equal(t, 2, got.n, "the three-day-old message is outside the window")
@@ -297,6 +309,7 @@ func TestCopyContext_ChatsPaneCoversTheLastDayOnly(t *testing.T) {
 }
 
 func TestCopyContext_EmptyRangeStillCarriesTheHeader(t *testing.T) {
+	t.Parallel()
 	d := copyFixture(t)
 	got := runCopy(t, d, copySpec{chatID: "oc_a", rng: agentctx.Range{Since: time.Second}})
 	require.Zero(t, got.n)
@@ -305,6 +318,7 @@ func TestCopyContext_EmptyRangeStillCarriesTheHeader(t *testing.T) {
 }
 
 func TestUpdate_ContextMessageReportsSizeAndSetsTheClipboard(t *testing.T) {
+	t.Parallel()
 	m := New(Deps{})
 	mm, cmd := m.Update(contextMsg{text: strings.Repeat("x", 31*1024), n: 24, chat: "平台组"})
 	require.Equal(t, "copied 24 msgs · 31 KB · 平台组", mm.(Model).notice)
@@ -317,6 +331,7 @@ func TestUpdate_ContextMessageReportsSizeAndSetsTheClipboard(t *testing.T) {
 }
 
 func TestHelp_DocumentsTheCopyKeys(t *testing.T) {
+	t.Parallel()
 	require.True(t, helpHas("Y copy agent context"))
 	require.True(t, helpHas("yy copy the message id"))
 	require.True(t, helpHas("yr copy the raw json"))
@@ -334,6 +349,7 @@ func loaded(m Model, msgs []store.Message) Model {
 }
 
 func TestUpdate_ReloadDoesNotWidenALiveSelection(t *testing.T) {
+	t.Parallel()
 	m := shortMsgs(sized(120, 36), 6)
 	m.focus, m.msgIdx = paneMessages, 2
 	mm, _ := m.onNormalKey("v")
@@ -353,6 +369,7 @@ func TestUpdate_ReloadDoesNotWidenALiveSelection(t *testing.T) {
 }
 
 func TestUpdate_ReloadShorterThanTheAnchorLeavesVisual(t *testing.T) {
+	t.Parallel()
 	m := shortMsgs(sized(120, 36), 12)
 	m.focus, m.msgIdx = paneMessages, len(m.msgs)-1
 	mm, _ := m.onNormalKey("v")
@@ -368,6 +385,7 @@ func TestUpdate_ReloadShorterThanTheAnchorLeavesVisual(t *testing.T) {
 }
 
 func TestUpdate_ThreadReloadKeepsTheSelectionPinned(t *testing.T) {
+	t.Parallel()
 	m := sized(120, 36)
 	m.rightKind, m.threadID = rightThread, "omt_1"
 	m.thread = []store.Message{

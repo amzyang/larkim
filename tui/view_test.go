@@ -47,6 +47,7 @@ func withThread(m Model) Model {
 }
 
 func TestView_PanesShareHeight(t *testing.T) {
+	t.Parallel()
 	m := sized(120, 40)
 	h := m.bodyHeight()
 	require.Equal(t, h+2, lipgloss.Height(m.renderMessages(h)), "messages pane = body + border")
@@ -64,6 +65,7 @@ func TestView_PanesShareHeight(t *testing.T) {
 }
 
 func TestChatsPane_RunsPastTheComposerBand(t *testing.T) {
+	t.Parallel()
 	m := sized(120, 40)
 	require.Equal(t, m.bodyHeight()+m.composerHeight()+2, m.chatsBodyHeight(),
 		"the chats pane takes the body and the box beside it")
@@ -81,6 +83,7 @@ func TestChatsPane_RunsPastTheComposerBand(t *testing.T) {
 }
 
 func TestHit_ChatsPaneAnswersBesideTheComposer(t *testing.T) {
+	t.Parallel()
 	m := sized(120, 30)
 	for _, y := range []int{m.bodyHeight() + 2, m.chatsBodyHeight()} {
 		p, row := m.hit(2, y)
@@ -94,6 +97,7 @@ func TestHit_ChatsPaneAnswersBesideTheComposer(t *testing.T) {
 }
 
 func TestCursorAt_SitsInsideTheNarrowedBand(t *testing.T) {
+	t.Parallel()
 	m := sized(120, 30)
 	mm, _ := m.startInsert(nil, false)
 	m = mm.(Model)
@@ -107,6 +111,7 @@ func TestCursorAt_SitsInsideTheNarrowedBand(t *testing.T) {
 }
 
 func TestRenderChats_OneRowPerChat(t *testing.T) {
+	t.Parallel()
 	m := sized(120, 30)
 	h := m.chatsBodyHeight()
 	lines := strings.Split(m.renderChats(h), "\n")
@@ -116,6 +121,7 @@ func TestRenderChats_OneRowPerChat(t *testing.T) {
 }
 
 func TestScrollTo_KeepsSelectionVisible(t *testing.T) {
+	t.Parallel()
 	m := sized(120, 20)
 	m.msgs = append(m.msgs, store.Message{MessageID: "om_last", ChatID: "oc_1", SenderName: "林岚", Content: "LASTLINE", RenderedAt: 1, CreateMs: 99 * 60_000})
 	m.layout()
@@ -128,6 +134,7 @@ func TestScrollTo_KeepsSelectionVisible(t *testing.T) {
 }
 
 func TestMove_LastChatStaysVisibleAfterG(t *testing.T) {
+	t.Parallel()
 	m := sized(120, 36)
 	m.focus = paneChats
 	mm, _ := m.move(1 << 30)
@@ -137,6 +144,7 @@ func TestMove_LastChatStaysVisibleAfterG(t *testing.T) {
 }
 
 func TestHit_MapsPanesBelowTitles(t *testing.T) {
+	t.Parallel()
 	m := sized(120, 30)
 	p, row := m.hit(2, 2)
 	require.Equal(t, paneChats, p)
@@ -164,6 +172,7 @@ func TestHit_MapsPanesBelowTitles(t *testing.T) {
 }
 
 func TestHighlight_SurvivesInnerResets(t *testing.T) {
+	t.Parallel()
 	m := sized(120, 30)
 	line := stDim.Render("12:00") + " sender " + stBold.Render("om_1")
 	out := m.highlight(line, true)
@@ -172,6 +181,7 @@ func TestHighlight_SurvivesInnerResets(t *testing.T) {
 }
 
 func TestOnFilterKey_EnterOpensHighlightedChat(t *testing.T) {
+	t.Parallel()
 	m := sized(120, 36)
 	m.mode, m.chatFilter, m.chatIdx = modeFilter, "群 70 ", 0
 	mm, _ := m.onFilterKey(tea.KeyPressMsg{Code: tea.KeyEnter})
@@ -181,6 +191,7 @@ func TestOnFilterKey_EnterOpensHighlightedChat(t *testing.T) {
 }
 
 func TestOnNormalKey_EscClearsFilterAndKeepsCurrentChat(t *testing.T) {
+	t.Parallel()
 	m := sized(120, 36)
 	m.chatID, m.chatFilter = "oc_5", "群 7"
 	m.clampChat()
@@ -191,6 +202,7 @@ func TestOnNormalKey_EscClearsFilterAndKeepsCurrentChat(t *testing.T) {
 }
 
 func TestOpenChat_DropsFilterHidingIt(t *testing.T) {
+	t.Parallel()
 	m := sized(120, 36)
 	m.chatFilter = "群 7"
 	m.openChat("oc_1")
@@ -199,6 +211,7 @@ func TestOpenChat_DropsFilterHidingIt(t *testing.T) {
 }
 
 func TestOnNormalKey_TabCyclesListPanesOnly(t *testing.T) {
+	t.Parallel()
 	m := sized(130, 36) // wide enough for three panes: chats + messages + thread
 	m.focus = paneMessages
 	mm, _ := m.onNormalKey("tab")
@@ -219,6 +232,7 @@ func TestOnNormalKey_TabCyclesListPanesOnly(t *testing.T) {
 }
 
 func TestOnNormalKey_GPrefixDiesWithTheKeyAfterIt(t *testing.T) {
+	t.Parallel()
 	m := sized(120, 36)
 	m.focus, m.msgIdx = paneMessages, 20
 
@@ -235,6 +249,7 @@ func TestOnNormalKey_GPrefixDiesWithTheKeyAfterIt(t *testing.T) {
 }
 
 func TestView_FoldsRightPaneOnNarrowTerminal(t *testing.T) {
+	t.Parallel()
 	m := sized(82, 35)
 	m = withThread(m)
 	m.focus = paneThread
@@ -252,6 +267,7 @@ func TestView_FoldsRightPaneOnNarrowTerminal(t *testing.T) {
 }
 
 func TestOnInsertKey_EscOnFoldedLayoutShowsMessages(t *testing.T) {
+	t.Parallel()
 	// A forwarded bundle has no box of its own, so the folded column is
 	// carrying the chat's — and leaving it is leaving the column.
 	m := sized(82, 35)
@@ -266,6 +282,7 @@ func TestOnInsertKey_EscOnFoldedLayoutShowsMessages(t *testing.T) {
 }
 
 func TestOnInsertKey_EscLeavesTheThreadBoxForItsOwnColumn(t *testing.T) {
+	t.Parallel()
 	m := withThread(sized(82, 35))
 	require.True(t, m.foldRight())
 	require.Equal(t, sideRight, m.side, "the folded column carries its own box")
@@ -277,11 +294,13 @@ func TestOnInsertKey_EscLeavesTheThreadBoxForItsOwnColumn(t *testing.T) {
 }
 
 func TestView_TooSmallTerminal(t *testing.T) {
+	t.Parallel()
 	m := sized(50, 10)
 	require.Contains(t, m.View().Content, "too small")
 }
 
 func TestUpdate_BackgroundColorDrivesSelectionShade(t *testing.T) {
+	t.Parallel()
 	m := New(Deps{})
 	light := lipgloss.Color("#eff1f5")
 	mm, _ := m.Update(tea.BackgroundColorMsg{Color: light})
@@ -294,6 +313,7 @@ func TestUpdate_BackgroundColorDrivesSelectionShade(t *testing.T) {
 }
 
 func TestComposerStyles_FollowPalette(t *testing.T) {
+	t.Parallel()
 	for _, dark := range []bool{true, false} {
 		st := composerStyles(dark)
 		require.Equal(t, lipgloss.NoColor{}, st.Focused.CursorLine.GetBackground(), "no cursor-line shade")
@@ -307,6 +327,7 @@ func luma(c color.Color) float64 {
 }
 
 func TestActivate_SearchHitAnchorsMessagePage(t *testing.T) {
+	t.Parallel()
 	m := sized(120, 36)
 	m.searching, m.focus, m.msgIdx = true, paneMessages, 0
 	m.searchHits = messageHits(store.Message{MessageID: "om_old", ChatID: "oc_2", CreateMs: 123})
@@ -327,6 +348,7 @@ func TestActivate_SearchHitAnchorsMessagePage(t *testing.T) {
 }
 
 func TestRenderStatus_StaysOneLine(t *testing.T) {
+	t.Parallel()
 	m := sized(120, 36)
 	m = m.notify("no messages match "+strings.Repeat("z", 200), true)
 	s := m.renderStatus()
@@ -335,6 +357,7 @@ func TestRenderStatus_StaysOneLine(t *testing.T) {
 }
 
 func TestRenderStatus_SpacesBetweenSyncGlyphAndNotice(t *testing.T) {
+	t.Parallel()
 	m := sized(120, 36)
 	m.syncStatus = "synced"
 	m = m.notify("open a chat first", true)
@@ -343,12 +366,14 @@ func TestRenderStatus_SpacesBetweenSyncGlyphAndNotice(t *testing.T) {
 }
 
 func TestRenderStatus_ReservesHelpWithLongNotice(t *testing.T) {
+	t.Parallel()
 	m := sized(120, 36)
 	m = m.notify("notice: "+strings.Repeat("z", 200), false)
 	require.Contains(t, ansi.Strip(m.renderStatus()), "? help")
 }
 
 func TestView_AtMinWidth78_LayoutFits(t *testing.T) {
+	t.Parallel()
 	m := sized(minWidth, minHeight)
 	v := m.View()
 	require.NotContains(t, v.Content, "too small")
@@ -359,6 +384,7 @@ func TestView_AtMinWidth78_LayoutFits(t *testing.T) {
 }
 
 func TestRenderStatus_ConfirmHighlightsKeys(t *testing.T) {
+	t.Parallel()
 	m := sized(120, 36)
 	m.confirm = confirmation{kind: confirmRecall, messageID: "om_0"}
 	m = m.notify("recall this message? y/n", false)
@@ -372,6 +398,7 @@ func TestRenderStatus_ConfirmHighlightsKeys(t *testing.T) {
 }
 
 func TestChatsLoaded_CursorFollowsItsOwnChat(t *testing.T) {
+	t.Parallel()
 	m := sized(120, 36)
 	m.chatID = "oc_3"
 	m.repinChat(m.chatID, rowKeyAt(m.visibleRows(), m.chatTop))
@@ -386,6 +413,7 @@ func TestChatsLoaded_CursorFollowsItsOwnChat(t *testing.T) {
 }
 
 func TestChatsLoaded_FilterBeingTypedKeepsItsCursor(t *testing.T) {
+	t.Parallel()
 	m := sized(120, 36)
 	m.chatID, m.mode, m.chatFilter, m.chatIdx = "oc_3", modeFilter, "群 1", 2
 	mm, _ := m.update(chatsLoadedMsg{chats: m.chats})
@@ -394,6 +422,7 @@ func TestChatsLoaded_FilterBeingTypedKeepsItsCursor(t *testing.T) {
 }
 
 func TestSelection_TheSelectedMessageShowsItsTime(t *testing.T) {
+	t.Parallel()
 	m := sized(120, 36)
 	m.focus, m.msgIdx = paneMessages, 0
 	m.rebuildMessages()
@@ -414,6 +443,7 @@ func TestSelection_TheSelectedMessageShowsItsTime(t *testing.T) {
 		"clicking a message spells out its time in the header too")
 }
 func TestMove_StepsThroughEveryMessageAcrossMergedBlocks(t *testing.T) {
+	t.Parallel()
 	m := sized(120, 24)
 	m.focus, m.msgIdx = paneMessages, 0
 	// A pane with nothing in it yet counts as sitting at its tail, so the first
@@ -429,6 +459,7 @@ func TestMove_StepsThroughEveryMessageAcrossMergedBlocks(t *testing.T) {
 }
 
 func TestModelPicHeight_DoesNotMoveWithTheReplyBar(t *testing.T) {
+	t.Parallel()
 	m := sized(120, 40)
 	was := m.picHeight()
 	require.Equal(t, m.msgListHeight(), was, "a picture may fill the pane it is drawn in")
@@ -442,6 +473,7 @@ func TestModelPicHeight_DoesNotMoveWithTheReplyBar(t *testing.T) {
 }
 
 func TestHighlightChat_FocusedRowTakesTheFixedTint(t *testing.T) {
+	t.Parallel()
 	tint := "48;2;231;238;252"
 	m := sized(120, 36)
 	m.focus = paneChats
@@ -451,6 +483,7 @@ func TestHighlightChat_FocusedRowTakesTheFixedTint(t *testing.T) {
 }
 
 func TestRenderChats_TintsTheAvatarColumnOfTheRowUnderTheCursor(t *testing.T) {
+	t.Parallel()
 	m := sized(120, 36)
 	m.focus, m.chatIdx = paneChats, rowOf(0) // a chat: the Unread row draws no disc
 	m.avatars = badgedAvatars{}
@@ -460,6 +493,7 @@ func TestRenderChats_TintsTheAvatarColumnOfTheRowUnderTheCursor(t *testing.T) {
 }
 
 func TestHighlightChat_KeepsARunsOwnColours(t *testing.T) {
+	t.Parallel()
 	m := sized(120, 36)
 	line := m.highlightChat(stUnread.Render("3")+" "+stBold.Render("群"), true)
 	require.Contains(t, ansi.Strip(line), "3 群")
@@ -469,6 +503,7 @@ func TestHighlightChat_KeepsARunsOwnColours(t *testing.T) {
 }
 
 func TestRenderSearchRows_DoesNotLendOneChatsPeerToAnothers(t *testing.T) {
+	t.Parallel()
 	msgs := []store.Message{{MessageID: "om_1", ChatID: "oc_g", SenderID: "ou_x", SenderName: "孙琪",
 		Content: "@李四 看下", MentionsJSON: `[{"id":"ou_a","key":"@_user_1","name":"李四"}]`,
 		CreateMs: msgAt(23, 9, 0), RenderedAt: 1}}
@@ -484,6 +519,7 @@ func TestRenderSearchRows_DoesNotLendOneChatsPeerToAnothers(t *testing.T) {
 }
 
 func TestOnFilterKey_CancellingAnEmptyFilterChangesNothing(t *testing.T) {
+	t.Parallel()
 	m := sized(120, 36)
 	m.focus, m.chatID, m.chatIdx, m.chatTop = paneMessages, "oc_0", 0, 0
 	m = wheelChats(m, 3, tea.MouseWheelDown)
@@ -501,6 +537,7 @@ func TestOnFilterKey_CancellingAnEmptyFilterChangesNothing(t *testing.T) {
 }
 
 func TestOnFilterKey_CancellingPutsTheReaderBackWhereTheyWere(t *testing.T) {
+	t.Parallel()
 	m := sized(120, 36)
 	m.focus, m.chatID, m.chatIdx, m.chatTop = paneMessages, "oc_0", rowOf(40), rowOf(34)
 	onCursor, onTop := "oc_40", "oc_34"
@@ -525,6 +562,7 @@ func TestOnFilterKey_CancellingPutsTheReaderBackWhereTheyWere(t *testing.T) {
 // are counted against the columns the label occupies, so a CJK chat name — two
 // columns a character, three bytes a character — does not cut the rule short.
 func TestSearchRule_FillsThePaneUnderALabelOfAnyScript(t *testing.T) {
+	t.Parallel()
 	for _, label := range []string{"Messages", "平台组", "项目协作群"} {
 		plain := ansi.Strip(searchRule(label, 60).text)
 
@@ -538,6 +576,7 @@ func TestSearchRule_FillsThePaneUnderALabelOfAnyScript(t *testing.T) {
 // sender's run collapses the sender line into the message that opened it, so
 // the picture in the middle of a run carries no text row of its own.
 func TestRenderMessages_PaintsThePictureRowsOfTheSelectedMessage(t *testing.T) {
+	t.Parallel()
 	m := sized(106, 40)
 	p := testPictures(t)
 	m.pics = p
@@ -559,6 +598,7 @@ func TestRenderMessages_PaintsThePictureRowsOfTheSelectedMessage(t *testing.T) {
 }
 
 func TestRowLine_APictureKeepsItsCellsUnderTheTint(t *testing.T) {
+	t.Parallel()
 	m := sized(106, 40)
 	p := testPictures(t)
 	m.pics = p

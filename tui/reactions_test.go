@@ -17,6 +17,7 @@ const twoReactions = `{"counts":[{"reaction_type":"THUMBSUP","count":"3"},{"reac
   "details":[{"emoji_type":"THUMBSUP","operator":{"operator_id":"ou_me","operator_type":"user"}}]}`
 
 func TestRenderRows_DrawsReactionsBelowTheBody(t *testing.T) {
+	t.Parallel()
 	msgs := []store.Message{{MessageID: "om_a", SenderID: "ou_a", SenderName: "张三",
 		Content: "这个方案我同意", CreateMs: msgAt(23, 9, 0), RenderedAt: 1, ReactionsJSON: twoReactions}}
 	out := rowText(renderRows(msgs, baseStyle()))
@@ -27,6 +28,7 @@ func TestRenderRows_DrawsReactionsBelowTheBody(t *testing.T) {
 }
 
 func TestRenderRows_StylesEveryReactorAlike(t *testing.T) {
+	t.Parallel()
 	msgs := []store.Message{{MessageID: "om_a", SenderID: "ou_a", SenderName: "张三",
 		Content: "同意", CreateMs: msgAt(23, 9, 0), RenderedAt: 1, ReactionsJSON: twoReactions}}
 	rows := renderRows(msgs, baseStyle())
@@ -39,6 +41,7 @@ func TestRenderRows_StylesEveryReactorAlike(t *testing.T) {
 }
 
 func TestRenderRows_WrapsALongReactionStripRatherThanCuttingIt(t *testing.T) {
+	t.Parallel()
 	// truncate cuts runes, which would split an emoji off its variation
 	// selector; the strip is a list of short tokens, so it wraps instead.
 	var counts []string
@@ -60,6 +63,7 @@ func TestRenderRows_WrapsALongReactionStripRatherThanCuttingIt(t *testing.T) {
 }
 
 func TestRenderRows_DropsTheReactionsOfARecalledMessage(t *testing.T) {
+	t.Parallel()
 	msgs := []store.Message{{MessageID: "om_a", SenderID: "ou_a", SenderName: "张三",
 		Content: "撤回前的内容", CreateMs: msgAt(23, 9, 0), RenderedAt: 1, Deleted: true, ReactionsJSON: twoReactions}}
 	out := rowText(renderRows(msgs, baseStyle()))
@@ -68,6 +72,7 @@ func TestRenderRows_DropsTheReactionsOfARecalledMessage(t *testing.T) {
 }
 
 func TestReactionChip_DrawsTheClientsOwnPicture(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	writeTestEmoji(t, dir, "JIAYI")
 	writeTestEmoji(t, dir, "THUMBSUP")
@@ -101,6 +106,7 @@ func TestReactionChip_DrawsTheClientsOwnPicture(t *testing.T) {
 // the invariant: a renderer that cannot produce the picture says so by
 // crashing, because every start cut the pictures before any drawing began.
 func TestReactionChip_PanicsOnAPictureTheStartDidNotCut(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	st := baseStyle()
 	st.dataDir = dir
@@ -109,6 +115,7 @@ func TestReactionChip_PanicsOnAPictureTheStartDidNotCut(t *testing.T) {
 }
 
 func TestReactionChip_ReadsASkinToneAsTheEmojiItIsAToneOf(t *testing.T) {
+	t.Parallel()
 	segs := reactionChip(emoji.Chip{Key: "DarkThumbsup", Count: 1}, baseStyle())
 	require.Equal(t, chipped("[Like]⋮+1"), ansi.Strip(segs[0].text),
 		"a tone Feishu sent but the picker never offered still draws")
@@ -133,6 +140,7 @@ func writeTestEmoji(t *testing.T, dir, key string) {
 }
 
 func TestRenderRows_KeepsAnAllCharacterStripAsOrdinaryText(t *testing.T) {
+	t.Parallel()
 	// The pieces exist so a picture can sit inside a line, and a row made of
 	// them takes no selection tint; a strip of characters must not pay that.
 	msgs := []store.Message{{MessageID: "om_a", SenderID: "ou_a", SenderName: "张三",
@@ -165,11 +173,13 @@ func reacted(key string, count int, ids ...string) emoji.Chip {
 }
 
 func TestReactionChip_NamesUpToThreeReactors(t *testing.T) {
+	t.Parallel()
 	segs := reactionChip(reacted("THUMBSUP", 3, "ou_a", "ou_b", "ou_c"), namedStyle())
 	require.Equal(t, chipped("[Like]⋮张三, 李四, 王五"), ansi.Strip(segs[0].text))
 }
 
 func TestReactionChip_TellsSameNamedReactorsApart(t *testing.T) {
+	t.Parallel()
 	st := namedStyle()
 	st.people["ou_z"] = "张三"
 	st.suffix = map[string]string{"ou_a": "01", "ou_z": "02"}
@@ -179,17 +189,20 @@ func TestReactionChip_TellsSameNamedReactorsApart(t *testing.T) {
 }
 
 func TestReactionChip_CountsTheRestAsPlusN(t *testing.T) {
+	t.Parallel()
 	segs := reactionChip(reacted("THUMBSUP", 9, "ou_a", "ou_b", "ou_c", "ou_d"), namedStyle())
 	require.Equal(t, chipped("[Like]⋮张三, 李四, 王五 +6"), ansi.Strip(segs[0].text),
 		"a fourth name costs more width than it tells, and the rest is a number")
 }
 
 func TestReactionChip_CallsTheReaderYou(t *testing.T) {
+	t.Parallel()
 	segs := reactionChip(reacted("THUMBSUP", 2, "ou_me", "ou_a"), namedStyle())
 	require.Equal(t, chipped("[Like]⋮You, 张三"), ansi.Strip(segs[0].text))
 }
 
 func TestReactionChip_LeavesAStrangerInThePlusN(t *testing.T) {
+	t.Parallel()
 	// A raw open id on screen says nothing, so somebody the contacts table
 	// has never seen is counted rather than named.
 	segs := reactionChip(reacted("THUMBSUP", 2, "ou_stranger", "ou_a"), namedStyle())
@@ -200,6 +213,7 @@ func TestReactionChip_LeavesAStrangerInThePlusN(t *testing.T) {
 }
 
 func TestReactionChip_KeepsOneChipInsideThePane(t *testing.T) {
+	t.Parallel()
 	// The strip wraps between chips but never cuts inside one, so a chip
 	// crowded with names has to fit itself. A single width would pass on the
 	// parity of the name's cells alone, so every width the pane can take is
@@ -226,6 +240,7 @@ func chipZones(rows []msgRow) []clickZone {
 }
 
 func TestReactionRows_MarksEveryChipAsAClickTarget(t *testing.T) {
+	t.Parallel()
 	msgs := []store.Message{{MessageID: "om_a", SenderID: "ou_a", SenderName: "张三",
 		Content: "这个方案我同意", CreateMs: msgAt(23, 9, 0), RenderedAt: 1, ReactionsJSON: twoReactions}}
 	zs := chipZones(renderRows(msgs, baseStyle()))
@@ -240,6 +255,7 @@ func TestReactionRows_MarksEveryChipAsAClickTarget(t *testing.T) {
 }
 
 func TestReactionRows_ZonesLandOnTheChipTheyName(t *testing.T) {
+	t.Parallel()
 	msgs := []store.Message{{MessageID: "om_a", SenderID: "ou_a", SenderName: "张三",
 		Content: "这个方案我同意", CreateMs: msgAt(23, 9, 0), RenderedAt: 1, ReactionsJSON: twoReactions}}
 	rows := renderRows(msgs, baseStyle())
@@ -269,6 +285,7 @@ func TestReactionRows_ZonesLandOnTheChipTheyName(t *testing.T) {
 }
 
 func TestReactionRows_WrapKeepsEachChipsTargetOnItsOwnRow(t *testing.T) {
+	t.Parallel()
 	keys := []string{"THUMBSUP", "ROSE", "HEART", "PARTY", "FIRE", "CAKE", "COFFEE", "BEER", "GIFT", "TROPHY"}
 	var counts []string
 	for _, key := range keys {
@@ -292,6 +309,7 @@ func TestReactionRows_WrapKeepsEachChipsTargetOnItsOwnRow(t *testing.T) {
 }
 
 func TestReactionRows_DrawAPressAheadOfFeishusAnswer(t *testing.T) {
+	t.Parallel()
 	msgs := []store.Message{{MessageID: "om_a", SenderID: "ou_a", SenderName: "张三",
 		Content: "这个方案我同意", CreateMs: msgAt(23, 9, 0), RenderedAt: 1, ReactionsJSON: twoReactions}}
 	st := baseStyle()
@@ -302,6 +320,7 @@ func TestReactionRows_DrawAPressAheadOfFeishusAnswer(t *testing.T) {
 }
 
 func TestReactionRows_ClosesAChipAPressEmptied(t *testing.T) {
+	t.Parallel()
 	msgs := []store.Message{{MessageID: "om_a", SenderID: "ou_a", SenderName: "张三",
 		Content: "同意", CreateMs: msgAt(23, 9, 0), RenderedAt: 1,
 		ReactionsJSON: `{"counts":[{"reaction_type":"THUMBSUP","count":"1"}],
@@ -314,6 +333,7 @@ func TestReactionRows_ClosesAChipAPressEmptied(t *testing.T) {
 }
 
 func TestSelectedZones_LeavesReactionChipsOut(t *testing.T) {
+	t.Parallel()
 	m := New(Deps{Self: "ou_me"})
 	m.width, m.height = 120, 36
 	m.chatID = "oc_team"

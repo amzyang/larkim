@@ -63,6 +63,7 @@ func search(t *testing.T, m Model, query string) Model {
 }
 
 func TestSearchPanel_LocalGroupsRenderUnderTheirRules(t *testing.T) {
+	t.Parallel()
 	m, _ := panelModel(t)
 	m = search(t, m, "预算")
 
@@ -83,6 +84,7 @@ func TestSearchPanel_LocalGroupsRenderUnderTheirRules(t *testing.T) {
 }
 
 func TestSearchRowText_PrefersTheDepartmentOverTheAddress(t *testing.T) {
+	t.Parallel()
 	h := searchHit{kind: hitPerson, user: larkcli.User{Name: "张三", Department: "财务", Email: "z@example.com"}}
 	require.Contains(t, ansi.Strip(searchRowText(h)), "张三 · 财务")
 
@@ -91,6 +93,7 @@ func TestSearchRowText_PrefersTheDepartmentOverTheAddress(t *testing.T) {
 }
 
 func TestSearchPanel_OneCursorWalksAllThreeGroups(t *testing.T) {
+	t.Parallel()
 	m, _ := panelModel(t)
 	m = search(t, m, "预算")
 	require.Len(t, m.searchHits, 3)
@@ -115,6 +118,7 @@ func TestSearchPanel_OneCursorWalksAllThreeGroups(t *testing.T) {
 }
 
 func TestSearchPanel_WalkingTheHitsLeavesTheRowsAlone(t *testing.T) {
+	t.Parallel()
 	m, _ := panelModel(t)
 	m = search(t, m, "预算")
 
@@ -131,6 +135,7 @@ func TestSearchPanel_WalkingTheHitsLeavesTheRowsAlone(t *testing.T) {
 }
 
 func TestSearchPanel_RuleRowsBelongToNoHit(t *testing.T) {
+	t.Parallel()
 	m, _ := panelModel(t)
 	m = search(t, m, "预算")
 	for _, r := range m.msgRows {
@@ -141,6 +146,7 @@ func TestSearchPanel_RuleRowsBelongToNoHit(t *testing.T) {
 }
 
 func TestSearchPanel_StaleGenerationIsDiscarded(t *testing.T) {
+	t.Parallel()
 	m, _ := panelModel(t)
 	m = search(t, m, "预算")
 	before := m.searchHits
@@ -152,6 +158,7 @@ func TestSearchPanel_StaleGenerationIsDiscarded(t *testing.T) {
 }
 
 func TestSearchPanel_SelectedIsOnlyAMessageOnAMessageHit(t *testing.T) {
+	t.Parallel()
 	m, _ := panelModel(t)
 	m = search(t, m, "预算")
 
@@ -166,6 +173,7 @@ func TestSearchPanel_SelectedIsOnlyAMessageOnAMessageHit(t *testing.T) {
 }
 
 func TestOpenHit_ChatRowOpensTheChat(t *testing.T) {
+	t.Parallel()
 	m, _ := panelModel(t)
 	m = search(t, m, "预算")
 	mm, _ := m.moveSelection(1)
@@ -178,6 +186,7 @@ func TestOpenHit_ChatRowOpensTheChat(t *testing.T) {
 }
 
 func TestOpenHit_MessageRowAnchorsThePage(t *testing.T) {
+	t.Parallel()
 	m, _ := panelModel(t)
 	m = search(t, m, "预算")
 
@@ -189,6 +198,7 @@ func TestOpenHit_MessageRowAnchorsThePage(t *testing.T) {
 }
 
 func TestOpenPerson_WithoutALocalChatPrimesTheSend(t *testing.T) {
+	t.Parallel()
 	m, _ := panelModel(t)
 	m = search(t, m, "预算")
 	mm, _ := m.moveSelection(2) // the person row
@@ -202,6 +212,7 @@ func TestOpenPerson_WithoutALocalChatPrimesTheSend(t *testing.T) {
 }
 
 func TestOpenPerson_WithALocalChatOpensIt(t *testing.T) {
+	t.Parallel()
 	m, _ := panelModel(t)
 	m.chats = append(m.chats, store.Chat{ChatID: "oc_a", Name: "预算负责人", ChatMode: "p2p"})
 	m = search(t, m, "预算")
@@ -220,6 +231,7 @@ func TestOpenPerson_WithALocalChatOpensIt(t *testing.T) {
 }
 
 func TestOpenSearch_SeedsFromTheCommandArgument(t *testing.T) {
+	t.Parallel()
 	m, _ := panelModel(t)
 	mm, _ := m.runCommand("search 预算")
 	m = mm.(Model)
@@ -230,6 +242,7 @@ func TestOpenSearch_SeedsFromTheCommandArgument(t *testing.T) {
 }
 
 func TestOnSearchKey_EscLeavesThePanel(t *testing.T) {
+	t.Parallel()
 	m, _ := panelModel(t)
 	m = search(t, m, "预算")
 	mm, _ := m.onSearchKey(tea.KeyPressMsg{Code: tea.KeyEscape})
@@ -240,6 +253,7 @@ func TestOnSearchKey_EscLeavesThePanel(t *testing.T) {
 }
 
 func TestOnSearchKey_TypingRearmsTheTimerForANewQuery(t *testing.T) {
+	t.Parallel()
 	m, _ := panelModel(t)
 	mm, _ := m.openSearch("预")
 	m = mm.(Model)
@@ -253,6 +267,7 @@ func TestOnSearchKey_TypingRearmsTheTimerForANewQuery(t *testing.T) {
 }
 
 func TestClaimSearch_FailsOncePanelIsClosed(t *testing.T) {
+	t.Parallel()
 	m, _ := panelModel(t)
 	mm, _ := m.openSearch("预算")
 	m = mm.(Model)
@@ -262,6 +277,7 @@ func TestClaimSearch_FailsOncePanelIsClosed(t *testing.T) {
 }
 
 func TestLocalSearch_EmptyQueryAnswersWithNothing(t *testing.T) {
+	t.Parallel()
 	m, _ := panelModel(t)
 	msg := localSearch(m.deps, m.chats, "  ", 3)().(searchMsg)
 	require.Equal(t, 3, msg.gen)
@@ -269,6 +285,7 @@ func TestLocalSearch_EmptyQueryAnswersWithNothing(t *testing.T) {
 }
 
 func TestLocalSearch_ReachesAChatByPinyinInitials(t *testing.T) {
+	t.Parallel()
 	m, _ := panelModel(t)
 	msg := localSearch(m.deps, m.chats, "yssh", 1)().(searchMsg)
 	var names []string
@@ -304,6 +321,7 @@ func remoteSearched(t *testing.T, m Model, query string) Model {
 }
 
 func TestRemoteSearch_ColdHitsFollowTheStoresInTheMessagesGroup(t *testing.T) {
+	t.Parallel()
 	m, _ := panelModel(t)
 	m.deps.Client = coldFake("预算")
 	m = search(t, m, "预算")
@@ -328,6 +346,7 @@ func TestRemoteSearch_ColdHitsFollowTheStoresInTheMessagesGroup(t *testing.T) {
 }
 
 func TestRemoteSearch_DropsAHitTheStoreAlreadyHas(t *testing.T) {
+	t.Parallel()
 	m, st := panelModel(t)
 	f := coldFake("预算")
 	// The store already holds om_1, so Feishu answering with it too must not
@@ -344,6 +363,7 @@ func TestRemoteSearch_DropsAHitTheStoreAlreadyHas(t *testing.T) {
 }
 
 func TestRemoteSearch_StaleGenerationIsDiscarded(t *testing.T) {
+	t.Parallel()
 	m, _ := panelModel(t)
 	m.deps.Client = coldFake("预算")
 	m = search(t, m, "预算")
@@ -354,6 +374,7 @@ func TestRemoteSearch_StaleGenerationIsDiscarded(t *testing.T) {
 }
 
 func TestRemoteSearch_FailureLeavesTheStoresHalfOnScreen(t *testing.T) {
+	t.Parallel()
 	m, _ := panelModel(t)
 	m = search(t, m, "预算")
 	local := m.searchHits
@@ -366,6 +387,7 @@ func TestRemoteSearch_FailureLeavesTheStoresHalfOnScreen(t *testing.T) {
 }
 
 func TestStartRemote_SkipsQueriesTooShortToBeWorthARoundTrip(t *testing.T) {
+	t.Parallel()
 	m, _ := panelModel(t)
 	m.deps.Client = coldFake("预算")
 	mm, _ := m.openSearch("预")
@@ -380,6 +402,7 @@ func TestStartRemote_SkipsQueriesTooShortToBeWorthARoundTrip(t *testing.T) {
 }
 
 func TestArmSearch_DropsTheRemoteSearchInFlight(t *testing.T) {
+	t.Parallel()
 	m, _ := panelModel(t)
 	m.deps.Client = coldFake("预算")
 	mm, _ := m.openSearch("预算")
@@ -393,6 +416,7 @@ func TestArmSearch_DropsTheRemoteSearchInFlight(t *testing.T) {
 }
 
 func TestCloseSearch_DropsTheRemoteSearchInFlight(t *testing.T) {
+	t.Parallel()
 	m, _ := panelModel(t)
 	m.deps.Client = coldFake("预算")
 	mm, _ := m.openSearch("预算")
@@ -405,6 +429,7 @@ func TestCloseSearch_DropsTheRemoteSearchInFlight(t *testing.T) {
 }
 
 func TestOpenColdHit_PullsItInBeforeOpeningThePage(t *testing.T) {
+	t.Parallel()
 	m, st := panelModel(t)
 	f := coldFake("预算")
 	m.deps.Client = f
@@ -430,6 +455,7 @@ func TestOpenColdHit_PullsItInBeforeOpeningThePage(t *testing.T) {
 }
 
 func TestSearchTitle_SaysWhenFeishuIsStillOut(t *testing.T) {
+	t.Parallel()
 	m, _ := panelModel(t)
 	m = search(t, m, "预算")
 	m.searchBusy = true
@@ -439,6 +465,7 @@ func TestSearchTitle_SaysWhenFeishuIsStillOut(t *testing.T) {
 }
 
 func TestOnSearchKey_PageKeysWalkTheHitsAndEditingKeysDoNot(t *testing.T) {
+	t.Parallel()
 	m, _ := panelModel(t)
 	m = search(t, m, "预算")
 	require.Len(t, m.searchHits, 3)
@@ -459,6 +486,7 @@ func TestOnSearchKey_PageKeysWalkTheHitsAndEditingKeysDoNot(t *testing.T) {
 }
 
 func TestCloseSearch_AnEmptyPaneLeavesACursorTheKeysCanMove(t *testing.T) {
+	t.Parallel()
 	m, _ := panelModel(t)
 	m.focus = paneMessages
 	mm, _ := m.openSearch("")

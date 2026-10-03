@@ -33,6 +33,7 @@ func stickerMsg(id, key string, at time.Time) larkcli.RawMessage {
 }
 
 func TestTick_StickerPicturesComeFromTheLarkClient(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	data, client := t.TempDir(), t.TempDir()
@@ -74,6 +75,7 @@ func TestTick_StickerPicturesComeFromTheLarkClient(t *testing.T) {
 }
 
 func TestTick_StickerPicturesOverTheSizeLimitAreSkipped(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	data, client := t.TempDir(), t.TempDir()
@@ -94,6 +96,7 @@ func TestTick_StickerPicturesOverTheSizeLimitAreSkipped(t *testing.T) {
 }
 
 func TestCopySticker_LeavesNoHalfWrittenCopyBehind(t *testing.T) {
+	t.Parallel()
 	data, client := t.TempDir(), t.TempDir()
 	dir := filepath.Join(client, "LarkShell", "sdk_storage", "u1", "resources", "stickers")
 	pic := clientSticker(t, dir, "v3_a.png")
@@ -107,6 +110,7 @@ func TestCopySticker_LeavesNoHalfWrittenCopyBehind(t *testing.T) {
 }
 
 func TestCopySticker_KeepsThePictureItAlreadyHas(t *testing.T) {
+	t.Parallel()
 	data, client := t.TempDir(), t.TempDir()
 	dir := filepath.Join(client, "LarkShell", "sdk_storage", "u1", "resources", "stickers")
 	clientSticker(t, dir, "v3_a.png")
@@ -125,6 +129,7 @@ func TestCopySticker_KeepsThePictureItAlreadyHas(t *testing.T) {
 }
 
 func TestFindSticker_AnswersNothingForAKeyTheClientNeverDrew(t *testing.T) {
+	t.Parallel()
 	src, size := findSticker(t.TempDir(), "v3_a")
 	require.Empty(t, src)
 	require.Zero(t, size)

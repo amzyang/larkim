@@ -12,6 +12,7 @@ import (
 )
 
 func TestTick_RebuildsSilenceWhenTheRulesChange(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	now := clk.t
@@ -41,6 +42,7 @@ func TestTick_RebuildsSilenceWhenTheRulesChange(t *testing.T) {
 }
 
 func TestTick_LeavesSilenceAloneWhenTheRulesHold(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	s.Store.SetSilence(store.SilenceRules{{Sender: "cli_c"}})
@@ -81,6 +83,7 @@ func (r *settleRecorder) Clear(_ context.Context, chat store.ChatUnread) error {
 }
 
 func TestTick_SettlesSilencedUnreadOnTheServer(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	s.Store.SetSilence(store.SilenceRules{{Sender: "cli_c"}})
@@ -122,6 +125,7 @@ func TestTick_SettlesSilencedUnreadOnTheServer(t *testing.T) {
 }
 
 func TestTick_KeepsAQueuedChatWhenTheSettleFails(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	s.Store.SetSilence(store.SilenceRules{{Sender: "cli_c"}})
@@ -143,6 +147,7 @@ func TestTick_KeepsAQueuedChatWhenTheSettleFails(t *testing.T) {
 }
 
 func TestTick_SkipsTheSilenceSettleWhenNoLever(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	s.Store.SetSilence(store.SilenceRules{{Sender: "cli_c"}})
@@ -163,6 +168,7 @@ func TestTick_SkipsTheSilenceSettleWhenNoLever(t *testing.T) {
 }
 
 func TestTick_StopsSettlingWhenTheLeverIsTakenAwayMidRun(t *testing.T) {
+	t.Parallel()
 	// silence_sync turned off under a running sweep: the queue goes back to
 	// only filling, without the loop being restarted.
 	s, f, clk := newSyncer(t)

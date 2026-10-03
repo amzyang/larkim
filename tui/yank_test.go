@@ -48,6 +48,7 @@ func clipboard(t *testing.T, cmd tea.Cmd) string {
 }
 
 func TestOnYankKey_CopiesOneStoredFieldPerKey(t *testing.T) {
+	t.Parallel()
 	base := yankMsgs(sized(120, 36))
 	base.focus = paneMessages
 
@@ -61,6 +62,7 @@ func TestOnYankKey_CopiesOneStoredFieldPerKey(t *testing.T) {
 }
 
 func TestOnYankKey_RawJSONIsIndentedButUnchanged(t *testing.T) {
+	t.Parallel()
 	m := yankMsgs(sized(120, 36))
 	m.focus = paneMessages
 
@@ -76,6 +78,7 @@ func TestOnYankKey_RawJSONIsIndentedButUnchanged(t *testing.T) {
 }
 
 func TestOnNormalKey_UnboundSecondKeyCancelsTheYPrefix(t *testing.T) {
+	t.Parallel()
 	m := yankMsgs(sized(120, 36))
 	m.focus, m.msgIdx = paneMessages, 1
 
@@ -92,6 +95,7 @@ func TestOnNormalKey_UnboundSecondKeyCancelsTheYPrefix(t *testing.T) {
 }
 
 func TestOnVisualKey_TheYPrefixEatsTheExtendKey(t *testing.T) {
+	t.Parallel()
 	m := yankMsgs(sized(120, 36))
 	m.focus, m.msgIdx = paneMessages, 0
 	mm, _ := m.onNormalKey("v")
@@ -106,6 +110,7 @@ func TestOnVisualKey_TheYPrefixEatsTheExtendKey(t *testing.T) {
 }
 
 func TestOnVisualKey_YFamilyCopiesTheWholeRangeAndLeaves(t *testing.T) {
+	t.Parallel()
 	base := yankMsgs(sized(120, 36))
 	base.focus, base.msgIdx = paneMessages, 0
 	mm, _ := base.onNormalKey("v")
@@ -148,6 +153,7 @@ func TestOnVisualKey_YFamilyCopiesTheWholeRangeAndLeaves(t *testing.T) {
 }
 
 func TestYank_SystemMessageBodyCarriesNoSender(t *testing.T) {
+	t.Parallel()
 	text, _ := yank(yankContent, []yankSource{
 		{content: "韩立 invited 柳依依 to the group.", rendered: true},
 		{content: "收到", rendered: true, sender: "周舟"},
@@ -156,6 +162,7 @@ func TestYank_SystemMessageBodyCarriesNoSender(t *testing.T) {
 }
 
 func TestYank_SearchHitsCopyButAnAgentContextStillNeedsTheChat(t *testing.T) {
+	t.Parallel()
 	m := yankMsgs(sized(120, 36))
 	m.focus, m.searching = paneMessages, true
 	m.searchHits = messageHits(store.Message{MessageID: "om_hit", ChatID: "oc_9", SenderName: "王五",
@@ -179,6 +186,7 @@ func TestYank_SearchHitsCopyButAnAgentContextStillNeedsTheChat(t *testing.T) {
 }
 
 func TestYank_ChatsPaneCopiesTheChatUnderTheCursor(t *testing.T) {
+	t.Parallel()
 	m := sized(120, 36)
 	m.focus, m.chatIdx = paneChats, rowOf(0)
 	m.chats = slices.Clone(m.chats)
@@ -198,6 +206,7 @@ func TestYank_ChatsPaneCopiesTheChatUnderTheCursor(t *testing.T) {
 }
 
 func TestYankContent_DegradesWithTheMessage(t *testing.T) {
+	t.Parallel()
 	base := yankMsgs(sized(120, 36))
 	base.focus = paneMessages
 
@@ -238,6 +247,7 @@ func TestYankContent_DegradesWithTheMessage(t *testing.T) {
 }
 
 func TestOnYankKey_RefusesWhereThereIsNoObjectUnderTheCursor(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name  string
 		model func() Model
@@ -258,6 +268,7 @@ func TestOnYankKey_RefusesWhereThereIsNoObjectUnderTheCursor(t *testing.T) {
 }
 
 func TestRenderRaw_AMalformedPayloadDoesNotTakeTheArrayDown(t *testing.T) {
+	t.Parallel()
 	text, notice := renderRaw([]yankSource{{raw: `{"a":1}`}, {raw: "not json"}})
 	require.Contains(t, text, `"a": 1`)
 	require.Contains(t, text, "not json", "one payload the API sent badly must not cost the others")
@@ -268,6 +279,7 @@ func TestRenderRaw_AMalformedPayloadDoesNotTakeTheArrayDown(t *testing.T) {
 }
 
 func TestYankContent_CopiesACardAsTheDocumentItIs(t *testing.T) {
+	t.Parallel()
 	card := weeklyCard
 	card.Content = "<card title=\"旧渲染\">\n待认领账号：13 个\n</card>"
 	text, notice := yank(yankContent, []yankSource{messageYank(card)})

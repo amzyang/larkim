@@ -10,6 +10,7 @@ import (
 )
 
 func TestEmojiInfo_DropsAPieceThatRepeatsTheName(t *testing.T) {
+	t.Parallel()
 	// Feishu's lettering emoji spell their own name, and the term a query
 	// landed on may spell it again; the row already draws it once.
 	ok := emoji.Emoji{Key: "OK", EN: "OK"}
@@ -20,6 +21,7 @@ func TestEmojiInfo_DropsAPieceThatRepeatsTheName(t *testing.T) {
 }
 
 func TestEmojiInfo_KeepsWhatSaysSomethingTheNameDoesNot(t *testing.T) {
+	t.Parallel()
 	up := emoji.Emoji{Key: "THUMBSUP", EN: "赞"}
 	require.Equal(t, "THUMBSUP", ansi.Strip(strings.Join(emojiInfo(emoji.Hit{Emoji: up}), "\n")))
 	require.Equal(t, "THUMBSUP\ndianzan", ansi.Strip(strings.Join(emojiInfo(emoji.Hit{Emoji: up, Term: "dianzan", Positions: []int{0}}), "\n")),
@@ -29,6 +31,7 @@ func TestEmojiInfo_KeepsWhatSaysSomethingTheNameDoesNot(t *testing.T) {
 }
 
 func TestEmojiInfo_LeavesTheCharacterToTheIconColumn(t *testing.T) {
+	t.Parallel()
 	up := emoji.Emoji{Key: "THUMBSUP", Glyph: "👍", EN: "赞"}
 	require.Equal(t, "THUMBSUP", ansi.Strip(strings.Join(emojiInfo(emoji.Hit{Emoji: up, Term: "👍", Positions: []int{0}}), "\n")),
 		"a query that landed on the character repeats what the icon column already draws")

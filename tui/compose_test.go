@@ -18,6 +18,7 @@ import (
 )
 
 func TestClassify_PlainChatStaysText(t *testing.T) {
+	t.Parallel()
 	for _, draft := range []string{
 		"",
 		"好的",
@@ -38,6 +39,7 @@ func TestClassify_PlainChatStaysText(t *testing.T) {
 }
 
 func TestClassify_MarkdownBecomesPost(t *testing.T) {
+	t.Parallel()
 	for _, draft := range []string{
 		"## 发布说明",
 		"# 标题\n正文",
@@ -57,16 +59,19 @@ func TestClassify_MarkdownBecomesPost(t *testing.T) {
 }
 
 func TestClassify_TableNeedsItsSeparatorRow(t *testing.T) {
+	t.Parallel()
 	require.Equal(t, kindText, classify("| a | b |\n| c | d |"))
 	require.Equal(t, kindPost, classify("| a | b |\n|---|---|\n| c | d |"))
 }
 
 func TestClassify_FencedContentIsNotRescanned(t *testing.T) {
+	t.Parallel()
 	// The fence answers first, so the markers inside it never decide anything.
 	require.Equal(t, kindPost, classify("```\n- not a list\n```"))
 }
 
 func TestClassify_LoneImageRefIsAnImageMessage(t *testing.T) {
+	t.Parallel()
 	require.Equal(t, kindImage, classify("![截图](~/Desktop/shot.png)"))
 	require.Equal(t, kindImage, classify("  ![](img_v3_shot)  "))
 	// Anything beside the image makes it a rich-text message instead.
@@ -75,6 +80,7 @@ func TestClassify_LoneImageRefIsAnImageMessage(t *testing.T) {
 }
 
 func TestPlanDraft_PicksTheBodyTheTypeNeeds(t *testing.T) {
+	t.Parallel()
 	f := draftFiles{}
 	p, err := f.planDraft("  好的  ")
 	require.NoError(t, err)
@@ -90,6 +96,7 @@ func TestPlanDraft_PicksTheBodyTheTypeNeeds(t *testing.T) {
 }
 
 func TestSubmit_MarkdownDraftSendsAPost(t *testing.T) {
+	t.Parallel()
 	m, f := newOutboxModel(t)
 	m.input.SetValue("## 发布说明\n\n- 修复了 A")
 
@@ -107,6 +114,7 @@ func TestSubmit_MarkdownDraftSendsAPost(t *testing.T) {
 }
 
 func TestSubmit_PlainDraftStillSendsText(t *testing.T) {
+	t.Parallel()
 	m, f := newOutboxModel(t)
 	m.input.SetValue("好的")
 
@@ -121,6 +129,7 @@ func TestSubmit_PlainDraftStillSendsText(t *testing.T) {
 }
 
 func TestReply_CarriesTheDraftsType(t *testing.T) {
+	t.Parallel()
 	m, f := newOutboxModel(t)
 	f.AddMessage(larkcli.RawMessage{MessageID: "om_elsewhere", ChatID: "oc_1", MsgType: "text"})
 	m.setQuote(&store.Message{MessageID: "om_elsewhere", ChatID: "oc_1"}, false)
@@ -135,6 +144,7 @@ func TestReply_CarriesTheDraftsType(t *testing.T) {
 }
 
 func TestRenderInput_BadgeNamesTheResolvedType(t *testing.T) {
+	t.Parallel()
 	m, _ := newOutboxModel(t)
 	for draft, want := range map[string]string{
 		"好的":                  "text",
@@ -156,6 +166,7 @@ func TestRenderInput_BadgeNamesTheResolvedType(t *testing.T) {
 }
 
 func TestComposerHeight_StandsStillWhateverModeTheReaderIsIn(t *testing.T) {
+	t.Parallel()
 	m, _ := newOutboxModel(t)
 	require.Equal(t, restingComposer, m.composerHeight(), "the badge row is claimed in every mode")
 
@@ -171,6 +182,7 @@ func TestComposerHeight_StandsStillWhateverModeTheReaderIsIn(t *testing.T) {
 }
 
 func TestRenderBadge_NamesTheKeyThatFitsTheMode(t *testing.T) {
+	t.Parallel()
 	m, _ := newOutboxModel(t)
 	out := ansi.Strip(m.renderBadge(m.width - 2))
 	require.Contains(t, out, "write", "outside insert mode the row says how to get in")
@@ -183,6 +195,7 @@ func TestRenderBadge_NamesTheKeyThatFitsTheMode(t *testing.T) {
 }
 
 func TestHelp_DocumentsTheComposerTypes(t *testing.T) {
+	t.Parallel()
 	require.True(t, helpHas("markdown sends as a post"))
 	require.True(t, helpHas("![](path) sends an image"))
 	require.True(t, helpHas("the badge under the draft names the type"))
@@ -222,6 +235,7 @@ func (f fakeInfo) IsDir() bool        { return f.dir }
 func (f fakeInfo) Sys() any           { return nil }
 
 func TestResolveDraft_ExpandsTildeAndRelativePaths(t *testing.T) {
+	t.Parallel()
 	cwd, err := os.Getwd()
 	require.NoError(t, err)
 	f := fakeFiles(map[string]int64{
@@ -242,12 +256,14 @@ func TestResolveDraft_ExpandsTildeAndRelativePaths(t *testing.T) {
 }
 
 func TestResolveDraft_MissingFileIsAUserError(t *testing.T) {
+	t.Parallel()
 	f := fakeFiles(nil)
 	_, err := f.planDraft("![x](~/nope.png)")
 	require.ErrorContains(t, err, "no such file: ~/nope.png")
 }
 
 func TestResolveDraft_RefusesAnOversizeImage(t *testing.T) {
+	t.Parallel()
 	f := fakeFiles(map[string]int64{"/Users/linlan/big.png": 14 << 20})
 	_, err := f.planDraft("![x](~/big.png)")
 	require.ErrorIs(t, err, errOverLimit)
@@ -255,6 +271,7 @@ func TestResolveDraft_RefusesAnOversizeImage(t *testing.T) {
 }
 
 func TestResolveDraft_RefusesADirectoryAndAnotherPersonsHome(t *testing.T) {
+	t.Parallel()
 	f := draftFiles{Home: "/Users/linlan", Stat: func(string) (os.FileInfo, error) {
 		return fakeInfo{name: "Desktop", dir: true}, nil
 	}}
@@ -266,6 +283,7 @@ func TestResolveDraft_RefusesADirectoryAndAnotherPersonsHome(t *testing.T) {
 }
 
 func TestResolveDraft_PassesAnImageKeyThrough(t *testing.T) {
+	t.Parallel()
 	f := fakeFiles(nil)
 	p, err := f.planDraft("![截图](img_v3_shot)")
 	require.NoError(t, err)
@@ -280,6 +298,7 @@ func TestResolveDraft_PassesAnImageKeyThrough(t *testing.T) {
 // sync.ExtractResources reads back, or the picture is never registered and
 // the message list never draws it.
 func TestResolveDraft_PostImageWithSpacesInItsPathCarriesABareKey(t *testing.T) {
+	t.Parallel()
 	path := "/Users/linlan/Screenshot 2026-09-25 at 08.25.13.png"
 	f := fakeFiles(map[string]int64{path: 2048})
 
@@ -293,6 +312,7 @@ func TestResolveDraft_PostImageWithSpacesInItsPathCarriesABareKey(t *testing.T) 
 }
 
 func TestResolveDraft_PostKeepsTheDraftAroundItsImages(t *testing.T) {
+	t.Parallel()
 	f := fakeFiles(map[string]int64{"/Users/linlan/shot.png": 2048})
 	p, err := f.planDraft("## 周报\n\n![截图](~/shot.png)\n\n见图")
 	require.NoError(t, err)
@@ -303,6 +323,7 @@ func TestResolveDraft_PostKeepsTheDraftAroundItsImages(t *testing.T) {
 }
 
 func TestSubmit_ImageDraftUploadsThenSends(t *testing.T) {
+	t.Parallel()
 	m, f := newOutboxModel(t)
 	m.files = fakeFiles(map[string]int64{"/Users/linlan/Desktop/shot.png": 2048})
 	m.input.SetValue("![截图](~/Desktop/shot.png)")
@@ -321,6 +342,7 @@ func TestSubmit_ImageDraftUploadsThenSends(t *testing.T) {
 }
 
 func TestSubmit_TheStoredRowDrawsThePictureThatWasSent(t *testing.T) {
+	t.Parallel()
 	m, _ := newOutboxModel(t)
 	dir := t.TempDir()
 	m.deps.Syncer.Opt().DataDir = dir
@@ -348,6 +370,7 @@ func TestSubmit_TheStoredRowDrawsThePictureThatWasSent(t *testing.T) {
 }
 
 func TestSubmit_MarkdownWithLocalImageUploadsAndRewrites(t *testing.T) {
+	t.Parallel()
 	m, f := newOutboxModel(t)
 	m.files = fakeFiles(map[string]int64{"/Users/linlan/shot.png": 2048})
 	m.input.SetValue("## 周报\n\n![截图](~/shot.png)")
@@ -361,6 +384,7 @@ func TestSubmit_MarkdownWithLocalImageUploadsAndRewrites(t *testing.T) {
 }
 
 func TestSubmit_TypoedPathKeepsTheDraft(t *testing.T) {
+	t.Parallel()
 	m, f := newOutboxModel(t)
 	m.files = fakeFiles(nil)
 	m.input.SetValue("![x](~/nope.png)")
@@ -377,6 +401,7 @@ func TestSubmit_TypoedPathKeepsTheDraft(t *testing.T) {
 }
 
 func TestApplyOutbox_PendingImageCarriesItsLocalFile(t *testing.T) {
+	t.Parallel()
 	m, _ := newOutboxModel(t)
 	m.files = fakeFiles(map[string]int64{"/Users/linlan/shot.png": 2048})
 	m.input.SetValue("![截图](~/shot.png)")
@@ -396,6 +421,7 @@ func TestApplyOutbox_PendingImageCarriesItsLocalFile(t *testing.T) {
 }
 
 func TestRetry_DoesNotUploadTwice(t *testing.T) {
+	t.Parallel()
 	m, f := newOutboxModel(t)
 	m.files = fakeFiles(map[string]int64{"/Users/linlan/shot.png": 2048})
 	m.input.SetValue("![截图](~/shot.png)")
@@ -423,6 +449,7 @@ func TestRetry_DoesNotUploadTwice(t *testing.T) {
 }
 
 func TestRenderBadge_NamesTheFileAndTheError(t *testing.T) {
+	t.Parallel()
 	m, _ := newOutboxModel(t)
 	mm, _ := m.startInsert(nil, false)
 	m = mm.(Model)
@@ -442,6 +469,7 @@ func TestRenderBadge_NamesTheFileAndTheError(t *testing.T) {
 }
 
 func TestBodyRows_HeadingsDropTheirHashes(t *testing.T) {
+	t.Parallel()
 	m, _ := newOutboxModel(t)
 	mm, _ := m.startInsert(nil, false)
 	m = mm.(Model)
@@ -477,6 +505,7 @@ func (u *uploadSpy) UploadImage(ctx context.Context, path string) (string, error
 }
 
 func TestResolveDraft_AcceptsARemoteImage(t *testing.T) {
+	t.Parallel()
 	f := fakeFiles(nil) // no file on disk, and none is wanted
 	p, err := f.planDraft("![图](https://example.com/a.png)")
 	require.NoError(t, err, "a URL is not a missing file")
@@ -487,12 +516,14 @@ func TestResolveDraft_AcceptsARemoteImage(t *testing.T) {
 }
 
 func TestResolveDraft_StillRefusesAMissingLocalFile(t *testing.T) {
+	t.Parallel()
 	f := fakeFiles(nil)
 	_, err := f.planDraft("![x](~/nope.png)")
 	require.ErrorContains(t, err, "no such file", "only http(s) is exempt from the stat")
 }
 
 func TestSubmit_RemoteImageIsFetchedThenUploaded(t *testing.T) {
+	t.Parallel()
 	m, fake := newOutboxModel(t)
 	spy := &uploadSpy{Fake: fake}
 	m.deps.Client = spy
@@ -517,6 +548,7 @@ func TestSubmit_RemoteImageIsFetchedThenUploaded(t *testing.T) {
 }
 
 func TestSubmit_RemoteImageFailureKeepsTheBubbleRetryable(t *testing.T) {
+	t.Parallel()
 	m, fake := newOutboxModel(t)
 	m.files = fakeFiles(nil)
 	m.deps.Fetch = func(context.Context, string) ([]byte, string, error) {
@@ -536,6 +568,7 @@ func TestSubmit_RemoteImageFailureKeepsTheBubbleRetryable(t *testing.T) {
 }
 
 func TestSubmit_RemoteImageAtTheFetchCeilingIsRefused(t *testing.T) {
+	t.Parallel()
 	m, fake := newOutboxModel(t)
 	m.files = fakeFiles(nil)
 	m.deps.Fetch = func(context.Context, string) ([]byte, string, error) {
@@ -554,6 +587,7 @@ func TestSubmit_RemoteImageAtTheFetchCeilingIsRefused(t *testing.T) {
 }
 
 func TestSubmit_RemoteImageRefusesAnEmptyBody(t *testing.T) {
+	t.Parallel()
 	m, fake := newOutboxModel(t)
 	m.files = fakeFiles(nil)
 	m.deps.Fetch = func(context.Context, string) ([]byte, string, error) { return nil, "image/png", nil }
@@ -566,6 +600,7 @@ func TestSubmit_RemoteImageRefusesAnEmptyBody(t *testing.T) {
 }
 
 func TestRenderBadge_NamesARemoteImage(t *testing.T) {
+	t.Parallel()
 	m, _ := newOutboxModel(t)
 	mm, _ := m.startInsert(nil, false)
 	m = mm.(Model)
@@ -582,6 +617,7 @@ func TestRenderBadge_NamesARemoteImage(t *testing.T) {
 // still leave the badge on the composer's last row: the band is drawn above
 // the badge, so rows it claims without filling pad the box underneath.
 func TestComposerRows_ShortPreviewLeavesNoRowUnderBadge(t *testing.T) {
+	t.Parallel()
 	m := sized(120, 40)
 	m.mode, m.previewOpen = modeInsert, true
 	m.input.SetValue("- abc\n- def")
@@ -598,6 +634,7 @@ func TestComposerRows_ShortPreviewLeavesNoRowUnderBadge(t *testing.T) {
 }
 
 func TestResolveDraft_LeavesAnImageReferenceInsideAFenceAlone(t *testing.T) {
+	t.Parallel()
 	// Pasting a snippet that shows the markdown for an image must not send
 	// the composer looking for that file: the draft is about the syntax.
 	f := fakeFiles(nil)
@@ -611,6 +648,7 @@ func TestResolveDraft_LeavesAnImageReferenceInsideAFenceAlone(t *testing.T) {
 }
 
 func TestResolveDraft_LeavesAnImageReferenceInACodeSpanAlone(t *testing.T) {
+	t.Parallel()
 	f := fakeFiles(nil)
 	p, err := f.planDraft("用 `![x](./shot.png)` 插图，比如\n\n- 一行")
 	require.NoError(t, err)

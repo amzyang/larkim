@@ -18,6 +18,7 @@ import (
 // message a reply answers is older than the page it arrives on, so it has to
 // be fetched by id, together with its sender's account suffix.
 func TestLoadMeta_LoadsTheQuotedParents(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 	st, err := storetest.Open(t, filepath.Join(t.TempDir(), "t.db"))
 	require.NoError(t, err)
@@ -48,6 +49,7 @@ func TestLoadMeta_LoadsTheQuotedParents(t *testing.T) {
 }
 
 func TestRenderRows_QuoteReadsRecalledAndUnrenderedParents(t *testing.T) {
+	t.Parallel()
 	gone := store.Message{MessageID: "om_gone", SenderName: "孙琪", Content: "原文", Deleted: true, RenderedAt: 1}
 	raw := store.Message{MessageID: "om_raw", SenderName: "孙琪", MsgType: "image", ContentRaw: `{"image_key":"img_1"}`}
 	msgs := []store.Message{
@@ -102,6 +104,7 @@ func pressQuote(t *testing.T, m Model) (Model, tea.Cmd) {
 }
 
 func TestRenderRows_QuoteLineCarriesAJumpZone(t *testing.T) {
+	t.Parallel()
 	parent := store.Message{MessageID: "om_root", SenderName: "李四", Content: "原文", RenderedAt: 1}
 	msgs := []store.Message{
 		{MessageID: "om_mid", SenderName: "王五", Content: "插话", CreateMs: msgAt(23, 9, 1), RenderedAt: 1},
@@ -127,6 +130,7 @@ func TestRenderRows_QuoteLineCarriesAJumpZone(t *testing.T) {
 }
 
 func TestOnClick_QuoteLineJumpsToTheMessageItNames(t *testing.T) {
+	t.Parallel()
 	m := quoteModel(t)
 	m, cmd := pressQuote(t, m)
 	require.Nil(t, cmd, "a message already on the page needs no page")
@@ -135,6 +139,7 @@ func TestOnClick_QuoteLineJumpsToTheMessageItNames(t *testing.T) {
 }
 
 func TestJumpToQuoted_FromTheThreadLandsInTheChatPane(t *testing.T) {
+	t.Parallel()
 	m := quoteModel(t)
 	// A thread reply can answer something said in the chat itself, which the
 	// thread pane does not list.
@@ -151,6 +156,7 @@ func TestJumpToQuoted_FromTheThreadLandsInTheChatPane(t *testing.T) {
 }
 
 func TestJumpToQuoted_ParentOffThePageReopensTheChatAtIt(t *testing.T) {
+	t.Parallel()
 	m := quoteModel(t)
 	parent := store.Message{MessageID: "om_old", ChatID: "oc_a", SenderName: "李四", Content: "很早以前", CreateMs: msgAt(21, 9, 0), RenderedAt: 1}
 	m.meta.parents["om_old"] = parent
@@ -164,6 +170,7 @@ func TestJumpToQuoted_ParentOffThePageReopensTheChatAtIt(t *testing.T) {
 }
 
 func TestJumpToQuoted_UnsyncedParentIsPulledThenOpened(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 	st, err := storetest.Open(t, filepath.Join(t.TempDir(), "t.db"))
 	require.NoError(t, err)

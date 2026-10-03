@@ -37,6 +37,7 @@ func picturesOnDisk(t *testing.T, s *Syncer, sizes map[string]int64) string {
 }
 
 func TestReadImageText_ReadsEachPictureOnce(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	dir := picturesOnDisk(t, s, map[string]int64{"img_code": 100, "img_photo": 100})
@@ -61,6 +62,7 @@ func TestReadImageText_ReadsEachPictureOnce(t *testing.T) {
 }
 
 func TestReadImageText_SkipsAPictureTooLargeForTheRecognizer(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	picturesOnDisk(t, s, map[string]int64{"img_huge": larkcli.MaxOCRBytes + 1})
@@ -73,6 +75,7 @@ func TestReadImageText_SkipsAPictureTooLargeForTheRecognizer(t *testing.T) {
 }
 
 func TestReadImageText_WalksTheLadderAndSettlesAPermanentRefusal(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	picturesOnDisk(t, s, map[string]int64{"img_a": 100})
@@ -96,6 +99,7 @@ func TestReadImageText_WalksTheLadderAndSettlesAPermanentRefusal(t *testing.T) {
 }
 
 func TestReadImageText_APermanentRefusalSettlesOnTheFirstAttempt(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	picturesOnDisk(t, s, map[string]int64{"img_a": 100})
@@ -110,6 +114,7 @@ func TestReadImageText_APermanentRefusalSettlesOnTheFirstAttempt(t *testing.T) {
 }
 
 func TestReadImageText_NothingToDoWithoutADataDir(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	picturesOnDisk(t, s, map[string]int64{"img_a": 100})
 	s.Opt().DataDir = ""
@@ -121,6 +126,7 @@ func TestReadImageText_NothingToDoWithoutADataDir(t *testing.T) {
 }
 
 func TestTick_ReadsTheWritingInPicturesItDownloaded(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	dir := t.TempDir()

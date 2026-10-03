@@ -26,23 +26,27 @@ func newChatPollModel(t *testing.T) Model {
 }
 
 func TestClaimChatPoll_NamesTheOpenChat(t *testing.T) {
+	t.Parallel()
 	m := newChatPollModel(t)
 	require.Equal(t, "oc_open", m.claimChatPoll(time.Unix(1000, 0)))
 }
 
 func TestClaimChatPoll_RefusesWhileTheTerminalIsBlurred(t *testing.T) {
+	t.Parallel()
 	m := newChatPollModel(t)
 	m.focused = false
 	require.Empty(t, m.claimChatPoll(time.Unix(1000, 0)), "nobody is reading it")
 }
 
 func TestClaimChatPoll_RefusesWhileACallIsOut(t *testing.T) {
+	t.Parallel()
 	m := newChatPollModel(t)
 	m.chatPollInFlight = true
 	require.Empty(t, m.claimChatPoll(time.Unix(1000, 0)), "a slow call costs a beat, not a queue")
 }
 
 func TestNotePollResult_StandsDownWhenTheGatewayRefuses(t *testing.T) {
+	t.Parallel()
 	m := newChatPollModel(t)
 	now := time.Unix(1000, 0)
 	m.chatPollInFlight = true
@@ -55,6 +59,7 @@ func TestNotePollResult_StandsDownWhenTheGatewayRefuses(t *testing.T) {
 }
 
 func TestNotePollResult_AnOrdinaryFailureOnlyFreesTheNextBeat(t *testing.T) {
+	t.Parallel()
 	m := newChatPollModel(t)
 	now := time.Unix(1000, 0)
 	m.chatPollInFlight = true
@@ -64,6 +69,7 @@ func TestNotePollResult_AnOrdinaryFailureOnlyFreesTheNextBeat(t *testing.T) {
 }
 
 func TestChatPollDue_ReArmsEvenWhenItPollsNothing(t *testing.T) {
+	t.Parallel()
 	m := newChatPollModel(t)
 	m.focused = false // nothing to poll this beat
 
@@ -74,6 +80,7 @@ func TestChatPollDue_ReArmsEvenWhenItPollsNothing(t *testing.T) {
 }
 
 func TestFocus_TellsDiscoveryWhetherSomebodyIsLooking(t *testing.T) {
+	t.Parallel()
 	m := newChatPollModel(t)
 	s := m.deps.Syncer
 
@@ -84,6 +91,7 @@ func TestFocus_TellsDiscoveryWhetherSomebodyIsLooking(t *testing.T) {
 }
 
 func TestFocusMsg_PollsAtOnceRatherThanWaitingOutABeat(t *testing.T) {
+	t.Parallel()
 	m := newChatPollModel(t)
 	m.focused = false
 

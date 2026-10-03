@@ -17,6 +17,7 @@ func postOf(content string, st msgStyle) []msgRow {
 }
 
 func TestBodyRows_ALinkOpensWhereItsLabelIsDrawn(t *testing.T) {
+	t.Parallel()
 	rows := postOf("看这里 [了解详情](https://example.com/x) 谢谢", baseStyle())
 	zones := rowZones(rows)
 	require.Len(t, zones, 1)
@@ -31,6 +32,7 @@ func TestBodyRows_ALinkOpensWhereItsLabelIsDrawn(t *testing.T) {
 }
 
 func TestBodyRows_EveryLinkOnALineIsItsOwnTarget(t *testing.T) {
+	t.Parallel()
 	rows := postOf("[甲](https://example.com/a) 和 [乙](https://example.com/b)", baseStyle())
 	zones := rowZones(rows)
 	require.Len(t, zones, 2)
@@ -40,6 +42,7 @@ func TestBodyRows_EveryLinkOnALineIsItsOwnTarget(t *testing.T) {
 }
 
 func TestBodyRows_ALinkWrappedAcrossRowsOpensFromEitherHalf(t *testing.T) {
+	t.Parallel()
 	st := baseStyle()
 	st.width = 28
 	label := strings.Repeat("very long label ", 4)
@@ -54,6 +57,7 @@ func TestBodyRows_ALinkWrappedAcrossRowsOpensFromEitherHalf(t *testing.T) {
 }
 
 func TestBodyRows_ALinkInAListSitsUnderTheMarker(t *testing.T) {
+	t.Parallel()
 	rows := postOf("- [报表](https://example.com/r)", baseStyle())
 	row, ok := zoneRow(rows)
 	require.True(t, ok, "a link inside a list item is still a target")
@@ -65,6 +69,7 @@ func TestBodyRows_ALinkInAListSitsUnderTheMarker(t *testing.T) {
 }
 
 func TestBodyRows_AnEmojiPictureAndALinkShareALine(t *testing.T) {
+	t.Parallel()
 	rows := postOf(":DONE: [了解](https://example.com/x)", drawingStyle(t))
 	require.Equal(t, 1, picsIn(rows), "the emoji is still drawn as a picture")
 	zones := rowZones(rows)
@@ -74,12 +79,14 @@ func TestBodyRows_AnEmojiPictureAndALinkShareALine(t *testing.T) {
 }
 
 func TestBodyRows_AnEmptyTargetIsNoLink(t *testing.T) {
+	t.Parallel()
 	rows := postOf("[了解]() 谢谢", baseStyle())
 	require.Empty(t, rowZones(rows), "a link with nowhere to go is only a label")
 	require.Contains(t, rowText(rows), "了解")
 }
 
 func TestBodyRows_AWrittenOutURLIsATargetToo(t *testing.T) {
+	t.Parallel()
 	rows := bodyOf("看这个 https://example.com/x 谢谢", baseStyle())
 	zones := rowZones(rows)
 	require.Len(t, zones, 1, "the client makes a written-out URL pressable, so larkim finds it too")
@@ -87,6 +94,7 @@ func TestBodyRows_AWrittenOutURLIsATargetToo(t *testing.T) {
 }
 
 func TestBodyRows_ASentenceMarkAfterAURLIsNotPartOfIt(t *testing.T) {
+	t.Parallel()
 	for _, body := range []string{"见 https://example.com/x。", "见 https://example.com/x.", "见 (https://example.com/x)"} {
 		zones := rowZones(bodyOf(body, baseStyle()))
 		require.Len(t, zones, 1, body)
@@ -95,6 +103,7 @@ func TestBodyRows_ASentenceMarkAfterAURLIsNotPartOfIt(t *testing.T) {
 }
 
 func TestBodyRows_ChineseAfterAURLIsNotPartOfIt(t *testing.T) {
+	t.Parallel()
 	// An address is ASCII. Chinese running straight on after one — the bracket
 	// somebody put it in, or the words they wrote next — is the sentence, and
 	// swallowing it leaves a target that opens nothing.
@@ -111,6 +120,7 @@ func TestBodyRows_ChineseAfterAURLIsNotPartOfIt(t *testing.T) {
 }
 
 func TestBodyRows_ASpelledLinkDoesNotAlsoOpenItsTarget(t *testing.T) {
+	t.Parallel()
 	rows := postOf("[了解](https://example.com/x)", baseStyle())
 	zones := rowZones(rows)
 	require.Len(t, zones, 1, "the label and the URL behind it are one target, not two")
@@ -149,6 +159,7 @@ func docStyle(docs map[string]store.DocLabel) msgStyle {
 }
 
 func TestBodyRows_AFeishuDocumentIsDrawnAsTheDocument(t *testing.T) {
+	t.Parallel()
 	st := docStyle(map[string]store.DocLabel{"docx/AbC123": {Title: "季度排期", Type: "docx"}})
 	url := "https://example.feishu.cn/docx/AbC123?from=from_copylink#doxcnBlock"
 	rows := bodyOf("排期 "+url+" 见此", st)
@@ -165,12 +176,14 @@ func TestBodyRows_AFeishuDocumentIsDrawnAsTheDocument(t *testing.T) {
 }
 
 func TestDocGlyph_EveryFamilyStartsItsTitleInTheSameColumn(t *testing.T) {
+	t.Parallel()
 	for _, docType := range []string{"docx", "doc", "sheet", "bitable", "mindnote", "slides", "folder", "file", "wiki", "baseform", "minutes"} {
 		require.Equal(t, 2, ansi.StringWidth(docGlyph(docType)), docType)
 	}
 }
 
 func TestBodyRows_ADocumentOutOfReachKeepsItsAddress(t *testing.T) {
+	t.Parallel()
 	st := docStyle(map[string]store.DocLabel{"docx/Nope456": {Type: "docx", Denied: true}})
 	url := "https://example.feishu.cn/docx/Nope456"
 	rows := bodyOf(url, st)
@@ -184,6 +197,7 @@ func TestBodyRows_ADocumentOutOfReachKeepsItsAddress(t *testing.T) {
 }
 
 func TestBodyRows_AnUnreadDocumentIsLeftAsItsAddress(t *testing.T) {
+	t.Parallel()
 	url := "https://example.feishu.cn/docx/AbC123"
 	rows := bodyOf(url, docStyle(nil))
 
@@ -194,6 +208,7 @@ func TestBodyRows_AnUnreadDocumentIsLeftAsItsAddress(t *testing.T) {
 }
 
 func TestBodyRows_ADocumentTitleWrappedAcrossRowsOpensFromEitherHalf(t *testing.T) {
+	t.Parallel()
 	st := docStyle(map[string]store.DocLabel{
 		"docx/AbC123": {Title: "第三季度招生转化链路复盘与下季度排期安排", Type: "docx"}})
 	st.width = 28
@@ -208,6 +223,7 @@ func TestBodyRows_ADocumentTitleWrappedAcrossRowsOpensFromEitherHalf(t *testing.
 }
 
 func TestBodyRows_AFormAndAMinuteAreDrawnLikeAnyOtherResource(t *testing.T) {
+	t.Parallel()
 	st := docStyle(map[string]store.DocLabel{
 		"baseform/shrcnAbC123": {Title: "评论收集表", Type: store.DocTypeBaseForm},
 		"minutes/obcnAbC123":   {Title: "周会妙记", Type: store.DocTypeMinutes},
@@ -225,6 +241,7 @@ func TestBodyRows_AFormAndAMinuteAreDrawnLikeAnyOtherResource(t *testing.T) {
 }
 
 func TestBodyRows_ANonDocumentFeishuLinkIsLeftAlone(t *testing.T) {
+	t.Parallel()
 	// A calendar event and a video call are not resources anything names.
 	for _, url := range []string{
 		"https://example.feishu.cn/calendar/AbC123",

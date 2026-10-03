@@ -20,6 +20,7 @@ func replying(w, h int, x store.Message, inThread bool) Model {
 }
 
 func TestRenderInput_QuotesTheMessageBeingRepliedTo(t *testing.T) {
+	t.Parallel()
 	m := replying(120, 30, store.Message{MessageID: "om_x", SenderID: "ou_her", SenderName: "林岚",
 		Content: "@Announcement hey", RenderedAt: 1}, false)
 	out := ansi.Strip(m.renderInput(sideMain))
@@ -31,6 +32,7 @@ func TestRenderInput_QuotesTheMessageBeingRepliedTo(t *testing.T) {
 }
 
 func TestRenderInput_ThreadReplyIsMarkedApart(t *testing.T) {
+	t.Parallel()
 	x := store.Message{MessageID: "om_x", SenderID: "ou_her", SenderName: "林岚", Content: "hey", RenderedAt: 1}
 	plain := ansi.Strip(replying(120, 30, x, false).renderInput(sideMain))
 	thread := ansi.Strip(replying(120, 30, x, true).renderInput(sideMain))
@@ -39,12 +41,14 @@ func TestRenderInput_ThreadReplyIsMarkedApart(t *testing.T) {
 }
 
 func TestRenderInput_NoQuoteWithoutAReplyTarget(t *testing.T) {
+	t.Parallel()
 	m := sized(120, 30)
 	require.Equal(t, restingComposer, m.composerHeight(), "the writing area and the badge row")
 	require.Equal(t, restingComposer+2, lipgloss.Height(m.renderInput(sideMain)))
 }
 
 func TestView_ReplyBarKeepsTheTerminalHeight(t *testing.T) {
+	t.Parallel()
 	m := replying(120, 30, store.Message{MessageID: "om_x", SenderName: "林岚", Content: "hey", RenderedAt: 1}, false)
 	v := m.View()
 	require.Equal(t, m.height, lipgloss.Height(v.Content))
@@ -54,6 +58,7 @@ func TestView_ReplyBarKeepsTheTerminalHeight(t *testing.T) {
 }
 
 func TestHit_ComposerGrowsWithTheReplyBar(t *testing.T) {
+	t.Parallel()
 	m := replying(120, 30, store.Message{MessageID: "om_x", SenderName: "林岚", Content: "hey", RenderedAt: 1}, false)
 	p, _ := m.hit(chatsWidth+2, m.bodyHeight()+2)
 	require.Equal(t, paneInput, p, "the quote row belongs to the composer")
@@ -62,6 +67,7 @@ func TestHit_ComposerGrowsWithTheReplyBar(t *testing.T) {
 }
 
 func TestReplyGist_NamesWhatHasNoText(t *testing.T) {
+	t.Parallel()
 	require.Equal(t, "(Recalled)", replyGist(store.Message{Deleted: true, Content: "gone", RenderedAt: 1}))
 	require.Equal(t, "hi", replyGist(store.Message{MsgType: "text", ContentRaw: `{"text":"hi"}`}), "an unrendered text still reads")
 	require.Equal(t, "[Image]", replyGist(store.Message{MsgType: "image", Content: "[Image: img_abc]", RenderedAt: 1}))
@@ -75,11 +81,13 @@ func TestReplyGist_NamesWhatHasNoText(t *testing.T) {
 }
 
 func TestReplyGist_PostKeepsThePictureItPlaced(t *testing.T) {
+	t.Parallel()
 	x := store.Message{MsgType: "post", Content: "a\n![Image](img_a)\nb\n\nd", RenderedAt: 1}
 	require.Equal(t, "a [Image] b d", replyGist(x), "the quote holds every element the post does")
 }
 
 func TestReplyGist_PostNamesItsClipAndItsFile(t *testing.T) {
+	t.Parallel()
 	clip := store.Message{MsgType: "post", Content: "看这个 [Media: file_b]", RenderedAt: 1}
 	require.Equal(t, "看这个 [Video]", replyGist(clip))
 
@@ -88,17 +96,20 @@ func TestReplyGist_PostNamesItsClipAndItsFile(t *testing.T) {
 }
 
 func TestReplyGist_SpellsTheMentionsAPostCarries(t *testing.T) {
+	t.Parallel()
 	x := store.Message{MsgType: "post", Content: `<at user_id="ou_a">张三</at> 看下`, RenderedAt: 1}
 	require.Equal(t, "@张三 看下", replyGist(x), "a quote is dim as a whole, so the tag has to read as the name")
 }
 
 func TestReplyGist_UnrenderedFileIsNamedByItsFile(t *testing.T) {
+	t.Parallel()
 	x := store.Message{MsgType: "file", ContentRaw: `{"file_key":"file_b","file_name":"report.pdf"}`}
 	require.Equal(t, "[File] report.pdf", replyGist(x),
 		"the file is in the body Feishu sent, so a forwarded child names it too")
 }
 
 func TestReplyGist_ReadsACardLarkCliNeverRendered(t *testing.T) {
+	t.Parallel()
 	pending := weeklyCard
 	pending.Content, pending.RenderedAt = "", 0
 	require.Equal(t, "设备版本周报 「兜底」", replyGist(pending),
@@ -110,6 +121,7 @@ func TestReplyGist_ReadsACardLarkCliNeverRendered(t *testing.T) {
 }
 
 func TestOnInsertKey_CtrlRDropsTheQuoteAndKeepsTheDraft(t *testing.T) {
+	t.Parallel()
 	m := replying(120, 30, store.Message{MessageID: "om_x", SenderName: "林岚", Content: "hey", RenderedAt: 1}, true)
 	m.input.SetValue("half a sentence")
 	out, _ := m.onInsertKey(tea.KeyPressMsg{Code: 'r', Mod: tea.ModCtrl})
@@ -121,6 +133,7 @@ func TestOnInsertKey_CtrlRDropsTheQuoteAndKeepsTheDraft(t *testing.T) {
 }
 
 func TestRenderMessages_MarksTheQuotedMessage(t *testing.T) {
+	t.Parallel()
 	m := sized(120, 30)
 	require.NotContains(t, ansi.Strip(m.renderMessages(m.bodyHeight())), "↩")
 	before := len(m.msgRows)
@@ -133,6 +146,7 @@ func TestRenderMessages_MarksTheQuotedMessage(t *testing.T) {
 }
 
 func TestOnInsertKey_EscLeavesTheBoxAtItsRestingHeight(t *testing.T) {
+	t.Parallel()
 	m := replying(120, 30, store.Message{MessageID: "om_x", SenderName: "林岚", Content: "hey", RenderedAt: 1}, false)
 	m.input.SetValue(strings.Repeat("一行\n", 5))
 	m.tookDraft(composerRows{})

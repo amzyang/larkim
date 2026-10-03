@@ -27,6 +27,7 @@ func replyStyle(n int) msgStyle {
 }
 
 func TestRenderRows_AnAnsweredMessageCountsItsWholeTree(t *testing.T) {
+	t.Parallel()
 	out := rowText(renderRows([]store.Message{theAnswered()}, replyStyle(5)))
 
 	require.Contains(t, out, replyGlyph+"5 replies")
@@ -34,6 +35,7 @@ func TestRenderRows_AnAnsweredMessageCountsItsWholeTree(t *testing.T) {
 }
 
 func TestRenderRows_TheReplyCountSitsUnderTheBody(t *testing.T) {
+	t.Parallel()
 	// The client puts it under the bubble. It is a footer about the message,
 	// not the head of a container standing in for hidden content.
 	lines := strings.Split(strings.TrimRight(rowText(renderRows(
@@ -44,6 +46,7 @@ func TestRenderRows_TheReplyCountSitsUnderTheBody(t *testing.T) {
 }
 
 func TestRenderRows_AReplyDrawsNoCountOfItsOwn(t *testing.T) {
+	t.Parallel()
 	// Only the message the conversation started from carries the line; the
 	// answers under it are ordinary messages of the flow.
 	reply := store.Message{MessageID: "om_2", ChatID: "oc_1", SenderName: "李四", Content: "2",
@@ -55,6 +58,7 @@ func TestRenderRows_AReplyDrawsNoCountOfItsOwn(t *testing.T) {
 }
 
 func TestRenderRows_TheReplyCountIsNotDrawnInsideItsOwnPane(t *testing.T) {
+	t.Parallel()
 	st := replyStyle(5)
 	st.inFrame = true
 
@@ -64,6 +68,7 @@ func TestRenderRows_TheReplyCountIsNotDrawnInsideItsOwnPane(t *testing.T) {
 }
 
 func TestRenderRows_AThreadRootDrawsItsThreadRatherThanItsReplies(t *testing.T) {
+	t.Parallel()
 	// A thread's replies are read in the thread's own frame, and a chat is
 	// either a topic group or it is not.
 	x := theAnswered()
@@ -79,6 +84,7 @@ func TestRenderRows_AThreadRootDrawsItsThreadRatherThanItsReplies(t *testing.T) 
 }
 
 func TestRenderRows_AReplyCountCarriesAnOpenZone(t *testing.T) {
+	t.Parallel()
 	rows := renderRows([]store.Message{theAnswered()}, replyStyle(5))
 
 	zoned := 0
@@ -115,6 +121,7 @@ func onReplies(t *testing.T) Model {
 }
 
 func TestToggleRight_OpensTheDetailsOfTheTreeUnderTheCursor(t *testing.T) {
+	t.Parallel()
 	m := onReplies(t)
 
 	got, _ := m.toggleRight()
@@ -126,6 +133,7 @@ func TestToggleRight_OpensTheDetailsOfTheTreeUnderTheCursor(t *testing.T) {
 }
 
 func TestToggleRight_OpensTheDetailsFromAReplyToo(t *testing.T) {
+	t.Parallel()
 	// The message a conversation started from is often further up than the
 	// page reaches, and the reader asking about the one in front of them
 	// means the same conversation either way.
@@ -140,6 +148,7 @@ func TestToggleRight_OpensTheDetailsFromAReplyToo(t *testing.T) {
 }
 
 func TestActivate_EnterOnAnAnsweredMessageStillAnswersIt(t *testing.T) {
+	t.Parallel()
 	// A reply lands in the flow, so Enter keeps its meaning here — unlike a
 	// thread root, which is answered inside the thread it opens.
 	m := onReplies(t)
@@ -154,6 +163,7 @@ func TestActivate_EnterOnAnAnsweredMessageStillAnswersIt(t *testing.T) {
 }
 
 func TestOnReplyLoaded_FillsTheFrameAndNamesItAfterTheRoot(t *testing.T) {
+	t.Parallel()
 	m := onReplies(t)
 	got, _ := m.toggleRight()
 	m = got.(Model)
@@ -170,6 +180,7 @@ func TestOnReplyLoaded_FillsTheFrameAndNamesItAfterTheRoot(t *testing.T) {
 }
 
 func TestOnReplyLoaded_IgnoresATreeTheColumnHasMovedOnFrom(t *testing.T) {
+	t.Parallel()
 	m := onReplies(t)
 	got, _ := m.toggleRight()
 	m = got.(Model)
@@ -180,6 +191,7 @@ func TestOnReplyLoaded_IgnoresATreeTheColumnHasMovedOnFrom(t *testing.T) {
 }
 
 func TestActivate_EnterInsideTheDetailsPaneRepliesInTheMainFlow(t *testing.T) {
+	t.Parallel()
 	// The rows there are the chat's own messages, so an answer belongs beside
 	// them; only a thread's replies go inside a thread.
 	m := onReplies(t)
@@ -197,6 +209,7 @@ func TestActivate_EnterInsideTheDetailsPaneRepliesInTheMainFlow(t *testing.T) {
 }
 
 func TestRightTitle_NamesTheDetailsPane(t *testing.T) {
+	t.Parallel()
 	m := onReplies(t)
 	got, _ := m.toggleRight()
 	m = got.(Model)
@@ -215,6 +228,7 @@ func treeOf(n int) []store.Message {
 }
 
 func TestReplyLoaded_TheMemberTheTreeWasOpenedOnIsCentred(t *testing.T) {
+	t.Parallel()
 	m := sized(140, 36)
 	m, _ = m.openRight(rightFrame{kind: rightReply, id: "om_root", sel: "om_a20"})
 
@@ -226,6 +240,7 @@ func TestReplyLoaded_TheMemberTheTreeWasOpenedOnIsCentred(t *testing.T) {
 }
 
 func TestReplyLoaded_ATreeOpenedFromItsRootLandsOnTheNewestAnswer(t *testing.T) {
+	t.Parallel()
 	m := sized(140, 36)
 	m, _ = m.openRight(rightFrame{kind: rightReply, id: "om_root"})
 	msgs := treeOf(40)

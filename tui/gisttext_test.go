@@ -7,6 +7,7 @@ import (
 )
 
 func TestGistBody_NamesEveryElementWhereItWasWritten(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct{ name, body, want string }{
 		{"a picture keeps its place among the words",
 			"a\n![Image](img_a)\nb", "a\n[Image]\nb"},
@@ -32,11 +33,13 @@ func TestGistBody_NamesEveryElementWhereItWasWritten(t *testing.T) {
 // The chat row splits the line at its mentions to colour the one that reaches
 // the reader, so the spellings it matches on have to survive this pass.
 func TestGistBody_LeavesMentionsForTheRowToColour(t *testing.T) {
+	t.Parallel()
 	require.Equal(t, `<at user_id="ou_a">张三</at> 看下`, gistBody(`<at user_id="ou_a">张三</at> 看下`))
 	require.Equal(t, "@_all 看下", gistBody("@_all 看下"))
 }
 
 func TestPlainAt_SpellsAMentionForALineWithNoStyling(t *testing.T) {
+	t.Parallel()
 	require.Equal(t, "@张三 看下", plainAt(`<at user_id="ou_a">张三</at> 看下`))
 	require.Equal(t, "@All 看下", plainAt(`<at user_id="all"></at> 看下`))
 	require.Equal(t, "@All 看下", plainAt("@_all 看下"))

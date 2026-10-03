@@ -10,6 +10,7 @@ import (
 )
 
 func TestRenderInline_KeepsLabelsAndDropsTargets(t *testing.T) {
+	t.Parallel()
 	ms := mentionsIn("", "")
 	require.Equal(t, "见 开放日详情 和 重点", ansi.Strip(renderInline("见 [开放日详情](https://example.com/x) 和 **重点**", ms)))
 	require.Equal(t, "下划线", ansi.Strip(renderInline("<u>下划线</u>", ms)))
@@ -20,6 +21,7 @@ func TestRenderInline_KeepsLabelsAndDropsTargets(t *testing.T) {
 }
 
 func TestRenderInline_StylesTheRunsAPostComesBackAs(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct{ in, want string }{
 		{"看 **粗体** 吧", "看 粗体 吧"},
 		{"看 *斜体* 吧", "看 斜体 吧"},
@@ -32,6 +34,7 @@ func TestRenderInline_StylesTheRunsAPostComesBackAs(t *testing.T) {
 }
 
 func TestRenderInline_LeavesOrdinaryProseAlone(t *testing.T) {
+	t.Parallel()
 	// A lone asterisk between spaces is arithmetic, not emphasis, and an
 	// underscore is part of an identifier.
 	for _, in := range []string{"3 * 4 * 5", "路径是 user_id_map", "评分 4*"} {
@@ -40,6 +43,7 @@ func TestRenderInline_LeavesOrdinaryProseAlone(t *testing.T) {
 }
 
 func TestRenderInline_BoldWinsOverItalic(t *testing.T) {
+	t.Parallel()
 	require.Equal(t, "粗体", ansi.Strip(renderInline("**粗体**", mentionsIn("", ""))),
 		"a doubled asterisk is bold, not an italic wrapping an asterisk")
 }
@@ -55,6 +59,7 @@ const (
 )
 
 func TestHitPositions_MarksEveryTermCaseInsensitively(t *testing.T) {
+	t.Parallel()
 	require.Equal(t, []int{0, 1, 2}, hitPositions("Feishu", []string{"fei"}))
 	require.Equal(t, []int{2, 3}, hitPositions("发布计划已定", []string{"计划"}),
 		"positions are runes, not bytes")
@@ -63,6 +68,7 @@ func TestHitPositions_MarksEveryTermCaseInsensitively(t *testing.T) {
 }
 
 func TestHitPositions_TermsThatOverlapMarkOnce(t *testing.T) {
+	t.Parallel()
 	pos := hitPositions("abcd", []string{"abc", "bcd"})
 	require.ElementsMatch(t, []int{0, 1, 2, 1, 2, 3}, pos,
 		"each term reports its own runes; markName folds the repeats into one run")
@@ -71,10 +77,12 @@ func TestHitPositions_TermsThatOverlapMarkOnce(t *testing.T) {
 }
 
 func TestHitPositions_FindsEveryOccurrence(t *testing.T) {
+	t.Parallel()
 	require.Equal(t, []int{0, 3}, hitPositions("a_ba", []string{"a"}))
 }
 
 func TestMarkName_UsesTheDottedUnderline(t *testing.T) {
+	t.Parallel()
 	out := markName("发布计划", hitPositions("发布计划", []string{"计划"}), lipgloss.NewStyle())
 	require.Contains(t, out, markColour)
 	require.Contains(t, out, dottedMark,
@@ -83,6 +91,7 @@ func TestMarkName_UsesTheDottedUnderline(t *testing.T) {
 }
 
 func TestRenderInline_NestedRunsCompose(t *testing.T) {
+	t.Parallel()
 	// A rich-text element carries every style it was given at once, and the
 	// markup that spells it back nests. Each layer has to reach the words
 	// rather than stopping at the markup of the layer below.
@@ -99,6 +108,7 @@ func TestRenderInline_NestedRunsCompose(t *testing.T) {
 }
 
 func TestRenderInline_ATripleAsteriskIsBoldAndItalic(t *testing.T) {
+	t.Parallel()
 	require.Equal(t, lipgloss.NewStyle().Bold(true).Italic(true).Render("abcd"),
 		renderInline("***abcd***", mentionsIn("", "")))
 }
@@ -112,10 +122,12 @@ func trimmed(lines []string) []string {
 }
 
 func TestWrap_BreaksBetweenIdeographs(t *testing.T) {
+	t.Parallel()
 	require.Equal(t, []string{"ab 中文", "字符串"}, trimmed(wrap("ab 中文字符串", 8)))
 }
 
 func TestWrap_EveryRowKeepsItsStyle(t *testing.T) {
+	t.Parallel()
 	lines := wrap(stDim.Render("aaaa bbbb"), 5)
 	require.Equal(t, []string{"aaaa", "bbbb"}, trimmed(lines))
 	for i, l := range lines {

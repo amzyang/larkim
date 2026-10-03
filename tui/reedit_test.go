@@ -25,6 +25,7 @@ func answerReEdit(t *testing.T, m Model, key string) (Model, func() any) {
 // Feishu's edit API takes bot identity only, so the message has to go before
 // its text can come back — which is what the y/n is for.
 func TestAskReEdit_AsksBeforeTakingAnythingBack(t *testing.T) {
+	t.Parallel()
 	m, f := recallModel(t)
 
 	next, cmd := m.askReEdit()
@@ -38,6 +39,7 @@ func TestAskReEdit_AsksBeforeTakingAnythingBack(t *testing.T) {
 }
 
 func TestAskReEdit_RefusesSomebodyElsesMessage(t *testing.T) {
+	t.Parallel()
 	m, f := recallModel(t)
 	m.msgIdx = 1 // 张三's
 
@@ -51,6 +53,7 @@ func TestAskReEdit_RefusesSomebodyElsesMessage(t *testing.T) {
 }
 
 func TestAskReEdit_RefusesAnAlreadyRecalledMessage(t *testing.T) {
+	t.Parallel()
 	m, _ := recallModel(t)
 	m.msgs[0].Deleted = true
 
@@ -63,6 +66,7 @@ func TestAskReEdit_RefusesAnAlreadyRecalledMessage(t *testing.T) {
 // A picture or an attachment has no source the composer could hold, so the
 // action covers the two types Feishu's own edit covers and no more.
 func TestAskReEdit_RefusesATypeTheComposerCannotCarry(t *testing.T) {
+	t.Parallel()
 	m, _ := recallModel(t)
 	m.msgs[0].MsgType = "image"
 
@@ -75,6 +79,7 @@ func TestAskReEdit_RefusesATypeTheComposerCannotCarry(t *testing.T) {
 // Until the rendering lands there is nothing to put back: the raw body carries
 // @_user_1 placeholders rather than the names the composer takes.
 func TestAskReEdit_RefusesAMessageWhoseRenderingHasNotLanded(t *testing.T) {
+	t.Parallel()
 	m, _ := recallModel(t)
 	m.msgs[0].Content, m.msgs[0].RenderedAt = "", 0
 
@@ -85,6 +90,7 @@ func TestAskReEdit_RefusesAMessageWhoseRenderingHasNotLanded(t *testing.T) {
 }
 
 func TestReEdit_RecallsThenFillsTheComposer(t *testing.T) {
+	t.Parallel()
 	m, f := recallModel(t)
 
 	m, run := answerReEdit(t, m, "y")
@@ -101,6 +107,7 @@ func TestReEdit_RecallsThenFillsTheComposer(t *testing.T) {
 // A recall Feishu refused leaves the message standing, so the composer must be
 // as the reader left it.
 func TestReEdit_LeavesTheComposerAloneWhenTheRecallFailed(t *testing.T) {
+	t.Parallel()
 	m, f := recallModel(t)
 	f.Err = errors.New("message is too old to recall")
 
@@ -117,6 +124,7 @@ func TestReEdit_LeavesTheComposerAloneWhenTheRecallFailed(t *testing.T) {
 
 // The resend belongs where the message was, so the quote is reinstated.
 func TestReEdit_ReinstatesTheQuote(t *testing.T) {
+	t.Parallel()
 	m, _ := recallModel(t)
 	m.msgs[0].ReplyTo = "om_theirs"
 
@@ -130,6 +138,7 @@ func TestReEdit_ReinstatesTheQuote(t *testing.T) {
 }
 
 func TestReEdit_DropsThePayloadOnCancel(t *testing.T) {
+	t.Parallel()
 	m, f := recallModel(t)
 
 	m, run := answerReEdit(t, m, "n")

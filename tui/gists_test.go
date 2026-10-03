@@ -18,6 +18,7 @@ func gistOf(r listRow, self string, pics emojiPics) rowGist {
 }
 
 func TestGistCache_SummarisesEachRowOnce(t *testing.T) {
+	t.Parallel()
 	g := newGistCache()
 	r := listRow{chat: reactedP2P("THUMBSUP")}
 	pics := chipPics(t, "THUMBSUP")
@@ -29,6 +30,7 @@ func TestGistCache_SummarisesEachRowOnce(t *testing.T) {
 }
 
 func TestGistCache_HoldsTheSummariesWhileTheInterleaveStands(t *testing.T) {
+	t.Parallel()
 	g := newGistCache()
 	chats := []store.Chat{reactedP2P("THUMBSUP")}
 	rows := listRows(chats, nil)
@@ -50,6 +52,7 @@ func TestGistCache_HoldsTheSummariesWhileTheInterleaveStands(t *testing.T) {
 // The interleave is what the summaries are keyed on, so a list that reaches
 // them only through it — the threads — has to reach them through Update too.
 func TestUpdate_ThreadsArrivingAnewDropTheSummaries(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	writeTestEmoji(t, dir, "THUMBSUP")
 	m := sized(100, 30)
@@ -75,6 +78,7 @@ func TestUpdate_ThreadsArrivingAnewDropTheSummaries(t *testing.T) {
 }
 
 func TestGistCache_DropsTheSummariesWhenTheCellGridMoves(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	writeTestEmoji(t, dir, getKey)
 	m := sized(100, 30)
@@ -92,6 +96,7 @@ func TestGistCache_DropsTheSummariesWhenTheCellGridMoves(t *testing.T) {
 }
 
 func TestGistCache_AThreadTakesItsOwnRepliesAndNoReactions(t *testing.T) {
+	t.Parallel()
 	g := newGistCache()
 	c := store.Chat{ChatID: "oc_1", Name: "平台组", ChatMode: "group",
 		LastReactionsJSON: `[{"emoji_type":"OK","operators":[{"operator_id":"ou_a"}]}]`}
@@ -107,6 +112,7 @@ func TestGistCache_AThreadTakesItsOwnRepliesAndNoReactions(t *testing.T) {
 }
 
 func TestRowGist_WithDraft_StandsInForTheSummary(t *testing.T) {
+	t.Parallel()
 	g := gistOf(listRow{chat: reactedP2P("THUMBSUP")}, "ou_me", chipPics(t, "THUMBSUP"))
 
 	over := g.withDraft(store.Draft{Text: "半句话"})
@@ -120,6 +126,7 @@ func TestRowGist_WithDraft_StandsInForTheSummary(t *testing.T) {
 // A draft is applied after the cache, never through it: the same row draws
 // two drafts in a row while the cache answers every ask with one summary.
 func TestGistCache_DraftDoesNotEnterTheCache(t *testing.T) {
+	t.Parallel()
 	g := newGistCache()
 	r := listRow{chat: store.Chat{ChatID: "oc_group", Name: "平台组", ChatMode: "group",
 		LastSenderName: "张三", LastContent: "发布计划定了吗", LastRenderedAt: 1}}
@@ -133,6 +140,7 @@ func TestGistCache_DraftDoesNotEnterTheCache(t *testing.T) {
 // The pane can only draw a picture the terminal was handed first, so the two
 // walks over the chat list have to claim and draw the same set.
 func TestPicturePrepare_ClaimsThePicturesTheRowsDraw(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	writeTestEmoji(t, dir, getKey)
 	m := sized(100, 30)

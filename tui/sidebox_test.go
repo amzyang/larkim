@@ -37,6 +37,7 @@ func writeIn(m Model, text string) Model {
 }
 
 func TestStartInsert_FocusInTheRightColumnWritesInItsOwnBox(t *testing.T) {
+	t.Parallel()
 	m := threadFrame(130, 30)
 	m.focus = paneThread
 	mm, _ := m.startInsert(nil, false)
@@ -50,6 +51,7 @@ func TestStartInsert_FocusInTheRightColumnWritesInItsOwnBox(t *testing.T) {
 }
 
 func TestStartInsert_AForwardedBundleLeavesTheKeysInTheChatsBox(t *testing.T) {
+	t.Parallel()
 	m := threadFrame(130, 30)
 	m.rightKind, m.threadID = rightForward, "om_bundle"
 	m.layout()
@@ -60,6 +62,7 @@ func TestStartInsert_AForwardedBundleLeavesTheKeysInTheChatsBox(t *testing.T) {
 }
 
 func TestComposers_HoldSeparateDrafts(t *testing.T) {
+	t.Parallel()
 	m := threadFrame(130, 30)
 	m.focus = paneMessages
 	m = writeIn(m, "写给会话的")
@@ -80,6 +83,7 @@ func TestComposers_HoldSeparateDrafts(t *testing.T) {
 }
 
 func TestSubmit_ThreadBoxWithNoQuoteAnswersTheFrameRoot(t *testing.T) {
+	t.Parallel()
 	m := threadFrame(130, 30)
 	m.focus = paneThread
 	m = writeIn(m, "我来看看")
@@ -96,6 +100,7 @@ func TestSubmit_ThreadBoxWithNoQuoteAnswersTheFrameRoot(t *testing.T) {
 }
 
 func TestSubmit_ThreadBoxAnswersTheMessageRPointedItAt(t *testing.T) {
+	t.Parallel()
 	m := threadFrame(130, 30)
 	m.focus, m.threadIdx = paneThread, 1
 	sel, ok := m.selected()
@@ -112,6 +117,7 @@ func TestSubmit_ThreadBoxAnswersTheMessageRPointedItAt(t *testing.T) {
 }
 
 func TestSubmit_DetailsBoxQuotesIntoTheChatFlow(t *testing.T) {
+	t.Parallel()
 	m := threadFrame(130, 30)
 	m.rightKind, m.threadID = rightReply, "om_root"
 	m.layout()
@@ -127,6 +133,7 @@ func TestSubmit_DetailsBoxQuotesIntoTheChatFlow(t *testing.T) {
 }
 
 func TestLayout_ForcesTheMainBoxWhenTheFrameHasNoComposer(t *testing.T) {
+	t.Parallel()
 	m := threadFrame(130, 30)
 	m.side = sideRight
 	m.rightKind, m.threadID = rightForward, "om_bundle"
@@ -139,6 +146,7 @@ func TestLayout_ForcesTheMainBoxWhenTheFrameHasNoComposer(t *testing.T) {
 }
 
 func TestLayout_FoldedThreadForcesTheRightBox(t *testing.T) {
+	t.Parallel()
 	m := threadFrame(100, 30)
 	require.True(t, m.foldRight(), "this width is the interesting one")
 	require.Equal(t, sideRight, m.side, "the chat's box is not on screen to write in")
@@ -149,6 +157,7 @@ func TestLayout_FoldedThreadForcesTheRightBox(t *testing.T) {
 }
 
 func TestShowRight_DoesNotCarryADraftIntoAnotherThread(t *testing.T) {
+	t.Parallel()
 	m := threadFrame(130, 30)
 	m.focus = paneThread
 	m = writeIn(m, "写到一半")
@@ -160,6 +169,7 @@ func TestShowRight_DoesNotCarryADraftIntoAnotherThread(t *testing.T) {
 }
 
 func TestOnClick_PressingABoxTakesThatSide(t *testing.T) {
+	t.Parallel()
 	m := threadFrame(130, 30)
 	y := m.bodyHeight() + 3
 
@@ -175,6 +185,7 @@ func TestOnClick_PressingABoxTakesThatSide(t *testing.T) {
 }
 
 func TestOnClick_PressingABoxKeepsTheQuoteItCarries(t *testing.T) {
+	t.Parallel()
 	m := threadFrame(130, 30)
 	m.focus, m.threadIdx = paneThread, 1
 	sel, ok := m.selected()
@@ -189,6 +200,7 @@ func TestOnClick_PressingABoxKeepsTheQuoteItCarries(t *testing.T) {
 }
 
 func TestBandAt_NamesTheBoxUnderEachColumn(t *testing.T) {
+	t.Parallel()
 	m := threadFrame(130, 30)
 	_, ok := m.bandAt(2)
 	require.False(t, ok, "the chats pane has no box")
@@ -206,6 +218,7 @@ func TestBandAt_NamesTheBoxUnderEachColumn(t *testing.T) {
 }
 
 func TestCmdSide_TheCommandLineStandsInTheProgramsOwnBox(t *testing.T) {
+	t.Parallel()
 	m := threadFrame(130, 30)
 	m.focus = paneThread
 	m = writeIn(m, "话题里写了一半")
@@ -224,6 +237,7 @@ func TestCmdSide_TheCommandLineStandsInTheProgramsOwnBox(t *testing.T) {
 }
 
 func TestRenderInput_TheBoxWithoutTheKeysDrawsItsOwnDraft(t *testing.T) {
+	t.Parallel()
 	m := threadFrame(130, 30)
 	m.focus = paneMessages
 	m = writeIn(m, "写给会话的")
@@ -238,6 +252,7 @@ func TestRenderInput_TheBoxWithoutTheKeysDrawsItsOwnDraft(t *testing.T) {
 }
 
 func TestComposerHeight_HoldsStillWhenTheKeysCrossSides(t *testing.T) {
+	t.Parallel()
 	m := threadFrame(130, 30)
 	m.focus, m.msgIdx = paneMessages, 0
 	sel, ok := m.selected()
@@ -258,6 +273,7 @@ func TestComposerHeight_HoldsStillWhenTheKeysCrossSides(t *testing.T) {
 }
 
 func TestComposerHeight_IsTheRestingOneWhicheverBoxHasTheKeys(t *testing.T) {
+	t.Parallel()
 	m := threadFrame(130, 30)
 	require.Equal(t, restingComposer, m.composerHeight())
 
@@ -272,6 +288,7 @@ func TestComposerHeight_IsTheRestingOneWhicheverBoxHasTheKeys(t *testing.T) {
 }
 
 func TestOnInsertKey_CtrlRDropsTheQuoteInADetailsFrame(t *testing.T) {
+	t.Parallel()
 	m := threadFrame(130, 30)
 	m.rightKind, m.threadID = rightReply, "om_root"
 	m.layout()
@@ -297,6 +314,7 @@ func TestOnInsertKey_CtrlRDropsTheQuoteInADetailsFrame(t *testing.T) {
 }
 
 func TestQuotedOn_ADetailsFrameQuotesNothingUntilAsked(t *testing.T) {
+	t.Parallel()
 	m := threadFrame(130, 30)
 	m.rightKind, m.threadID = rightReply, "om_root"
 	m.layout()

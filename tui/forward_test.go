@@ -60,6 +60,7 @@ func fwdNames(hits []fwdTarget) []string {
 
 // Chats first, then the people no chat reaches yet.
 func TestFwdSearch_OffersChatsThenPeople(t *testing.T) {
+	t.Parallel()
 	m, _ := fwdModel(t)
 
 	assert.Equal(t, []string{"平台组", "张三", "李四", "王五"}, fwdNames(m.fwdSearch("")))
@@ -67,6 +68,7 @@ func TestFwdSearch_OffersChatsThenPeople(t *testing.T) {
 
 // Somebody already reachable as a chat is not offered twice.
 func TestFwdSearch_DoesNotOfferAPersonTwice(t *testing.T) {
+	t.Parallel()
 	m, _ := fwdModel(t)
 
 	got := fwdNames(m.fwdSearch("张三"))
@@ -75,18 +77,21 @@ func TestFwdSearch_DoesNotOfferAPersonTwice(t *testing.T) {
 }
 
 func TestFwdSearch_LeavesTheReaderOut(t *testing.T) {
+	t.Parallel()
 	m, _ := fwdModel(t)
 
 	assert.NotContains(t, fwdNames(m.fwdSearch("")), "林岚")
 }
 
 func TestFwdSearch_ReachesAChineseNameThroughPinyin(t *testing.T) {
+	t.Parallel()
 	m, _ := fwdModel(t)
 
 	assert.Equal(t, []string{"李四"}, fwdNames(m.fwdSearch("lisi")))
 }
 
 func TestOpenForward_RefusesARecalledMessage(t *testing.T) {
+	t.Parallel()
 	m, _ := fwdModel(t)
 	m.msgs[0].Deleted = true
 
@@ -98,6 +103,7 @@ func TestOpenForward_RefusesARecalledMessage(t *testing.T) {
 }
 
 func TestOpenForward_RefusesASendStillInFlight(t *testing.T) {
+	t.Parallel()
 	m, _ := fwdModel(t)
 	m.outbox = []outboxItem{{localID: "om_a", chatID: "oc_group"}}
 
@@ -109,6 +115,7 @@ func TestOpenForward_RefusesASendStillInFlight(t *testing.T) {
 }
 
 func TestChooseForward_SendsToTheChosenChat(t *testing.T) {
+	t.Parallel()
 	m, f := fwdModel(t)
 	next, _ := m.openForward()
 	m = next.(Model)
@@ -125,6 +132,7 @@ func TestChooseForward_SendsToTheChosenChat(t *testing.T) {
 
 // A colleague with no chat yet is still somewhere a message can go.
 func TestChooseForward_SendsToAPersonWithNoChatYet(t *testing.T) {
+	t.Parallel()
 	m, f := fwdModel(t)
 	next, _ := m.openForward()
 	m = next.(Model)
@@ -137,6 +145,7 @@ func TestChooseForward_SendsToAPersonWithNoChatYet(t *testing.T) {
 }
 
 func TestOnForwardKey_EscSendsNothing(t *testing.T) {
+	t.Parallel()
 	m, f := fwdModel(t)
 	next, _ := m.openForward()
 	m = next.(Model)
@@ -149,6 +158,7 @@ func TestOnForwardKey_EscSendsNothing(t *testing.T) {
 }
 
 func TestForward_ReportsFeishusRefusal(t *testing.T) {
+	t.Parallel()
 	m, _ := fwdModel(t)
 
 	msg := forwardCmd(m.deps, "om_gone", larkcli.Target{ChatID: "oc_group"})().(forwardedMsg)
@@ -162,6 +172,7 @@ func TestForward_ReportsFeishusRefusal(t *testing.T) {
 // one row short and the cursor vanishes off the bottom, and enter would then
 // send to a destination the reader never saw selected.
 func TestRenderForward_KeepsTheCursorVisibleOnEveryDestination(t *testing.T) {
+	t.Parallel()
 	m, _ := fwdModel(t)
 	next, _ := m.openForward()
 	m = next.(Model)
@@ -176,6 +187,7 @@ func TestRenderForward_KeepsTheCursorVisibleOnEveryDestination(t *testing.T) {
 // The contacts table is read when the chooser opens, not on every refresh, so
 // the people arrive after the box is already on screen.
 func TestForward_TakesInContactsThatArriveAfterItOpened(t *testing.T) {
+	t.Parallel()
 	m, _ := fwdModel(t)
 	people := m.contacts
 	m.contacts = nil

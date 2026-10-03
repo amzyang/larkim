@@ -10,6 +10,7 @@ import (
 )
 
 func TestTextLocal_PutsTheNamesBackWhereThePlaceholdersStand(t *testing.T) {
+	t.Parallel()
 	// Feishu leaves a mention as @_user_n in the body and the name in the
 	// message's mention list, which is the one thing a text body does not say
 	// for itself.
@@ -20,6 +21,7 @@ func TestTextLocal_PutsTheNamesBackWhereThePlaceholdersStand(t *testing.T) {
 }
 
 func TestResolveMentions_TakesTheLongestKeyFirst(t *testing.T) {
+	t.Parallel()
 	// @_user_1 is a prefix of @_user_10, so replacing in the order the list
 	// arrives in would leave a stray 0 behind.
 	ms := `[{"id":"ou_a","key":"@_user_1","name":"张三"},{"id":"ou_b","key":"@_user_10","name":"王五"}]`
@@ -27,15 +29,18 @@ func TestResolveMentions_TakesTheLongestKeyFirst(t *testing.T) {
 }
 
 func TestTextLocal_UnwrapsTheParagraphsAnEditLeaves(t *testing.T) {
+	t.Parallel()
 	got := textLocal(store.PendingLocalMessage{MsgType: "text", ContentRaw: `{"text":"<p>甲</p><p>乙</p>"}`})
 	require.Equal(t, "甲\n乙", got)
 }
 
 func TestTextLocal_ABodyItCannotReadIsKept(t *testing.T) {
+	t.Parallel()
 	require.Equal(t, "not json", textLocal(store.PendingLocalMessage{MsgType: "text", ContentRaw: "not json"}))
 }
 
 func TestMentionsJSON_HoldsWhatTheColumnDocuments(t *testing.T) {
+	t.Parallel()
 	// The API sends an id_type and a tenant_key besides, and the column's
 	// contract is [{id,key,name}] minified, so an id can be matched as text.
 	require.Equal(t, `[{"id":"ou_a","key":"@_user_1","name":"张三"}]`,
@@ -44,6 +49,7 @@ func TestMentionsJSON_HoldsWhatTheColumnDocuments(t *testing.T) {
 }
 
 func TestTick_ATextMessageIsRenderedWithoutACall(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	f.Chats = []larkcli.RawChat{{ChatID: "oc_a", Name: "平台组", ChatMode: "group"}}
@@ -64,6 +70,7 @@ func TestTick_ATextMessageIsRenderedWithoutACall(t *testing.T) {
 }
 
 func TestIngestIDs_SpendsNoRenderCallOnABodyLarkimReadsItself(t *testing.T) {
+	t.Parallel()
 	// A send waits on this path, so a call asking lark-cli to read back a body
 	// already on disk is the one worth not making.
 	s, f, clk := newSyncer(t)
@@ -80,6 +87,7 @@ func TestIngestIDs_SpendsNoRenderCallOnABodyLarkimReadsItself(t *testing.T) {
 }
 
 func TestTick_AStickerIsRenderedWithoutACall(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	s.Opt().DataDir = t.TempDir()
@@ -99,6 +107,7 @@ func TestTick_AStickerIsRenderedWithoutACall(t *testing.T) {
 }
 
 func TestIngestIDs_RendersTheMessageItPulledRatherThanTheQueuesHead(t *testing.T) {
+	t.Parallel()
 	// A recall or a forward ingests an older message; taking the local queue's
 	// newest rows instead would leave the one somebody is waiting on unrendered.
 	s, f, clk := newSyncer(t)

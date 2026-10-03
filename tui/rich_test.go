@@ -14,6 +14,7 @@ func dataLiteral(html string) string {
 }
 
 func TestOsaData_UnwrapsTheDataLiteral(t *testing.T) {
+	t.Parallel()
 	got, err := osaData(dataLiteral("<p>好的</p>"))
 	require.NoError(t, err)
 	require.Equal(t, "<p>好的</p>", string(got))
@@ -31,6 +32,7 @@ func TestOsaData_UnwrapsTheDataLiteral(t *testing.T) {
 }
 
 func TestHTMLMarkdown_KeepsWhatThePostCanCarry(t *testing.T) {
+	t.Parallel()
 	md, err := htmlMarkdown([]byte(
 		`<h2>发布说明</h2>` +
 			`<ul><li>修了<strong>同步</strong></li><li><del>回滚</del>见<a href="https://example.com/b">看板</a></li></ul>` +
@@ -49,6 +51,7 @@ func TestHTMLMarkdown_KeepsWhatThePostCanCarry(t *testing.T) {
 }
 
 func TestHTMLMarkdown_TableSurvivesAsGFM(t *testing.T) {
+	t.Parallel()
 	md, err := htmlMarkdown([]byte(
 		`<table><thead><tr><th>项</th><th>值</th></tr></thead>` +
 			`<tbody><tr><td>待认领</td><td>13</td></tr></tbody></table>`))
@@ -60,6 +63,7 @@ func TestHTMLMarkdown_TableSurvivesAsGFM(t *testing.T) {
 }
 
 func TestHTMLMarkdown_ImageKeepsItsURL(t *testing.T) {
+	t.Parallel()
 	md, err := htmlMarkdown([]byte(`<p>看这个 <img src="https://example.com/chart.png"></p>`))
 	require.NoError(t, err)
 
@@ -72,6 +76,7 @@ func TestHTMLMarkdown_ImageKeepsItsURL(t *testing.T) {
 }
 
 func TestHTMLMarkdown_ReadsTheCharsetTheSourceDeclared(t *testing.T) {
+	t.Parallel()
 	// 0xE9 is é in windows-1252 and not valid UTF-8 on its own.
 	md, err := htmlMarkdown([]byte("<meta charset=\"windows-1252\"><h2>caf\xe9</h2>"))
 	require.NoError(t, err)
@@ -79,6 +84,7 @@ func TestHTMLMarkdown_ReadsTheCharsetTheSourceDeclared(t *testing.T) {
 }
 
 func TestPickPaste_FormattingWins(t *testing.T) {
+	t.Parallel()
 	md, err := htmlMarkdown([]byte(`<h2>发布说明</h2><p>今天上线</p>`))
 	require.NoError(t, err)
 
@@ -86,6 +92,7 @@ func TestPickPaste_FormattingWins(t *testing.T) {
 }
 
 func TestPickPaste_PlainLookingHTMLKeepsTheTextFlavour(t *testing.T) {
+	t.Parallel()
 	// An editor that copies with syntax highlighting — VS Code does, by
 	// default — puts styled spans on the pasteboard for what is only code.
 	md, err := htmlMarkdown([]byte(
@@ -99,5 +106,6 @@ func TestPickPaste_PlainLookingHTMLKeepsTheTextFlavour(t *testing.T) {
 }
 
 func TestPickPaste_PlainFlavourIsNeverTrimmed(t *testing.T) {
+	t.Parallel()
 	require.Equal(t, "  好的 \n", pickPaste("好的", "  好的 \n"))
 }

@@ -44,17 +44,20 @@ func calendarLines(t *testing.T, msgType, raw string) []string {
 }
 
 func TestCalendarRows_DrawTheEventWithoutARendering(t *testing.T) {
+	t.Parallel()
 	require.Equal(t, []string{"📅 平台组周会", eventSpan(), " Open"},
 		calendarLines(t, "calendar", eventRaw))
 }
 
 func TestCalendarRows_OfferTheOpenButtonOnAnInvite(t *testing.T) {
+	t.Parallel()
 	zones := rowZones(renderRows(calendarRaw("calendar", eventRaw), baseStyle()))
 	require.Len(t, zones, 1)
 	require.Equal(t, []string{applink.EventLink("cal_team", "evt-a_0", eventStartMs)}, zones[0].urls)
 }
 
 func TestCalendarRows_WithholdTheButtonWhenTheBodyNamesNoEvent(t *testing.T) {
+	t.Parallel()
 	// The client needs both ids to find an event; without them the button
 	// would land on nothing.
 	require.Equal(t, []string{"📅 平台组周会", eventSpan()},
@@ -62,6 +65,7 @@ func TestCalendarRows_WithholdTheButtonWhenTheBodyNamesNoEvent(t *testing.T) {
 }
 
 func TestCalendarRows_LeaveASharedEventWithoutAButton(t *testing.T) {
+	t.Parallel()
 	// A shared event sits on somebody else's calendar, which the detail page
 	// cannot show a reader who has not subscribed to it.
 	shared := strings.Replace(eventRaw, `"open_calendar_id":"cal_team"`,
@@ -72,12 +76,14 @@ func TestCalendarRows_LeaveASharedEventWithoutAButton(t *testing.T) {
 }
 
 func TestCalendarRows_KeepTheShareTokenOffTheScreen(t *testing.T) {
+	t.Parallel()
 	shared := strings.Replace(eventRaw, `"open_event_id"`, `"share_token":"cse_secret","open_event_id"`, 1)
 	rows := renderRows(calendarRaw("share_calendar_event", shared), baseStyle())
 	require.NotContains(t, rowText(rows), "cse_secret")
 }
 
 func TestCalendarRows_FallBackToTheRenderingWhenTheBodyIsUnreadable(t *testing.T) {
+	t.Parallel()
 	msgs := calendarRaw("calendar", "not json")
 	msgs[0].Content, msgs[0].RenderedAt = "[Event] 平台组周会", 1
 	rows := renderRows(msgs, baseStyle())
@@ -85,6 +91,7 @@ func TestCalendarRows_FallBackToTheRenderingWhenTheBodyIsUnreadable(t *testing.T
 }
 
 func TestCalendarRows_NameAnEventWhoseBodyCarriesNoTitle(t *testing.T) {
+	t.Parallel()
 	require.Equal(t, []string{"📅 Event", eventSpan()},
 		calendarLines(t, "general_calendar", `{"start_time":"1788143400000","end_time":"1788148800000"}`))
 }

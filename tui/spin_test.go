@@ -35,6 +35,7 @@ func firstOf[T tea.Msg](t *testing.T, cmd tea.Cmd) T {
 }
 
 func TestPaceSpin_RunsExactlyWhileAnAnswerStreams(t *testing.T) {
+	t.Parallel()
 	turn := &aiTurn{state: aiAsking}
 	m := Model{spin: newSpin(), aiP: &aiPanel{sess: []*aiSession{{turns: []*aiTurn{turn}}}}}
 
@@ -48,6 +49,7 @@ func TestPaceSpin_RunsExactlyWhileAnAnswerStreams(t *testing.T) {
 }
 
 func TestPaceSpin_LeavesASendOnItsWayAlone(t *testing.T) {
+	t.Parallel()
 	m, _ := newOutboxModel(t)
 	m.enqueue(outboxItem{localID: "local-1", chatID: "oc_1", msgType: "text", body: "在路上", createMs: 10})
 	m.refreshPanes()

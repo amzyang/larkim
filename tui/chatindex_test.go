@@ -11,6 +11,7 @@ import (
 func chat(id, name string) store.Chat { return store.Chat{ChatID: id, Name: name, ChatMode: "group"} }
 
 func TestChatIndex_MatchesPinyinInitials(t *testing.T) {
+	t.Parallel()
 	ix := newChatIndex()
 	_, ok := ix.match(chat("oc_a", "平台组"), "ptz")
 	require.True(t, ok)
@@ -21,6 +22,7 @@ func TestChatIndex_MatchesPinyinInitials(t *testing.T) {
 }
 
 func TestChatIndex_MatchesTheNameItself(t *testing.T) {
+	t.Parallel()
 	ix := newChatIndex()
 	pos, ok := ix.match(chat("oc_a", "项目协作群"), "协作")
 	require.True(t, ok)
@@ -28,6 +30,7 @@ func TestChatIndex_MatchesTheNameItself(t *testing.T) {
 }
 
 func TestChatIndex_MatchesChatIDBySubstringNotFuzzily(t *testing.T) {
+	t.Parallel()
 	ix := newChatIndex()
 	_, ok := ix.match(chat("oc_quiet", "平台组"), "quiet")
 	require.True(t, ok, "an id is reached by the piece of it one remembers")
@@ -36,6 +39,7 @@ func TestChatIndex_MatchesChatIDBySubstringNotFuzzily(t *testing.T) {
 }
 
 func TestChatIndex_PositionsEmptyOnPinyinHit(t *testing.T) {
+	t.Parallel()
 	ix := newChatIndex()
 	// Underlining name runes at pinyin offsets would point at the wrong
 	// characters, so a pinyin hit marks nothing.
@@ -45,6 +49,7 @@ func TestChatIndex_PositionsEmptyOnPinyinHit(t *testing.T) {
 }
 
 func TestChatIndex_RespellsOnRename(t *testing.T) {
+	t.Parallel()
 	ix := newChatIndex()
 	_, ok := ix.match(chat("oc_a", "平台组"), "ptz")
 	require.True(t, ok)
@@ -55,12 +60,14 @@ func TestChatIndex_RespellsOnRename(t *testing.T) {
 }
 
 func TestChatIndex_EmptyQueryTakesEverything(t *testing.T) {
+	t.Parallel()
 	ix := newChatIndex()
 	_, ok := ix.match(chat("oc_a", "平台组"), "")
 	require.True(t, ok)
 }
 
 func TestVisibleChats_KeepsListOrderUnderFilter(t *testing.T) {
+	t.Parallel()
 	m := New(Deps{Self: "ou_me"})
 	// 抖音 scores worse than 抖 alone would, so a score-ranked list would put
 	// the second row first. The list is the reader's own recency order and
@@ -77,6 +84,7 @@ func TestVisibleChats_KeepsListOrderUnderFilter(t *testing.T) {
 }
 
 func TestVisibleRows_UnfilteredIsTheWholeList(t *testing.T) {
+	t.Parallel()
 	m := New(Deps{Self: "ou_me"})
 	m.chats = []store.Chat{chat("oc_1", "平台组"), chat("oc_2", "财务组")}
 	vis := m.visibleRows()
@@ -85,6 +93,7 @@ func TestVisibleRows_UnfilteredIsTheWholeList(t *testing.T) {
 }
 
 func TestVisibleRows_AFilterLeavesTheUnreadRowOut(t *testing.T) {
+	t.Parallel()
 	m := New(Deps{Self: "ou_me"})
 	m.chats = []store.Chat{chat("oc_1", "平台组"), chat("oc_2", "财务组")}
 	m.chatFilter = "平台"
@@ -94,6 +103,7 @@ func TestVisibleRows_AFilterLeavesTheUnreadRowOut(t *testing.T) {
 }
 
 func TestRenderChatRow_UnderlinesTheRunesTheFilterLandedOn(t *testing.T) {
+	t.Parallel()
 	ix := newChatIndex()
 	c := chat("oc_a", "项目协作群")
 	pos, ok := ix.match(c, "协作")
@@ -110,6 +120,7 @@ func TestRenderChatRow_UnderlinesTheRunesTheFilterLandedOn(t *testing.T) {
 }
 
 func TestRenderChatRow_LeavesTheNameAloneOnAPinyinHit(t *testing.T) {
+	t.Parallel()
 	ix := newChatIndex()
 	c := chat("oc_a", "平台组")
 	pos, ok := ix.match(c, "ptz")
@@ -120,6 +131,7 @@ func TestRenderChatRow_LeavesTheNameAloneOnAPinyinHit(t *testing.T) {
 }
 
 func TestChatIndex_ChineseQueryMatchesARun(t *testing.T) {
+	t.Parallel()
 	ix := newChatIndex()
 	_, ok := ix.match(chat("oc_a", "部门年会邀请函"), "年会")
 	require.True(t, ok)

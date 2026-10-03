@@ -25,6 +25,7 @@ func discovering(t *testing.T, s *Syncer, f *larkcli.Fake, now time.Time) {
 }
 
 func TestDiscover_AnUnmovedOrderingWritesNothing(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	f.Chats = []larkcli.RawChat{{ChatID: "oc_a", ChatMode: "group"}, {ChatID: "oc_b", ChatMode: "group"}}
@@ -46,6 +47,7 @@ func TestDiscover_AnUnmovedOrderingWritesNothing(t *testing.T) {
 }
 
 func TestDiscover_ShowsAChatsMessageWithoutWaitingForASlowerChat(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	f.Chats = []larkcli.RawChat{{ChatID: "oc_slow", ChatMode: "group"}, {ChatID: "oc_quick", ChatMode: "p2p"}}
@@ -83,6 +85,7 @@ func TestDiscover_ShowsAChatsMessageWithoutWaitingForASlowerChat(t *testing.T) {
 }
 
 func TestDiscover_AsksForARenderingAtOnceAndWakesTheSweep(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	f.Chats = []larkcli.RawChat{{ChatID: "oc_a", ChatMode: "group"}}
@@ -105,6 +108,7 @@ func TestDiscover_AsksForARenderingAtOnceAndWakesTheSweep(t *testing.T) {
 }
 
 func TestDiscoveryPause_RestsOnlyWhileNobodyIsLooking(t *testing.T) {
+	t.Parallel()
 	s, _, _ := newSyncer(t)
 	s.Opt().PollInterval = 2 * time.Second
 	s.SetAttended(true)
@@ -120,6 +124,7 @@ func TestDiscoveryPause_RestsOnlyWhileNobodyIsLooking(t *testing.T) {
 }
 
 func TestSetAttended_ComingBackEndsThePause(t *testing.T) {
+	t.Parallel()
 	s, _, _ := newSyncer(t)
 	s.SetAttended(true)
 	<-s.attend
@@ -134,6 +139,7 @@ func TestSetAttended_ComingBackEndsThePause(t *testing.T) {
 }
 
 func TestRun_DiscoveryLandsAMessageWhileTheSweepRests(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	s.Opt().PollInterval = time.Hour
@@ -161,6 +167,7 @@ func TestRun_DiscoveryLandsAMessageWhileTheSweepRests(t *testing.T) {
 }
 
 func TestRun_APanicInTheSweepLeavesRunWhileDiscoveryIsStillGoing(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	f.Chats = []larkcli.RawChat{{ChatID: "oc_a", ChatMode: "group"}}
 	discovering(t, s, f, clk.t)
@@ -186,6 +193,7 @@ func TestRun_APanicInTheSweepLeavesRunWhileDiscoveryIsStillGoing(t *testing.T) {
 }
 
 func TestRunDiscovery_MakesNoCallWhileLoggedOut(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	f.Chats = []larkcli.RawChat{{ChatID: "oc_a", ChatMode: "group"}}
 	discovering(t, s, f, clk.t)
@@ -202,6 +210,7 @@ func TestRunDiscovery_MakesNoCallWhileLoggedOut(t *testing.T) {
 }
 
 func TestScoutOnce_ASlowChatHoldsUpNobodyElse(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	f.Chats = []larkcli.RawChat{{ChatID: "oc_slow", ChatMode: "p2p"}, {ChatID: "oc_quick", ChatMode: "group"}}
@@ -234,6 +243,7 @@ func TestScoutOnce_ASlowChatHoldsUpNobodyElse(t *testing.T) {
 }
 
 func TestScoutOnce_AFailedListingBacksOffAndIsOwed(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	f.Chats = []larkcli.RawChat{{ChatID: "oc_a"}, {ChatID: "oc_b"}, {ChatID: "oc_c"}, {ChatID: "oc_d"}, {ChatID: "oc_e"}}
@@ -268,6 +278,7 @@ func TestScoutOnce_AFailedListingBacksOffAndIsOwed(t *testing.T) {
 }
 
 func TestScoutOnce_AChatThatKeepsFailingIsAskedAgainLessOften(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	f.Chats = []larkcli.RawChat{{ChatID: "oc_a", ChatMode: "group"}}

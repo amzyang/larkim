@@ -22,6 +22,7 @@ func reactSyncer(t *testing.T) (*Syncer, *larkcli.Fake) {
 }
 
 func TestReact_AddsTheEmojiAndBringsTheSummaryBack(t *testing.T) {
+	t.Parallel()
 	s, f := reactSyncer(t)
 	ctx := t.Context()
 	f.Reactions["om_a"] = json.RawMessage(`{"counts":[{"reaction_type":"OK","count":"1"}]}`)
@@ -36,6 +37,7 @@ func TestReact_AddsTheEmojiAndBringsTheSummaryBack(t *testing.T) {
 }
 
 func TestReact_LooksUpTheReactionIdBeforeTakingOneBack(t *testing.T) {
+	t.Parallel()
 	// The stored summary carries no reaction id, and the delete needs one, so
 	// taking a reaction back costs a lookup Feishu answers nowhere else.
 	s, f := reactSyncer(t)
@@ -51,6 +53,7 @@ func TestReact_LooksUpTheReactionIdBeforeTakingOneBack(t *testing.T) {
 }
 
 func TestReact_LeavesSomebodyElsesReactionAlone(t *testing.T) {
+	t.Parallel()
 	s, f := reactSyncer(t)
 	ctx := t.Context()
 	f.Reacted["om_a"] = []larkcli.Reaction{{ReactionID: "rx_other", EmojiType: "OK", OperatorID: "ou_b"}}

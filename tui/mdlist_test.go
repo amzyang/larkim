@@ -32,6 +32,7 @@ func rowPlain(r msgRow) string {
 }
 
 func TestMdRows_ANumberedItemKeepsEveryColumnItsMarkerTakes(t *testing.T) {
+	t.Parallel()
 	const inner = 56
 	// The link is what puts the item on the piece-wise path, which is where a
 	// marker wider than the indent it replaces costs the row a column.
@@ -46,6 +47,7 @@ func TestMdRows_ANumberedItemKeepsEveryColumnItsMarkerTakes(t *testing.T) {
 }
 
 func TestMdRows_EveryItemOfAListStartsAtOneColumn(t *testing.T) {
+	t.Parallel()
 	var body strings.Builder
 	for i := 1; i <= 11; i++ {
 		body.WriteString(strconv.Itoa(i) + ". 项目\n")
@@ -71,6 +73,7 @@ func textColumn(t *testing.T, line, want string) int {
 }
 
 func TestMdRows_ABulletedItemIsIndentedAsItWas(t *testing.T) {
+	t.Parallel()
 	rows := mdBody("- 项目\n- 项目\n", 56)
 	require.Len(t, rows, 2)
 	for _, r := range rows {
@@ -80,6 +83,7 @@ func TestMdRows_ABulletedItemIsIndentedAsItWas(t *testing.T) {
 }
 
 func TestMdRows_ANestedListIsIndentedByItsParentsMarker(t *testing.T) {
+	t.Parallel()
 	rows := mdBody("1. 项目\n   1. 内层\n", 56)
 	require.Len(t, rows, 2)
 	require.Equal(t, 3, textColumn(t, rowPlain(rows[1]), "1."),

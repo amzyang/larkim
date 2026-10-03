@@ -46,6 +46,7 @@ func writeAnimGIF(t *testing.T, dir, name string, frames, w, h int) string {
 }
 
 func TestGIFFrames_CompositesEachPatchOntoTheOneBefore(t *testing.T) {
+	t.Parallel()
 	g := &gif.GIF{
 		Config:   image.Config{Width: 4, Height: 4},
 		Image:    []*image.Paletted{patch(image.Rect(0, 0, 4, 4), 1), patch(image.Rect(2, 2, 4, 4), 2)},
@@ -60,6 +61,7 @@ func TestGIFFrames_CompositesEachPatchOntoTheOneBefore(t *testing.T) {
 }
 
 func TestGIFFrames_HonoursTheDisposalRules(t *testing.T) {
+	t.Parallel()
 	background := &gif.GIF{
 		Config:   image.Config{Width: 4, Height: 4},
 		Image:    []*image.Paletted{patch(image.Rect(0, 0, 4, 4), 1), patch(image.Rect(2, 2, 4, 4), 2)},
@@ -86,6 +88,7 @@ func TestGIFFrames_HonoursTheDisposalRules(t *testing.T) {
 }
 
 func TestGIFFrames_StopsAtTheFrameCap(t *testing.T) {
+	t.Parallel()
 	g := &gif.GIF{Config: image.Config{Width: 2, Height: 2}}
 	for range picMaxFrames + 10 {
 		g.Image = append(g.Image, patch(image.Rect(0, 0, 2, 2), 1))
@@ -98,6 +101,7 @@ func TestGIFFrames_StopsAtTheFrameCap(t *testing.T) {
 }
 
 func TestFrameGap_HoldsTheImpatientFramesAsABrowserWould(t *testing.T) {
+	t.Parallel()
 	require.Equal(t, 60, frameGap(6))
 	require.Equal(t, 20, frameGap(2))
 	require.Equal(t, 100, frameGap(1), "10ms means as fast as possible, which browsers settled on at 100ms")
@@ -105,6 +109,7 @@ func TestFrameGap_HoldsTheImpatientFramesAsABrowserWould(t *testing.T) {
 }
 
 func TestLoadFrames_AStillPictureIsOneFrame(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	still := filepath.Join(dir, writePNG(t, dir, "a.png", 20, 10))
 	frames, gaps, err := loadFrames(still, image.Pt(20, 10), image.Pt(20, 10))
@@ -122,6 +127,7 @@ func TestLoadFrames_AStillPictureIsOneFrame(t *testing.T) {
 }
 
 func TestPictures_PrepareRunsAnAnimatedGIF(t *testing.T) {
+	t.Parallel()
 	p := testPictures(t)
 	pic := p.place(writeAnimGIF(t, p.dataDir, "a.gif", 3, 100, 100), 30, 20)
 	require.NotZero(t, pic.cols)

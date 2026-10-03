@@ -9,6 +9,7 @@ import (
 )
 
 func TestRenderedText_UnwrapsAnHTMLTextBody(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name string
 		in   larkcli.RenderedMessage
@@ -30,6 +31,7 @@ func TestRenderedText_UnwrapsAnHTMLTextBody(t *testing.T) {
 }
 
 func TestTick_StoresAnEditedBodyAsPlainLines(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	now := clk.t

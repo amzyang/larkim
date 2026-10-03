@@ -27,6 +27,7 @@ func rowsOf(chats []store.Chat) []listRow {
 }
 
 func TestNextUnread_FindsTheNextChatWaiting(t *testing.T) {
+	t.Parallel()
 	chats := chatList("oc_a", "oc_b", "oc_c")
 	unread := map[string]int64{"oc_c": 2}
 
@@ -36,6 +37,7 @@ func TestNextUnread_FindsTheNextChatWaiting(t *testing.T) {
 // The scan starts past the cursor, so the key moves on rather than standing
 // still on a chat that still has something waiting.
 func TestNextUnread_LeavesTheChatUnderTheCursor(t *testing.T) {
+	t.Parallel()
 	chats := chatList("oc_a", "oc_b", "oc_c")
 	unread := map[string]int64{"oc_a": 1, "oc_c": 1}
 
@@ -43,6 +45,7 @@ func TestNextUnread_LeavesTheChatUnderTheCursor(t *testing.T) {
 }
 
 func TestNextUnread_WrapsAroundTheEnd(t *testing.T) {
+	t.Parallel()
 	chats := chatList("oc_a", "oc_b", "oc_c")
 	unread := map[string]int64{"oc_a": 1}
 
@@ -50,6 +53,7 @@ func TestNextUnread_WrapsAroundTheEnd(t *testing.T) {
 }
 
 func TestNextUnread_WalksBackwards(t *testing.T) {
+	t.Parallel()
 	chats := chatList("oc_a", "oc_b", "oc_c")
 	unread := map[string]int64{"oc_a": 1}
 
@@ -60,6 +64,7 @@ func TestNextUnread_WalksBackwards(t *testing.T) {
 // A single waiting chat is reachable from itself: one press round the whole
 // list comes back to it rather than reporting nothing.
 func TestNextUnread_TheOnlyWaitingChatIsReachableFromItself(t *testing.T) {
+	t.Parallel()
 	chats := chatList("oc_a", "oc_b", "oc_c")
 	unread := map[string]int64{"oc_b": 1}
 
@@ -69,6 +74,7 @@ func TestNextUnread_TheOnlyWaitingChatIsReachableFromItself(t *testing.T) {
 // Silencing a chat is a request not to be pulled by it, and being walked onto
 // it is that pull.
 func TestNextUnread_SkipsMutedChats(t *testing.T) {
+	t.Parallel()
 	chats := []store.Chat{{ChatID: "oc_a"}, {ChatID: "oc_loud", Muted: true}, {ChatID: "oc_c"}}
 	unread := map[string]int64{"oc_loud": 9, "oc_c": 1}
 
@@ -76,12 +82,14 @@ func TestNextUnread_SkipsMutedChats(t *testing.T) {
 }
 
 func TestNextUnread_NothingWaitingAnswersMinusOne(t *testing.T) {
+	t.Parallel()
 	assert.Equal(t, -1, nextUnread(rowsOf(chatList("oc_a", "oc_b")), nil, 0, 1))
 	assert.Equal(t, -1, nextUnread(nil, map[string]int64{"oc_a": 1}, 0, 1))
 }
 
 // The list the key walks is the one on screen, so a filter narrows it.
 func TestJumpUnread_WalksOnlyTheVisibleChats(t *testing.T) {
+	t.Parallel()
 	m, st := draftModel(t)
 	defer st.Close()
 	m.chats = chatList("oc_group", "oc_peer")
@@ -96,6 +104,7 @@ func TestJumpUnread_WalksOnlyTheVisibleChats(t *testing.T) {
 }
 
 func TestJumpUnread_TakesTheChatsPane(t *testing.T) {
+	t.Parallel()
 	m, st := draftModel(t)
 	defer st.Close()
 	m.chats = chatList("oc_group", "oc_peer")
@@ -110,6 +119,7 @@ func TestJumpUnread_TakesTheChatsPane(t *testing.T) {
 }
 
 func TestJumpUnread_NothingWaitingLeavesTheCursorAlone(t *testing.T) {
+	t.Parallel()
 	m, st := draftModel(t)
 	defer st.Close()
 	m.chats = chatList("oc_group", "oc_peer")
@@ -126,6 +136,7 @@ func TestJumpUnread_NothingWaitingLeavesTheCursorAlone(t *testing.T) {
 // A thread carries a badge of its own here, so it is a row of the queue like
 // any other: the key means "clear the queue", and the thread is in it.
 func TestNextUnread_WalksOntoAThreadWithRepliesWaiting(t *testing.T) {
+	t.Parallel()
 	rows := []listRow{
 		{chat: store.Chat{ChatID: "oc_a"}},
 		{chat: store.Chat{ChatID: "oc_a"}, thread: store.ThreadFeed{ThreadID: "omt_x", Unread: 2}},
@@ -138,6 +149,7 @@ func TestNextUnread_WalksOntoAThreadWithRepliesWaiting(t *testing.T) {
 // The queue is walked from the list, so the row it stops on opens where the
 // reader is rather than carrying them into the right column.
 func TestJumpUnread_AThreadRowKeepsTheCursorInTheChatsPane(t *testing.T) {
+	t.Parallel()
 	m, st := draftModel(t)
 	defer st.Close()
 	m.chats = []store.Chat{chatAt("oc_a", 300)}
@@ -156,6 +168,7 @@ func TestJumpUnread_AThreadRowKeepsTheCursorInTheChatsPane(t *testing.T) {
 
 // A thread inherits the silence of the chat it happens in.
 func TestNextUnread_SkipsAThreadInAMutedChat(t *testing.T) {
+	t.Parallel()
 	rows := []listRow{
 		{chat: store.Chat{ChatID: "oc_a"}},
 		{chat: store.Chat{ChatID: "oc_quiet", Muted: true}, thread: store.ThreadFeed{ThreadID: "omt_x", Unread: 2}},

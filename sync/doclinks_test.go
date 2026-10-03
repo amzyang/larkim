@@ -25,6 +25,7 @@ func docMessage(t *testing.T, s *Syncer, id, content string) {
 }
 
 func TestResolveDocLinks_NamesWhatItCanAndSettlesWhatItCannot(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	f.Docs["docx/AbC123"] = larkcli.DocTitle{Type: "docx", Title: "排期"}
@@ -45,6 +46,7 @@ func TestResolveDocLinks_NamesWhatItCanAndSettlesWhatItCannot(t *testing.T) {
 }
 
 func TestResolveDocLinks_AsksOnceForADocumentSharedAround(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	f.Docs["docx/AbC123"] = larkcli.DocTitle{Type: "docx", Title: "排期"}
@@ -67,6 +69,7 @@ func TestResolveDocLinks_AsksOnceForADocumentSharedAround(t *testing.T) {
 }
 
 func TestResolveDocLinks_NeverAsksAgainForADocumentOutOfReach(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	docMessage(t, s, "om_1", "https://example.feishu.cn/docx/Nope456")
@@ -82,6 +85,7 @@ func TestResolveDocLinks_NeverAsksAgainForADocumentOutOfReach(t *testing.T) {
 }
 
 func TestResolveDocLinks_ReadsLinksFromBodiesStoredBeforeTitlesWere(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	f.Docs["docx/AbC123"] = larkcli.DocTitle{Type: "docx", Title: "排期"}
@@ -103,6 +107,7 @@ func TestResolveDocLinks_ReadsLinksFromBodiesStoredBeforeTitlesWere(t *testing.T
 // was never rendered at all, so the URL exists only in the json it arrived
 // with.
 func TestResolveDocLinks_ReadsALinkThatOnlyTheCardBodyCarries(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	f.Docs["docx/AbC123"] = larkcli.DocTitle{Type: "docx", Title: "排期"}
@@ -124,6 +129,7 @@ func TestResolveDocLinks_ReadsALinkThatOnlyTheCardBodyCarries(t *testing.T) {
 }
 
 func TestResolveDocLinks_WaitsBeforeAskingAgainAboutADocumentLeftUnanswered(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	f.DocsSilent["docx/AbC123"] = true
@@ -148,6 +154,7 @@ func TestResolveDocLinks_WaitsBeforeAskingAgainAboutADocumentLeftUnanswered(t *t
 }
 
 func TestResolveDocLinks_NamesTheFamiliesTheBatchEndpointHasNoTypeFor(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	f.Docs["bitable/AbC123"] = larkcli.DocTitle{Type: "bitable", Title: "排期表"}
@@ -172,6 +179,7 @@ func TestResolveDocLinks_NamesTheFamiliesTheBatchEndpointHasNoTypeFor(t *testing
 }
 
 func TestResolveDocLinks_SettlesAFormTheEndpointRefuses(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	docMessage(t, s, "om_1", "https://example.feishu.cn/share/base/form/shrcnGone")
@@ -188,6 +196,7 @@ func TestResolveDocLinks_SettlesAFormTheEndpointRefuses(t *testing.T) {
 }
 
 func TestResolveDocLinks_LeavesASingleThatOnlyFailedToTravelPending(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	f.Err = &larkcli.Error{ExitCode: larkcli.ExitNetwork}
@@ -207,6 +216,7 @@ func TestResolveDocLinks_LeavesASingleThatOnlyFailedToTravelPending(t *testing.T
 }
 
 func TestResolveDocLinks_LeavesTheSinglesPastOneTicksShareForTheNext(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	for i := range docSinglesPerTick + 2 {

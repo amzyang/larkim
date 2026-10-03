@@ -40,6 +40,7 @@ func silenceRow(m Model) string {
 }
 
 func TestSilenceTab_AddsARuleThroughThePickersAndWritesTheFile(t *testing.T) {
+	t.Parallel()
 	m := silenceModel(t)
 	m = press(t, m, "a", "enter")
 	require.True(t, m.config.silence.form.pick.open)
@@ -67,6 +68,7 @@ func TestSilenceTab_AddsARuleThroughThePickersAndWritesTheFile(t *testing.T) {
 }
 
 func TestSilenceTab_ARuleReachesTheStoredMessagesWhereTheSweepRunsHere(t *testing.T) {
+	t.Parallel()
 	m := silenceModel(t)
 	m.deps.Embedded = true
 	ctx := t.Context()
@@ -84,6 +86,7 @@ func TestSilenceTab_ARuleReachesTheStoredMessagesWhereTheSweepRunsHere(t *testin
 }
 
 func TestSilenceTab_AFieldLeftUnsetIsNotWritten(t *testing.T) {
+	t.Parallel()
 	m := silenceModel(t)
 	m = press(t, m, "a", "enter")
 	m = typeText(t, m, "平台")
@@ -96,6 +99,7 @@ func TestSilenceTab_AFieldLeftUnsetIsNotWritten(t *testing.T) {
 }
 
 func TestSilenceTab_RefusesAnEmptyRule(t *testing.T) {
+	t.Parallel()
 	m := silenceModel(t)
 	m = press(t, m, "a", "tab", "tab", "enter")
 
@@ -106,6 +110,7 @@ func TestSilenceTab_RefusesAnEmptyRule(t *testing.T) {
 }
 
 func TestSilenceTab_EditReplacesOnlyItsRule(t *testing.T) {
+	t.Parallel()
 	m := silenceModel(t)
 	rules := store.SilenceRules{{Chat: "oc_quiet"}, {Sender: "cli_c", Contains: "nightly"}}
 	require.NoError(t, m.writeSilence(rules))
@@ -122,6 +127,7 @@ func TestSilenceTab_EditReplacesOnlyItsRule(t *testing.T) {
 }
 
 func TestSilenceTab_EscAbandonsTheForm(t *testing.T) {
+	t.Parallel()
 	m := silenceModel(t)
 	m = press(t, m, "a", "tab", "tab")
 	m = typeText(t, m, "nightly")
@@ -132,6 +138,7 @@ func TestSilenceTab_EscAbandonsTheForm(t *testing.T) {
 }
 
 func TestSilenceTab_BackspaceClearsAnIDField(t *testing.T) {
+	t.Parallel()
 	m := silenceModel(t)
 	require.NoError(t, m.writeSilence(store.SilenceRules{{Chat: "oc_quiet", Sender: "cli_c"}}))
 	m = press(t, m, "enter", "tab", "backspace", "tab", "enter")
@@ -139,6 +146,7 @@ func TestSilenceTab_BackspaceClearsAnIDField(t *testing.T) {
 }
 
 func TestSilenceTab_DeleteAsksFirst(t *testing.T) {
+	t.Parallel()
 	m := silenceModel(t)
 	require.NoError(t, m.writeSilence(store.SilenceRules{{Chat: "oc_quiet"}, {Sender: "cli_c"}}))
 	m = press(t, m, "d")
@@ -154,6 +162,7 @@ func TestSilenceTab_DeleteAsksFirst(t *testing.T) {
 }
 
 func TestSilenceSearch_ListsNamedChatMembersBeforeContacts(t *testing.T) {
+	t.Parallel()
 	m := silenceModel(t)
 	m.config.silence.form = silenceForm{
 		open:   true,
@@ -176,6 +185,7 @@ func TestSilenceSearch_ListsNamedChatMembersBeforeContacts(t *testing.T) {
 }
 
 func TestSilenceTab_RosterLoadRefreshesTheSenderPicker(t *testing.T) {
+	t.Parallel()
 	m := silenceModel(t)
 	ctx := t.Context()
 	require.NoError(t, m.deps.Store.EnsureChat(ctx, "oc_quiet", 1))
@@ -198,6 +208,7 @@ func TestSilenceTab_RosterLoadRefreshesTheSenderPicker(t *testing.T) {
 }
 
 func TestSilenceTab_PickerTakesARawIDWhenNothingMatches(t *testing.T) {
+	t.Parallel()
 	m := silenceModel(t)
 	m = press(t, m, "a", "tab", "enter")
 	m = typeText(t, m, "cli_zz")
@@ -207,6 +218,7 @@ func TestSilenceTab_PickerTakesARawIDWhenNothingMatches(t *testing.T) {
 }
 
 func TestSilenceTab_EscOutOfThePickerKeepsTheField(t *testing.T) {
+	t.Parallel()
 	m := silenceModel(t)
 	require.NoError(t, m.writeSilence(store.SilenceRules{{Chat: "oc_quiet"}}))
 	m = press(t, m, "enter", "enter")
@@ -217,6 +229,7 @@ func TestSilenceTab_EscOutOfThePickerKeepsTheField(t *testing.T) {
 }
 
 func TestSilenceTab_NamesChatsAndSendersAndFallsBackToTheID(t *testing.T) {
+	t.Parallel()
 	m := silenceModel(t)
 	require.NoError(t, m.writeSilence(store.SilenceRules{{Chat: "oc_quiet", Sender: "cli_c"}, {Chat: "oc_gone", Contains: "nightly"}}))
 	// The set is written unsorted above and listed by chat: oc_gone first.
@@ -228,6 +241,7 @@ func TestSilenceTab_NamesChatsAndSendersAndFallsBackToTheID(t *testing.T) {
 }
 
 func TestSilenceTab_ShowsMatchCountsAndIgnoresRulesSinceRemoved(t *testing.T) {
+	t.Parallel()
 	m := silenceModel(t)
 	stale := store.SilenceRules{{Chat: "oc_team"}, {Sender: "cli_c"}}
 	require.NoError(t, m.writeSilence(stale))
@@ -247,6 +261,7 @@ func TestSilenceTab_ShowsMatchCountsAndIgnoresRulesSinceRemoved(t *testing.T) {
 }
 
 func TestSilenceRecount_CountsOnlyTheRulesWithoutACount(t *testing.T) {
+	t.Parallel()
 	m := silenceModel(t)
 	require.NoError(t, m.writeSilence(store.SilenceRules{{Chat: "oc_team"}, {Sender: "cli_c"}}))
 	m = m.onSilenceMatches(loadSilenceMatches(m.deps, store.SilenceRules{{Chat: "oc_team"}})().(silenceMatchesMsg))
@@ -259,6 +274,7 @@ func TestSilenceRecount_CountsOnlyTheRulesWithoutACount(t *testing.T) {
 }
 
 func TestSilenceTab_AFormStartsWithoutTheLastRulesRoster(t *testing.T) {
+	t.Parallel()
 	m := silenceModel(t)
 	require.NoError(t, m.writeSilence(store.SilenceRules{{Chat: "oc_quiet"}, {Chat: "oc_team"}}))
 	m = press(t, m, "enter")
@@ -269,6 +285,7 @@ func TestSilenceTab_AFormStartsWithoutTheLastRulesRoster(t *testing.T) {
 }
 
 func TestSilenceTab_AFailedWriteLeavesTheSessionAlone(t *testing.T) {
+	t.Parallel()
 	m := silenceModel(t)
 	// A directory where the file should be is a write the rename refuses.
 	m.deps.ConfigPath = filepath.Join(t.TempDir(), "config.yaml")
@@ -283,6 +300,7 @@ func TestSilenceTab_AFailedWriteLeavesTheSessionAlone(t *testing.T) {
 }
 
 func TestSilenceTab_TheCaretSitsInTheFieldBeingTyped(t *testing.T) {
+	t.Parallel()
 	m := silenceModel(t)
 	m = press(t, m, "a", "tab", "tab")
 	m = typeText(t, m, "nightly")

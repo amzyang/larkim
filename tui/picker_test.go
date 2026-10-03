@@ -131,6 +131,7 @@ func keyCode(name string) rune {
 func reactKey(m Model, i int) string { return m.picker.menu.items[i].hit.Emoji.Key }
 
 func TestOpenPicker_ArmsAgainstTheSelectedMessage(t *testing.T) {
+	t.Parallel()
 	m := press(t, pickerModel(t), "e")
 	require.Equal(t, modeEmoji, m.mode)
 	require.Equal(t, "om_a", m.picker.target.MessageID)
@@ -139,6 +140,7 @@ func TestOpenPicker_ArmsAgainstTheSelectedMessage(t *testing.T) {
 }
 
 func TestPicker_FiltersAsTheReaderTypes(t *testing.T) {
+	t.Parallel()
 	m := press(t, pickerModel(t), "e", "z", "a", "n")
 	require.Equal(t, "zan", m.picker.input.Value())
 	require.Equal(t, "THUMBSUP", reactKey(m, 0))
@@ -150,6 +152,7 @@ func TestPicker_FiltersAsTheReaderTypes(t *testing.T) {
 }
 
 func TestPicker_AnswersNoCharacterQuery(t *testing.T) {
+	t.Parallel()
 	// A built-in answers by its names alone: the client draws it as its
 	// picture, and the wire never carries a character, so a pasted character
 	// names no reaction. A character is how the composer's own menu reaches a
@@ -159,6 +162,7 @@ func TestPicker_AnswersNoCharacterQuery(t *testing.T) {
 }
 
 func TestPicker_MovesOnArrowsBecauseTheQueryOwnsTheLetters(t *testing.T) {
+	t.Parallel()
 	m := press(t, pickerModel(t), "e")
 	first := reactKey(m, 0)
 	m = press(t, m, "down")
@@ -172,6 +176,7 @@ func TestPicker_MovesOnArrowsBecauseTheQueryOwnsTheLetters(t *testing.T) {
 }
 
 func TestPicker_EscLeavesWithoutReacting(t *testing.T) {
+	t.Parallel()
 	m := press(t, pickerModel(t), "e", "z")
 	m = press(t, m, "esc")
 	require.Equal(t, modeNormal, m.mode)
@@ -179,6 +184,7 @@ func TestPicker_EscLeavesWithoutReacting(t *testing.T) {
 }
 
 func TestPicker_RemembersWhatWasChosen(t *testing.T) {
+	t.Parallel()
 	m := press(t, pickerModel(t), "e", "m", "e", "i", "g", "u", "i")
 	require.Equal(t, "ROSE", reactKey(m, 0))
 	m = press(t, m, "enter")
@@ -187,6 +193,7 @@ func TestPicker_RemembersWhatWasChosen(t *testing.T) {
 }
 
 func TestPicker_TabWalksAndShiftTabWalksBack(t *testing.T) {
+	t.Parallel()
 	m := press(t, pickerModel(t), "e")
 	m = press(t, m, "tab")
 	require.Equal(t, 1, m.picker.menu.idx, "tab walks one offer")
@@ -196,6 +203,7 @@ func TestPicker_TabWalksAndShiftTabWalksBack(t *testing.T) {
 }
 
 func TestPicker_CtrlYAccepts(t *testing.T) {
+	t.Parallel()
 	m := press(t, pickerModel(t), "e", "m", "e", "i", "g", "u", "i")
 	require.Equal(t, "ROSE", reactKey(m, 0))
 	m = press(t, m, "ctrl+y")
@@ -204,6 +212,7 @@ func TestPicker_CtrlYAccepts(t *testing.T) {
 }
 
 func TestPicker_ADigitPicksTheRowItIsDrawnBeside(t *testing.T) {
+	t.Parallel()
 	// The digit narrows nothing — "zan1" is no emoji's term — so the rule
 	// hands it to the row it names.
 	m := press(t, pickerModel(t), "e", "z", "a", "n")
@@ -215,6 +224,7 @@ func TestPicker_ADigitPicksTheRowItIsDrawnBeside(t *testing.T) {
 }
 
 func TestPicker_ADigitGoesIntoTheQueryWhenOneAnswers(t *testing.T) {
+	t.Parallel()
 	m := press(t, pickerModel(t), "e", "6", "6", "6")
 	require.Equal(t, "666", m.picker.input.Value())
 	require.Equal(t, "AWESOME", reactKey(m, 0))
@@ -227,6 +237,7 @@ func TestPicker_ADigitGoesIntoTheQueryWhenOneAnswers(t *testing.T) {
 }
 
 func TestPicker_ATermSpelledInDigitsIsTypeable(t *testing.T) {
+	t.Parallel()
 	// 18X's every term carries a digit, so the query has to start with one.
 	m := press(t, pickerModel(t), "e", "1", "8")
 	require.Equal(t, "18", m.picker.input.Value())
@@ -234,6 +245,7 @@ func TestPicker_ATermSpelledInDigitsIsTypeable(t *testing.T) {
 }
 
 func TestPicker_OpensOnTheSmallestTerminalTheClientDraws(t *testing.T) {
+	t.Parallel()
 	// The chooser's own box is the composer's, so any terminal that can write
 	// a message can offer an emoji.
 	m := pickerModel(t)
@@ -245,6 +257,7 @@ func TestPicker_OpensOnTheSmallestTerminalTheClientDraws(t *testing.T) {
 }
 
 func TestPicker_SurvivesAResizeBelowWhatTheClientDraws(t *testing.T) {
+	t.Parallel()
 	// Nothing closes the chooser when the terminal shrinks under the size the
 	// client draws at, and the picture pass runs at any height.
 	m := press(t, pickerModel(t), "e")
@@ -257,6 +270,7 @@ func TestPicker_SurvivesAResizeBelowWhatTheClientDraws(t *testing.T) {
 }
 
 func TestPicker_TheListScrollsWithTheCursor(t *testing.T) {
+	t.Parallel()
 	m := press(t, pickerModel(t), "e")
 	rows := m.reactRows()
 	require.Positive(t, rows)
@@ -271,6 +285,7 @@ func TestPicker_TheListScrollsWithTheCursor(t *testing.T) {
 }
 
 func TestPicker_LeavesTheMessageOnScreenBehindIt(t *testing.T) {
+	t.Parallel()
 	// The reader has to see what they are reacting to, so the offers stand
 	// over the panes and cost the composer's box nothing.
 	m := press(t, pickerModel(t), "e")
@@ -280,6 +295,7 @@ func TestPicker_LeavesTheMessageOnScreenBehindIt(t *testing.T) {
 }
 
 func TestRenderPicker_StandsInTheComposersBoxRatherThanBesideIt(t *testing.T) {
+	t.Parallel()
 	shut := pickerModel(t)
 	open := press(t, shut, "e")
 	require.Equal(t, lipgloss.Width(shut.renderInput(shut.side)), lipgloss.Width(open.renderPicker()),
@@ -293,6 +309,7 @@ func TestRenderPicker_StandsInTheComposersBoxRatherThanBesideIt(t *testing.T) {
 }
 
 func TestModelPicturePrepare_ClaimsWhatTheOpenPickerOffers(t *testing.T) {
+	t.Parallel()
 	m := press(t, pickerModel(t), "e")
 	// Every offer the chooser can show carries a picture on a real start, so
 	// the whole visible window is cut before the pass claims it.
@@ -316,12 +333,14 @@ func TestModelPicturePrepare_ClaimsWhatTheOpenPickerOffers(t *testing.T) {
 }
 
 func TestPicker_MarksAnEmojiTheReaderAlreadyChose(t *testing.T) {
+	t.Parallel()
 	m := press(t, pickerModel(t), "e", "z", "a", "n")
 	require.Contains(t, ansi.Strip(m.picker.menu.rows[0].name), "✓",
 		"choosing it again takes the reaction back, and the row says so")
 }
 
 func TestRunReact_TogglesOffWhatTheReaderAlreadyChose(t *testing.T) {
+	t.Parallel()
 	m := pickerModel(t)
 	next, cmd := m.runCommand("react zan")
 	require.NotNil(t, cmd)
@@ -330,6 +349,7 @@ func TestRunReact_TogglesOffWhatTheReaderAlreadyChose(t *testing.T) {
 }
 
 func TestRunReact_SaysWhatIsWrongRatherThanReactingWithTheFirstThingItFinds(t *testing.T) {
+	t.Parallel()
 	m := pickerModel(t)
 	for _, tc := range []struct{ arg, want string }{
 		{"", "usage:"},
@@ -342,6 +362,7 @@ func TestRunReact_SaysWhatIsWrongRatherThanReactingWithTheFirstThingItFinds(t *t
 }
 
 func TestOpenPicker_TakesAMessageWhoseBodyIsNotRenderedYet(t *testing.T) {
+	t.Parallel()
 	// A reaction reaches a message by id alone, so waiting on the rendering
 	// would refuse a message Feishu already holds.
 	m := pickerModel(t)
@@ -351,6 +372,7 @@ func TestOpenPicker_TakesAMessageWhoseBodyIsNotRenderedYet(t *testing.T) {
 }
 
 func TestOpenPicker_RefusesASendStillOnItsWay(t *testing.T) {
+	t.Parallel()
 	m := pickerModel(t)
 	m.enqueue(outboxItem{localID: "local_1", chatID: "oc_team", msgType: "text", body: "稍等", createMs: 200})
 	m.applyOutbox()
@@ -363,11 +385,13 @@ func TestOpenPicker_RefusesASendStillOnItsWay(t *testing.T) {
 }
 
 func TestStatus_NamesThePickerWhileItIsOpen(t *testing.T) {
+	t.Parallel()
 	m := press(t, pickerModel(t), "e")
 	require.Contains(t, fmtStatus(m), "☺", "the mode line says which keys are live")
 }
 
 func TestPicker_FilterErasesTheWayReadlineDoes(t *testing.T) {
+	t.Parallel()
 	m := press(t, pickerModel(t), "e", "z", "a", "n")
 	m = press(t, m, "ctrl+h")
 	require.Equal(t, "za", m.picker.input.Value(), "the kitty protocol tells ctrl+h from backspace, and both erase a rune")
@@ -384,6 +408,7 @@ func TestPicker_FilterErasesTheWayReadlineDoes(t *testing.T) {
 }
 
 func TestView_PanesStandStillWhateverModeTheReaderIsIn(t *testing.T) {
+	t.Parallel()
 	// The bottom box is the same height in every mode, so pressing i, e or :
 	// moves nothing above it.
 	m := pickerModel(t)
@@ -415,6 +440,7 @@ func chipAt(t *testing.T, m Model, key string) (Model, tea.Cmd) {
 }
 
 func TestPressChip_DrawsThePressBeforeItIsSent(t *testing.T) {
+	t.Parallel()
 	m := pickerModel(t)
 	before := rowText(m.msgRows)
 	require.Contains(t, before, "[Like]⋮You", "the reader already reacted, which is what a press takes back")
@@ -426,6 +452,7 @@ func TestPressChip_DrawsThePressBeforeItIsSent(t *testing.T) {
 }
 
 func TestPressChip_SecondPressGoesTheOtherWay(t *testing.T) {
+	t.Parallel()
 	m := pickerModel(t)
 	m, _ = chipAt(t, m, "THUMBSUP")
 	require.False(t, m.reacts[0].on)
@@ -440,6 +467,7 @@ func TestPressChip_SecondPressGoesTheOtherWay(t *testing.T) {
 }
 
 func TestPressChip_LeavesTheCursorWhereItWas(t *testing.T) {
+	t.Parallel()
 	m := pickerModel(t)
 	m.msgIdx = 0
 	m, _ = chipAt(t, m, "THUMBSUP")
@@ -447,6 +475,7 @@ func TestPressChip_LeavesTheCursorWhereItWas(t *testing.T) {
 }
 
 func TestReactedMsg_TakesAFailedPressBackOffTheStrip(t *testing.T) {
+	t.Parallel()
 	m := pickerModel(t)
 	m, _ = chipAt(t, m, "THUMBSUP")
 	require.NotContains(t, rowText(m.msgRows), "[Like]")
@@ -458,6 +487,7 @@ func TestReactedMsg_TakesAFailedPressBackOffTheStrip(t *testing.T) {
 }
 
 func TestReactedMsg_AsksForTheSummaryRatherThanWaitingOnARevision(t *testing.T) {
+	t.Parallel()
 	m := pickerModel(t)
 	m, _ = chipAt(t, m, "THUMBSUP")
 	next, cmd := m.update(reactedMsg{p: m.reacts[0]})
@@ -469,6 +499,7 @@ func TestReactedMsg_AsksForTheSummaryRatherThanWaitingOnARevision(t *testing.T) 
 }
 
 func TestReactedMsg_StopsDrawingARemovalFeishuTookWithoutChangingAnything(t *testing.T) {
+	t.Parallel()
 	// Taking back a reaction Feishu no longer holds answers without moving the
 	// summary. The press must still go when the reload lands, or the strip
 	// keeps showing a reaction that is not there until the window runs out.
@@ -484,6 +515,7 @@ func TestReactedMsg_StopsDrawingARemovalFeishuTookWithoutChangingAnything(t *tes
 }
 
 func TestReactedMsg_RollsBackOnlyThePressThatFailed(t *testing.T) {
+	t.Parallel()
 	m := pickerModel(t)
 	m, _ = chipAt(t, m, "THUMBSUP")
 	failed := m.reacts[0]
@@ -496,6 +528,7 @@ func TestReactedMsg_RollsBackOnlyThePressThatFailed(t *testing.T) {
 }
 
 func TestOpenPicker_MarksWhatAPressAlreadyPut(t *testing.T) {
+	t.Parallel()
 	m := pickerModel(t)
 	// Taking the reaction back means the chooser must stop marking it, even
 	// though the store still says the reader has it.
@@ -505,6 +538,7 @@ func TestOpenPicker_MarksWhatAPressAlreadyPut(t *testing.T) {
 }
 
 func TestReactRow_SaysALetteringEmojisNameOnce(t *testing.T) {
+	t.Parallel()
 	// OK, Yes, No and OKR are spelled as their own name, and the picture in
 	// the icon column spells it again; the row must not.
 	m := press(t, pickerModel(t), "e", "y", "e", "s")
@@ -515,6 +549,7 @@ func TestReactRow_SaysALetteringEmojisNameOnce(t *testing.T) {
 }
 
 func TestReactInfo_StillNamesTheKeyAndThePinyinThatReachedIt(t *testing.T) {
+	t.Parallel()
 	m := press(t, pickerModel(t), "e", "d", "z")
 	require.Equal(t, "THUMBSUP", reactKey(m, 0))
 	info := ansi.Strip(strings.Join(m.picker.menu.view(m.reactRows()).info, "\n"))
@@ -523,6 +558,7 @@ func TestReactInfo_StillNamesTheKeyAndThePinyinThatReachedIt(t *testing.T) {
 }
 
 func TestRenderPicker_NamesTheBandOnlyWhenItIsTheReadersOwn(t *testing.T) {
+	t.Parallel()
 	m := press(t, pickerModel(t), "e")
 	require.NotContains(t, ansi.Strip(m.renderPicker()), "frequently used",
 		"nothing reached for yet: the lead is the client's panel order, not this reader's habits")
@@ -555,6 +591,7 @@ func pictureModel(t *testing.T) (Model, *larkcli.Fake) {
 }
 
 func TestToggleReaction_SendsAWithdrawnEmojiAsAPictureInstead(t *testing.T) {
+	t.Parallel()
 	m, f := pictureModel(t)
 	next, cmd := m.toggleReaction(m.msgs[0], withdrawnKey)
 	m = next.(Model)
@@ -571,6 +608,7 @@ func TestToggleReaction_SendsAWithdrawnEmojiAsAPictureInstead(t *testing.T) {
 }
 
 func TestToggleReaction_DrawsTheOutgoingPictureUnderTheMessage(t *testing.T) {
+	t.Parallel()
 	m, _ := pictureModel(t)
 	next, _ := m.toggleReaction(m.msgs[0], withdrawnKey)
 	m = next.(Model)
@@ -579,6 +617,7 @@ func TestToggleReaction_DrawsTheOutgoingPictureUnderTheMessage(t *testing.T) {
 }
 
 func TestToggleReaction_StillTakesBackAWithdrawnEmojiAlreadyOnTheMessage(t *testing.T) {
+	t.Parallel()
 	// Somebody reacted with it before the client withdrew it. Taking one's own
 	// back is a reaction, not a picture.
 	m, _ := pictureModel(t)
@@ -596,6 +635,7 @@ func TestToggleReaction_StillTakesBackAWithdrawnEmojiAlreadyOnTheMessage(t *test
 }
 
 func TestReactRow_SaysWhichEmojiGoInAsAPicture(t *testing.T) {
+	t.Parallel()
 	m := press(t, pickerModel(t), "e")
 	m = paste(t, m, "给力")
 	require.NotEmpty(t, m.picker.menu.items)

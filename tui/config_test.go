@@ -55,6 +55,7 @@ func cursorLine(lines []string, idx, top int) string {
 }
 
 func TestConfig_OpensOnEveryKeyOfTheFile(t *testing.T) {
+	t.Parallel()
 	m := configModel(t)
 	require.True(t, m.config.open)
 	require.Len(t, m.config.hits, len(config.Keys()))
@@ -62,6 +63,7 @@ func TestConfig_OpensOnEveryKeyOfTheFile(t *testing.T) {
 }
 
 func TestConfig_ShowsTheValueThisSessionRunsNotTheFiles(t *testing.T) {
+	t.Parallel()
 	m := configModel(t)
 	m = m.closeConfig().runSet("applink_pace_ms=1500")
 	m = m.openConfig("applink_pace_ms")
@@ -70,6 +72,7 @@ func TestConfig_ShowsTheValueThisSessionRunsNotTheFiles(t *testing.T) {
 }
 
 func TestConfig_JumpsToTheKeyItWasNamed(t *testing.T) {
+	t.Parallel()
 	m := configModel(t)
 	m = m.openConfig("ai.model")
 	s, ok := m.configFocus()
@@ -78,6 +81,7 @@ func TestConfig_JumpsToTheKeyItWasNamed(t *testing.T) {
 }
 
 func TestConfig_RefusesAKeyTheFileHasNot(t *testing.T) {
+	t.Parallel()
 	m := configModel(t)
 	m = m.closeConfig().openConfig("nope")
 	require.False(t, m.config.open)
@@ -86,6 +90,7 @@ func TestConfig_RefusesAKeyTheFileHasNot(t *testing.T) {
 }
 
 func TestConfig_AnEditWritesTheFileAndReachesTheSession(t *testing.T) {
+	t.Parallel()
 	m := configModel(t)
 	m = m.openConfig("applink_pace_ms")
 	m = press(t, m, "enter")
@@ -100,6 +105,7 @@ func TestConfig_AnEditWritesTheFileAndReachesTheSession(t *testing.T) {
 }
 
 func TestConfig_AnEditOfAStartupKeyWritesTheFileAndSaysSo(t *testing.T) {
+	t.Parallel()
 	m := configModel(t)
 	m = m.openConfig("backfill_days")
 	m = press(t, m, "enter", "ctrl+u", "7", "enter")
@@ -109,6 +115,7 @@ func TestConfig_AnEditOfAStartupKeyWritesTheFileAndSaysSo(t *testing.T) {
 }
 
 func TestConfig_ANestedKeyReachesItsSectionAlone(t *testing.T) {
+	t.Parallel()
 	m := configModel(t)
 	m = m.openConfig("ai.context")
 	m = press(t, m, "enter", "ctrl+u", "2", "0", "enter")
@@ -119,6 +126,7 @@ func TestConfig_ANestedKeyReachesItsSectionAlone(t *testing.T) {
 }
 
 func TestConfig_ARefusedValueKeepsWhatWasTyped(t *testing.T) {
+	t.Parallel()
 	m := configModel(t)
 	m = m.openConfig("applink_pace_ms")
 	m = press(t, m, "enter", "ctrl+u", "0", "enter")
@@ -132,6 +140,7 @@ func TestConfig_ARefusedValueKeepsWhatWasTyped(t *testing.T) {
 }
 
 func TestConfig_RefusesADurationSpellingOfThePollInterval(t *testing.T) {
+	t.Parallel()
 	// The unit is in the key's name, so 3s is the reader writing it twice.
 	m := configModel(t)
 	m = m.openConfig("poll_interval_ms")
@@ -143,6 +152,7 @@ func TestConfig_RefusesADurationSpellingOfThePollInterval(t *testing.T) {
 }
 
 func TestConfig_RestoresTheDefault(t *testing.T) {
+	t.Parallel()
 	m := configModel(t)
 	m = m.openConfig("backfill_days")
 	m = press(t, m, "&")
@@ -151,6 +161,7 @@ func TestConfig_RestoresTheDefault(t *testing.T) {
 }
 
 func TestConfig_ResetRefusesTheSilenceList(t *testing.T) {
+	t.Parallel()
 	m := configModel(t)
 	m.cfg.Silence = store.SilenceRules{{Chat: "oc_quiet"}}
 	m = press(t, m, "G", "k", "&")
@@ -160,6 +171,7 @@ func TestConfig_ResetRefusesTheSilenceList(t *testing.T) {
 }
 
 func TestConfig_SilenceKeyOpensTheSilenceTab(t *testing.T) {
+	t.Parallel()
 	m := configModel(t)
 	m = m.closeConfig().openConfig("silence")
 	require.Equal(t, tabSilence, m.config.tab, ":config silence")
@@ -173,6 +185,7 @@ func TestConfig_SilenceKeyOpensTheSilenceTab(t *testing.T) {
 }
 
 func TestConfig_TabSwitchesBetweenGeneralAndSilence(t *testing.T) {
+	t.Parallel()
 	m := configModel(t)
 	m = press(t, m, "j", "tab")
 	require.Equal(t, tabSilence, m.config.tab)
@@ -185,6 +198,7 @@ func TestConfig_TabSwitchesBetweenGeneralAndSilence(t *testing.T) {
 }
 
 func TestConfig_TabIsTypedIntoAnOpenEditor(t *testing.T) {
+	t.Parallel()
 	m := configModel(t)
 	m = press(t, m, "/", "tab")
 	require.Equal(t, tabGeneral, m.config.tab, "the filter keeps the key")
@@ -196,6 +210,7 @@ func TestConfig_TabIsTypedIntoAnOpenEditor(t *testing.T) {
 }
 
 func TestConfig_FilterNarrowsOnKeyAndOnProse(t *testing.T) {
+	t.Parallel()
 	m := configModel(t)
 	m = press(t, m, "/", "a", "i", ".")
 	keys := make([]string, len(m.config.hits))
@@ -219,6 +234,7 @@ func TestConfig_FilterNarrowsOnKeyAndOnProse(t *testing.T) {
 }
 
 func TestConfig_EscBacksOutOneLayerAtATime(t *testing.T) {
+	t.Parallel()
 	m := configModel(t)
 	m = press(t, m, "/", "a", "i", "esc")
 	require.True(t, m.config.open)
@@ -229,6 +245,7 @@ func TestConfig_EscBacksOutOneLayerAtATime(t *testing.T) {
 }
 
 func TestConfig_EscOutOfAnEditKeepsThePanel(t *testing.T) {
+	t.Parallel()
 	m := configModel(t)
 	m = m.openConfig("backfill_days")
 	m = press(t, m, "enter", "9", "esc")
@@ -238,6 +255,7 @@ func TestConfig_EscOutOfAnEditKeepsThePanel(t *testing.T) {
 }
 
 func TestConfig_AStrayKeyLeavesThePanelStanding(t *testing.T) {
+	t.Parallel()
 	m := configModel(t)
 	m = press(t, m, "j", "j", "z")
 	require.True(t, m.config.open)
@@ -245,6 +263,7 @@ func TestConfig_AStrayKeyLeavesThePanelStanding(t *testing.T) {
 }
 
 func TestConfig_TakesEveryKeyAheadOfTheHelpPanel(t *testing.T) {
+	t.Parallel()
 	m := configModel(t)
 	m.help = helpPanel{open: true}
 	m = press(t, m, "j")
@@ -253,6 +272,7 @@ func TestConfig_TakesEveryKeyAheadOfTheHelpPanel(t *testing.T) {
 }
 
 func TestConfig_RenderFillsTheBoxAtEveryWidth(t *testing.T) {
+	t.Parallel()
 	for _, tab := range []configTab{tabGeneral, tabSilence} {
 		for _, w := range []int{minWidth, 100, 160} {
 			m := configModel(t)
@@ -271,6 +291,7 @@ func TestConfig_RenderFillsTheBoxAtEveryWidth(t *testing.T) {
 }
 
 func TestConfig_TheOverlayIsTheWholeView(t *testing.T) {
+	t.Parallel()
 	m := configModel(t)
 	v := m.View()
 	lines := strings.Split(ansi.Strip(v.Content), "\n")
@@ -281,6 +302,7 @@ func TestConfig_TheOverlayIsTheWholeView(t *testing.T) {
 }
 
 func TestConfig_TheWheelScrollsIt(t *testing.T) {
+	t.Parallel()
 	m := configModel(t)
 	next, _ := m.Update(tea.MouseWheelMsg{Button: tea.MouseWheelDown})
 	require.Positive(t, next.(Model).config.idx)
@@ -291,6 +313,7 @@ func TestConfig_TheWheelScrollsIt(t *testing.T) {
 const applinkDefaultPaceForTest = time.Second
 
 func TestConfig_ANewModelRebuildsTheAssistantAndIsWritten(t *testing.T) {
+	t.Parallel()
 	m := configModel(t)
 	var asked []string
 	m.deps.NewAI = func(agent, model string) AIStreamer {
@@ -310,6 +333,7 @@ func TestConfig_ANewModelRebuildsTheAssistantAndIsWritten(t *testing.T) {
 }
 
 func TestConfig_ANewContextReachesTheNextQuestion(t *testing.T) {
+	t.Parallel()
 	m := configModel(t)
 	m = m.openConfig("ai.context")
 	m = press(t, m, "enter", "ctrl+u", "1", "2", "enter")
@@ -319,6 +343,7 @@ func TestConfig_ANewContextReachesTheNextQuestion(t *testing.T) {
 }
 
 func TestConfig_TheEditorOpensInTheCellItReplaces(t *testing.T) {
+	t.Parallel()
 	m := configModel(t)
 	m = m.openConfig("poll_interval_ms")
 	m = press(t, m, "enter")
@@ -333,6 +358,7 @@ func TestConfig_TheEditorOpensInTheCellItReplaces(t *testing.T) {
 }
 
 func TestConfig_TheCellBeingEditedLooksUnlikeAValue(t *testing.T) {
+	t.Parallel()
 	m := configModel(t)
 	m = m.openConfig("poll_interval_ms")
 	// The box's own border, its head row and the blank under it come first.
@@ -344,6 +370,7 @@ func TestConfig_TheCellBeingEditedLooksUnlikeAValue(t *testing.T) {
 }
 
 func TestConfig_TheEditorWindowsAValueLongerThanItsColumn(t *testing.T) {
+	t.Parallel()
 	m := configModel(t)
 	m.width, m.height = minWidth, 24
 	m.layout()

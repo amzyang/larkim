@@ -27,21 +27,25 @@ func paged(n, limit int) Model {
 }
 
 func TestNew_StartsOnOneMessagePage(t *testing.T) {
+	t.Parallel()
 	require.Equal(t, messagePageSize, New(Deps{Self: "ou_me"}).msgLimit)
 }
 
 func TestMessageQuery_CarriesTheGrownLimit(t *testing.T) {
+	t.Parallel()
 	require.Equal(t, 600, messageQuery("oc_1", 0, 600).Limit)
 	require.Equal(t, 600, messageQuery("oc_1", 123, 600).Limit, "an anchored page is bounded by the same limit")
 }
 
 func TestGrowMessages_FullPageAsksForMore(t *testing.T) {
+	t.Parallel()
 	m := paged(messagePageSize, messagePageSize)
 	require.NotNil(t, m.growMessages())
 	require.Equal(t, 2*messagePageSize, m.msgLimit)
 }
 
 func TestGrowMessages_AsksOnceWhileThePageIsInFlight(t *testing.T) {
+	t.Parallel()
 	m := paged(messagePageSize, messagePageSize)
 	require.NotNil(t, m.growMessages())
 	require.Nil(t, m.growMessages(), "the widened limit is itself the guard")
@@ -49,12 +53,14 @@ func TestGrowMessages_AsksOnceWhileThePageIsInFlight(t *testing.T) {
 }
 
 func TestGrowMessages_ShortChatAsksForNothing(t *testing.T) {
+	t.Parallel()
 	m := paged(messagePageSize-1, messagePageSize)
 	require.Nil(t, m.growMessages())
 	require.True(t, m.atLocalFloor())
 }
 
 func TestGrowMessages_OnlyAtTheTop(t *testing.T) {
+	t.Parallel()
 	m := paged(messagePageSize, messagePageSize)
 	m.msgTop = 1
 	require.Nil(t, m.growMessages())
@@ -62,18 +68,21 @@ func TestGrowMessages_OnlyAtTheTop(t *testing.T) {
 }
 
 func TestGrowMessages_SearchPanelAsksForNothing(t *testing.T) {
+	t.Parallel()
 	m := paged(messagePageSize, messagePageSize)
 	m.searching = true
 	require.Nil(t, m.growMessages())
 }
 
 func TestGrowMessages_EmptyChatAsksForNothing(t *testing.T) {
+	t.Parallel()
 	m := paged(0, messagePageSize)
 	m.chatID = ""
 	require.Nil(t, m.growMessages())
 }
 
 func TestGrowMessages_FromASearchAnchorDropsTheAnchor(t *testing.T) {
+	t.Parallel()
 	m := paged(anchoredPageSize, anchoredPageSize)
 	m.msgSince = 123
 	require.NotNil(t, m.growMessages())
@@ -82,6 +91,7 @@ func TestGrowMessages_FromASearchAnchorDropsTheAnchor(t *testing.T) {
 }
 
 func TestMove_ScrollToTopAsksForAnOlderPage(t *testing.T) {
+	t.Parallel()
 	m := paged(messagePageSize, messagePageSize)
 	m.focus, m.msgIdx = paneMessages, 0
 	mm, cmd := m.move(-1)
@@ -90,6 +100,7 @@ func TestMove_ScrollToTopAsksForAnOlderPage(t *testing.T) {
 }
 
 func TestWheel_ScrollToTopAsksForAnOlderPage(t *testing.T) {
+	t.Parallel()
 	m := paged(messagePageSize, messagePageSize)
 	m.msgTop = 1
 	mm, cmd := m.onWheel(tea.Mouse{X: chatsWidth + 5, Y: 4, Button: tea.MouseWheelUp})
@@ -98,6 +109,7 @@ func TestWheel_ScrollToTopAsksForAnOlderPage(t *testing.T) {
 }
 
 func TestGrownPage_KeepsTheTopRow(t *testing.T) {
+	t.Parallel()
 	m := paged(messagePageSize, messagePageSize)
 	m.chatID, m.msgTop = "oc_1", 6
 	top := m.msgRows[m.msgTop].idx
@@ -122,6 +134,7 @@ func atFloor(floorMs int64) Model {
 }
 
 func TestRebuildMessages_MarksTheLocalFloor(t *testing.T) {
+	t.Parallel()
 	require.True(t, atFloor(1000).msgRows[0].plain)
 	require.Contains(t, atFloor(1000).msgRows[0].text, floorLabel)
 	require.Contains(t, atFloor(0).msgRows[0].text, startLabel, "nothing older is left to fetch")
@@ -133,11 +146,13 @@ func TestRebuildMessages_MarksTheLocalFloor(t *testing.T) {
 }
 
 func TestRebuildMessages_FullPageCarriesNoFloor(t *testing.T) {
+	t.Parallel()
 	m := paged(messagePageSize, messagePageSize)
 	require.NotContains(t, m.msgRows[0].text, floorLabel, "a full page has more behind it")
 }
 
 func TestPullOlder_AtTheFloorReachesPastIt(t *testing.T) {
+	t.Parallel()
 	m := atFloor(1000)
 	require.NotNil(t, m.growMessages())
 	require.True(t, m.msgPullInFlight)
@@ -145,18 +160,21 @@ func TestPullOlder_AtTheFloorReachesPastIt(t *testing.T) {
 }
 
 func TestPullOlder_AsksOnceWhileTheCallIsOut(t *testing.T) {
+	t.Parallel()
 	m := atFloor(1000)
 	require.NotNil(t, m.growMessages())
 	require.Nil(t, m.growMessages())
 }
 
 func TestPullOlder_CompleteHistoryAsksNothing(t *testing.T) {
+	t.Parallel()
 	m := atFloor(0)
 	require.Nil(t, m.growMessages())
 	require.False(t, m.msgPullInFlight)
 }
 
 func TestNoteOlderPull_AFailureSaysSoAndFreesTheNextTry(t *testing.T) {
+	t.Parallel()
 	m := atFloor(1000)
 	m.msgPullInFlight = true
 	require.Nil(t, m.noteOlderPull(olderPulledMsg{chatID: m.chatID, err: errors.New("rate limited")}))
@@ -166,6 +184,7 @@ func TestNoteOlderPull_AFailureSaysSoAndFreesTheNextTry(t *testing.T) {
 }
 
 func TestNoteOlderPull_AnAnswerForAChatSinceLeftIsDropped(t *testing.T) {
+	t.Parallel()
 	m := atFloor(1000)
 	m.msgPullInFlight = true
 	require.Nil(t, m.noteOlderPull(olderPulledMsg{chatID: "oc_elsewhere", err: errors.New("boom")}))
@@ -174,10 +193,12 @@ func TestNoteOlderPull_AnAnswerForAChatSinceLeftIsDropped(t *testing.T) {
 }
 
 func TestRebuildMessages_EmptyChatCarriesNoFloor(t *testing.T) {
+	t.Parallel()
 	require.Empty(t, paged(0, messagePageSize).msgRows)
 }
 
 func TestNoteOlderPull_ASuccessRereadsTheFloorItMoved(t *testing.T) {
+	t.Parallel()
 	m := atFloor(1000)
 	m.msgPullInFlight = true
 	// history_floor_ms is outside the revision trigger, so the pane would go

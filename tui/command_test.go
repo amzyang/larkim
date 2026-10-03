@@ -8,6 +8,7 @@ import (
 )
 
 func TestResolveCommand_AUniquePrefixReachesTheWholeName(t *testing.T) {
+	t.Parallel()
 	for typed, want := range map[string]string{
 		"cop":      "copy",
 		"cf":       "config",
@@ -28,6 +29,7 @@ func TestResolveCommand_AUniquePrefixReachesTheWholeName(t *testing.T) {
 }
 
 func TestResolveCommand_AnExactSpellingBeatsALongerName(t *testing.T) {
+	t.Parallel()
 	// s, u and q are names in their own right, so they stand for themselves
 	// however many longer commands share their first letter.
 	for typed, want := range map[string]string{
@@ -45,6 +47,7 @@ func TestResolveCommand_AnExactSpellingBeatsALongerName(t *testing.T) {
 }
 
 func TestResolveCommand_RefusesAPrefixSeveralCommandsAnswerTo(t *testing.T) {
+	t.Parallel()
 	for _, typed := range []string{"", "co", "re", "se", "zz"} {
 		_, ok := resolveCommand(typed)
 		require.False(t, ok, ":%s resolved to something", typed)
@@ -52,6 +55,7 @@ func TestResolveCommand_RefusesAPrefixSeveralCommandsAnswerTo(t *testing.T) {
 }
 
 func TestCommandsWithPrefix_OffersACommandOnceHoweverManySpellingsMatched(t *testing.T) {
+	t.Parallel()
 	// goto answers to both "goto" and the alias "chat", and c reaches it
 	// through the second — but it is one command and so one offer.
 	require.Equal(t, []string{"copy", "goto", "candidates", "config"}, names(commandsWithPrefix("c")))
@@ -60,6 +64,7 @@ func TestCommandsWithPrefix_OffersACommandOnceHoweverManySpellingsMatched(t *tes
 }
 
 func TestRunCommand_AnAmbiguousPrefixNamesTheCandidates(t *testing.T) {
+	t.Parallel()
 	m, _ := newOutboxModel(t)
 
 	out, cmd := m.runCommand("re")
@@ -72,6 +77,7 @@ func TestRunCommand_AnAmbiguousPrefixNamesTheCandidates(t *testing.T) {
 }
 
 func TestRunCommand_StillRejectsWhatMatchesNothing(t *testing.T) {
+	t.Parallel()
 	m, _ := newOutboxModel(t)
 
 	out, cmd := m.runCommand("zzz now")
@@ -84,6 +90,7 @@ func TestRunCommand_StillRejectsWhatMatchesNothing(t *testing.T) {
 // command nobody finds, and one listed there that : does not answer to is a
 // promise the line cannot keep.
 func TestHelpEntries_NameEveryCommand(t *testing.T) {
+	t.Parallel()
 	listed := map[string]bool{}
 	for _, e := range helpEntries {
 		if e.mode != "COMMAND" || e.keys == "" {
@@ -108,6 +115,7 @@ func names(cs []command) []string {
 }
 
 func TestResolveCommand_SeReachesSearchSendAndSet(t *testing.T) {
+	t.Parallel()
 	// Three commands share it, so it stands for none of them; :s is still
 	// :search, because an exact alias beats every longer name.
 	_, ok := resolveCommand("se")

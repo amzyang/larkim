@@ -41,6 +41,7 @@ func picsIn(rows []msgRow) int {
 }
 
 func TestBodyRows_DrawsEveryEmojiAsTheClientsPicture(t *testing.T) {
+	t.Parallel()
 	rows := bodyOf("abc[完成]def[了解]", drawingStyle(t))
 	require.Equal(t, 2, picsIn(rows), "both emoji are the client's own pictures")
 	out := rowText(rows)
@@ -51,6 +52,7 @@ func TestBodyRows_DrawsEveryEmojiAsTheClientsPicture(t *testing.T) {
 }
 
 func TestBodyRows_DrawsAPostShortcodeAsAPicture(t *testing.T) {
+	t.Parallel()
 	rows := renderRows([]store.Message{{MessageID: "om_1", SenderID: "ou_a", SenderName: "张三",
 		MsgType: "post", Content: "abc:GET:def", CreateMs: msgAt(23, 9, 0), RenderedAt: 1}}, drawingStyle(t))
 	require.Equal(t, 1, picsIn(rows))
@@ -58,12 +60,14 @@ func TestBodyRows_DrawsAPostShortcodeAsAPicture(t *testing.T) {
 }
 
 func TestBodyRows_KeepsTheSpellingWhereNoPictureCanBeDrawn(t *testing.T) {
+	t.Parallel()
 	rows := bodyOf("abc[完成]", baseStyle())
 	require.Zero(t, picsIn(rows), "a terminal without graphics draws no picture")
 	require.Contains(t, rowText(rows), "[完成]", "the spelling stays the text the message stores")
 }
 
 func TestBodyRows_DrawsAnEmojiACharacterOnceCarriedAsItsPicture(t *testing.T) {
+	t.Parallel()
 	// The client draws every built-in emoji as its picture, so an emoji a
 	// Unicode character once stood in for is drawn no differently.
 	rows := bodyOf("谢谢[双手合十]", drawingStyle(t))
@@ -73,6 +77,7 @@ func TestBodyRows_DrawsAnEmojiACharacterOnceCarriedAsItsPicture(t *testing.T) {
 }
 
 func TestBodyRows_WrapsALongLineWithoutBreakingThePicture(t *testing.T) {
+	t.Parallel()
 	st := drawingStyle(t)
 	rows := bodyOf(strings.Repeat("排期已经确认", 12)+"[完成]"+strings.Repeat("收到", 12), st)
 	require.Equal(t, 1, picsIn(rows))
@@ -86,12 +91,14 @@ func TestBodyRows_WrapsALongLineWithoutBreakingThePicture(t *testing.T) {
 }
 
 func TestBodyRows_LeavesALinkLabelAlone(t *testing.T) {
+	t.Parallel()
 	rows := bodyOf("看这里 [了解](https://example.com/x) 谢谢", drawingStyle(t))
 	require.Zero(t, picsIn(rows), "a link label is not an emoji")
 	require.Contains(t, rowText(rows), "了解")
 }
 
 func TestBodyRows_TintsABodyRowThatCarriesAnEmojiPicture(t *testing.T) {
+	t.Parallel()
 	rows := bodyOf("abc[完成]def", drawingStyle(t))
 	var body msgRow
 	for _, r := range rows {
@@ -104,6 +111,7 @@ func TestBodyRows_TintsABodyRowThatCarriesAnEmojiPicture(t *testing.T) {
 }
 
 func TestReactionRows_StayUntinted(t *testing.T) {
+	t.Parallel()
 	st := drawingStyle(t)
 	rows := renderRows([]store.Message{{MessageID: "om_a", SenderID: "ou_a", SenderName: "张三",
 		Content: "同意", CreateMs: msgAt(23, 9, 0), RenderedAt: 1,
@@ -116,6 +124,7 @@ func TestReactionRows_StayUntinted(t *testing.T) {
 }
 
 func TestHyperlink_NamesTheTargetAndClosesAfterIt(t *testing.T) {
+	t.Parallel()
 	out := hyperlink("https://example.com/x", "详情")
 	require.True(t, strings.HasPrefix(out, "\x1b]8;id="))
 	require.Contains(t, out, ";https://example.com/x\a详情")
@@ -125,6 +134,7 @@ func TestHyperlink_NamesTheTargetAndClosesAfterIt(t *testing.T) {
 }
 
 func TestHyperlink_TheHalvesOfAWrappedLinkShareOneName(t *testing.T) {
+	t.Parallel()
 	head, tail := hyperlink("https://example.com/x", "上"), hyperlink("https://example.com/x", "下")
 	id, _, _ := strings.Cut(strings.TrimPrefix(head, "\x1b]8;"), ";")
 	require.Contains(t, tail, id, "the terminal hovers the two fragments as the one link they are")
@@ -132,12 +142,14 @@ func TestHyperlink_TheHalvesOfAWrappedLinkShareOneName(t *testing.T) {
 }
 
 func TestFileURL_EscapesWhatAPathMayHoldAndAURLMayNot(t *testing.T) {
+	t.Parallel()
 	require.Equal(t, "file:///Users/linlan/a%20b/%E6%8A%A5%E5%91%8A.pdf",
 		fileURL("/Users/linlan/a b/报告.pdf"))
 	require.Empty(t, fileURL(""), "nothing downloaded, nowhere to lead")
 }
 
 func TestJoinSegs_LinksOnlyTheSegmentsThatLeadSomewhere(t *testing.T) {
+	t.Parallel()
 	segs := []rowSeg{{text: "见 "}, {text: stLink.Render("详情"), urls: []string{"https://example.com/x"}}}
 	out := Model{}.joinSegs(segs, 20)
 	require.Contains(t, out, ";https://example.com/x\a")
@@ -147,6 +159,7 @@ func TestJoinSegs_LinksOnlyTheSegmentsThatLeadSomewhere(t *testing.T) {
 }
 
 func TestJoinSegs_ClosesALinkTheRowWidthCutThrough(t *testing.T) {
+	t.Parallel()
 	segs := []rowSeg{{text: stLink.Render("很长的标签"), urls: []string{"https://example.com/x"}}}
 	out := Model{}.joinSegs(segs, 4)
 	require.True(t, strings.HasSuffix(out, ansi.ResetHyperlink()))
@@ -154,6 +167,7 @@ func TestJoinSegs_ClosesALinkTheRowWidthCutThrough(t *testing.T) {
 }
 
 func TestWrapSegs_FillsTheRowWithCJKRatherThanOrphaningWhatCameBefore(t *testing.T) {
+	t.Parallel()
 	// CJK breaks between any two ideographs, so a run that will not fit whole
 	// fills the row it starts on. Moving it down instead would leave the piece
 	// before it — a list marker, a mention — alone on a row of its own.
@@ -173,6 +187,7 @@ func TestWrapSegs_FillsTheRowWithCJKRatherThanOrphaningWhatCameBefore(t *testing
 }
 
 func TestWrapSegs_ALongWordStillMovesToARowOfItsOwn(t *testing.T) {
+	t.Parallel()
 	// A word that would fit on an empty row is not cut to fill this one.
 	rows := wrapSegs([]rowSeg{{text: "ab "}, {text: "supercalifragilistic"}}, 22)
 	require.Len(t, rows, 2)
@@ -193,6 +208,7 @@ func rowStrings(rows [][]rowSeg) []string {
 }
 
 func TestWrapSegs_TheBreakSpaceAfterAStyledRunOpensNoRow(t *testing.T) {
+	t.Parallel()
 	styled := stCode.Render("cd")
 	require.Contains(t, styled, "\x1b[", "an unstyled run would prove nothing here")
 	require.Equal(t, []string{"ab cd", "efgh"},
@@ -202,6 +218,7 @@ func TestWrapSegs_TheBreakSpaceAfterAStyledRunOpensNoRow(t *testing.T) {
 }
 
 func TestWrapSegs_AContinuationRowDropsTheSpaceItOpensWith(t *testing.T) {
+	t.Parallel()
 	segs := []rowSeg{{text: "aaaa"}, {text: stLink.Render("bb"), urls: []string{"https://example.com/x"}}, {text: " cc"}}
 	require.Equal(t, []string{"aaaabb", "cc"}, rowStrings(wrapSegs(segs, 6)))
 	require.Equal(t, []string{"  ab"}, rowStrings(wrapSegs([]rowSeg{{text: "  ab"}}, 6)),
@@ -209,9 +226,11 @@ func TestWrapSegs_AContinuationRowDropsTheSpaceItOpensWith(t *testing.T) {
 }
 
 func TestWrapSegs_BreaksBetweenIdeographsLikeTheClient(t *testing.T) {
+	t.Parallel()
 	require.Equal(t, []string{"ab 中文", "字符串"}, rowStrings(wrapSegs([]rowSeg{{text: "ab 中文字符串"}}, 8)))
 }
 
 func TestWrapSegs_NoRowOpensOnClosingPunctuation(t *testing.T) {
+	t.Parallel()
 	require.Equal(t, []string{"中文", "字，好"}, rowStrings(wrapSegs([]rowSeg{{text: "中文字，好"}}, 6)))
 }

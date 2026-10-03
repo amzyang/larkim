@@ -21,6 +21,7 @@ func badge(name string) string {
 const pairMentions = `[{"id":"ou_me","name":"林岚"},{"id":"ou_peer","name":"张三"},{"id":"ou_a","name":"李四"}]`
 
 func TestMentions_BadgesTheReaderAndAccentsEveryoneElse(t *testing.T) {
+	t.Parallel()
 	me := mentionsIn(selfMention, "ou_me").render("@林岚 reachable")
 	require.Equal(t, badge("@林岚")+" reachable", me)
 
@@ -33,6 +34,7 @@ func TestMentions_BadgesTheReaderAndAccentsEveryoneElse(t *testing.T) {
 }
 
 func TestMentions_BadgeWearsTheCapsAChipDoes(t *testing.T) {
+	t.Parallel()
 	out := mentionsIn(selfMention, "ou_me").render("@林岚 hi")
 	require.Equal(t, stMentionMeEdge.Render(chipLeft)+stMentionMe.Render("@林岚")+stMentionMeEdge.Render(chipRight)+" hi", out,
 		"a cap is painted in the very fill it closes")
@@ -44,28 +46,33 @@ func TestMentions_BadgeWearsTheCapsAChipDoes(t *testing.T) {
 }
 
 func TestMentions_AllReadsAsItsName(t *testing.T) {
+	t.Parallel()
 	require.Equal(t, stAccent.Render(allName)+" all", mentionsIn("", "ou_me").render("@_all all"),
 		"@_all resolves to no name of its own, so the client's spelling is ours to write")
 }
 
 func TestMentions_LongerNameWinsOverTheOneItContains(t *testing.T) {
+	t.Parallel()
 	m := mentionsIn(`[{"id":"ou_me","name":"张三"},{"id":"ou_x","name":"张三丰"}]`, "ou_me")
 	require.Equal(t, "@张三丰 在吗", ansi.Strip(m.render("@张三丰 在吗")))
 	require.Equal(t, badge("@张三")+" 在吗", m.render("@张三 在吗"))
 }
 
 func TestMentions_OnDimsTheTextAround(t *testing.T) {
+	t.Parallel()
 	out := mentionsIn(selfMention, "ou_me").on(stDim).render("群里 @林岚 看下")
 	require.Equal(t, stDim.Render("群里 ")+badge("@林岚")+stDim.Render(" 看下"), out)
 }
 
 func TestMentions_OnKeepsOthersInTheLinesOwnDim(t *testing.T) {
+	t.Parallel()
 	out := mentionsIn(`[{"id":"ou_a","key":"@_user_1","name":"李四"}]`, "ou_me").on(stDim).render("群里 @李四 看下")
 	require.Equal(t, stDim.Render("群里 ")+stDim.Render("@李四")+stDim.Render(" 看下"), out,
 		"a one-line summary says nothing by colouring an @ that is not the reader's")
 }
 
 func TestMentions_DimsAMentionThatReachesNobodyInAChatOfTwo(t *testing.T) {
+	t.Parallel()
 	m := mentionsIn(pairMentions, "ou_me").facing("ou_peer")
 	require.Equal(t, badge("@林岚")+" 在吗", m.render("@林岚 在吗"))
 	require.Equal(t, stAccent.Render("@张三")+" 在吗", m.render("@张三 在吗"))
@@ -74,6 +81,7 @@ func TestMentions_DimsAMentionThatReachesNobodyInAChatOfTwo(t *testing.T) {
 }
 
 func TestMentions_FacingNobodyLeavesAGroupAlone(t *testing.T) {
+	t.Parallel()
 	require.Equal(t,
 		mentionsIn(pairMentions, "ou_me").render("@李四 在吗"),
 		mentionsIn(pairMentions, "ou_me").facing("").render("@李四 在吗"),
@@ -81,6 +89,7 @@ func TestMentions_FacingNobodyLeavesAGroupAlone(t *testing.T) {
 }
 
 func TestMentions_PostTagFollowsTheSameReach(t *testing.T) {
+	t.Parallel()
 	m := mentionsIn("", "ou_me").facing("ou_peer")
 	require.Equal(t, stAccent.Render("@张三")+" 在吗", m.render(`<at user_id="ou_peer">张三</at>在吗`))
 	require.Equal(t, stDim.Render("@李四")+" 在吗", m.render(`<at user_id="ou_a">李四</at>在吗`))
@@ -88,12 +97,14 @@ func TestMentions_PostTagFollowsTheSameReach(t *testing.T) {
 }
 
 func TestMentions_MalformedJSONStillDraws(t *testing.T) {
+	t.Parallel()
 	require.Equal(t, "@林岚 hi", mentionsIn("not json", "ou_me").render("@林岚 hi"))
 	require.Equal(t, "笑 [笑哭]", ansi.Strip(mentionsIn("", "ou_me").spelling(spellBracket).render("笑 [笑哭]")),
 		"the emoji keeps the spelling the message stores")
 }
 
 func TestMentions_BadgeSurvivesTheRowHighlight(t *testing.T) {
+	t.Parallel()
 	m := Model{th: themeFor(lipgloss.Color("0"), true)}
 	line := m.highlight(mentionsIn(selfMention, "ou_me").render("@林岚 hi"), true)
 	require.Contains(t, line, stMentionMe.Render("@林岚"),
@@ -101,6 +112,7 @@ func TestMentions_BadgeSurvivesTheRowHighlight(t *testing.T) {
 }
 
 func TestMentions_PostTagResolvesToAName(t *testing.T) {
+	t.Parallel()
 	require.Equal(t, stAccent.Render(allName)+" 各位伙伴好",
 		mentionsIn("", "ou_me").render(`<at user_id="all"></at>各位伙伴好`),
 		"a post keeps the tag lark-cli wrote, so it is resolved here")
@@ -116,6 +128,7 @@ func TestMentions_PostTagResolvesToAName(t *testing.T) {
 }
 
 func TestMentions_GapOnlyWhereTheBodyWouldGlue(t *testing.T) {
+	t.Parallel()
 	m := mentionsIn("", "ou_me")
 	require.Equal(t, stAccent.Render(allName)+"，注意", m.render(`<at user_id="all"></at>，注意`),
 		"punctuation separates on its own")
@@ -125,5 +138,6 @@ func TestMentions_GapOnlyWhereTheBodyWouldGlue(t *testing.T) {
 }
 
 func TestMentions_UnclosedTagStaysText(t *testing.T) {
+	t.Parallel()
 	require.Equal(t, `<at user_id="all"> hi`, mentionsIn("", "ou_me").render(`<at user_id="all"> hi`))
 }

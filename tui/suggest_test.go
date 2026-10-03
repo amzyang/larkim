@@ -76,12 +76,14 @@ var ready = jev.Rank{Fits: 0.9, Options: []jev.Option{
 var marked = []string{"DONE", "THUMBSUP", "APPLAUSE", "OK"}
 
 func TestPicker_WithoutASuggesterHasNoRow(t *testing.T) {
+	t.Parallel()
 	m := press(t, pickerModel(t), "e")
 	require.Equal(t, suggestOff, m.picker.suggest)
 	require.Equal(t, reactHits(m.emoji.Search(""), 0, m.picker.mine), m.picker.menu.items, "the list is the one it has always been")
 }
 
 func TestPicker_OpensOnTheGridItHasAlwaysOpenedOn(t *testing.T) {
+	t.Parallel()
 	m, _ := openSuggest(t, &fakeSuggest{rank: ready})
 	require.Equal(t, suggestWaiting, m.picker.suggest)
 	require.Equal(t, reactHits(m.emoji.Search(""), 0, m.picker.mine), m.picker.menu.items, "nothing is reserved while the answer is on its way")
@@ -89,6 +91,7 @@ func TestPicker_OpensOnTheGridItHasAlwaysOpenedOn(t *testing.T) {
 }
 
 func TestPicker_TheHeadRowsCostTheBoxNothing(t *testing.T) {
+	t.Parallel()
 	plain := press(t, pickerModel(t), "e")
 	m, _ := openSuggest(t, &fakeSuggest{rank: ready})
 	require.Equal(t, plain.composerHeight(), m.composerHeight(),
@@ -96,6 +99,7 @@ func TestPicker_TheHeadRowsCostTheBoxNothing(t *testing.T) {
 }
 
 func TestPicker_TheAnswerLeadsTheList(t *testing.T) {
+	t.Parallel()
 	m, cmd := openSuggest(t, &fakeSuggest{rank: ready})
 	m = answer(t, m, cmd)
 	require.Equal(t, suggestReady, m.picker.suggest)
@@ -107,6 +111,7 @@ func TestPicker_TheAnswerLeadsTheList(t *testing.T) {
 }
 
 func TestPicker_APickUnderTheFloorIsNotOffered(t *testing.T) {
+	t.Parallel()
 	m, cmd := openSuggest(t, &fakeSuggest{rank: ready})
 	m = answer(t, m, cmd)
 	n := 0
@@ -120,6 +125,7 @@ func TestPicker_APickUnderTheFloorIsNotOffered(t *testing.T) {
 }
 
 func TestPicker_TheRestOfTheRowsComeFromTheReadersOwnOrder(t *testing.T) {
+	t.Parallel()
 	m, cmd := openSuggest(t, &fakeSuggest{rank: ready})
 	m = answer(t, m, cmd)
 	// Every cell is filled — an empty one costs the grid a place for nothing —
@@ -136,6 +142,7 @@ func TestPicker_TheRestOfTheRowsComeFromTheReadersOwnOrder(t *testing.T) {
 }
 
 func TestPicker_TheRowsEmojiComeOutOfTheGridUnderThem(t *testing.T) {
+	t.Parallel()
 	m, cmd := openSuggest(t, &fakeSuggest{rank: ready})
 	m = answer(t, m, cmd)
 	require.Len(t, m.picker.menu.items, m.picker.found, "as many out of the list as into the head rows")
@@ -151,6 +158,7 @@ func TestPicker_TheRowsEmojiComeOutOfTheGridUnderThem(t *testing.T) {
 }
 
 func TestPicker_TheCursorKeepsItsEmojiWhenTheAnswerLands(t *testing.T) {
+	t.Parallel()
 	m, cmd := openSuggest(t, &fakeSuggest{rank: ready})
 	// Down two rows, which is an offer the emoji the answer pulls to the head
 	// would otherwise shift out from under.
@@ -162,6 +170,7 @@ func TestPicker_TheCursorKeepsItsEmojiWhenTheAnswerLands(t *testing.T) {
 }
 
 func TestPicker_ChoosingFromTheRowReactsWithThatEmoji(t *testing.T) {
+	t.Parallel()
 	m, cmd := openSuggest(t, &fakeSuggest{rank: ready})
 	m = answer(t, m, cmd)
 	next, _ := m.chooseAt(m.picker.menu.idx)
@@ -172,6 +181,7 @@ func TestPicker_ChoosingFromTheRowReactsWithThatEmoji(t *testing.T) {
 }
 
 func TestPicker_AMessageNobodyWouldReactToGivesTheRowsLineBack(t *testing.T) {
+	t.Parallel()
 	m, cmd := openSuggest(t, &fakeSuggest{rank: jev.Rank{
 		Options: []jev.Option{{Key: "DONE", P: 1}}, Fits: suggestFits - 0.1}})
 	m = answer(t, m, cmd)
@@ -182,6 +192,7 @@ func TestPicker_AMessageNobodyWouldReactToGivesTheRowsLineBack(t *testing.T) {
 }
 
 func TestPicker_AFailedQuestionSaysSoInTheRowAndNowhereElse(t *testing.T) {
+	t.Parallel()
 	m, cmd := openSuggest(t, &fakeSuggest{err: errors.New("boom")})
 	m = answer(t, m, cmd)
 	require.Equal(t, suggestFailed, m.picker.suggest)
@@ -192,6 +203,7 @@ func TestPicker_AFailedQuestionSaysSoInTheRowAndNowhereElse(t *testing.T) {
 }
 
 func TestPicker_AnAnswerForAClosedPickerIsDropped(t *testing.T) {
+	t.Parallel()
 	m, cmd := openSuggest(t, &fakeSuggest{rank: ready})
 	m = press(t, m, "esc")
 	m = press(t, m, "e")
@@ -201,6 +213,7 @@ func TestPicker_AnAnswerForAClosedPickerIsDropped(t *testing.T) {
 }
 
 func TestPicker_AnUntouchedCursorLandsOnTheBestPick(t *testing.T) {
+	t.Parallel()
 	m, cmd := openSuggest(t, &fakeSuggest{rank: ready})
 	m = answer(t, m, cmd)
 	require.Equal(t, 0, m.picker.menu.idx)
@@ -208,6 +221,7 @@ func TestPicker_AnUntouchedCursorLandsOnTheBestPick(t *testing.T) {
 }
 
 func TestPicker_ReopeningOnTheSameMessageAsksNothingAgain(t *testing.T) {
+	t.Parallel()
 	f := &fakeSuggest{rank: ready}
 	m, cmd := openSuggest(t, f)
 	m = answer(t, m, cmd)
@@ -220,6 +234,7 @@ func TestPicker_ReopeningOnTheSameMessageAsksNothingAgain(t *testing.T) {
 }
 
 func TestPicker_AQueryTakesTheRowAwayAndClearingItBringsItBack(t *testing.T) {
+	t.Parallel()
 	m, cmd := openSuggest(t, &fakeSuggest{rank: ready})
 	m = answer(t, m, cmd)
 	m = press(t, m, "z")
@@ -231,6 +246,7 @@ func TestPicker_AQueryTakesTheRowAwayAndClearingItBringsItBack(t *testing.T) {
 }
 
 func TestStanding_NamesWhatIsAlreadyOnTheMessage(t *testing.T) {
+	t.Parallel()
 	m := pickerModel(t)
 	x, _ := m.selected()
 	require.Equal(t, "Like / 赞 ×1 (mine already)", standing(m.drawnChips(x)))
@@ -238,6 +254,7 @@ func TestStanding_NamesWhatIsAlreadyOnTheMessage(t *testing.T) {
 }
 
 func TestAskSuggest_NamesBothSpellingsOfAnEmoji(t *testing.T) {
+	t.Parallel()
 	m := pickerModel(t)
 	x, _ := m.selected()
 	opts := m.askSuggest(x).Options
@@ -246,6 +263,7 @@ func TestAskSuggest_NamesBothSpellingsOfAnEmoji(t *testing.T) {
 }
 
 func TestPicker_TheRowMarksItselfApartFromTheGridUnderIt(t *testing.T) {
+	t.Parallel()
 	m, cmd := openSuggest(t, &fakeSuggest{rank: ready})
 	m = answer(t, m, cmd)
 	require.Contains(t, ansi.Strip(m.picker.menu.rows[0].name), "✦")
@@ -255,6 +273,7 @@ func TestPicker_TheRowMarksItselfApartFromTheGridUnderIt(t *testing.T) {
 }
 
 func TestAskSuggest_OffersWhatTheReaderReachesForAndOnlyReactions(t *testing.T) {
+	t.Parallel()
 	m := pickerModel(t)
 	x, ok := m.selected()
 	require.True(t, ok)
@@ -268,6 +287,7 @@ func TestAskSuggest_OffersWhatTheReaderReachesForAndOnlyReactions(t *testing.T) 
 }
 
 func TestAskSuggest_NamesWhoIsReactingAndWhoWrote(t *testing.T) {
+	t.Parallel()
 	m := pickerModel(t)
 	m.selfName = "林岚"
 	x, _ := m.selected()
@@ -277,6 +297,7 @@ func TestAskSuggest_NamesWhoIsReactingAndWhoWrote(t *testing.T) {
 }
 
 func TestAskSuggest_NamesTheTargetApartFromTheConversation(t *testing.T) {
+	t.Parallel()
 	m := pickerModel(t)
 	x, _ := m.selected()
 	state := m.askSuggest(x).State.(map[string]string)
@@ -288,6 +309,7 @@ func TestAskSuggest_NamesTheTargetApartFromTheConversation(t *testing.T) {
 }
 
 func TestAskSuggest_APictureBringsItsWritingIntoTheState(t *testing.T) {
+	t.Parallel()
 	m := pickerModel(t)
 	ctx := t.Context()
 	st := m.deps.Store

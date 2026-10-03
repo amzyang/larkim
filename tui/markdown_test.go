@@ -16,6 +16,7 @@ func mdText(t *testing.T, body string) string {
 }
 
 func TestMdRows_HeadingsDrawByLevelWithoutTheirHashes(t *testing.T) {
+	t.Parallel()
 	out := mdText(t, "# 一级\n## 二级\n### 三级\n\n正文")
 	require.Contains(t, out, "一级")
 	require.Contains(t, out, "二级")
@@ -41,6 +42,7 @@ func TestMdRows_HeadingsDrawByLevelWithoutTheirHashes(t *testing.T) {
 }
 
 func TestMdRows_ListsCarryMarkersAndIndent(t *testing.T) {
+	t.Parallel()
 	out := mdText(t, "- 甲\n    - 乙\n- 丙")
 	require.Contains(t, out, "• 甲")
 	require.Contains(t, out, "◦ 乙", "a nested item takes a different marker")
@@ -53,12 +55,14 @@ func TestMdRows_ListsCarryMarkersAndIndent(t *testing.T) {
 }
 
 func TestMdRows_OrderedListKeepsItsStart(t *testing.T) {
+	t.Parallel()
 	out := mdText(t, "3. 三\n4. 四")
 	require.Contains(t, out, "3. 三")
 	require.Contains(t, out, "4. 四")
 }
 
 func TestMdRows_AnUnorderedMarkerWearsTheClientsBlue(t *testing.T) {
+	t.Parallel()
 	// The client colours the marker of an unordered item its own blue; the
 	// number of an ordered one stays dim with the words.
 	rows := renderRows(postWith("- 甲\n1. 乙"), baseStyle())
@@ -76,12 +80,14 @@ func TestMdRows_AnUnorderedMarkerWearsTheClientsBlue(t *testing.T) {
 }
 
 func TestMdRows_BlockquoteGetsAGutter(t *testing.T) {
+	t.Parallel()
 	out := mdText(t, "> 引用一句\n\n正文")
 	require.Contains(t, out, "│ 引用一句")
 	require.NotContains(t, out, "> 引用", "the angle bracket is markup")
 }
 
 func TestMdRows_ThematicBreakSpansThePane(t *testing.T) {
+	t.Parallel()
 	rows := renderRows(postWith("上面\n\n---\n\n下面"), baseStyle())
 	var rule string
 	for _, r := range rows {
@@ -94,6 +100,7 @@ func TestMdRows_ThematicBreakSpansThePane(t *testing.T) {
 }
 
 func TestMdRows_TableRendersAsAGrid(t *testing.T) {
+	t.Parallel()
 	out := mdText(t, "| 项 | 值 |\n|---|---|\n| 甲 | 1 |\n| 乙 | 2 |")
 	require.Contains(t, out, "项")
 	require.Contains(t, out, "│", "cells are parted by a border, not by pipes in the text")
@@ -112,6 +119,7 @@ func TestMdRows_TableRendersAsAGrid(t *testing.T) {
 }
 
 func TestMdRows_TableStaysInsideThePane(t *testing.T) {
+	t.Parallel()
 	st := baseStyle()
 	rows := renderRows(postWith("| 一个很长的列名 | 另一个很长的列名 | 第三个很长的列名 |\n|---|---|---|\n| 值值值值值 | 值值值值值 | 值值值值值 |"), st)
 	for _, r := range rows {
@@ -120,12 +128,14 @@ func TestMdRows_TableStaysInsideThePane(t *testing.T) {
 }
 
 func TestMdRows_CodeFenceStillHighlights(t *testing.T) {
+	t.Parallel()
 	out := mdText(t, "```go\nx := 1\n```")
 	require.Contains(t, out, codeRule+" 1 x := 1", "the existing code path still draws the block")
 	require.NotContains(t, out, "```")
 }
 
 func TestMdRows_KeepsInlineImagesAndMentions(t *testing.T) {
+	t.Parallel()
 	// The inline path is what carries pictures and mention styling, so the
 	// block renderer must hand paragraphs to it untouched.
 	msgs := []store.Message{{MessageID: "om_1", SenderName: "张三", SenderID: "ou_a", MsgType: "post",
@@ -139,6 +149,7 @@ func TestMdRows_KeepsInlineImagesAndMentions(t *testing.T) {
 }
 
 func TestMdRows_InlineRunsReachRenderInline(t *testing.T) {
+	t.Parallel()
 	out := mdText(t, "看 **粗** 和 *斜* 和 ~~删~~ 和 [链接](https://example.com)")
 	require.Contains(t, out, "粗")
 	require.Contains(t, out, "斜")
@@ -149,6 +160,7 @@ func TestMdRows_InlineRunsReachRenderInline(t *testing.T) {
 }
 
 func TestMdRows_NoTextIsEverDropped(t *testing.T) {
+	t.Parallel()
 	// The one failure mode that matters: a construct the walker does not know
 	// must still show its words rather than silently swallow them.
 	body := "# 标题\n\n段落 `行内` 文字\n\n- 甲\n    - 乙\n\n> 引用\n\n```go\nx := 1\n```\n\n| 项 | 值 |\n|---|---|\n| 丙 | 1 |\n\n---\n\n末尾"
@@ -159,6 +171,7 @@ func TestMdRows_NoTextIsEverDropped(t *testing.T) {
 }
 
 func TestMdRows_WrapsCJKByDisplayWidth(t *testing.T) {
+	t.Parallel()
 	st := baseStyle()
 	rows := renderRows(postWith(strings.Repeat("中文", 80)), st)
 	for _, r := range rows {
@@ -167,6 +180,7 @@ func TestMdRows_WrapsCJKByDisplayWidth(t *testing.T) {
 }
 
 func TestBodyRows_TextMessagesStayLiteral(t *testing.T) {
+	t.Parallel()
 	// A person typing "3 * 4 * 5" in a plain message means the asterisks, a
 	// lone "- 甲" is how people answer, and the hashes and fences they typed
 	// are text: the client shows a plain message the way it was written.
@@ -195,6 +209,7 @@ func mdLines(t *testing.T, body string) []string {
 }
 
 func TestMdRows_KeepsTheBlankLinesBetweenBlocks(t *testing.T) {
+	t.Parallel()
 	// A post is a list of paragraphs and an empty one is a line the client
 	// draws, so a run of them is content, not the block separator a markdown
 	// parser reads it as.
@@ -202,16 +217,19 @@ func TestMdRows_KeepsTheBlankLinesBetweenBlocks(t *testing.T) {
 }
 
 func TestMdRows_BlankLinesPartListItems(t *testing.T) {
+	t.Parallel()
 	require.Equal(t, []string{"• 甲", "", "• 乙"}, mdLines(t, "- 甲\n\n- 乙"))
 }
 
 func TestMdRows_NoBlankLineOpensOrClosesABody(t *testing.T) {
+	t.Parallel()
 	// lark-cli trims the body, and a block that opens a level has nothing
 	// above it to count.
 	require.Equal(t, []string{"甲", "乙"}, mdLines(t, "甲\n乙"))
 }
 
 func TestMdRows_APictureInAListItemStandsUnderTheItem(t *testing.T) {
+	t.Parallel()
 	// The words of an item are charged the columns its marker took; a picture
 	// beside them is part of the same item and is charged them too.
 	require.Equal(t, []string{"• 图", "  [Image]"}, mdLines(t, "- 图 ![Image](img_a)"))
@@ -220,6 +238,7 @@ func TestMdRows_APictureInAListItemStandsUnderTheItem(t *testing.T) {
 }
 
 func TestMdRows_APicturesCellsAndTargetMoveWithItsIndent(t *testing.T) {
+	t.Parallel()
 	msgs := []store.Message{{MessageID: "om_1", MsgType: "post", SenderName: "张三",
 		Content: "- 图 ![Image](img_v3_abc)", CreateMs: msgAt(23, 9, 0), RenderedAt: 1}}
 	st := baseStyle()
@@ -243,6 +262,7 @@ func TestMdRows_APicturesCellsAndTargetMoveWithItsIndent(t *testing.T) {
 }
 
 func TestRowLine_APictureRowDrawsTheIndentItCarries(t *testing.T) {
+	t.Parallel()
 	m := sized(106, 40)
 	p := testPictures(t)
 	m.pics = p

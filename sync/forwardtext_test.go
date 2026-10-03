@@ -21,6 +21,7 @@ func kid(id, upper, msgType, contentRaw string) store.Forwarded {
 }
 
 func TestForwardText_SpellsABundleTheWayLarkCLIDoes(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name string
 		kids []store.Forwarded
@@ -64,6 +65,7 @@ func TestForwardText_SpellsABundleTheWayLarkCLIDoes(t *testing.T) {
 }
 
 func TestForwardText_NamesWhoeverTheExpansionCarried(t *testing.T) {
+	t.Parallel()
 	named := kid("om_a", "om_fwd", "text", `{"text":"你好"}`)
 	byID := named
 	byID.SenderName = ""
@@ -76,6 +78,7 @@ func TestForwardText_NamesWhoeverTheExpansionCarried(t *testing.T) {
 }
 
 func TestForwardText_SaysUnknownForAChildItCannotDate(t *testing.T) {
+	t.Parallel()
 	k := kid("om_a", "om_fwd", "text", `{"text":"你好"}`)
 	k.CreateMs = 0
 	require.Equal(t, "<forwarded_messages>\n[unknown] 张三:\n    你好\n</forwarded_messages>",
@@ -83,12 +86,14 @@ func TestForwardText_SaysUnknownForAChildItCannotDate(t *testing.T) {
 }
 
 func TestForwardText_ResolvesTheMentionsAChildCarried(t *testing.T) {
+	t.Parallel()
 	k := kid("om_a", "om_fwd", "text", `{"text":"@_user_1 在吗"}`)
 	k.MentionsJSON = `[{"id":"ou_b","key":"@_user_1","name":"李四"}]`
 	require.Contains(t, ForwardText("om_fwd", []store.Forwarded{k}, time.UTC), "    @李四 在吗\n")
 }
 
 func TestForwardText_StopsAtABundleThatNamesItsOwnAncestor(t *testing.T) {
+	t.Parallel()
 	// upper_message_id comes off the wire, so nothing but this bounds the walk.
 	require.NotPanics(t, func() {
 		out := ForwardText("om_fwd", []store.Forwarded{
@@ -99,6 +104,7 @@ func TestForwardText_StopsAtABundleThatNamesItsOwnAncestor(t *testing.T) {
 }
 
 func TestForwardText_KeepsThePictureSpellingTheBackScanReads(t *testing.T) {
+	t.Parallel()
 	// registerExistingResources finds a bundle's pictures nowhere but here.
 	out := ForwardText("om_fwd", []store.Forwarded{
 		kid("om_a", "om_fwd", "image", `{"image_key":"img_a"}`),

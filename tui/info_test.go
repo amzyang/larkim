@@ -35,6 +35,7 @@ func infoText(m Model) string {
 }
 
 func TestInfoLines_NamesTheChatAndItsMembers(t *testing.T) {
+	t.Parallel()
 	m, _ := infoModel(t)
 
 	got := infoText(m)
@@ -50,6 +51,7 @@ func TestInfoLines_NamesTheChatAndItsMembers(t *testing.T) {
 // chat_members is synced daily and was never shown before; the owner is the
 // one member the chat row already knew about.
 func TestInfoLines_MarksTheOwner(t *testing.T) {
+	t.Parallel()
 	m, _ := infoModel(t)
 
 	assert.Contains(t, infoText(m), "张三 owner")
@@ -57,6 +59,7 @@ func TestInfoLines_MarksTheOwner(t *testing.T) {
 
 // An external group was indistinguishable from any other before this.
 func TestInfoLines_BadgesAnExternalChat(t *testing.T) {
+	t.Parallel()
 	m, _ := infoModel(t)
 	m.chats[0].External = true
 
@@ -64,6 +67,7 @@ func TestInfoLines_BadgesAnExternalChat(t *testing.T) {
 }
 
 func TestInfoLines_BadgesADissolvedChat(t *testing.T) {
+	t.Parallel()
 	m, _ := infoModel(t)
 	m.chats[0].ChatStatus = "dissolved"
 
@@ -71,6 +75,7 @@ func TestInfoLines_BadgesADissolvedChat(t *testing.T) {
 }
 
 func TestInfoLines_ReportsASyncError(t *testing.T) {
+	t.Parallel()
 	m, _ := infoModel(t)
 	m.chats[0].SyncError = "restricted mode"
 
@@ -80,6 +85,7 @@ func TestInfoLines_ReportsASyncError(t *testing.T) {
 // "Members" of a pair is a question nobody asks, so a chat of two answers with
 // the person across from it.
 func TestInfoLines_P2PDrawsThePeersCard(t *testing.T) {
+	t.Parallel()
 	m, _ := infoModel(t)
 	m.chats[0] = store.Chat{ChatID: "oc_group", Name: "张三", ChatMode: "p2p", P2PTargetID: "ou_a"}
 	m.info = []store.Contact{{OpenID: "ou_a", Name: "张三",
@@ -95,6 +101,7 @@ func TestInfoLines_P2PDrawsThePeersCard(t *testing.T) {
 }
 
 func TestToggleInfo_TakesTheRightPaneFromTheThread(t *testing.T) {
+	t.Parallel()
 	m, _ := infoModel(t)
 	m.rightKind = rightThread
 
@@ -107,6 +114,7 @@ func TestToggleInfo_TakesTheRightPaneFromTheThread(t *testing.T) {
 }
 
 func TestToggleInfo_ClosesWhenAlreadyOpen(t *testing.T) {
+	t.Parallel()
 	m, _ := infoModel(t)
 	m.infoOpen = true
 
@@ -116,6 +124,7 @@ func TestToggleInfo_ClosesWhenAlreadyOpen(t *testing.T) {
 }
 
 func TestToggleInfo_WithoutAChatSaysSo(t *testing.T) {
+	t.Parallel()
 	m, _ := infoModel(t)
 	m.chatID = ""
 
@@ -127,6 +136,7 @@ func TestToggleInfo_WithoutAChatSaysSo(t *testing.T) {
 }
 
 func TestLoadInfo_ReadsTheRosterTheSyncStored(t *testing.T) {
+	t.Parallel()
 	m, st := infoModel(t)
 	ctx := t.Context()
 	require.NoError(t, st.EnsureChat(ctx, "oc_group", 1))
@@ -143,6 +153,7 @@ func TestLoadInfo_ReadsTheRosterTheSyncStored(t *testing.T) {
 // A member the contacts table has never seen still counts: leaving it out
 // would say the chat is smaller than it is.
 func TestChatMembers_KeepsAMemberWithNoContactRow(t *testing.T) {
+	t.Parallel()
 	_, st := infoModel(t)
 	ctx := t.Context()
 	require.NoError(t, st.EnsureChat(ctx, "oc_group", 1))
@@ -159,6 +170,7 @@ func TestChatMembers_KeepsAMemberWithNoContactRow(t *testing.T) {
 // A capped roster is a part of the membership, and a bare count of it reads as
 // the size of the chat.
 func TestInfoLines_SaysWhenTheServerCappedTheRoster(t *testing.T) {
+	t.Parallel()
 	m, _ := infoModel(t)
 	m.chats[0].MembersTruncated = true
 

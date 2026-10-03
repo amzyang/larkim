@@ -38,6 +38,7 @@ func bundleStore(t *testing.T) *store.Store {
 }
 
 func TestLoadForward_ListsOneLevelAndLeavesTheNestedBundleAsARow(t *testing.T) {
+	t.Parallel()
 	st := bundleStore(t)
 	d := Deps{Store: st, Self: "ou_me"}
 
@@ -56,6 +57,7 @@ func TestLoadForward_ListsOneLevelAndLeavesTheNestedBundleAsARow(t *testing.T) {
 }
 
 func TestLoadForward_ANestedLevelListsItsOwnChildren(t *testing.T) {
+	t.Parallel()
 	st := bundleStore(t)
 
 	msg := loadForward(Deps{Store: st}, "om_fwd", "om_inner")().(forwardLoadedMsg)
@@ -66,6 +68,7 @@ func TestLoadForward_ANestedLevelListsItsOwnChildren(t *testing.T) {
 }
 
 func TestLoadForward_APictureChildGetsOnlyItsOwnOfTheBundlesResources(t *testing.T) {
+	t.Parallel()
 	st := bundleStore(t)
 	ctx := t.Context()
 	// Every picture in the tree is registered against the bundle, because the
@@ -84,6 +87,7 @@ func TestLoadForward_APictureChildGetsOnlyItsOwnOfTheBundlesResources(t *testing
 }
 
 func TestForwardedRow_AnImageChildPlacesItsPicture(t *testing.T) {
+	t.Parallel()
 	x := forwardedRow(store.Forwarded{MessageID: "om_pic", MsgType: "image",
 		ContentRaw: `{"image_key":"img_inside"}`, CreateMs: 20})
 
@@ -93,6 +97,7 @@ func TestForwardedRow_AnImageChildPlacesItsPicture(t *testing.T) {
 }
 
 func TestForwardedRow_APostKeepsTheDimStandIn(t *testing.T) {
+	t.Parallel()
 	// A post's rendering is markdown, which only lark-cli builds. Feeding the
 	// markdown path a flattened line would turn the sender's punctuation into
 	// formatting, so the words come through the stand-in instead.
@@ -104,6 +109,7 @@ func TestForwardedRow_APostKeepsTheDimStandIn(t *testing.T) {
 }
 
 func TestOnForwardLoaded_AnUnexpandedBundleIsAskedForNow(t *testing.T) {
+	t.Parallel()
 	st := bundleStore(t)
 	m := sized(140, 36)
 	m.deps = Deps{Store: st, Syncer: &sync.Syncer{Store: st}}
@@ -117,6 +123,7 @@ func TestOnForwardLoaded_AnUnexpandedBundleIsAskedForNow(t *testing.T) {
 }
 
 func TestOnForwardLoaded_ARefusedBundleSaysSoRatherThanShowingAnEmptyFrame(t *testing.T) {
+	t.Parallel()
 	m := sized(140, 36)
 	m.rightKind, m.threadID, m.rightRoot = rightForward, "om_gone", "om_gone"
 
@@ -128,6 +135,7 @@ func TestOnForwardLoaded_ARefusedBundleSaysSoRatherThanShowingAnEmptyFrame(t *te
 }
 
 func TestOnForwardLoaded_IgnoresAnAnswerForAFrameTheReaderLeft(t *testing.T) {
+	t.Parallel()
 	// The reader popped back to the thread while the children were in
 	// flight; the answer names a frame that is no longer on screen.
 	m := onThread(t)
@@ -141,6 +149,7 @@ func TestOnForwardLoaded_IgnoresAnAnswerForAFrameTheReaderLeft(t *testing.T) {
 }
 
 func TestForwardFrame_AChildCannotBeAnswered(t *testing.T) {
+	t.Parallel()
 	// A child is a message of another chat. Replying, reacting or recalling
 	// would put the result somewhere the reader is not looking.
 	m := onThread(t)
@@ -161,6 +170,7 @@ func TestForwardFrame_AChildCannotBeAnswered(t *testing.T) {
 }
 
 func TestLoadForward_GistsTheLevelRatherThanTheBundle(t *testing.T) {
+	t.Parallel()
 	st := bundleStore(t)
 
 	msg := loadForward(Deps{Store: st}, "om_fwd", "om_inner")().(forwardLoadedMsg)
@@ -180,6 +190,7 @@ const postWithPicture = `{"title":"","content":[
  [{"tag":"text","text":"看下这个问题"}]]}`
 
 func TestForwardFrame_APostChildDrawsThePictureItCarries(t *testing.T) {
+	t.Parallel()
 	x := forwardedRow(store.Forwarded{MessageID: "om_post", MsgType: "post",
 		SenderID: "ou_a", SenderName: "张三", ContentRaw: postWithPicture, CreateMs: msgAt(23, 9, 0)})
 	st := baseStyle()
@@ -205,6 +216,7 @@ func TestForwardFrame_APostChildDrawsThePictureItCarries(t *testing.T) {
 }
 
 func TestForwardFrame_AChildShowsTheReactionsItCollected(t *testing.T) {
+	t.Parallel()
 	st := bundleStore(t)
 	ctx := t.Context()
 	require.NoError(t, st.SaveForwarded(ctx, "om_fwd", []store.Forwarded{

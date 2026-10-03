@@ -18,6 +18,7 @@ func wordSpec(iconFor func(string) string) menuSpec[string] {
 func noIcon(string) string { return "" }
 
 func TestMenu_DropsTheIconColumnWhenNoRowHasOne(t *testing.T) {
+	t.Parallel()
 	m := newPumModel(t)
 	plain := fillMenu([]string{"copy", "goto"}, wordSpec(noIcon))
 	require.False(t, plain.cols.icon)
@@ -37,6 +38,7 @@ func TestMenu_DropsTheIconColumnWhenNoRowHasOne(t *testing.T) {
 }
 
 func TestMenu_MeasuresEveryItemNotTheWindow(t *testing.T) {
+	t.Parallel()
 	words := []string{"a", "b", "c", "d", "e", "f", "g", "h", "i", "a much longer word"}
 	u := fillMenu(words, wordSpec(noIcon))
 	require.Equal(t, len("a much longer word"), u.cols.name, "the longest name is past the window, and still counts")
@@ -47,6 +49,7 @@ func TestMenu_MeasuresEveryItemNotTheWindow(t *testing.T) {
 }
 
 func TestMenu_CutsALongNameWithAnEllipsis(t *testing.T) {
+	t.Parallel()
 	m := newPumModel(t)
 	u := fillMenu([]string{strings.Repeat("x", offerNameMax+10)}, wordSpec(noIcon))
 	require.Equal(t, offerNameMax, u.cols.name)
@@ -56,6 +59,7 @@ func TestMenu_CutsALongNameWithAnEllipsis(t *testing.T) {
 }
 
 func TestMenu_NoselectStartsUnfocusedAndWalksBackToIt(t *testing.T) {
+	t.Parallel()
 	spec := wordSpec(noIcon)
 	spec.noselect = true
 	u := fillMenu([]string{"a", "b"}, spec)
@@ -77,6 +81,7 @@ func TestMenu_NoselectStartsUnfocusedAndWalksBackToIt(t *testing.T) {
 }
 
 func TestMenu_InfoIsResolvedForTheFocusedItemOnly(t *testing.T) {
+	t.Parallel()
 	var asked []string
 	spec := wordSpec(noIcon)
 	spec.info = func(s string) []string {
@@ -93,6 +98,7 @@ func TestMenu_InfoIsResolvedForTheFocusedItemOnly(t *testing.T) {
 }
 
 func TestMenu_PicksTheVisibleRowADigitIsDrawnBeside(t *testing.T) {
+	t.Parallel()
 	spec := wordSpec(noIcon)
 	spec.digits = digitRow
 	items := make([]string, 12)
@@ -123,6 +129,7 @@ func TestMenu_PicksTheVisibleRowADigitIsDrawnBeside(t *testing.T) {
 }
 
 func TestOfferRow_TintsTheCursorRowRatherThanMarkingIt(t *testing.T) {
+	t.Parallel()
 	m := newPumModel(t)
 	u := fillMenu([]string{"copy"}, wordSpec(noIcon))
 	marked := m.joinSegsWidth(m.offerRow(u.rows[0], u.cols, 0, true))
@@ -132,6 +139,7 @@ func TestOfferRow_TintsTheCursorRowRatherThanMarkingIt(t *testing.T) {
 	require.NotContains(t, plain, "231;238;252", "an unselected row wears no tint")
 }
 func TestOfferRow_DrawsTheNumberColumnOnlyWithDigits(t *testing.T) {
+	t.Parallel()
 	m := newPumModel(t)
 	spec := wordSpec(noIcon)
 	spec.digits = digitRow

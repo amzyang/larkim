@@ -14,18 +14,21 @@ func kittyAnswer(name, value string) string {
 }
 
 func TestCollectHandshake_TakesTheDisplayScaleKittyStates(t *testing.T) {
+	t.Parallel()
 	stream := kittyAnswer("kitty-query-dpi_x", "144") + kittyAnswer("kitty-query-os_name", "macos") + "\x1b[?62c"
 	h := collectHandshake(strings.NewReader(stream), Handshake{})
 	require.Equal(t, 2.0, h.Display.scale())
 }
 
 func TestCollectHandshake_RefusedDisplayQueryLeavesScaleOne(t *testing.T) {
+	t.Parallel()
 	stream := "\x1bP0+r" + hex.EncodeToString([]byte("kitty-query-dpi_x")) + "\x1b\\\x1b[?62c"
 	h := collectHandshake(strings.NewReader(stream), Handshake{})
 	require.Equal(t, 1.0, h.Display.scale())
 }
 
 func TestDisplay_ScaleIsDPIOverTheTerminalOSBase(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		name  string
 		dpi   string
@@ -58,6 +61,7 @@ func TestDisplay_ScaleIsDPIOverTheTerminalOSBase(t *testing.T) {
 // device px, with room to spare. The client shows it at 219×151 pt, which is
 // 438×302 screen px; before the scale it was drawn at half that.
 func TestPictures_PlaceDrawsAtTheClientSizeOnARetinaScreen(t *testing.T) {
+	t.Parallel()
 	p := newPictures(t.TempDir(), true)
 	p.setCellSize(17, 36)
 	path := writePNG(t, p.dataDir, "sticker.png", 219, 151)
@@ -78,6 +82,7 @@ func TestPictures_PlaceDrawsAtTheClientSizeOnARetinaScreen(t *testing.T) {
 }
 
 func TestPictures_SetDisplayDropsPlacementsSentForTheOldScale(t *testing.T) {
+	t.Parallel()
 	p := testPictures(t)
 	p.id["x"], p.used["x"] = picIDBase, 1
 	var d display

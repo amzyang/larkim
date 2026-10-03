@@ -16,12 +16,14 @@ import (
 )
 
 func TestNew_DefaultsTheLogger(t *testing.T) {
+	t.Parallel()
 	m := New(Deps{})
 	require.NotNil(t, m.deps.Log, "every log call in the TUI dereferences this")
 	m.deps.Log.Warn("discarded")
 }
 
 func TestMarkChatRead_ReportsAFailureTheBadgeCannotShow(t *testing.T) {
+	t.Parallel()
 	st, err := storetest.Open(t, filepath.Join(t.TempDir(), "t.db"))
 	require.NoError(t, err)
 	require.NoError(t, st.Close())
@@ -49,6 +51,7 @@ func logDeps(t *testing.T, openErr error) (Deps, *bytes.Buffer) {
 }
 
 func TestFireBadgeClear_LogsAFailureInsteadOfTakingTheNoticeBar(t *testing.T) {
+	t.Parallel()
 	d, buf := logDeps(t, errors.New("no application knows how to open URL"))
 
 	msg := fireBadgeClear(d, store.ChatUnread{ChatID: "oc_quiet"}, 3)().(applinkFiredMsg)
@@ -60,6 +63,7 @@ func TestFireBadgeClear_LogsAFailureInsteadOfTakingTheNoticeBar(t *testing.T) {
 }
 
 func TestOpenInFeishu_LogsTheChatTheNoticeBarCannotName(t *testing.T) {
+	t.Parallel()
 	d, buf := logDeps(t, errors.New("boom"))
 
 	require.Equal(t, errMsg{errors.New("boom")}, openInFeishu(d, "oc_quiet", "", 227)(),
@@ -71,6 +75,7 @@ func TestOpenInFeishu_LogsTheChatTheNoticeBarCannotName(t *testing.T) {
 }
 
 func TestOpenZone_LogsTheTargetsTheNoticeBarCannotHold(t *testing.T) {
+	t.Parallel()
 	d, buf := logDeps(t, errors.New("boom"))
 	z := clickZone{urls: []string{"/data/resources/img_a.png", "/data/resources/img_b.png"}, note: "opened"}
 
@@ -82,6 +87,7 @@ func TestOpenZone_LogsTheTargetsTheNoticeBarCannotHold(t *testing.T) {
 }
 
 func TestOpenURL_CarriesWhatOpenRefusedOn(t *testing.T) {
+	t.Parallel()
 	err := applink.Open(slog.New(slog.DiscardHandler), []string{filepath.Join(t.TempDir(), "nothing-here.txt")}, true)
 
 	require.ErrorContains(t, err, "does not exist",
@@ -89,6 +95,7 @@ func TestOpenURL_CarriesWhatOpenRefusedOn(t *testing.T) {
 }
 
 func TestOpenURL_LogsTheArgvItBuilt(t *testing.T) {
+	t.Parallel()
 	var buf bytes.Buffer
 	log := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
 

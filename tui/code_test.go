@@ -28,6 +28,7 @@ func rawText(rows []msgRow) string {
 }
 
 func TestBodyRows_HighlightsAFencedCodeBlock(t *testing.T) {
+	t.Parallel()
 	rows := renderRows(postWith("```JSON\n{\"a\": 1}\n```"), baseStyle())
 	out := rowText(rows)
 	require.NotContains(t, out, "```", "the fence is chrome, not content")
@@ -36,12 +37,14 @@ func TestBodyRows_HighlightsAFencedCodeBlock(t *testing.T) {
 }
 
 func TestBodyRows_NumbersTheLinesOfACodeBlock(t *testing.T) {
+	t.Parallel()
 	out := rowText(renderRows(postWith("```JSON\n{\n}\n```"), baseStyle()))
 	require.Contains(t, out, codeRule+" 1 {")
 	require.Contains(t, out, codeRule+" 2 }")
 }
 
 func TestBodyRows_LeavesAnUnknownLanguageUncoloured(t *testing.T) {
+	t.Parallel()
 	rows := renderRows(postWith("```PLAIN_TEXT\nid,name\n1,张三\n```"), baseStyle())
 	out := rowText(rows)
 	require.NotContains(t, out, "```")
@@ -53,6 +56,7 @@ func TestBodyRows_LeavesAnUnknownLanguageUncoloured(t *testing.T) {
 }
 
 func TestBodyRows_TruncatesALongCodeLineRatherThanWrappingIt(t *testing.T) {
+	t.Parallel()
 	long := "SELECT " + strings.Repeat("column_name, ", 60) + "1"
 	st := baseStyle()
 	rows := renderRows(postWith("```SQL\n"+long+"\n```"), st)
@@ -68,6 +72,7 @@ func TestBodyRows_TruncatesALongCodeLineRatherThanWrappingIt(t *testing.T) {
 }
 
 func TestBodyRows_MidLineBackticksAreAnInlineSpanNotABlock(t *testing.T) {
+	t.Parallel()
 	// Backticks that do not open a line are an inline code span, which is
 	// what CommonMark and Feishu both make of them. The text has to survive
 	// either way: a body is never quietly shortened.
@@ -78,17 +83,20 @@ func TestBodyRows_MidLineBackticksAreAnInlineSpanNotABlock(t *testing.T) {
 }
 
 func TestBodyRows_ClosesAnUnterminatedFenceAtTheEnd(t *testing.T) {
+	t.Parallel()
 	out := rowText(renderRows(postWith("```BASH\nls -la\n"), baseStyle()))
 	require.NotContains(t, out, "```")
 	require.Contains(t, out, codeRule+" 1 ls -la")
 }
 
 func TestBodyRows_LeavesEmojiSpellingsInsideCodeAlone(t *testing.T) {
+	t.Parallel()
 	out := rowText(renderRows(postWith("```JSON\n{\"a\": \"[完成]\"}\n```"), baseStyle()))
 	require.Contains(t, out, "[完成]", "code is code, not a message body")
 }
 
 func TestBodyRows_DropsTheBlankLineLarkLeavesBeforeTheClosingFence(t *testing.T) {
+	t.Parallel()
 	out := rowText(renderRows(postWith("```JSON\n{\n}\n\n```"), baseStyle()))
 	require.NotContains(t, out, codeRule+" 3 ")
 }
@@ -101,7 +109,8 @@ func TestBodyRows_KeepsTextAroundACodeBlock(t *testing.T) {
 }
 
 // countingLexers puts a recording lookup behind the memo for one test and
-// reports, in order, the languages that reached chroma's registry.
+// reports, in order, the languages that reached chroma's registry. It swaps
+// the package-level lexerFor, so its callers must not call t.Parallel.
 func countingLexers(t *testing.T) func() []string {
 	t.Helper()
 	var asked []string

@@ -48,6 +48,7 @@ func wheelAt(m Model, y int, b tea.MouseButton, n int) Model {
 }
 
 func TestComposerBand_ResolvesPreviewRuleAndInput(t *testing.T) {
+	t.Parallel()
 	m := posting(sized(120, 40), 20)
 	m.setQuote(&m.msgs[0], false)
 	r := m.composerRows()
@@ -76,6 +77,7 @@ func TestComposerBand_ResolvesPreviewRuleAndInput(t *testing.T) {
 }
 
 func TestWheel_PreviewScrollsPastPreviewMaxRows(t *testing.T) {
+	t.Parallel()
 	m := posting(sized(120, 40), 20)
 	require.Greater(t, len(m.previewRows), m.composerRows().preview,
 		"the fixture has to render more rows than the band shows")
@@ -90,6 +92,7 @@ func TestWheel_PreviewScrollsPastPreviewMaxRows(t *testing.T) {
 }
 
 func TestWheel_PreviewClampsAtBothEnds(t *testing.T) {
+	t.Parallel()
 	m := posting(sized(120, 40), 20)
 	y := composerY(m, bandPreview)
 
@@ -103,6 +106,7 @@ func TestWheel_PreviewClampsAtBothEnds(t *testing.T) {
 }
 
 func TestPreview_TopSurvivesTyping(t *testing.T) {
+	t.Parallel()
 	m := posting(sized(120, 40), 20)
 	m = wheelAt(m, composerY(m, bandPreview), tea.MouseWheelDown, 2)
 	top := m.previewTop
@@ -115,6 +119,7 @@ func TestPreview_TopSurvivesTyping(t *testing.T) {
 }
 
 func TestPreview_TopClampsWhenTheDraftShrinks(t *testing.T) {
+	t.Parallel()
 	m := posting(sized(120, 40), 20)
 	m = wheelAt(m, composerY(m, bandPreview), tea.MouseWheelDown, 10)
 	require.Positive(t, m.previewTop)
@@ -126,6 +131,7 @@ func TestPreview_TopClampsWhenTheDraftShrinks(t *testing.T) {
 }
 
 func TestPreview_TopGoesBackToTheTopWhenThePreviewCloses(t *testing.T) {
+	t.Parallel()
 	m := posting(sized(120, 40), 20)
 	m = wheelAt(m, composerY(m, bandPreview), tea.MouseWheelDown, 2)
 	require.Positive(t, m.previewTop)
@@ -137,6 +143,7 @@ func TestPreview_TopGoesBackToTheTopWhenThePreviewCloses(t *testing.T) {
 }
 
 func TestWheel_WritingAreaMovesTheCaret(t *testing.T) {
+	t.Parallel()
 	m := posting(sized(120, 40), 30)
 	m.input.MoveToEnd()
 	require.Positive(t, m.input.ScrollYOffset(), "the draft has to overflow the writing area")
@@ -152,6 +159,7 @@ func TestWheel_WritingAreaMovesTheCaret(t *testing.T) {
 }
 
 func TestWheel_WritingAreaIgnoredOutsideInsert(t *testing.T) {
+	t.Parallel()
 	m := posting(sized(120, 40), 30)
 	m.input.MoveToEnd()
 	y := composerY(m, bandInput)
@@ -164,6 +172,7 @@ func TestWheel_WritingAreaIgnoredOutsideInsert(t *testing.T) {
 }
 
 func TestWheel_ComposerQuoteAndBadgeScrollNothing(t *testing.T) {
+	t.Parallel()
 	m := posting(sized(120, 40), 20)
 	m.setQuote(&m.msgs[0], false)
 	m = wheelAt(m, composerY(m, bandPreview), tea.MouseWheelDown, 2)
@@ -182,6 +191,7 @@ func TestWheel_ComposerQuoteAndBadgeScrollNothing(t *testing.T) {
 }
 
 func TestPicturePrepare_ClaimsOnlyTheVisiblePreviewRows(t *testing.T) {
+	t.Parallel()
 	m := posting(sized(106, 59), 4)
 	p := testPictures(t)
 	m.pics, m.msgRows = p, nil

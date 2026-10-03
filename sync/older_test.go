@@ -24,6 +24,7 @@ func atFloor(t *testing.T, s *Syncer, f *larkcli.Fake, floor time.Time, n int) {
 }
 
 func TestPullOlder_MovesTheFloorBackOnePage(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	floor := clk.Now().AddDate(0, 0, -30)
@@ -44,6 +45,7 @@ func TestPullOlder_MovesTheFloorBackOnePage(t *testing.T) {
 }
 
 func TestPullOlder_WalksBackAPageAtATime(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	f.OlderPage = 2
@@ -65,6 +67,7 @@ func TestPullOlder_WalksBackAPageAtATime(t *testing.T) {
 }
 
 func TestPullOlder_CompleteHistoryAsksNothing(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	atFloor(t, s, f, clk.Now().AddDate(0, 0, -30), 1)
@@ -78,6 +81,7 @@ func TestPullOlder_CompleteHistoryAsksNothing(t *testing.T) {
 }
 
 func TestPullOlder_BringsTheRepliesOfTheThreadsItFinds(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	floor := clk.Now().AddDate(0, 0, -30)
@@ -98,6 +102,7 @@ func TestPullOlder_BringsTheRepliesOfTheThreadsItFinds(t *testing.T) {
 }
 
 func TestPullOlder_AFailedCallLeavesTheFloorWhereItWas(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	floor := clk.Now().AddDate(0, 0, -30)

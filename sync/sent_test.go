@@ -20,6 +20,7 @@ func answer(m larkcli.RawMessage) larkcli.SentMessage {
 }
 
 func TestIngestSent_StoresTheAnswerWithoutFetchingItBack(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	require.NoError(t, s.Store.UpsertContacts(ctx, []store.Contact{{OpenID: "ou_me", Name: "林岚"}}, 1))
@@ -36,6 +37,7 @@ func TestIngestSent_StoresTheAnswerWithoutFetchingItBack(t *testing.T) {
 }
 
 func TestIngestSent_TheNextListingWritesThePositionOverTheZero(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	m := msg("om_sent", "oc_a", clk.t, "发布好了")
@@ -54,6 +56,7 @@ func TestIngestSent_TheNextListingWritesThePositionOverTheZero(t *testing.T) {
 }
 
 func TestIngestSent_FetchesAReplyInsideAThread(t *testing.T) {
+	t.Parallel()
 	// Whether a thread reply's position is negative depends on the kind of
 	// chat, and the sign is what keeps it out of the chat's own flow.
 	s, f, clk := newSyncer(t)
@@ -71,6 +74,7 @@ func TestIngestSent_FetchesAReplyInsideAThread(t *testing.T) {
 }
 
 func TestIngestSent_FetchesWhatCameBackWithoutTheMessage(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	f.AddMessage(msg("om_fwd", "oc_a", clk.t, "转发"))
@@ -83,6 +87,7 @@ func TestIngestSent_FetchesWhatCameBackWithoutTheMessage(t *testing.T) {
 }
 
 func TestKeepSent_TheMessageFindsItsPictureAlreadyDone(t *testing.T) {
+	t.Parallel()
 	s, _, clk := newSyncer(t)
 	ctx := t.Context()
 	dir := t.TempDir()
@@ -106,6 +111,7 @@ func TestKeepSent_TheMessageFindsItsPictureAlreadyDone(t *testing.T) {
 }
 
 func TestKeepSent_SettlesAKeyAlreadyWaitingForItsDownload(t *testing.T) {
+	t.Parallel()
 	s, _, _ := newSyncer(t)
 	ctx := t.Context()
 	s.Opt().DataDir = t.TempDir()
@@ -122,6 +128,7 @@ func TestKeepSent_SettlesAKeyAlreadyWaitingForItsDownload(t *testing.T) {
 }
 
 func TestKeepSent_LeavesAFilePastTheCapToTheDownloader(t *testing.T) {
+	t.Parallel()
 	s, _, _ := newSyncer(t)
 	ctx := t.Context()
 	dir := t.TempDir()

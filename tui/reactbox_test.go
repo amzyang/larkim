@@ -13,6 +13,7 @@ import (
 )
 
 func TestPendingChips_AddsTheReaderToAChipSomebodyElseOpened(t *testing.T) {
+	t.Parallel()
 	chips := []emoji.Chip{{Key: "THUMBSUP", Count: 2, Operators: []string{"ou_a", "ou_b"}}}
 	out := pendingChips(chips, map[string]bool{"THUMBSUP": true}, "ou_me")
 	require.Equal(t, []emoji.Chip{{Key: "THUMBSUP", Count: 3, Mine: true,
@@ -21,12 +22,14 @@ func TestPendingChips_AddsTheReaderToAChipSomebodyElseOpened(t *testing.T) {
 }
 
 func TestPendingChips_TakesTheReaderBackOffAChipOthersKeep(t *testing.T) {
+	t.Parallel()
 	chips := []emoji.Chip{{Key: "THUMBSUP", Count: 2, Mine: true, Operators: []string{"ou_a", "ou_me"}}}
 	out := pendingChips(chips, map[string]bool{"THUMBSUP": false}, "ou_me")
 	require.Equal(t, []emoji.Chip{{Key: "THUMBSUP", Count: 1, Operators: []string{"ou_a"}}}, out)
 }
 
 func TestPendingChips_ClosesAChipThePressEmptied(t *testing.T) {
+	t.Parallel()
 	chips := []emoji.Chip{
 		{Key: "THUMBSUP", Count: 1, Mine: true, Operators: []string{"ou_me"}},
 		{Key: "OK", Count: 1, Operators: []string{"ou_a"}},
@@ -37,6 +40,7 @@ func TestPendingChips_ClosesAChipThePressEmptied(t *testing.T) {
 }
 
 func TestPendingChips_OpensANewChipAtTheEndOfTheStrip(t *testing.T) {
+	t.Parallel()
 	chips := []emoji.Chip{{Key: "THUMBSUP", Count: 1, Operators: []string{"ou_a"}}}
 	out := pendingChips(chips, map[string]bool{"OK": true}, "ou_me")
 	require.Len(t, out, 2)
@@ -45,17 +49,20 @@ func TestPendingChips_OpensANewChipAtTheEndOfTheStrip(t *testing.T) {
 }
 
 func TestPendingChips_LeavesAStripTheStoreAlreadyAgreesWith(t *testing.T) {
+	t.Parallel()
 	chips := []emoji.Chip{{Key: "THUMBSUP", Count: 1, Mine: true, Operators: []string{"ou_me"}}}
 	require.Equal(t, chips, pendingChips(chips, map[string]bool{"THUMBSUP": true}, "ou_me"))
 	require.Equal(t, chips, pendingChips(chips, nil, "ou_me"))
 }
 
 func TestPendingChips_DrawsNothingForTakingBackAReactionThatIsNotThere(t *testing.T) {
+	t.Parallel()
 	chips := []emoji.Chip{{Key: "THUMBSUP", Count: 1, Operators: []string{"ou_a"}}}
 	require.Equal(t, chips, pendingChips(chips, map[string]bool{"OK": false}, "ou_me"))
 }
 
 func TestMineOn_MatchesTheWayFeishuSpellsTheKey(t *testing.T) {
+	t.Parallel()
 	chips := []emoji.Chip{{Key: "Thumbsup", Count: 1, Mine: true}, {Key: "OK", Count: 2}}
 	require.True(t, mineOn(chips, "THUMBSUP"), "a key is matched folded, the way the picker matches")
 	require.False(t, mineOn(chips, "OK"), "somebody else's reaction is not the reader's")
@@ -63,6 +70,7 @@ func TestMineOn_MatchesTheWayFeishuSpellsTheKey(t *testing.T) {
 }
 
 func TestSettleReacts_DropsThePressFeishuAnswered(t *testing.T) {
+	t.Parallel()
 	now := time.Now()
 	ps := []reactPending{
 		{seq: 1, messageID: "om_a", key: "THUMBSUP", on: true, at: now, answered: true},
@@ -74,6 +82,7 @@ func TestSettleReacts_DropsThePressFeishuAnswered(t *testing.T) {
 }
 
 func TestSettleReacts_DropsAnAnsweredPressTheSummaryDisagreesWith(t *testing.T) {
+	t.Parallel()
 	// Taking back a reaction Feishu no longer holds is answered without the
 	// summary moving. Holding the press against that would keep drawing a
 	// reaction that is not there.
@@ -83,6 +92,7 @@ func TestSettleReacts_DropsAnAnsweredPressTheSummaryDisagreesWith(t *testing.T) 
 }
 
 func TestSettleReacts_GivesUpOnAPressThatWasNeverAnswered(t *testing.T) {
+	t.Parallel()
 	now := time.Now()
 	ps := []reactPending{{seq: 1, messageID: "om_a", key: "THUMBSUP", on: false, at: now.Add(-2 * reactSettle)}}
 	require.Empty(t, settleReacts(ps, now),
@@ -90,6 +100,7 @@ func TestSettleReacts_GivesUpOnAPressThatWasNeverAnswered(t *testing.T) {
 }
 
 func TestSettleReacts_HoldsAPressStillOnTheWire(t *testing.T) {
+	t.Parallel()
 	now := time.Now()
 	ps := []reactPending{{seq: 1, messageID: "om_elsewhere", key: "THUMBSUP", on: true, at: now}}
 	require.Equal(t, ps, settleReacts(ps, now),
@@ -97,6 +108,7 @@ func TestSettleReacts_HoldsAPressStillOnTheWire(t *testing.T) {
 }
 
 func TestPressReaction_ReplacesTheEarlierPressOnTheSameEmoji(t *testing.T) {
+	t.Parallel()
 	m := Model{}
 	m.deps.Self = "ou_me"
 	x := store.Message{MessageID: "om_a"}
@@ -110,6 +122,7 @@ func TestPressReaction_ReplacesTheEarlierPressOnTheSameEmoji(t *testing.T) {
 }
 
 func TestReactStates_KeysThePressesByMessageThenEmoji(t *testing.T) {
+	t.Parallel()
 	m := Model{reacts: []reactPending{
 		{messageID: "om_a", key: "THUMBSUP", on: true},
 		{messageID: "om_a", key: "OK", on: false},
@@ -127,6 +140,7 @@ func TestReactStates_KeysThePressesByMessageThenEmoji(t *testing.T) {
 // reaches Feishu unharmed and only the two thirds that are not — Yes, No, Get,
 // BubbleTea, every Status and General one — come back 231001.
 func TestToggleReaction_SendsTheSpellingFeishuKnows(t *testing.T) {
+	t.Parallel()
 	yes, ok := emoji.ByKey("Yes")
 	require.True(t, ok)
 	require.True(t, yes.Reactable(), "the picker offers it, so a press has to reach Feishu")

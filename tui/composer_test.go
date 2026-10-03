@@ -11,6 +11,7 @@ import (
 )
 
 func TestDraftRows_CountsWrappedLines(t *testing.T) {
+	t.Parallel()
 	require.Equal(t, 1, draftRows("", 20))
 	require.Equal(t, 1, draftRows("短", 20))
 	require.Equal(t, 3, draftRows("one\ntwo\nthree", 20))
@@ -22,6 +23,7 @@ func TestDraftRows_CountsWrappedLines(t *testing.T) {
 }
 
 func TestComposerHeight_GrowsWithTheDraftAndCapsAtTen(t *testing.T) {
+	t.Parallel()
 	m, _ := newOutboxModel(t)
 	mm, _ := m.startInsert(nil, false)
 	m = mm.(Model)
@@ -35,6 +37,7 @@ func TestComposerHeight_GrowsWithTheDraftAndCapsAtTen(t *testing.T) {
 }
 
 func TestComposerHeight_GrowthStopsAtThePanesFloor(t *testing.T) {
+	t.Parallel()
 	m, _ := newOutboxModel(t)
 	mm, _ := m.startInsert(nil, false)
 	m = mm.(Model)
@@ -52,6 +55,7 @@ func TestComposerHeight_GrowthStopsAtThePanesFloor(t *testing.T) {
 }
 
 func TestPreview_ShowsOnlyForPostAndImage(t *testing.T) {
+	t.Parallel()
 	m, _ := newOutboxModel(t)
 	mm, _ := m.startInsert(nil, false)
 	m = mm.(Model)
@@ -70,6 +74,7 @@ func TestPreview_ShowsOnlyForPostAndImage(t *testing.T) {
 }
 
 func TestPreview_TogglesOffAndBackOn(t *testing.T) {
+	t.Parallel()
 	m, _ := newOutboxModel(t)
 	mm, _ := m.startInsert(nil, false)
 	m = mm.(Model)
@@ -90,6 +95,7 @@ func TestPreview_TogglesOffAndBackOn(t *testing.T) {
 }
 
 func TestPreview_RendersThroughTheMessageBody(t *testing.T) {
+	t.Parallel()
 	m, _ := newOutboxModel(t)
 	mm, _ := m.startInsert(nil, false)
 	m = mm.(Model)
@@ -103,6 +109,7 @@ func TestPreview_RendersThroughTheMessageBody(t *testing.T) {
 }
 
 func TestPreview_DrawsAnEmojiWhereTheSendCarriesOne(t *testing.T) {
+	t.Parallel()
 	m, _ := newOutboxModel(t)
 	mm, _ := m.startInsert(nil, false)
 	m = mm.(Model)
@@ -117,6 +124,7 @@ func TestPreview_DrawsAnEmojiWhereTheSendCarriesOne(t *testing.T) {
 }
 
 func TestPreview_KeepsAnEmojiNameInsideMarkupAsTyped(t *testing.T) {
+	t.Parallel()
 	m, _ := newOutboxModel(t)
 	mm, _ := m.startInsert(nil, false)
 	m = mm.(Model)
@@ -130,6 +138,7 @@ func TestPreview_KeepsAnEmojiNameInsideMarkupAsTyped(t *testing.T) {
 }
 
 func TestRenderInput_BoxIsExactlyAsTallAsItClaims(t *testing.T) {
+	t.Parallel()
 	m, _ := newOutboxModel(t)
 	mm, _ := m.startInsert(nil, false)
 	m = mm.(Model)
@@ -142,6 +151,7 @@ func TestRenderInput_BoxIsExactlyAsTallAsItClaims(t *testing.T) {
 }
 
 func TestPicturePrepare_ClaimsThePreviewFirst(t *testing.T) {
+	t.Parallel()
 	m, _ := newOutboxModel(t)
 	mm, _ := m.startInsert(nil, false)
 	m = mm.(Model)
@@ -158,6 +168,7 @@ func TestPicturePrepare_ClaimsThePreviewFirst(t *testing.T) {
 }
 
 func TestOnInsertKey_GrowingTheDraftRelaysOutThePanes(t *testing.T) {
+	t.Parallel()
 	m, _ := newOutboxModel(t)
 	mm, _ := m.startInsert(nil, false)
 	m = mm.(Model)
@@ -185,6 +196,7 @@ func typeInto(m Model, text string) Model {
 }
 
 func TestOnInsertKey_PreviewTracksTheDraftWhileTyping(t *testing.T) {
+	t.Parallel()
 	m, _ := newOutboxModel(t)
 	mm, _ := m.startInsert(nil, false)
 	m = typeInto(mm.(Model), "## 发布说明")
@@ -196,6 +208,7 @@ func TestOnInsertKey_PreviewTracksTheDraftWhileTyping(t *testing.T) {
 }
 
 func TestStartInsert_PreviewIsPlannedBeforeItIsDrawn(t *testing.T) {
+	t.Parallel()
 	m, _ := newOutboxModel(t)
 	mm, _ := m.startInsert(nil, false)
 	m = typeInto(mm.(Model), "## 发布说明")

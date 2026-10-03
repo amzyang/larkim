@@ -77,6 +77,7 @@ func unreadScreen() UnreadScreen {
 // The page is the TUI's pane: on a terminal that draws them, the pictures the
 // pane draws are on it, not the stand-ins a plain terminal falls back to.
 func TestUnreadPage_DrawsWhatTheTUIDraws(t *testing.T) {
+	t.Parallel()
 	page, err := UnreadPage(t.Context(), unreadPageDeps(t), unreadScreen())
 	require.NoError(t, err)
 
@@ -92,6 +93,7 @@ func TestUnreadPage_DrawsWhatTheTUIDraws(t *testing.T) {
 // Off a terminal nothing is transmitted: an escape sequence in a file is noise,
 // and every row falls back to the stand-in it has always drawn.
 func TestUnreadPage_KeepsThePagePlainOffATerminal(t *testing.T) {
+	t.Parallel()
 	sc := unreadScreen()
 	sc.TTY = false
 
@@ -108,6 +110,7 @@ func TestUnreadPage_KeepsThePagePlainOffATerminal(t *testing.T) {
 // A bundle the reader forwarded is titled by their own name, which is not on
 // the message: it is read from contacts, the way the panes read it.
 func TestUnreadPage_NamesTheReaderOnTheirOwnForward(t *testing.T) {
+	t.Parallel()
 	page, err := UnreadPage(t.Context(), unreadPageDeps(t), unreadScreen())
 	require.NoError(t, err)
 
@@ -117,6 +120,7 @@ func TestUnreadPage_NamesTheReaderOnTheirOwnForward(t *testing.T) {
 // The page has no chats list beside it and no pane border, so it spends every
 // column of the terminal on the messages.
 func TestUnreadPage_SpansTheWholeTerminal(t *testing.T) {
+	t.Parallel()
 	sc := unreadScreen()
 
 	page, err := UnreadPage(t.Context(), unreadPageDeps(t), sc)
@@ -138,6 +142,7 @@ func TestUnreadPage_SpansTheWholeTerminal(t *testing.T) {
 // before the rows carry an APC; nothing a message body holds reaches the
 // terminal as a sequence.
 func TestUnreadPage_DropsASendersEscapeSequences(t *testing.T) {
+	t.Parallel()
 	d := unreadPageDeps(t)
 	ctx := t.Context()
 	require.NoError(t, d.Store.UpdateRendered(ctx, "om_react",

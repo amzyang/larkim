@@ -87,6 +87,7 @@ func badges(t *testing.T, st *store.Store) map[string]int64 {
 }
 
 func TestMarkAllRead_WalksEveryChatThatWasWaiting(t *testing.T) {
+	t.Parallel()
 	m, st, calls, _ := sweepModel(t, 3)
 	m = pressMarkAll(t, m)
 
@@ -102,6 +103,7 @@ func TestMarkAllRead_WalksEveryChatThatWasWaiting(t *testing.T) {
 }
 
 func TestMarkAllRead_NeverBatchesSeveralTargetsIntoOneOpen(t *testing.T) {
+	t.Parallel()
 	m, _, calls, _ := sweepModel(t, 3)
 	pressMarkAll(t, m)
 
@@ -112,6 +114,7 @@ func TestMarkAllRead_NeverBatchesSeveralTargetsIntoOneOpen(t *testing.T) {
 }
 
 func TestMarkAllRead_WritesBeforeItFiresTheFirstApplink(t *testing.T) {
+	t.Parallel()
 	m, st, calls, _ := sweepModel(t, 3)
 	m, cmd := clickMarkAll(m)
 	next, cmd := m.Update(cmd())
@@ -126,6 +129,7 @@ func TestMarkAllRead_WritesBeforeItFiresTheFirstApplink(t *testing.T) {
 }
 
 func TestMarkAllRead_EndsOnTheChatTheReaderHasOpen(t *testing.T) {
+	t.Parallel()
 	m, _, calls, _ := sweepModel(t, 3)
 	m.chatID = "oc_0"
 
@@ -137,6 +141,7 @@ func TestMarkAllRead_EndsOnTheChatTheReaderHasOpen(t *testing.T) {
 }
 
 func TestMarkAllRead_APressWhileAQuestionIsOnScreenStartsNothing(t *testing.T) {
+	t.Parallel()
 	m, st, calls, _ := sweepModel(t, 3)
 	m.confirm = confirmation{kind: confirmRecall, messageID: "om_0"}
 	m = m.notify("recall this message? y/n", false)
@@ -152,6 +157,7 @@ func TestMarkAllRead_APressWhileAQuestionIsOnScreenStartsNothing(t *testing.T) {
 }
 
 func TestMarkAllRead_AnOpenFailureIsReportedAndDoesNotStopTheChain(t *testing.T) {
+	t.Parallel()
 	m, _, calls, openErr := sweepModel(t, 3)
 	*openErr = errFailedOpen
 	m = pressMarkAll(t, m)
@@ -162,6 +168,7 @@ func TestMarkAllRead_AnOpenFailureIsReportedAndDoesNotStopTheChain(t *testing.T)
 }
 
 func TestMarkAllRead_ReportsOnlyTheFailuresOfItsOwnSweep(t *testing.T) {
+	t.Parallel()
 	m, _, calls, openErr := sweepModel(t, 2)
 
 	// A read gate's applink fails on the way past. It says nothing on its own
@@ -180,6 +187,7 @@ func TestMarkAllRead_ReportsOnlyTheFailuresOfItsOwnSweep(t *testing.T) {
 }
 
 func TestMarkAllRead_WaitsForTheLastOpenBeforeItReports(t *testing.T) {
+	t.Parallel()
 	m, _, calls, openErr := sweepModel(t, 1)
 	*openErr = errFailedOpen
 	m, cmd := clickMarkAll(m)
@@ -204,6 +212,7 @@ func TestMarkAllRead_WaitsForTheLastOpenBeforeItReports(t *testing.T) {
 }
 
 func TestMarkAllRead_WalksAgainWhatTheLastSweepFailedToClear(t *testing.T) {
+	t.Parallel()
 	m, _, calls, openErr := sweepModel(t, 2)
 	*openErr = errFailedOpen
 	m = pressMarkAll(t, m)
@@ -219,6 +228,7 @@ func TestMarkAllRead_WalksAgainWhatTheLastSweepFailedToClear(t *testing.T) {
 }
 
 func TestMarkAllRead_LeavesOutWhatFeishuConfirmedRead(t *testing.T) {
+	t.Parallel()
 	m, st, calls, _ := sweepModel(t, 2)
 	m = pressMarkAll(t, m)
 	*calls = nil
@@ -233,6 +243,7 @@ func TestMarkAllRead_LeavesOutWhatFeishuConfirmedRead(t *testing.T) {
 }
 
 func TestMarkAllRead_OnAStoreWithNothingWaitingSaysSo(t *testing.T) {
+	t.Parallel()
 	m, _, calls, _ := sweepModel(t, 0)
 
 	m = pressMarkAll(t, m)
@@ -242,6 +253,7 @@ func TestMarkAllRead_OnAStoreWithNothingWaitingSaysSo(t *testing.T) {
 }
 
 func TestMarkAllRead_EscapeStopsTheWalk(t *testing.T) {
+	t.Parallel()
 	m, _, calls, _ := sweepModel(t, 4)
 	m, cmd := clickMarkAll(m)
 	next, cmd := m.Update(cmd())
@@ -283,6 +295,7 @@ func walkOne(t *testing.T, m Model) Model {
 }
 
 func TestRunCommand_ReadAllTakesTheSamePathAsTheButton(t *testing.T) {
+	t.Parallel()
 	m, _, _, _ := sweepModel(t, 2)
 
 	next, cmd := m.runCommand("read-all")
@@ -299,6 +312,7 @@ var errFailedOpen = errors.New("no application knows how to open URL")
 // reader saying none of it is, so they go with the counts, and the panel drawn
 // beside the list answers the press rather than the watch's next beat.
 func TestOnMarkAllDone_DropsTheMarkersAndReanchorsThePanel(t *testing.T) {
+	t.Parallel()
 	m, st, _, _ := sweepModel(t, 2)
 	m = drain(t, m, m.startUnread(false))
 	require.Len(t, m.feed.sections, 2)

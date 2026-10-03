@@ -9,6 +9,7 @@ import (
 )
 
 func TestCollectHandshake_TakesEveryAnswerFromOneRoundTrip(t *testing.T) {
+	t.Parallel()
 	// The answers in the order a terminal gives them: graphics, cell size,
 	// background, and the device attributes closing the batch.
 	stream := "\x1b_Gi=31;OK\x1b\\" + // graphics: yes
@@ -24,18 +25,21 @@ func TestCollectHandshake_TakesEveryAnswerFromOneRoundTrip(t *testing.T) {
 }
 
 func TestCollectHandshake_TakesALightBackgroundAnsweredByBell(t *testing.T) {
+	t.Parallel()
 	h := collectHandshake(strings.NewReader("\x1b]11;rgb:ffff/ffff/ffff\x07\x1b[?62c"), Handshake{})
 	require.False(t, h.Graphics, "a terminal that never answered the graphics query does not draw them")
 	require.False(t, h.Dark, "white leans light")
 }
 
 func TestCollectHandshake_DropsKeysTypedInsideTheWindow(t *testing.T) {
+	t.Parallel()
 	h := collectHandshake(strings.NewReader("jkl\x1b[?62c"), Handshake{Dark: true})
 	require.False(t, h.Graphics)
 	require.True(t, h.Dark, "the fallback holds")
 }
 
 func TestCollectHandshake_KeepsWhatWasSaidWhenTheTerminalGoesQuiet(t *testing.T) {
+	t.Parallel()
 	h := collectHandshake(strings.NewReader("\x1b_Gi=31;OK\x1b\\"), Handshake{Dark: true})
 	require.True(t, h.Graphics)
 	require.Nil(t, h.BG)
@@ -43,6 +47,7 @@ func TestCollectHandshake_KeepsWhatWasSaidWhenTheTerminalGoesQuiet(t *testing.T)
 }
 
 func TestNew_DrawsTheFirstFrameTheHandshakeDescribed(t *testing.T) {
+	t.Parallel()
 	m := New(Deps{DataDir: t.TempDir(), Term: Handshake{Graphics: true, CellW: 8, CellH: 16, BG: color.Black, Dark: true}})
 	require.IsType(t, &kittyAvatars{}, m.avatars)
 	require.NotNil(t, m.pics)
@@ -51,6 +56,7 @@ func TestNew_DrawsTheFirstFrameTheHandshakeDescribed(t *testing.T) {
 }
 
 func TestNew_KeepsTheStandInsForATerminalThatDrewNoPictures(t *testing.T) {
+	t.Parallel()
 	m := New(Deps{})
 	require.IsType(t, textAvatars{}, m.avatars)
 	require.Nil(t, m.pics)

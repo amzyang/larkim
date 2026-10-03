@@ -9,6 +9,7 @@ import (
 )
 
 func TestPostText_SpellsEachElementTheWayItsReadersMatchIt(t *testing.T) {
+	t.Parallel()
 	// The @ runs, the picture references and the attachment tags are all read
 	// back out of a rendering by matching these shapes.
 	for _, tc := range []struct{ name, raw, want string }{
@@ -48,6 +49,7 @@ func TestPostText_SpellsEachElementTheWayItsReadersMatchIt(t *testing.T) {
 }
 
 func TestTick_APostAndACardAreRenderedWithoutACall(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	f.Chats = []larkcli.RawChat{{ChatID: "oc_a", Name: "平台组", ChatMode: "group"}}
@@ -69,6 +71,7 @@ func TestTick_APostAndACardAreRenderedWithoutACall(t *testing.T) {
 }
 
 func TestCardText_ACardWithNothingInItIsNamedByItsKind(t *testing.T) {
+	t.Parallel()
 	require.Equal(t, "[Card]", cardText(`{"json_card":"{}"}`))
 	require.Equal(t, "[Card]", cardText(`not json`))
 }

@@ -13,6 +13,7 @@ import (
 )
 
 func TestRefreshReactions_AsksAboutTheNewestMessagesAndStoresTheAnswer(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	var msgs []store.Message
@@ -40,6 +41,7 @@ func TestRefreshReactions_AsksAboutTheNewestMessagesAndStoresTheAnswer(t *testin
 }
 
 func TestRefreshReactions_ClearsASummaryFeishuNoLongerHolds(t *testing.T) {
+	t.Parallel()
 	s, _, clk := newSyncer(t)
 	ctx := t.Context()
 	_, err := s.Store.UpsertMessages(ctx, []store.Message{
@@ -58,6 +60,7 @@ func TestRefreshReactions_ClearsASummaryFeishuNoLongerHolds(t *testing.T) {
 }
 
 func TestRefreshReactions_SaysNothingAboutAChatWithNoMessages(t *testing.T) {
+	t.Parallel()
 	s, f, _ := newSyncer(t)
 	n, err := s.RefreshReactions(t.Context(), "oc_quiet")
 	require.NoError(t, err)
@@ -89,6 +92,7 @@ func p2pChats(t *testing.T, s *Syncer, f *larkcli.Fake, clk *fakeClock, n int) [
 }
 
 func TestReactionsSlice_AsksAboutTheNewestMessageOfTheP2PChatsAlone(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	f.Chats = []larkcli.RawChat{{ChatID: "oc_team", Name: "平台组", ChatMode: "group"}}
@@ -114,6 +118,7 @@ func TestReactionsSlice_AsksAboutTheNewestMessageOfTheP2PChatsAlone(t *testing.T
 }
 
 func TestReactionsSlice_SkipsAChatWhoseNewestMessageWasRecalled(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	p2pChats(t, s, f, clk, 1)
@@ -131,6 +136,7 @@ func TestReactionsSlice_SkipsAChatWhoseNewestMessageWasRecalled(t *testing.T) {
 }
 
 func TestReactionsSlice_AsksNoMoreThanOneBatchPerTick(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ids := p2pChats(t, s, f, clk, reactionWindow+5)
 
@@ -142,6 +148,7 @@ func TestReactionsSlice_AsksNoMoreThanOneBatchPerTick(t *testing.T) {
 }
 
 func TestReactionsSlice_AsksNoMoreOftenThanItsInterval(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	s.Opt().BackfillPerTick = 0

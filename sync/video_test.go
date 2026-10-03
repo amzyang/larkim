@@ -8,6 +8,7 @@ import (
 )
 
 func TestParseVideoChat_ReadsTheCallOffTheBody(t *testing.T) {
+	t.Parallel()
 	v, ok := ParseVideoChat(videoChatBody(1_000, 33_000))
 	require.True(t, ok)
 	assert.Equal(t, VideoChat{Topic: "站会的视频会议", MeetNumber: "100000000", StartMs: 1_000, EndMs: 33_000}, v)
@@ -18,6 +19,7 @@ func TestParseVideoChat_ReadsTheCallOffTheBody(t *testing.T) {
 }
 
 func TestParseVideoChat_ACallWithoutAnEndIsStillRunning(t *testing.T) {
+	t.Parallel()
 	// Feishu stamps end_time in the update that closes the call, so the
 	// invite carries none for as long as the call is worth joining.
 	v, ok := ParseVideoChat(`{"topic":"站会的视频会议","meet_number":"100000000","start_time":"1000"}`)
@@ -32,6 +34,7 @@ func TestParseVideoChat_ACallWithoutAnEndIsStillRunning(t *testing.T) {
 }
 
 func TestParseVideoChat_RefusesABodyThatNamesNoCall(t *testing.T) {
+	t.Parallel()
 	for _, raw := range []string{"", "not json", "{}", `{"text":"hi"}`, `{"topic":42}`} {
 		_, ok := ParseVideoChat(raw)
 		assert.False(t, ok, raw)
@@ -39,6 +42,7 @@ func TestParseVideoChat_RefusesABodyThatNamesNoCall(t *testing.T) {
 }
 
 func TestParseVideoChat_DropsAMeetingNumberThatIsNotDigits(t *testing.T) {
+	t.Parallel()
 	// The number goes into a join link, so a value that cannot be one is
 	// dropped rather than dialled.
 	v, ok := ParseVideoChat(`{"topic":"站会的视频会议","meet_number":"852-073-321"}`)
@@ -47,6 +51,7 @@ func TestParseVideoChat_DropsAMeetingNumberThatIsNotDigits(t *testing.T) {
 }
 
 func TestVideoChatText_SpellsOutWhichCallItWas(t *testing.T) {
+	t.Parallel()
 	assert.Equal(t, "[Video call] 站会的视频会议 · 100000000 · 32s", videoChatText(videoChatBody(1_000, 33_000)))
 	assert.Equal(t, "[Video call] 站会的视频会议 · 100000000",
 		videoChatText(`{"topic":"站会的视频会议","meet_number":"100000000","start_time":"1000"}`),

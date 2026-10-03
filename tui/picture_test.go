@@ -20,12 +20,14 @@ func testPictures(t *testing.T) *pictures {
 }
 
 func TestNewPictures_OnlyOnATerminalThatDrawsThem(t *testing.T) {
+	t.Parallel()
 	require.Nil(t, newPictures("/tmp", false))
 	require.Nil(t, newPictures("", true), "no data dir, no files to draw")
 	require.NotNil(t, newPictures("/tmp", true))
 }
 
 func TestPictures_PlaceFillsWhicheverSideOfThePaneBindsFirst(t *testing.T) {
+	t.Parallel()
 	p := testPictures(t)
 	wide := writePNG(t, p.dataDir, "wide.png", 1000, 500)
 	pic := p.place(wide, 30, 20)
@@ -43,6 +45,7 @@ func TestPictures_PlaceFillsWhicheverSideOfThePaneBindsFirst(t *testing.T) {
 }
 
 func TestPictures_PlaceNeverEnlargesPastTheSourcePixels(t *testing.T) {
+	t.Parallel()
 	p := testPictures(t)
 	pic := p.place(writePNG(t, p.dataDir, "small.png", 100, 100), 158, 50)
 	require.Equal(t, 100, pic.w)
@@ -52,6 +55,7 @@ func TestPictures_PlaceNeverEnlargesPastTheSourcePixels(t *testing.T) {
 }
 
 func TestPictures_PlaceDrawsInsideTheBoxItReserves(t *testing.T) {
+	t.Parallel()
 	p := testPictures(t)
 	for _, px := range [][2]int{{1000, 500}, {200, 4000}, {31, 47}, {100, 100}, {3, 900}, {1, 1}} {
 		name := fmt.Sprintf("s%dx%d.png", px[0], px[1])
@@ -65,6 +69,7 @@ func TestPictures_PlaceDrawsInsideTheBoxItReserves(t *testing.T) {
 }
 
 func TestPictures_PlaceRoundsToTheNearestCellRatherThanUp(t *testing.T) {
+	t.Parallel()
 	p := testPictures(t)
 	// A 64px square over a 10x20 cell: rounding up would reserve 7x4 cells and
 	// leave most of the fourth row empty beside the one line of text it sits by.
@@ -76,6 +81,7 @@ func TestPictures_PlaceRoundsToTheNearestCellRatherThanUp(t *testing.T) {
 }
 
 func TestPictures_PlaceGivesNothingWhenThePaneHasNoRoom(t *testing.T) {
+	t.Parallel()
 	p := testPictures(t)
 	tall := writePNG(t, p.dataDir, "tall.png", 200, 4000)
 	require.Zero(t, p.place(tall, 1, 20).cols, "a pane too narrow to hold a picture")
@@ -83,6 +89,7 @@ func TestPictures_PlaceGivesNothingWhenThePaneHasNoRoom(t *testing.T) {
 }
 
 func TestPictures_PlaceGivesNothingItCannotDraw(t *testing.T) {
+	t.Parallel()
 	p := testPictures(t)
 	require.Zero(t, p.place("", 30, 20).cols, "a file that was never downloaded")
 	require.Zero(t, p.place("missing.png", 30, 20).cols)
@@ -97,6 +104,7 @@ func TestPictures_PlaceGivesNothingItCannotDraw(t *testing.T) {
 }
 
 func TestPictures_PrepareTransmitsOnceAndThenPlaces(t *testing.T) {
+	t.Parallel()
 	p := testPictures(t)
 	pic := p.place(writePNG(t, p.dataDir, "a.png", 100, 100), 30, 20)
 	require.NotZero(t, pic.cols)
@@ -111,6 +119,7 @@ func TestPictures_PrepareTransmitsOnceAndThenPlaces(t *testing.T) {
 }
 
 func TestPictures_IDsDoNotCollideWithTheAvatars(t *testing.T) {
+	t.Parallel()
 	p := testPictures(t)
 	require.GreaterOrEqual(t, picIDBase, kittyIDBase+kittyIDs)
 	require.LessOrEqual(t, picIDBase+picIDs, 256, "the id travels in a 256-colour index, whose last index is 255")
@@ -122,6 +131,7 @@ func TestPictures_IDsDoNotCollideWithTheAvatars(t *testing.T) {
 }
 
 func TestModelPicturePrepare_SettlesWhenPicturesOutnumberTheIDs(t *testing.T) {
+	t.Parallel()
 	m := sized(106, 59)
 	p := testPictures(t)
 	m.pics = p
@@ -139,6 +149,7 @@ func TestModelPicturePrepare_SettlesWhenPicturesOutnumberTheIDs(t *testing.T) {
 }
 
 func TestModelPicturePrepare_CoversEveryRowOnScreen(t *testing.T) {
+	t.Parallel()
 	m := sized(106, 59)
 	p := testPictures(t)
 	m.pics = p
@@ -174,6 +185,7 @@ var (
 )
 
 func TestPictures_DrawsEveryFormatFeishuSends(t *testing.T) {
+	t.Parallel()
 	for name, bytes := range map[string][]byte{"a.gif": tinyGIF, "a.webp": tinyWebP} {
 		p := testPictures(t)
 		require.NoError(t, os.WriteFile(filepath.Join(p.dataDir, name), bytes, 0o600))
@@ -184,6 +196,7 @@ func TestPictures_DrawsEveryFormatFeishuSends(t *testing.T) {
 }
 
 func TestPicturePlace_ADiscKeepsAKeyOfItsOwn(t *testing.T) {
+	t.Parallel()
 	plain := picture{path: "a.png", cols: 2, rows: 1}
 	disc := plain
 	disc.disc = true
@@ -192,6 +205,7 @@ func TestPicturePlace_ADiscKeepsAKeyOfItsOwn(t *testing.T) {
 }
 
 func TestPicturesPrepare_ADiscIsClippedToTheCircle(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := writeFilledPNG(t, dir, "a.png", 40, 40)
 	plain := picturesIn(dir).place(path, 2, 1)
@@ -212,6 +226,7 @@ func TestPicturesPrepare_ADiscIsClippedToTheCircle(t *testing.T) {
 }
 
 func TestPicturesDisc_PlacesTheDownloadedFileAsACircle(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	file := writeFilledPNG(t, dir, "a.png", 240, 240)
 	p := picturesIn(dir)
@@ -224,6 +239,7 @@ func TestPicturesDisc_PlacesTheDownloadedFileAsACircle(t *testing.T) {
 }
 
 func TestPicturesDisc_DrawsOneForSomebodyWithNoFile(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	p := picturesIn(dir)
 
@@ -246,6 +262,7 @@ func TestPicturesDisc_DrawsOneForSomebodyWithNoFile(t *testing.T) {
 }
 
 func TestPicturesDisc_DrawsEachPersonOnce(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	p := picturesIn(dir)
 	pic := p.disc("", "ou_a", "孙琪", avatarWidth, avatarHeight)
@@ -258,6 +275,7 @@ func TestPicturesDisc_DrawsEachPersonOnce(t *testing.T) {
 }
 
 func TestPicturesDisc_AFileThatCannotBeReadFallsBackToADrawnOne(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	p := picturesIn(dir)
 

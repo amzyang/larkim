@@ -19,6 +19,7 @@ import (
 const keycap = "1️⃣"
 
 func TestCut_AKeycapNeverOutgrowsItsBudget(t *testing.T) {
+	t.Parallel()
 	s := keycap + strings.Repeat("字", 40)
 	require.Equal(t, 2, ansi.StringWidth(keycap), "the terminal draws a keycap in two cells")
 	for w := range 40 {
@@ -28,6 +29,7 @@ func TestCut_AKeycapNeverOutgrowsItsBudget(t *testing.T) {
 }
 
 func TestCut_ARunOfKeycapsKeepsWhatFits(t *testing.T) {
+	t.Parallel()
 	s := strings.Repeat(keycap, 60)
 	for w := 2; w <= 20; w++ {
 		require.Equal(t, strings.Repeat(keycap, w/2), cut(s, w), "a cut to %d columns", w)
@@ -35,6 +37,7 @@ func TestCut_ARunOfKeycapsKeepsWhatFits(t *testing.T) {
 }
 
 func TestWrap_ARunOfKeycapsWiderThanTheRowEnds(t *testing.T) {
+	t.Parallel()
 	s := strings.Repeat(keycap, 60)
 	done := make(chan []string, 1)
 	go func() { done <- wrap(s, 20) }()
@@ -50,6 +53,7 @@ func TestWrap_ARunOfKeycapsWiderThanTheRowEnds(t *testing.T) {
 }
 
 func TestWrap_ARowCarriesOnlyTheEscapesInForce(t *testing.T) {
+	t.Parallel()
 	// lipgloss underlines a rune at a time, so a paragraph is an escape pair
 	// per character; a row opening on all of them is a row the size of the
 	// whole paragraph.
@@ -65,6 +69,7 @@ func TestWrap_ARowCarriesOnlyTheEscapesInForce(t *testing.T) {
 }
 
 func TestWrap_KeepsTextAnEscapeCutsAClusterOf(t *testing.T) {
+	t.Parallel()
 	// Underlined a rune at a time, a keycap is a digit and two marks to the
 	// width a cut measures, and one cluster to the break; measured the two
 	// ways, the row after it lost its first letter.
@@ -85,6 +90,7 @@ func BenchmarkWrap_AParagraphWithNoBreakInIt(b *testing.B) {
 }
 
 func TestCut_KeepsWhatAlreadyFits(t *testing.T) {
+	t.Parallel()
 	s := keycap + "ab"
 	require.Equal(t, s, cut(s, 4))
 	require.Equal(t, s, cut(s, 99))
@@ -92,6 +98,7 @@ func TestCut_KeepsWhatAlreadyFits(t *testing.T) {
 }
 
 func TestCutLeft_NeverKeepsAColumnItWasAskedToDrop(t *testing.T) {
+	t.Parallel()
 	s := keycap + "ab" + keycap
 	full := ansi.StringWidth(s)
 	for w := range full + 1 {
@@ -106,6 +113,7 @@ func TestCutLeft_NeverKeepsAColumnItWasAskedToDrop(t *testing.T) {
 }
 
 func TestFit_AKeycapLineStaysInsideThePane(t *testing.T) {
+	t.Parallel()
 	s := keycap + strings.Repeat("字", 40)
 	for w := 1; w < 40; w++ {
 		require.Equal(t, w, lipgloss.Width(fit(s, w)), "fit to %d columns", w)
@@ -113,6 +121,7 @@ func TestFit_AKeycapLineStaysInsideThePane(t *testing.T) {
 }
 
 func TestWrapSegs_AnUnbreakableRunWithAKeycapFitsTheRow(t *testing.T) {
+	t.Parallel()
 	// A digit and the letters after it break nowhere, so the run reaches the
 	// forced cut.
 	segs := []rowSeg{{text: keycap + strings.Repeat("x", 120)}}
@@ -148,6 +157,7 @@ func bodyModel(t *testing.T, msgType, body string) (Model, *store.Store) {
 }
 
 func TestView_NoFrameLineOutgrowsTheTerminal(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct{ name, msgType, body string }{
 		// The run is one column past the body a 101-column terminal leaves
 		// and has nowhere to break, so it reaches the cut that reads the
@@ -176,6 +186,7 @@ func TestView_NoFrameLineOutgrowsTheTerminal(t *testing.T) {
 }
 
 func TestTruncate_ClosesTheColourItCutsThrough(t *testing.T) {
+	t.Parallel()
 	s := stDim.Render("THUMBSUP") + " 赞"
 	for n := 1; n <= lipgloss.Width(s); n++ {
 		got := truncate(s, n)
@@ -190,6 +201,7 @@ func TestTruncate_ClosesTheColourItCutsThrough(t *testing.T) {
 }
 
 func TestTruncate_KeepsAGraphemeClusterWhole(t *testing.T) {
+	t.Parallel()
 	// A keycap is an ASCII digit, a variation selector and U+20E3: two columns
 	// the terminal draws as one shape, and half of it is not a shape at all.
 	require.Equal(t, "…", truncate("1️⃣x", 2), "no room for the keycap and the mark both")
@@ -197,6 +209,7 @@ func TestTruncate_KeepsAGraphemeClusterWhole(t *testing.T) {
 }
 
 func TestCut_ClosesAHyperlinkItCutThrough(t *testing.T) {
+	t.Parallel()
 	line := hyperlink("https://example.com/x", "一个很长的标签")
 	out := cut(line, 4)
 	require.Equal(t, "一个", ansi.Strip(out))
@@ -205,11 +218,13 @@ func TestCut_ClosesAHyperlinkItCutThrough(t *testing.T) {
 }
 
 func TestCut_LeavesAWholeHyperlinkAlone(t *testing.T) {
+	t.Parallel()
 	line := hyperlink("https://example.com/x", "ab")
 	require.Equal(t, line, cut(line, 10), "nothing was cut, so nothing needs closing")
 	require.Equal(t, 1, strings.Count(cut(line, 10), ansi.ResetHyperlink()))
 }
 
 func TestCut_LeavesTextWithNoHyperlinkAlone(t *testing.T) {
+	t.Parallel()
 	require.Equal(t, "ab", cut("abcd", 2))
 }

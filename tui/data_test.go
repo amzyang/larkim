@@ -13,11 +13,13 @@ import (
 )
 
 func TestFeishuChatLink_UsesTheClientScheme(t *testing.T) {
+	t.Parallel()
 	require.Equal(t, "lark://applink.feishu.cn/client/chat/open?openChatId=oc_1",
 		applink.ChatLink("oc_1", "", 0))
 }
 
 func TestFeishuChatLink_CarriesAMessagePosition(t *testing.T) {
+	t.Parallel()
 	require.Equal(t, "lark://applink.feishu.cn/client/chat/open?openChatId=oc_1&position=227",
 		applink.ChatLink("oc_1", "", 227))
 	require.NotContains(t, applink.ChatLink("oc_1", "", -1), "position",
@@ -25,6 +27,7 @@ func TestFeishuChatLink_CarriesAMessagePosition(t *testing.T) {
 }
 
 func TestLoadMeta_NamesTheReactorsTheBlockOnlyHoldsIDsFor(t *testing.T) {
+	t.Parallel()
 	st, err := storetest.Open(t, filepath.Join(t.TempDir(), "t.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { st.Close() })
@@ -40,6 +43,7 @@ func TestLoadMeta_NamesTheReactorsTheBlockOnlyHoldsIDsFor(t *testing.T) {
 }
 
 func TestLoadMeta_NamesTheAppsThatReacted(t *testing.T) {
+	t.Parallel()
 	st, err := storetest.Open(t, filepath.Join(t.TempDir(), "t.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { st.Close() })
@@ -63,6 +67,7 @@ func TestLoadMeta_NamesTheAppsThatReacted(t *testing.T) {
 }
 
 func TestLoadMeta_NamesTheThreadReplierThePageNeverHeardFrom(t *testing.T) {
+	t.Parallel()
 	st, err := storetest.Open(t, filepath.Join(t.TempDir(), "t.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { st.Close() })
@@ -90,6 +95,7 @@ func TestLoadMeta_NamesTheThreadReplierThePageNeverHeardFrom(t *testing.T) {
 // A send is a keypress waiting on a subprocess, so it must not queue behind
 // the syncer's sweeps.
 func TestWaited_TakesTheInteractiveLane(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := waited(time.Second)
 	defer cancel()
 	require.Equal(t, larkcli.LaneInteractive, larkcli.LaneOf(ctx))
@@ -101,6 +107,7 @@ func TestWaited_TakesTheInteractiveLane(t *testing.T) {
 // and the refresh riding along with it held two of three slots and a send
 // landed behind them.
 func TestBeat_TakesTheBeatLane(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := beat(time.Second)
 	defer cancel()
 	require.Equal(t, larkcli.LaneBeat, larkcli.LaneOf(ctx))
@@ -111,6 +118,7 @@ func TestBeat_TakesTheBeatLane(t *testing.T) {
 // A recall is an event in the chat, not an absence: the client draws a notice
 // where the message stood, so the page has to be handed the row.
 func TestMessageQuery_KeepsARecallOnThePage(t *testing.T) {
+	t.Parallel()
 	st, err := storetest.Open(t, filepath.Join(t.TempDir(), "t.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { st.Close() })
@@ -132,6 +140,7 @@ func TestMessageQuery_KeepsARecallOnThePage(t *testing.T) {
 }
 
 func TestThreadQuery_KeepsARecalledReply(t *testing.T) {
+	t.Parallel()
 	st, err := storetest.Open(t, filepath.Join(t.TempDir(), "t.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { st.Close() })
@@ -151,6 +160,7 @@ func TestThreadQuery_KeepsARecalledReply(t *testing.T) {
 }
 
 func TestLoadMeta_CarriesTheWritingReadOutOfAPicture(t *testing.T) {
+	t.Parallel()
 	st, err := storetest.Open(t, filepath.Join(t.TempDir(), "t.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { st.Close() })

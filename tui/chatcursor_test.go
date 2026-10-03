@@ -33,6 +33,7 @@ func reorder(chats []store.Chat, from, to int) []store.Chat {
 }
 
 func TestRepinChat_CursorAndViewportFollowTheirOwnChats(t *testing.T) {
+	t.Parallel()
 	m := sized(120, 36)
 	m.chatID, m.chatIdx, m.chatTop = "oc_40", rowOf(40), rowOf(34)
 	// Moving 40 down to 45 walks 41..45 up one place each, carrying both the
@@ -46,6 +47,7 @@ func TestRepinChat_CursorAndViewportFollowTheirOwnChats(t *testing.T) {
 }
 
 func TestRepinChat_ViewportHoldsItsTopRowWhenTheCursorsChatIsCarriedAway(t *testing.T) {
+	t.Parallel()
 	m := sized(120, 36)
 	m.chatID, m.chatIdx, m.chatTop = "oc_40", rowOf(40), rowOf(30)
 
@@ -61,6 +63,7 @@ func TestRepinChat_ViewportHoldsItsTopRowWhenTheCursorsChatIsCarriedAway(t *test
 }
 
 func TestRepinChat_StaysInsideTheListWhenItShrinks(t *testing.T) {
+	t.Parallel()
 	m := sized(120, 36)
 	m.chatID, m.chatIdx, m.chatTop = "oc_40", rowOf(40), rowOf(30)
 
@@ -74,6 +77,7 @@ func TestRepinChat_StaysInsideTheListWhenItShrinks(t *testing.T) {
 }
 
 func TestMoveToChat_OpensWhatACursorAtRestLandsOn(t *testing.T) {
+	t.Parallel()
 	m := cursorModel(t)
 	m.chatIdx = rowOf(1)
 
@@ -83,6 +87,7 @@ func TestMoveToChat_OpensWhatACursorAtRestLandsOn(t *testing.T) {
 }
 
 func TestMoveToChat_WaitsWhileTheCursorIsStillMoving(t *testing.T) {
+	t.Parallel()
 	m := cursorModel(t)
 	now := time.Unix(1000, 0)
 	m.chatIdx = rowOf(1)
@@ -96,6 +101,7 @@ func TestMoveToChat_WaitsWhileTheCursorIsStillMoving(t *testing.T) {
 }
 
 func TestMoveToChat_ASweepLoadsOnePageNotOnePerRow(t *testing.T) {
+	t.Parallel()
 	m := cursorModel(t)
 	now := time.Unix(1000, 0)
 
@@ -115,6 +121,7 @@ func TestMoveToChat_ASweepLoadsOnePageNotOnePerRow(t *testing.T) {
 }
 
 func TestClaimRowOpen_OnlyForTheRowTheCursorStoppedOn(t *testing.T) {
+	t.Parallel()
 	m := cursorModel(t)
 	m.chatIdx = rowOf(9)
 
@@ -128,6 +135,7 @@ func TestClaimRowOpen_OnlyForTheRowTheCursorStoppedOn(t *testing.T) {
 }
 
 func TestOpenChat_KeepsThePageItIsOnUntilTheNewOneArrives(t *testing.T) {
+	t.Parallel()
 	m := cursorModel(t)
 	m.msgs = []store.Message{{MessageID: "om_old", ChatID: "oc_0", RenderedAt: 1, Content: "old"}}
 	m.rebuildMessages()
@@ -147,6 +155,7 @@ func TestOpenChat_KeepsThePageItIsOnUntilTheNewOneArrives(t *testing.T) {
 }
 
 func TestActivate_OpensTheHighlightedChatWithoutWaiting(t *testing.T) {
+	t.Parallel()
 	m := cursorModel(t)
 	m.focus, m.chatIdx = paneChats, rowOf(7)
 
@@ -161,6 +170,7 @@ func TestActivate_OpensTheHighlightedChatWithoutWaiting(t *testing.T) {
 // Walking onto a thread row opens its frame beside the reader: the list is
 // what they are reading, and the next j has to still move it.
 func TestMoveToChat_AThreadRowOpensTheColumnWithoutTakingTheFocus(t *testing.T) {
+	t.Parallel()
 	m := cursorModel(t)
 	m.chats, m.threads = []store.Chat{chatAt("oc_0", 300)}, []store.ThreadFeed{feedAt("omt_a", "oc_0", 200)}
 	m.focus, m.chatIdx = paneChats, rowOf(1)
@@ -179,6 +189,7 @@ func TestMoveToChat_AThreadRowOpensTheColumnWithoutTakingTheFocus(t *testing.T) 
 // Enter says the reader means this row, and a thread row leads into the
 // column rather than into the chat's page.
 func TestActivate_EnterOnAThreadRowLandsInTheColumn(t *testing.T) {
+	t.Parallel()
 	m := cursorModel(t)
 	m.chats, m.threads = []store.Chat{chatAt("oc_0", 300)}, []store.ThreadFeed{feedAt("omt_a", "oc_0", 200)}
 	m.focus, m.chatIdx = paneChats, rowOf(1)
@@ -194,6 +205,7 @@ func TestActivate_EnterOnAThreadRowLandsInTheColumn(t *testing.T) {
 // The row the cursor previewed has nothing left to load, so the focus cannot
 // wait for a frame to land — there is none coming.
 func TestActivate_EnterOnAnAlreadyOpenThreadRowTakesTheFocus(t *testing.T) {
+	t.Parallel()
 	m := cursorModel(t)
 	m.chats, m.threads = []store.Chat{chatAt("oc_0", 300)}, []store.ThreadFeed{feedAt("omt_a", "oc_0", 200)}
 	m.focus, m.chatIdx = paneChats, rowOf(1)
@@ -209,6 +221,7 @@ func TestActivate_EnterOnAnAlreadyOpenThreadRowTakesTheFocus(t *testing.T) {
 // A click lands in the list, so it leaves the reader there — the same place
 // the TUI's other clicks leave them, the pane they clicked.
 func TestOnClick_AThreadRowKeepsTheFocusInTheChatsPane(t *testing.T) {
+	t.Parallel()
 	m := cursorModel(t)
 	m.chats, m.threads = []store.Chat{chatAt("oc_0", 300)}, []store.ThreadFeed{feedAt("omt_a", "oc_0", 200)}
 	m.focus, m.chatIdx, m.chatTop = paneMessages, 0, 0
@@ -224,6 +237,7 @@ func TestOnClick_AThreadRowKeepsTheFocusInTheChatsPane(t *testing.T) {
 }
 
 func TestChatsLoaded_ACursorAheadOfTheOpenChatKeepsItsPlace(t *testing.T) {
+	t.Parallel()
 	m := sized(120, 36)
 	// A sweep down the list left the cursor far from the chat whose page is
 	// still the one on screen.
@@ -247,6 +261,7 @@ func wheelChats(m Model, n int, b tea.MouseButton) Model {
 }
 
 func TestOnWheel_ChatsKeepsItsScrollAcrossAReload(t *testing.T) {
+	t.Parallel()
 	m := sized(120, 36)
 	m.chatID, m.chatIdx, m.chatTop = "oc_0", 0, 0
 
@@ -267,6 +282,7 @@ func TestOnWheel_ChatsKeepsItsScrollAcrossAReload(t *testing.T) {
 }
 
 func TestScrollChatToCursor_ACursorMoveBringsTheListBack(t *testing.T) {
+	t.Parallel()
 	m := sized(120, 36)
 	m.focus, m.chatID, m.chatIdx, m.chatTop = paneChats, "oc_0", 0, 0
 	m = wheelChats(m, 3, tea.MouseWheelDown)
@@ -284,6 +300,7 @@ func TestScrollChatToCursor_ACursorMoveBringsTheListBack(t *testing.T) {
 // is a deliberate k there, so it loads too — a row that left the pane showing
 // the chat below would read as a list one row out of step with its own page.
 func TestMove_TheUnreadRowOpensUnderTheCursor(t *testing.T) {
+	t.Parallel()
 	m := cursorModel(t)
 	m.focus, m.chatIdx = paneChats, rowOf(0)
 	m.cursorMovedAt = time.Now().Add(-time.Second)

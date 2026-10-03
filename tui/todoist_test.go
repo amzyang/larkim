@@ -45,6 +45,7 @@ func fileTask(msg store.Message) store.Message {
 }
 
 func TestRunCommand_TodoistFilesTheSelectedMessage(t *testing.T) {
+	t.Parallel()
 	f := &fakeTasks{}
 	m := taskPage(t, f, fileTask(store.Message{MsgType: "post",
 		Content: "发布单合了吗\n还没", RenderedAt: 1}))
@@ -62,6 +63,7 @@ func TestRunCommand_TodoistFilesTheSelectedMessage(t *testing.T) {
 }
 
 func TestTodoistTask_FilesTheSelectedMessage(t *testing.T) {
+	t.Parallel()
 	f := &fakeTasks{}
 	m := taskPage(t, f, fileTask(store.Message{MsgType: "post",
 		Content: "发布单合了吗\n还没", RenderedAt: 1}))
@@ -79,6 +81,7 @@ func TestTodoistTask_FilesTheSelectedMessage(t *testing.T) {
 }
 
 func TestTodoistTask_TakesTheFirstLineAndNamesAttachments(t *testing.T) {
+	t.Parallel()
 	f := &fakeTasks{}
 	m := taskPage(t, f, fileTask(store.Message{MsgType: "post",
 		Content: "![图](img_v3_abc) 先看这个\n后面还有", RenderedAt: 1}))
@@ -93,6 +96,7 @@ func TestTodoistTask_TakesTheFirstLineAndNamesAttachments(t *testing.T) {
 }
 
 func TestTodoistTask_CutsALongFirstLine(t *testing.T) {
+	t.Parallel()
 	f := &fakeTasks{}
 	m := taskPage(t, f, fileTask(store.Message{MsgType: "text",
 		Content: strings.Repeat("很", 200), RenderedAt: 1}))
@@ -107,6 +111,7 @@ func TestTodoistTask_CutsALongFirstLine(t *testing.T) {
 }
 
 func TestTodoistTask_AThreadReplyLinksTheChatWithoutAPosition(t *testing.T) {
+	t.Parallel()
 	f := &fakeTasks{}
 	msg := fileTask(store.Message{MsgType: "text", Content: "线程里的一句", RenderedAt: 1})
 	msg.MessagePosition = -3
@@ -121,6 +126,7 @@ func TestTodoistTask_AThreadReplyLinksTheChatWithoutAPosition(t *testing.T) {
 }
 
 func TestTodoistTask_FromTheChatListFilesTheChat(t *testing.T) {
+	t.Parallel()
 	f := &fakeTasks{}
 	m := sized(120, 36)
 	m.deps.Todoist = f
@@ -136,6 +142,7 @@ func TestTodoistTask_FromTheChatListFilesTheChat(t *testing.T) {
 }
 
 func TestTodoistTask_FromTheUnreadRowHasNoChatToName(t *testing.T) {
+	t.Parallel()
 	f := &fakeTasks{}
 	m := sized(120, 36)
 	m.deps.Todoist = f
@@ -150,6 +157,7 @@ func TestTodoistTask_FromTheUnreadRowHasNoChatToName(t *testing.T) {
 }
 
 func TestTodoistTask_WithoutATokenSaysSo(t *testing.T) {
+	t.Parallel()
 	m := sized(120, 36)
 	m.deps.Todoist = nil
 	m.focus = paneMessages
@@ -161,6 +169,7 @@ func TestTodoistTask_WithoutATokenSaysSo(t *testing.T) {
 }
 
 func TestTodoistTask_WithNothingUnderTheCursorSaysSo(t *testing.T) {
+	t.Parallel()
 	m := sized(120, 36)
 	m.deps.Todoist = &fakeTasks{}
 	m.focus, m.msgIdx = paneMessages, 0
@@ -173,6 +182,7 @@ func TestTodoistTask_WithNothingUnderTheCursorSaysSo(t *testing.T) {
 }
 
 func TestTodoistTask_AFailureReachesTheNoticeBar(t *testing.T) {
+	t.Parallel()
 	boom := errors.New("todoist: 401 Unauthorized: bad token")
 	f := &fakeTasks{err: boom}
 	m := taskPage(t, f, fileTask(store.Message{MsgType: "text",

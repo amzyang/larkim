@@ -50,6 +50,7 @@ func theBundle() store.Message {
 }
 
 func TestRenderRows_AForwardedBundleNeverPrintsItsTags(t *testing.T) {
+	t.Parallel()
 	out := rowText(renderRows([]store.Message{theBundle()},
 		bundleStyle(fromGroup(kids("张三", "预算定了", "李四", "收到")...))))
 
@@ -60,6 +61,7 @@ func TestRenderRows_AForwardedBundleNeverPrintsItsTags(t *testing.T) {
 }
 
 func TestForwardTitle_NamesTheConversationTheWayTheClientDoes(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name string
 		gist store.ForwardGist
@@ -80,6 +82,7 @@ func TestForwardTitle_NamesTheConversationTheWayTheClientDoes(t *testing.T) {
 }
 
 func TestRenderRows_AForwardCardShowsAtMostFourChildren(t *testing.T) {
+	t.Parallel()
 	g := fromGroup(kids("张三", "一", "李四", "二", "王五", "三", "张三", "四")...)
 	g.ChildCount = 9
 
@@ -94,6 +97,7 @@ func TestRenderRows_AForwardCardShowsAtMostFourChildren(t *testing.T) {
 }
 
 func TestRenderRows_AForwardCardCountsNothing(t *testing.T) {
+	t.Parallel()
 	g := fromGroup(kids("张三", "预算定了")...)
 	g.ChildCount = 9
 
@@ -104,6 +108,7 @@ func TestRenderRows_AForwardCardCountsNothing(t *testing.T) {
 }
 
 func TestRenderRows_AForwardCardEndsWithoutAnEllipsisWhenItShowsEverything(t *testing.T) {
+	t.Parallel()
 	out := rowText(renderRows([]store.Message{theBundle()},
 		bundleStyle(fromGroup(kids("张三", "预算定了", "李四", "收到")...))))
 
@@ -111,6 +116,7 @@ func TestRenderRows_AForwardCardEndsWithoutAnEllipsisWhenItShowsEverything(t *te
 }
 
 func TestRenderRows_AForwardCardIsBoundedHoweverBigTheBundleIs(t *testing.T) {
+	t.Parallel()
 	x := theBundle()
 	small := renderRows([]store.Message{x}, bundleStyle(fromGroup(kids("张三", "预算定了")...)))
 	big := fromGroup(kids("张三", "一", "李四", "二", "王五", "三", "张三", "四")...)
@@ -123,6 +129,7 @@ func TestRenderRows_AForwardCardIsBoundedHoweverBigTheBundleIs(t *testing.T) {
 }
 
 func TestRenderRows_AForwardedBundleOpensWithItsFirstChild(t *testing.T) {
+	t.Parallel()
 	// A forward is frozen, so what it opens with is the context it was
 	// forwarded for — unlike a thread, where the last word is the state.
 	rows := renderRows([]store.Message{theBundle()},
@@ -132,6 +139,7 @@ func TestRenderRows_AForwardedBundleOpensWithItsFirstChild(t *testing.T) {
 }
 
 func TestRenderRows_AnUnexpandedBundleDrawsTheTitleAlone(t *testing.T) {
+	t.Parallel()
 	out := rowText(renderRows([]store.Message{theBundle()}, bundleStyle(store.ForwardGist{})))
 
 	require.Contains(t, out, "Chat History")
@@ -140,12 +148,14 @@ func TestRenderRows_AnUnexpandedBundleDrawsTheTitleAlone(t *testing.T) {
 }
 
 func TestRenderRows_ARefusedBundleSaysSo(t *testing.T) {
+	t.Parallel()
 	out := rowText(renderRows([]store.Message{theBundle()}, bundleStyle(store.ForwardGist{Refused: true})))
 
 	require.Contains(t, out, "cannot be expanded")
 }
 
 func TestSummaryRow_CutsEveryCardLineToTheWidth(t *testing.T) {
+	t.Parallel()
 	st := bundleStyle(fromGroup(kids("张三", strings.Repeat("很长的一句话", 20))...))
 	st.width = 30
 
@@ -171,6 +181,7 @@ func forwardCardRows(rows []msgRow) int {
 }
 
 func TestRenderRows_EveryCardLineOpensTheSameFrame(t *testing.T) {
+	t.Parallel()
 	rows := renderRows([]store.Message{theBundle()},
 		bundleStyle(fromGroup(kids("张三", "预算定了", "李四", "收到")...)))
 
@@ -191,6 +202,7 @@ func TestRenderRows_EveryCardLineOpensTheSameFrame(t *testing.T) {
 }
 
 func TestSelectedZones_LeavesTheSummaryLineToTheKeyboardsOwnKeys(t *testing.T) {
+	t.Parallel()
 	m := sized(140, 36)
 	m.msgsBase = []store.Message{theBundle()}
 	m.meta.forwards = map[string]store.ForwardGist{"om_fwd": {ChildCount: 2, Expanded: true}}
@@ -233,6 +245,7 @@ func headerRow(p pane) int {
 }
 
 func TestOnClick_ASummaryLineOpensTheContainerInTheRightPane(t *testing.T) {
+	t.Parallel()
 	m := sized(140, 36)
 	m.msgsBase = []store.Message{theBundle()}
 	m.meta.forwards = map[string]store.ForwardGist{"om_fwd": {ChildCount: 2, Expanded: true}}
@@ -247,6 +260,7 @@ func TestOnClick_ASummaryLineOpensTheContainerInTheRightPane(t *testing.T) {
 }
 
 func TestOnClick_ASummaryPressedInsideTheRightPanePushesAFrame(t *testing.T) {
+	t.Parallel()
 	m := onThread(t)
 	m.threadMeta.forwards = map[string]store.ForwardGist{"om_inner": {ChildCount: 3, Expanded: true}}
 	m.thread = []store.Message{
@@ -263,6 +277,7 @@ func TestOnClick_ASummaryPressedInsideTheRightPanePushesAFrame(t *testing.T) {
 }
 
 func TestOnClick_ASummaryPressFiresOnTheFirstClick(t *testing.T) {
+	t.Parallel()
 	m := sized(140, 36)
 	m.msgsBase = []store.Message{
 		{MessageID: "om_a", SenderName: "张三", Content: "先", RenderedAt: 1, CreateMs: 1},
@@ -307,6 +322,7 @@ func aReply(id, name, text string) store.Message {
 }
 
 func TestRenderRows_AThreadRootShowsItsRepliesOldestFirst(t *testing.T) {
+	t.Parallel()
 	// The tail runs the way the chat itself does, so the newest word is the
 	// line nearest whatever comes next.
 	out := rowText(renderRows([]store.Message{theRoot()}, threadStyle(aThread(3,
@@ -318,6 +334,7 @@ func TestRenderRows_AThreadRootShowsItsRepliesOldestFirst(t *testing.T) {
 }
 
 func TestRenderRows_AThreadHeadNamesTheRepliesItIsNotShowing(t *testing.T) {
+	t.Parallel()
 	// The client's own wording: the head says what is folded away, and the
 	// five lines under it say the rest.
 	tail := make([]store.Message, 0, threadTailSize)
@@ -332,6 +349,7 @@ func TestRenderRows_AThreadHeadNamesTheRepliesItIsNotShowing(t *testing.T) {
 }
 
 func TestRenderRows_AThreadSummaryNamesTheReplierWithTheirSuffix(t *testing.T) {
+	t.Parallel()
 	st := threadStyle(aThread(2, aReply("ou_b", "张三", "收到")))
 	st.suffix = map[string]string{"ou_b": "02"}
 
@@ -344,6 +362,7 @@ func TestRenderRows_AThreadSummaryNamesTheReplierWithTheirSuffix(t *testing.T) {
 // the root, and standing there the face parts the count from the name, so the
 // line needs no dot of its own.
 func TestRenderRows_AThreadSummaryWearsTheRepliersFaceBesideTheirName(t *testing.T) {
+	t.Parallel()
 	rows := renderRows([]store.Message{theRoot()}, threadStyle(aThread(1, aReply("ou_b", "李四", "收到"))))
 
 	last := rows[len(rows)-1]
@@ -355,6 +374,7 @@ func TestRenderRows_AThreadSummaryWearsTheRepliersFaceBesideTheirName(t *testing
 }
 
 func TestRenderRows_AThreadSummaryPlacesTheRepliersPictureInTheLine(t *testing.T) {
+	t.Parallel()
 	st := threadStyle(aThread(1, aReply("ou_b", "李四", "收到")))
 	st.avatars = map[string]string{"ou_b": "users/ou_b.png"}
 	// The root's own disc comes through here too; only the replier's is read.
@@ -381,6 +401,7 @@ func TestRenderRows_AThreadSummaryPlacesTheRepliersPictureInTheLine(t *testing.T
 }
 
 func TestRenderRows_TheThreadFoldSitsUnderTheBody(t *testing.T) {
+	t.Parallel()
 	// The root's own words come first, the way the client stacks a topic:
 	// the fold hangs the replies under the message, not over it.
 	lines := strings.Split(strings.TrimRight(rowText(renderRows([]store.Message{theRoot()},
@@ -392,6 +413,7 @@ func TestRenderRows_TheThreadFoldSitsUnderTheBody(t *testing.T) {
 }
 
 func TestRenderRows_AThreadRootWithNoReplyStillGetsItsLine(t *testing.T) {
+	t.Parallel()
 	// Without it the root reads as an ordinary message, and nothing says
 	// that Enter opens a thread there rather than answering.
 	out := rowText(renderRows([]store.Message{theRoot()}, threadStyle(store.ThreadGist{})))
@@ -400,6 +422,7 @@ func TestRenderRows_AThreadRootWithNoReplyStillGetsItsLine(t *testing.T) {
 }
 
 func TestRenderRows_AThreadSummaryIsNotDrawnInsideItsOwnPane(t *testing.T) {
+	t.Parallel()
 	st := threadStyle(aThread(23, aReply("ou_b", "李四", "1234")))
 	st.inFrame = true
 
@@ -410,6 +433,7 @@ func TestRenderRows_AThreadSummaryIsNotDrawnInsideItsOwnPane(t *testing.T) {
 }
 
 func TestRenderRows_AForwardedThreadRootShowsTheThreadInTheChatAndTheForwardInTheFrame(t *testing.T) {
+	t.Parallel()
 	// One message, two containers. The live one wins in the chat; inside the
 	// thread the same message is the forward's own line, so it opens in turn.
 	x := theBundle()
@@ -428,6 +452,7 @@ func TestRenderRows_AForwardedThreadRootShowsTheThreadInTheChatAndTheForwardInTh
 }
 
 func TestRenderRows_EveryLineOfAThreadFoldCarriesAnOpenZone(t *testing.T) {
+	t.Parallel()
 	// The head no differently from the reply under it: whichever line the
 	// reader presses, the pane that opens is the thread's.
 	rows := renderRows([]store.Message{theRoot()},
@@ -449,6 +474,7 @@ func TestRenderRows_EveryLineOfAThreadFoldCarriesAnOpenZone(t *testing.T) {
 }
 
 func TestMessageQuery_FoldsThreadRepliesOutOfTheChatFlow(t *testing.T) {
+	t.Parallel()
 	// Both shapes: the newest page, and one cut around an anchor.
 	require.True(t, messageQuery("oc_a", 0, messagePageSize).ExcludeThreadReplies)
 	require.True(t, messageQuery("oc_a", 1000, anchoredPageSize).ExcludeThreadReplies,
@@ -456,6 +482,7 @@ func TestMessageQuery_FoldsThreadRepliesOutOfTheChatFlow(t *testing.T) {
 }
 
 func TestRenderRows_AThreadSummaryCarriesTheUnreadDot(t *testing.T) {
+	t.Parallel()
 	waiting := aThread(3, aReply("ou_b", "李四", "先"), aReply("ou_c", "王五", "1234"))
 	waiting.Waiting = true
 	rows := renderRows([]store.Message{theRoot()}, threadStyle(waiting))
@@ -469,6 +496,7 @@ func TestRenderRows_AThreadSummaryCarriesTheUnreadDot(t *testing.T) {
 }
 
 func TestClearBlockDots_LeavesAThreadSummaryLit(t *testing.T) {
+	t.Parallel()
 	// The dot comes from the read flags, not from the dots this visit
 	// gathered, so walking the cursor onto the root cannot wipe a reply
 	// nobody has seen.
@@ -495,12 +523,14 @@ func marks(rows []msgRow) string {
 }
 
 func TestReplyGist_NamesAForwardRatherThanQuotingItsTree(t *testing.T) {
+	t.Parallel()
 	// The rendering lark-cli leaves on a bundle is the whole of another chat.
 	// A quote line that flattened it would read as tags and ISO timestamps.
 	require.Equal(t, "[Chat History]", replyGist(theBundle()))
 }
 
 func TestRightTitle_NamesAForwardFrameAfterTheCardThatOpenedIt(t *testing.T) {
+	t.Parallel()
 	m := sized(140, 36)
 	m.rightKind, m.threadID, m.rightRoot = rightForward, "om_fwd", "om_fwd"
 	m.rightName = "Group Chat History"
@@ -511,6 +541,7 @@ func TestRightTitle_NamesAForwardFrameAfterTheCardThatOpenedIt(t *testing.T) {
 }
 
 func TestContainerAtCursor_CarriesTheCardsNameIntoTheFrame(t *testing.T) {
+	t.Parallel()
 	m := sized(140, 36)
 	m.selfName = "林岚"
 	m.msgsBase = []store.Message{theBundle()}
@@ -525,6 +556,7 @@ func TestContainerAtCursor_CarriesTheCardsNameIntoTheFrame(t *testing.T) {
 }
 
 func TestShowRight_TitlesTheFrameBeforeItsListLands(t *testing.T) {
+	t.Parallel()
 	m := sized(140, 36)
 
 	m, _ = m.openRight(rightFrame{kind: rightForward, id: "om_fwd", root: "om_fwd", name: "Group Chat History"})

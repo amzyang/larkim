@@ -23,6 +23,7 @@ func newRefreshModel(t *testing.T) Model {
 }
 
 func TestClaimChatRefresh_OnlyForTheChatStillOpen(t *testing.T) {
+	t.Parallel()
 	m := newRefreshModel(t)
 	require.False(t, m.claimChatRefresh("oc_scrolled_past"))
 	require.True(t, m.claimChatRefresh("oc_open"))
@@ -30,6 +31,7 @@ func TestClaimChatRefresh_OnlyForTheChatStillOpen(t *testing.T) {
 }
 
 func TestOpenChat_ArmsTheChatRefresh(t *testing.T) {
+	t.Parallel()
 	m := newRefreshModel(t)
 	got := collect(m.openChat("oc_other"))
 	require.Contains(t, got, "tui.messagesLoadedMsg")
@@ -40,6 +42,7 @@ func TestOpenChat_ArmsTheChatRefresh(t *testing.T) {
 // reader did not ask for it, so a red banner is the wrong place for a gateway
 // that refused, and there is nothing to back off from it.
 func TestRideAlongRefresh_LogsAFailureInsteadOfRaisingIt(t *testing.T) {
+	t.Parallel()
 	st, err := storetest.Open(t, filepath.Join(t.TempDir(), "t.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { st.Close() })

@@ -37,6 +37,7 @@ func newPumModel(t *testing.T) Model {
 }
 
 func TestPumRunAt_OpensOnATriggerAtAWordBoundary(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		line  string
 		kind  pumKind
@@ -63,6 +64,7 @@ func TestPumRunAt_OpensOnATriggerAtAWordBoundary(t *testing.T) {
 }
 
 func TestPumRunAt_StaysShutInsideAWord(t *testing.T) {
+	t.Parallel()
 	for _, line := range []string{
 		"",
 		"好的",
@@ -89,6 +91,7 @@ func TestPumRunAt_StaysShutInsideAWord(t *testing.T) {
 }
 
 func TestLineBeforeCursor_CountsRunesNotBytes(t *testing.T) {
+	t.Parallel()
 	m := newPumModel(t)
 	m.input.SetValue("你好世界")
 	m.input.SetCursorColumn(2)
@@ -101,6 +104,7 @@ func TestLineBeforeCursor_CountsRunesNotBytes(t *testing.T) {
 }
 
 func TestPum_OpensOnTheRosterAndNarrowsByPinyin(t *testing.T) {
+	t.Parallel()
 	m := typeInto(newPumModel(t), "@")
 	require.True(t, m.pum.open())
 	// @All leads, and everyone in the chat follows in roster order.
@@ -113,6 +117,7 @@ func TestPum_OpensOnTheRosterAndNarrowsByPinyin(t *testing.T) {
 // A chat of two keeps no member list, but @ opens on it all the same: naming
 // the peer is what makes a message a reminder rather than one more line.
 func TestPum_OpensInAChatOfTwoOnThePeerAndSelf(t *testing.T) {
+	t.Parallel()
 	m := newPumModel(t)
 	m.chatID = "oc_pair"
 	m.chats = []store.Chat{{ChatID: "oc_pair", Name: "张三", ChatMode: "p2p", P2PTargetID: "ou_a"}}
@@ -126,6 +131,7 @@ func TestPum_OpensInAChatOfTwoOnThePeerAndSelf(t *testing.T) {
 }
 
 func TestPum_OffersTheReaderThemselves(t *testing.T) {
+	t.Parallel()
 	m := typeInto(newPumModel(t), "@lin")
 
 	require.Equal(t, []string{"林岚"}, pumNames(m))
@@ -134,6 +140,7 @@ func TestPum_OffersTheReaderThemselves(t *testing.T) {
 // A group's roster now carries its bots, so the badge that says which of them
 // is a machine reaches the popup.
 func TestPum_OffersABotWithItsBadge(t *testing.T) {
+	t.Parallel()
 	m := typeInto(newPumModel(t), "@gjjqr")
 
 	require.Equal(t, []string{"构建机器人"}, pumNames(m))
@@ -141,12 +148,14 @@ func TestPum_OffersABotWithItsBadge(t *testing.T) {
 }
 
 func TestPum_ClosesWhenNobodyAnswers(t *testing.T) {
+	t.Parallel()
 	m := typeInto(newPumModel(t), "@zzzz")
 	require.False(t, m.pum.open())
 	require.Equal(t, "@zzzz", m.input.Value(), "what was typed stays in the draft")
 }
 
 func TestPum_AcceptingAMentionWritesThePlainNameAndRemembersWho(t *testing.T) {
+	t.Parallel()
 	m := typeInto(newPumModel(t), "@zs")
 	mm, _ := m.onInsertKey(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = mm.(Model)
@@ -157,6 +166,7 @@ func TestPum_AcceptingAMentionWritesThePlainNameAndRemembersWho(t *testing.T) {
 }
 
 func TestPum_TabAndShiftTabWalkRatherThanAccept(t *testing.T) {
+	t.Parallel()
 	m := typeInto(newPumModel(t), "@")
 	mm, _ := m.onInsertKey(tea.KeyPressMsg{Code: tea.KeyTab})
 	m = mm.(Model)
@@ -168,6 +178,7 @@ func TestPum_TabAndShiftTabWalkRatherThanAccept(t *testing.T) {
 }
 
 func TestPum_CtrlYAccepts(t *testing.T) {
+	t.Parallel()
 	m := typeInto(newPumModel(t), "@zs")
 	mm, _ := m.onInsertKey(tea.KeyPressMsg{Code: 'y', Mod: tea.ModCtrl})
 	m = mm.(Model)
@@ -176,6 +187,7 @@ func TestPum_CtrlYAccepts(t *testing.T) {
 }
 
 func TestForward_APasteInTheComposerRereadsThePopup(t *testing.T) {
+	t.Parallel()
 	m := typeInto(newPumModel(t), "@zs")
 	require.True(t, m.pum.open())
 	m.deps.Clipboard = func(string) (clip, error) { return clip{kind: clipText, text: " 你好"}, nil }
@@ -196,6 +208,7 @@ func TestForward_APasteInTheComposerRereadsThePopup(t *testing.T) {
 }
 
 func TestPastedMsg_AClipboardPasteRereadsThePopup(t *testing.T) {
+	t.Parallel()
 	m := typeInto(newPumModel(t), "@zs")
 	mm, _ := m.Update(pastedMsg{clip: clip{kind: clipText, text: " 你好"}})
 	m = mm.(Model)
@@ -204,6 +217,7 @@ func TestPastedMsg_AClipboardPasteRereadsThePopup(t *testing.T) {
 }
 
 func TestPum_AcceptingAtAllRemembersNobody(t *testing.T) {
+	t.Parallel()
 	m := typeInto(newPumModel(t), "@")
 	mm, _ := m.onInsertKey(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = mm.(Model)
@@ -213,6 +227,7 @@ func TestPum_AcceptingAtAllRemembersNobody(t *testing.T) {
 }
 
 func TestPum_AcceptingMidDraftLeavesTheTailAlone(t *testing.T) {
+	t.Parallel()
 	m := newPumModel(t)
 	m.input.SetValue("好的 @zs 你看下")
 	// The cursor sits at the end of the run, not at the end of the draft.
@@ -225,6 +240,7 @@ func TestPum_AcceptingMidDraftLeavesTheTailAlone(t *testing.T) {
 }
 
 func TestPum_AcceptingAnEmojiWithNoCharacterWritesTheBracketedName(t *testing.T) {
+	t.Parallel()
 	m := typeInto(newPumModel(t), ":done")
 	require.True(t, m.pum.open())
 
@@ -237,6 +253,7 @@ func TestPum_AcceptingAnEmojiWithNoCharacterWritesTheBracketedName(t *testing.T)
 }
 
 func TestPum_StaysShutUntilTwoLettersStand(t *testing.T) {
+	t.Parallel()
 	m := typeInto(newPumModel(t), ":")
 	require.False(t, m.pum.open(), "a lone colon is punctuation")
 	m = typeInto(m, "d")
@@ -246,6 +263,7 @@ func TestPum_StaysShutUntilTwoLettersStand(t *testing.T) {
 }
 
 func TestPum_OpensOnTheBracketedFormTheClientSends(t *testing.T) {
+	t.Parallel()
 	m := typeInto(newPumModel(t), "[wancheng")
 	require.True(t, m.pum.open())
 
@@ -264,6 +282,7 @@ func TestPum_OpensOnTheBracketedFormTheClientSends(t *testing.T) {
 // nothing answers. The popup completes what is being typed mid-sentence, where
 // the capital is the shift still held from the bracket, not a request.
 func TestPum_MatchesWhateverCaseTheQueryIsTypedIn(t *testing.T) {
+	t.Parallel()
 	for _, run := range []string{"[Do", ":Do"} {
 		m := typeInto(newPumModel(t), run)
 		require.True(t, slices.ContainsFunc(m.pum.menu.items, func(h pumHit) bool { return h.insert == "[Done]" }), run)
@@ -275,6 +294,7 @@ func TestPum_MatchesWhateverCaseTheQueryIsTypedIn(t *testing.T) {
 }
 
 func TestPum_OffersTheUnicodeEmojiFeishuHasNoAnswerFor(t *testing.T) {
+	t.Parallel()
 	m := typeInto(newPumModel(t), ":rocket")
 	require.True(t, m.pum.open())
 	require.NotContains(t, pumInfo(m), larkMark, "a character is not one of Lark's own")
@@ -284,6 +304,7 @@ func TestPum_OffersTheUnicodeEmojiFeishuHasNoAnswerFor(t *testing.T) {
 }
 
 func TestPum_EnterAcceptsWhileOpenAndSendsOnceClosed(t *testing.T) {
+	t.Parallel()
 	m := typeInto(newPumModel(t), "好的 @zs")
 	mm, _ := m.onInsertKey(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = mm.(Model)
@@ -296,6 +317,7 @@ func TestPum_EnterAcceptsWhileOpenAndSendsOnceClosed(t *testing.T) {
 }
 
 func TestPum_EscDismissesWithoutLeavingInsertMode(t *testing.T) {
+	t.Parallel()
 	m := typeInto(newPumModel(t), "@zs")
 	mm, _ := m.onInsertKey(tea.KeyPressMsg{Code: tea.KeyEscape})
 	m = mm.(Model)
@@ -314,6 +336,7 @@ func TestPum_EscDismissesWithoutLeavingInsertMode(t *testing.T) {
 }
 
 func TestPum_MovingKeepsItsPlaceWhileTheRunStands(t *testing.T) {
+	t.Parallel()
 	m := typeInto(newPumModel(t), "@")
 	mm, _ := m.onInsertKey(tea.KeyPressMsg{Code: 'n', Mod: tea.ModCtrl})
 	m = mm.(Model)
@@ -328,6 +351,7 @@ func TestPum_MovingKeepsItsPlaceWhileTheRunStands(t *testing.T) {
 }
 
 func TestPumRows_HoldThePopupToThePaneItCovers(t *testing.T) {
+	t.Parallel()
 	m := typeInto(newPumModel(t), "@")
 	require.Equal(t, len(m.pum.menu.items), m.pumRows())
 	require.Len(t, m.floatSegs(), m.pumRows())
@@ -346,6 +370,7 @@ func TestPumRows_HoldThePopupToThePaneItCovers(t *testing.T) {
 }
 
 func TestPum_TakesNoKeysOnATerminalWithNoRoomToDrawIt(t *testing.T) {
+	t.Parallel()
 	m := typeInto(newPumModel(t), ":do")
 	require.True(t, m.pumShowing())
 
@@ -362,6 +387,7 @@ func TestPum_TakesNoKeysOnATerminalWithNoRoomToDrawIt(t *testing.T) {
 }
 
 func TestRenderInput_BoxStandsStillWhenThePopupOpens(t *testing.T) {
+	t.Parallel()
 	m := newPumModel(t)
 	before, body := m.composerRows(), m.bodyHeight()
 	m = typeInto(m, "@")
@@ -372,6 +398,7 @@ func TestRenderInput_BoxStandsStillWhenThePopupOpens(t *testing.T) {
 }
 
 func TestModelPicturePrepare_ClaimsWhatTheOpenPopupOffers(t *testing.T) {
+	t.Parallel()
 	m := newPumModel(t)
 	writeTestEmoji(t, m.deps.DataDir, "DONE")
 	m.pics = picturesIn(m.deps.DataDir)
@@ -414,6 +441,7 @@ func pumNames(m Model) []string {
 var emojiByBracket = regexp.MustCompile(`^\[([^\[\]\n]{1,12})\]`)
 
 func TestOfferSegs_SayALetteringEmojisNameOnce(t *testing.T) {
+	t.Parallel()
 	m := newPumModel(t)
 	m = typeInto(m, ":yes")
 	i := slices.IndexFunc(m.pum.menu.items, func(h pumHit) bool { return h.emoji.Emoji.Key == "Yes" })
@@ -424,6 +452,7 @@ func TestOfferSegs_SayALetteringEmojisNameOnce(t *testing.T) {
 }
 
 func TestPum_AnEmojisKeyAndTermAreItsInfoNotItsName(t *testing.T) {
+	t.Parallel()
 	m := typeInto(newPumModel(t), ":dianzan")
 	require.Equal(t, "THUMBSUP", m.pum.menu.items[0].emoji.Emoji.Key)
 	require.Equal(t, "Like", ansi.Strip(m.pum.menu.rows[0].name))
@@ -431,12 +460,14 @@ func TestPum_AnEmojisKeyAndTermAreItsInfoNotItsName(t *testing.T) {
 }
 
 func TestPum_ALarkBuiltInEmojiSaysLarkInTheBox(t *testing.T) {
+	t.Parallel()
 	m := typeInto(newPumModel(t), ":dianzan")
 	require.Equal(t, "THUMBSUP", m.pum.menu.items[0].emoji.Emoji.Key)
 	require.Contains(t, pumInfo(m), larkMark, "one of Lark's own is marked; a character is not")
 }
 
 func TestPum_APersonsInfoIsDepartmentThenEmail(t *testing.T) {
+	t.Parallel()
 	m := newPumModel(t)
 	m.roster[1].Department = "平台组"
 	m.roster[1].Email = "zhangsan@example.com"
@@ -467,6 +498,7 @@ func writeTestAvatar(t *testing.T, dataDir, id string) string {
 }
 
 func TestPum_AMentionWearsItsFace(t *testing.T) {
+	t.Parallel()
 	// Without graphics the face is the colour block the chat list stands in
 	// with, so the column is there either way.
 	m := typeInto(newPumModel(t), "@zs")
@@ -485,6 +517,7 @@ func TestPum_AMentionWearsItsFace(t *testing.T) {
 }
 
 func TestPum_AtAllWearsTheGroupsFace(t *testing.T) {
+	t.Parallel()
 	m := newPumModel(t)
 	m.chats[0].AvatarPath = writeTestAvatar(t, m.deps.DataDir, "oc_group")
 	m = typeInto(m, "@")
@@ -496,6 +529,7 @@ func TestPum_AtAllWearsTheGroupsFace(t *testing.T) {
 }
 
 func TestPum_AnEmojiListHasNoFaces(t *testing.T) {
+	t.Parallel()
 	m := typeInto(newPumModel(t), ":dianzan")
 	icon := m.pum.menu.rows[0].icon
 	require.False(t, icon.avatar)

@@ -21,6 +21,7 @@ func lintModel(t *testing.T) Model {
 }
 
 func TestReplan_BadgeNamesWhatTheDraftLoses(t *testing.T) {
+	t.Parallel()
 	m := lintModel(t)
 	m.input.SetValue("## 周报\n\n@李四 看下")
 	m.replan()
@@ -31,6 +32,7 @@ func TestReplan_BadgeNamesWhatTheDraftLoses(t *testing.T) {
 }
 
 func TestReplan_AMentionTheComposerPlacedDrawsNoWarning(t *testing.T) {
+	t.Parallel()
 	m := lintModel(t)
 	m.input.SetValue("## 周报\n\n@张三 看下")
 	m.replan()
@@ -38,6 +40,7 @@ func TestReplan_AMentionTheComposerPlacedDrawsNoWarning(t *testing.T) {
 }
 
 func TestReplan_TextDraftIsNotLinted(t *testing.T) {
+	t.Parallel()
 	m := lintModel(t)
 	m.input.SetValue("@李四 看下")
 	m.replan()
@@ -46,6 +49,7 @@ func TestReplan_TextDraftIsNotLinted(t *testing.T) {
 }
 
 func TestRenderBadge_CountsTheFindingsPastTheFirst(t *testing.T) {
+	t.Parallel()
 	m := lintModel(t)
 	m.input.SetValue("## 周报\n\n@李四 @王五 看下")
 	m.replan()
@@ -55,6 +59,7 @@ func TestRenderBadge_CountsTheFindingsPastTheFirst(t *testing.T) {
 }
 
 func TestRenderBadge_ARefusedPathBeatsAFinding(t *testing.T) {
+	t.Parallel()
 	m := lintModel(t)
 	m.input.SetValue("## 周报\n\n@李四 看下\n\n![图](~/nope.png)")
 	m.replan()
@@ -65,6 +70,7 @@ func TestRenderBadge_ARefusedPathBeatsAFinding(t *testing.T) {
 }
 
 func TestRunCommand_SendCarriesTheFindingInItsNotice(t *testing.T) {
+	t.Parallel()
 	m := lintModel(t)
 	m.chats = []store.Chat{{ChatID: "oc_1", Name: "平台组"}}
 

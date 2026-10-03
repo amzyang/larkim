@@ -16,6 +16,7 @@ func envOf(kv map[string]string) func(string) string {
 }
 
 func TestEditorFor_PrefersVisualThenEditorThenVi(t *testing.T) {
+	t.Parallel()
 	require.Equal(t, []string{"nvim"}, editorFor(envOf(map[string]string{"VISUAL": "nvim", "EDITOR": "nano"})))
 	require.Equal(t, []string{"nano"}, editorFor(envOf(map[string]string{"EDITOR": "nano"})))
 	require.Equal(t, []string{"vi"}, editorFor(envOf(nil)))
@@ -26,6 +27,7 @@ func TestEditorFor_PrefersVisualThenEditorThenVi(t *testing.T) {
 }
 
 func TestOnInsertKey_CtrlGDoesNotReachTheTextarea(t *testing.T) {
+	t.Parallel()
 	m, _ := newOutboxModel(t)
 	m.deps.Env = envOf(map[string]string{"EDITOR": "true"})
 	mm, _ := m.startInsert(nil, false)
@@ -40,6 +42,7 @@ func TestOnInsertKey_CtrlGDoesNotReachTheTextarea(t *testing.T) {
 }
 
 func TestEdited_CleanExitTakesTheFileVerbatim(t *testing.T) {
+	t.Parallel()
 	m, _ := newOutboxModel(t)
 	mm, _ := m.startInsert(nil, false)
 	m = mm.(Model)
@@ -57,6 +60,7 @@ func TestEdited_CleanExitTakesTheFileVerbatim(t *testing.T) {
 }
 
 func TestEdited_AnEmptyFileClearsTheDraft(t *testing.T) {
+	t.Parallel()
 	m, _ := newOutboxModel(t)
 	mm, _ := m.startInsert(nil, false)
 	m = mm.(Model)
@@ -73,6 +77,7 @@ func TestEdited_AnEmptyFileClearsTheDraft(t *testing.T) {
 }
 
 func TestEdited_NonZeroExitKeepsTheDraft(t *testing.T) {
+	t.Parallel()
 	m, _ := newOutboxModel(t)
 	mm, _ := m.startInsert(nil, false)
 	m = mm.(Model)
@@ -90,6 +95,7 @@ func TestEdited_NonZeroExitKeepsTheDraft(t *testing.T) {
 }
 
 func TestEditExternally_WritesTheDraftToAMarkdownFile(t *testing.T) {
+	t.Parallel()
 	cmd := editExternally(envOf(map[string]string{"EDITOR": "true"}), "## 发布说明")
 	require.NotNil(t, cmd)
 
@@ -109,6 +115,7 @@ func TestEditExternally_WritesTheDraftToAMarkdownFile(t *testing.T) {
 }
 
 func TestPicturesForget_DropsPlacementsButKeepsFileFacts(t *testing.T) {
+	t.Parallel()
 	p := &pictures{dataDir: t.TempDir(), size: map[string]image.Point{"/a.png": {X: 10, Y: 10}},
 		failed: map[string]bool{"/b.png": true}, id: map[string]int{"k": 1},
 		used: map[string]int64{"k": 1}, drew: map[string]bool{"/c.png": true}}

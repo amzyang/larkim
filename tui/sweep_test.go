@@ -14,11 +14,13 @@ import (
 // owns alone.
 
 func TestNew_AlwaysHasAPullerToReachFeishuWith(t *testing.T) {
+	t.Parallel()
 	require.NotNil(t, New(Deps{}).deps.Syncer,
 		"a reader that does not own the sweep still pulls what it opens")
 }
 
 func TestRunCommand_SyncBelongsToTheSweepOwner(t *testing.T) {
+	t.Parallel()
 	m := New(Deps{})
 	next, cmd := m.runCommand("sync")
 	require.Nil(t, cmd, "a tick moves the global cursors, which the daemon owns")

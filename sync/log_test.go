@@ -12,6 +12,7 @@ import (
 )
 
 func TestReport_ChangedOnlyWhenSomethingLanded(t *testing.T) {
+	t.Parallel()
 	require.False(t, Report{Hits: 3, Chats: 2}.changed(), "discovering and listing is not landing")
 	require.True(t, Report{New: 1}.changed())
 	require.True(t, Report{Rendered: 1}.changed())
@@ -43,6 +44,7 @@ func atLevel(s *Syncer, level slog.Level) *bytes.Buffer {
 }
 
 func TestRun_IdleTickStaysOutOfTheRecord(t *testing.T) {
+	t.Parallel()
 	s, _, _ := newSyncer(t)
 	buf := atLevel(s, slog.LevelInfo)
 
@@ -53,6 +55,7 @@ func TestRun_IdleTickStaysOutOfTheRecord(t *testing.T) {
 }
 
 func TestRun_TickThatLandedSomethingIsRecorded(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	f.Chats = []larkcli.RawChat{{ChatID: "oc_a", Name: "Alpha", ChatMode: "group"}}
 	f.AddMessage(msg("om_new", "oc_a", clk.t.Add(-30*time.Second), "fresh"))
@@ -66,6 +69,7 @@ func TestRun_TickThatLandedSomethingIsRecorded(t *testing.T) {
 }
 
 func TestRun_IdleTickIsStillThereUnderDebug(t *testing.T) {
+	t.Parallel()
 	s, _, _ := newSyncer(t)
 	buf := atLevel(s, slog.LevelDebug)
 
@@ -76,6 +80,7 @@ func TestRun_IdleTickIsStillThereUnderDebug(t *testing.T) {
 }
 
 func TestErrClass_NamesWhyTheLoopBacksOff(t *testing.T) {
+	t.Parallel()
 	require.Equal(t, "auth", errClass(&larkcli.Error{ExitCode: larkcli.ExitAuth}))
 	require.Equal(t, "network", errClass(&larkcli.Error{ExitCode: larkcli.ExitNetwork}))
 	require.Equal(t, "rate_limit", errClass(&larkcli.Error{ExitCode: larkcli.ExitAPI, Subtype: "rate_limit"}))
@@ -84,6 +89,7 @@ func TestErrClass_NamesWhyTheLoopBacksOff(t *testing.T) {
 }
 
 func TestReport_NamingTheHeadIsNotARecord(t *testing.T) {
+	t.Parallel()
 	require.False(t, Report{Moved: 1}.changed(),
 		"the probe names the head on every tick, so naming alone says nothing landed")
 	require.True(t, Report{Probed: 1}.changed(),

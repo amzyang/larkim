@@ -7,6 +7,7 @@ import (
 )
 
 func TestSyncer_StateTimeReturnsZeroForAKeyNeverWritten(t *testing.T) {
+	t.Parallel()
 	s, _, _ := newSyncer(t)
 	got, err := s.stateTime(t.Context(), KeyWatermark)
 	require.NoError(t, err)
@@ -17,6 +18,7 @@ func TestSyncer_StateTimeReturnsZeroForAKeyNeverWritten(t *testing.T) {
 // the zero for one and collapse the search to a single overlap, and the tick
 // would then write that window's end over the watermark it never saw.
 func TestSyncer_StateTimeReportsAReadFailureRatherThanAFirstRun(t *testing.T) {
+	t.Parallel()
 	s, _, _ := newSyncer(t)
 	require.NoError(t, s.Store.Close())
 	_, err := s.stateTime(t.Context(), KeyWatermark)

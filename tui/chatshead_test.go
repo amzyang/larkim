@@ -32,6 +32,7 @@ func head(t *testing.T, rows []listRow, unread map[string]int64, filter string, 
 }
 
 func TestUnreadMessages_SumsAcrossChats(t *testing.T) {
+	t.Parallel()
 	rows, unread := headRows("uu")
 	unread["a"], unread["b"] = 5, 7
 	n, muted := unreadMessages(rows, unread)
@@ -40,6 +41,7 @@ func TestUnreadMessages_SumsAcrossChats(t *testing.T) {
 }
 
 func TestUnreadMessages_MutedOnesOnlyRaiseTheDot(t *testing.T) {
+	t.Parallel()
 	rows, unread := headRows("mmu")
 	unread["a"], unread["c"] = 9, 4
 	n, muted := unreadMessages(rows, unread)
@@ -48,6 +50,7 @@ func TestUnreadMessages_MutedOnesOnlyRaiseTheDot(t *testing.T) {
 }
 
 func TestUnreadMessages_ReadChatsCountForNeither(t *testing.T) {
+	t.Parallel()
 	rows, unread := headRows("um")
 	unread["a"], unread["b"] = 0, 0
 	n, muted := unreadMessages(rows, unread)
@@ -56,17 +59,20 @@ func TestUnreadMessages_ReadChatsCountForNeither(t *testing.T) {
 }
 
 func TestChatsHeader_RaisesTheCount(t *testing.T) {
+	t.Parallel()
 	rows, unread := headRows("uuu")
 	unread["a"] = 3
 	require.Contains(t, head(t, rows, unread, "", 36), "Chats⁵")
 }
 
 func TestChatsHeader_CapsAt99Plus(t *testing.T) {
+	t.Parallel()
 	rows, unread := headRows(strings.Repeat("u", 120))
 	require.Contains(t, head(t, rows, unread, "", 36), "Chats⁹⁹⁺")
 }
 
 func TestChatsHeader_SaysNothingWhenEverythingIsRead(t *testing.T) {
+	t.Parallel()
 	rows, unread := headRows("um")
 	unread["a"], unread["b"] = 0, 0
 	require.Equal(t, "Chats"+strings.Repeat(" ", 28)+markAllGlyph+" ", head(t, rows, unread, "", 36),
@@ -74,6 +80,7 @@ func TestChatsHeader_SaysNothingWhenEverythingIsRead(t *testing.T) {
 }
 
 func TestChatsHeader_DotSitsAtTheRightEdge(t *testing.T) {
+	t.Parallel()
 	rows, unread := headRows("mu")
 	line := head(t, rows, unread, "", 36)
 	require.True(t, strings.HasSuffix(line, mutedDot), "the dot ends the row: %q", line)
@@ -84,6 +91,7 @@ func TestChatsHeader_DotSitsAtTheRightEdge(t *testing.T) {
 // sits beside it rather than in it — so both are where the eye already reads
 // them, whichever of the two is lit.
 func TestChatsHeader_HoldsTheButtonColumnWhetherOrNotADotIsDrawn(t *testing.T) {
+	t.Parallel()
 	quiet, unreadQuiet := headRows("uu")
 	muted, unreadMuted := headRows("mu")
 	for _, tc := range []struct {
@@ -101,6 +109,7 @@ func TestChatsHeader_HoldsTheButtonColumnWhetherOrNotADotIsDrawn(t *testing.T) {
 }
 
 func TestOnClick_TheChatsHeaderButtonLeavesTheCursorAlone(t *testing.T) {
+	t.Parallel()
 	m, _, _ := badgeModel(t)
 	m.chatIdx, m.focus = 3, paneMessages
 
@@ -113,6 +122,7 @@ func TestOnClick_TheChatsHeaderButtonLeavesTheCursorAlone(t *testing.T) {
 }
 
 func TestOnClick_TheChatsHeaderBesideTheButtonOnlyTakesFocus(t *testing.T) {
+	t.Parallel()
 	m, _, _ := badgeModel(t)
 	m.chatIdx, m.focus = 3, paneMessages
 
@@ -125,18 +135,21 @@ func TestOnClick_TheChatsHeaderBesideTheButtonOnlyTakesFocus(t *testing.T) {
 }
 
 func TestChatsHeader_DotStandsAloneWhenOnlyMutedChatsWait(t *testing.T) {
+	t.Parallel()
 	rows, unread := headRows("mm")
 	line := head(t, rows, unread, "", 36)
 	require.Equal(t, "Chats"+strings.Repeat(" ", 28)+markAllGlyph+mutedDot, line)
 }
 
 func TestChatsHeader_CountsBehindAFilter(t *testing.T) {
+	t.Parallel()
 	rows, unread := headRows("uuu")
 	require.Contains(t, head(t, rows, unread, "zhou", 36), "Chats /zhou³",
 		"the filter hides rows, not what is waiting")
 }
 
 func TestChatsHeader_LongFilterYieldsToTheSignals(t *testing.T) {
+	t.Parallel()
 	rows, unread := headRows("mu")
 	line := head(t, rows, unread, strings.Repeat("x", 60), 36)
 	require.Contains(t, line, "…¹", "the filter is cut, the count is not")
@@ -144,6 +157,7 @@ func TestChatsHeader_LongFilterYieldsToTheSignals(t *testing.T) {
 }
 
 func TestChatsHeader_IsDrawnInTheUnreadColour(t *testing.T) {
+	t.Parallel()
 	rows, unread := headRows("mu")
 	line := chatsHeader(rows, unread, "", 36)
 	require.Contains(t, line, stUnread.Render("¹"), "the count carries the unread red")
@@ -151,6 +165,7 @@ func TestChatsHeader_IsDrawnInTheUnreadColour(t *testing.T) {
 }
 
 func TestSuperscript_RaisesEveryDigitAndTheCap(t *testing.T) {
+	t.Parallel()
 	require.Equal(t, "⁰¹²³⁴⁵⁶⁷⁸⁹", superscript("0123456789"))
 	require.Equal(t, "⁹⁹⁺", superscript("99+"))
 	for _, r := range superscript("0123456789+") {
@@ -159,12 +174,14 @@ func TestSuperscript_RaisesEveryDigitAndTheCap(t *testing.T) {
 }
 
 func TestCounterStyle_MatchesThePictureItStandsInFor(t *testing.T) {
+	t.Parallel()
 	require.Equal(t, stUnread, counterStyle(store.Chat{}),
 		"a chat whose picture failed sits beside discs drawn in the unread red")
 	require.Equal(t, stDim, counterStyle(store.Chat{Muted: true}))
 }
 
 func TestChatsHeader_LongFilterYieldsToTheButtonToo(t *testing.T) {
+	t.Parallel()
 	rows, unread := headRows("u")
 	line := head(t, rows, unread, strings.Repeat("x", 60), 36)
 	require.Contains(t, line, "…¹", "the filter is cut, the count is not: %q", line)
@@ -173,6 +190,7 @@ func TestChatsHeader_LongFilterYieldsToTheButtonToo(t *testing.T) {
 }
 
 func TestOnClick_TheWholeRightStripPressesTheButton(t *testing.T) {
+	t.Parallel()
 	for col := markAllCol(chatsWidth - 2); col < chatsWidth-2; col++ {
 		m, _, _ := badgeModel(t)
 		_, cmd := m.onClick(tea.Mouse{Button: tea.MouseLeft, X: 1 + col, Y: 1})
@@ -181,12 +199,14 @@ func TestOnClick_TheWholeRightStripPressesTheButton(t *testing.T) {
 }
 
 func TestOnClick_TheColumnLeftOfTheStripIsNotTheButton(t *testing.T) {
+	t.Parallel()
 	m, _, _ := badgeModel(t)
 	_, cmd := m.onClick(tea.Mouse{Button: tea.MouseLeft, X: markAllCol(chatsWidth - 2), Y: 1})
 	require.Nil(t, cmd)
 }
 
 func TestOnClick_ThePanesRightBorderIsNotTheButton(t *testing.T) {
+	t.Parallel()
 	m, _, _ := badgeModel(t)
 	_, cmd := m.onClick(tea.Mouse{Button: tea.MouseLeft, X: chatsWidth - 1, Y: 1})
 	require.Nil(t, cmd)

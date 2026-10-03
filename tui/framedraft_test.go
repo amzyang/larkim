@@ -71,6 +71,7 @@ func openThread(t *testing.T, m Model, threadID string) Model {
 }
 
 func TestSaveComposer_WritesBothBoxes(t *testing.T) {
+	t.Parallel()
 	m, st := frameDraftModel(t)
 	m = openThread(t, m, "omt_1")
 	m.input.SetValue("写给会话的")
@@ -87,6 +88,7 @@ func TestSaveComposer_WritesBothBoxes(t *testing.T) {
 }
 
 func TestCloseRight_KeepsTheThreadDraft(t *testing.T) {
+	t.Parallel()
 	m, _ := frameDraftModel(t)
 	m = openThread(t, m, "omt_1")
 	m.focus = paneThread
@@ -104,6 +106,7 @@ func TestCloseRight_KeepsTheThreadDraft(t *testing.T) {
 // The thread row's gist is the frame's own box: a draft typed into the right
 // column stands in for the last reply, with no replier's name before it.
 func TestThreadRowLine_FrameDraftIsTheGistLine(t *testing.T) {
+	t.Parallel()
 	row := listRow{chat: store.Chat{ChatID: "oc_group", Name: "平台组", ChatMode: "group"},
 		thread: store.ThreadFeed{ThreadID: "omt_1", ChatID: "oc_group", ChatMode: "group",
 			Root: spoke("om_root", "ou_a", "张三", "发布流程", 100),
@@ -121,6 +124,7 @@ func TestThreadRowLine_FrameDraftIsTheGistLine(t *testing.T) {
 
 // A frame draft lands under its thread, not under the chat the thread is in.
 func TestDraftSavedMsg_PatchesTheFrameDraftsMap(t *testing.T) {
+	t.Parallel()
 	m, _ := frameDraftModel(t)
 
 	next, _ := m.Update(draftSavedMsg{draft: store.Draft{ChatID: "oc_group", FrameID: "omt_1", Text: "写给话题的"}})
@@ -135,6 +139,7 @@ func TestDraftSavedMsg_PatchesTheFrameDraftsMap(t *testing.T) {
 // The thread frame standing open in the right column draws no draft on its
 // row either: the box beside it is the draft.
 func TestRenderChats_TheOpenThreadRowStaysBare(t *testing.T) {
+	t.Parallel()
 	m, _ := frameDraftModel(t)
 	m = openThread(t, m, "omt_1")
 	m.rightInput.SetValue("写给话题的")
@@ -153,6 +158,7 @@ func TestRenderChats_TheOpenThreadRowStaysBare(t *testing.T) {
 }
 
 func TestShowRight_EachFrameGetsItsOwnDraftBack(t *testing.T) {
+	t.Parallel()
 	m, _ := frameDraftModel(t)
 	m = openThread(t, m, "omt_1")
 	m.rightInput.SetValue("第一个话题的")
@@ -168,6 +174,7 @@ func TestShowRight_EachFrameGetsItsOwnDraftBack(t *testing.T) {
 }
 
 func TestRightBox_QuoteComesBackWithItsText(t *testing.T) {
+	t.Parallel()
 	m, _ := frameDraftModel(t)
 	m = openThread(t, m, "omt_1")
 	m.focus, m.threadIdx = paneThread, indexOfID(m.thread, "om_reply")
@@ -186,6 +193,7 @@ func TestRightBox_QuoteComesBackWithItsText(t *testing.T) {
 // A reload is not an entry: a tick landing a new reply must not put back a
 // draft the reader has just cleared.
 func TestTakeRightDraft_AReloadLeavesTheBoxAlone(t *testing.T) {
+	t.Parallel()
 	m, _ := frameDraftModel(t)
 	m = openThread(t, m, "omt_1")
 	m.rightInput.SetValue("写到一半")
@@ -198,6 +206,7 @@ func TestTakeRightDraft_AReloadLeavesTheBoxAlone(t *testing.T) {
 }
 
 func TestDraftForThreadRow_TheOpenFrameDrawsNoDraft(t *testing.T) {
+	t.Parallel()
 	m, _ := frameDraftModel(t)
 	m = openThread(t, m, "omt_1")
 	m.rightInput.SetValue("半句")

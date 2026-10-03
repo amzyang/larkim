@@ -45,6 +45,7 @@ func picSegs(segs []rowSeg) int {
 }
 
 func TestChatSummary_DrawsAnEmojiInTheBodyAsAPicture(t *testing.T) {
+	t.Parallel()
 	c := store.Chat{ChatID: "oc_peer", Name: "张三", ChatMode: "p2p", LastMessageID: "om_1",
 		LastMessageMs: at(-1), LastRenderedAt: 1, LastSenderID: "ou_me", LastSenderName: "林岚",
 		LastContent: "[了解]"}
@@ -60,6 +61,7 @@ func TestChatSummary_DrawsAnEmojiInTheBodyAsAPicture(t *testing.T) {
 }
 
 func TestChatSummary_KeepsAnEmojiNameWhenNoPictureCanBeDrawn(t *testing.T) {
+	t.Parallel()
 	c := store.Chat{ChatID: "oc_peer", Name: "张三", ChatMode: "p2p", LastMessageID: "om_1",
 		LastMessageMs: at(-1), LastRenderedAt: 1, LastSenderID: "ou_me", LastSenderName: "林岚",
 		LastContent: "[了解]"}
@@ -70,6 +72,7 @@ func TestChatSummary_KeepsAnEmojiNameWhenNoPictureCanBeDrawn(t *testing.T) {
 }
 
 func TestRenderRows_QuoteDrawsTheEmojiItsParentSpelled(t *testing.T) {
+	t.Parallel()
 	parent := store.Message{MessageID: "om_1", SenderName: "孙琪", Content: "[了解]",
 		CreateMs: msgAt(23, 9, 0), RenderedAt: 1}
 	msgs := []store.Message{
@@ -102,6 +105,7 @@ func quoteLine(t *testing.T, rows []msgRow) msgRow {
 }
 
 func TestThreadSummary_DrawsTheEmojiItsLastReplySpelled(t *testing.T) {
+	t.Parallel()
 	root := store.Message{MessageID: "om_root", ChatID: "oc_a", SenderName: "孙琪", Content: "开个话题",
 		ThreadID: "omt_1", CreateMs: msgAt(23, 9, 0), RenderedAt: 1}
 	st := gistStyle(t)
@@ -118,6 +122,7 @@ func TestThreadSummary_DrawsTheEmojiItsLastReplySpelled(t *testing.T) {
 }
 
 func TestForwardSummary_DrawsTheEmojiItsPreviewSpelled(t *testing.T) {
+	t.Parallel()
 	x := store.Message{MessageID: "om_fwd", ChatID: "oc_a", SenderName: "孙琪",
 		MsgType: "merge_forward", CreateMs: msgAt(23, 9, 0), RenderedAt: 1}
 	st := gistStyle(t)
@@ -147,6 +152,7 @@ func summaryLine(t *testing.T, rows []msgRow, mark string) msgRow {
 }
 
 func TestTruncateSegs_DropsAPictureItCannotDrawWhole(t *testing.T) {
+	t.Parallel()
 	segs := []rowSeg{{text: "abc"}, {pic: picture{cols: 2}}, {text: "def"}}
 
 	require.Equal(t, segs, truncateSegs(segs, 8), "a line that fits is left alone")
@@ -169,6 +175,7 @@ func gistModel(t *testing.T) Model {
 }
 
 func TestRenderReplyBar_DrawsTheEmojiTheQuotedMessageSpelled(t *testing.T) {
+	t.Parallel()
 	m := gistModel(t)
 	m.replyTo = &store.Message{MessageID: "om_1", SenderName: "孙琪", Content: "[了解]", RenderedAt: 1}
 	w := m.bandWidth(sideMain) - 2
@@ -183,6 +190,7 @@ func TestRenderReplyBar_DrawsTheEmojiTheQuotedMessageSpelled(t *testing.T) {
 }
 
 func TestRenderForward_DrawsTheEmojiTheForwardedMessageSpelled(t *testing.T) {
+	t.Parallel()
 	m := gistModel(t)
 	m.fwd.msg = store.Message{MessageID: "om_1", SenderName: "孙琪", Content: "[了解]", RenderedAt: 1}
 	w := m.width - 2
@@ -192,6 +200,7 @@ func TestRenderForward_DrawsTheEmojiTheForwardedMessageSpelled(t *testing.T) {
 }
 
 func TestBodyRows_DrawAnEmojiInAnUnrenderedBodyAsAPicture(t *testing.T) {
+	t.Parallel()
 	// A merged forward's children keep this path for good: lark-cli's
 	// expansion answers with raw bodies and renders none of them.
 	msgs := []store.Message{{MessageID: "om_1", SenderName: "孙琪", MsgType: "text",

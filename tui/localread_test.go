@@ -46,6 +46,7 @@ func arrive(t *testing.T, m Model, st *store.Store, chatID string) Model {
 }
 
 func TestUpdate_OpeningAChatClearsItsBadge(t *testing.T) {
+	t.Parallel()
 	m, st := readModel(t)
 	m.pendingChat = "oc_a"
 
@@ -60,6 +61,7 @@ func TestUpdate_OpeningAChatClearsItsBadge(t *testing.T) {
 }
 
 func TestUpdate_TheUnreadMarkerOutlivesTheReadItCaused(t *testing.T) {
+	t.Parallel()
 	m, st := readModel(t)
 	// The visit opens on the newest block and reads it, so the marker under
 	// test is the one above it.
@@ -78,6 +80,7 @@ func TestUpdate_TheUnreadMarkerOutlivesTheReadItCaused(t *testing.T) {
 }
 
 func TestUpdate_TheUnreadMarkerIsGoneOnTheNextVisit(t *testing.T) {
+	t.Parallel()
 	m, st := readModel(t)
 	m.pendingChat = "oc_a"
 	m = arrive(t, m, st, "oc_a")
@@ -91,6 +94,7 @@ func TestUpdate_TheUnreadMarkerIsGoneOnTheNextVisit(t *testing.T) {
 }
 
 func TestUpdate_SearchHitsKeepTheirUnreadMarker(t *testing.T) {
+	t.Parallel()
 	m, st := readModel(t)
 	require.NoError(t, st.UpdateRendered(t.Context(), "om_a", "在吗", "", 1))
 
@@ -106,6 +110,7 @@ func TestUpdate_SearchHitsKeepTheirUnreadMarker(t *testing.T) {
 }
 
 func TestUpdate_OpeningTheChatLeavesAThreadReplyUnreadUntilTheThreadIsOpened(t *testing.T) {
+	t.Parallel()
 	m, st := readModel(t)
 	ctx := t.Context()
 	_, err := st.UpsertMessages(ctx, []store.Message{
@@ -169,6 +174,7 @@ func watching(t *testing.T, m Model, st *store.Store) Model {
 }
 
 func TestUpdate_AMessageLandingInTheWatchedChatWearsNoMarker(t *testing.T) {
+	t.Parallel()
 	m, st := readModel(t)
 	lands(t, st, "om_b", "ou_b", "李四", "在的", 300)
 	m = watching(t, m, st)
@@ -183,6 +189,7 @@ func TestUpdate_AMessageLandingInTheWatchedChatWearsNoMarker(t *testing.T) {
 }
 
 func TestUpdate_AMessageLandingWhileAwayKeepsItsMarkerOnTheReturn(t *testing.T) {
+	t.Parallel()
 	m, st := readModel(t)
 	m = watching(t, m, st)
 
@@ -200,6 +207,7 @@ func TestUpdate_AMessageLandingWhileAwayKeepsItsMarkerOnTheReturn(t *testing.T) 
 }
 
 func TestUpdate_AJumpClearsTheMarkerOfTheHitItLandsOn(t *testing.T) {
+	t.Parallel()
 	m, st := readModel(t)
 	lands(t, st, "om_b", "ou_b", "李四", "在的", 300)
 	m = watching(t, m, st)
@@ -214,6 +222,7 @@ func TestUpdate_AJumpClearsTheMarkerOfTheHitItLandsOn(t *testing.T) {
 }
 
 func TestMove_TheCursorClearsTheMarkerOfTheBlockItLandsOn(t *testing.T) {
+	t.Parallel()
 	m, st := readModel(t)
 	lands(t, st, "om_b", "ou_b", "李四", "在的", 300)
 	lands(t, st, "om_c", "ou_c", "王五", "我来看看", 500)
@@ -229,6 +238,7 @@ func TestMove_TheCursorClearsTheMarkerOfTheBlockItLandsOn(t *testing.T) {
 }
 
 func TestMove_ClearingAMarkerTakesEveryMessageUnderTheSenderLine(t *testing.T) {
+	t.Parallel()
 	m, st := readModel(t)
 	lands(t, st, "om_b", "ou_b", "李四", "在的", 300)
 	lands(t, st, "om_c", "ou_b", "李四", "马上处理", 400)
@@ -247,6 +257,7 @@ func TestMove_ClearingAMarkerTakesEveryMessageUnderTheSenderLine(t *testing.T) {
 }
 
 func TestMove_RepaintsOnlyWhenTheCursorClearsAMarker(t *testing.T) {
+	t.Parallel()
 	m, st := readModel(t)
 	lands(t, st, "om_b", "ou_b", "李四", "在的", 300)
 	lands(t, st, "om_c", "ou_c", "王五", "我来看看", 500)
@@ -273,6 +284,7 @@ func TestMove_RepaintsOnlyWhenTheCursorClearsAMarker(t *testing.T) {
 }
 
 func TestMove_SearchHitsKeepTheirMarker(t *testing.T) {
+	t.Parallel()
 	m, st := readModel(t)
 	require.NoError(t, st.UpdateRendered(t.Context(), "om_a", "在吗", "", 1))
 	msg, ok := localSearch(Deps{Store: st}, nil, "在吗", 1)().(searchMsg)
@@ -290,6 +302,7 @@ func TestMove_SearchHitsKeepTheirMarker(t *testing.T) {
 }
 
 func TestThreadLoaded_LightsAMarkerForAReplyTheChatPaneNeverShowed(t *testing.T) {
+	t.Parallel()
 	m, st := readModel(t)
 	ctx := t.Context()
 	_, err := st.UpsertMessages(ctx, []store.Message{

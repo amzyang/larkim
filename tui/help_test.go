@@ -39,6 +39,7 @@ func helpModel(w, h int) Model {
 }
 
 func TestHelp_QuestionMarkOpensAndAnyKeyCloses(t *testing.T) {
+	t.Parallel()
 	m := New(Deps{Self: "ou_me"})
 	m.width, m.height = 100, 30
 	m = press(t, m, "?")
@@ -47,6 +48,7 @@ func TestHelp_QuestionMarkOpensAndAnyKeyCloses(t *testing.T) {
 }
 
 func TestHelp_SlashFiltersToTheMatchingBindings(t *testing.T) {
+	t.Parallel()
 	m := press(t, helpModel(100, 30), "/", "f", "o", "r", "w", "a", "r", "d")
 	require.True(t, m.help.filtering)
 	require.NotEmpty(t, m.help.hits)
@@ -57,6 +59,7 @@ func TestHelp_SlashFiltersToTheMatchingBindings(t *testing.T) {
 }
 
 func TestHelp_FilterReachesAKeyByItsProse(t *testing.T) {
+	t.Parallel()
 	m := press(t, helpModel(100, 30), "/", "c", "l", "i", "p")
 	var keys []string
 	for _, h := range m.help.hits {
@@ -66,6 +69,7 @@ func TestHelp_FilterReachesAKeyByItsProse(t *testing.T) {
 }
 
 func TestHelp_FilteredRowsNameTheirOwnMode(t *testing.T) {
+	t.Parallel()
 	m := helpModel(100, 30)
 	require.Equal(t, "NORMAL", trimmedLine(m.helpLines(), 0),
 		"unfiltered, the mode is a heading of its own")
@@ -76,6 +80,7 @@ func TestHelp_FilteredRowsNameTheirOwnMode(t *testing.T) {
 }
 
 func TestHelp_EscapeDropsTheQueryBeforeThePanel(t *testing.T) {
+	t.Parallel()
 	m := press(t, helpModel(100, 30), "/", "q")
 	m = press(t, m, "esc")
 	require.True(t, m.help.open)
@@ -85,6 +90,7 @@ func TestHelp_EscapeDropsTheQueryBeforeThePanel(t *testing.T) {
 }
 
 func TestHelp_ScrollsWithoutLosingTheColumns(t *testing.T) {
+	t.Parallel()
 	m := helpModel(100, 20)
 	require.Greater(t, len(m.helpLines()), m.helpRows(), "the table is taller than the box")
 	m = press(t, m, "G")
@@ -94,6 +100,7 @@ func TestHelp_ScrollsWithoutLosingTheColumns(t *testing.T) {
 }
 
 func TestHelp_WheelScrollsThePanelAndClicksAreInert(t *testing.T) {
+	t.Parallel()
 	m := helpModel(100, 20)
 	mm, _ := m.Update(tea.MouseWheelMsg{Button: tea.MouseWheelDown})
 	require.Equal(t, 3, mm.(Model).help.top)
@@ -103,6 +110,7 @@ func TestHelp_WheelScrollsThePanelAndClicksAreInert(t *testing.T) {
 }
 
 func TestHelp_RenderFillsTheBoxAtEveryWidth(t *testing.T) {
+	t.Parallel()
 	for _, w := range []int{minWidth, 100, 160} {
 		m := helpModel(w, 24)
 		for line := range strings.SplitSeq(ansi.Strip(m.renderHelp()), "\n") {
@@ -112,6 +120,7 @@ func TestHelp_RenderFillsTheBoxAtEveryWidth(t *testing.T) {
 }
 
 func TestHelp_KeysAreStyledApartFromTheirProse(t *testing.T) {
+	t.Parallel()
 	m := helpModel(100, 30)
 	out := m.renderHelp()
 	require.Contains(t, out, stHelpKey.Render("⌃D/⌃U"))
@@ -160,6 +169,7 @@ var helpAliases = map[string]bool{
 // The ? panel is the in-app reference, so a binding missing from it is a
 // binding nobody finds.
 func TestHelpEntries_DocumentEveryNormalKey(t *testing.T) {
+	t.Parallel()
 	// A row names one key or several: "j/k", ": or ;", and "/" itself, which
 	// is why the whole string counts as well as the pieces it splits into.
 	documented, named := map[string]bool{}, map[string]bool{}

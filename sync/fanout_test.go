@@ -47,6 +47,7 @@ func backfilled(t *testing.T, s *Syncer, now time.Time, ids ...string) {
 }
 
 func TestPullFromCursor_ListsEveryChatAtOnce(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ids := []string{"oc_a", "oc_b", "oc_c", "oc_d"}
 	backfilled(t, s, clk.t, ids...)
@@ -58,6 +59,7 @@ func TestPullFromCursor_ListsEveryChatAtOnce(t *testing.T) {
 }
 
 func TestPullFromCursor_RecordsAPermanentRefusalAndPullsTheRest(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	ids := []string{"oc_a", "oc_quiet", "oc_b"}
@@ -83,6 +85,7 @@ func TestPullFromCursor_RecordsAPermanentRefusalAndPullsTheRest(t *testing.T) {
 }
 
 func TestPullFromCursor_ReturnsAFatalRefusalWithoutRecordingIt(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	backfilled(t, s, clk.t, "oc_a")
@@ -101,6 +104,7 @@ func TestPullFromCursor_ReturnsAFatalRefusalWithoutRecordingIt(t *testing.T) {
 }
 
 func TestPullChat_ListsEveryThreadAtOnce(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	at := clk.t.Add(-time.Minute)
 	tids := []string{"omt_a", "omt_b", "omt_c"}
@@ -121,6 +125,7 @@ func TestPullChat_ListsEveryThreadAtOnce(t *testing.T) {
 }
 
 func TestBackfillSlice_MarksEveryChatDone(t *testing.T) {
+	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
 	ids := []string{"oc_a", "oc_b", "oc_c"}

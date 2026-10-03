@@ -8,6 +8,7 @@ import (
 )
 
 func TestFastWindow(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 9, 22, 12, 0, 0, 0, time.UTC)
 	overlap := 2 * time.Minute
 
@@ -24,6 +25,7 @@ func TestFastWindow(t *testing.T) {
 }
 
 func TestHalves(t *testing.T) {
+	t.Parallel()
 	s := time.Unix(0, 0)
 	a, b, ok := Halves(Window{s, s.Add(10 * time.Minute)})
 	require.True(t, ok)
@@ -34,6 +36,7 @@ func TestHalves(t *testing.T) {
 }
 
 func TestDueBackoffUnique(t *testing.T) {
+	t.Parallel()
 	now := time.Unix(1000, 0)
 	require.True(t, Due(time.Time{}, time.Minute, now))
 	require.False(t, Due(now.Add(-30*time.Second), time.Minute, now))
@@ -47,6 +50,7 @@ func TestDueBackoffUnique(t *testing.T) {
 }
 
 func TestActiveDelta(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name      string
 		prev, now []string

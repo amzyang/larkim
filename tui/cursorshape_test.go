@@ -22,6 +22,7 @@ func cursorRow(t *testing.T, v tea.View) string {
 }
 
 func TestCursorShape_BlockOnlyWhereKeysAreCommands(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		md    mode
 		shape tea.CursorShape
@@ -41,6 +42,7 @@ func TestCursorShape_BlockOnlyWhereKeysAreCommands(t *testing.T) {
 }
 
 func TestView_CursorShapeFollowsTheModeTheKeysPutItIn(t *testing.T) {
+	t.Parallel()
 	m := pickerModel(t)
 	require.Equal(t, tea.CursorBlock, m.View().Cursor.Shape, "the client opens in normal")
 
@@ -66,6 +68,7 @@ func TestView_CursorShapeFollowsTheModeTheKeysPutItIn(t *testing.T) {
 }
 
 func TestView_NormalModeParksTheBlockWhereWritingWouldResume(t *testing.T) {
+	t.Parallel()
 	m := press(t, pickerModel(t), "i")
 	m.input.SetValue("明天的评审挪到下午")
 	m.replan()
@@ -82,6 +85,7 @@ func TestView_NormalModeParksTheBlockWhereWritingWouldResume(t *testing.T) {
 }
 
 func TestView_CursorSitsAtTheEndOfTheDraftUnderTheQuote(t *testing.T) {
+	t.Parallel()
 	m := pickerModel(t)
 	mm, _ := m.startInsert(&m.msgs[0], false)
 	m = mm.(Model)
@@ -97,6 +101,7 @@ func TestView_CursorSitsAtTheEndOfTheDraftUnderTheQuote(t *testing.T) {
 }
 
 func TestView_CursorClearsThePreviewRowsAboveTheDraft(t *testing.T) {
+	t.Parallel()
 	m := press(t, pickerModel(t), "i")
 	m.input.SetValue("## 发布说明")
 	m.replan()
@@ -109,6 +114,7 @@ func TestView_CursorClearsThePreviewRowsAboveTheDraft(t *testing.T) {
 }
 
 func TestComposerAbove_CountsTheQuoteAndThePreviewRows(t *testing.T) {
+	t.Parallel()
 	base := pickerModel(t)
 	w := base.bandWidth(base.side) - 2
 
@@ -126,6 +132,7 @@ func TestComposerAbove_CountsTheQuoteAndThePreviewRows(t *testing.T) {
 }
 
 func TestView_CursorFollowsTheCommandLinePrompt(t *testing.T) {
+	t.Parallel()
 	top := pickerModel(t).bodyHeight() + 3
 
 	cmd := press(t, pickerModel(t), ":").View()
@@ -141,6 +148,7 @@ func TestView_CursorFollowsTheCommandLinePrompt(t *testing.T) {
 }
 
 func TestView_CursorSitsInThePickersQueryBox(t *testing.T) {
+	t.Parallel()
 	m := press(t, pickerModel(t), "e", "z")
 	v := m.View()
 	require.Equal(t, m.bodyHeight()+3, v.Cursor.Y)
@@ -149,6 +157,7 @@ func TestView_CursorSitsInThePickersQueryBox(t *testing.T) {
 }
 
 func TestView_HidesTheCursorWhereThereIsNothingToWriteIn(t *testing.T) {
+	t.Parallel()
 	require.Nil(t, press(t, pickerModel(t), "?").View().Cursor, "the help overlay covers the composer")
 
 	loading := pickerModel(t)
@@ -161,6 +170,7 @@ func TestView_HidesTheCursorWhereThereIsNothingToWriteIn(t *testing.T) {
 }
 
 func TestView_CursorStaysInsideTheBoxWhenTheLineScrolls(t *testing.T) {
+	t.Parallel()
 	m := press(t, pickerModel(t), ":")
 	m.cmdline.SetValue("ai " + strings.Repeat("x", 200))
 	m.cmdline.CursorEnd()

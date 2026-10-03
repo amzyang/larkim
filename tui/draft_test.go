@@ -51,6 +51,7 @@ func enter(t *testing.T, m Model, st *store.Store, chatID string) Model {
 // a half-written message follows the reader into the next chat and Enter sends
 // it to the wrong person.
 func TestEnterChat_DraftDoesNotFollowTheReaderIntoTheNextChat(t *testing.T) {
+	t.Parallel()
 	m, st := draftModel(t)
 	m = enter(t, m, st, "oc_group")
 	m.input.SetValue("半句话")
@@ -61,6 +62,7 @@ func TestEnterChat_DraftDoesNotFollowTheReaderIntoTheNextChat(t *testing.T) {
 }
 
 func TestEnterChat_DraftComesBackWithTheChatItWasTypedIn(t *testing.T) {
+	t.Parallel()
 	m, st := draftModel(t)
 	m = enter(t, m, st, "oc_group")
 	m.input.SetValue("半句话")
@@ -73,6 +75,7 @@ func TestEnterChat_DraftComesBackWithTheChatItWasTypedIn(t *testing.T) {
 
 // The draft is on disk, not in the model, so it outlives the process.
 func TestSaveComposer_DraftOutlivesTheProcess(t *testing.T) {
+	t.Parallel()
 	m, st := draftModel(t)
 	m = enter(t, m, st, "oc_group")
 	m.input.SetValue("重开还在")
@@ -88,6 +91,7 @@ func TestSaveComposer_DraftOutlivesTheProcess(t *testing.T) {
 // A draft that answers something is only that draft while it still says what
 // it answers.
 func TestEnterChat_DraftCarriesItsQuoteBack(t *testing.T) {
+	t.Parallel()
 	m, st := draftModel(t)
 	m = enter(t, m, st, "oc_group")
 	m.input.SetValue("好的")
@@ -104,6 +108,7 @@ func TestEnterChat_DraftCarriesItsQuoteBack(t *testing.T) {
 // A quote whose message is no longer on the page cannot be drawn, so the text
 // comes back without it rather than pointing at nothing.
 func TestEnterChat_DraftQuotingAMissingMessageKeepsOnlyItsText(t *testing.T) {
+	t.Parallel()
 	m, st := draftModel(t)
 	ctx := t.Context()
 	require.NoError(t, st.SaveDraft(ctx, store.Draft{
@@ -119,6 +124,7 @@ func TestEnterChat_DraftQuotingAMissingMessageKeepsOnlyItsText(t *testing.T) {
 // A reload is not an entry: a tick landing a new message must not stomp what
 // is being typed.
 func TestMessagesLoaded_ReloadDoesNotStompTheComposer(t *testing.T) {
+	t.Parallel()
 	m, st := draftModel(t)
 	m = enter(t, m, st, "oc_group")
 	m.input.SetValue("正在打字")
@@ -131,6 +137,7 @@ func TestMessagesLoaded_ReloadDoesNotStompTheComposer(t *testing.T) {
 // Sending empties the composer, and every path that persists writes that
 // emptiness through, so no marker survives the send.
 func TestSaveComposer_SendingLeavesNoDraftBehind(t *testing.T) {
+	t.Parallel()
 	m, st := draftModel(t)
 	m = enter(t, m, st, "oc_group")
 	m.input.SetValue("发出去")
@@ -148,6 +155,7 @@ func TestSaveComposer_SendingLeavesNoDraftBehind(t *testing.T) {
 // draft is in, and the client's list leaves the conversation being typed in
 // bare of its own draft.
 func TestDraftForRow_TheOpenChatDrawsNoDraft(t *testing.T) {
+	t.Parallel()
 	m, st := draftModel(t)
 	m = enter(t, m, st, "oc_group")
 	m.input.SetValue("正在打字")
@@ -161,6 +169,7 @@ func TestDraftForRow_TheOpenChatDrawsNoDraft(t *testing.T) {
 // every other row answer it the same way: a composer holding only blanks marks
 // nothing, and marks nothing still once the reader has moved on.
 func TestDraftForRow_BlanksAreNotADraft(t *testing.T) {
+	t.Parallel()
 	m, st := draftModel(t)
 	m = enter(t, m, st, "oc_group")
 	m.input.SetValue("   ")
@@ -174,6 +183,7 @@ func TestDraftForRow_BlanksAreNotADraft(t *testing.T) {
 }
 
 func TestSelfMark_DrawnOnlyForAChatHoldingADraft(t *testing.T) {
+	t.Parallel()
 	assert.Empty(t, selfMark(store.Draft{}))
 	// Styled, so the pair the glyph and its cell make is read behind the
 	// escapes that underline puts around each of them.
@@ -183,6 +193,7 @@ func TestSelfMark_DrawnOnlyForAChatHoldingADraft(t *testing.T) {
 // The marker belongs to the chat, not to its newest message: the summary line
 // may have moved on while somebody is still waiting on the reader.
 func TestChatSummaryLine_AtMeIsDrawnWhateverTheSummarySays(t *testing.T) {
+	t.Parallel()
 	c := store.Chat{ChatID: "oc_group", Name: "平台组", ChatMode: "group",
 		LastSenderName: "张三", LastContent: "别的事", LastRenderedAt: 1, UnreadMention: true}
 
@@ -192,6 +203,7 @@ func TestChatSummaryLine_AtMeIsDrawnWhateverTheSummarySays(t *testing.T) {
 }
 
 func TestChatSummaryLine_NoBadgeWithoutAnUnreadMention(t *testing.T) {
+	t.Parallel()
 	c := store.Chat{ChatID: "oc_group", Name: "平台组", ChatMode: "group",
 		LastSenderName: "张三", LastContent: "别的事", LastRenderedAt: 1}
 
@@ -203,6 +215,7 @@ func TestChatSummaryLine_NoBadgeWithoutAnUnreadMention(t *testing.T) {
 // Being named is the louder of the two, so it takes the slot the reactions
 // would have had.
 func TestChatSummaryLine_AtMeOutranksTheReactionChips(t *testing.T) {
+	t.Parallel()
 	c := reactedP2P("OK")
 	c.UnreadMention = true
 
@@ -224,6 +237,7 @@ func draftChatRow() store.Chat {
 // The saved draft stands in for the last message with no sender's name before
 // it: the pencil in the marker slot already says whose words they are.
 func TestChatSummaryLine_DraftGistCarriesNoSenderPrefix(t *testing.T) {
+	t.Parallel()
 	c := draftChatRow()
 	d := store.Draft{ChatID: c.ChatID, Text: "半句话"}
 	g := gistOf(listRow{chat: c}, "ou_me", emojiPics{}).withDraft(d)
@@ -239,6 +253,7 @@ func TestChatSummaryLine_DraftGistCarriesNoSenderPrefix(t *testing.T) {
 // A draft goes through the same laying out a summary does, so the room runs
 // out on it the same way and the mute mark keeps its edge.
 func TestChatSummaryLine_DraftGistTruncatesLikeASummary(t *testing.T) {
+	t.Parallel()
 	c := draftChatRow()
 	c.Muted = true
 	d := store.Draft{ChatID: c.ChatID, Text: strings.Repeat("a", 40) + "尾"}
@@ -255,6 +270,7 @@ func TestChatSummaryLine_DraftGistTruncatesLikeASummary(t *testing.T) {
 // A draft written over more than one line is one line on the row: the row has
 // two, and the second is the gist's alone.
 func TestChatSummaryLine_MultiLineDraftIsOneLine(t *testing.T) {
+	t.Parallel()
 	c := draftChatRow()
 	d := store.Draft{ChatID: c.ChatID, Text: "第一行\n第二行\t字"}
 	g := gistOf(listRow{chat: c}, "ou_me", emojiPics{}).withDraft(d)
@@ -269,6 +285,7 @@ func TestChatSummaryLine_MultiLineDraftIsOneLine(t *testing.T) {
 // Saving is what puts a draft on its row, and the open chat's row is bare
 // even then: the composer beside it already holds the words.
 func TestRenderChats_TypingAloneDoesNotChangeTheGist(t *testing.T) {
+	t.Parallel()
 	m, st := draftModel(t)
 	m = deliver(t, m, loadChats(m.deps))
 	m = enter(t, m, st, "oc_group")
@@ -284,6 +301,7 @@ func TestRenderChats_TypingAloneDoesNotChangeTheGist(t *testing.T) {
 // A save lands the draft on disk, but the row of the chat still open stays
 // bare: another row — after a switch — is where the words belong.
 func TestRenderChats_TheOpenChatRowStaysBareEvenSaved(t *testing.T) {
+	t.Parallel()
 	m, st := draftModel(t)
 	m = deliver(t, m, loadChats(m.deps))
 	m = enter(t, m, st, "oc_group")
@@ -300,6 +318,7 @@ func TestRenderChats_TheOpenChatRowStaysBareEvenSaved(t *testing.T) {
 // The row a switch just left carries its draft without waiting for a listing
 // no revision bump will bring: drafts sit outside data_rev.
 func TestRenderChats_SavedDraftIsTheGistLine(t *testing.T) {
+	t.Parallel()
 	m, st := draftModel(t)
 	m = deliver(t, m, loadChats(m.deps))
 	m = enter(t, m, st, "oc_group")
@@ -316,6 +335,7 @@ func TestRenderChats_SavedDraftIsTheGistLine(t *testing.T) {
 // Clearing the composer writes the emptiness through, so the row falls back
 // to the chat's last message and the pencil goes with the draft.
 func TestRenderChats_ClearedDraftRevertsToTheLastMessage(t *testing.T) {
+	t.Parallel()
 	m, st := draftModel(t)
 	m = deliver(t, m, loadChats(m.deps))
 	m = enter(t, m, st, "oc_group")
@@ -338,6 +358,7 @@ func TestRenderChats_ClearedDraftRevertsToTheLastMessage(t *testing.T) {
 // The maps start nil — no listing has landed yet — and a blur-save in the
 // first moments of a session must not find that out the hard way.
 func TestDraftSavedMsg_PatchesTheDraftsMap(t *testing.T) {
+	t.Parallel()
 	m, _ := draftModel(t)
 
 	next, _ := m.Update(draftSavedMsg{draft: store.Draft{ChatID: "oc_group", Text: "半句话"}})
@@ -352,6 +373,7 @@ func TestDraftSavedMsg_PatchesTheDraftsMap(t *testing.T) {
 // A write the store refused leaves the maps a refresh behind: a gist drawing a
 // draft the disk never took would promise words the box has lost.
 func TestDraftSavedMsg_FailedWriteLeavesTheMapsAlone(t *testing.T) {
+	t.Parallel()
 	m, _ := draftModel(t)
 
 	next, _ := m.Update(draftSavedMsg{draft: store.Draft{ChatID: "oc_group", Text: "半句话"}, err: errors.New("disk full")})
@@ -366,6 +388,7 @@ func TestDraftSavedMsg_FailedWriteLeavesTheMapsAlone(t *testing.T) {
 // cluster, and a styled separator would re-assert it straight — a line one
 // cell off the pencil it belongs to.
 func TestSelfMark_WearsTheDraftColourUnderlined(t *testing.T) {
+	t.Parallel()
 	out := selfMark(store.Draft{Text: "半句话"})
 
 	assert.Contains(t, out, "38;2;245;74;69", "the red the client paints a draft with")

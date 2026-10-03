@@ -28,6 +28,7 @@ func candModel(t *testing.T) (Model, *store.Store) {
 }
 
 func TestOpenCandidates_ListsEveryPendingDraftOldestFirst(t *testing.T) {
+	t.Parallel()
 	m, _ := candModel(t)
 
 	next, cmd := m.openCandidates()
@@ -45,6 +46,7 @@ func TestOpenCandidates_ListsEveryPendingDraftOldestFirst(t *testing.T) {
 }
 
 func TestOpenCandidates_TellsAChatWithNothingPending(t *testing.T) {
+	t.Parallel()
 	m := pickerModel(t)
 
 	next, cmd := m.openCandidates()
@@ -56,6 +58,7 @@ func TestOpenCandidates_TellsAChatWithNothingPending(t *testing.T) {
 }
 
 func TestChooseCandidate_FillsTheComposerAndRemembersTheMid(t *testing.T) {
+	t.Parallel()
 	m, _ := candModel(t)
 	next, cmd := m.openCandidates()
 	m = next.(Model)
@@ -72,6 +75,7 @@ func TestChooseCandidate_FillsTheComposerAndRemembersTheMid(t *testing.T) {
 }
 
 func TestChooseCandidate_LeavesTheComposerAloneOnEsc(t *testing.T) {
+	t.Parallel()
 	m, _ := candModel(t)
 	next, cmd := m.openCandidates()
 	m = next.(Model)
@@ -87,6 +91,7 @@ func TestChooseCandidate_LeavesTheComposerAloneOnEsc(t *testing.T) {
 }
 
 func TestCandidates_KeyAndCommandOpenTheSamePicker(t *testing.T) {
+	t.Parallel()
 	m, _ := candModel(t)
 	next, _ := m.onNormalKey("C")
 	require.Equal(t, modeNormal, next.(Model).mode, "C only asks; the picker opens on the store's answer")
@@ -96,6 +101,7 @@ func TestCandidates_KeyAndCommandOpenTheSamePicker(t *testing.T) {
 }
 
 func TestChatRow_DrawsTheCandidateMark(t *testing.T) {
+	t.Parallel()
 	c := store.Chat{ChatID: "oc_team", Name: "平台组", ChatMode: "group", LastMessageMs: 100}
 	with := renderChatRow(textAvatars{}, listRow{chat: c}, store.Draft{}, 0, 2,
 		gistOf(listRow{chat: c}, "ou_me", emojiPics{}), testNow, 40, nil)
@@ -106,6 +112,7 @@ func TestChatRow_DrawsTheCandidateMark(t *testing.T) {
 }
 
 func TestSentMsg_ClearsTheSeededCandidateRow(t *testing.T) {
+	t.Parallel()
 	m, st := candModel(t)
 	m.candFilled = "om_b"
 	require.NoError(t, st.PutCandidates(t.Context(), "om_keep", "oc_elsewhere", []string{"x"}, "text", 1))
@@ -136,6 +143,7 @@ func openCand(t *testing.T) Model {
 }
 
 func TestCandidates_ADigitPicksTheRowItIsDrawnBeside(t *testing.T) {
+	t.Parallel()
 	mm, _ := openCand(t).onCandidatesKey(keyMsg("2"))
 	m := mm.(Model)
 	require.Equal(t, modeNormal, m.mode)
@@ -152,6 +160,7 @@ func TestCandidates_ADigitPicksTheRowItIsDrawnBeside(t *testing.T) {
 }
 
 func TestCandidates_StandOverThePaneNumbered(t *testing.T) {
+	t.Parallel()
 	m := openCand(t)
 	segs := m.floatSegs()
 	require.Len(t, segs, 4)
@@ -166,6 +175,7 @@ func TestCandidates_StandOverThePaneNumbered(t *testing.T) {
 }
 
 func TestCandidates_TheBoxBesideTheListReadsTheWholeDraft(t *testing.T) {
+	t.Parallel()
 	m, st := candModel(t)
 	require.NoError(t, st.PutCandidates(t.Context(), "om_c", "oc_team", []string{"第一行\n第二行"}, "markdown", 300))
 	next, cmd := m.openCandidates()
@@ -182,6 +192,7 @@ func TestCandidates_TheBoxBesideTheListReadsTheWholeDraft(t *testing.T) {
 }
 
 func TestCandidates_CapAtTheTenRowsTheDigitsReach(t *testing.T) {
+	t.Parallel()
 	m, st := candModel(t)
 	texts := make([]string, 12)
 	for i := range texts {
@@ -196,6 +207,7 @@ func TestCandidates_CapAtTheTenRowsTheDigitsReach(t *testing.T) {
 }
 
 func TestCandidates_ParkABlockCursorOnTheDraftBelow(t *testing.T) {
+	t.Parallel()
 	m := openCand(t)
 	c := m.View().Cursor
 	require.NotNil(t, c)

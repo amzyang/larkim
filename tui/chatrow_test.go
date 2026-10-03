@@ -20,6 +20,7 @@ var testNow = time.Date(2026, 9, 23, 10, 0, 0, 0, time.Local)
 // blank, and an en-space is the one blank a renderer will not fold into an
 // erase — so every glyph ships with one, and the layout budgets both cells.
 func TestNerdGlyphs_EachCarriesTheCellThatKeepsItFullSize(t *testing.T) {
+	t.Parallel()
 	for name, g := range map[string]string{
 		"botBadge":     botBadge,
 		"muteGlyph":    muteGlyph,
@@ -50,6 +51,7 @@ func plainRow(c store.Chat, unread int64, w int) (string, string) {
 }
 
 func TestChatSummary_TellsSameNamedSendersApart(t *testing.T) {
+	t.Parallel()
 	c := store.Chat{ChatID: "oc_a", ChatMode: "group", LastMessageID: "om_1",
 		LastSenderID: "ou_a", LastSenderName: "张三", LastSenderAccount: "zhangsan01@example.com",
 		LastMsgType: "text", LastContent: "排期定了", LastRenderedAt: 1}
@@ -61,6 +63,7 @@ func TestChatSummary_TellsSameNamedSendersApart(t *testing.T) {
 }
 
 func TestChatTime_BucketsByCalendarDay(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name string
 		when time.Time
@@ -81,6 +84,7 @@ func TestChatTime_BucketsByCalendarDay(t *testing.T) {
 }
 
 func TestRenderChatRow_ShowsSenderOnlyForGroups(t *testing.T) {
+	t.Parallel()
 	base := store.Chat{ChatID: "oc_1", LastMessageID: "om_1", LastMessageMs: at(-time.Hour),
 		LastSenderID: "ou_them", LastSenderName: "周舟", LastContent: "收到", LastRenderedAt: 1}
 
@@ -97,6 +101,7 @@ func TestRenderChatRow_ShowsSenderOnlyForGroups(t *testing.T) {
 }
 
 func TestRenderChatRow_PrefixesTheUsersOwnTurn(t *testing.T) {
+	t.Parallel()
 	c := store.Chat{ChatID: "oc_1", Name: "李明", ChatMode: "p2p", LastMessageID: "om_1",
 		LastSenderID: "ou_me", LastSenderName: "林岚", LastContent: "好的", LastRenderedAt: 1}
 	_, bottom := plainRow(c, 0, 31)
@@ -108,6 +113,7 @@ func TestRenderChatRow_PrefixesTheUsersOwnTurn(t *testing.T) {
 }
 
 func TestRenderChatRow_SystemMessageNamesNoSender(t *testing.T) {
+	t.Parallel()
 	c := store.Chat{ChatID: "oc_1", Name: "抖音评论兼职伙伴群", ChatMode: "group", LastMessageID: "om_1",
 		LastMessageMs: at(-time.Hour), LastMsgType: "system", LastRenderedAt: 5,
 		LastContent: "韩立 invited 柳依依 to the group."}
@@ -116,6 +122,7 @@ func TestRenderChatRow_SystemMessageNamesNoSender(t *testing.T) {
 }
 
 func TestRenderChatRow_EmptyStatesReadDifferently(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name string
 		chat store.Chat
@@ -142,6 +149,7 @@ func TestRenderChatRow_EmptyStatesReadDifferently(t *testing.T) {
 }
 
 func TestRenderChatRow_AppendsTheAccountSuffix(t *testing.T) {
+	t.Parallel()
 	c := store.Chat{ChatID: "oc_1", Name: "李明", ChatMode: "p2p", PeerAccount: "liming01@example.com"}
 	top, _ := plainRow(c, 0, 31)
 	require.Contains(t, top, "李明01")
@@ -154,6 +162,7 @@ func TestRenderChatRow_AppendsTheAccountSuffix(t *testing.T) {
 }
 
 func TestRenderChatRow_TitleBadgesOnlyABotPeer(t *testing.T) {
+	t.Parallel()
 	bot := store.Chat{ChatID: "oc_1", Name: "监控告警", ChatMode: "p2p", P2PTargetType: "bot"}
 	top, _ := plainRow(bot, 0, 31)
 	require.Contains(t, top, botBadge)
@@ -171,6 +180,7 @@ func TestRenderChatRow_TitleBadgesOnlyABotPeer(t *testing.T) {
 }
 
 func TestChatSummary_LeavesAHumanTurnUnbadged(t *testing.T) {
+	t.Parallel()
 	group := store.Chat{ChatID: "oc_1", Name: "流程中心", ChatMode: "group", LastSenderType: "user",
 		LastMessageID: "om_1", LastMessageMs: at(-time.Hour), LastSenderID: "ou_them",
 		LastSenderName: "周舟", LastContent: "收到", LastRenderedAt: 1}
@@ -180,6 +190,7 @@ func TestChatSummary_LeavesAHumanTurnUnbadged(t *testing.T) {
 }
 
 func TestRenderChatRow_KeepsTheRightEdgeAlignedAndBothLinesInWidth(t *testing.T) {
+	t.Parallel()
 	const w = 31
 	long := store.Chat{
 		ChatID: "oc_1", Name: "林岚's AI Assistant 名字非常非常长会被截断", ChatMode: "p2p",
@@ -201,6 +212,7 @@ func TestRenderChatRow_KeepsTheRightEdgeAlignedAndBothLinesInWidth(t *testing.T)
 }
 
 func TestRenderChats_LeavesTheOddLineBlankRatherThanHalveAChat(t *testing.T) {
+	t.Parallel()
 	m := sized(130, 31)
 	fit := m.chatListHeight()
 	require.Equal(t, 1, m.chatRowsHeight()-(fit*chatRowStride-chatRowGap),
@@ -224,6 +236,7 @@ func TestRenderChats_LeavesTheOddLineBlankRatherThanHalveAChat(t *testing.T) {
 }
 
 func TestRenderChats_SeparatesEachChatFromTheNextButNotFromTheFoot(t *testing.T) {
+	t.Parallel()
 	m := sized(130, 30)
 	fit := m.chatListHeight()
 	require.Equal(t, 0, m.chatRowsHeight()-(fit*chatRowStride-chatRowGap),
@@ -240,6 +253,7 @@ func TestRenderChats_SeparatesEachChatFromTheNextButNotFromTheFoot(t *testing.T)
 }
 
 func TestRenderChats_HoldsTogetherAtTheNarrowestSupportedWidth(t *testing.T) {
+	t.Parallel()
 	m := sized(minWidth, 24)
 	require.Equal(t, chatsWidth+minMessagesWidth, minWidth, "minWidth is what the two left panes need")
 
@@ -260,6 +274,7 @@ func (badgedAvatars) cells(listRow, int64) (string, string, bool) {
 func (badgedAvatars) prepare([]listRow, map[string]int64) string { return "" }
 
 func TestRenderChatRow_LeavesTheCountToAPictureThatCarriesIt(t *testing.T) {
+	t.Parallel()
 	c := store.Chat{ChatID: "oc_1", Name: "Alpha", ChatMode: "group",
 		LastMessageID: "om_1", LastMessageMs: at(-time.Hour), LastSenderName: "Bob", LastContent: "hi"}
 
@@ -271,6 +286,7 @@ func TestRenderChatRow_LeavesTheCountToAPictureThatCarriesIt(t *testing.T) {
 }
 
 func TestRenderChatRow_MarksAMutedChat(t *testing.T) {
+	t.Parallel()
 	c := store.Chat{ChatID: "oc_1", Name: "Alpha", ChatMode: "group",
 		LastMessageID: "om_1", LastMessageMs: at(-time.Hour), LastSenderName: "Bob", LastContent: "hi"}
 
@@ -284,6 +300,7 @@ func TestRenderChatRow_MarksAMutedChat(t *testing.T) {
 }
 
 func TestChatSummary_NamesACardRatherThanItsContent(t *testing.T) {
+	t.Parallel()
 	c := store.Chat{ChatID: "oc_1", ChatMode: "group", LastMessageID: "om_1", LastRenderedAt: 1,
 		LastSenderName: "构建机器人", LastMsgType: "interactive",
 		LastContentRaw: weeklyCard.ContentRaw, LastContent: "<card title=\"旧渲染\">\n待认领账号：13 个\n</card>"}
@@ -294,6 +311,7 @@ func TestChatSummary_NamesACardRatherThanItsContent(t *testing.T) {
 }
 
 func TestChatSummary_ReadsAPostPastThePictureKeysItNames(t *testing.T) {
+	t.Parallel()
 	c := store.Chat{ChatID: "oc_1", ChatMode: "group", LastMessageID: "om_1", LastRenderedAt: 1,
 		LastSenderName: "张三", LastMsgType: "post",
 		LastContent: "看这个\n![Image](img_a)\n谢谢"}
@@ -304,6 +322,7 @@ func TestChatSummary_ReadsAPostPastThePictureKeysItNames(t *testing.T) {
 }
 
 func TestChatSummary_NamesTheFileAPostCarries(t *testing.T) {
+	t.Parallel()
 	c := store.Chat{ChatID: "oc_1", ChatMode: "group", LastMessageID: "om_1", LastRenderedAt: 1,
 		LastSenderName: "张三", LastMsgType: "post",
 		LastContent: "周报\n<file key=\"file_b\" name=\"report.pdf\"/>"}
@@ -313,6 +332,7 @@ func TestChatSummary_NamesTheFileAPostCarries(t *testing.T) {
 }
 
 func TestChatSummary_NamesAPostThatIsOnlyAPicture(t *testing.T) {
+	t.Parallel()
 	c := store.Chat{ChatID: "oc_1", ChatMode: "group", LastMessageID: "om_1", LastRenderedAt: 1,
 		LastSenderName: "张三", LastMsgType: "post", LastContent: "![Image](img_a)"}
 	_, bottom := plainRow(c, 0, 40)
@@ -321,6 +341,7 @@ func TestChatSummary_NamesAPostThatIsOnlyAPicture(t *testing.T) {
 }
 
 func TestRenderChatRow_GreysTheCounterOfAMutedChat(t *testing.T) {
+	t.Parallel()
 	c := store.Chat{ChatID: "oc_1", Name: "Alpha", ChatMode: "group",
 		LastMessageID: "om_1", LastMessageMs: at(-time.Hour), LastSenderName: "Bob", LastContent: "hi"}
 
@@ -335,6 +356,7 @@ func TestRenderChatRow_GreysTheCounterOfAMutedChat(t *testing.T) {
 }
 
 func TestChatSummary_KeepsAMentionOfTheReaderVisibleThroughTheDim(t *testing.T) {
+	t.Parallel()
 	c := store.Chat{ChatID: "oc_1", Name: "项目协作群", ChatMode: "group", LastMessageID: "om_1", LastRenderedAt: 1,
 		LastSenderName: "孙琪", LastSenderID: "ou_x", LastContent: "@林岚 看下",
 		LastMentionsJSON: `[{"id":"ou_me","key":"@_user_1","name":"林岚"}]`}
@@ -349,6 +371,7 @@ func TestChatSummary_KeepsAMentionOfTheReaderVisibleThroughTheDim(t *testing.T) 
 }
 
 func TestChatSummary_LeavesAMentionOfSomebodyElseInTheRowsOwnDim(t *testing.T) {
+	t.Parallel()
 	c := store.Chat{ChatID: "oc_1", Name: "项目协作群", ChatMode: "group", LastMessageID: "om_1", LastRenderedAt: 1,
 		LastSenderName: "孙琪", LastSenderID: "ou_x", LastContent: "@李四 看下",
 		LastMentionsJSON: `[{"id":"ou_a","key":"@_user_1","name":"李四"}]`}
@@ -429,6 +452,7 @@ func reactionBadges(row chatRow) int {
 }
 
 func TestChatSummary_LeadsAP2PLineWithTheReactionIcons(t *testing.T) {
+	t.Parallel()
 	row := picRow(t, reactedP2P("THUMBSUP", "HEART"), 40)
 	require.Equal(t, 2, reactionBadges(row), "one badge per reaction, ahead of the summary")
 	require.Positive(t, row.segs[1].pic.cols, "the icon is the client's own picture")
@@ -438,6 +462,7 @@ func TestChatSummary_LeadsAP2PLineWithTheReactionIcons(t *testing.T) {
 }
 
 func TestChatSummary_LeadsAGroupsLineWithTheReactionIcons(t *testing.T) {
+	t.Parallel()
 	c := reactedP2P("THUMBSUP")
 	c.ChatMode, c.Name = "group", "平台组"
 	row := picRow(t, c, 40)
@@ -447,6 +472,7 @@ func TestChatSummary_LeadsAGroupsLineWithTheReactionIcons(t *testing.T) {
 }
 
 func TestChatSummary_DropsTheReactionsOfARecalledMessage(t *testing.T) {
+	t.Parallel()
 	c := reactedP2P("THUMBSUP")
 	c.LastDeleted = true
 	row := picRow(t, c, 40)
@@ -455,11 +481,13 @@ func TestChatSummary_DropsTheReactionsOfARecalledMessage(t *testing.T) {
 }
 
 func TestChatSummary_ShowsNoMoreThanThreeReactions(t *testing.T) {
+	t.Parallel()
 	row := picRow(t, reactedP2P("THUMBSUP", "HEART", "ROSE", "MUSCLE"), 44)
 	require.Equal(t, 3, reactionBadges(row), "past three the icons crowd out the message behind them")
 }
 
 func TestChatSummary_LeavesOutAnEmojiItKnowsNothingOf(t *testing.T) {
+	t.Parallel()
 	// A key outside this build's table names no emoji and cuts no picture, so
 	// the row leaves it out rather than head the line with a key nobody reads.
 	row := picRow(t, reactedP2P("NOSUCHEMOJI", "THUMBSUP"), 40)
@@ -468,6 +496,7 @@ func TestChatSummary_LeavesOutAnEmojiItKnowsNothingOf(t *testing.T) {
 }
 
 func TestChatSummary_KeepsTheBodyClearOfTheReactions(t *testing.T) {
+	t.Parallel()
 	const w = 31
 	c := reactedP2P("THUMBSUP", "HEART", "ROSE")
 	c.LastContent = strings.Repeat("很长的内容", 20)
@@ -477,6 +506,7 @@ func TestChatSummary_KeepsTheBodyClearOfTheReactions(t *testing.T) {
 }
 
 func TestChatSummary_DrawsAReactionNoCharacterCarriesAsAPicture(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	writeTestEmoji(t, dir, "OK")
 	pics := emojiPics{dir: dir, place: picturesIn(dir).place}
@@ -496,6 +526,7 @@ func TestChatSummary_DrawsAReactionNoCharacterCarriesAsAPicture(t *testing.T) {
 }
 
 func TestChatSummary_WearsABadgePerPictureReaction(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	writeTestEmoji(t, dir, "OK")
 	writeTestEmoji(t, dir, "AWESOME")
@@ -511,6 +542,7 @@ func TestChatSummary_WearsABadgePerPictureReaction(t *testing.T) {
 }
 
 func TestChatSummary_NamesACardBySummaryRatherThanItsBand(t *testing.T) {
+	t.Parallel()
 	c := store.Chat{ChatID: "oc_1", ChatMode: "group", LastMessageID: "om_1", LastRenderedAt: 1,
 		LastSenderName: "构建机器人", LastMsgType: "interactive",
 		LastContentRaw: summarisedCard("应用 order-api 普通预警")}
@@ -520,6 +552,7 @@ func TestChatSummary_NamesACardBySummaryRatherThanItsBand(t *testing.T) {
 }
 
 func TestRenderChatRow_AMutedChatStillSaysSo(t *testing.T) {
+	t.Parallel()
 	// Silence asks not to be pulled, not not to be told; the count is drawn
 	// grey on a muted chat for the same reason rather than left out.
 	c := store.Chat{ChatID: "oc_a", Name: "平台组", ChatMode: "group", Muted: true}

@@ -29,6 +29,7 @@ func fill(t *testing.T, contentRaw string) string {
 }
 
 func TestFillSlots_JoinsTheValuesTheBodyCarries(t *testing.T) {
+	t.Parallel()
 	assert.Equal(t, "李明 invited 林岚, 孙琪 to the group.",
 		fill(t, `{"template":"{from_user} invited {to_chatters} to the group.","from_user":["李明"],"to_chatters":["林岚","孙琪"],"divider_text":{}}`))
 	assert.Equal(t, "2026年1月1日",
@@ -36,6 +37,7 @@ func TestFillSlots_JoinsTheValuesTheBodyCarries(t *testing.T) {
 }
 
 func TestFillSlots_UnfillableSlotReadsAsAnEllipsis(t *testing.T) {
+	t.Parallel()
 	assert.Equal(t, `何静 updated the group name from "…" to "…".`,
 		fill(t, `{"template":"{from_user} updated the group name from \"{old_group_name}\" to \"{group_name}\".","from_user":["何静"],"to_chatters":[],"divider_text":{}}`))
 	assert.Equal(t, "段明轩 invited … to the group.",
@@ -45,10 +47,12 @@ func TestFillSlots_UnfillableSlotReadsAsAnEllipsis(t *testing.T) {
 }
 
 func TestFillSlots_ABlankTemplateFillsToNothing(t *testing.T) {
+	t.Parallel()
 	assert.Empty(t, fill(t, blankTemplate))
 }
 
 func TestSystemText_KeepsAMessageThatSpeaksForItself(t *testing.T) {
+	t.Parallel()
 	// A template with text of its own is never a call marker, whatever call
 	// happens to sit above it.
 	assert.Equal(t, "何静 started the group chat.",
@@ -57,10 +61,12 @@ func TestSystemText_KeepsAMessageThatSpeaksForItself(t *testing.T) {
 }
 
 func TestSystemText_TimesTheCallTheMarkerCloses(t *testing.T) {
+	t.Parallel()
 	assert.Equal(t, "Meeting ended: 32s", systemText(marker(blankTemplate, videoChatBody(1_000, 33_000), 33_909)))
 }
 
 func TestSystemText_SaysOnlyThatACallEndedWhenNothingDatesIt(t *testing.T) {
+	t.Parallel()
 	// A p2p call leaves no video_chat message, so its length is unknowable.
 	assert.Equal(t, "Call ended", systemText(marker(blankTemplate, "", 33_909)))
 	assert.Equal(t, "Call ended", systemText(marker(blankTemplate, `not json`, 33_909)))
@@ -68,6 +74,7 @@ func TestSystemText_SaysOnlyThatACallEndedWhenNothingDatesIt(t *testing.T) {
 }
 
 func TestSystemText_IgnoresACallThatIsNotTheOneClosing(t *testing.T) {
+	t.Parallel()
 	// Feishu stamps the marker about a second after end_time; an older call
 	// in the same chat must not lend it a duration, nor one still running.
 	assert.Equal(t, "Call ended", systemText(marker(blankTemplate, videoChatBody(1_000, 33_000), 9_999_999)))
@@ -77,6 +84,7 @@ func TestSystemText_IgnoresACallThatIsNotTheOneClosing(t *testing.T) {
 }
 
 func TestSystemText_StaysSilentOnABodyItCannotRead(t *testing.T) {
+	t.Parallel()
 	// Only a template that is present and blank marks a call ending. A body
 	// larkim cannot read says nothing, and must not be guessed into one.
 	assert.Empty(t, systemText(marker(`not json`, "", 33_909)))
@@ -85,6 +93,7 @@ func TestSystemText_StaysSilentOnABodyItCannotRead(t *testing.T) {
 }
 
 func TestCallLength_ShowsTheTwoUnitsThatMatter(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		ms   int64
 		want string

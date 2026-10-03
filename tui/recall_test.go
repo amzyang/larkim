@@ -47,6 +47,7 @@ func recallModel(t *testing.T) (Model, *larkcli.Fake) {
 // A recall is visible to everybody who was in the chat and cannot be undone,
 // so it asks first — the client asks too.
 func TestAskRecall_AsksBeforeTakingAnythingBack(t *testing.T) {
+	t.Parallel()
 	m, f := recallModel(t)
 
 	next, cmd := m.askRecall()
@@ -60,6 +61,7 @@ func TestAskRecall_AsksBeforeTakingAnythingBack(t *testing.T) {
 }
 
 func TestAnswerConfirm_YesRecalls(t *testing.T) {
+	t.Parallel()
 	m, f := recallModel(t)
 	next, _ := m.askRecall()
 	m = next.(Model)
@@ -75,6 +77,7 @@ func TestAnswerConfirm_YesRecalls(t *testing.T) {
 // Anything but y cancels, not only n: this is the answer where a slip costs
 // something everybody in the chat can see.
 func TestAnswerConfirm_AnythingButYesCancels(t *testing.T) {
+	t.Parallel()
 	for _, key := range []string{"n", "esc", "j", "q"} {
 		m, f := recallModel(t)
 		next, _ := m.askRecall()
@@ -91,6 +94,7 @@ func TestAnswerConfirm_AnythingButYesCancels(t *testing.T) {
 
 // With nothing pending the key belongs to its ordinary binding.
 func TestAnswerConfirm_NothingPendingLeavesTheKeyAlone(t *testing.T) {
+	t.Parallel()
 	m, _ := recallModel(t)
 
 	_, _, answered := m.answerConfirm("j")
@@ -99,6 +103,7 @@ func TestAnswerConfirm_NothingPendingLeavesTheKeyAlone(t *testing.T) {
 }
 
 func TestAskRecall_RefusesSomebodyElsesMessage(t *testing.T) {
+	t.Parallel()
 	m, f := recallModel(t)
 	m.msgIdx = 1 // 张三's
 
@@ -111,6 +116,7 @@ func TestAskRecall_RefusesSomebodyElsesMessage(t *testing.T) {
 }
 
 func TestAskRecall_RefusesAnAlreadyRecalledMessage(t *testing.T) {
+	t.Parallel()
 	m, _ := recallModel(t)
 	m.msgs[0].Deleted = true
 
@@ -123,6 +129,7 @@ func TestAskRecall_RefusesAnAlreadyRecalledMessage(t *testing.T) {
 
 // A send still on its way carries a local id Feishu has never seen.
 func TestAskRecall_RefusesASendStillInFlight(t *testing.T) {
+	t.Parallel()
 	m, _ := recallModel(t)
 	m.outbox = []outboxItem{{localID: "om_mine", chatID: "oc_group"}}
 
@@ -136,6 +143,7 @@ func TestAskRecall_RefusesASendStillInFlight(t *testing.T) {
 // Feishu decides whether the window has closed, and its refusal is what the
 // reader is told.
 func TestRecall_ReportsFeishusRefusal(t *testing.T) {
+	t.Parallel()
 	m, _ := recallModel(t)
 
 	// Whether the window has closed is Feishu's to answer; whatever it says
@@ -150,6 +158,7 @@ func TestRecall_ReportsFeishusRefusal(t *testing.T) {
 // A pending confirmation owns the next key, so one press cannot both answer it
 // and do something else.
 func TestOnKey_PendingConfirmationSwallowsTheNextKey(t *testing.T) {
+	t.Parallel()
 	m, _ := recallModel(t)
 	next, _ := m.askRecall()
 	m = next.(Model)
@@ -162,6 +171,7 @@ func TestOnKey_PendingConfirmationSwallowsTheNextKey(t *testing.T) {
 
 // INSERT mode is not an exception: the answer must not also reach the composer.
 func TestOnKey_PendingConfirmationSwallowsKeyInInsertMode(t *testing.T) {
+	t.Parallel()
 	m, f := recallModel(t)
 	next, _ := m.askRecall()
 	m = next.(Model)
@@ -180,6 +190,7 @@ func TestOnKey_PendingConfirmationSwallowsKeyInInsertMode(t *testing.T) {
 // A recall leaves a notice the cursor can land on, so every action needing a
 // body has to say why it will not run.
 func TestStartInsert_RefusesToQuoteARecalledMessage(t *testing.T) {
+	t.Parallel()
 	m, _ := recallModel(t)
 	sel := m.msgs[0]
 	sel.Deleted = true
@@ -192,6 +203,7 @@ func TestStartInsert_RefusesToQuoteARecalledMessage(t *testing.T) {
 }
 
 func TestOpenPicker_RefusesToReactToARecalledMessage(t *testing.T) {
+	t.Parallel()
 	m, _ := recallModel(t)
 	m.msgs[0].Deleted = true
 
@@ -202,6 +214,7 @@ func TestOpenPicker_RefusesToReactToARecalledMessage(t *testing.T) {
 }
 
 func TestRunReact_RefusesARecalledMessage(t *testing.T) {
+	t.Parallel()
 	m, _ := recallModel(t)
 	m.msgs[0].Deleted = true
 

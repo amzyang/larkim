@@ -12,6 +12,7 @@ import (
 // already in the database, and repair reaches recent history alone. The
 // back-scan is that way, so it has to select cards.
 func TestRegisterExistingResources_ReadsAStoredCardsAttachment(t *testing.T) {
+	t.Parallel()
 	s, _, clk := newSyncer(t)
 	ctx := t.Context()
 	now := clk.t.UnixMilli()

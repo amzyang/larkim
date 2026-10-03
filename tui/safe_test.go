@@ -8,6 +8,7 @@ import (
 )
 
 func TestSafeLine_KeepsWhatTheRendererWrote(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name string
 		line string
@@ -26,6 +27,7 @@ func TestSafeLine_KeepsWhatTheRendererWrote(t *testing.T) {
 }
 
 func TestSafeLine_DropsEverythingElse(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name string
 		line string
@@ -53,6 +55,7 @@ func TestSafeLine_DropsEverythingElse(t *testing.T) {
 // A lead byte with no rune behind it would let the byte after it through as one
 // of its continuation bytes, and Feishu carries whatever a sender typed.
 func TestSafeLine_TakesNoEscapeThroughMalformedUTF8(t *testing.T) {
+	t.Parallel()
 	for _, line := range []string{
 		"hi\xe4\x1b[2Jthere",              // a 3-byte lead, then an escape
 		"hi\xf0\x9f\x1bP@kitty-cmd\x1b\\", // two bytes of four, then a DCS
@@ -67,6 +70,7 @@ func TestSafeLine_TakesNoEscapeThroughMalformedUTF8(t *testing.T) {
 // A line carrying no escape at all is returned as it came, and a multi-byte
 // rune is not mistaken for sequence bytes on the way through the filter.
 func TestSafeLine_LeavesTextAlone(t *testing.T) {
+	t.Parallel()
 	require.Equal(t, "平台组 张三 🎉", safeLine("平台组 张三 🎉"))
 	require.Equal(t, "平台组\x1b[31m张三\x1b[0m", safeLine("平台组\x1b[31m张三\x1b[0m"))
 	require.Equal(t, "平台组张三", safeLine("平台组\x1b[2J张三"))

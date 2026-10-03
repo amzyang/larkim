@@ -26,6 +26,7 @@ func onThread(t *testing.T) Model {
 }
 
 func TestPushRight_AForwardOpenedInsideAThreadKeepsTheThreadUnderIt(t *testing.T) {
+	t.Parallel()
 	m := onThread(t)
 
 	m, _ = m.pushRight(rightFrame{kind: rightForward, id: "om_fwd", root: "om_fwd"})
@@ -39,6 +40,7 @@ func TestPushRight_AForwardOpenedInsideAThreadKeepsTheThreadUnderIt(t *testing.T
 }
 
 func TestOpenRight_AThreadOpenedFromTheChatPaneReplacesTheColumn(t *testing.T) {
+	t.Parallel()
 	m := onThread(t)
 	m, _ = m.pushRight(rightFrame{kind: rightForward, id: "om_fwd", root: "om_fwd"})
 	require.Len(t, m.rightStack, 1)
@@ -52,6 +54,7 @@ func TestOpenRight_AThreadOpenedFromTheChatPaneReplacesTheColumn(t *testing.T) {
 }
 
 func TestPushRight_PressingTheSameSummaryTwiceStacksOneFrame(t *testing.T) {
+	t.Parallel()
 	m := onThread(t)
 	f := rightFrame{kind: rightForward, id: "om_fwd", root: "om_fwd"}
 
@@ -63,6 +66,7 @@ func TestPushRight_PressingTheSameSummaryTwiceStacksOneFrame(t *testing.T) {
 }
 
 func TestPopRight_EscUncoversTheFrameBeneath(t *testing.T) {
+	t.Parallel()
 	m := onThread(t)
 	m, _ = m.pushRight(rightFrame{kind: rightForward, id: "om_fwd", root: "om_fwd"})
 
@@ -75,6 +79,7 @@ func TestPopRight_EscUncoversTheFrameBeneath(t *testing.T) {
 }
 
 func TestPopRight_ASuspendedFrameComesBackOnItsOwnCursor(t *testing.T) {
+	t.Parallel()
 	m := onThread(t)
 	m.threadIdx = 1
 	was := m.thread
@@ -94,6 +99,7 @@ func TestPopRight_ASuspendedFrameComesBackOnItsOwnCursor(t *testing.T) {
 }
 
 func TestPopRight_EscOnTheLastFrameClosesTheColumn(t *testing.T) {
+	t.Parallel()
 	m := onThread(t)
 
 	m, _ = m.popRight()
@@ -103,6 +109,7 @@ func TestPopRight_EscOnTheLastFrameClosesTheColumn(t *testing.T) {
 }
 
 func TestPopRight_HUncoversTheFrameBeneath(t *testing.T) {
+	t.Parallel()
 	m := onThread(t)
 	m, _ = m.pushRight(rightFrame{kind: rightForward, id: "om_fwd", root: "om_fwd"})
 
@@ -117,6 +124,7 @@ func TestPopRight_HUncoversTheFrameBeneath(t *testing.T) {
 }
 
 func TestH_OnTheLastFrameLeavesTheColumnStanding(t *testing.T) {
+	t.Parallel()
 	m := onThread(t)
 
 	next, _ := m.onNormalKey("h")
@@ -127,6 +135,7 @@ func TestH_OnTheLastFrameLeavesTheColumnStanding(t *testing.T) {
 }
 
 func TestH_OutsideTheRightPaneLeavesTheStackAlone(t *testing.T) {
+	t.Parallel()
 	m := onThread(t)
 	m, _ = m.pushRight(rightFrame{kind: rightForward, id: "om_fwd", root: "om_fwd"})
 	m.focus = paneMessages
@@ -138,6 +147,7 @@ func TestH_OutsideTheRightPaneLeavesTheStackAlone(t *testing.T) {
 }
 
 func TestEsc_OutsideTheRightPaneLeavesTheStackAlone(t *testing.T) {
+	t.Parallel()
 	m := onThread(t)
 	m, _ = m.pushRight(rightFrame{kind: rightForward, id: "om_fwd", root: "om_fwd"})
 	m.focus = paneMessages
@@ -149,6 +159,7 @@ func TestEsc_OutsideTheRightPaneLeavesTheStackAlone(t *testing.T) {
 }
 
 func TestToggleInfo_ResetsTheStackToOneFrame(t *testing.T) {
+	t.Parallel()
 	m, _ := infoModel(t)
 	m.rightKind, m.threadID = rightThread, "omt_1"
 	m, _ = m.pushRight(rightFrame{kind: rightForward, id: "om_fwd", root: "om_fwd"})
@@ -162,6 +173,7 @@ func TestToggleInfo_ResetsTheStackToOneFrame(t *testing.T) {
 }
 
 func TestOpenThreadID_NamesTheThreadUnderAnOpenForward(t *testing.T) {
+	t.Parallel()
 	m := onThread(t)
 	m, _ = m.pushRight(rightFrame{kind: rightForward, id: "om_fwd", root: "om_fwd"})
 
@@ -170,6 +182,7 @@ func TestOpenThreadID_NamesTheThreadUnderAnOpenForward(t *testing.T) {
 }
 
 func TestFocusMessages_OnAFoldedLayoutEmptiesTheWholeStack(t *testing.T) {
+	t.Parallel()
 	m := onThread(t)
 	m.width = chatsWidth + minMessagesWidth + threadWidth - 1
 	m.layout()
@@ -183,6 +196,7 @@ func TestFocusMessages_OnAFoldedLayoutEmptiesTheWholeStack(t *testing.T) {
 }
 
 func TestToggleRight_OnTheOpenContainerClosesTheColumn(t *testing.T) {
+	t.Parallel()
 	m := onThread(t)
 	m.focus, m.msgIdx = paneMessages, 0
 	m.msgsBase = []store.Message{{MessageID: "om_root", ThreadID: "omt_1", Content: "根", RenderedAt: 1}}
@@ -194,6 +208,7 @@ func TestToggleRight_OnTheOpenContainerClosesTheColumn(t *testing.T) {
 }
 
 func TestContainerOf_AThreadWinsOverAForward(t *testing.T) {
+	t.Parallel()
 	// A forward somebody started a topic on is read in the topic, where the
 	// forward is one row that opens in turn.
 	kind, id, _ := containerOf(store.Message{MessageID: "om_fwd", MsgType: "merge_forward", ThreadID: "omt_1"}, "")
@@ -210,6 +225,7 @@ func TestContainerOf_AThreadWinsOverAForward(t *testing.T) {
 }
 
 func TestJumpTo_AFoldedReplyIsReachedThroughItsThread(t *testing.T) {
+	t.Parallel()
 	reply := store.Message{MessageID: "om_r", ThreadID: "omt_1", MessagePosition: -3}
 	require.Equal(t, pendingJump{id: "om_r", thread: "omt_1", takeFocus: true}, jumpTo(reply))
 
@@ -221,6 +237,7 @@ func TestJumpTo_AFoldedReplyIsReachedThroughItsThread(t *testing.T) {
 }
 
 func TestMessagesLoaded_AThreadReplyLandsInsideItsThreadFrame(t *testing.T) {
+	t.Parallel()
 	st, err := storetest.Open(t, filepath.Join(t.TempDir(), "t.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { st.Close() })
@@ -245,6 +262,7 @@ func TestMessagesLoaded_AThreadReplyLandsInsideItsThreadFrame(t *testing.T) {
 // reader is walking the list, and a row that pulled them into the column would
 // cost them the next j.
 func TestMessagesLoaded_AThreadRowOpensTheColumnWithoutTakingTheFocus(t *testing.T) {
+	t.Parallel()
 	st, err := storetest.Open(t, filepath.Join(t.TempDir(), "t.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { st.Close() })
@@ -263,6 +281,7 @@ func TestMessagesLoaded_AThreadRowOpensTheColumnWithoutTakingTheFocus(t *testing
 }
 
 func TestMessagesLoaded_AHitOnThePageItselfLeavesTheColumnAlone(t *testing.T) {
+	t.Parallel()
 	m := sized(140, 36)
 	m.chatID, m.pendingChat = "oc_1", "oc_1"
 	m.pendingSelect = pendingJump{id: "om_5"}
@@ -275,6 +294,7 @@ func TestMessagesLoaded_AHitOnThePageItselfLeavesTheColumnAlone(t *testing.T) {
 }
 
 func TestOpenerSel_AContainerOpenedFromItsRootNamesNoMessage(t *testing.T) {
+	t.Parallel()
 	root := store.Message{MessageID: "om_root", ThreadID: "omt_1", MessagePosition: 7}
 	reply := store.Message{MessageID: "om_r", ThreadID: "omt_1", MessagePosition: -3}
 
@@ -292,6 +312,7 @@ func TestOpenerSel_AContainerOpenedFromItsRootNamesNoMessage(t *testing.T) {
 }
 
 func TestDetailsAtCursor_PointsAtTheMessageInFrontOfTheReader(t *testing.T) {
+	t.Parallel()
 	m := sized(140, 36)
 	m.focus, m.msgIdx = paneMessages, 1
 	m.msgsBase = []store.Message{
@@ -316,6 +337,7 @@ func TestDetailsAtCursor_PointsAtTheMessageInFrontOfTheReader(t *testing.T) {
 }
 
 func TestContainerAtCursor_AThreadOpenedFromAReplyPointsAtIt(t *testing.T) {
+	t.Parallel()
 	m := sized(140, 36)
 	m.focus, m.msgIdx = paneMessages, 0
 	m.msgsBase = []store.Message{{MessageID: "om_r", ThreadID: "omt_1", MessagePosition: -3, RenderedAt: 1}}
@@ -340,6 +362,7 @@ func threadList(n int) []store.Message {
 }
 
 func TestThreadLoaded_AFrameOpenedFromItsRootLandsOnTheNewestReply(t *testing.T) {
+	t.Parallel()
 	m := sized(140, 36)
 	m, _ = m.openRight(rightFrame{kind: rightThread, id: "omt_1"})
 	msgs := threadList(40)
@@ -352,6 +375,7 @@ func TestThreadLoaded_AFrameOpenedFromItsRootLandsOnTheNewestReply(t *testing.T)
 }
 
 func TestThreadLoaded_TheMessageTheFrameWasOpenedOnIsCentred(t *testing.T) {
+	t.Parallel()
 	m := sized(140, 36)
 	m, _ = m.openRight(rightFrame{kind: rightThread, id: "omt_1", sel: "om_r20"})
 	msgs := threadList(40)
@@ -367,6 +391,7 @@ func TestThreadLoaded_TheMessageTheFrameWasOpenedOnIsCentred(t *testing.T) {
 }
 
 func TestThreadLoaded_AReloadUnderTheReadersHandMovesNothing(t *testing.T) {
+	t.Parallel()
 	m := sized(140, 36)
 	m, _ = m.openRight(rightFrame{kind: rightThread, id: "omt_1"})
 	msgs := threadList(40)
@@ -382,6 +407,7 @@ func TestThreadLoaded_AReloadUnderTheReadersHandMovesNothing(t *testing.T) {
 }
 
 func TestForwardLoaded_ABundleOpensAtItsFirstMessage(t *testing.T) {
+	t.Parallel()
 	m := sized(140, 36)
 	m, _ = m.openRight(rightFrame{kind: rightForward, id: "om_fwd", root: "om_fwd"})
 	var msgs []store.Message
@@ -399,6 +425,7 @@ func TestForwardLoaded_ABundleOpensAtItsFirstMessage(t *testing.T) {
 }
 
 func TestForwardLoaded_AnUnexpandedLevelKeepsItsPinForTheReload(t *testing.T) {
+	t.Parallel()
 	m := sized(140, 36)
 	m, _ = m.openRight(rightFrame{kind: rightForward, id: "om_fwd", root: "om_fwd"})
 

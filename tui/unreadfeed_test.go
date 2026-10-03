@@ -63,6 +63,7 @@ func backlog(t *testing.T) (*store.Store, []store.Chat) {
 }
 
 func TestGatherUnread_OrdersSectionsByTheOldestBacklog(t *testing.T) {
+	t.Parallel()
 	st, chats := backlog(t)
 
 	secs, msgs, _, err := gatherUnread(t.Context(), st, "ou_me", chats, nil)
@@ -78,6 +79,7 @@ func TestGatherUnread_OrdersSectionsByTheOldestBacklog(t *testing.T) {
 // The section is the conversation from the backlog on, not the unread messages
 // picked out of it, so a message read after the anchor is still on the page.
 func TestGatherUnread_ASectionRunsFromItsAnchorToTheNewest(t *testing.T) {
+	t.Parallel()
 	st, chats := backlog(t)
 	say(t, st, "om_p3", "oc_platform", 400, "我自己发的")
 	read := true
@@ -93,6 +95,7 @@ func TestGatherUnread_ASectionRunsFromItsAnchorToTheNewest(t *testing.T) {
 // The panel is the chat's own rows from the anchor on, so it tells the same
 // story the chat does — recall included.
 func TestGatherUnread_ASectionKeepsARecallInTheBacklog(t *testing.T) {
+	t.Parallel()
 	st, chats := backlog(t)
 	gone := say(t, st, "om_p3", "oc_platform", 400, "说错了")
 	gone.Deleted = true
@@ -106,6 +109,7 @@ func TestGatherUnread_ASectionKeepsARecallInTheBacklog(t *testing.T) {
 }
 
 func TestUnreadAnchors_TakeInMutedChats(t *testing.T) {
+	t.Parallel()
 	_, chats := backlog(t)
 	chats[1].Muted = true
 	rows := []store.UnreadAnchor{{ChatID: "oc_platform", FirstMs: 100}, {ChatID: "oc_project", FirstMs: 300}}
@@ -117,6 +121,7 @@ func TestUnreadAnchors_TakeInMutedChats(t *testing.T) {
 }
 
 func TestUnreadAnchors_AChatTheListingDoesNotHoldIsLeftOut(t *testing.T) {
+	t.Parallel()
 	rows := []store.UnreadAnchor{{ChatID: "oc_gone", FirstMs: 100}}
 	require.Empty(t, unreadAnchors(rows, nil))
 }
@@ -137,6 +142,7 @@ func manyWaiting(n int) ([]store.UnreadAnchor, []store.Chat) {
 // one that has been settled, which a set already cut to the cap would say of a
 // chat that is only crowded out.
 func TestUnreadAnchors_AnswerWithEveryChatStillWaiting(t *testing.T) {
+	t.Parallel()
 	rows, chats := manyWaiting(unreadFeedChats + 5)
 
 	secs := unreadAnchors(rows, chats)
@@ -146,6 +152,7 @@ func TestUnreadAnchors_AnswerWithEveryChatStillWaiting(t *testing.T) {
 }
 
 func TestJoinUnread_ReachesNoFurtherThanTheChatCap(t *testing.T) {
+	t.Parallel()
 	rows, chats := manyWaiting(unreadFeedChats + 5)
 
 	page := joinUnread(nil, unreadAnchors(rows, chats))
@@ -157,6 +164,7 @@ func TestJoinUnread_ReachesNoFurtherThanTheChatCap(t *testing.T) {
 
 // A chat holding exactly the cap has nothing below it, so the section is whole.
 func TestGatherUnread_ASectionOfExactlyTheCapIsNotCut(t *testing.T) {
+	t.Parallel()
 	st, ids := firehose(t, unreadSectionLimit)
 	chats := []store.Chat{{ChatID: "oc_loud", Name: "平台组", UnreadCount: int64(len(ids))}}
 
@@ -183,6 +191,7 @@ func firehose(t *testing.T, n int) (*store.Store, []string) {
 }
 
 func TestGatherUnread_CutsAFirehoseSectionAndSaysSo(t *testing.T) {
+	t.Parallel()
 	st, ids := firehose(t, unreadSectionLimit+10)
 	chats := []store.Chat{{ChatID: "oc_loud", Name: "平台组", UnreadCount: int64(len(ids))}}
 
@@ -197,6 +206,7 @@ func TestGatherUnread_CutsAFirehoseSectionAndSaysSo(t *testing.T) {
 // A chat still waiting keeps the anchor it was drawn on, so the rows above the
 // reader's cursor stay where they are however much of its backlog settles.
 func TestGatherUnread_AChatStillWaitingKeepsTheAnchorItWasDrawnOn(t *testing.T) {
+	t.Parallel()
 	st, chats := backlog(t)
 	secs, _, _, err := gatherUnread(t.Context(), st, "ou_me", chats, nil)
 	require.NoError(t, err)
@@ -217,6 +227,7 @@ func TestGatherUnread_AChatStillWaitingKeepsTheAnchorItWasDrawnOn(t *testing.T) 
 // it. A chat with none left leaves the page, taking the anchor it held: that
 // anchor is what would re-open the read stretch when the chat next speaks.
 func TestGatherUnread_AChatReadElsewhereLeavesThePage(t *testing.T) {
+	t.Parallel()
 	st, chats := backlog(t)
 	secs, _, _, err := gatherUnread(t.Context(), st, "ou_me", chats, nil)
 	require.NoError(t, err)
@@ -233,6 +244,7 @@ func TestGatherUnread_AChatReadElsewhereLeavesThePage(t *testing.T) {
 // The stretch a chat opens after its whole backlog is written off starts at
 // what it says next, not at the history that was just read.
 func TestGatherUnread_ReanchorsAChatAfterItsBacklogIsRead(t *testing.T) {
+	t.Parallel()
 	st, chats := backlog(t)
 	first, _, _, err := gatherUnread(t.Context(), st, "ou_me", chats, nil)
 	require.NoError(t, err)
@@ -257,6 +269,7 @@ func TestGatherUnread_ReanchorsAChatAfterItsBacklogIsRead(t *testing.T) {
 // A chat with nothing waiting is no section, however it got onto the page; an
 // empty rule names nothing.
 func TestGatherUnread_AChatWithNothingWaitingIsNoSection(t *testing.T) {
+	t.Parallel()
 	st, chats := backlog(t)
 	keep := []unreadSection{
 		{chatID: "oc_platform", name: "平台组", anchorMs: 100},
@@ -273,6 +286,7 @@ func TestGatherUnread_AChatWithNothingWaitingIsNoSection(t *testing.T) {
 }
 
 func TestUnreadMore_CountsWhatThePageLeavesOut(t *testing.T) {
+	t.Parallel()
 	_, chats := backlog(t)
 	chats = append(chats,
 		store.Chat{ChatID: "oc_late", Name: "后来的", UnreadCount: 3},
@@ -288,6 +302,7 @@ func TestUnreadMore_CountsWhatThePageLeavesOut(t *testing.T) {
 // last however old its backlog: everything above it is already drawn, and the
 // reader's cursor is somewhere in it.
 func TestGatherUnread_AChatThatStartsWaitingJoinsThePage(t *testing.T) {
+	t.Parallel()
 	st, chats := backlog(t)
 	held, _, _, err := gatherUnread(t.Context(), st, "ou_me", chats, nil)
 	require.NoError(t, err)
@@ -311,6 +326,7 @@ func TestGatherUnread_AChatThatStartsWaitingJoinsThePage(t *testing.T) {
 // A panel opened with nothing waiting holds an empty page, which is the one
 // state where every chat is a newcomer.
 func TestGatherUnread_AnEmptyPageTakesTheFirstChatToStartWaiting(t *testing.T) {
+	t.Parallel()
 	st := feedStore(t)
 	held, msgs, _, err := gatherUnread(t.Context(), st, "ou_me", nil, nil)
 	require.NoError(t, err)
@@ -331,6 +347,7 @@ func TestGatherUnread_AnEmptyPageTakesTheFirstChatToStartWaiting(t *testing.T) {
 }
 
 func TestJoinUnread_AChatThatStoppedWaitingLeavesThePage(t *testing.T) {
+	t.Parallel()
 	held := []unreadSection{{chatID: "oc_platform", anchorMs: 100}, {chatID: "oc_project", anchorMs: 300}}
 
 	out := joinUnread(held, []unreadSection{{chatID: "oc_project", anchorMs: 300}})
@@ -343,6 +360,7 @@ func TestJoinUnread_AChatThatStoppedWaitingLeavesThePage(t *testing.T) {
 // reader is already looking at keeps its place however old a newcomer's
 // backlog is.
 func TestJoinUnread_AHeldChatIsNotEvictedByAnOlderNewcomer(t *testing.T) {
+	t.Parallel()
 	var held, fresh []unreadSection
 	for i := range unreadFeedChats {
 		held = append(held, unreadSection{chatID: "oc_held_" + string(rune('a'+i)), anchorMs: int64(100 + i)})
@@ -358,6 +376,7 @@ func TestJoinUnread_AHeldChatIsNotEvictedByAnOlderNewcomer(t *testing.T) {
 
 // The page reaches no further than the cap however many chats join it.
 func TestJoinUnread_ANewcomerPastTheCapIsLeftOut(t *testing.T) {
+	t.Parallel()
 	held := make([]unreadSection, 0, unreadFeedChats)
 	for i := range unreadFeedChats {
 		held = append(held, unreadSection{chatID: "oc_" + string(rune('a'+i)), anchorMs: int64(i + 1)})
@@ -373,6 +392,7 @@ func TestJoinUnread_ANewcomerPastTheCapIsLeftOut(t *testing.T) {
 
 // The held page is the model's own slice, and the reader is looking at it.
 func TestJoinUnread_TheHeldPageIsNotWrittenThrough(t *testing.T) {
+	t.Parallel()
 	held := make([]unreadSection, 1, 4)
 	held[0] = unreadSection{chatID: "oc_platform", anchorMs: 100}
 
@@ -383,6 +403,7 @@ func TestJoinUnread_TheHeldPageIsNotWrittenThrough(t *testing.T) {
 }
 
 func TestUnreadSection_TheRuleAnswersWhatTheChatsRowWould(t *testing.T) {
+	t.Parallel()
 	s := unreadSection{name: "平台组", count: 3, atMe: true, muted: true}
 	out := ansi.Strip(s.rule())
 	require.Equal(t, "平台组 · 3 @ "+muteGlyph, out,
@@ -391,6 +412,7 @@ func TestUnreadSection_TheRuleAnswersWhatTheChatsRowWould(t *testing.T) {
 }
 
 func TestUnreadSection_ARuleWithNothingToAddIsJustTheName(t *testing.T) {
+	t.Parallel()
 	require.Equal(t, "项目协作群", ansi.Strip(unreadSection{name: "项目协作群"}.rule()))
 	require.Equal(t, "oc_nameless", ansi.Strip(unreadSection{chatID: "oc_nameless"}.rule()),
 		"an unnamed chat falls back to its id, the way label does")
@@ -399,6 +421,7 @@ func TestUnreadSection_ARuleWithNothingToAddIsJustTheName(t *testing.T) {
 // The rule stands in for a chat row the reader cannot see while the page is up,
 // so what it says has to be what that row says now — only the anchor is held.
 func TestJoinUnread_AHeldChatTakesTheMarksItsRowNowHas(t *testing.T) {
+	t.Parallel()
 	held := []unreadSection{{chatID: "oc_platform", name: "平台组", anchorMs: 100, count: 1}}
 	fresh := []unreadSection{{chatID: "oc_platform", name: "平台组改名了", anchorMs: 400, count: 3, atMe: true, muted: true}}
 

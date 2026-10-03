@@ -21,6 +21,7 @@ func wheelRight(m Model, n int) Model {
 }
 
 func TestWheel_RightPaneScrollsTheAssistantWhileItIsOpen(t *testing.T) {
+	t.Parallel()
 	m := aiOpenOn(withThread(sized(120, 36)))
 	s := &aiSession{id: "s1", title: "问", turns: []*aiTurn{{
 		ask: "总结", answer: strings.Repeat("回答很长 answer\n", 80), state: aiDone, at: time.Now()}}}
@@ -39,6 +40,7 @@ func TestWheel_RightPaneScrollsTheAssistantWhileItIsOpen(t *testing.T) {
 }
 
 func TestWheel_RightPaneScrollsTheRosterWhileItIsOpen(t *testing.T) {
+	t.Parallel()
 	m := withThread(sized(120, 36))
 	m.rightKind, m.infoOpen = rightNone, true
 	for i := range 60 {
@@ -54,6 +56,7 @@ func TestWheel_RightPaneScrollsTheRosterWhileItIsOpen(t *testing.T) {
 }
 
 func TestWheel_RightPaneScrollsTheThreadOtherwise(t *testing.T) {
+	t.Parallel()
 	m := withThread(sized(120, 36))
 	m.thread = m.msgs
 	m.rebuildThread()

@@ -66,6 +66,7 @@ func paneText(m Model) string {
 }
 
 func TestFeed_PartsThePageByChat(t *testing.T) {
+	t.Parallel()
 	m := feedModel(t)
 	out := paneText(m)
 
@@ -78,6 +79,7 @@ func TestFeed_PartsThePageByChat(t *testing.T) {
 }
 
 func TestFeed_TitleNamesThePanelAndTheChatUnderTheCursor(t *testing.T) {
+	t.Parallel()
 	m := feedModel(t)
 
 	require.Contains(t, ansi.Strip(m.renderHeader(80)), "Unread · 平台组 · 3 in 2 chats")
@@ -85,6 +87,7 @@ func TestFeed_TitleNamesThePanelAndTheChatUnderTheCursor(t *testing.T) {
 }
 
 func TestFeed_ThePinnedRuleNamesTheSectionAtTheTopOfTheViewport(t *testing.T) {
+	t.Parallel()
 	m := feedModel(t)
 	line, _ := m.feedRuleLine(60)
 	require.Contains(t, ansi.Strip(line), "平台组")
@@ -101,6 +104,7 @@ func TestFeed_ThePinnedRuleNamesTheSectionAtTheTopOfTheViewport(t *testing.T) {
 // The rule is pinned above the rows, so the row it stands for is not drawn a
 // second time — but it keeps its line, so nothing under it moves.
 func TestFeed_TheTopRowIsBlankWhenItIsTheSectionRuleItself(t *testing.T) {
+	t.Parallel()
 	m := feedModel(t)
 	m.msgTop = -1
 	for i, r := range m.msgRows {
@@ -119,6 +123,7 @@ func TestFeed_TheTopRowIsBlankWhenItIsTheSectionRuleItself(t *testing.T) {
 }
 
 func TestFeed_BlocksDoNotMergeAcrossASectionBoundary(t *testing.T) {
+	t.Parallel()
 	st, chats := backlog(t)
 	// The same sender, inside the run span, either side of the boundary.
 	say(t, st, "om_j2", "oc_project", 250, "同一个人，同一分钟")
@@ -142,6 +147,7 @@ func TestFeed_BlocksDoNotMergeAcrossASectionBoundary(t *testing.T) {
 // The page runs across chats, so the other half of a chat of two says nothing
 // about the messages above and below it.
 func TestFeed_TheStyleCarriesNoChatOfTwo(t *testing.T) {
+	t.Parallel()
 	m := feedModel(t)
 	m.chats = append(m.chats, store.Chat{ChatID: "oc_peer", Name: "张三", ChatMode: "p2p", P2PTargetID: "ou_a"})
 	m.chatID = "oc_peer"
@@ -153,6 +159,7 @@ func TestFeed_TheStyleCarriesNoChatOfTwo(t *testing.T) {
 }
 
 func TestFeed_SaysHowManyChatsThePageLeavesOut(t *testing.T) {
+	t.Parallel()
 	m := feedModel(t)
 	m.chats = append(m.chats, store.Chat{ChatID: "oc_late", Name: "后来的", UnreadCount: 4})
 	m.rebuildMessages()
@@ -161,6 +168,7 @@ func TestFeed_SaysHowManyChatsThePageLeavesOut(t *testing.T) {
 }
 
 func TestFeed_AnEmptyPanelSaysSo(t *testing.T) {
+	t.Parallel()
 	m := feedModel(t)
 	m.feed.sections, m.msgs, m.msgsBase = nil, nil, nil
 	m.chats = nil
@@ -182,6 +190,7 @@ func rowTexts(rows []msgRow) []string {
 }
 
 func TestListRows_TheUnreadRowLeadsTheChatsPane(t *testing.T) {
+	t.Parallel()
 	c := newRowsCache()
 	rows := c.all([]store.Chat{chat("oc_1", "平台组")}, nil)
 
@@ -191,6 +200,7 @@ func TestListRows_TheUnreadRowLeadsTheChatsPane(t *testing.T) {
 }
 
 func TestNextUnread_SkipsTheUnreadRow(t *testing.T) {
+	t.Parallel()
 	rows := []listRow{
 		{chat: store.Chat{ChatID: unreadFeedRowID}},
 		{chat: store.Chat{ChatID: "oc_a"}},
@@ -202,6 +212,7 @@ func TestNextUnread_SkipsTheUnreadRow(t *testing.T) {
 }
 
 func TestRenderUnreadRow_CountsTheChatsWaiting(t *testing.T) {
+	t.Parallel()
 	rows := []listRow{
 		{chat: store.Chat{ChatID: unreadFeedRowID}},
 		{chat: store.Chat{ChatID: "oc_platform"}},
@@ -221,12 +232,14 @@ func TestRenderUnreadRow_CountsTheChatsWaiting(t *testing.T) {
 }
 
 func TestRenderUnreadRow_SaysSoWhenNothingIsWaiting(t *testing.T) {
+	t.Parallel()
 	row := listRow{chat: store.Chat{ChatID: unreadFeedRowID}}
 	r := renderUnreadRow(textAvatars{}, row, []listRow{row}, nil, 38)
 	require.Contains(t, ansi.Strip(r.bottom), "nothing waiting")
 }
 
 func TestRenderUnreadRow_TakesItsAvatarFromTheRenderer(t *testing.T) {
+	t.Parallel()
 	row := listRow{chat: store.Chat{ChatID: unreadFeedRowID}}
 	r := renderUnreadRow(textAvatars{}, row, []listRow{row}, nil, 38)
 
@@ -240,6 +253,7 @@ func TestRenderUnreadRow_TakesItsAvatarFromTheRenderer(t *testing.T) {
 // the difference: a press goes to the page, the cursor walking on stays in the
 // list so the next j is still the reader's.
 func TestOpenRow_TheUnreadRowOpensWithoutTakingFocus(t *testing.T) {
+	t.Parallel()
 	m := feedModel(t)
 	m.feed, m.focus = nil, paneChats
 	row := listRow{chat: store.Chat{ChatID: unreadFeedRowID}}
@@ -256,6 +270,7 @@ func TestOpenRow_TheUnreadRowOpensWithoutTakingFocus(t *testing.T) {
 // Landing on the row a second time has nothing left to load, which is what
 // keeps a held ctrl+u at the top of the list from asking for the page again.
 func TestHighlightedRow_TheUnreadRowIsOpenOnceThePanelIs(t *testing.T) {
+	t.Parallel()
 	m := feedModel(t)
 	m.focus, m.chatIdx = paneChats, 0
 	require.True(t, m.visibleRows()[0].isFeed())
@@ -271,6 +286,7 @@ func TestHighlightedRow_TheUnreadRowIsOpenOnceThePanelIs(t *testing.T) {
 // With every section emptied out the page holds only the line counting the
 // chats it left out, and that line is not a page.
 func TestFeed_AnEmptiedPageStillSaysNothingIsOnIt(t *testing.T) {
+	t.Parallel()
 	m := feedModel(t)
 	// gatherUnread answers with a slice, never nil, so that is what a page
 	// left with no section to draw actually holds.
@@ -286,6 +302,7 @@ func TestFeed_AnEmptiedPageStillSaysNothingIsOnIt(t *testing.T) {
 // The Unread row is where the chats pane opens, and it stands for no chat, so
 // the y family has nothing to take from it.
 func TestYank_TheUnreadRowHasNothingToCopy(t *testing.T) {
+	t.Parallel()
 	m := feedModel(t)
 	m.feed = nil
 	m.focus, m.chatIdx = paneChats, 0
@@ -303,6 +320,7 @@ func TestYank_TheUnreadRowHasNothingToCopy(t *testing.T) {
 // The note counts the chats the page leaves out, so it counts over the
 // listing the chats pane beside it is drawing.
 func TestFeed_TheNoteFollowsTheChatsListing(t *testing.T) {
+	t.Parallel()
 	m := feedModel(t)
 	require.NotContains(t, paneText(m), "more chat")
 
@@ -317,6 +335,7 @@ func TestFeed_TheNoteFollowsTheChatsListing(t *testing.T) {
 // The reported defect: the panel goes up over an empty backlog, a chat starts
 // waiting, and the page it is showing has to be the page of what is waiting.
 func TestFeed_AChatThatStartsWaitingLandsOnThePage(t *testing.T) {
+	t.Parallel()
 	st := feedStore(t)
 	m := New(Deps{Store: st, Self: "ou_me"})
 	m.width, m.height = 120, 40
@@ -341,6 +360,7 @@ func TestFeed_AChatThatStartsWaitingLandsOnThePage(t *testing.T) {
 }
 
 func TestFeedRule_CentresTheChatNameBetweenTheEdgeAndTheButton(t *testing.T) {
+	t.Parallel()
 	for w := 40; w < 48; w++ { // both remainders of the odd-column split
 		plain := ansi.Strip(feedRule("平台组", 0, w).text)
 
@@ -360,6 +380,7 @@ func TestFeedRule_CentresTheChatNameBetweenTheEdgeAndTheButton(t *testing.T) {
 // The button is the last thing on the line, so the strip the click lands in has
 // to be the last columns of it.
 func TestInMarkChat_AnswersForTheStripTheButtonCloses(t *testing.T) {
+	t.Parallel()
 	const w = 40
 	plain := ansi.Strip(feedRule("平台组", 0, w).text)
 
@@ -374,12 +395,14 @@ func TestInMarkChat_AnswersForTheStripTheButtonCloses(t *testing.T) {
 // The two rules the page alternates between are the same shape, so the chat
 // name is what has to be told from the day under it.
 func TestFeedRule_DrawsTheChatNameBrighterThanTheDayRule(t *testing.T) {
+	t.Parallel()
 	require.NotEqual(t, daySeparator("平台组", 40), feedRule("平台组", 0, 40).text)
 }
 
 // The rule names a chat whose row in the list is out of sight, so the number on
 // it has to keep up with the badge the reader would have seen there.
 func TestFeed_ASectionsRuleFollowsTheChatsBadge(t *testing.T) {
+	t.Parallel()
 	m := feedModel(t)
 	require.Contains(t, paneText(m), "平台组 · 2")
 

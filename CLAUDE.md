@@ -62,6 +62,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - 飞书边界用 `larkcli.Fake`（非 _test 文件，可跨包导入）；时间用 `sync.Clock` 假时钟
 - 数据库不 fake：`storetest.Open(t, filepath.Join(t.TempDir(), "t.db"))` 打开真 SQLite，新文件从已 migrate 的模板复制（-race 下每次跑全部 migration 要近 1 秒）；`store` 包自身的测试仍用 `store.Open`
 - 测试命名 `TestSubject_BehaviourDescription`
+- `tui` 与 `sync` 的顶层测试第一行写 `t.Parallel()`：两包合计近 1800 个测试，串行时 `-race` 下 `tui` 单包 70 秒；
+  例外是动了进程级状态的测试——`t.Setenv`（与 `t.Parallel` 同用会 panic）、替换包级变量（`lexerFor`、`openApplink`），
+  以及调用了这类 helper（如 `countingLexers`）的测试，它们保持串行；testing 包保证串行测试跑完才放行并行测试
 
 ## Commits
 

@@ -11,6 +11,7 @@ import (
 )
 
 func TestFloater_StandsUnderTheRunItCompletes(t *testing.T) {
+	t.Parallel()
 	m := typeInto(newPumModel(t), ":do")
 	f, ok := m.floater()
 	require.True(t, ok)
@@ -27,6 +28,7 @@ func TestFloater_StandsUnderTheRunItCompletes(t *testing.T) {
 }
 
 func TestFloater_IsHeldInsideTheScreen(t *testing.T) {
+	t.Parallel()
 	m := typeInto(newPumModel(t), strings.Repeat("x", 200)+" :do")
 	f, ok := m.floater()
 	require.True(t, ok)
@@ -35,6 +37,7 @@ func TestFloater_IsHeldInsideTheScreen(t *testing.T) {
 }
 
 func TestFloater_RestsOnThePanesBottomBorder(t *testing.T) {
+	t.Parallel()
 	m := typeInto(newPumModel(t), ":do")
 	f, ok := m.floater()
 	require.True(t, ok)
@@ -44,6 +47,7 @@ func TestFloater_RestsOnThePanesBottomBorder(t *testing.T) {
 }
 
 func TestPumRows_IsZeroOutsideInsertMode(t *testing.T) {
+	t.Parallel()
 	m := typeInto(newPumModel(t), ":do")
 	require.Positive(t, m.pumRows())
 
@@ -57,6 +61,7 @@ func TestPumRows_IsZeroOutsideInsertMode(t *testing.T) {
 }
 
 func TestFloater_TintsTheCursorRowAcrossItsWidth(t *testing.T) {
+	t.Parallel()
 	m := typeInto(newPumModel(t), ":do")
 	f, ok := m.floater()
 	require.True(t, ok)
@@ -67,6 +72,7 @@ func TestFloater_TintsTheCursorRowAcrossItsWidth(t *testing.T) {
 	}
 }
 func TestFloatOver_DrawsThePopupOverTheMessagesPane(t *testing.T) {
+	t.Parallel()
 	m := typeInto(newPumModel(t), ":do")
 	f, ok := m.floater()
 	require.True(t, ok)
@@ -79,6 +85,7 @@ func TestFloatOver_DrawsThePopupOverTheMessagesPane(t *testing.T) {
 }
 
 func TestView_KeepsEveryLineInsideTheTerminalWithThePopupOpen(t *testing.T) {
+	t.Parallel()
 	// `:ha` offers more than the popup can draw and every offer carries an
 	// emoji, so the rows go through the picture column as well as the text.
 	m := typeInto(newPumModel(t), ":ha")
@@ -89,6 +96,7 @@ func TestView_KeepsEveryLineInsideTheTerminalWithThePopupOpen(t *testing.T) {
 }
 
 func TestOfferSegs_MeasureWhatTheyDraw(t *testing.T) {
+	t.Parallel()
 	m := typeInto(newPumModel(t), ":ha")
 	for _, segs := range m.floatSegs() {
 		w := segsWidth(segs)
@@ -97,6 +105,7 @@ func TestOfferSegs_MeasureWhatTheyDraw(t *testing.T) {
 }
 
 func TestWheel_WalksThePopupRatherThanTheMessagesUnderIt(t *testing.T) {
+	t.Parallel()
 	m := typeInto(newPumModel(t), ":ha")
 	f, ok := m.floater()
 	require.True(t, ok)
@@ -110,6 +119,7 @@ func TestWheel_WalksThePopupRatherThanTheMessagesUnderIt(t *testing.T) {
 }
 
 func TestClick_IsSwallowedByThePopupItLandsOn(t *testing.T) {
+	t.Parallel()
 	m := typeInto(newPumModel(t), ":ha")
 	f, ok := m.floater()
 	require.True(t, ok)
@@ -118,6 +128,7 @@ func TestClick_IsSwallowedByThePopupItLandsOn(t *testing.T) {
 }
 
 func TestFloater_KeepsItsWidthWhileTheListScrolls(t *testing.T) {
+	t.Parallel()
 	m := typeInto(newPumModel(t), ":ha")
 	require.Greater(t, len(m.pum.menu.items), pumMaxRows)
 	f, ok := m.floater()
@@ -143,6 +154,7 @@ func infoPumModel(t *testing.T, draft string) Model {
 }
 
 func TestInfoFloater_OpensBesideTheMenuForTheFocusedItem(t *testing.T) {
+	t.Parallel()
 	m := infoPumModel(t, "@zs")
 	f, _ := m.floater()
 	info, ok := m.infoFloater(f)
@@ -158,6 +170,7 @@ func TestInfoFloater_OpensBesideTheMenuForTheFocusedItem(t *testing.T) {
 }
 
 func TestInfoFloater_IsDroppedWhereNeitherSideHasRoom(t *testing.T) {
+	t.Parallel()
 	m := infoPumModel(t, "@zs")
 	f, _ := m.floater()
 	// A list as wide as the screen leaves nothing either side.
@@ -167,6 +180,7 @@ func TestInfoFloater_IsDroppedWhereNeitherSideHasRoom(t *testing.T) {
 }
 
 func TestInfoFloater_RestsOnTheListsBaseline(t *testing.T) {
+	t.Parallel()
 	m := infoPumModel(t, "@zs")
 	f, _ := m.floater()
 	info, ok := m.infoFloater(f)
@@ -176,6 +190,7 @@ func TestInfoFloater_RestsOnTheListsBaseline(t *testing.T) {
 }
 
 func TestInfoFloater_FollowsTheCursor(t *testing.T) {
+	t.Parallel()
 	m := infoPumModel(t, "@")
 	// @All leads and says nothing; the box opens once the cursor reaches 张三.
 	f, _ := m.floater()
@@ -188,6 +203,7 @@ func TestInfoFloater_FollowsTheCursor(t *testing.T) {
 }
 
 func TestFloatAt_CoversTheInfoBox(t *testing.T) {
+	t.Parallel()
 	m := infoPumModel(t, "@zs")
 	f, _ := m.floater()
 	info, ok := m.infoFloater(f)
@@ -197,6 +213,7 @@ func TestFloatAt_CoversTheInfoBox(t *testing.T) {
 }
 
 func TestInfoFloater_DrawsAShortAnswerAtItsOwnWidth(t *testing.T) {
+	t.Parallel()
 	m := newPumModel(t)
 	m.roster[1].Department = "QA"
 	m = typeInto(m, "@zs")
