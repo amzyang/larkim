@@ -1003,7 +1003,15 @@ func (m Model) renderMessages(h int) string {
 	// the chats it left out, and that line is not a page.
 	switch {
 	case m.inFeed() && len(m.msgs) == 0:
-		lines = append(lines, fit(stDim.Render("All caught up · nothing waiting"), w))
+		note := fit(centre(stDim.Render("All caught up · nothing waiting"), w), w)
+		avail := max(1, h-msgHeaderHeight)
+		contentLines := 1 + len(lines)
+		top := max(0, (avail-contentLines)/2)
+		emptyTop := make([]string, top)
+		for i := range emptyTop {
+			emptyTop[i] = fit("", w)
+		}
+		lines = append(append(emptyTop, note), lines...)
 	case len(m.msgRows) == 0:
 		lines = append(lines, fit(stDim.Render("no messages synced for this chat yet"), w))
 	}
