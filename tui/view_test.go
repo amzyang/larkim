@@ -334,6 +334,14 @@ func TestRenderStatus_StaysOneLine(t *testing.T) {
 	require.Equal(t, m.width, lipgloss.Width(s))
 }
 
+func TestRenderStatus_SpacesBetweenSyncGlyphAndNotice(t *testing.T) {
+	m := sized(120, 36)
+	m.syncStatus = "synced"
+	m = m.notify("open a chat first", true)
+	s := ansi.Strip(m.renderStatus())
+	require.Contains(t, s, "● open a chat first")
+}
+
 func TestRenderStatus_ReservesHelpWithLongNotice(t *testing.T) {
 	m := sized(120, 36)
 	m = m.notify("notice: "+strings.Repeat("z", 200), false)

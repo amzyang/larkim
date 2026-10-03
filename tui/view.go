@@ -1405,12 +1405,11 @@ func (m Model) renderStatus() string {
 	if syncGlyph != "" {
 		left += " " + syncGlyph
 	}
-	// Budget for right hints: allocate remaining width after left and safety padding
 	leftW := lipgloss.Width(left)
 	rightBudget := max(0, m.width-leftW-2)
 	hint := m.statusKeyHints(rightBudget)
 
-	room := max(0, m.width-leftW-lipgloss.Width(hint)-2)
+	room := max(0, m.width-leftW-lipgloss.Width(hint)-3)
 	var mid string
 	switch {
 	case m.notice != "" && m.noticeErr:
@@ -1421,6 +1420,10 @@ func (m Model) renderStatus() string {
 		mid = truncateStatusNotice(m.notice, room)
 	case m.statusWarn != "":
 		mid = stWarn.Render(truncate(m.statusWarn, room))
+	}
+	if mid != "" {
+		left += " "
+		leftW++
 	}
 
 	rightPart := padBetween(mid, hint, m.width-leftW)
