@@ -3265,7 +3265,7 @@ func fmtStatus(m Model) string {
 	label := modeAbbr(m.mode)
 	if m.mode == modeVisual {
 		lo, hi := m.selectionRange()
-		label += " " + plural(hi-lo+1, "msg", "msgs")
+		label += fmt.Sprintf(" %d", hi-lo+1)
 	}
 	syncIcon := m.syncGlyph()
 	if syncIcon != "" {
@@ -3276,21 +3276,17 @@ func fmtStatus(m Model) string {
 
 func (m Model) syncGlyph() string {
 	st := cmp.Or(m.syncStatus, "never_synced")
-	prefix := "⚡"
-	if m.deps.Embedded {
-		prefix = "⚙"
-	}
 	switch st {
 	case "running", "synced":
-		return prefix + "●"
+		return "●"
 	case "needs_login":
-		return prefix + "! auth"
+		return "! auth"
 	case "error":
-		return prefix + "✗"
+		return "✗"
 	case "syncing", "fetching":
-		return prefix + "○"
+		return "○"
 	default:
-		return prefix + "○"
+		return "○"
 	}
 }
 

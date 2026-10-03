@@ -1311,7 +1311,7 @@ func (m Model) modeBadge() string {
 	label := modeAbbr(m.mode)
 	if m.mode == modeVisual {
 		lo, hi := m.selectionRange()
-		label += " " + plural(hi-lo+1, "msg", "msgs")
+		label += fmt.Sprintf(" %d", hi-lo+1)
 	}
 	badgeStyle := lipgloss.NewStyle().
 		Background(bg).
@@ -1319,6 +1319,21 @@ func (m Model) modeBadge() string {
 		Bold(true).
 		Padding(0, 1)
 	return badgeStyle.Render(label)
+}
+func (m Model) styledSyncGlyph() string {
+	st := cmp.Or(m.syncStatus, "never_synced")
+	switch st {
+	case "running", "synced":
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("#2ea121")).Render("●") // 绿点：健康在线
+	case "syncing", "fetching":
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("#3370ff")).Render("○") // 蓝圈：同步中
+	case "needs_login":
+		return lipgloss.NewStyle().Foreground(colWarn).Bold(true).Render("! auth") // 警示黄
+	case "error":
+		return lipgloss.NewStyle().Foreground(colErr).Bold(true).Render("✗") // 红色故障
+	default:
+		return stDim.Render("○")
+	}
 }
 
 func (m Model) statusKeyHints(availWidth int) string {
@@ -1385,12 +1400,11 @@ func (m Model) statusKeyHints(availWidth int) string {
 
 func (m Model) renderStatus() string {
 	badge := m.modeBadge()
-	syncGlyph := m.syncGlyph()
+	syncGlyph := m.styledSyncGlyph()
 	left := badge
 	if syncGlyph != "" {
-		left += " " + stDim.Render(syncGlyph)
+		left += " " + syncGlyph
 	}
-
 	// Budget for right hints: allocate remaining width after left and safety padding
 	leftW := lipgloss.Width(left)
 	rightBudget := max(0, m.width-leftW-2)
