@@ -1111,22 +1111,13 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			return m.notify("paste: "+msg.err.Error(), true), nil
 		}
-		var text string
-		switch msg.clip.kind {
-		case clipEmpty:
+		text, empty := pasteTextFromClip(msg.clip)
+		if empty {
 			return m.notify("the clipboard is empty", true), nil
-		case clipText:
-			text = msg.clip.text
-		case clipImage:
-			text = imageRef(msg.clip.path)
-		case clipFile:
-			// A picture goes in as one so it draws in the list; anything else
-			// goes in as an attachment, which is what a file copied in Finder
-			// was meant to be.
-			text = fileRef(msg.clip.path)
-			if isImagePath(msg.clip.path) {
-				text = imageRef(msg.clip.path)
-			}
+		}
+		if m.pasteIntoFocusedInput() {
+			next, cmd := m.forward(tea.PasteMsg{Content: text})
+			return next.(Model).notify("", false), cmd
 		}
 		// The composer may have lost focus while the clipboard was read, and a
 		// blurred textarea drops what Update hands it; the paste still lands.
@@ -1860,6 +1851,9 @@ func (m Model) onKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	// the question is still on screen.
 	if next, cmd, answered := m.answerConfirm(s); answered {
 		return next, cmd
+	}
+	if isClipboardPasteKey(s) && m.clipboardPasteTarget() {
+		return m, pasteClipboard(m.deps)
 	}
 	if m.config.open {
 		return m.onConfigKey(k)

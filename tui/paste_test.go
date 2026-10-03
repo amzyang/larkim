@@ -259,6 +259,31 @@ func TestPaste_SuperVReadsClipboard(t *testing.T) {
 	require.Equal(t, "from cmd", m.input.Value())
 }
 
+// pasteFromClipboardKey drives ctrl+v / super+v through Update the way the app does.
+func pasteFromClipboardKey(t *testing.T, m Model, c clip, key tea.KeyPressMsg) Model {
+	t.Helper()
+	m.deps.Clipboard = func(string) (clip, error) { return c, nil }
+	next, cmd := m.Update(key)
+	m = next.(Model)
+	require.NotNil(t, cmd, key.String()+" should read the clipboard")
+	out, _ := m.Update(cmd())
+	return out.(Model)
+}
+
+func TestSilenceContains_SuperVReadsClipboard(t *testing.T) {
+	m := press(t, silenceModel(t), "a", "tab", "tab")
+	m = pasteFromClipboardKey(t, m, clip{kind: clipText, text: "nightly build"},
+		tea.KeyPressMsg{Code: 'v', Mod: tea.ModSuper})
+	require.Equal(t, "nightly build", m.config.silence.form.contains.Value())
+}
+
+func TestConfigEditor_SuperVReadsClipboard(t *testing.T) {
+	m := press(t, configModel(t).openConfig("ai.model"), "enter", "ctrl+u")
+	m = pasteFromClipboardKey(t, m, clip{kind: clipText, text: "gpt-4"},
+		tea.KeyPressMsg{Code: 'v', Mod: tea.ModSuper})
+	require.Equal(t, "gpt-4", m.config.editor.Value())
+}
+
 func TestPaste_BracketedPasteReReadsPasteboard(t *testing.T) {
 	m, _ := newOutboxModel(t)
 	mm, _ := m.startInsert(nil, false)
