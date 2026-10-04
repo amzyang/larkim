@@ -20,8 +20,10 @@ const (
 // atLocalFloor reports that the store holds nothing behind the page on screen.
 // A page shorter than the limit it was asked for is the whole of what the
 // store has; ExcludeThreadReplies makes that limit count only the rows the
-// pane draws, so the comparison is exact.
-func (m Model) atLocalFloor() bool { return len(m.msgsBase) < m.msgLimit }
+// pane draws, so the comparison is exact. An anchored page is exempt: its
+// query starts at the anchor, so what lies older is before the anchor, not
+// behind the limit, and the row count says nothing about it.
+func (m Model) atLocalFloor() bool { return m.msgSince == 0 && len(m.msgsBase) < m.msgLimit }
 
 // historyFloorMs is how far back the open chat has been pulled, 0 once the
 // whole of it is stored.
@@ -61,10 +63,11 @@ func (m *Model) growMessages() tea.Cmd {
 		return m.pullOlder()
 	}
 	if m.msgSince > 0 {
-		// An anchored page runs from a search hit to now, so what lies older
-		// is before the anchor rather than behind the limit. Dropping the
-		// anchor for a count that covers the page already drawn keeps every
-		// row on screen where it is and adds one page above them.
+		// An anchored page runs from its hit — a search hit, a jump — to
+		// now, so what lies older is before the anchor rather than behind
+		// the limit. Dropping the anchor for a count that covers the page
+		// already drawn keeps every row on screen where it is and adds one
+		// page above them.
 		m.msgSince, m.msgLimit = 0, len(m.msgsBase)+messagePageSize
 	} else {
 		m.msgLimit += messagePageSize

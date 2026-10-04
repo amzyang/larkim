@@ -210,6 +210,23 @@ func TestNoteOlderPull_ASuccessRereadsTheFloorItMoved(t *testing.T) {
 	require.Empty(t, m.notice)
 }
 
+func TestGrowMessages_FromAShortAnchorDropsTheAnchor(t *testing.T) {
+	t.Parallel()
+	m := paged(2, anchoredPageSize)
+	m.msgSince = 123
+	require.NotNil(t, m.growMessages(), "the store may hold messages before the anchor")
+	require.Zero(t, m.msgSince, "older messages lie before the anchor, so the anchor goes")
+	require.Equal(t, 2+messagePageSize, m.msgLimit)
+}
+
+func TestRebuildMessages_AnchoredPageCarriesNoFloor(t *testing.T) {
+	t.Parallel()
+	m := paged(2, anchoredPageSize)
+	m.msgSince = 123
+	m.rebuildMessages()
+	require.NotContains(t, m.msgRows[0].text, startLabel, "a short anchored page does not see the whole store")
+}
+
 // A short chat hangs from the foot of the pane, the way the client hangs it.
 func TestRenderMessages_ShortChatHugsTheFoot(t *testing.T) {
 	t.Parallel()
