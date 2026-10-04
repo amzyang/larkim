@@ -371,7 +371,7 @@ func (m Model) contextMenuFloater() (floater, bool) {
 	for i, it := range items {
 		lines[i] = m.contextMenuRow(it, maxDesc, maxKey, i == m.contextMenu.cursor)
 	}
-	block := popupStyle().Padding(0, 1).Render(strings.Join(lines, "\n"))
+	block := popupStyle().Render(strings.Join(lines, "\n"))
 	f := floater{
 		block: block,
 		w:     lipgloss.Width(block),
@@ -398,7 +398,7 @@ func (m Model) contextMenuRow(it contextMenuItem, maxDesc, maxKey int, selected 
 		k = "enter"
 	}
 	key := fit(macKeys(k), maxKey)
-	row := icon + " " + desc + "   " + renderKey(key)
+	row := " " + icon + " " + desc + "   " + renderKey(key) + " "
 	if selected {
 		return paint(stChatSel, row)
 	}

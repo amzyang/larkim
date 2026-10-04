@@ -308,6 +308,9 @@ func TestContextMenu_RenderedBlockHasNormalBorderAndStructuredColumns(t *testing
 	require.Contains(t, firstRow, "Reply")
 	require.Contains(t, firstRow, "r")
 	require.Contains(t, lines[1], "231;238;252")
+	// Selected row background extends edge-to-edge from left border to right border.
+	require.Contains(t, lines[1], "│\x1b[m\x1b[38;2;31;35;41;48;2;231;238;252m ")
+	require.Contains(t, lines[1], "231;238;252;38;2;31;35;41m \x1b[m\x1b[34m│\x1b[m")
 
 	// Unselected rows style their shortcut key through keyhint (renderKey).
 	secondRow := ansi.Strip(lines[2])
