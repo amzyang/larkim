@@ -96,7 +96,8 @@ func TestListChats_KeepsAChatInPlaceWhenItIsRead(t *testing.T) {
 	markUnread(t, s, "om_stale")
 	before := chatIDs(listChats(t, s))
 
-	require.NoError(t, s.MarkChatRead(ctx, "oc_stale", 5000))
+	_, err = s.AcceptRemoteRead(ctx, "oc_stale", 1)
+	require.NoError(t, err)
 
 	require.Equal(t, before, chatIDs(listChats(t, s)),
 		"reading a chat is not news about the chat, so it does not move")
@@ -136,7 +137,8 @@ func TestListChats_CarriesTheUnreadCount(t *testing.T) {
 	require.Equal(t, int64(2), chats[0].UnreadCount,
 		"the badge counts unread main-flow messages, thread replies and silenced ones left out")
 
-	require.NoError(t, s.MarkChatRead(ctx, "oc_loud", 5000))
+	_, err = s.AcceptRemoteRead(ctx, "oc_loud", 2)
+	require.NoError(t, err)
 	require.Equal(t, int64(0), listChats(t, s)[0].UnreadCount)
 }
 

@@ -91,7 +91,7 @@ func (m Model) onClearDue(msg clearDueMsg) (Model, tea.Cmd) {
 	}
 	if len(m.clears.left) == 0 {
 		if m.clears.inflight > 0 {
-			return m, m.clearTick(msg.gen)
+			return m, nil
 		}
 		return m.closeSweep(), nil
 	}
@@ -111,6 +111,9 @@ func (m Model) onClearFired(msg clearFiredMsg) (Model, tea.Cmd) {
 	m.clears.inflight--
 	if msg.err != nil {
 		m.clears.failed++
+	}
+	if len(m.clears.left) == 0 && m.clears.inflight == 0 {
+		return m.closeSweep(), nil
 	}
 	if m.clears.swept > 0 && len(m.clears.left) > 0 {
 		return m.notify(sweepNote(len(m.clears.left)), false), nil
@@ -142,15 +145,19 @@ func (m Model) closeSweep() Model {
 	return m.notify(note, isErr)
 }
 
-// fireBadgeClear drops one chat's red dot. It is best effort either way:
-// local_read_at has already dropped the badge drawn here. The clear bounds
-// itself (markread.New), so the chain cannot stall on it.
+// fireBadgeClear drops one chat's red dot and accepts the receipt on success.
 func fireBadgeClear(d Deps, c store.ChatUnread, gen int) tea.Cmd {
 	return func() tea.Msg {
-		err := d.ClearBadge(context.Background(), c)
+		ctx := context.Background()
+		err := d.ClearBadge(ctx, c)
 		if err != nil {
 			d.Log.Warn("clear feishu badge", "chat_id", c.ChatID, "err", err)
+			return clearFiredMsg{gen: gen, err: err}
 		}
-		return clearFiredMsg{gen: gen, err: err}
+		if _, err := d.Store.AcceptRemoteRead(ctx, c.ChatID, c.Position); err != nil {
+			d.Log.Warn("accept remote read", "chat_id", c.ChatID, "err", err)
+			return clearFiredMsg{gen: gen, err: err}
+		}
+		return clearFiredMsg{gen: gen}
 	}
 }

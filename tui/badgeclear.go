@@ -9,8 +9,8 @@ import "github.com/amzyang/larkim/store"
 //
 // The predicate is store.unreadBadge, down to the thread replies a chat page
 // carries but the badge leaves out. Matching it exactly is what bounds the
-// clears: every message this fires for is one markChatRead takes in the
-// same breath, so the page that comes back says no. A looser reading would
+// clears: every message this fires for is one AcceptRemoteRead settles after
+// the POST succeeds. A looser reading would
 // keep saying yes to something no write ever settles, and clear the chat on
 // every reload for the rest of the session.
 // The position it answers with is the newest such message's; the watermark
@@ -28,5 +28,5 @@ func unreadWaiting(msgs []store.Message) (position int64, waiting bool) {
 }
 
 func isUnread(m store.Message) bool {
-	return m.IsReadRemote != nil && !*m.IsReadRemote && m.LocalReadAt == 0
+	return m.IsReadRemote != nil && !*m.IsReadRemote
 }

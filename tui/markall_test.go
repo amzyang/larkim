@@ -75,8 +75,7 @@ func waiting(t *testing.T, st *store.Store) []store.ChatUnread {
 	return chats
 }
 
-// badges is the other half: the chats larkim still draws a number beside,
-// which is what a local write brings down.
+// badges is every chat larkim still draws a number beside.
 func badges(t *testing.T, st *store.Store) map[string]int64 {
 	t.Helper()
 	chats, err := st.ListChats(t.Context(), store.ChatQuery{})
@@ -100,23 +99,23 @@ func TestMarkAllRead_ClearsEveryChatThatWasWaiting(t *testing.T) {
 		{ChatID: "oc_1", Position: 1},
 		{ChatID: "oc_2", Position: 1},
 	}, *cleared)
-	require.Empty(t, badges(t, st), "and the local half is settled")
-	require.Len(t, waiting(t, st), 3,
-		"the client's half is not: no receipt has come back yet, so another press would clear them again")
+	require.Empty(t, badges(t, st))
+	require.Empty(t, waiting(t, st))
 	require.Contains(t, m.notice, "3 chats marked read")
 }
 
-func TestMarkAllRead_WritesBeforeItFiresTheFirstClear(t *testing.T) {
+func TestMarkAllRead_BadgeFallsOnlyAfterSuccessfulClear(t *testing.T) {
 	t.Parallel()
 	m, st, cleared, _ := sweepModel(t, 3)
 	m, cmd := clickMarkAll(m)
-	next, cmd := m.Update(cmd())
+	next, _ := m.Update(cmd())
 	m = next.(Model)
 
-	msg := cmd()
-	require.IsType(t, markAllDoneMsg{}, msg)
-	require.Empty(t, badges(t, st))
+	require.Len(t, badges(t, st), 3)
 	require.Empty(t, *cleared)
+	m = drain(t, m, m.clearTick(m.clears.gen))
+	require.Empty(t, badges(t, st))
+	require.Len(t, *cleared, 3)
 }
 
 func TestMarkAllRead_EndsOnTheChatTheReaderHasOpen(t *testing.T) {
@@ -179,16 +178,12 @@ func TestMarkAllRead_WaitsForTheLastClearBeforeItReports(t *testing.T) {
 	*clearErr = errFailedClear
 	m, cmd := clickMarkAll(m)
 	next, cmd := m.Update(cmd())
-	armed, _ := next.(Model).Update(cmd())
+	m = next.(Model)
+	armed, tickCmd := m.Update(cmd())
 	m = armed.(Model)
-
-	due, fired := m.Update(clearDueMsg{m.clears.gen})
-	m = due.(Model)
-	early, _ := m.Update(clearDueMsg{m.clears.gen})
-	m = early.(Model)
 	require.NotContains(t, m.notice, "marked read", "the sweep is not over while a clear is still out")
 
-	m = drain(t, m, fired)
+	m = drain(t, m, tickCmd)
 
 	require.Len(t, *cleared, 1)
 	require.Contains(t, m.notice, "1 not cleared in Feishu", "the last clear's failure is in the report")
@@ -286,18 +281,15 @@ func TestRunCommand_ReadAllTakesTheSamePathAsTheButton(t *testing.T) {
 
 var errFailedClear = errors.New("session cookie missing")
 
-func TestOnMarkAllDone_DropsTheMarkersAndReanchorsThePanel(t *testing.T) {
+func TestMarkAllSet_DropsTheMarkersAndReanchorsThePanel(t *testing.T) {
 	t.Parallel()
-	m, st, _, _ := sweepModel(t, 2)
+	m, _, _, _ := sweepModel(t, 2)
 	m = drain(t, m, m.startUnread(false))
 	require.Len(t, m.feed.sections, 2)
 	require.NotEmpty(t, m.dots)
 
-	swept := waiting(t, st)
-	_, err := st.MarkAllRead(t.Context(), 900)
-	require.NoError(t, err)
-	next, cmd := m.onMarkAllDone(markAllDoneMsg{chats: swept})
-	m = drain(t, next, cmd)
+	m = pressMarkAll(t, m)
+	m = applyAll(t, m, m.reloadCurrent())
 
 	require.Empty(t, m.dots, "no marker outlives the press that settled it")
 	require.Empty(t, m.feed.sections, "and no section holds the anchor it was drawn on")

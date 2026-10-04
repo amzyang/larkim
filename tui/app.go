@@ -962,8 +962,6 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.notify("recalled", false), m.reloadCurrent()
 	case markAllSetMsg:
 		return m.onMarkAllSet(msg)
-	case markAllDoneMsg:
-		return m.onMarkAllDone(msg)
 	case sectionDotMsg:
 		return m.pushClears(msg.chats)
 	case clearDueMsg:
@@ -1035,10 +1033,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.repinSelection(land.cursor)
 		m.rebuildThread()
 		m.settleRight(land)
-		// The chat's own page no longer shows these, so opening the thread is
-		// the only thing that can settle them. A thread is one screenful, so
-		// having it on top is having read it — there is no tail to reach.
-		return m, markThreadRead(m.deps.Store, m.deps.log(), msg.threadID)
+		return m, nil
 	case replyLoadedMsg:
 		return m.onReplyLoaded(msg)
 	case forwardLoadedMsg:
@@ -1508,13 +1503,11 @@ func (m *Model) clearBlockDots(msgs []store.Message, idx int, st msgStyle) bool 
 // counts is worth a clear, because the gateway will not drop its dot for a
 // reply the chat's message flow does not show.
 func (m Model) takeRead(chatID string, msgs []store.Message) (Model, tea.Cmd) {
-	cmd := markChatRead(m.deps.Store, m.deps.Log, chatID)
 	position, waiting := unreadWaiting(msgs)
 	if !waiting {
-		return m, cmd
+		return m, nil
 	}
-	m, tick := m.pushClears([]store.ChatUnread{{ChatID: chatID, Position: position}})
-	return m, tea.Batch(cmd, tick)
+	return m.pushClears([]store.ChatUnread{{ChatID: chatID, Position: position}})
 }
 
 // selectCurrentChat puts the cursor on the chat being opened within the

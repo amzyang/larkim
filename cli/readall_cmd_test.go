@@ -72,25 +72,26 @@ func TestReadAllCmd_ClearsEveryChatThatWasWaiting(t *testing.T) {
 	require.NotContains(t, out, `"mode"`)
 }
 
-func TestReadAllCmd_SettlesTheLocalHalfEvenWhenTheClearFails(t *testing.T) {
+func TestReadAllCmd_LeavesRemoteUnreadWhenTheClearFails(t *testing.T) {
 	a, cleared, _ := readAllApp(t, 2, errors.New("session cookie missing"))
 
 	out := runReadAll(t, a)
 
-	require.Len(t, *cleared, 2, "the chat behind a refusal has a dot of its own")
+	require.Len(t, *cleared, 2)
+	require.Contains(t, out, `"messages": 0`)
 	require.Contains(t, out, `"failed": 2`)
 
 	st, err := storetest.Open(t, a.cfg.DBPath())
 	require.NoError(t, err)
 	defer st.Close()
-	chats, err := st.ListChats(t.Context(), store.ChatQuery{})
-	require.NoError(t, err)
-	for _, c := range chats {
-		require.Zero(t, c.UnreadCount, "the durable half landed before the best-effort half was tried")
+	for _, id := range []string{"om_0", "om_1"} {
+		m, err := st.GetMessage(t.Context(), id)
+		require.NoError(t, err)
+		require.False(t, *m.IsReadRemote)
 	}
 	left, err := st.ChatsWithUnread(t.Context())
 	require.NoError(t, err)
-	require.Len(t, left, 2, "and the refused chats are still the client's, so the next pass finds them")
+	require.Len(t, left, 2)
 }
 
 func TestReadAllCmd_ClearsAgainWhatTheLastPassFailedToClear(t *testing.T) {
@@ -105,7 +106,7 @@ func TestReadAllCmd_ClearsAgainWhatTheLastPassFailedToClear(t *testing.T) {
 		"no receipt said the dots came down, so the chats are still the client's and the pass is repeatable")
 	require.Contains(t, out, `"chats": 2`)
 	require.Contains(t, out, `"failed": 0`)
-	require.Contains(t, out, `"messages": 0`, "the local half was already settled by the first pass")
+	require.Contains(t, out, `"messages": 2`)
 }
 
 func TestReadAllCmd_DryRunCountsAndWritesNothing(t *testing.T) {
@@ -151,6 +152,6 @@ func TestReadAllCmd_SaysClearedInText(t *testing.T) {
 	cmd.SetErr(&out)
 	require.NoError(t, cmd.Execute())
 	text := out.String()
-	require.Contains(t, text, "2 messages read, 1 chats cleared in Feishu")
+	require.Contains(t, text, "1 messages read, 1 chats cleared in Feishu")
 	require.Contains(t, text, "1 chats kept their red dot: not matched to the web client, or refused")
 }

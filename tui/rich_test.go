@@ -96,12 +96,12 @@ func TestPickPaste_PlainLookingHTMLKeepsTheTextFlavour(t *testing.T) {
 	// An editor that copies with syntax highlighting — VS Code does, by
 	// default — puts styled spans on the pasteboard for what is only code.
 	md, err := htmlMarkdown([]byte(
-		`<div><span style="color:#001080">read_state</span><span>.local_read_at</span></div>` +
+		`<div><span style="color:#001080">read_state</span><span>.is_read_remote</span></div>` +
 			`<div><span>ORDER BY create_ms, message_position</span></div>`))
 	require.NoError(t, err)
 	require.Contains(t, md, `\_`, "the converter escaped what was never markdown")
 
-	text := "read_state.local_read_at\nORDER BY create_ms, message_position"
+	text := "read_state.is_read_remote\nORDER BY create_ms, message_position"
 	require.Equal(t, text, pickPaste(md, text), "the plain flavour goes in untouched")
 }
 

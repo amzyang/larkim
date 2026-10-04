@@ -262,7 +262,8 @@ func TestThreadGists_ASilencedOrReadReplyIsNotWaiting(t *testing.T) {
 	got, _ = s.ThreadGists(ctx, []string{"omt_1"}, "ou_me", 5)
 	require.False(t, got["omt_1"].Waiting, "silence is what unreadCounted already says")
 
-	require.NoError(t, s.MarkThreadRead(ctx, "omt_1", 5000))
+	read := true
+	require.NoError(t, s.SetReadStatus(ctx, "om_quiet", &read, 5000, 0))
 	_, err = s.db.ExecContext(ctx, `UPDATE messages SET silenced = 0 WHERE message_id = 'om_quiet'`)
 	require.NoError(t, err)
 	got, _ = s.ThreadGists(ctx, []string{"omt_1"}, "ou_me", 5)

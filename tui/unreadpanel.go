@@ -203,7 +203,7 @@ func (m Model) markSectionRead(chatID string) (tea.Model, tea.Cmd) {
 	label := m.feed.section(chatID).label()
 	// The reload answers the press rather than waiting on the store's own
 	// revision, the way onMarkAllDone does.
-	cmds := tea.Batch(markChatRead(m.deps.Store, m.deps.Log, chatID), sectionDot(m.deps, chatID), m.reloadCurrent())
+	cmds := tea.Batch(sectionDot(m.deps, chatID), m.reloadCurrent())
 	return m.notify(label+" taken as read", false), cmds
 }
 

@@ -818,20 +818,47 @@ func TestProbeReadStatus_TakesAChatOutOfTheSweepOnceTheClientAnswers(t *testing.
 		SenderID: "ou_a", CreateMs: now.Add(-time.Hour).UnixMilli(), RawJSON: "{}"}}, now.UnixMilli())
 	require.NoError(t, err)
 	require.NoError(t, s.Store.SetReadStatus(ctx, "om_walked", new(false), now.UnixMilli(), now.Add(6*time.Hour).UnixMilli()))
-	// What a sweep leaves behind: larkim's half written, the client walked.
-	_, err = s.Store.MarkAllRead(ctx, now.UnixMilli())
+	_, err = s.Store.AcceptRemoteRead(ctx, "oc_walked", 0)
 	require.NoError(t, err)
 	chats, err := s.Store.ChatsWithUnread(ctx)
 	require.NoError(t, err)
-	require.Len(t, chats, 1, "the local write says nothing about the client's dot")
+	require.Empty(t, chats, "accept is the receipt the badge follows")
 
 	f.Read["om_walked"] = true
 	_, err = s.probeReadStatus(ctx, now)
 	require.NoError(t, err)
 
 	m, _ := s.Store.GetMessage(ctx, "om_walked")
-	require.True(t, *m.IsReadRemote, "the probe asks about a chat read here, which is what closes the loop")
+	require.True(t, *m.IsReadRemote)
+	probes, err := s.Store.ReadStatusProbes(ctx, store.ReadCheckQuery{Self: "ou_me", SinceMs: 100, Limit: 10})
+	require.NoError(t, err)
+	require.Empty(t, probes, "confirm closes the unconfirmed accept slot")
 	chats, err = s.Store.ChatsWithUnread(ctx)
 	require.NoError(t, err)
-	require.Empty(t, chats, "so the next press walks nothing: the receipt is what ends the sweep")
+	require.Empty(t, chats)
+}
+
+func TestProbeReadStatus_RevertsWhenFeishuStillReportsUnread(t *testing.T) {
+	t.Parallel()
+	s, f, clk := newSyncer(t)
+	ctx := t.Context()
+	now := clk.t
+	require.NoError(t, s.Store.SetState(ctx, KeySelfOpenID, "ou_me"))
+	f.AddMessage(msg("om_lie", "oc_lie", now.Add(-time.Hour), "hi"))
+	_, err := s.Store.UpsertMessages(ctx, []store.Message{{MessageID: "om_lie", ChatID: "oc_lie",
+		SenderID: "ou_a", CreateMs: now.Add(-time.Hour).UnixMilli(), RawJSON: "{}"}}, now.UnixMilli())
+	require.NoError(t, err)
+	require.NoError(t, s.Store.SetReadStatus(ctx, "om_lie", new(false), now.UnixMilli(), now.Add(6*time.Hour).UnixMilli()))
+	_, err = s.Store.AcceptRemoteRead(ctx, "oc_lie", 0)
+	require.NoError(t, err)
+
+	f.Read["om_lie"] = false
+	_, err = s.probeReadStatus(ctx, now)
+	require.NoError(t, err)
+
+	m, _ := s.Store.GetMessage(ctx, "om_lie")
+	require.False(t, *m.IsReadRemote)
+	chats, err := s.Store.ChatsWithUnread(ctx)
+	require.NoError(t, err)
+	require.Len(t, chats, 1)
 }

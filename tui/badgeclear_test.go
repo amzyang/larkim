@@ -87,26 +87,41 @@ func TestTakeRead_ClearsNothingWhenNothingWasWaiting(t *testing.T) {
 func TestTakeRead_ClearsNothingForAPageAlreadyReadHere(t *testing.T) {
 	t.Parallel()
 	m, _, cleared := badgeModel(t)
-	unread := false
-	page := []store.Message{{MessageID: "om_a", IsReadRemote: &unread, LocalReadAt: 900}}
+	read := true
+	page := []store.Message{{MessageID: "om_a", IsReadRemote: &read}}
 	next, cmd := m.takeRead("oc_a", page)
 	drain(t, next, cmd)
 
 	require.Empty(t, *cleared, "the reload a visit causes must not fire a second clear")
 }
 
-func TestTakeRead_StaysOffAChatTheSweepWouldStillWalk(t *testing.T) {
+func TestFireBadgeClear_AcceptsRemoteReadOnSuccess(t *testing.T) {
 	t.Parallel()
-	m, st, cleared := badgeModel(t)
-	require.NoError(t, st.MarkChatRead(t.Context(), "oc_a", 900))
-
-	next, cmd := m.takeRead("oc_a", []store.Message{{MessageID: "om_a", IsReadRemote: new(false), LocalReadAt: 900}})
+	m, st, _ := badgeModel(t)
+	next, cmd := m.takeRead("oc_a", unreadPage())
 	drain(t, next, cmd)
 
-	require.Empty(t, *cleared)
-	require.Len(t, waiting(t, st), 1,
-		"the two gates disagree on purpose: the sweep is bounded by the receipt and may clear this chat, "+
-			"the read gate is bounded by markChatRead's write so that a reload cannot fire per visit")
+	got, err := st.GetMessage(t.Context(), "om_a")
+	require.NoError(t, err)
+	require.True(t, *got.IsReadRemote)
+}
+
+func TestFireBadgeClear_LeavesUnreadWhenClearFails(t *testing.T) {
+	t.Parallel()
+	st, err := storetest.OpenSeed(t, filepath.Join(t.TempDir(), "t.db"), "tui.unreadone", seedUnreadOne)
+	require.NoError(t, err)
+	t.Cleanup(func() { st.Close() })
+	m := New(Deps{Store: st, Self: "ou_me", Client: larkcli.NewFake(),
+		ClearBadge: func(_ context.Context, _ store.ChatUnread) error {
+			return errFailedClear
+		}})
+	m.width, m.height = 120, 36
+	next, cmd := m.takeRead("oc_a", unreadPage())
+	drain(t, next, cmd)
+
+	got, err := st.GetMessage(t.Context(), "om_a")
+	require.NoError(t, err)
+	require.False(t, *got.IsReadRemote)
 }
 
 func TestTakeRead_ClearsAgainForAMessageLandingInTheOpenChat(t *testing.T) {
@@ -130,7 +145,7 @@ func TestTakeRead_IgnoresUnreadTheChatBadgeLeavesOut(t *testing.T) {
 	})
 	drain(t, next, cmd)
 
-	require.Empty(t, *cleared, "markChatRead never settles these, so firing for them would never stop")
+	require.Empty(t, *cleared, "the watermark never settles these, so firing for them would never stop")
 }
 
 func TestOpenInFeishu_HandsTheChatLinkToTheDesktop(t *testing.T) {

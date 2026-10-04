@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"maps"
 	"slices"
 	"strings"
@@ -19,7 +20,8 @@ import (
 func feedModel(t *testing.T) Model {
 	t.Helper()
 	st, chats := backlog(t)
-	m := New(Deps{Store: st, Self: "ou_me"})
+	m := New(Deps{Store: st, Self: "ou_me",
+		ClearBadge: func(_ context.Context, _ store.ChatUnread) error { return nil }})
 	m.width, m.height = 120, 40
 	m.chats = chats
 	m.unread = map[string]int64{"oc_platform": 2, "oc_project": 1}
@@ -48,7 +50,7 @@ func applyAll(t *testing.T, m Model, cmd tea.Cmd) Model {
 			return m
 		}
 		switch msg.(type) {
-		case unreadFeedLoadedMsg, chatSideMsg, messagesLoadedMsg, chatsLoadedMsg, sectionDotMsg:
+		case unreadFeedLoadedMsg, chatSideMsg, messagesLoadedMsg, chatsLoadedMsg, sectionDotMsg, clearDueMsg, clearFiredMsg:
 		case errMsg:
 			require.NoError(t, msg.(errMsg).err)
 			return m

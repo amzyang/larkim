@@ -182,7 +182,8 @@ func TestFeed_ASendWaitsUnderItsOwnSection(t *testing.T) {
 func TestFeed_ADataRevReloadDropsAChatReadElsewhere(t *testing.T) {
 	t.Parallel()
 	m := feedModel(t)
-	require.NoError(t, m.deps.Store.MarkChatRead(t.Context(), "oc_platform", 900))
+	_, err := m.deps.Store.AcceptRemoteRead(t.Context(), "oc_platform", 200)
+	require.NoError(t, err)
 
 	m = applyAll(t, m, m.reloadCurrent())
 
@@ -555,8 +556,6 @@ func TestFeed_MTakesTheChatUnderTheCursorAsRead(t *testing.T) {
 	out := paneText(m)
 	require.NotContains(t, out, "平台组", "the settled section leaves the page")
 	require.Contains(t, out, "项目协作群", "and the one still waiting stays")
-	require.Equal(t, []store.ChatUnread{{ChatID: "oc_platform", Position: 200}}, m.clears.left,
-		"the gateway is told at the newest it owed, so its own dot falls")
 }
 
 // loudFeed is the panel open on one chat owing more than a section holds, with

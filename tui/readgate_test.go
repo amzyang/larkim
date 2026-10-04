@@ -178,7 +178,6 @@ func TestReadKey_IsEmptyWhileTheSearchPanelIsOpen(t *testing.T) {
 	m.pendingChat = "oc_a"
 	lands(t, st, "om_b", "ou_b", "李四", "改到下午", 300)
 	m = watching(t, m, st)
-	m.msgsBase[0].LocalReadAt = 0
 	require.NotEmpty(t, m.readKey(true), "the chat's own page is what the pane draws")
 
 	// :mentions borrows the search panel whole, so both set this one flag.

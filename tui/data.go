@@ -640,32 +640,6 @@ func loadReplies(d Deps, chatID, rootID string) tea.Cmd {
 	}
 }
 
-// markChatRead takes the chat's unread messages as read locally, which is
-// what makes its badge fall: Feishu offers no way to say a message was read.
-func markChatRead(st *store.Store, log *slog.Logger, chatID string) tea.Cmd {
-	return func() tea.Msg {
-		if err := st.MarkChatRead(context.Background(), chatID, time.Now().UnixMilli()); err != nil {
-			// The badge staying up is the only symptom on screen, which says
-			// nothing about why.
-			log.Warn("mark chat read", "chat_id", chatID, "err", err)
-		}
-		return nil
-	}
-}
-
-// markThreadRead takes a thread's replies as read locally, which is what
-// opening its pane means. It runs on every landing of the list rather than
-// behind a gate of its own: the update matches nothing on a thread already
-// read, so a quiet beat writes nothing and the data_rev trigger stays silent.
-func markThreadRead(st *store.Store, log *slog.Logger, threadID string) tea.Cmd {
-	return func() tea.Msg {
-		if err := st.MarkThreadRead(context.Background(), threadID, time.Now().UnixMilli()); err != nil {
-			log.Warn("mark thread read", "thread_id", threadID, "err", err)
-		}
-		return nil
-	}
-}
-
 func waitForRev(ch <-chan int64) tea.Cmd {
 	return func() tea.Msg {
 		if _, ok := <-ch; !ok {

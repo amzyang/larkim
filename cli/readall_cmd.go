@@ -9,15 +9,13 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// readAllResult is what one pass settled, on both sides of the line.
+// readAllResult is what one pass settled.
 type readAllResult struct {
-	// Messages is what was taken as read locally, thread replies included.
+	// Messages is how many main-flow rows AcceptRemoteRead flipped on successful POSTs.
 	Messages int64 `json:"messages"`
 	// Chats is the chats whose main message flow Feishu still reports unseen.
 	Chats int `json:"chats"`
-	// Failed is how many of those the web client refused or could not match,
-	// which leaves the dot up while larkim's badge is down. They stay in the
-	// set so the next pass retries them.
+	// Failed is how many clears or accepts failed; those chats stay unread.
 	Failed int `json:"failed"`
 }
 
@@ -25,11 +23,11 @@ func (a *App) readAllCmd() *cobra.Command {
 	var dryRun bool
 	cmd := &cobra.Command{
 		Use:   "read-all",
-		Short: "Take every chat as read and clear the Feishu client's red dots",
-		Long: "The local half is a write. The client's own dots come down by posting each chat's read watermark to the web client with the Feishu login of mark_read.browser.\n" +
-			"A chat leaves the set when Feishu reports it read, not when the attempt is made, so a chat\n" +
-			"left unread is tried again by the next pass.\n" +
-			"Thread replies are taken as read locally but leave no dot this clears.",
+		Short: "Clear every Feishu client red dot for chats larkim knows are unread",
+		Long: "Posts each chat's read watermark to the web client with the Feishu login of mark_read.browser.\n" +
+			"On a successful POST, larkim sets is_read_remote for main-flow messages up to that watermark.\n" +
+			"A failed POST leaves the badge up; the next pass retries.\n" +
+			"Thread replies are not settled by the watermark and stay unread until Feishu reports them read.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			st, err := a.openStore()
@@ -45,11 +43,7 @@ func (a *App) readAllCmd() *cobra.Command {
 			if dryRun {
 				return a.reportReadAll(cmd, readAllResult{Chats: len(chats)}, true)
 			}
-			n, err := st.MarkAllRead(ctx, time.Now().UnixMilli())
-			if err != nil {
-				return err
-			}
-			res := readAllResult{Messages: n, Chats: len(chats)}
+			res := readAllResult{Chats: len(chats)}
 			clear := a.clearBadge
 			if clear == nil {
 				clear = markread.New(a.cfg.MarkRead, a.logger(), st)
@@ -59,11 +53,17 @@ func (a *App) readAllCmd() *cobra.Command {
 					time.Sleep(larkweb.Pace)
 				}
 				if err := clear(ctx, c); err != nil {
-					// Best effort behind a durable write: a refusal costs one
-					// red dot, not the pass.
 					a.logger().Warn("clear feishu badge", "chat_id", c.ChatID, "err", err)
 					res.Failed++
+					continue
 				}
+				n, err := st.AcceptRemoteRead(ctx, c.ChatID, c.Position)
+				if err != nil {
+					a.logger().Warn("accept remote read", "chat_id", c.ChatID, "err", err)
+					res.Failed++
+					continue
+				}
+				res.Messages += n
 			}
 			return a.reportReadAll(cmd, res, false)
 		},

@@ -413,6 +413,9 @@ func (s *Syncer) probeReadStatus(ctx context.Context, now time.Time) (int, error
 		p := byMessage[it.MessageID]
 		switch {
 		case it.IsRead:
+			if err := s.Store.ConfirmAcceptedRead(ctx, p.ChatID, now.UnixMilli()); err != nil {
+				return checked, err
+			}
 			n, err := s.RefreshReadStatus(ctx, p.ChatID)
 			if err != nil {
 				return checked, err
@@ -420,6 +423,9 @@ func (s *Syncer) probeReadStatus(ctx context.Context, now time.Time) (int, error
 			checked += n
 		case p.Unchecked:
 			if err := s.recordReadStatus(ctx, it, now); err != nil {
+				return checked, err
+			}
+			if err := s.Store.RevertUnconfirmedRead(ctx, p.ChatID); err != nil {
 				return checked, err
 			}
 			checked++

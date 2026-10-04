@@ -80,7 +80,7 @@ func (s *Store) PendingSilenceSettle(ctx context.Context, limit int) ([]SilenceS
 func (s *Store) unreadOfChat(ctx context.Context, chatID string) ([]UnreadMsg, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT m.message_position, m.silenced
  FROM messages m JOIN read_state r ON r.message_id = m.message_id
- WHERE m.chat_id = ? AND `+clientDot+` ORDER BY m.message_position`, chatID)
+ WHERE m.chat_id = ? AND `+unreadBadge+` ORDER BY m.message_position`, chatID)
 	if err != nil {
 		return nil, err
 	}
@@ -137,7 +137,7 @@ func queueSilenceSettle(ctx context.Context, tx *sql.Tx, ids []string) error {
 	for chunk := range slices.Chunk(ids, 500) {
 		if _, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO silence_settle_queue (chat_id)
  SELECT DISTINCT m.chat_id FROM messages m JOIN read_state r ON r.message_id = m.message_id
- WHERE m.message_id IN `+inClause(len(chunk))+` AND m.silenced = 1 AND `+clientDot+`
+ WHERE m.message_id IN `+inClause(len(chunk))+` AND m.silenced = 1 AND `+unreadBadge+`
    AND m.message_position > COALESCE((SELECT c.silence_settled_pos FROM chats c WHERE c.chat_id = m.chat_id), 0)`,
 			anySlice(chunk)...); err != nil {
 			return fmt.Errorf("queue silence settle: %w", err)

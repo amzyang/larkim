@@ -65,7 +65,8 @@ func TestListChats_AtMeGoesOutWhenTheChatIsRead(t *testing.T) {
 	s := atMeStore(t, `[{"id":"ou_me","key":"@_user_1","name":"林岚"}]`, 2)
 	require.True(t, listOne(t, s, "ou_me").UnreadMention)
 
-	require.NoError(t, s.MarkChatRead(t.Context(), "oc_group", 500))
+	_, err := s.AcceptRemoteRead(t.Context(), "oc_group", 0)
+	require.NoError(t, err)
 
 	assert.False(t, listOne(t, s, "ou_me").UnreadMention)
 }
@@ -119,7 +120,8 @@ func TestMentionsOf_ListsWhatNamesTheReaderNewestFirst(t *testing.T) {
 func TestMentionsOf_KeepsMentionsTheReaderHasSeen(t *testing.T) {
 	s := atMeStore(t, `[{"id":"ou_me","key":"@_user_1","name":"林岚"}]`, 0)
 	ctx := t.Context()
-	require.NoError(t, s.MarkChatRead(ctx, "oc_group", 500))
+	_, err := s.AcceptRemoteRead(ctx, "oc_group", 0)
+	require.NoError(t, err)
 
 	hits, err := s.MentionsOf(ctx, "ou_me", 0)
 	require.NoError(t, err)

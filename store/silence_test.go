@@ -205,21 +205,6 @@ func TestListChats_SinksAFullySilencedChat(t *testing.T) {
 	require.Equal(t, "om_noise", chats[1].LastMessageID, "the row sank but still says what is in there")
 }
 
-func TestMarkChatRead_MarksSilencedMessagesToo(t *testing.T) {
-	s := openTest(t)
-	s.SetSilence(SilenceRules{{Sender: "cli_c"}})
-	ctx := t.Context()
-	_, err := s.UpsertMessages(ctx, []Message{fromBot("om_noise", "oc_quiet", 200, "nightly build")}, 1)
-	require.NoError(t, err)
-	markUnread(t, s, "om_noise")
-
-	require.NoError(t, s.MarkChatRead(ctx, "oc_quiet", 500))
-	m, err := s.GetMessage(ctx, "om_noise")
-	require.NoError(t, err)
-	require.Equal(t, int64(500), m.LocalReadAt,
-		"a message the reader had in front of them is read, badge or no badge")
-}
-
 func TestSilenceMatches_CountsOneRule(t *testing.T) {
 	s := openTest(t)
 	ctx := t.Context()

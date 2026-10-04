@@ -207,11 +207,8 @@ type ReadProbe struct {
 // spending it there would leave the badge that chat does show waiting on the
 // ladder.
 //
-// A chat already read here keeps its slot, because the receipt is what takes
-// a chat out of ChatsWithUnread. The ladder asks about it either way —
-// ReadStatusCandidates has no local_read_at term — so what the probe buys is
-// latency: one tick instead of a backoff step that tops out at six hours, over
-// which a sweep would clear chats whose dot is long down.
+// An accepted-but-unconfirmed read keeps its slot so the probe can confirm or
+// revert the watermark POST.
 func (s *Store) ReadStatusProbes(ctx context.Context, q ReadCheckQuery) ([]ReadProbe, error) {
 	scan := func(sc scanner) (ReadProbe, error) {
 		var p ReadProbe
@@ -222,7 +219,8 @@ func (s *Store) ReadStatusProbes(ctx context.Context, q ReadCheckQuery) ([]ReadP
 	return queryAll(ctx, s.db, scan, `SELECT message_id, chat_id, unchecked FROM
  (SELECT m.message_id AS message_id, m.chat_id AS chat_id, COALESCE(r.remote_checked_at, 0) = 0 AS unchecked, max(m.create_ms) AS newest `+messageFrom+`
   WHERE m.sender_id <> ? AND m.deleted = 0 AND m.create_ms > ?
-   AND (r.message_id IS NULL OR r.is_read_remote = 0)
+   AND (r.message_id IS NULL OR r.is_read_remote = 0
+     OR (r.is_read_remote = 1 AND r.remote_checked_at = 0))
   GROUP BY m.chat_id)
  ORDER BY newest DESC LIMIT ?`, q.Self, q.SinceMs, q.Limit)
 }
@@ -260,10 +258,8 @@ func (s *Store) ReadCheckCount(ctx context.Context, messageID string) (int, erro
 	return n, err
 }
 
-// stillUnread is every live message with something still waiting on it.
-// Both flags can only witness that a message was seen, so reading either one
-// as "seen" adds no false unread.
-const stillUnread = `r.is_read_remote = 0 AND r.local_read_at = 0 AND m.deleted = 0`
+// stillUnread is every live message Feishu still reports unread.
+const stillUnread = `r.is_read_remote = 0 AND m.deleted = 0`
 
 // unreadBadge is what the chat list treats as unread. Thread replies are out —
 // a thread exists so that answering an old topic does not pull the whole chat
@@ -274,33 +270,6 @@ const unreadBadge = stillUnread + ` AND m.message_position >= 0`
 // unreadCounted is what the badge shows: the badge's messages, minus the ones
 // a silence rule matched.
 const unreadCounted = unreadBadge + ` AND m.silenced = 0`
-
-// clientDot is what the Feishu client still has a red dot for: its own
-// receipt, on a live message of the main flow. local_read_at is out of it on
-// purpose. It is a fact about this machine, which the client cannot see, so
-// taking it as "the dot is down" made a sweep that lost a chat unrepeatable:
-// the write settled the chat whether or not the client ever navigated.
-const clientDot = `r.is_read_remote = 0 AND m.deleted = 0 AND m.message_position >= 0`
-
-// MarkChatRead takes as seen locally every message the chat's page showed the
-// reader. Feishu has no mark-read call, so this is the only way a badge falls
-// without leaving larkim. Matching no row — the ordinary case on a chat
-// already read — writes nothing, so the data_rev trigger stays quiet and the
-// TUI does not reload itself in a circle.
-//
-// The set is exactly the page's, and both edges of that are load-bearing.
-// Wider, and it settles a message nobody was shown. Narrower, and a message
-// the reader did see keeps its unread flags for good: the TUI redraws its
-// marker on every visit, and tui.unreadWaiting fires another clear on every
-// reload (docs/read-sync/TECH.md). A thread's replies are folded into their
-// root's line and are on no page of the chat, so MarkThreadRead settles those
-// when the thread itself is opened.
-func (s *Store) MarkChatRead(ctx context.Context, chatID string, now int64) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE read_state SET local_read_at = ?
- WHERE message_id IN (SELECT m.message_id FROM messages m JOIN read_state r ON r.message_id = m.message_id
-   WHERE m.chat_id = ? AND `+unreadBadge+`)`, now, chatID)
-	return err
-}
 
 // ChatUnread is a chat the Feishu client still has a red dot for, and the
 // newest message it is drawn over.
@@ -313,20 +282,13 @@ type ChatUnread struct {
 }
 
 // ChatsWithUnread names every chat a clear would still do something for,
-// oldest id first.
-//
-// The predicate is clientDot, so what takes a chat out of the set is the
-// client's own receipt and nothing else. That is what stops the sweep firing
-// for ever, and it is also what makes a lost pass repeatable: a clear the
-// gateway never acted on leaves the chat here, so pressing again retries it.
-//
-// Thread replies and recalls are out: the watermark path does not settle
-// thread replies, so their receipts never flip and the chat would be
-// listed on every press regardless.
+// oldest id first. Thread replies and recalls are out: the watermark path does
+// not settle thread replies, so their receipts never flip and the chat would
+// be listed on every press regardless.
 func (s *Store) ChatsWithUnread(ctx context.Context) ([]ChatUnread, error) {
 	return queryAll(ctx, s.db, scanChatUnread, `SELECT m.chat_id, max(m.message_position)
  FROM messages m JOIN read_state r ON r.message_id = m.message_id
- WHERE `+clientDot+` GROUP BY m.chat_id ORDER BY m.chat_id`)
+ WHERE `+unreadBadge+` GROUP BY m.chat_id ORDER BY m.chat_id`)
 }
 
 // ChatWithUnread is ChatsWithUnread's entry for one chat, ok=false when the
@@ -334,7 +296,7 @@ func (s *Store) ChatsWithUnread(ctx context.Context) ([]ChatUnread, error) {
 func (s *Store) ChatWithUnread(ctx context.Context, chatID string) (ChatUnread, bool, error) {
 	rows, err := queryAll(ctx, s.db, scanChatUnread, `SELECT m.chat_id, max(m.message_position)
  FROM messages m JOIN read_state r ON r.message_id = m.message_id
- WHERE m.chat_id = ? AND `+clientDot+` GROUP BY m.chat_id`, chatID)
+ WHERE m.chat_id = ? AND `+unreadBadge+` GROUP BY m.chat_id`, chatID)
 	if err != nil || len(rows) == 0 {
 		return ChatUnread{}, false, err
 	}
@@ -420,39 +382,34 @@ func (s *Store) UnreadAnchors(ctx context.Context) ([]UnreadAnchor, error) {
  WHERE `+unreadCounted+` GROUP BY m.chat_id ORDER BY m.chat_id`)
 }
 
-// MarkAllRead takes as seen locally everything still waiting anywhere, thread
-// replies included: "mark all as read" is a statement about the whole list,
-// not about the pages the reader happened to visit. Feishu has no mark-read
-// call, so this is the only half larkim can write; the client's own dots are
-// cleared separately, chat by chat, through the gateway ChatsWithUnread
-// names. The two halves no longer share a predicate: this one answers "has
-// the reader seen it", ChatsWithUnread answers "does the client still show
-// it", and only the second decides who gets cleared.
-//
-// It returns how many messages it settled. Matching no row writes nothing, so
-// the data_rev trigger stays quiet and the TUI does not reload itself in a
-// circle.
-func (s *Store) MarkAllRead(ctx context.Context, now int64) (int64, error) {
-	res, err := s.db.ExecContext(ctx, `UPDATE read_state SET local_read_at = ?
- WHERE message_id IN (SELECT m.message_id FROM messages m JOIN read_state r ON r.message_id = m.message_id
-   WHERE `+stillUnread+`)`, now)
+// AcceptRemoteRead records a successful mark-read watermark: main-flow messages
+// up to position flip to read and stay unconfirmed until the probe checks.
+func (s *Store) AcceptRemoteRead(ctx context.Context, chatID string, position int64) (int64, error) {
+	res, err := s.db.ExecContext(ctx, `UPDATE read_state SET is_read_remote = 1, remote_checked_at = 0
+ WHERE message_id IN (
+   SELECT m.message_id FROM messages m JOIN read_state r ON r.message_id = m.message_id
+   WHERE m.chat_id = ? AND r.is_read_remote = 0 AND m.deleted = 0
+     AND m.message_position >= 0 AND m.message_position <= ?)`, chatID, position)
 	if err != nil {
 		return 0, err
 	}
 	return res.RowsAffected()
 }
 
-// MarkThreadRead takes as seen locally every reply of one thread, which is
-// what opening its pane means: a thread is one screenful, so the whole of it
-// is in front of the reader at once.
-//
-// Silenced replies are collected too. Silence decides whether to interrupt,
-// not whether something was read, and a reply left out here would keep the
-// thread's line lit for good.
-func (s *Store) MarkThreadRead(ctx context.Context, threadID string, now int64) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE read_state SET local_read_at = ?
- WHERE message_id IN (SELECT m.message_id FROM messages m JOIN read_state r ON r.message_id = m.message_id
-   WHERE m.thread_id = ? AND m.message_position < 0 AND `+stillUnread+`)`, now, threadID)
+// ConfirmAcceptedRead stamps Feishu confirmation on accepted reads without
+// changing is_read_remote, so data_rev stays quiet.
+func (s *Store) ConfirmAcceptedRead(ctx context.Context, chatID string, now int64) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE read_state SET remote_checked_at = ?
+ WHERE is_read_remote = 1 AND remote_checked_at = 0
+   AND message_id IN (SELECT message_id FROM messages WHERE chat_id = ?)`, now, chatID)
+	return err
+}
+
+// RevertUnconfirmedRead puts the badge back when the watermark POST lied.
+func (s *Store) RevertUnconfirmedRead(ctx context.Context, chatID string) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE read_state SET is_read_remote = 0
+ WHERE is_read_remote = 1 AND remote_checked_at = 0
+   AND message_id IN (SELECT message_id FROM messages WHERE chat_id = ?)`, chatID)
 	return err
 }
 

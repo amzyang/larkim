@@ -293,9 +293,6 @@ func (a *App) messagesShowCmd() *cobra.Command {
 			if m.IsReadRemote != nil {
 				fmt.Fprintf(&b, "read (feishu): %v\n", *m.IsReadRemote)
 			}
-			if m.LocalReadAt != 0 {
-				fmt.Fprintf(&b, "read (local): %s\n", fmtMs(m.LocalReadAt))
-			}
 			fmt.Fprintf(&b, "\n%s\n\nraw: %s\n", m.Content, m.ContentRaw)
 			for _, r := range resources {
 				fmt.Fprintf(&b, "resource: %s %s %s", r.Type, r.FileKey, r.Status)

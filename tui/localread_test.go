@@ -20,7 +20,8 @@ func readModel(t *testing.T) (Model, *store.Store) {
 	require.NoError(t, err)
 	t.Cleanup(func() { st.Close() })
 
-	m := New(Deps{Store: st, Self: "ou_me"})
+	m := New(Deps{Store: st, Self: "ou_me",
+		ClearBadge: func(_ context.Context, _ store.ChatUnread) error { return nil }})
 	m.width, m.height = 120, 36
 	return m, st
 }
@@ -59,6 +60,9 @@ func TestUpdate_OpeningAChatClearsItsBadge(t *testing.T) {
 
 	m = arrive(t, m, st, "oc_a")
 
+	got, err := st.GetMessage(t.Context(), "om_a")
+	require.NoError(t, err)
+	require.True(t, *got.IsReadRemote)
 	chats, err := st.ListChats(t.Context(), store.ChatQuery{})
 	require.NoError(t, err)
 	for _, c := range chats {
@@ -80,7 +84,7 @@ func TestUpdate_TheUnreadMarkerOutlivesTheReadItCaused(t *testing.T) {
 	// the page comes back with the message already read.
 	m = arrive(t, m, st, "oc_a")
 
-	require.NotZero(t, m.msgs[0].LocalReadAt, "the reload carries the write that opening made")
+	require.True(t, *m.msgs[0].IsReadRemote, "the reload carries the receipt opening made")
 	require.True(t, m.dots["om_a"])
 	require.Contains(t, rowText(renderRows(m.msgs, m.msgStyleFor(60, m.meta))), "●",
 		"the marker must not go out under the reader's eyes")
@@ -116,7 +120,7 @@ func TestUpdate_SearchHitsKeepTheirUnreadMarker(t *testing.T) {
 	require.Contains(t, rowText(m.msgRows), "●")
 }
 
-func TestUpdate_OpeningTheChatLeavesAThreadReplyUnreadUntilTheThreadIsOpened(t *testing.T) {
+func TestUpdate_OpeningTheChatLeavesAThreadReplyUnread(t *testing.T) {
 	t.Parallel()
 	m, st := readModel(t)
 	ctx := t.Context()
@@ -137,10 +141,8 @@ func TestUpdate_OpeningTheChatLeavesAThreadReplyUnreadUntilTheThreadIsOpened(t *
 	require.NotContains(t, idsOf(m.msgs), "om_reply", "the page folds a reply into its root's line")
 	reply, err := st.GetMessage(ctx, "om_reply")
 	require.NoError(t, err)
-	require.Zero(t, reply.LocalReadAt, "a visit cannot read what it never showed")
+	require.False(t, *reply.IsReadRemote, "the gateway watermark does not settle thread replies")
 
-	// Opening the thread is what puts them in front of the reader, and a
-	// thread is one screenful: having it on top is having read it.
 	m, cmd := m.openRight(rightFrame{kind: rightThread, id: "omt_1"})
 	collect(cmd)
 	next, cmd := m.Update(loadThread(Deps{Store: st}, "oc_1", "omt_1")().(threadLoadedMsg))
@@ -148,7 +150,7 @@ func TestUpdate_OpeningTheChatLeavesAThreadReplyUnreadUntilTheThreadIsOpened(t *
 
 	reply, err = st.GetMessage(ctx, "om_reply")
 	require.NoError(t, err)
-	require.NotZero(t, reply.LocalReadAt)
+	require.False(t, *reply.IsReadRemote, "opening the thread pane writes nothing")
 	require.Contains(t, idsOf(next.(Model).thread), "om_reply")
 }
 

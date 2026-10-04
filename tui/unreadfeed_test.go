@@ -259,7 +259,8 @@ func TestGatherUnread_AChatReadElsewhereLeavesThePage(t *testing.T) {
 	secs, _, _, err := gatherUnread(t.Context(), st, "ou_me", chats, nil)
 	require.NoError(t, err)
 
-	require.NoError(t, st.MarkChatRead(t.Context(), "oc_platform", 900))
+	_, err = st.AcceptRemoteRead(t.Context(), "oc_platform", 200)
+	require.NoError(t, err)
 
 	held, msgs, _, err := gatherUnread(t.Context(), st, "ou_me", chats, secs)
 	require.NoError(t, err)
@@ -277,8 +278,10 @@ func TestGatherUnread_ReanchorsAChatAfterItsBacklogIsRead(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, int64(100), first[0].anchorMs)
 
-	_, err = st.MarkAllRead(t.Context(), 900)
-	require.NoError(t, err)
+	read := true
+	for _, id := range []string{"om_p1", "om_p2", "om_j1"} {
+		require.NoError(t, st.SetReadStatus(t.Context(), id, &read, 900, 0))
+	}
 	settled, _, _, err := gatherUnread(t.Context(), st, "ou_me", chats, first)
 	require.NoError(t, err)
 	require.Empty(t, settled, "nothing is waiting, so nothing holds a stretch")

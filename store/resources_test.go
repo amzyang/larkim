@@ -304,120 +304,133 @@ func TestSetWebChatIDs_SkipsAChatNotStored(t *testing.T) {
 	require.ErrorIs(t, err, ErrNotFound, "a row with nothing but an id is a chat the list cannot draw")
 }
 
-func TestMarkChatRead_ClearsTheBadgeOfOneChat(t *testing.T) {
+func TestAcceptRemoteRead_FlipsMainFlowUpToPosition(t *testing.T) {
 	s := openTest(t)
 	ctx := t.Context()
 	require.NoError(t, s.EnsureChat(ctx, "oc_a", 1))
-	require.NoError(t, s.EnsureChat(ctx, "oc_b", 1))
+	reply := msgAt("om_reply", "oc_a", 25, -3, "thread")
+	reply.ThreadID = "omt_1"
+	recalled := msgAt("om_gone", "oc_a", 35, 3, "recalled")
+	recalled.Deleted = true
 	_, err := s.UpsertMessages(ctx, []Message{
-		msgAt("om_a1", "oc_a", 10, 1, "one"),
-		msgAt("om_a2", "oc_a", 20, 1, "two"),
-		msgAt("om_b", "oc_b", 30, 1, "elsewhere"),
+		msgAt("om_old", "oc_a", 10, 1, "one"),
+		msgAt("om_new", "oc_a", 20, 2, "two"),
+		reply, recalled,
 	}, 1)
 	require.NoError(t, err)
-	markUnread(t, s, "om_a1")
-	markUnread(t, s, "om_a2")
-	markUnread(t, s, "om_b")
-
-	require.NoError(t, s.MarkChatRead(ctx, "oc_a", 5000))
-
-	require.Equal(t, map[string]int64{"oc_b": 1}, unreadCounts(t, s), "the chat that was read carries no badge")
-
-	total, _ := s.UnreadCount(ctx)
-	require.Equal(t, int64(3), total, "the poller's backlog is about Feishu, which still has all three unread")
-
-	m, _ := s.GetMessage(ctx, "om_a1")
-	require.Equal(t, int64(5000), m.LocalReadAt)
-	require.False(t, *m.IsReadRemote, "the remote receipt is untouched: larkim cannot write it")
-}
-
-func TestMarkChatRead_LeavesThreadRepliesUnread(t *testing.T) {
-	s := openTest(t)
-	ctx := t.Context()
-	reply := msgAt("om_reply", "oc_a", 20, -3, "answered an old topic")
-	reply.ThreadID = "omt_1"
-	_, err := s.UpsertMessages(ctx, []Message{msgAt("om_root", "oc_a", 10, 1, "an old topic"), reply}, 1)
-	require.NoError(t, err)
-	markUnread(t, s, "om_root")
-	markUnread(t, s, "om_reply")
-
-	require.NoError(t, s.MarkChatRead(ctx, "oc_a", 5000))
-
-	root, _ := s.GetMessage(ctx, "om_root")
-	require.Equal(t, int64(5000), root.LocalReadAt)
-	m, _ := s.GetMessage(ctx, "om_reply")
-	require.Zero(t, m.LocalReadAt,
-		"the page folds the reply into its root's line, so the visit never put it in front of anyone")
-	require.Empty(t, unreadCounts(t, s), "the badge never counted the reply and still does not")
-}
-
-func TestMarkThreadRead_SettlesOnlyItsOwnReplies(t *testing.T) {
-	s := openTest(t)
-	ctx := t.Context()
-	mine := msgAt("om_mine", "oc_a", 20, -3, "in this thread")
-	mine.ThreadID = "omt_1"
-	// Silence decides whether to interrupt, not whether something was read:
-	// a reply left out here would keep the thread's line lit for good.
-	quiet := msgAt("om_quiet", "oc_a", 21, -4, "also in it")
-	quiet.ThreadID, quiet.Silenced = "omt_1", true
-	other := msgAt("om_other", "oc_a", 22, -5, "a different topic")
-	other.ThreadID = "omt_2"
-	root := msgAt("om_root", "oc_a", 10, 1, "an old topic")
-	root.ThreadID = "omt_1"
-	_, err := s.UpsertMessages(ctx, []Message{root, mine, quiet, other}, 1)
-	require.NoError(t, err)
-	for _, id := range []string{"om_root", "om_mine", "om_quiet", "om_other"} {
+	for _, id := range []string{"om_old", "om_new", "om_reply", "om_gone"} {
 		markUnread(t, s, id)
 	}
 
-	require.NoError(t, s.MarkThreadRead(ctx, "omt_1", 5000))
+	n, err := s.AcceptRemoteRead(ctx, "oc_a", 2)
+	require.NoError(t, err)
+	require.Equal(t, int64(2), n)
 
-	for _, id := range []string{"om_mine", "om_quiet"} {
+	for _, id := range []string{"om_old", "om_new"} {
 		m, _ := s.GetMessage(ctx, id)
-		require.Equal(t, int64(5000), m.LocalReadAt, id)
+		require.True(t, *m.IsReadRemote, id)
 	}
-	for _, id := range []string{"om_root", "om_other"} {
-		m, _ := s.GetMessage(ctx, id)
-		require.Zero(t, m.LocalReadAt, id+" is not a reply of this thread")
-	}
+	replyMsg, _ := s.GetMessage(ctx, "om_reply")
+	require.False(t, *replyMsg.IsReadRemote)
+	gone, _ := s.GetMessage(ctx, "om_gone")
+	require.False(t, *gone.IsReadRemote)
+	require.Empty(t, unreadCounts(t, s))
+	total, _ := s.UnreadCount(ctx)
+	require.Equal(t, int64(1), total, "the thread reply stays in the poller backlog; recalled rows are out")
 }
 
-func TestMarkChatRead_LeavesReadAndDeletedMessagesAlone(t *testing.T) {
+func TestAcceptRemoteRead_IncludesSilenced(t *testing.T) {
 	s := openTest(t)
 	ctx := t.Context()
-	deleted := msgAt("om_gone", "oc_a", 30, 1, "recalled")
-	deleted.Deleted = true
-	_, err := s.UpsertMessages(ctx, []Message{msgAt("om_seen", "oc_a", 10, 1, "read"), deleted}, 1)
+	quiet := msgAt("om_quiet", "oc_a", 10, 1, "nightly")
+	quiet.Silenced = true
+	_, err := s.UpsertMessages(ctx, []Message{quiet}, 1)
 	require.NoError(t, err)
-	read := true
-	require.NoError(t, s.SetReadStatus(ctx, "om_seen", &read, 100, 0))
-	markUnread(t, s, "om_gone")
+	markUnread(t, s, "om_quiet")
+	require.Empty(t, unreadCounts(t, s))
 
-	require.NoError(t, s.MarkChatRead(ctx, "oc_a", 5000))
-
-	for _, id := range []string{"om_seen", "om_gone"} {
-		m, _ := s.GetMessage(ctx, id)
-		require.Zero(t, m.LocalReadAt, "%s is nothing the reader has waiting, so reading the chat says nothing about it", id)
-	}
+	n, err := s.AcceptRemoteRead(ctx, "oc_a", 1)
+	require.NoError(t, err)
+	require.Equal(t, int64(1), n)
+	m, _ := s.GetMessage(ctx, "om_quiet")
+	require.True(t, *m.IsReadRemote)
 }
 
-func TestMarkChatRead_WritesNothingWhenTheChatIsAlreadyRead(t *testing.T) {
+func TestAcceptRemoteRead_WritesNothingWhenAlreadyRead(t *testing.T) {
 	s := openTest(t)
 	ctx := t.Context()
 	_, err := s.UpsertMessages(ctx, []Message{msgAt("om_a", "oc_a", 10, 1, "one")}, 1)
 	require.NoError(t, err)
 	markUnread(t, s, "om_a")
-	require.NoError(t, s.MarkChatRead(ctx, "oc_a", 5000))
+	_, err = s.AcceptRemoteRead(ctx, "oc_a", 1)
+	require.NoError(t, err)
 
 	before, err := s.DataRev(ctx)
 	require.NoError(t, err)
-	require.NoError(t, s.MarkChatRead(ctx, "oc_a", 6000))
+	n, err := s.AcceptRemoteRead(ctx, "oc_a", 1)
+	require.NoError(t, err)
+	require.Zero(t, n)
 	after, err := s.DataRev(ctx)
 	require.NoError(t, err)
+	require.Equal(t, before, after)
+}
 
-	require.Equal(t, before, after, "an inert call must not wake the watchers that reload on it")
+func TestAcceptRemoteRead_LeavesAHigherPositionUnread(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	require.NoError(t, s.EnsureChat(ctx, "oc_a", 1))
+	_, err := s.UpsertMessages(ctx, []Message{
+		msgAt("om_1", "oc_a", 10, 1, "one"),
+		msgAt("om_2", "oc_a", 20, 2, "two"),
+	}, 1)
+	require.NoError(t, err)
+	markUnread(t, s, "om_1")
+	markUnread(t, s, "om_2")
+
+	_, err = s.AcceptRemoteRead(ctx, "oc_a", 1)
+	require.NoError(t, err)
+
+	require.Equal(t, map[string]int64{"oc_a": 1}, unreadCounts(t, s))
+	m, _ := s.GetMessage(ctx, "om_2")
+	require.False(t, *m.IsReadRemote)
+}
+
+func TestReadStatusProbes_KeepsUnconfirmedAcceptedRead(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	_, err := s.UpsertMessages(ctx, []Message{
+		{MessageID: "om_a", ChatID: "oc_a", SenderID: "ou_x", CreateMs: 1000, RawJSON: "{}"},
+	}, 1)
+	require.NoError(t, err)
+	require.NoError(t, s.SetReadStatus(ctx, "om_a", new(false), 1000, 9e12))
+	_, err = s.AcceptRemoteRead(ctx, "oc_a", 0)
+	require.NoError(t, err)
+
+	probes, err := s.ReadStatusProbes(ctx, ReadCheckQuery{Self: "ou_me", SinceMs: 100, Limit: 10})
+	require.NoError(t, err)
+	require.Equal(t, []ReadProbe{{"om_a", "oc_a", true}}, probes)
+
+	require.NoError(t, s.ConfirmAcceptedRead(ctx, "oc_a", 2000))
+	probes, err = s.ReadStatusProbes(ctx, ReadCheckQuery{Self: "ou_me", SinceMs: 100, Limit: 10})
+	require.NoError(t, err)
+	require.Empty(t, probes)
+}
+
+func TestRevertUnconfirmedRead_RestoresTheBadge(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	require.NoError(t, s.EnsureChat(ctx, "oc_a", 1))
+	_, err := s.UpsertMessages(ctx, []Message{msgAt("om_a", "oc_a", 10, 1, "one")}, 1)
+	require.NoError(t, err)
+	markUnread(t, s, "om_a")
+	_, err = s.AcceptRemoteRead(ctx, "oc_a", 1)
+	require.NoError(t, err)
+	require.Empty(t, unreadCounts(t, s))
+
+	require.NoError(t, s.RevertUnconfirmedRead(ctx, "oc_a"))
+	require.Equal(t, map[string]int64{"oc_a": 1}, unreadCounts(t, s))
 	m, _ := s.GetMessage(ctx, "om_a")
-	require.Equal(t, int64(5000), m.LocalReadAt, "the first reading is when it was read")
+	require.False(t, *m.IsReadRemote)
 }
 
 func sharedFixture(t *testing.T) *Store {
@@ -585,7 +598,6 @@ func TestReadStatusProbes_SkipsMessagesNoAnswerCanReach(t *testing.T) {
 	require.NoError(t, s.SetReadStatus(ctx, "om_refused", nil, 1000, 9e12))
 	require.NoError(t, s.SetReadStatus(ctx, "om_answerable", &unread, 1000, 9e12))
 	require.NoError(t, s.SetReadStatus(ctx, "om_seen_here", &unread, 1000, 9e12))
-	require.NoError(t, s.MarkChatRead(ctx, "oc_seen_here", 1100))
 
 	probes, err := s.ReadStatusProbes(ctx, ReadCheckQuery{Self: "ou_me", SinceMs: 100, Limit: 10})
 	require.NoError(t, err)
@@ -593,7 +605,7 @@ func TestReadStatusProbes_SkipsMessagesNoAnswerCanReach(t *testing.T) {
 		"a refused id spends the chat's one slot on a question with no answer")
 }
 
-func TestReadStatusProbes_KeepsAskingAboutAChatReadHere(t *testing.T) {
+func TestReadStatusProbes_KeepsAskingAboutAnUnconfirmedAccept(t *testing.T) {
 	s := openTest(t)
 	ctx := t.Context()
 	_, err := s.UpsertMessages(ctx, []Message{
@@ -601,103 +613,31 @@ func TestReadStatusProbes_KeepsAskingAboutAChatReadHere(t *testing.T) {
 	}, 1)
 	require.NoError(t, err)
 	require.NoError(t, s.SetReadStatus(ctx, "om_walked", new(false), 1000, 9e12))
-	require.NoError(t, s.MarkChatRead(ctx, "oc_walked", 1100))
+	_, err = s.AcceptRemoteRead(ctx, "oc_walked", 0)
+	require.NoError(t, err)
 
 	probes, err := s.ReadStatusProbes(ctx, ReadCheckQuery{Self: "ou_me", SinceMs: 100, Limit: 10})
 	require.NoError(t, err)
-	require.Equal(t, []ReadProbe{{"om_walked", "oc_walked", false}}, probes,
-		"the receipt is what takes the chat out of ChatsWithUnread, so this is the question the sweep converges on")
+	require.Equal(t, []ReadProbe{{"om_walked", "oc_walked", true}}, probes)
 }
 
-func TestMarkAllRead_SettlesEveryChatIncludingThreadReplies(t *testing.T) {
+func TestChatsWithUnread_DropsAfterAcceptUntilFeishuDisagrees(t *testing.T) {
 	s := openTest(t)
 	ctx := t.Context()
-	reply := msgAt("om_reply", "oc_b", 20, -3, "answered an old topic")
-	reply.ThreadID = "omt_1"
-	root := msgAt("om_root", "oc_b", 10, 1, "an old topic")
-	root.ThreadID = "omt_1"
-	_, err := s.UpsertMessages(ctx, []Message{msgAt("om_a", "oc_a", 10, 1, "one"), root, reply}, 1)
+	_, err := s.UpsertMessages(ctx, []Message{msgAt("om_c", "oc_c", 30, 1, "one")}, 1)
 	require.NoError(t, err)
-	markUnread(t, s, "om_a")
-	markUnread(t, s, "om_reply")
-
-	n, err := s.MarkAllRead(ctx, 5000)
+	markUnread(t, s, "om_c")
+	_, err = s.AcceptRemoteRead(ctx, "oc_c", 1)
 	require.NoError(t, err)
-	require.Equal(t, int64(2), n)
-
-	require.Empty(t, unreadCounts(t, s), "every badge is down")
-	m, _ := s.GetMessage(ctx, "om_reply")
-	require.Equal(t, int64(5000), m.LocalReadAt,
-		"a thread reply is settled too: marking everything read is what the reader asked for")
-	m, _ = s.GetMessage(ctx, "om_root")
-	require.Zero(t, m.LocalReadAt, "nothing was waiting on the root")
-}
-
-func TestMarkAllRead_CollectsSilencedMessagesToo(t *testing.T) {
-	s := openTest(t)
-	ctx := t.Context()
-	quiet := msgAt("om_quiet", "oc_a", 10, 1, "nightly build")
-	quiet.Silenced = true
-	_, err := s.UpsertMessages(ctx, []Message{quiet}, 1)
-	require.NoError(t, err)
-	markUnread(t, s, "om_quiet")
-	require.Empty(t, unreadCounts(t, s), "a silenced message never carried a badge")
-
-	_, err = s.MarkAllRead(ctx, 5000)
-	require.NoError(t, err)
-
-	m, _ := s.GetMessage(ctx, "om_quiet")
-	require.Equal(t, int64(5000), m.LocalReadAt,
-		"silence decides whether to interrupt, not whether the Feishu client still has a dot for it")
-}
-
-func TestMarkAllRead_OnAReadStoreBumpsNoRevision(t *testing.T) {
-	s := openTest(t)
-	ctx := t.Context()
-	_, err := s.UpsertMessages(ctx, []Message{msgAt("om_a", "oc_a", 10, 1, "one")}, 1)
-	require.NoError(t, err)
-	markUnread(t, s, "om_a")
-	_, err = s.MarkAllRead(ctx, 5000)
-	require.NoError(t, err)
-
-	before, err := s.DataRev(ctx)
-	require.NoError(t, err)
-	n, err := s.MarkAllRead(ctx, 6000)
-	require.NoError(t, err)
-	after, err := s.DataRev(ctx)
-	require.NoError(t, err)
-
-	require.Zero(t, n)
-	require.Equal(t, before, after, "an inert call must not wake the watchers that reload on it")
-}
-
-func TestChatsWithUnread_KeepsAChatTheReaderAlreadyTookHere(t *testing.T) {
-	s := openTest(t)
-	ctx := t.Context()
-	_, err := s.UpsertMessages(ctx, []Message{
-		msgAt("om_a", "oc_a", 10, 1, "one"),
-		msgAt("om_a2", "oc_a", 11, 2, "two"),
-		msgAt("om_b", "oc_b", 20, 1, "elsewhere"),
-		msgAt("om_c", "oc_c", 30, 1, "already read here"),
-	}, 1)
-	require.NoError(t, err)
-	for _, id := range []string{"om_a", "om_a2", "om_b", "om_c"} {
-		markUnread(t, s, id)
-	}
-	require.NoError(t, s.MarkChatRead(ctx, "oc_c", 4000))
-
-	want := []ChatUnread{{ChatID: "oc_a", Position: 2}, {ChatID: "oc_b", Position: 1}, {ChatID: "oc_c", Position: 1}}
 	chats, err := s.ChatsWithUnread(ctx)
 	require.NoError(t, err)
-	require.Equal(t, want, chats,
-		"one entry per chat at its newest waiting message; reading oc_c here said nothing about the client's dot")
+	require.Empty(t, chats)
 
-	_, err = s.MarkAllRead(ctx, 5000)
+	unread := false
+	require.NoError(t, s.SetReadStatus(ctx, "om_c", &unread, 5000, 0))
+	chats, err = s.ChatsWithUnread(ctx)
 	require.NoError(t, err)
-	after, err := s.ChatsWithUnread(ctx)
-	require.NoError(t, err)
-	require.Equal(t, want, after,
-		"the local write settles larkim's half only, so a pass the client slept through can be run again")
+	require.Len(t, chats, 1)
 }
 
 func TestChatWithUnread_AnswersWithTheChatsNewestWaitingMessage(t *testing.T) {
@@ -715,13 +655,12 @@ func TestChatWithUnread_AnswersWithTheChatsNewestWaitingMessage(t *testing.T) {
 		markUnread(t, s, id)
 	}
 	require.NoError(t, s.SetReadStatus(ctx, "om_c", new(true), 100, 0))
-	require.NoError(t, s.MarkChatRead(ctx, "oc_a", 4000))
 
 	got, ok, err := s.ChatWithUnread(ctx, "oc_a")
 	require.NoError(t, err)
 	require.True(t, ok)
 	require.Equal(t, ChatUnread{ChatID: "oc_a", Position: 2}, got,
-		"the same row ChatsWithUnread lists for the chat, local reads and thread replies aside")
+		"the same row ChatsWithUnread lists for the chat; thread replies aside")
 
 	_, ok, err = s.ChatWithUnread(ctx, "oc_c")
 	require.NoError(t, err)
@@ -738,11 +677,9 @@ func TestChatsWithUnread_DropsAChatFeishuReportsRead(t *testing.T) {
 	require.NoError(t, err)
 	markUnread(t, s, "om_a")
 	markUnread(t, s, "om_b")
-	_, err = s.MarkAllRead(ctx, 5000)
+	_, err = s.AcceptRemoteRead(ctx, "oc_a", 1)
 	require.NoError(t, err)
-
-	// The client navigated to oc_a and sent its receipt; oc_b it never drew.
-	require.NoError(t, s.SetReadStatus(ctx, "om_a", new(true), 6000, 0))
+	require.NoError(t, s.ConfirmAcceptedRead(ctx, "oc_a", 6000))
 
 	chats, err := s.ChatsWithUnread(ctx)
 	require.NoError(t, err)
@@ -764,11 +701,6 @@ func TestChatsWithUnread_LeavesOutThreadRepliesAndRecalls(t *testing.T) {
 	for _, id := range []string{"om_reply", "om_gone", "om_quiet"} {
 		markUnread(t, s, id)
 	}
-	// Taking them read here must not be what keeps them out: their receipts
-	// never flip, so listing one would walk the client onto it on every press.
-	_, err = s.MarkAllRead(ctx, 5000)
-	require.NoError(t, err)
-
 	chats, err := s.ChatsWithUnread(ctx)
 	require.NoError(t, err)
 	require.Equal(t, []ChatUnread{{ChatID: "oc_quiet", Position: 1}}, chats,

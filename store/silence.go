@@ -187,7 +187,7 @@ func (s *Store) ReapplySilence(ctx context.Context) (int64, error) {
 		// again, so the queue comes from the whole table here.
 		if _, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO silence_settle_queue (chat_id)
  SELECT DISTINCT m.chat_id FROM messages m JOIN read_state r ON r.message_id = m.message_id
- WHERE m.silenced = 1 AND `+clientDot+`
+ WHERE m.silenced = 1 AND `+unreadBadge+`
    AND m.message_position > COALESCE((SELECT c.silence_settled_pos FROM chats c WHERE c.chat_id = m.chat_id), 0)`); err != nil {
 			return 0, fmt.Errorf("queue silence settle: %w", err)
 		}

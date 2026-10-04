@@ -597,6 +597,13 @@ func (s *Syncer) settleSilenced(ctx context.Context) (int, error) {
 			}
 			continue
 		}
+		if _, err := s.Store.AcceptRemoteRead(ctx, p.ChatID, p.Position); err != nil {
+			s.log().Warn("accept remote read", "chat_id", p.ChatID, "err", err)
+			if serr := s.Store.SilenceSettleFailed(ctx, p.ChatID); serr != nil {
+				s.log().Warn("count silence settle failure", "chat_id", p.ChatID, "err", serr)
+			}
+			continue
+		}
 		settled++
 		if err := s.Store.SilenceSettleDone(ctx, p.ChatID, p.Position); err != nil {
 			return settled, err
