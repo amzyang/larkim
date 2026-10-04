@@ -56,7 +56,7 @@ func TestPrefixBar(t *testing.T) {
 func TestCombined_BarMatchesPrefixBar(t *testing.T) {
 	st := testStyles()
 	c := Combined{
-		Prefix: "g",
+		Prefix:  "g",
 		Choices: []Binding{{Keys: "g", Desc: "top"}},
 	}
 	require.Equal(t,

@@ -71,6 +71,20 @@ func TestFloater_TintsTheCursorRowAcrossItsWidth(t *testing.T) {
 		require.NotContains(t, lines[2], "\x1b[48;2;231;238;252m", "no other row does")
 	}
 }
+
+func TestFloater_UsesNormalBorder(t *testing.T) {
+	t.Parallel()
+	m := typeInto(newPumModel(t), ":do")
+	f, ok := m.floater()
+	require.True(t, ok)
+	lines := strings.Split(f.block, "\n")
+	top := ansi.Strip(lines[0])
+	bottom := ansi.Strip(lines[len(lines)-1])
+	require.True(t, strings.HasPrefix(top, "┌"), "top-left is ┌: %q", top)
+	require.True(t, strings.HasSuffix(top, "┐"), "top-right is ┐: %q", top)
+	require.True(t, strings.HasPrefix(bottom, "└"), "bottom-left is └: %q", bottom)
+	require.True(t, strings.HasSuffix(bottom, "┘"), "bottom-right is ┘: %q", bottom)
+}
 func TestFloatOver_DrawsThePopupOverTheMessagesPane(t *testing.T) {
 	t.Parallel()
 	m := typeInto(newPumModel(t), ":do")

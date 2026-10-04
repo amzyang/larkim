@@ -330,57 +330,65 @@ func (m Model) contextMenuView() menuView {
 }
 
 func (m Model) contextMenuFloater() (floater, bool) {
-	v := m.contextMenuView()
-	if len(v.rows) == 0 {
+	items := m.contextMenu.items
+	if len(items) == 0 {
 		return floater{}, false
 	}
-	segs := make([][]rowSeg, len(v.rows))
-	for i, o := range v.rows {
-		segs[i] = m.contextMenuRow(o, v.cols, i == v.sel)
-	}
-	w := 0
-	for _, s := range segs {
-		w = max(w, segsWidth(s))
-	}
-	w = min(w, m.width-2)
-	lines := make([]string, len(segs))
-	for i, s := range segs {
-		line := m.joinSegs(s, w)
-		if i == v.sel {
-			line = paint(stChatSelBG, line)
+	const (
+		iconCol = 2
+		gap     = 3
+	)
+	maxDesc := 0
+	maxKey := 0
+	for _, it := range items {
+		maxDesc = max(maxDesc, lipgloss.Width(it.hint.Desc))
+		k := it.hint.Keys
+		if k == "" {
+			k = "↵"
 		}
-		lines[i] = line
+		maxKey = max(maxKey, lipgloss.Width(k))
 	}
+	chrome := iconCol + 1 + gap + maxKey + 4 // +4 for borders and padding
+	maxDesc = min(maxDesc, max(8, m.width-chrome))
+	maxDesc = min(maxDesc, 32)
+
+	lines := make([]string, len(items))
+	for i, it := range items {
+		lines[i] = m.contextMenuRow(it, maxDesc, maxKey, i == m.contextMenu.cursor)
+	}
+	block := popupStyle().Padding(0, 1).Render(strings.Join(lines, "\n"))
 	f := floater{
-		block: paneStyle(true).Render(strings.Join(lines, "\n")),
-		w:     w + 2,
-		h:     len(lines) + 2,
+		block: block,
+		w:     lipgloss.Width(block),
+		h:     lipgloss.Height(block),
 	}
 	f.x = m.contextMenu.x
 	f.y = m.contextMenu.y
 	if f.x+f.w > m.width {
 		f.x = max(0, m.contextMenu.x-f.w)
 	}
-	if f.y+f.h > m.height {
+	if f.y+f.h > m.height-statusHeight {
 		f.y = max(0, m.contextMenu.y-f.h)
 	}
 	f.x = clamp(f.x, 0, max(0, m.width-f.w))
-	f.y = clamp(f.y, 0, max(0, m.height-f.h))
+	f.y = clamp(f.y, 0, max(0, m.height-statusHeight-f.h))
 	return f, true
 }
 
-func (m Model) contextMenuRow(o offer, c offerCols, selected bool) []rowSeg {
-	sel := func(s string) string {
-		if !selected {
-			return s
-		}
-		return paint(stChatSel, s)
+func (m Model) contextMenuRow(it contextMenuItem, maxDesc, maxKey int, selected bool) string {
+	icon := fit(it.icon, 2)
+	desc := fit(truncate(it.hint.Desc, maxDesc), maxDesc)
+	k := it.hint.Keys
+	if k == "" {
+		k = "↵"
 	}
-	icon := fit(o.icon.text, 2) + " "
-	name := sel(fit(truncate(o.name, c.name), c.name))
-	return []rowSeg{{text: sel(icon + name)}}
+	key := fit(k, maxKey)
+	row := icon + " " + desc + "   " + key
+	if selected {
+		return paint(stChatSel, row)
+	}
+	return icon + " " + desc + "   " + stDim.Render(key)
 }
-
 func (m Model) contextMenuAnchorChats() (int, int) {
 	row := m.chatIdx - m.chatTop
 	y := 1 + headerHeight + row*chatRowStride + chatRowHeight/2

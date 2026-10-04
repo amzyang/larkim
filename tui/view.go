@@ -952,6 +952,14 @@ func paneStyle(focused bool) lipgloss.Style {
 	return lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(c)
 }
 
+// popupStyle draws the border for floating overlays (pum completion popup,
+// context menus, reaction pickers). NormalBorder provides square single-line
+// intersections without background cell bleed past rounded corners or notched
+// divider collisions.
+func popupStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(colAccent)
+}
+
 func (m Model) renderChats(h int) string {
 	vis := m.visibleRows()
 	w := chatsWidth - 2

@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
@@ -238,4 +239,33 @@ func TestForward_LeavesContextMenuAlone(t *testing.T) {
 	m = mm.(Model)
 	require.Equal(t, modeContextMenu, m.mode)
 	require.Empty(t, m.input.Value())
+}
+
+func TestContextMenu_RenderedBlockHasNormalBorderAndStructuredColumns(t *testing.T) {
+	t.Parallel()
+	m := pickerModel(t)
+	line := firstMessageLine(m)
+	next, _ := m.onRightClick(tea.Mouse{Button: tea.MouseRight, X: chatsWidth + 4,
+		Y: messageClickY(m, line)})
+	m = next.(Model)
+
+	f, ok := m.contextMenuFloater()
+	require.True(t, ok)
+	lines := strings.Split(f.block, "\n")
+	require.Greater(t, len(lines), 2)
+
+	topLine := ansi.Strip(lines[0])
+	require.True(t, strings.HasPrefix(topLine, "┌"), "top-left corner is ┌: %q", topLine)
+	require.True(t, strings.HasSuffix(topLine, "┐"), "top-right corner is ┐: %q", topLine)
+
+	bottomLine := ansi.Strip(lines[len(lines)-1])
+	require.True(t, strings.HasPrefix(bottomLine, "└"), "bottom-left corner is └: %q", bottomLine)
+	require.True(t, strings.HasSuffix(bottomLine, "┘"), "bottom-right corner is ┘: %q", bottomLine)
+
+	firstRow := ansi.Strip(lines[1])
+	require.True(t, strings.HasPrefix(firstRow, "│ "), "row has left padding inside border: %q", firstRow)
+	require.True(t, strings.HasSuffix(firstRow, " │"), "row has right padding inside border: %q", firstRow)
+	require.Contains(t, firstRow, "Reply")
+	require.Contains(t, firstRow, "r")
+	require.Contains(t, lines[1], "231;238;252")
 }

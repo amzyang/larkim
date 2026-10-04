@@ -138,15 +138,14 @@ func (m Model) floater() (floater, bool) {
 		lines[i] = line
 	}
 	f := floater{
-		block: paneStyle(true).Render(strings.Join(lines, "\n")),
+		block: popupStyle().Render(strings.Join(lines, "\n")),
 		w:     w + 2,
 		h:     len(lines) + 2,
 	}
-	// The popup's bottom border lands on the pane's, so the two read as one
-	// line with a notch in it and the offers stand one row off the composer.
-	// Dropping it a row further would put a row of offers inside the pane's
-	// border instead, and a row further still would break the box the reader
-	// is typing in.
+	// The popup's bottom border lands on the pane's, so the offers stand
+	// one row off the composer. Dropping it a row further would put a row of
+	// offers inside the pane's border instead, and a row further still would
+	// break the box the reader is typing in.
 	f.y = m.bodyHeight() + 2 - f.h
 	// One column left of the anchor, so the offers — not the border — line up
 	// under the run. A box that would hang off the edge is pushed back on.
@@ -208,7 +207,7 @@ func (m Model) infoFloater(menu floater) (floater, bool) {
 		lines[room-1] = fit(truncate(last+"…", cols), cols)
 	}
 	f := floater{
-		block: paneStyle(true).Render(strings.Join(lines, "\n")),
+		block: popupStyle().Render(strings.Join(lines, "\n")),
 		w:     cols + 2,
 		h:     len(lines) + 2,
 	}

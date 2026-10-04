@@ -62,7 +62,7 @@ var (
 		{Keys: "esc", Desc: "cancel"},
 	}
 	replyBarHintBinding = KeyBinding{Keys: "^r", Desc: "drops the quote"}
-	yankCombined = keyhint.Combined{
+	yankCombined        = keyhint.Combined{
 		Prefix: "y",
 		Choices: []KeyBinding{
 			{Keys: "y", Desc: "id"},
