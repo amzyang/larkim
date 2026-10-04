@@ -28,6 +28,8 @@ func TestNerdGlyphs_EachCarriesTheCellThatKeepsItFullSize(t *testing.T) {
 		"draftGlyph":      draftGlyph,
 		"markAllGlyph":    markAllGlyph,
 		"replyGlyph":      replyGlyph,
+		"todoBoxDone":     todoBoxDone,
+		"todoBoxOpen":     todoBoxOpen,
 		"p2p":             chatModeGlyph("p2p"),
 		"group":           chatModeGlyph("group"),
 		"topic":           chatModeGlyph("topic"),

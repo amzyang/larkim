@@ -53,6 +53,18 @@ func TestTodoRows_DrawTheBoxTheRenderingCarries(t *testing.T) {
 		todoLines(t, "☐ 写周报\nDue: 2026-09-29 18:00:00", false))
 }
 
+func TestTodoRows_RebuildsALeftoverXMLRenderingFromTheBody(t *testing.T) {
+	t.Parallel()
+	// The previous stored shape was lark-cli's tag. Cutting that first
+	// line on a space would title the card "task_id=…" and leave </todo>
+	// as a detail row.
+	legacy := "<todo task_id=\"task_a\">\nFrom chat with AI Assistant\n</todo>"
+	require.Equal(t, []string{todoBoxOpen + " From chat with AI Assistant"},
+		todoLines(t, legacy, false))
+	require.Equal(t, []string{todoBoxDone + " From chat with AI Assistant"},
+		todoLines(t, legacy, true), "the icon still reads todo_done, not the leftover tag")
+}
+
 func TestTodoRows_SplitTheBoxFromTheSummaryItLeads(t *testing.T) {
 	t.Parallel()
 	rows := renderRows(todoRaw("☑ From chat with AI Assistant", true), baseStyle())

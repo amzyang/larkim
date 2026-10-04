@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"cmp"
 	"strings"
 
 	"charm.land/lipgloss/v2"
@@ -43,8 +42,15 @@ func todoRows(x store.Message, idx int, st msgStyle, g *leads) []msgRow {
 // box it stores for the circles the terminal draws a task's state with. What
 // the database holds stays free of private-use glyphs; the swap is the
 // card's alone, and done reports the state the swapped glyph stands for.
+//
+// A leftover <todo>…</todo> from before the checkbox lived in the text is
+// not a rendering this reader can use: the first space in that tag is not
+// the box, so the body is what the card is built from.
 func todoDisplay(x store.Message) (display string, done bool) {
-	stored := cmp.Or(x.Content, sync.TodoText(x.ContentRaw))
+	stored := x.Content
+	if !todoStored(stored) {
+		stored = sync.TodoText(x.ContentRaw)
+	}
 	done = x.TodoDone
 	box := todoBoxOpen
 	if done {
@@ -62,6 +68,13 @@ func todoDisplay(x store.Message) (display string, done bool) {
 		out = append(out, l)
 	}
 	return strings.Join(out, "\n"), done
+}
+
+// todoStored reports a rendering that already carries the checkbox
+// todoText writes. Anything else — empty, leftover XML, a type label — is
+// not a card this swap can read.
+func todoStored(s string) bool {
+	return strings.HasPrefix(s, "\u2610") || strings.HasPrefix(s, "\u2611")
 }
 
 // todoBoxRow is the card's first line, split between the box and its
