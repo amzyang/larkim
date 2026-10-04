@@ -91,6 +91,10 @@ func (m Model) onClearDue(msg clearDueMsg) (Model, tea.Cmd) {
 	}
 	if len(m.clears.left) == 0 {
 		if m.clears.inflight > 0 {
+			// No tick is scheduled past this one, so the queue stops being
+			// armed: a push that lands before the last clear settles has to
+			// arm a chain of its own or it waits for good.
+			m.clears.armed = false
 			return m, nil
 		}
 		return m.closeSweep(), nil
