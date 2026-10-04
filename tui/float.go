@@ -43,6 +43,10 @@ func (m Model) floatCeiling() int { return m.bodyHeight() - msgHeaderHeight - 1 
 // says which, so a list left behind by a mode the reader has moved on from is
 // never drawn.
 func (m Model) floatMenu() (menuView, bool) {
+	if m.mode == modeContextMenu {
+		v := m.contextMenuView()
+		return v, len(v.rows) > 0
+	}
 	var v menuView
 	switch m.mode {
 	case modeInsert:
@@ -109,6 +113,9 @@ func (m Model) floatAnchor() int {
 // floater places the popup. It is the last thing drawn, over everything the
 // frame put under it.
 func (m Model) floater() (floater, bool) {
+	if m.mode == modeContextMenu {
+		return m.contextMenuFloater()
+	}
 	segs := m.floatSegs()
 	if len(segs) == 0 {
 		return floater{}, false
@@ -237,6 +244,8 @@ func (m Model) walkFloat(d int) Model {
 		m.cand.move(d, m.candRows())
 	case modeEmoji:
 		m.picker.menu.move(d, m.reactRows())
+	case modeContextMenu:
+		m = m.walkContextMenu(d)
 	}
 	return m
 }

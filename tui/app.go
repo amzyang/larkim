@@ -54,6 +54,7 @@ const (
 	modeTarget
 	modeForward
 	modeCandidates
+	modeContextMenu
 )
 
 // Model is the Bubble Tea model.
@@ -134,6 +135,8 @@ type Model struct {
 	reEdit *reEditPending
 	// fwd is the forward chooser, open only in modeForward.
 	fwd forwarder
+	// contextMenu is the right-click action list, open only in modeContextMenu.
+	contextMenu contextMenuState
 	// help is the ? overlay, which takes every key while it is open.
 	help helpPanel
 	// config is the :config overlay, the editor of the configuration file.
@@ -1162,14 +1165,25 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.notify(fmt.Sprintf("copied %s · %s · %s", plural(msg.n, "msg", "msgs"), humanBytes(int64(len(msg.text))), msg.chat), false),
 			tea.SetClipboard(msg.text)
 	case tea.MouseClickMsg:
+		if m.mode == modeContextMenu {
+			return m.onClick(tea.Mouse(msg))
+		}
 		if m.help.open || m.floatAt(msg.X, msg.Y) {
 			// Nothing under the overlay is clickable, and a click is not a
 			// key the reader meant as "done reading".
 			return m, nil
 		}
+		if msg.Button == tea.MouseRight {
+			return m.onRightClick(tea.Mouse(msg))
+		}
 		return m.onClick(tea.Mouse(msg))
 	case tea.MouseWheelMsg:
 		return m.onWheel(tea.Mouse(msg))
+	case tea.MouseMotionMsg:
+		if m.mode == modeContextMenu {
+			return m.onContextMenuMotion(tea.Mouse(msg))
+		}
+		return m, nil
 	case tea.KeyPressMsg:
 		return m.onKey(msg)
 	case tea.PasteMsg:
@@ -1211,6 +1225,8 @@ func (m Model) forward(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.typeIntoFilter(msg)
 	case modeForward:
 		return m.typeIntoForward(msg)
+	case modeContextMenu:
+		return m, nil
 	}
 	return m, nil
 }
@@ -1845,6 +1861,8 @@ func (m Model) onKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m.onSearchKey(k)
 	case modeVisual:
 		return m.onVisualKey(s)
+	case modeContextMenu:
+		return m.onContextMenuKey(k)
 	}
 	return m.onNormalKey(s)
 }
@@ -2083,6 +2101,13 @@ func (m Model) onNormalKey(s string) (tea.Model, tea.Cmd) {
 		if m.inFeed() {
 			return m.markSectionRead(m.feedChatAt(m.msgIdx))
 		}
+		return m.openContextMenuAtCursor()
+	case " ", "space":
+		return m.openContextMenuAtCursor()
+	case "f10":
+		return m.openContextMenuAtCursor()
+	case "shift+f10":
+		return m.openContextMenuAtCursor()
 	case "enter":
 		return m.activate()
 	case "e":
@@ -2970,6 +2995,12 @@ func (m Model) focusMessages() (Model, tea.Cmd) {
 // --- mouse ----------------------------------------------------------------
 
 func (m Model) onClick(ms tea.Mouse) (tea.Model, tea.Cmd) {
+	if m.mode == modeContextMenu {
+		if ms.Button == tea.MouseLeft {
+			return m.contextMenuClick(ms)
+		}
+		return m, nil
+	}
 	if ms.Button != tea.MouseLeft {
 		return m, nil
 	}
@@ -3176,6 +3207,9 @@ func (m Model) onWheel(ms tea.Mouse) (tea.Model, tea.Cmd) {
 		m.helpScroll(step)
 		return m, nil
 	}
+	if m.mode == modeContextMenu {
+		return m.walkContextMenu(cmp.Compare(step, 0)), nil
+	}
 	if m.floatAt(ms.X, ms.Y) {
 		// A notch is three rows everywhere else, which over a list of eight
 		// offers walks past most of them; the popup moves by one, the way the
@@ -3285,6 +3319,8 @@ func modeAbbr(md mode) string {
 		return "O"
 	case modeCandidates:
 		return "D"
+	case modeContextMenu:
+		return "M"
 	}
 	return "N"
 }

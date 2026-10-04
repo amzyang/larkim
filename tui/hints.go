@@ -40,6 +40,11 @@ var (
 		{Keys: "digits", Desc: "jump"},
 		{Keys: "esc", Desc: "cancel"},
 	}
+	contextMenuHintBar = []KeyBinding{
+		{Keys: "j/k", Desc: "move"},
+		{Keys: "Enter", Desc: "run"},
+		{Keys: "Esc", Desc: "close"},
+	}
 	helpOverlayHintBar = []KeyBinding{
 		{Keys: "/", Desc: "filter"},
 		{Keys: "j/k", Desc: "scroll"},
@@ -68,6 +73,15 @@ func macKeys(s string) string { return keyhint.MacKeys(s) }
 func renderKey(s string) string { return keyhint.RenderKey(s, keyhintStyles()) }
 
 func renderKeyDesc(b KeyBinding) string { return keyhint.RenderDesc(b, keyhintStyles()) }
+
+// renderMenuKeyDesc is one context-menu row's shortcut, styled through
+// keyhint the same way the status bar and overlay footers render theirs.
+func renderMenuKeyDesc(b KeyBinding) string {
+	if b.Keys == "" {
+		b.Keys = "enter"
+	}
+	return renderKeyDesc(b)
+}
 
 func renderKeyHintBar(bindings []KeyBinding, w int) string {
 	return keyhint.HintBar(bindings, w, keyhintStyles())

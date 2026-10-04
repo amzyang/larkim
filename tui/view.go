@@ -830,6 +830,11 @@ func (m Model) View() tea.View {
 	var v tea.View
 	v.AltScreen = true
 	v.MouseMode = tea.MouseModeCellMotion
+	if m.mode == modeContextMenu {
+		// Hover follows the pointer without a held button, the way Herdr's
+		// context menu and tmux's popup menus track motion over their rows.
+		v.MouseMode = tea.MouseModeAllMotion
+	}
 	v.ReportFocus = true
 	v.KeyboardEnhancements = tea.KeyboardEnhancements{ReportAlternateKeys: true}
 	v.WindowTitle = windowTitle(m.rows.all(m.chats, m.threads), m.unread)
@@ -1412,6 +1417,8 @@ func (m Model) statusKeyHints(availWidth int) string {
 			{Keys: "Enter", Desc: "open"},
 			{Keys: "Esc", Desc: "cancel"},
 		}
+	case modeContextMenu:
+		pool = contextMenuHintBar
 	default:
 		pool = []KeyBinding{
 			{Keys: "r", Desc: "reply"},
