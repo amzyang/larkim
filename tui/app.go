@@ -1439,7 +1439,7 @@ func (m *Model) markDots(msgs []store.Message) {
 // one is still waiting.
 func (m *Model) clearDotsAtCursor() bool {
 	switch {
-	case m.focus == paneMessages && !m.searching && m.feed == nil:
+	case m.focus == paneMessages && m.chatPage():
 		return m.clearBlockDots(m.msgs, m.msgIdx, m.msgStyleFor(m.messagesWidth()-2, m.meta))
 	case m.focus == paneThread && !m.aiOpen():
 		return m.clearBlockDots(m.thread, m.threadIdx, m.msgStyleFor(m.rightWidth()-2, m.threadMeta))
@@ -1683,7 +1683,7 @@ func (m Model) jumpToQuoted(p pane, id string) (tea.Model, tea.Cmd) {
 	// The search panel lists hits rather than a chat, and the Unread panel
 	// holds only what is still waiting, so a quote drawn in either rarely
 	// points at anything on screen and never at the right copy of it.
-	if !m.searching && m.feed == nil {
+	if m.chatPage() {
 		// A thread reply can answer something said in the chat itself, which
 		// is in the other pane.
 		if i := indexOfID(m.msgs, id); i >= 0 {
@@ -1691,7 +1691,7 @@ func (m Model) jumpToQuoted(p pane, id string) (tea.Model, tea.Cmd) {
 			m.msgIdx = i
 			m.clearDotsAtCursor()
 			m.rebuildMessages()
-			m.scrollMessagesToSelection()
+			m.scrollMessagesToFoot()
 			return m, nil
 		}
 	}

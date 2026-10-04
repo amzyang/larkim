@@ -3,6 +3,8 @@ package tui
 import (
 	"errors"
 	"fmt"
+	"slices"
+	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
@@ -206,4 +208,58 @@ func TestNoteOlderPull_ASuccessRereadsTheFloorItMoved(t *testing.T) {
 	require.NotNil(t, m.noteOlderPull(olderPulledMsg{chatID: m.chatID}))
 	require.False(t, m.msgPullInFlight)
 	require.Empty(t, m.notice)
+}
+
+// A short chat hangs from the foot of the pane, the way the client hangs it.
+func TestRenderMessages_ShortChatHugsTheFoot(t *testing.T) {
+	t.Parallel()
+	m := paged(2, messagePageSize)
+	m.chatID = "oc_1"
+
+	lines := strings.Split(paneText(m), "\n")
+	newest, firstRow := 0, 0
+	for i, ln := range lines {
+		if strings.Contains(ln, "content") {
+			newest = i
+		}
+		if strings.Contains(ln, "Beginning of chat") {
+			firstRow = i
+		}
+	}
+	require.Equal(t, len(lines)-2, newest, "the newest message owns the line above the bottom border")
+	require.Positive(t, firstRow-3, "blank rows sit above the conversation, not under it")
+}
+
+func TestScrollToFoot_AnchorsTheSelectionOnTheBottomEdge(t *testing.T) {
+	t.Parallel()
+	m := paged(messagePageSize, messagePageSize)
+	m.msgIdx = 150
+	m.scrollMessagesToFoot()
+	require.Equal(t, lastRow(m.msgRows, m.msgIdx)+1, m.msgTop+m.msgListHeight(),
+		"the selection's last row is the view's last row")
+}
+
+// A click lands on the row the screen draws, not pad rows below it: with a
+// short page hanging from the foot, the blank pad overhead is where the rows
+// are not.
+func TestOnClick_AShortChatLandsOnTheDrawnRow(t *testing.T) {
+	t.Parallel()
+	m := paged(2, messagePageSize)
+	m.chatID = "oc_1"
+	m.msgsBase[0].Content, m.msgsBase[1].Content = "first words", "last words"
+	m.applyOutbox()
+	m.rebuildMessages()
+
+	lines := strings.Split(paneText(m), "\n")
+	y := slices.IndexFunc(lines, func(ln string) bool { return strings.Contains(ln, "last words") })
+	require.NotEqual(t, -1, y, "the drawn page carries the message")
+	require.Positive(t, y-3, "the chat is short, so blank rows sit above the drawn row")
+
+	next, _ := m.onClick(tea.Mouse{Button: tea.MouseLeft, X: chatsWidth + 2, Y: y})
+	m = next.(Model)
+	require.Equal(t, "om_1", m.msgs[m.msgIdx].MessageID, "the click lands on the row the screen draws")
+
+	next, _ = m.onClick(tea.Mouse{Button: tea.MouseLeft, X: chatsWidth + 2, Y: 3})
+	m = next.(Model)
+	require.Equal(t, "om_1", m.msgs[m.msgIdx].MessageID, "a click on the blank pad selects nothing")
 }

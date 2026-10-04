@@ -34,9 +34,12 @@ func highlighted(m Model) []int {
 	bg := ansi.Style{}.BackgroundColor(m.th.sel.GetBackground()).String()
 	var out []int
 	lines := strings.Split(m.renderMessages(m.bodyHeight()), "\n")
+	// A short chat's rows hang from the foot of the pane with the pad above
+	// them, so a screen line is a row only past that pad.
+	pad := m.msgPad()
 	for i, line := range lines[3:] { // past the top border, the header and its rule
-		row := m.msgTop + i
-		if row < len(m.msgRows) && strings.Contains(line, bg) {
+		row := m.msgTop + i - pad
+		if row >= 0 && row < len(m.msgRows) && strings.Contains(line, bg) {
 			if idx := m.msgRows[row].idx; !slices.Contains(out, idx) {
 				out = append(out, idx)
 			}

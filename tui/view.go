@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"image/color"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -304,6 +305,20 @@ func (m Model) listHeight() int { return max(1, m.bodyHeight()-headerHeight) }
 // msgListHeight is listHeight for the messages pane, which spends a second row
 // on the rule under its title.
 func (m Model) msgListHeight() int { return max(1, m.bodyHeight()-msgHeaderHeight) }
+
+// msgPad is the blank rows the renderer holds above a short chat page, which
+// hangs from the foot of the pane. hit and the tests read it too: a screen
+// line is a row of the list only past the pad.
+func (m Model) msgPad() int {
+	if !m.chatPage() {
+		return 0
+	}
+	drawn := min(len(m.msgRows)-m.msgTop, m.msgListHeight())
+	if len(m.msgRows) == 0 {
+		drawn = 1 // the line the empty state draws
+	}
+	return max(0, m.msgListHeight()-drawn)
+}
 
 // aiListHeight is the assistant panel's viewport: the pane's title, the
 // context strip and the rule under it are three rows the turns never get.
@@ -679,6 +694,10 @@ func (m *Model) scrollMessagesToSelection() {
 	m.msgTop = scrollTo(m.msgRows, m.msgIdx, m.msgTop, m.msgListHeight())
 }
 
+func (m *Model) scrollMessagesToFoot() {
+	m.msgTop = scrollToFoot(m.msgRows, m.msgIdx, m.msgListHeight())
+}
+
 func (m *Model) scrollThreadToSelection() {
 	m.threadTop = scrollTo(m.threadRows, m.threadIdx, m.threadTop, m.listHeight())
 }
@@ -741,6 +760,14 @@ func scrollTo(rows []msgRow, idx, top, h int) int {
 	return clamp(top, 0, max(0, len(rows)-h))
 }
 
+// scrollToFoot anchors the selection on the bottom edge of the view, the way
+// the client lands a jump: the message sits at the foot of the pane with the
+// history it answers above it, not pinned to the top with the rest of the
+// chat under the fold.
+func scrollToFoot(rows []msgRow, idx, h int) int {
+	return clamp(lastRow(rows, idx)-h+1, 0, max(0, len(rows)-h))
+}
+
 // hit maps screen coordinates to a pane and the row inside its list. A row of
 // -1 is the pane's own head — its title, the rule the messages pane draws
 // under one, the three lines the assistant column draws — which indexes
@@ -790,7 +817,13 @@ func (m Model) hit(x, y int) (pane, int) {
 		}
 		return paneThread, listRow(headerHeight)
 	}
-	return paneMessages, listRow(msgHeaderHeight)
+	// A short chat page hangs from the foot of the pane with its pad above
+	// it, so a screen line is a row only past the pad; the pad's blank lines
+	// collapse into the head's no-row.
+	if row := listRow(msgHeaderHeight) - m.msgPad(); row >= 0 {
+		return paneMessages, row
+	}
+	return paneMessages, -1
 }
 
 func (m Model) View() tea.View {
@@ -1015,8 +1048,19 @@ func (m Model) renderMessages(h int) string {
 	case len(m.msgRows) == 0:
 		lines = append(lines, fit(stDim.Render("no messages synced for this chat yet"), w))
 	}
-	for len(lines) < h-msgHeaderHeight {
-		lines = append(lines, fit("", w))
+	// A chat's page hangs from the foot of the pane, the way the client hangs
+	// it: the newest message sits just above the composer, and the blank rows
+	// left over sit above the conversation rather than under a lone message,
+	// where they read as content gone missing. The panel and the search
+	// results read from the top, so theirs keep the filler below.
+	if m.chatPage() {
+		if pad := m.msgPad(); pad > 0 {
+			lines = append(slices.Repeat([]string{fit("", w)}, pad), lines...)
+		}
+	} else {
+		for len(lines) < h-msgHeaderHeight {
+			lines = append(lines, fit("", w))
+		}
 	}
 	content := header + "\n" + rule + "\n" + strings.Join(lines, "\n")
 	return paneStyle(m.focus == paneMessages).Height(h).Render(content)

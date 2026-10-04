@@ -220,6 +220,10 @@ func TestSelectedZones_LeavesTheSummaryLineToTheKeyboardsOwnKeys(t *testing.T) {
 func clickSummary(t *testing.T, m Model, p pane) Model {
 	t.Helper()
 	rows, top, x0 := m.msgRows, m.msgTop, chatsWidth+1
+	pad := 0
+	if p == paneMessages {
+		pad = m.msgPad()
+	}
 	if p == paneThread {
 		rows, top, x0 = m.threadRows, m.threadTop, m.width-m.rightWidth()+1
 	}
@@ -228,7 +232,7 @@ func clickSummary(t *testing.T, m Model, p pane) Model {
 			if z.open == "" {
 				continue
 			}
-			next, _ := m.onClick(tea.Mouse{Button: tea.MouseLeft, X: x0 + z.x0, Y: headerRow(p) + i - top})
+			next, _ := m.onClick(tea.Mouse{Button: tea.MouseLeft, X: x0 + z.x0, Y: headerRow(p) + i - top + pad})
 			return next.(Model)
 		}
 	}

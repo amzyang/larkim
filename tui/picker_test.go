@@ -441,7 +441,7 @@ func chipAt(t *testing.T, m Model, key string) (Model, tea.Cmd) {
 				continue
 			}
 			next, cmd := m.onClick(tea.Mouse{Button: tea.MouseLeft,
-				X: chatsWidth + 1 + z.x0, Y: line - m.msgTop + 1 + msgHeaderHeight})
+				X: chatsWidth + 1 + z.x0, Y: line - m.msgTop + 1 + msgHeaderHeight + m.msgPad()})
 			return next.(Model), cmd
 		}
 	}

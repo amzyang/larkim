@@ -537,7 +537,7 @@ func ruleLineOf(t *testing.T, m Model, chatID string) (row int) {
 // line is drawn at.
 func clickPane(m Model, col, line int) (tea.Model, tea.Cmd) {
 	return m.onClick(tea.Mouse{Button: tea.MouseLeft,
-		X: chatsWidth + 1 + col, Y: line - m.msgTop + 1 + msgHeaderHeight})
+		X: chatsWidth + 1 + col, Y: line - m.msgTop + 1 + msgHeaderHeight + m.msgPad()})
 }
 
 // markChatPress is a column inside the button closing a rule.

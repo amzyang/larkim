@@ -98,6 +98,11 @@ func (m *Model) feedAnswer(replyTo *store.Message) tea.Cmd {
 // that reads m.msgs has to ask this rather than the field.
 func (m Model) inFeed() bool { return m.feed != nil && !m.searching }
 
+// chatPage reports whether the message pane is drawing the open chat's own
+// page, rather than the panel's feed or the search hits, which run across
+// chats the reader has not opened.
+func (m Model) chatPage() bool { return m.feed == nil && !m.searching }
+
 // composerHeld reports whether the composer is carrying something of the
 // reader's: words they typed, or the message those words answer. Either makes
 // the widget theirs rather than the target chat's.
