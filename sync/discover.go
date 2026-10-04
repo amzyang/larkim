@@ -270,10 +270,16 @@ func (s *Syncer) runDiscovery(ctx context.Context) {
 	}
 }
 
+// attendedDiscoveryPause is the floor between cycles while somebody is
+// looking. A cycle is already a round trip, but with no floor the discovery
+// lane fills as fast as Feishu answers, which is what produces 2200 on the
+// chats that sit in the active head.
+const attendedDiscoveryPause = 400 * time.Millisecond
+
 // discoveryPause is how long discovery rests before its next cycle. With
-// somebody looking it does not rest: a cycle is already a round trip or two,
-// which is the whole of a new message's wait. With nobody looking, or no login
-// to call with, it keeps the sweep's pace; after a failure, the sweep's
+// somebody looking it only takes the floor: a cycle is already a round trip
+// or two, which is most of a new message's wait. With nobody looking, or no
+// login to call with, it keeps the sweep's pace; after a failure, the sweep's
 // backoff.
 func (s *Syncer) discoveryPause(loggedOut bool, err error, failures int) time.Duration {
 	switch {
@@ -282,14 +288,15 @@ func (s *Syncer) discoveryPause(loggedOut bool, err error, failures int) time.Du
 	case loggedOut || !s.attended.Load():
 		return s.Opt().PollInterval
 	}
-	return 0
+	return attendedDiscoveryPause
 }
 
 // SetAttended tells discovery whether somebody is looking at what it finds.
-// While they are, it runs cycle after cycle; while they are not, it keeps the
-// sweep's pace, since a message nobody is looking at is no later for landing
-// a second after it was sent. Coming back starts a cycle at once. Only the
-// process running Run discovers, so a TUI beside a daemon says it to nobody.
+// While they are, it runs cycle after cycle with only the attended floor
+// between them; while they are not, it keeps the sweep's pace, since a
+// message nobody is looking at is no later for landing a second after it was
+// sent. Coming back starts a cycle at once. Only the process running Run
+// discovers, so a TUI beside a daemon says it to nobody.
 func (s *Syncer) SetAttended(on bool) {
 	s.signals()
 	if s.attended.Swap(on) || !on {

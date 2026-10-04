@@ -112,7 +112,7 @@ func TestDiscoveryPause_RestsOnlyWhileNobodyIsLooking(t *testing.T) {
 	s, _, _ := newSyncer(t)
 	s.Opt().PollInterval = 2 * time.Second
 	s.SetAttended(true)
-	require.Zero(t, s.discoveryPause(false, nil, 0), "a reader is waiting on the next message")
+	require.Equal(t, attendedDiscoveryPause, s.discoveryPause(false, nil, 0), "a reader is waiting, but the lane is not filled")
 	require.Equal(t, 2*time.Second, s.discoveryPause(true, nil, 0), "without a login there is nothing to call with")
 
 	s.SetAttended(false)
