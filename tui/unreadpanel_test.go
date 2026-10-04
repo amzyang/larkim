@@ -690,3 +690,21 @@ func TestOnClick_TheRowOfTheChatThePanelPointsAtOpensIt(t *testing.T) {
 	require.Equal(t, rowOf(0), m.chatIdx)
 	require.Equal(t, "oc_a", m.pendingChat, "one click opens it, as it does any chat not on screen")
 }
+
+// Enter on a backlog message is a quick jump into the chat: the chat's own
+// page opens with the history the anchor used to hide, and the cursor lands on
+// the entered message rather than on the page's top.
+func TestFeed_OpenFeedHitLandsOnTheChatPageFocusedOnTheMessage(t *testing.T) {
+	t.Parallel()
+	m := feedModel(t)
+	m.msgIdx = indexOfID(m.msgs, "om_p1")
+
+	next, cmd := m.openFeedHit()
+	m = applyAll(t, next.(Model), cmd)
+
+	require.Equal(t, "oc_platform", m.chatID)
+	require.Zero(t, m.msgSince, "the chat opens on its own tail page, not on a window from the hit")
+	require.Equal(t, []string{"om_p0", "om_p1", "om_p2"}, idsOf(m.msgs),
+		"the read history before the backlog comes along")
+	require.Equal(t, "om_p1", m.msgs[m.msgIdx].MessageID, "the cursor lands on the entered message")
+}

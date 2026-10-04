@@ -151,10 +151,12 @@ func (m Model) jumpSection(step int) (tea.Model, tea.Cmd) {
 	return m.notify("", false), cmd
 }
 
-// openFeedHit leaves the panel for the chat the selected message is in,
-// anchored on the message itself — the same landing a search hit makes.
-// Reading it is that chat's business, which is the whole reason the panel does
-// not do it here.
+// openFeedHit leaves the panel for the chat the selected message is in, the
+// way pressing Enter on that chat's row does, with the cursor landing on the
+// message itself. The backlog that put the message here is the chat's newest
+// stretch, so its own page carries it and the history before it — an anchored
+// window from the hit would pin those few rows to the top of the pane and
+// hide the rest.
 func (m Model) openFeedHit() (tea.Model, tea.Cmd) {
 	sel, ok := m.selected()
 	if !ok {
@@ -162,7 +164,7 @@ func (m Model) openFeedHit() (tea.Model, tea.Cmd) {
 	}
 	m.pendingSelect = jumpTo(sel)
 	m.focus = paneMessages
-	cmd := m.openChatFrom(sel.ChatID, sel.CreateMs)
+	cmd := m.openChat(sel.ChatID)
 	return m.notify("", false), cmd
 }
 
