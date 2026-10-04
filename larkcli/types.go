@@ -122,6 +122,13 @@ type ReadStatus struct {
 	IsRead    bool   `json:"is_read"`
 }
 
+// Task is one of the signed-in user's todo tasks, reduced to what a todo
+// message's rendering needs: the completion, which no message body carries.
+type Task struct {
+	GUID string
+	Done bool
+}
+
 // ChatMember is one member of a chat. IsBot carries no tag: the answer says
 // which kind a member is by the bucket it arrives in, not by a field.
 type ChatMember struct {

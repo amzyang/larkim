@@ -123,6 +123,12 @@ type clickZone struct {
 	act aiAct
 	// cand is a lark-watch reply draft offered under the message.
 	cand candZone
+	// task names the task a todo's checkbox toggles when pressed, and
+	// taskDone the state the box is drawn in — a press flips it. A checkbox
+	// is not a place to open but a thing to do, which is what the client
+	// does with one.
+	task     string
+	taskDone bool
 	// label names the target the way the chooser lists it, and note is what
 	// the status bar says once it has been handed over. They differ because a
 	// list wants the thing and a status line wants the act.
@@ -132,7 +138,7 @@ type clickZone struct {
 
 // live reports whether the zone leads anywhere at all.
 func (z clickZone) live() bool {
-	return len(z.urls) > 0 || z.react != "" || z.jump != "" || z.open != "" || z.act.kind != actNone || z.cand.c.Mid != ""
+	return len(z.urls) > 0 || z.react != "" || z.jump != "" || z.open != "" || z.task != "" || z.act.kind != actNone || z.cand.c.Mid != ""
 }
 
 func (z clickZone) hit(x int) bool { return z.live() && x >= z.x0 && x < z.x1 }
@@ -740,6 +746,14 @@ func bodyRows(x store.Message, idx int, st msgStyle, g *leads) []msgRow {
 	// would get wraps the same two lines in XML.
 	if c, ok := calendarOf(x); ok {
 		return calendarRows(c, x, idx, st, g)
+	}
+	// A task's card needs both halves of it: the body names the guid its
+	// detail page opens on, while the rendering carries the checkbox the
+	// task list last reported.
+	if x.MsgType == "todo" {
+		if rows := todoRows(x, idx, st, g); rows != nil {
+			return rows
+		}
 	}
 	// An attachment's body likewise names the whole card, and the text a
 	// rendering would bring is the markup the card replaces.

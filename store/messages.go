@@ -43,15 +43,19 @@ type Message struct {
 	// From read_state; IsReadRemote is nil when nothing is known, neither an
 	// answer from Feishu nor an arrival stored unread.
 	IsReadRemote *bool `json:"is_read_remote"`
+	// TodoDone is the completion of the task a todo message carries, kept in
+	// todo_done because the body never says and the rendering is rewritten.
+	TodoDone bool `json:"todo_done"`
 }
 
 const messageColumns = `m.id, m.message_id, m.chat_id, m.msg_type, m.sender_id, m.sender_type, m.sender_name,
  m.content_raw, m.content, m.create_ms, m.update_ms, m.message_position, m.updated, m.deleted, m.silenced, m.deleted_seen_at,
  m.thread_id, m.reply_to, m.mentions_json, m.reactions_json, m.raw_json, m.rendered_at, m.edited_at, m.first_seen_at, m.last_seen_at,
- r.is_read_remote`
+ r.is_read_remote, COALESCE(td.done, 0)`
 
 // messageFrom is the FROM clause every message query selects messageColumns from.
-const messageFrom = `FROM messages m LEFT JOIN read_state r ON r.message_id = m.message_id`
+const messageFrom = `FROM messages m LEFT JOIN read_state r ON r.message_id = m.message_id
+ LEFT JOIN todo_done td ON td.message_id = m.message_id`
 
 func scanMessage(sc scanner) (Message, error) {
 	var m Message
@@ -59,7 +63,7 @@ func scanMessage(sc scanner) (Message, error) {
 	err := sc.Scan(&m.ID, &m.MessageID, &m.ChatID, &m.MsgType, &m.SenderID, &m.SenderType, &m.SenderName,
 		&m.ContentRaw, &m.Content, &m.CreateMs, &m.UpdateMs, &m.MessagePosition, &m.Updated, &m.Deleted, &m.Silenced, &m.DeletedSeenAt,
 		&m.ThreadID, &m.ReplyTo, &m.MentionsJSON, &m.ReactionsJSON, &m.RawJSON, &m.RenderedAt, &m.EditedAt, &m.FirstSeenAt, &m.LastSeenAt,
-		&isRead)
+		&isRead, &m.TodoDone)
 	if isRead.Valid {
 		m.IsReadRemote = new(isRead.Bool)
 	}
@@ -306,6 +310,53 @@ type PendingLocalMessage struct {
 	CallRaw    string
 	// MentionsJSON is what a text body's @_user_n placeholders stand for.
 	MentionsJSON string
+	// TodoDone is the task completion a todo message's rendering carried,
+	// read from todo_done so a re-queue keeps the box it drew.
+	TodoDone bool
+}
+
+// TodoMessage is a live todo message with the rendering and reaction summary
+// it holds, which is what the task-status refresh rewrites: the checkbox in
+// that rendering is the one field a body never carries.
+type TodoMessage struct {
+	MessageID     string
+	ContentRaw    string
+	Content       string
+	ReactionsJSON string
+}
+
+// TodoMessages returns every live todo message with its current rendering
+// and reaction summary.
+func (s *Store) TodoMessages(ctx context.Context) ([]TodoMessage, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT message_id, content_raw, content, reactions_json FROM messages WHERE msg_type = 'todo' AND deleted = 0`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []TodoMessage
+	for rows.Next() {
+		var m TodoMessage
+		if err := rows.Scan(&m.MessageID, &m.ContentRaw, &m.Content, &m.ReactionsJSON); err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}
+
+// SetTodoDone records the completion of the task a todo message carries.
+// It is written beside the rendering that displays it, so the next render
+// of the message starts from the state the last one drew.
+func (s *Store) SetTodoDone(ctx context.Context, messageID string, done bool) error {
+	d := 0
+	if done {
+		d = 1
+	}
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO todo_done (message_id, done) VALUES (?, ?)
+		 ON CONFLICT(message_id) DO UPDATE SET done = excluded.done`, messageID, d)
+	return err
 }
 
 // UnrenderedLocalMessages returns up to limit live messages that still need
@@ -325,14 +376,15 @@ type PendingLocalMessage struct {
 func (s *Store) UnrenderedLocalMessages(ctx context.Context, ids []string, limit int) ([]PendingLocalMessage, error) {
 	scan := func(sc scanner) (PendingLocalMessage, error) {
 		var m PendingLocalMessage
-		err := sc.Scan(&m.MessageID, &m.MsgType, &m.ContentRaw, &m.CreateMs, &m.CallRaw, &m.MentionsJSON)
+		err := sc.Scan(&m.MessageID, &m.MsgType, &m.ContentRaw, &m.CreateMs, &m.CallRaw, &m.MentionsJSON, &m.TodoDone)
 		return m, err
 	}
 	q := `SELECT m.message_id, m.msg_type, m.content_raw, m.create_ms, COALESCE((
    SELECT v.content_raw FROM messages v
     WHERE v.chat_id = m.chat_id AND v.msg_type = 'video_chat' AND v.create_ms <= m.create_ms
-    ORDER BY v.create_ms DESC LIMIT 1), ''), m.mentions_json
+    ORDER BY v.create_ms DESC LIMIT 1), ''), m.mentions_json, COALESCE(td.done, 0)
  FROM messages m
+ LEFT JOIN todo_done td ON td.message_id = m.message_id
  WHERE m.rendered_at = 0 AND m.deleted = 0 AND m.msg_type IN (` + localRenderList + `)
    AND (m.msg_type <> 'merge_forward' OR EXISTS (
          SELECT 1 FROM forwarded_roots r

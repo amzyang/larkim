@@ -3188,6 +3188,9 @@ func (m Model) pressZone(p pane, rows []msgRow, line int, z clickZone) (tea.Mode
 		// the x offset was already paid by the caller.
 		return m.openContainer(p, rightFrame{kind: z.openKind, id: z.open, root: z.openRoot, name: z.openName})
 	}
+	if z.task != "" {
+		return m, toggleTodo(m.deps, z.task, z.taskDone)
+	}
 	if z.react == "" {
 		return m, openZone(m.deps, z)
 	}
@@ -3196,6 +3199,22 @@ func (m Model) pressZone(p pane, rows []msgRow, line int, z clickZone) (tea.Mode
 		return m, nil
 	}
 	return m.toggleReaction(x, z.react)
+}
+
+// toggleTodo flips the task a todo's checkbox carries, the way the client
+// does. The box is not drawn ahead of Feishu's answer — a box that moved and
+// moved back would read as a press that did not land — so the rendering that
+// displays the state comes back with the write instead.
+func toggleTodo(d Deps, guid string, done bool) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := waited(reactTimeout)
+		defer cancel()
+		if err := d.Syncer.ToggleTodo(ctx, guid, !done); err != nil {
+			d.Log.Error("toggle todo", "guid", guid, "err", err)
+			return noticeMsg{"could not toggle the task: " + err.Error()}
+		}
+		return nil
+	}
 }
 
 // wheelStep is how far one notch scrolls: rows for the lists, lines for the

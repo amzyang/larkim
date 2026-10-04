@@ -69,6 +69,17 @@ func botMark(senderType string) string {
 	return botBadge
 }
 
+// todoBoxDone and todoBoxOpen are a task's checkbox (FA check-circle and
+// circle-o): the filled circle carries the check a completed task draws, the
+// hollow one the task still open. Like the other Nerd glyphs they pair with
+// an en-space to hold their two columns, and take the colour the card gives
+// them. They are the TUI's spelling alone — what a rendering stores stays the
+// plain box, so nothing private-use lands in the database.
+const (
+	todoBoxDone = "\uf058" + enSpace
+	todoBoxOpen = "\uf10c" + enSpace
+)
+
 // bellUnmuteGlyph is the outline bell (FA bell-o): the Unmute action in the
 // chat context menu. Like muteGlyph it comes from the Nerd Font PUA block so
 // it takes the colour it is given.

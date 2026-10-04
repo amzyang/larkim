@@ -40,7 +40,11 @@ type Fake struct {
 	reactionSeq int
 	// Muted answers MuteStatus for chats in Chats; one that is listed
 	// nowhere comes back unknown, as a chat the user is not a member of does.
-	Muted   map[string]bool
+	Muted map[string]bool
+	// Tasks answers ListTasks, keyed by task guid: true is done. A guid
+	// listed nowhere is a task the listing does not name, which a caller
+	// reads as "keep the box it had".
+	Tasks   map[string]bool
 	Members map[string][]ChatMember
 	// MembersTruncated marks a chat whose roster the server caps, which is
 	// what a tenant's security config does to a large group.
@@ -135,6 +139,7 @@ func NewFake() *Fake {
 		Reactions:        map[string]json.RawMessage{},
 		Reacted:          map[string][]Reaction{},
 		Muted:            map[string]bool{},
+		Tasks:            map[string]bool{},
 		Members:          map[string][]ChatMember{},
 		MembersTruncated: map[string]bool{},
 		Details:          map[string]UserDetail{},
@@ -485,6 +490,39 @@ func (f *Fake) SetChatMuted(_ context.Context, chatID string, muted bool) error 
 		}
 	}
 	return fmt.Errorf("not a member")
+}
+
+func (f *Fake) ListTasks(_ context.Context) ([]Task, error) {
+	if err := f.record("tasks"); err != nil {
+		return nil, err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	tasks := make([]Task, 0, len(f.Tasks))
+	for guid, done := range f.Tasks {
+		tasks = append(tasks, Task{GUID: guid, Done: done})
+	}
+	return tasks, nil
+}
+
+func (f *Fake) CompleteTask(_ context.Context, guid string) error {
+	if err := f.record("task complete"); err != nil {
+		return err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.Tasks[guid] = true
+	return nil
+}
+
+func (f *Fake) ReopenTask(_ context.Context, guid string) error {
+	if err := f.record("task reopen"); err != nil {
+		return err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.Tasks[guid] = false
+	return nil
 }
 
 func (f *Fake) ChatMembers(_ context.Context, chatID string) ([]ChatMember, bool, error) {

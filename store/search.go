@@ -25,7 +25,8 @@ func (s *Store) SearchMessages(ctx context.Context, query, chatID string, limit 
 	var args []any
 	q := `SELECT ` + messageColumns + ` ` + messageFrom
 	if len(ftsTerms) > 0 {
-		q = `SELECT ` + messageColumns + ` FROM messages_fts f JOIN messages m ON m.id = f.rowid LEFT JOIN read_state r ON r.message_id = m.message_id`
+		q = `SELECT ` + messageColumns + ` FROM messages_fts f JOIN messages m ON m.id = f.rowid
+ LEFT JOIN read_state r ON r.message_id = m.message_id LEFT JOIN todo_done td ON td.message_id = m.message_id`
 		where = append(where, `messages_fts MATCH ?`)
 		args = append(args, strings.Join(ftsTerms, " AND "))
 	}

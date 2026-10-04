@@ -22,15 +22,15 @@ var testNow = time.Date(2026, 9, 23, 10, 0, 0, 0, time.Local)
 func TestNerdGlyphs_EachCarriesTheCellThatKeepsItFullSize(t *testing.T) {
 	t.Parallel()
 	for name, g := range map[string]string{
-		"botBadge":     botBadge,
+		"botBadge":        botBadge,
 		"muteGlyph":       muteGlyph,
 		"bellUnmuteGlyph": bellUnmuteGlyph,
-		"draftGlyph":   draftGlyph,
-		"markAllGlyph": markAllGlyph,
-		"replyGlyph":   replyGlyph,
-		"p2p":          chatModeGlyph("p2p"),
-		"group":        chatModeGlyph("group"),
-		"topic":        chatModeGlyph("topic"),
+		"draftGlyph":      draftGlyph,
+		"markAllGlyph":    markAllGlyph,
+		"replyGlyph":      replyGlyph,
+		"p2p":             chatModeGlyph("p2p"),
+		"group":           chatModeGlyph("group"),
+		"topic":           chatModeGlyph("topic"),
 	} {
 		require.True(t, strings.HasSuffix(g, enSpace), "%s ends without its en-space", name)
 		require.Equal(t, 2, lipgloss.Width(g), "%s has to measure two columns", name)

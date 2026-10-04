@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/amzyang/larkim/store"
 )
@@ -44,6 +45,11 @@ func localText(m store.PendingLocalMessage) string {
 		return videoChatText(m.ContentRaw)
 	case LocalCalendar(m.MsgType):
 		return CalendarText(m.MsgType, m.ContentRaw)
+	case m.MsgType == "todo":
+		// A todo's box comes from todo_done: completing a task makes Feishu
+		// rewrite its message, and the re-render that rewrite re-queues
+		// starts from the recorded state rather than the open box.
+		return todoText(m.ContentRaw, m.TodoDone, time.Local)
 	case LocalMisc(m.MsgType):
 		return miscText(m.MsgType, m.ContentRaw)
 	case m.MsgType == "system":

@@ -805,3 +805,38 @@ func TestRecognizeText_AMissingFileNeverSpendsACall(t *testing.T) {
 	_, err := c.RecognizeText(t.Context(), filepath.Join(t.TempDir(), "gone.png"))
 	require.ErrorIs(t, err, os.ErrNotExist)
 }
+
+func TestExecClient_ListTasksPagesUntilTheListEnds(t *testing.T) {
+	t.Parallel()
+	c := fakeBinary(t, `
+printf '%s\n' "$@" >> "$(dirname "$0")/argv"
+if [ "$6" = "--page-token" ]; then
+  echo '{"ok":true,"identity":"user","data":{"items":[{"guid":"task_b","status":"done"}],"has_more":false}}'
+else
+  echo '{"ok":true,"identity":"user","data":{"items":[{"guid":"task_a","status":"todo"}],"has_more":true,"page_token":"tok_2"}}'
+fi`)
+	tasks, err := c.ListTasks(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, []Task{{GUID: "task_a"}, {GUID: "task_b", Done: true}}, tasks)
+	argv, err := os.ReadFile(filepath.Join(c.Dir, "argv"))
+	require.NoError(t, err)
+	require.Equal(t, []string{
+		"task", "tasks", "list", "--page-size", "100", "--as", "user", "--json",
+		"task", "tasks", "list", "--page-size", "100", "--page-token", "tok_2", "--as", "user", "--json",
+	}, strings.Split(strings.TrimSpace(string(argv)), "\n"))
+}
+
+func TestExecClient_CompleteAndReopenTaskAddressTheTaskByGuid(t *testing.T) {
+	t.Parallel()
+	c := fakeBinary(t, `printf '%s\n' "$@" > "$(dirname "$0")/argv"; echo '{"ok":true}'`)
+	require.NoError(t, c.CompleteTask(t.Context(), "task_a"))
+	argv, err := os.ReadFile(filepath.Join(c.Dir, "argv"))
+	require.NoError(t, err)
+	require.Equal(t, []string{"task", "+complete", "--task-id", "task_a", "--as", "user", "--json"},
+		strings.Split(strings.TrimSpace(string(argv)), "\n"))
+	require.NoError(t, c.ReopenTask(t.Context(), "task_a"))
+	argv, err = os.ReadFile(filepath.Join(c.Dir, "argv"))
+	require.NoError(t, err)
+	require.Equal(t, []string{"task", "+reopen", "--task-id", "task_a", "--as", "user", "--json"},
+		strings.Split(strings.TrimSpace(string(argv)), "\n"))
+}

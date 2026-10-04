@@ -35,6 +35,17 @@ func ChatLink(chatID, messageID string, position int64) string {
 	return url
 }
 
+// TodoLink addresses a task's detail page, and is empty for a body naming
+// no task. The guid is the whole address: the entity number the task API
+// also spells (suite_entity_num) is the same task under a second name, which
+// the client resolves from the guid on its own.
+func TodoLink(guid string) string {
+	if guid == "" {
+		return ""
+	}
+	return "lark://applink.feishu.cn/client/todo/detail?guid=" + url.QueryEscape(guid)
+}
+
 // MeetingLink joins a meeting by its number. The lark:// scheme works on the
 // vc host too, so the client goes straight into the call rather than through
 // a browser redirect.

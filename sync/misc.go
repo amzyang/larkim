@@ -11,7 +11,9 @@ import (
 
 // The renderings here are lark-cli's, to the character, for the same reason
 // the attachment and rich-text ones are: a reading of a rendering matches
-// these shapes, so a spelling of larkim's own would go unread.
+// these shapes, so a spelling of larkim's own would go unread. The todo card
+// is the exception: it renders the client's checkbox, whose completion
+// lark-cli's XML-shaped rendering does not carry at all.
 
 // miscBody is what the one-line message types carry; each reads the fields it
 // uses and leaves the rest zero.
@@ -43,6 +45,21 @@ type todoBody struct {
 	DueTime string `json:"due_time"`
 }
 
+// ParseTodo reads a todo body's task guid, the id the client's detail page
+// addresses a task by. ok is false for a body this renderer cannot read.
+func ParseTodo(contentRaw string) (guid string, ok bool) {
+	var b todoBody
+	if json.Unmarshal([]byte(contentRaw), &b) != nil {
+		return "", false
+	}
+	return b.TaskID, true
+}
+
+// TodoText is a todo body's unchecked card: the text a TUI card falls back
+// to before a rendering lands. The box a finished task draws is the
+// rendering's to add — it comes from the task list, never the body.
+func TodoText(contentRaw string) string { return todoText(contentRaw, false, time.Local) }
+
 // LocalMisc reports the msg_types miscText renders.
 func LocalMisc(msgType string) bool {
 	switch msgType {
@@ -72,8 +89,6 @@ func miscText(msgType, contentRaw string) string {
 		return cmp.Or(bad, redPacketText(b))
 	case "vote":
 		return voteText(contentRaw)
-	case "todo":
-		return todoText(contentRaw, time.Local)
 	}
 	// LocalMisc and this switch are the same list read twice, so a type in one
 	// and not the other names itself rather than arriving as another's card.
@@ -143,9 +158,12 @@ func voteText(contentRaw string) string {
 	return "<vote>\n" + xmlEscape(cmp.Or(strings.Join(lines, "\n"), "vote")) + "\n</vote>"
 }
 
-// todoText renders a task card. loc dates the deadline, which is the only
-// wall-clock reading in it.
-func todoText(contentRaw string, loc *time.Location) string {
+// todoText renders a task card the way the client's own does: a checkbox,
+// the summary, the deadline. done is the task's completion, which no message
+// body carries — Feishu does not rewrite one when its task finishes — so the
+// rendering pass always writes the empty box and the task refresh is what
+// fills it in. loc dates the deadline, the only wall-clock reading in it.
+func todoText(contentRaw string, done bool, loc *time.Location) string {
 	var b todoBody
 	if json.Unmarshal([]byte(contentRaw), &b) != nil {
 		return invalidBody("todo")
@@ -166,12 +184,19 @@ func todoText(contentRaw string, loc *time.Location) string {
 	if due := dueStamp(b.DueTime, loc); due != "" {
 		lines = append(lines, "Due: "+due)
 	}
-	var attr string
-	if b.TaskID != "" {
-		attr = fmt.Sprintf(` task_id="%s"`, attrEscape(b.TaskID))
+	box := boxOpen
+	if done {
+		box = boxDone
 	}
-	return "<todo" + attr + ">\n" + xmlEscape(cmp.Or(strings.Join(lines, "\n"), "todo")) + "\n</todo>"
+	return box + " " + cmp.Or(strings.Join(lines, "\n"), "todo")
 }
+
+// boxOpen and boxDone spell the checkbox a todo renders, the one state that
+// lives outside the message body.
+const (
+	boxOpen = "\u2610"
+	boxDone = "\u2611"
+)
 
 // dueStamp dates a deadline. Feishu sends it as digits in a string, in seconds
 // or in milliseconds with no field to tell them apart, so the count of digits

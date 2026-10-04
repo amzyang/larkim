@@ -141,6 +141,16 @@ Per-message read state, joined on `message_id`. A row exists for a message whose
 
 A chat's badge counts live rows where `is_read_remote` is 0 on an unsilenced message with a non-negative `message_position`; thread replies are left out. That is the same set `larkim read-all` walks for Feishu red dots. Silenced main-flow messages still flip on a successful watermark POST even though they do not increment the badge.
 
+## todo_done
+
+Per-message task completion, joined on `message_id`. A todo message's body never carries whether its task finished, and Feishu rewrites the message when it does, so the completion is kept here where the render queue reads it as data rather than off the rendering's glyph.
+
+| column | meaning |
+|---|---|
+| `done` | 1 the task is finished. Written when a rendering is rewritten with the completion the task list last reported; a task the listing stops naming keeps the row it has |
+
+Derived state: rebuild it from a fresh task listing matched to todo message bodies' `task_id`.
+
 ## silence_settle_queue
 
 Chats a silence flag flip left with server-side unread, waiting for the sweep to push the web client's read watermark past the silenced messages (config `silence_sync: true`). Rows are written inside the transaction that flips the flags, by whichever process stores the message; drained by the `daemon.lock` holder, a few chats per tick. The row only names the chat — the watermark is re-derived from `read_state` when the row is drained.

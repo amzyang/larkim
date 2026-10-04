@@ -37,6 +37,13 @@ func TestLinks_UseTheSchemeThatReachesTheClientDirectly(t *testing.T) {
 	require.Equal(t, "lark://vc.feishu.cn/j/123456789", MeetingLink("123456789"))
 }
 
+func TestTodoLink_AddressesTheTaskByItsGuid(t *testing.T) {
+	t.Parallel()
+	require.Equal(t, "lark://applink.feishu.cn/client/todo/detail?guid=7bc2f1b2-5660-44cf-a3dc-2300acbc22c3",
+		TodoLink("7bc2f1b2-5660-44cf-a3dc-2300acbc22c3"))
+	require.Empty(t, TodoLink(""), "a body naming no task is not addressed")
+}
+
 func TestEventLink_SplitsTheEventIdIntoKeyAndOriginalTime(t *testing.T) {
 	// The API names an event with key and originalTime joined, while the
 	// client's own URL wants them apart.

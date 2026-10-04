@@ -712,6 +712,62 @@ func (c *ExecClient) ChatMembers(ctx context.Context, chatID string) ([]ChatMemb
 	return append(resp.Users, resp.Bots...), len(resp.Truncations) > 0, nil
 }
 
+// taskPages bounds the pagination of a task listing. The cap only exists so
+// a page_token that keeps repeating cannot spin the sweep forever.
+const taskPages = 20
+
+// ListTasks reads the signed-in user's tasks with their completion, paging
+// until the listing ends. "my_tasks" is the whole of the readable scope,
+// which is why a task the list stops naming is a task that left it, not one
+// the pages missed.
+func (c *ExecClient) ListTasks(ctx context.Context) ([]Task, error) {
+	var out []Task
+	var page string
+	for range taskPages {
+		args := []string{"task", "tasks", "list", "--page-size", "100"}
+		if page != "" {
+			args = append(args, "--page-token", page)
+		}
+		data, err := c.run(ctx, args...)
+		if err != nil {
+			return nil, err
+		}
+		var resp struct {
+			Items []struct {
+				GUID   string `json:"guid"`
+				Status string `json:"status"`
+			} `json:"items"`
+			HasMore   bool   `json:"has_more"`
+			PageToken string `json:"page_token"`
+		}
+		if err := json.Unmarshal(data, &resp); err != nil {
+			return nil, fmt.Errorf("decode tasks: %w", err)
+		}
+		for _, it := range resp.Items {
+			out = append(out, Task{GUID: it.GUID, Done: it.Status == "done"})
+		}
+		if !resp.HasMore || resp.PageToken == "" {
+			return out, nil
+		}
+		page = resp.PageToken
+	}
+	return out, nil
+}
+
+// CompleteTask marks one of the user's tasks done, the press of a todo
+// message's checkbox.
+func (c *ExecClient) CompleteTask(ctx context.Context, guid string) error {
+	_, err := c.run(ctx, "task", "+complete", "--task-id", guid)
+	return err
+}
+
+// ReopenTask takes a completed task back to todo, the same press on a box
+// that is already checked.
+func (c *ExecClient) ReopenTask(ctx context.Context, guid string) error {
+	_, err := c.run(ctx, "task", "+reopen", "--task-id", guid)
+	return err
+}
+
 // MaxChatIDsPerMuteCall is the upstream cap on one mute lookup.
 const MaxChatIDsPerMuteCall = 100
 

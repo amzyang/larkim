@@ -63,6 +63,15 @@ type Client interface {
 	// that the server capped the list, so what came back is a part of the
 	// roster and must not be presented as the whole of it.
 	ChatMembers(ctx context.Context, chatID string) (members []ChatMember, truncated bool, err error)
+	// ListTasks reads the signed-in user's tasks with their completion. It is
+	// the only source of a todo message's checkbox: Feishu does not rewrite a
+	// body when its task finishes.
+	ListTasks(ctx context.Context) ([]Task, error)
+	// CompleteTask marks one of the user's tasks done, and ReopenTask takes
+	// a completed one back — the write behind a todo message's checkbox.
+	// A task this identity cannot act on is refused by Feishu, not here.
+	CompleteTask(ctx context.Context, guid string) error
+	ReopenTask(ctx context.Context, guid string) error
 	// MuteStatus reports the user's do-not-disturb setting per chat. unknown
 	// carries the chats the API declined to answer for, which a caller must
 	// not read as "not muted".

@@ -85,7 +85,13 @@ var (
 	stAccent = lipgloss.NewStyle().Foreground(colAccent)
 	stBold   = lipgloss.NewStyle().Bold(true)
 	stErr    = lipgloss.NewStyle().Foreground(colErr)
-	stWarn   = lipgloss.NewStyle().Foreground(colWarn)
+	// stTodoDone is the green the client draws a finished task's check in,
+	// from the card palette it paints its own green with.
+	stTodoDone = lipgloss.NewStyle().Foreground(lipgloss.Color("#2ea121"))
+	// stTodoStruck is a finished task's summary: dimmed and struck through,
+	// the way the client marks what is done.
+	stTodoStruck = stDim.Strikethrough(true)
+	stWarn       = lipgloss.NewStyle().Foreground(colWarn)
 	// stConfirm is a decision waiting on y/n: not an error, not plain info.
 	stConfirm = lipgloss.NewStyle().Bold(true).Foreground(colWarn)
 	// The reader's own mention wears the filled badge the client paints it as:

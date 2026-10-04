@@ -107,6 +107,7 @@ const (
 	// history is complete once it reaches the live window.
 	KeyHistoryCursor = "history_cursor_ms"
 	KeyReactionsAt   = "reactions_at"
+	KeyTasksAt       = "tasks_at"
 	// KeyActiveOrder is the chat list's active-time ordering as the previous
 	// tick saw it; comparing against it names the chats that have since seen
 	// a message.
@@ -241,6 +242,7 @@ type Report struct {
 	Forwards   int // merged-forward bundles expanded
 	ReadChecks int // read-status answers recorded
 	Reactions  int // p2p chats whose newest message was asked about
+	Todos      int // todo messages re-rendered with the completion their task now holds
 	Repaired   int // messages re-listed by the repair pass
 	Threads    int // replies re-listed from the threads the reader has a stake in
 	Members    int // chat members recorded
@@ -534,7 +536,23 @@ func (s *Syncer) tick(ctx context.Context, now time.Time, discover bool) (Report
 		rep.Reactions = n
 	}
 
-	// 16. Repair recent history, refresh members, fetch avatars, name reacting
+	// 16. Keep the todo checkboxes current: the completion lives in the task
+	// list and nowhere in a message body, so this listing is the only thing
+	// that can move a box.
+	tasksAt, err := s.stateTime(ctx, KeyTasksAt)
+	if err != nil {
+		return rep, err
+	}
+	if Due(tasksAt, tasksEvery, now) {
+		n, err = s.refreshTodos(ctx, now)
+		if err != nil {
+			return rep, fmt.Errorf("todos: %w", err)
+		}
+		rep.Todos = n
+		s.changed(n)
+	}
+
+	// 17. Repair recent history, refresh members, fetch avatars, name reacting
 	// apps: a few each.
 	if rep.Repaired, err = s.repairSlice(ctx, now); err != nil {
 		return rep, fmt.Errorf("repair: %w", err)
@@ -552,7 +570,7 @@ func (s *Syncer) tick(ctx context.Context, now time.Time, discover bool) (Report
 		return rep, fmt.Errorf("apps: %w", err)
 	}
 
-	// 17. Read the writing in pictures already on disk. Last because nothing
+	// 18. Read the writing in pictures already on disk. Last because nothing
 	// on screen waits for it: it feeds the assistant and the reaction
 	// suggester, which are asked for by hand.
 	if rep.ImageText, err = s.readImageText(ctx, now); err != nil {

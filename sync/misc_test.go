@@ -29,20 +29,12 @@ func TestMiscText_SpellsEachKindTheWayLarkCLIDoes(t *testing.T) {
 		{"poll with no topic", "vote", `{"options":["A"]}`, "<vote>\n• A\n</vote>"},
 		{"poll with nothing in it", "vote", `{}`, "<vote>\nvote\n</vote>"},
 		{"a poll topic carrying a bracket", "vote", `{"topic":"a < b & c"}`, "<vote>\na &lt; b &amp; c\n</vote>"},
-		{"task", "todo", `{"task_id":"task_a","summary":{"title":"写周报","content":[[{"tag":"text","text":"先收数"}]]}}`,
-			"<todo task_id=\"task_a\">\n写周报\n先收数\n</todo>"},
-		{"task with no id", "todo", `{"summary":{"title":"写周报"}}`, "<todo>\n写周报\n</todo>"},
-		{"task with nothing in it", "todo", `{}`, "<todo>\ntodo\n</todo>"},
-		{"a task id carrying a quote", "todo", `{"task_id":"say \"hi\"","summary":{"title":"t"}}`,
-			"<todo task_id=\"say \\\"hi\\\"\">\nt\n</todo>"},
-		{"a task body carrying a bracket", "todo", `{"summary":{"title":"a < b"}}`, "<todo>\na &lt; b\n</todo>"},
 		{"a shared chat that will not parse", "share_chat", `not json`, "[Invalid chat card JSON]"},
 		{"a shared contact that will not parse", "share_user", `not json`, "[Invalid user card JSON]"},
 		{"a location that will not parse", "location", `not json`, "[Invalid location JSON]"},
 		{"a folder that will not parse", "folder", `not json`, "[Invalid folder JSON]"},
 		{"a red packet that will not parse", "hongbao", `not json`, "[Invalid hongbao JSON]"},
 		{"a poll that will not parse", "vote", `not json`, "[Invalid vote JSON]"},
-		{"a task that will not parse", "todo", `not json`, "[Invalid todo JSON]"},
 		// LocalMisc and this switch are one list read twice, so a type added
 		// to the queue with no renderer here has to say so.
 		{"a type this switch has not learned", "brand_new", `{}`, "[brand_new]"},
@@ -57,16 +49,33 @@ func TestTodoText_DatesTheDeadlineInTheGivenZone(t *testing.T) {
 	t.Parallel()
 	loc := time.FixedZone("CST", 8*60*60)
 	// Seconds and milliseconds arrive in the same field, told apart by length.
-	require.Equal(t, "<todo>\n写周报\nDue: 2026-09-29 18:00:00\n</todo>",
-		todoText(`{"summary":{"title":"写周报"},"due_time":"1790676000"}`, loc))
-	require.Equal(t, "<todo>\n写周报\nDue: 2026-09-29 18:00:00\n</todo>",
-		todoText(`{"summary":{"title":"写周报"},"due_time":"1790676000000"}`, loc))
+	require.Equal(t, "☐ 写周报\nDue: 2026-09-29 18:00:00",
+		todoText(`{"summary":{"title":"写周报"},"due_time":"1790676000"}`, false, loc))
+	require.Equal(t, "☐ 写周报\nDue: 2026-09-29 18:00:00",
+		todoText(`{"summary":{"title":"写周报"},"due_time":"1790676000000"}`, false, loc))
 	// A deadline that reads as nothing leaves the line out rather than dating
 	// the epoch.
-	require.Equal(t, "<todo>\n写周报\n</todo>",
-		todoText(`{"summary":{"title":"写周报"},"due_time":"0"}`, loc))
-	require.Equal(t, "<todo>\n写周报\n</todo>",
-		todoText(`{"summary":{"title":"写周报"},"due_time":""}`, loc))
+	require.Equal(t, "☐ 写周报",
+		todoText(`{"summary":{"title":"写周报"},"due_time":"0"}`, false, loc))
+	require.Equal(t, "☐ 写周报",
+		todoText(`{"summary":{"title":"写周报"},"due_time":""}`, false, loc))
+}
+
+func TestTodoText_MarksTheCompletionInTheLeadingBox(t *testing.T) {
+	t.Parallel()
+	body := `{"task_id":"task_a","summary":{"title":"写周报"},"due_time":"1790676000"}`
+	require.Equal(t, "☐ 写周报\nDue: 2026-09-29 18:00:00", todoText(body, false, time.Local))
+	require.Equal(t, "☑ 写周报\nDue: 2026-09-29 18:00:00", todoText(body, true, time.Local))
+}
+
+func TestTodoText_SpellsTheCard(t *testing.T) {
+	t.Parallel()
+	require.Equal(t, "☐ 写周报\n先收数",
+		todoText(`{"task_id":"task_a","summary":{"title":"写周报","content":[[{"tag":"text","text":"先收数"}]]}}`, false, time.Local))
+	require.Equal(t, "☐ 写周报", todoText(`{"summary":{"title":"写周报"}}`, false, time.Local))
+	require.Equal(t, "☐ todo", todoText(`{}`, false, time.Local))
+	require.Equal(t, "☐ a < b", todoText(`{"summary":{"title":"a < b"}}`, false, time.Local))
+	require.Equal(t, "[Invalid todo JSON]", todoText(`not json`, false, time.Local))
 }
 
 func TestLocalMisc_CoversTheTypesMiscTextRenders(t *testing.T) {
