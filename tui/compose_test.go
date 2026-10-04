@@ -345,7 +345,10 @@ func TestSubmit_TheStoredRowDrawsThePictureThatWasSent(t *testing.T) {
 	t.Parallel()
 	m, _ := newOutboxModel(t)
 	dir := t.TempDir()
-	m.deps.Syncer.Opt().DataDir = dir
+	// Opt()'s fallback for a Syncer that never SetOptions'd is the package-wide
+	// zeroOptions; writing through it would point every parallel test's
+	// KeepSent at this dir, so the set is installed per Syncer instead.
+	m.deps.Syncer.SetOptions(sync.Options{DataDir: dir})
 	shot := filepath.Join(t.TempDir(), "shot.png")
 	require.NoError(t, os.WriteFile(shot, []byte("png"), 0o600))
 	m.files = fakeFiles(map[string]int64{shot: 3})

@@ -186,7 +186,9 @@ var zeroOptions Options
 // Opt is the tuning this tick runs under. The pointer is handed back rather
 // than a copy because a tick reads a dozen fields off it; SetOptions replaces
 // the set whole rather than writing through it, so a reader holding one sees
-// a coherent set however long it holds it.
+// a coherent set however long it holds it. A Syncer without its own set
+// answers with the one shared zeroOptions: never write through that pointer
+// unless this Syncer installed a set of its own.
 func (s *Syncer) Opt() *Options {
 	if o := s.opts.Load(); o != nil {
 		return o
