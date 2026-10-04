@@ -83,11 +83,11 @@ func TestBodyRows_AnUndownloadedPictureHasNothingToOpen(t *testing.T) {
 
 // targetPage is a chat holding one message, with the opener replaced so the
 // hand-overs a keypress fires are recorded instead of reaching macOS.
-func targetPage(t *testing.T, msg store.Message, res []store.Resource) (Model, *[]openCall) {
+func targetPage(t *testing.T, msg store.Message, res []store.Resource) (Model, *[][]string) {
 	t.Helper()
-	var calls []openCall
-	m := New(Deps{Self: "ou_me", DataDir: "/data", OpenURL: func(targets []string, background bool) error {
-		calls = append(calls, openCall{targets, background})
+	var calls [][]string
+	m := New(Deps{Self: "ou_me", DataDir: "/data", OpenURL: func(targets []string) error {
+		calls = append(calls, targets)
 		return nil
 	}})
 	m.width, m.height = 120, 36
@@ -114,7 +114,7 @@ func TestOnNormalKey_OOpensTheOneTargetWithoutAsking(t *testing.T) {
 	model, cmd := m.onNormalKey("o")
 	require.Equal(t, modeNormal, model.(Model).mode, "one target needs no chooser")
 	collect(cmd)
-	require.Equal(t, []openCall{opened("https://example.com/x", false)}, *calls)
+	require.Equal(t, [][]string{{"https://example.com/x"}}, *calls)
 }
 
 func TestOnNormalKey_OOffersAChooserWhenAMessageLeadsSeveralWays(t *testing.T) {
@@ -139,7 +139,7 @@ func TestOpenTargets_TheMessageItselfClosesTheList(t *testing.T) {
 
 	_, cmd := press(t, m, "G").onTargetKey(keyMsg("enter"))
 	collect(cmd)
-	require.Equal(t, []openCall{opened(applink.ChatLink("oc_a", "om_1", 227), false)}, *calls)
+	require.Equal(t, [][]string{{applink.ChatLink("oc_a", "om_1", 227)}}, *calls)
 }
 
 func TestOpenTargets_TheMessageIsNotListedTwice(t *testing.T) {
@@ -177,7 +177,7 @@ func TestOnTargetKey_EnterOpensTheHighlightedTarget(t *testing.T) {
 	next, cmd := m.onTargetKey(keyMsg("enter"))
 	require.Equal(t, modeNormal, next.(Model).mode, "choosing closes the chooser")
 	collect(cmd)
-	require.Equal(t, []openCall{opened("https://b.example.com/2", false)}, *calls)
+	require.Equal(t, [][]string{{"https://b.example.com/2"}}, *calls)
 }
 
 func TestOnTargetKey_ADigitReachesATargetStraightOff(t *testing.T) {
@@ -186,7 +186,7 @@ func TestOnTargetKey_ADigitReachesATargetStraightOff(t *testing.T) {
 	m = press(t, m, "o")
 	_, cmd := m.onTargetKey(keyMsg("2"))
 	collect(cmd)
-	require.Equal(t, []openCall{opened("https://b.example.com/2", false)}, *calls)
+	require.Equal(t, [][]string{{"https://b.example.com/2"}}, *calls)
 }
 
 func TestOnTargetKey_EscLeavesEverythingClosed(t *testing.T) {
@@ -201,8 +201,8 @@ func TestOnNormalKey_OStillOpensTheMessageWhenItLeadsNowhere(t *testing.T) {
 	m, calls := targetPage(t, linkMessage("没有链接"), nil)
 	_, cmd := m.onNormalKey("o")
 	collect(cmd)
-	require.Equal(t, []openCall{
-		opened("lark://applink.feishu.cn/client/chat/open?openChatId=oc_a&position=227&messageId=om_1", false)}, *calls)
+	require.Equal(t, [][]string{{
+		"lark://applink.feishu.cn/client/chat/open?openChatId=oc_a&position=227&messageId=om_1"}}, *calls)
 }
 
 func TestTargetHint_SaysWhereEachKindLeads(t *testing.T) {
@@ -233,7 +233,7 @@ func TestOnClick_ALinkOpensFromTheColumnsItsLabelIsDrawnIn(t *testing.T) {
 	for _, x := range []int{x0, x1 - 1} {
 		*calls = nil
 		collect(clickAt(m, row, x))
-		require.Equal(t, []openCall{opened("https://example.com/x", false)}, *calls,
+		require.Equal(t, [][]string{{"https://example.com/x"}}, *calls,
 			"column %d is inside the label a wide-character body drew", x)
 	}
 	*calls = nil
@@ -284,7 +284,7 @@ func TestOnTargetKey_ADigitMeansTheLineItIsDrawnOn(t *testing.T) {
 	_, cmd := m.onTargetKey(keyMsg("1"))
 	collect(cmd)
 	want := "https://example.com/" + string(rune('a'+m.targets.top))
-	require.Equal(t, []openCall{opened(want, false)}, *calls,
+	require.Equal(t, [][]string{{want}}, *calls,
 		"the first line on screen is what 1 reaches, not the first of the list")
 }
 
@@ -302,6 +302,6 @@ func TestOnTargetKey_ZeroMeansTheTenthLine(t *testing.T) {
 	_, cmd := m.onTargetKey(keyMsg("0"))
 	collect(cmd)
 	want := "https://example.com/" + string(rune('a'+m.targets.top+9))
-	require.Equal(t, []openCall{opened(want, false)}, *calls,
+	require.Equal(t, [][]string{{want}}, *calls,
 		"0 reaches the tenth line on screen, the one past what 9 reaches")
 }

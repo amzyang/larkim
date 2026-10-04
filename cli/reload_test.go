@@ -88,16 +88,16 @@ func TestReloadOnChange(t *testing.T) {
 	})
 
 	t.Run("turns the silence settle on and off", func(t *testing.T) {
-		a, st := reloadApp(t, "mark_read:\n  mode: web\n")
+		a, st := reloadApp(t, "mark_read:\n  browser: chrome\n")
 		s := a.syncer(st)
 		reload := a.reloadOnChange(s, st)
 		require.Nil(t, s.SettleSilenced())
 
-		rewrite(t, a.configPath, "mark_read:\n  mode: web\nsilence_sync: true\n")
+		rewrite(t, a.configPath, "mark_read:\n  browser: chrome\nsilence_sync: true\n")
 		reload()
 		require.NotNil(t, s.SettleSilenced())
 
-		rewrite(t, a.configPath, "mark_read:\n  mode: web\nsilence_sync: false\n")
+		rewrite(t, a.configPath, "mark_read:\n  browser: chrome\nsilence_sync: false\n")
 		reload()
 		require.Nil(t, s.SettleSilenced())
 	})

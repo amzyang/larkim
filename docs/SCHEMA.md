@@ -37,7 +37,7 @@ One row per chat the user is (or was) in, from `GET /im/v1/chats` with `types=p2
 | `last_unsilenced_ms` | the newest main-flow message no silence rule matched, and the key the list orders on; 0 when every message is silenced |
 | `silence_settled_pos` | the read watermark `silence_sync` last settled for the chat; messages at or below it never queue or settle again. The settle moves the feed's unread count only, never the per-message `is_read_remote` |
 | `muted`, `mute_checked_at` | the user's do-not-disturb setting and when it was last answered; 0 means it has never been asked |
-| `web_chat_id` | the Feishu web client's numeric id for the chat, which no OpenAPI response carries; empty until matched. Written by the processes that mark chats read in `mark_read.mode: web`, never by the daemon |
+| `web_chat_id` | the Feishu web client's numeric id for the chat, which no OpenAPI response carries; empty until matched. Written by the processes that clear Feishu badges, never by the daemon |
 
 A chat first seen only through a message (before the next full listing) exists with an empty name.
 
@@ -146,7 +146,7 @@ A chat's badge counts the rows where `is_read_remote` is 0 and `local_read_at` i
 
 ## silence_settle_queue
 
-Chats a silence flag flip left with server-side unread, waiting for the sweep to push the web client's read watermark past the silenced messages (config `silence_sync: true`, which requires `mark_read.mode: web`). Rows are written inside the transaction that flips the flags, by whichever process stores the message; drained by the `daemon.lock` holder, a few chats per tick. The row only names the chat — the watermark is re-derived from `read_state` when the row is drained.
+Chats a silence flag flip left with server-side unread, waiting for the sweep to push the web client's read watermark past the silenced messages (config `silence_sync: true`). Rows are written inside the transaction that flips the flags, by whichever process stores the message; drained by the `daemon.lock` holder, a few chats per tick. The row only names the chat — the watermark is re-derived from `read_state` when the row is drained.
 
 | column | meaning |
 |---|---|

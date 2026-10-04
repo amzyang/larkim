@@ -5,7 +5,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -65,10 +64,10 @@ func TestConfig_OpensOnEveryKeyOfTheFile(t *testing.T) {
 func TestConfig_ShowsTheValueThisSessionRunsNotTheFiles(t *testing.T) {
 	t.Parallel()
 	m := configModel(t)
-	m = m.closeConfig().runSet("applink_pace_ms=1500")
-	m = m.openConfig("applink_pace_ms")
-	require.Equal(t, "❯ applink_pace_ms 1500", configRow(m))
-	require.Equal(t, 1000, configFile(t, m).ApplinkPaceMS, "a :set leaves the file alone")
+	m = m.closeConfig().runSet("ai.context=20")
+	m = m.openConfig("ai.context")
+	require.Equal(t, "❯ ai.context 20", configRow(m))
+	require.Equal(t, 10, configFile(t, m).AI.Context, "a :set leaves the file alone")
 }
 
 func TestConfig_JumpsToTheKeyItWasNamed(t *testing.T) {
@@ -92,15 +91,15 @@ func TestConfig_RefusesAKeyTheFileHasNot(t *testing.T) {
 func TestConfig_AnEditWritesTheFileAndReachesTheSession(t *testing.T) {
 	t.Parallel()
 	m := configModel(t)
-	m = m.openConfig("applink_pace_ms")
+	m = m.openConfig("ai.context")
 	m = press(t, m, "enter")
 	require.True(t, m.config.editing)
-	m = press(t, m, "ctrl+u", "1", "5", "0", "0", "enter")
+	m = press(t, m, "ctrl+u", "1", "5", "enter")
 
 	require.False(t, m.config.editing)
-	require.Equal(t, 1500*time.Millisecond, m.applinkPace(), "the running queue re-arms on it")
-	require.Equal(t, 1500, configFile(t, m).ApplinkPaceMS)
-	require.Equal(t, "applink_pace_ms=1500", m.notice)
+	require.Equal(t, 15, m.cfg.AI.Context)
+	require.Equal(t, 15, configFile(t, m).AI.Context)
+	require.Equal(t, "ai.context=15", m.notice)
 	require.False(t, m.noticeErr)
 }
 
@@ -128,15 +127,15 @@ func TestConfig_ANestedKeyReachesItsSectionAlone(t *testing.T) {
 func TestConfig_ARefusedValueKeepsWhatWasTyped(t *testing.T) {
 	t.Parallel()
 	m := configModel(t)
-	m = m.openConfig("applink_pace_ms")
+	m = m.openConfig("poll_interval_ms")
 	m = press(t, m, "enter", "ctrl+u", "0", "enter")
 
 	require.True(t, m.config.editing, "the reader keeps the line they were on")
 	require.Equal(t, "0", m.config.editor.Value())
 	require.Contains(t, m.config.err, "milliseconds")
 	require.Contains(t, ansi.Strip(m.configDetail()), "milliseconds")
-	require.Equal(t, 1000, configFile(t, m).ApplinkPaceMS, "nothing was written")
-	require.Equal(t, applinkDefaultPaceForTest, m.applinkPace(), "nothing was applied")
+	require.Equal(t, 3000, configFile(t, m).PollIntervalMS, "nothing was written")
+	require.Equal(t, 3000, m.cfg.PollIntervalMS, "nothing was applied")
 }
 
 func TestConfig_RefusesADurationSpellingOfThePollInterval(t *testing.T) {
@@ -307,10 +306,6 @@ func TestConfig_TheWheelScrollsIt(t *testing.T) {
 	next, _ := m.Update(tea.MouseWheelMsg{Button: tea.MouseWheelDown})
 	require.Positive(t, next.(Model).config.idx)
 }
-
-// applinkDefaultPaceForTest is the gap configModel starts on, which is the
-// example file's own applink_pace_ms.
-const applinkDefaultPaceForTest = time.Second
 
 func TestConfig_ANewModelRebuildsTheAssistantAndIsWritten(t *testing.T) {
 	t.Parallel()

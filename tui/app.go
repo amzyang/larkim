@@ -23,6 +23,7 @@ import (
 	"github.com/amzyang/larkim/emoji"
 	"github.com/amzyang/larkim/larkcli"
 	"github.com/amzyang/larkim/larkmd"
+	"github.com/amzyang/larkim/larkweb"
 	"github.com/amzyang/larkim/markread"
 	"github.com/amzyang/larkim/store"
 	"github.com/amzyang/larkim/sync"
@@ -72,7 +73,7 @@ type Model struct {
 	// cfg is the configuration this session is running, seeded from Deps and
 	// rewritten by :set and :config. It lives on the Model rather than on the
 	// pieces seeded from it so a change reaches a chain already running — the
-	// applink queue re-arms its tick from it per chat.
+	// clear queue re-arms its tick from clearPace per chat.
 	cfg config.Config
 
 	chats []store.Chat
@@ -223,12 +224,12 @@ type Model struct {
 	dots map[string]bool
 	// readAt is the readKey the last takeRead answered. Holding it, rather
 	// than diffing against the model this update began with, is what keeps a
-	// view that leaves the tail and comes back from firing a second applink
+	// view that leaves the tail and comes back from firing a second clear
 	// for the same message while the first one's write is still in flight.
 	readAt string
-	// applinks paces the walk of the Feishu client, which the read gate and a
-	// mark-all both feed. See applinkq.go.
-	applinks applinkQueue
+	// clears paces badge clears, which the read gate and a mark-all both feed.
+	// See clearq.go.
+	clears clearQueue
 	// pendingChat is a chat whose page has been asked for but not arrived. The
 	// panes stay on the chat they are showing until it does, so a cursor
 	// running down the list never leaves a blank behind it.
@@ -379,12 +380,15 @@ type Model struct {
 	cancel     context.CancelFunc
 }
 
-// openApplink and defaultApplinkPaceMS are what New gives a Deps that names
-// neither. The tests swap both: the real opener moves the Feishu client on the
-// machine running them, and the real pace is a second per chat drained.
+// openApplink and newClearBadge are what New gives a Deps that names
+// neither, and clearPace is the gap between two badge clears. The tests swap
+// all three: the real opener moves the desktop of the machine running them,
+// the real lever reads its browser's cookies and posts to Feishu, and the
+// real gap costs 100ms per chat drained.
 var (
-	openApplink          = applink.Open
-	defaultApplinkPaceMS = applink.DefaultPaceMS
+	openApplink   = applink.Open
+	newClearBadge = markread.New
+	clearPace     = larkweb.Pace
 )
 
 // New builds the model.
@@ -408,10 +412,7 @@ func New(d Deps) Model {
 	if d.Syncer == nil {
 		s := &sync.Syncer{Client: d.Client, Store: d.Store, Clock: sync.RealClock{}, Log: d.Log}
 		if d.Config.SilenceSync {
-			// Web mode only (silence_sync is validated to it), which is the
-			// lever that never calls the opener the block below has not
-			// defaulted yet.
-			s.SetSettleSilenced(markread.New(d.Config.MarkRead, d.Log, d.Store, nil))
+			s.SetSettleSilenced(newClearBadge(d.Config.MarkRead, d.Log, d.Store))
 		}
 		d.Syncer = s
 	}
@@ -419,19 +420,11 @@ func New(d Deps) Model {
 	// TUI makes, and it logs the argv it builds.
 	if d.OpenURL == nil {
 		log := d.Log
-		d.OpenURL = func(targets []string, background bool) error {
-			return openApplink(log, targets, background)
-		}
+		d.OpenURL = func(targets []string) error { return openApplink(log, targets) }
 	}
-	if d.Config.ApplinkPaceMS <= 0 {
-		// A Deps built by hand carries no configuration, and a gap of nothing
-		// is the bug the pacing exists to fix.
-		d.Config.ApplinkPaceMS = defaultApplinkPaceMS
-	}
-	// After OpenURL: applink mode clears a badge by handing it one.
 	if d.ClearBadge == nil && d.NewClearBadge == nil {
-		log, st, open := d.Log, d.Store, d.OpenURL
-		d.NewClearBadge = func(cfg config.MarkRead) markread.Clear { return markread.New(cfg, log, st, open) }
+		log, st := d.Log, d.Store
+		d.NewClearBadge = func(cfg config.MarkRead) markread.Clear { return newClearBadge(cfg, log, st) }
 	}
 	if d.ClearBadge == nil {
 		d.ClearBadge = d.NewClearBadge(d.Config.MarkRead)
@@ -972,11 +965,11 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case markAllDoneMsg:
 		return m.onMarkAllDone(msg)
 	case sectionDotMsg:
-		return m.pushApplinks(msg.chats)
-	case applinkDueMsg:
-		return m.onApplinkDue(msg)
-	case applinkFiredMsg:
-		return m.onApplinkFired(msg)
+		return m.pushClears(msg.chats)
+	case clearDueMsg:
+		return m.onClearDue(msg)
+	case clearFiredMsg:
+		return m.onClearFired(msg)
 	case reactedMsg:
 		if msg.err == nil {
 			// React brought the summary up to date in the same breath, so the
@@ -1504,15 +1497,15 @@ func (m *Model) clearBlockDots(msgs []store.Message, idx int, st msgStyle) bool 
 // settles it.
 //
 // The Feishu client keeps a red dot of its own, which only the client itself
-// can drop. A page carrying something the badge counts therefore also walks
-// the client onto the chat, so reading here settles both badges rather than
-// leaving one lit for a later trip to Feishu. That covers the chat under the
-// reader's eyes as well as the one just opened: a message landing in it
-// relights the client's dot, and reaching it drops the dot again.
+// can drop. A page carrying something the badge counts therefore also clears
+// the Feishu dot, so reading here settles both badges rather than leaving one
+// lit for a later trip to Feishu. That covers the chat under the reader's
+// eyes as well as the one just opened: a message landing in it relights the
+// client's dot, and reaching it drops the dot again.
 //
 // unreadWaiting is the narrower of the two gates. readKey fires for anything
 // markChatRead would settle, thread replies included; only what the chat badge
-// counts is worth an applink, because the client will not drop its dot for a
+// counts is worth a clear, because the gateway will not drop its dot for a
 // reply the chat's message flow does not show.
 func (m Model) takeRead(chatID string, msgs []store.Message) (Model, tea.Cmd) {
 	cmd := markChatRead(m.deps.Store, m.deps.Log, chatID)
@@ -1520,7 +1513,7 @@ func (m Model) takeRead(chatID string, msgs []store.Message) (Model, tea.Cmd) {
 	if !waiting {
 		return m, cmd
 	}
-	m, tick := m.pushApplinks([]store.ChatUnread{{ChatID: chatID, Position: position}})
+	m, tick := m.pushClears([]store.ChatUnread{{ChatID: chatID, Position: position}})
 	return m, tea.Batch(cmd, tick)
 }
 
@@ -2202,11 +2195,11 @@ func (m Model) onNormalKey(s string) (tea.Model, tea.Cmd) {
 		switch {
 		// A mark-all sweep is the one thing here that keeps acting after the
 		// key that started it, so esc is scoped to it. A read gate's own
-		// applink is not on offer: it is the tail of a navigation the reader
-		// already made, not something still unfolding. Dropping it costs one
+		// a read gate's own clear is not on offer: it is the tail of a read the
+		// reader already made, not something still unfolding. Dropping it costs one
 		// dot until the next sweep, which does find that chat again.
-		case m.applinks.swept > 0:
-			return m.clearApplinks().notify("stopped", false), nil
+		case m.clears.swept > 0:
+			return m.dropClears().notify("stopped", false), nil
 		case m.aiOpen():
 			return m.closeAI(), nil
 		case m.searching:

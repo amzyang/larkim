@@ -211,7 +211,7 @@ type ReadProbe struct {
 // a chat out of ChatsWithUnread. The ladder asks about it either way —
 // ReadStatusCandidates has no local_read_at term — so what the probe buys is
 // latency: one tick instead of a backoff step that tops out at six hours, over
-// which a sweep would walk the client onto chats whose dot is long down.
+// which a sweep would clear chats whose dot is long down.
 func (s *Store) ReadStatusProbes(ctx context.Context, q ReadCheckQuery) ([]ReadProbe, error) {
 	scan := func(sc scanner) (ReadProbe, error) {
 		var p ReadProbe
@@ -291,7 +291,7 @@ const clientDot = `r.is_read_remote = 0 AND m.deleted = 0 AND m.message_position
 // The set is exactly the page's, and both edges of that are load-bearing.
 // Wider, and it settles a message nobody was shown. Narrower, and a message
 // the reader did see keeps its unread flags for good: the TUI redraws its
-// marker on every visit, and tui.unreadWaiting fires another applink on every
+// marker on every visit, and tui.unreadWaiting fires another clear on every
 // reload (docs/read-sync/TECH.md). A thread's replies are folded into their
 // root's line and are on no page of the chat, so MarkThreadRead settles those
 // when the thread itself is opened.
@@ -306,22 +306,22 @@ func (s *Store) MarkChatRead(ctx context.Context, chatID string, now int64) erro
 // newest message it is drawn over.
 type ChatUnread struct {
 	ChatID string `json:"chat_id"`
-	// Position addresses that message inside the chat. An applink carrying it
-	// lands the client at the tail rather than on its own unread divider,
+	// Position addresses that message inside the chat. The watermark settles
+	// everything up to the newest unread position rather than on its own
 	// which for a deep backlog is somewhere in the middle of the history.
 	Position int64 `json:"position"`
 }
 
-// ChatsWithUnread names every chat an applink would still do something for,
+// ChatsWithUnread names every chat a clear would still do something for,
 // oldest id first.
 //
 // The predicate is clientDot, so what takes a chat out of the set is the
 // client's own receipt and nothing else. That is what stops the sweep firing
-// for ever, and it is also what makes a lost pass repeatable: an applink the
-// client never acted on leaves the chat here, so pressing again walks it.
+// for ever, and it is also what makes a lost pass repeatable: a clear the
+// gateway never acted on leaves the chat here, so pressing again retries it.
 //
-// Thread replies and recalls are out: the client renders neither when the
-// applink opens the chat, so their receipts never flip and the chat would be
+// Thread replies and recalls are out: the watermark path does not settle
+// thread replies, so their receipts never flip and the chat would be
 // listed on every press regardless.
 func (s *Store) ChatsWithUnread(ctx context.Context) ([]ChatUnread, error) {
 	return queryAll(ctx, s.db, scanChatUnread, `SELECT m.chat_id, max(m.message_position)
@@ -424,10 +424,10 @@ func (s *Store) UnreadAnchors(ctx context.Context) ([]UnreadAnchor, error) {
 // replies included: "mark all as read" is a statement about the whole list,
 // not about the pages the reader happened to visit. Feishu has no mark-read
 // call, so this is the only half larkim can write; the client's own dots are
-// walked down separately, chat by chat, over the applinks ChatsWithUnread
+// cleared separately, chat by chat, through the gateway ChatsWithUnread
 // names. The two halves no longer share a predicate: this one answers "has
 // the reader seen it", ChatsWithUnread answers "does the client still show
-// it", and only the second decides who gets walked.
+// it", and only the second decides who gets cleared.
 //
 // It returns how many messages it settled. Matching no row writes nothing, so
 // the data_rev trigger stays quiet and the TUI does not reload itself in a

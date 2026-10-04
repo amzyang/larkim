@@ -39,10 +39,10 @@ type App struct {
 	sentrySource string
 	buildDSN     string
 
-	// openURL hands a lark:// applink to the desktop. A test replaces it so
-	// the walk is recorded rather than reaching macOS; left nil, it is the
-	// real one.
-	openURL func(targets []string, background bool) error
+	// clearBadge drops one chat's Feishu red dot. A test replaces it so the
+	// clears are recorded rather than posted to the gateway; left nil, read-all
+	// builds markread.New.
+	clearBadge markread.Clear
 
 	clientOnce gosync.Once
 	// larkClient is the Feishu boundary every command shares. A test sets it
@@ -94,7 +94,7 @@ func New(version, buildDSN string) *cobra.Command {
 	}
 	root.PersistentFlags().StringVar(&app.configPath, "config", "", "config file (default ~/.larkim/config.yaml)")
 	root.PersistentFlags().StringArrayVar(&app.sets, "set", nil,
-		"override one config key for this run, repeatable (--set applink_pace_ms=1500)")
+		"override one config key for this run, repeatable (--set backfill_days=7)")
 	root.PersistentFlags().BoolVar(&app.jsonOut, "json", false, "JSON output (default when stdout is not a terminal)")
 	root.PersistentFlags().BoolVar(&app.debug, "debug", false,
 		"log every lark-cli request and response (always-on logging lives in <data_dir>/larkim.log)")
@@ -185,14 +185,11 @@ func (a *App) syncer(st *store.Store) *sync.Syncer {
 // settle is the silenced-unread settle lever cfg asks for, nil when
 // silence_sync is off. cfg is a parameter rather than a.cfg because a reload
 // asks this of a configuration it has not installed anywhere yet.
-//
-// silence_sync is validated to web mode, the one lever that settles a
-// position rather than a whole chat.
 func (a *App) settle(cfg config.Config, st *store.Store) markread.Clear {
 	if !cfg.SilenceSync {
 		return nil
 	}
-	return markread.New(cfg.MarkRead, a.logger(), st, a.open)
+	return markread.New(cfg.MarkRead, a.logger(), st)
 }
 
 // reloadOnChange watches the configuration file and hands the sweep what it

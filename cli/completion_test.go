@@ -218,30 +218,29 @@ func TestCompleteConfigKey_OffersTheKeysWithTheirEquals(t *testing.T) {
 	// value rather than a second argument.
 	require.Equal(t, directiveLine(cobra.ShellCompDirectiveNoFileComp|cobra.ShellCompDirectiveNoSpace),
 		lines[len(lines)-1])
-	require.Equal(t, []string{"active_top_k=", "applink_pace_ms=", "ai.agent=", "ai.model=",
+	require.Equal(t, []string{"active_top_k=", "ai.agent=", "ai.model=",
 		"ai.context=", "ai.jev_key_env=", "ai.jev_endpoint=", "ai.snippets=", "ai.history="}, lines[:len(lines)-1])
 }
 
 func TestCompleteConfigKey_LeavesAValueAlone(t *testing.T) {
-	lines := completeArgs(t, "--set", "applink_pace_ms=15")
+	lines := completeArgs(t, "--set", "poll_interval_ms=15")
 	require.Equal(t, directiveLine(cobra.ShellCompDirectiveNoFileComp), lines[len(lines)-1])
 	require.Len(t, lines, 1, "what the value should be is the reader's business, not a list")
 }
 
-func TestCompleteConfigKey_OffersTheWordsAModeTakes(t *testing.T) {
-	lines := completeArgs(t, "--set", "mark_read.mode=")
-	require.Equal(t, []string{"mark_read.mode=applink", "mark_read.mode=web"}, lines[:len(lines)-1])
+func TestCompleteConfigKey_OffersTheWordsABrowserTakes(t *testing.T) {
+	lines := completeArgs(t, "--set", "mark_read.browser=")
+	require.Equal(t, []string{"mark_read.browser=brave", "mark_read.browser=chrome",
+		"mark_read.browser=chromium", "mark_read.browser=edge"}, lines[:len(lines)-1])
 
-	lines = completeArgs(t, "--set", "mark_read.mode=w")
-	require.Equal(t, []string{"mark_read.mode=web"}, lines[:len(lines)-1])
+	lines = completeArgs(t, "--set", "mark_read.browser=e")
+	require.Equal(t, []string{"mark_read.browser=edge"}, lines[:len(lines)-1])
 }
 
 func TestCompleteConfigKey_NeedsNoDatabase(t *testing.T) {
-	// The keys come out of the config struct, so Tab answers before the
-	// first sync the way --config does.
 	t.Setenv("HOME", t.TempDir())
-	lines := completeArgs(t, "--set", "applink")
-	require.Equal(t, []string{"applink_pace_ms="}, lines[:len(lines)-1])
+	lines := completeArgs(t, "--set", "backfill")
+	require.Equal(t, []string{"backfill_days="}, lines[:len(lines)-1])
 }
 
 func TestCompleteBodySource_OffersPathsOnlyOnceTheWordOpensWithAt(t *testing.T) {

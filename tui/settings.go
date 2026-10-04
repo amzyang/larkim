@@ -6,7 +6,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/amzyang/larkim/config"
 	"github.com/amzyang/larkim/markread"
@@ -94,19 +93,8 @@ var settings = []setting{{
 	sweep: true,
 	apply: retuneSweep,
 }, {
-	key:   "applink_pace_ms",
-	help:  "gap between two Feishu navigations, in milliseconds",
-	live:  true,
-	check: positiveMS,
-}, {
-	key:   "mark_read.mode",
-	help:  "how Feishu's own red dot comes down: applink walks the desktop client, web posts to the web client with browser cookies",
-	live:  true,
-	check: config.ValidMarkReadMode,
-	apply: rebuildClearBadge,
-}, {
 	key:   "mark_read.browser",
-	help:  "the browser whose Feishu login web mode borrows, e.g. chrome or edge",
+	help:  "the browser whose Feishu login clears Feishu's own red dots, e.g. chrome or edge",
 	live:  true,
 	check: config.ValidMarkReadBrowser,
 	apply: rebuildClearBadge,
@@ -164,7 +152,7 @@ var settings = []setting{{
 	summary:  func(c config.Config) string { return plural(len(c.Silence), "rule", "rules") },
 }, {
 	key:   "silence_sync",
-	help:  "settle Feishu's own read watermark past silenced messages, so every client's dot follows the same rules; needs mark_read.mode: web",
+	help:  "settle Feishu's own read watermark past silenced messages, so every client's dot follows the same rules",
 	live:  true,
 	sweep: true,
 	apply: rebuildSettle,
@@ -180,7 +168,7 @@ func nonEmpty(raw string) error {
 }
 
 // positiveMS judges a key whose unit is in its own name, so 3s is the reader
-// writing it twice. A gap of nothing is the bug the pacing exists to fix.
+// writing it twice.
 func positiveMS(raw string) error {
 	if ms, err := strconv.Atoi(raw); err != nil || ms <= 0 {
 		return fmt.Errorf("want a positive count of milliseconds, not %q", raw)
@@ -209,9 +197,9 @@ func rebuildSuggest(m *Model) {
 	m.suggester = m.deps.NewSuggest(m.cfg.AI.JevKeyEnv, m.cfg.AI.JevEndpoint)
 }
 
-// rebuildClearBadge builds the badge clearer again from the mode and browser
-// now in m.cfg, so a :set reaches the next chat the queue fires rather than
-// the next session. Deps without a builder keeps what it was given.
+// rebuildClearBadge builds the badge clearer again from the browser now in
+// m.cfg, so a :set reaches the next chat the queue fires rather than the next
+// session. Deps without a builder keeps what it was given.
 func rebuildClearBadge(m *Model) {
 	if m.deps.NewClearBadge == nil {
 		return
@@ -244,8 +232,8 @@ func retuneSweep(m *Model) {
 }
 
 // rebuildSettle puts the silenced-unread settle lever on the sweep, or takes
-// it off, as silence_sync now says. It is the same lever mark_read names, so
-// it is built through the same factory the badge clearer is.
+// it off, as silence_sync now says. It is built through the same factory the
+// badge clearer is.
 func rebuildSettle(m *Model) {
 	if !m.deps.Embedded || m.deps.Syncer == nil || m.deps.NewClearBadge == nil {
 		return
@@ -263,12 +251,6 @@ func lookupSetting(key string) (setting, bool) {
 		return setting{}, false
 	}
 	return settings[i], true
-}
-
-// applinkPace is the gap the queue leaves between two clears. It is read per
-// tick, so a change reaches a chain already running.
-func (m Model) applinkPace() time.Duration {
-	return markread.Pace(m.cfg)
 }
 
 // settingValue is what this session is running for a key, spelled the way the
@@ -335,8 +317,8 @@ func nextValue(cfg config.Config, s setting, value string) (config.Config, error
 	}
 	// The same floors and cross-key rules the file goes through, so a value
 	// this session runs on is one the next start would load, and a pair that
-	// only breaks together — silence_sync without web mode — is refused at
-	// the key that breaks it rather than at the next start.
+	// only breaks together is refused at the key that breaks it rather than at
+	// the next start.
 	cfg.Normalize()
 	return cfg, cfg.Validate()
 }

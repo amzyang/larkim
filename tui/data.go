@@ -72,27 +72,22 @@ type Deps struct {
 	// waiting out its interval. It carries this process's own writes, the
 	// sweep's too when the sweep runs here; a daemon's land on the interval.
 	Nudge <-chan struct{}
-	// OpenURL hands applinks, links and local files to the desktop. New fills
-	// it when nil; tests replace it to keep the real `open` out of the run.
-	// Several targets are opened together rather than one by one.
-	OpenURL func(targets []string, background bool) error
-	// ClearBadge drops the Feishu client's own red dot for one chat, by
-	// whichever lever mark_read.mode names. New fills it when nil; tests
-	// replace it to keep both macOS and the gateway out of the run.
+	// OpenURL hands links, applinks and local files to the desktop, which comes
+	// forward. New fills it when nil; tests replace it to keep the real `open`
+	// out of the run. Several targets are opened together rather than one by one.
+	OpenURL func(targets []string) error
+	// ClearBadge drops the Feishu client's own red dot for one chat. New fills
+	// it when nil; tests replace it to keep the gateway out of the run.
 	//
-	// It is separate from OpenURL because the two answer different questions:
-	// OpenURL hands a URL to the desktop, which is also what the `o` key does
-	// on purpose, while this one is asked for a chat to stop being unread and
-	// may never touch the desktop at all.
+	// OpenURL is what `o` does; ClearBadge never touches the desktop.
 	ClearBadge markread.Clear
-	// NewClearBadge builds ClearBadge again when :set changes mark_read. New
+	// NewClearBadge builds ClearBadge again when :set changes mark_read.browser.
+	// New
 	// fills it with markread.New when both are nil; a test that injects
 	// ClearBadge leaves it nil, so a :set keeps the fake it was given.
 	NewClearBadge func(config.MarkRead) markread.Clear
 	// Config is the configuration this run loaded. :set retunes a key of it
-	// for the session and :config writes one back to the file. New fills a
-	// zero applink_pace_ms with the default; tests set it small so a
-	// queue-walking case does not pay the real gap per chat.
+	// for the session and :config writes one back to the file.
 	Config config.Config
 	// Env reads the environment the external editor is named in. New fills it
 	// when nil; tests replace it to keep a real editor out of the run.
@@ -911,7 +906,7 @@ func (d Deps) env() func(string) string {
 // openInFeishu opens a chat (optionally at a message position) in the desktop client.
 func openInFeishu(d Deps, chatID, messageID string, position int64) tea.Cmd {
 	return func() tea.Msg {
-		if err := d.OpenURL([]string{applink.ChatLink(chatID, messageID, position)}, false); err != nil {
+		if err := d.OpenURL([]string{applink.ChatLink(chatID, messageID, position)}); err != nil {
 			// The notice bar holds the message and is gone at the next
 			// keypress; which chat was asked for only exists here.
 			d.Log.Error("open in feishu", "chat_id", chatID, "position", position, "err", err)
@@ -929,7 +924,7 @@ func openZone(d Deps, z clickZone) tea.Cmd {
 		if len(z.urls) == 0 {
 			return nil
 		}
-		if err := d.OpenURL(z.urls, false); err != nil {
+		if err := d.OpenURL(z.urls); err != nil {
 			// The notice bar has room for the message but not for what was
 			// handed over, and a zone carries as many targets as the message
 			// had attachments.

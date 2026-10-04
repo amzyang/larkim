@@ -69,7 +69,7 @@ func buildHelpEntries() []helpEntry {
 		{"NORMAL", "Ctrl+f", "search messages, chats and people"},
 		{"NORMAL", ": or ;", "command"},
 		{"NORMAL", "?", "this panel"},
-		{"NORMAL", "Esc", "stop a running walk of the Feishu client, then back out of the assistant, the search, one pane of the right column, the filter, then the quote"},
+		{"NORMAL", "Esc", "stop a running Feishu badge clear, then back out of the assistant, the search, one pane of the right column, the filter, then the quote"},
 		{"NORMAL", "q", "quit"},
 
 		{"VISUAL", "v", "starts in the messages or thread pane"},

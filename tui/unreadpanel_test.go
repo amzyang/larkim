@@ -8,7 +8,6 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/stretchr/testify/require"
 
-	"github.com/amzyang/larkim/config"
 	"github.com/amzyang/larkim/store"
 )
 
@@ -141,7 +140,7 @@ func TestFeed_TakesNothingRead(t *testing.T) {
 	t.Parallel()
 	m := feedModel(t)
 	var opened [][]string
-	m.deps.OpenURL = func(targets []string, _ bool) error { opened = append(opened, targets); return nil }
+	m.deps.OpenURL = func(targets []string) error { opened = append(opened, targets); return nil }
 
 	for range 30 {
 		next, cmd := m.Update(tea.KeyPressMsg{Code: 'j', Text: "j"})
@@ -149,7 +148,7 @@ func TestFeed_TakesNothingRead(t *testing.T) {
 	}
 
 	require.Empty(t, m.readKey(true), "the page is not a chat's")
-	require.Empty(t, opened, "so the client is walked onto nothing")
+	require.Empty(t, opened, "so nothing is cleared")
 	got, err := m.deps.Store.UnreadAnchors(t.Context())
 	require.NoError(t, err)
 	require.Len(t, got, 2, "and both chats still owe an answer")
@@ -556,8 +555,8 @@ func TestFeed_MTakesTheChatUnderTheCursorAsRead(t *testing.T) {
 	out := paneText(m)
 	require.NotContains(t, out, "平台组", "the settled section leaves the page")
 	require.Contains(t, out, "项目协作群", "and the one still waiting stays")
-	require.Equal(t, []store.ChatUnread{{ChatID: "oc_platform", Position: 200}}, m.applinks.left,
-		"the client is walked onto the newest it owed, so its own dot falls")
+	require.Equal(t, []store.ChatUnread{{ChatID: "oc_platform", Position: 200}}, m.clears.left,
+		"the gateway is told at the newest it owed, so its own dot falls")
 }
 
 // loudFeed is the panel open on one chat owing more than a section holds, with
@@ -566,7 +565,7 @@ func loudFeed(t *testing.T) (Model, *[]store.ChatUnread) {
 	t.Helper()
 	st, ids := firehose(t, unreadSectionLimit+10)
 	var cleared []store.ChatUnread
-	m := New(Deps{Store: st, Self: "ou_me", Config: config.Config{ApplinkPaceMS: testPace},
+	m := New(Deps{Store: st, Self: "ou_me",
 		ClearBadge: func(_ context.Context, c store.ChatUnread) error {
 			cleared = append(cleared, c)
 			return nil
@@ -594,7 +593,7 @@ func TestFeed_MClearsTheWholeChatInFeishuPastACutSection(t *testing.T) {
 	drain(t, next.(Model), cmd)
 
 	require.Equal(t, []store.ChatUnread{{ChatID: "oc_loud", Position: unreadSectionLimit + 10}}, *cleared,
-		"one clear through mark_read.mode's lever, at the tail of the backlog")
+		"one clear at the tail of the backlog")
 }
 
 // Everywhere else a chat is read by being gone into, so m carries no meaning
@@ -654,7 +653,7 @@ func TestFeed_ClickingTheHeldOpenLineUnderThePinTakesNothing(t *testing.T) {
 // coldPanel is a cold start with one chat waiting: the first listing puts the
 // panel up on the Unread row, and the panel's cursor rests in that chat's
 // section, which makes the chat its reply target before any key is pressed.
-func coldPanel(t *testing.T) (Model, *store.Store, *[]openCall) {
+func coldPanel(t *testing.T) (Model, *store.Store, *[]store.ChatUnread) {
 	t.Helper()
 	m, st, calls := badgeModel(t)
 	m = applyAll(t, m, loadChats(m.deps))
@@ -679,7 +678,7 @@ func TestMove_TheRowOfTheChatThePanelPointsAtOpensIt(t *testing.T) {
 	m = arrive(t, m, st, "oc_a")
 
 	require.Nil(t, m.feed, "the panel comes down for the chat")
-	require.Equal(t, []openCall{opened("lark://applink.feishu.cn/client/chat/open?openChatId=oc_a", true)}, *calls)
+	require.Equal(t, []store.ChatUnread{{ChatID: "oc_a"}}, *calls)
 }
 
 func TestOnClick_TheRowOfTheChatThePanelPointsAtOpensIt(t *testing.T) {

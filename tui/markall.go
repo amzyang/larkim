@@ -52,7 +52,7 @@ func (m Model) onMarkAllSet(msg markAllSetMsg) (Model, tea.Cmd) {
 }
 
 // markAllRead settles every waiting message locally, which is the half larkim
-// can write. It runs before a single applink goes out: the durable state is
+// can write. It runs before a single clear goes out: the durable state is
 // what the reader asked for, and the client's own dots are the best-effort
 // half behind it.
 func markAllRead(d Deps, chats []store.ChatUnread) tea.Cmd {
@@ -75,8 +75,8 @@ func (m Model) onMarkAllDone(msg markAllDoneMsg) (Model, tea.Cmd) {
 	// saying none of it is, so they go with the counts rather than outliving
 	// them: no page reloaded after this one can light them again.
 	clear(m.dots)
-	m.applinks.swept = len(msg.chats)
-	m, cmd := m.pushApplinks(msg.chats)
+	m.clears.swept = len(msg.chats)
+	m, cmd := m.pushClears(msg.chats)
 	reload := m.reloadCurrent()
 	return m.notify(sweepNote(len(msg.chats)), false), tea.Batch(cmd, reload)
 }

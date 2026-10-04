@@ -1,13 +1,13 @@
 package tui
 
 import (
+	"context"
 	"errors"
 	"path/filepath"
 	"strconv"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/amzyang/larkim/config"
 	"github.com/amzyang/larkim/larkcli"
 	"github.com/amzyang/larkim/store"
 	"github.com/amzyang/larkim/store/storetest"
@@ -15,8 +15,8 @@ import (
 )
 
 // sweepModel is a list of n chats, each carrying one message Feishu still
-// reports unseen, with the opener recorded instead of reaching macOS.
-func sweepModel(t *testing.T, n int) (Model, *store.Store, *[]openCall, *error) {
+// reports unseen, with the clear lever recorded instead of reaching the gateway.
+func sweepModel(t *testing.T, n int) (Model, *store.Store, *[]store.ChatUnread, *error) {
 	t.Helper()
 	st, err := storetest.Open(t, filepath.Join(t.TempDir(), "t.db"))
 	require.NoError(t, err)
@@ -37,14 +37,18 @@ func sweepModel(t *testing.T, n int) (Model, *store.Store, *[]openCall, *error) 
 		require.NoError(t, st.SetReadStatus(ctx, x.MessageID, &unread, 100, 0))
 	}
 
-	var calls []openCall
-	var openErr error
-	m := New(Deps{Store: st, Self: "ou_me", Client: larkcli.NewFake(), Config: config.Config{ApplinkPaceMS: testPace}, OpenURL: func(targets []string, background bool) error {
-		calls = append(calls, openCall{targets, background})
-		return openErr
-	}})
+	var cleared []store.ChatUnread
+	var clearErr error
+	m := New(Deps{Store: st, Self: "ou_me", Client: larkcli.NewFake(),
+		ClearBadge: func(_ context.Context, c store.ChatUnread) error {
+			cleared = append(cleared, c)
+			if clearErr != nil {
+				return clearErr
+			}
+			return nil
+		}})
 	m.width, m.height = 120, 36
-	return m, st, &calls, &openErr
+	return m, st, &cleared, &clearErr
 }
 
 // clickMarkAll is the click on the header button, at the column the header
@@ -62,8 +66,8 @@ func pressMarkAll(t *testing.T, m Model) Model {
 	return drain(t, m, cmd)
 }
 
-// waiting is every chat the store would still walk the client onto: the half
-// only a Feishu receipt settles.
+// waiting is every chat the store would still clear: the half only a Feishu
+// receipt settles.
 func waiting(t *testing.T, st *store.Store) []store.ChatUnread {
 	t.Helper()
 	chats, err := st.ChatsWithUnread(t.Context())
@@ -86,142 +90,122 @@ func badges(t *testing.T, st *store.Store) map[string]int64 {
 	return out
 }
 
-func TestMarkAllRead_WalksEveryChatThatWasWaiting(t *testing.T) {
+func TestMarkAllRead_ClearsEveryChatThatWasWaiting(t *testing.T) {
 	t.Parallel()
-	m, st, calls, _ := sweepModel(t, 3)
+	m, st, cleared, _ := sweepModel(t, 3)
 	m = pressMarkAll(t, m)
 
-	require.Equal(t, []openCall{
-		opened("lark://applink.feishu.cn/client/chat/open?openChatId=oc_0&position=1", true),
-		opened("lark://applink.feishu.cn/client/chat/open?openChatId=oc_1&position=1", true),
-		opened("lark://applink.feishu.cn/client/chat/open?openChatId=oc_2&position=1", true),
-	}, *calls, "one background applink per chat, each landing on that chat's newest unread")
+	require.Equal(t, []store.ChatUnread{
+		{ChatID: "oc_0", Position: 1},
+		{ChatID: "oc_1", Position: 1},
+		{ChatID: "oc_2", Position: 1},
+	}, *cleared)
 	require.Empty(t, badges(t, st), "and the local half is settled")
 	require.Len(t, waiting(t, st), 3,
-		"the client's half is not: no receipt has come back yet, so another press would walk them again")
+		"the client's half is not: no receipt has come back yet, so another press would clear them again")
 	require.Contains(t, m.notice, "3 chats marked read")
 }
 
-func TestMarkAllRead_NeverBatchesSeveralTargetsIntoOneOpen(t *testing.T) {
+func TestMarkAllRead_WritesBeforeItFiresTheFirstClear(t *testing.T) {
 	t.Parallel()
-	m, _, calls, _ := sweepModel(t, 3)
-	pressMarkAll(t, m)
-
-	for _, c := range *calls {
-		require.Len(t, c.targets, 1,
-			"the client can only be in one chat, so a set of applinks arrives as one navigation")
-	}
-}
-
-func TestMarkAllRead_WritesBeforeItFiresTheFirstApplink(t *testing.T) {
-	t.Parallel()
-	m, st, calls, _ := sweepModel(t, 3)
+	m, st, cleared, _ := sweepModel(t, 3)
 	m, cmd := clickMarkAll(m)
 	next, cmd := m.Update(cmd())
 	m = next.(Model)
 
-	// Run only as far as the write's own answer: the durable half has to be
-	// down before the best-effort half starts (ARCH.md 三).
 	msg := cmd()
 	require.IsType(t, markAllDoneMsg{}, msg)
 	require.Empty(t, badges(t, st))
-	require.Empty(t, *calls)
+	require.Empty(t, *cleared)
 }
 
 func TestMarkAllRead_EndsOnTheChatTheReaderHasOpen(t *testing.T) {
 	t.Parallel()
-	m, _, calls, _ := sweepModel(t, 3)
+	m, _, cleared, _ := sweepModel(t, 3)
 	m.chatID = "oc_0"
 
 	pressMarkAll(t, m)
 
-	require.Len(t, *calls, 3)
-	require.Equal(t, opened("lark://applink.feishu.cn/client/chat/open?openChatId=oc_0&position=1", true), (*calls)[2],
+	require.Len(t, *cleared, 3)
+	require.Equal(t, store.ChatUnread{ChatID: "oc_0", Position: 1}, (*cleared)[2],
 		"the client comes to rest where the terminal is")
 }
 
 func TestMarkAllRead_APressWhileAQuestionIsOnScreenStartsNothing(t *testing.T) {
 	t.Parallel()
-	m, st, calls, _ := sweepModel(t, 3)
+	m, st, cleared, _ := sweepModel(t, 3)
 	m.confirm = confirmation{kind: confirmRecall, messageID: "om_0"}
 	m = m.notify("recall this message? y/n", false)
 
 	m = pressMarkAll(t, m)
 
-	require.Empty(t, *calls)
-	// Not waiting(): that set survives the write now, so it would read the
-	// same whether or not the press was swallowed.
+	require.Empty(t, *cleared)
 	require.Len(t, badges(t, st), 3, "nothing was taken as read either")
 	require.Equal(t, "recall this message? y/n", m.notice, "the question is still the one on screen")
 	require.Equal(t, confirmRecall, m.confirm.kind)
 }
 
-func TestMarkAllRead_AnOpenFailureIsReportedAndDoesNotStopTheChain(t *testing.T) {
+func TestMarkAllRead_AClearFailureIsReportedAndDoesNotStopTheChain(t *testing.T) {
 	t.Parallel()
-	m, _, calls, openErr := sweepModel(t, 3)
-	*openErr = errFailedOpen
+	m, _, cleared, clearErr := sweepModel(t, 3)
+	*clearErr = errFailedClear
 	m = pressMarkAll(t, m)
 
-	require.Len(t, *calls, 3, "the chats behind a refusal have dots of their own")
+	require.Len(t, *cleared, 3, "the chats behind a refusal have dots of their own")
 	require.Contains(t, m.notice, "3 not cleared in Feishu")
 	require.True(t, m.noticeErr)
 }
 
 func TestMarkAllRead_ReportsOnlyTheFailuresOfItsOwnSweep(t *testing.T) {
 	t.Parallel()
-	m, _, calls, openErr := sweepModel(t, 2)
+	m, _, cleared, clearErr := sweepModel(t, 2)
 
-	// A read gate's applink fails on the way past. It says nothing on its own
-	// way out, so it must leave nothing behind for the next sweep to claim.
-	*openErr = errFailedOpen
+	*clearErr = errFailedClear
 	gated, cmd := m.takeRead("oc_elsewhere", unreadPage())
 	m = drain(t, gated, cmd)
-	*openErr = nil
-	*calls = nil
+	*clearErr = nil
+	*cleared = nil
 
 	m = pressMarkAll(t, m)
 
-	require.Len(t, *calls, 2)
-	require.Equal(t, "2 chats marked read", m.notice, "a sweep whose every applink landed reports no failure")
+	require.Len(t, *cleared, 2)
+	require.Equal(t, "2 chats marked read", m.notice, "a sweep whose every clear landed reports no failure")
 	require.False(t, m.noticeErr)
 }
 
-func TestMarkAllRead_WaitsForTheLastOpenBeforeItReports(t *testing.T) {
+func TestMarkAllRead_WaitsForTheLastClearBeforeItReports(t *testing.T) {
 	t.Parallel()
-	m, _, calls, openErr := sweepModel(t, 1)
-	*openErr = errFailedOpen
+	m, _, cleared, clearErr := sweepModel(t, 1)
+	*clearErr = errFailedClear
 	m, cmd := clickMarkAll(m)
 	next, cmd := m.Update(cmd())
 	armed, _ := next.(Model).Update(cmd())
 	m = armed.(Model)
 
-	// The open and the tick behind it go out together and applink.Open waits
-	// on a process, so the tick that finds the queue empty can beat the
-	// answer it is waiting for.
-	due, fired := m.Update(applinkDueMsg{m.applinks.gen})
+	due, fired := m.Update(clearDueMsg{m.clears.gen})
 	m = due.(Model)
-	early, _ := m.Update(applinkDueMsg{m.applinks.gen})
+	early, _ := m.Update(clearDueMsg{m.clears.gen})
 	m = early.(Model)
-	require.NotContains(t, m.notice, "marked read", "the sweep is not over while an open is still out")
+	require.NotContains(t, m.notice, "marked read", "the sweep is not over while a clear is still out")
 
 	m = drain(t, m, fired)
 
-	require.Len(t, *calls, 1)
-	require.Contains(t, m.notice, "1 not cleared in Feishu", "the last open's failure is in the report")
+	require.Len(t, *cleared, 1)
+	require.Contains(t, m.notice, "1 not cleared in Feishu", "the last clear's failure is in the report")
 	require.True(t, m.noticeErr)
 }
 
-func TestMarkAllRead_WalksAgainWhatTheLastSweepFailedToClear(t *testing.T) {
+func TestMarkAllRead_ClearsAgainWhatTheLastSweepFailedToClear(t *testing.T) {
 	t.Parallel()
-	m, _, calls, openErr := sweepModel(t, 2)
-	*openErr = errFailedOpen
+	m, _, cleared, clearErr := sweepModel(t, 2)
+	*clearErr = errFailedClear
 	m = pressMarkAll(t, m)
-	require.Len(t, *calls, 2)
-	*openErr, *calls = nil, nil
+	require.Len(t, *cleared, 2)
+	*clearErr, *cleared = nil, nil
 
 	m = pressMarkAll(t, m)
 
-	require.Len(t, *calls, 2,
+	require.Len(t, *cleared, 2,
 		"nothing said the client's dots came down, so the second press is the reader's retry")
 	require.Contains(t, m.notice, "2 chats marked read")
 	require.False(t, m.noticeErr)
@@ -229,64 +213,60 @@ func TestMarkAllRead_WalksAgainWhatTheLastSweepFailedToClear(t *testing.T) {
 
 func TestMarkAllRead_LeavesOutWhatFeishuConfirmedRead(t *testing.T) {
 	t.Parallel()
-	m, st, calls, _ := sweepModel(t, 2)
+	m, st, cleared, _ := sweepModel(t, 2)
 	m = pressMarkAll(t, m)
-	*calls = nil
+	*cleared = nil
 	for _, id := range []string{"om_0", "om_1"} {
 		require.NoError(t, st.SetReadStatus(t.Context(), id, new(true), 200, 0))
 	}
 
 	m = pressMarkAll(t, m)
 
-	require.Empty(t, *calls)
+	require.Empty(t, *cleared)
 	require.Equal(t, "nothing waiting in Feishu", m.notice, "the receipts are what end the sweep")
 }
 
 func TestMarkAllRead_OnAStoreWithNothingWaitingSaysSo(t *testing.T) {
 	t.Parallel()
-	m, _, calls, _ := sweepModel(t, 0)
+	m, _, cleared, _ := sweepModel(t, 0)
 
 	m = pressMarkAll(t, m)
 
 	require.Equal(t, "nothing waiting in Feishu", m.notice)
-	require.Empty(t, *calls)
+	require.Empty(t, *cleared)
 }
 
-func TestMarkAllRead_EscapeStopsTheWalk(t *testing.T) {
+func TestMarkAllRead_EscapeStopsTheSweep(t *testing.T) {
 	t.Parallel()
-	m, _, calls, _ := sweepModel(t, 4)
+	m, _, cleared, _ := sweepModel(t, 4)
 	m, cmd := clickMarkAll(m)
 	next, cmd := m.Update(cmd())
 	m = next.(Model)
 
-	// The walk is driven by hand rather than drained, because backing out of
-	// it is only possible while it is still running.
 	armed, _ := m.Update(cmd())
-	m = walkOne(t, armed.(Model))
-	require.Len(t, *calls, 1)
+	m = clearOne(t, armed.(Model))
+	require.Len(t, *cleared, 1)
 
 	stopped, _ := m.onNormalKey("esc")
 	m = stopped.(Model)
 	require.Equal(t, "stopped", m.notice)
-	require.Empty(t, m.applinks.left)
+	require.Empty(t, m.clears.left)
 
-	// A chain already armed cannot be recalled, only ignored: its tick
-	// arrives carrying the generation esc left behind.
-	drain(t, m, m.applinkTick(m.applinks.gen-1))
-	require.Len(t, *calls, 1, "a tick from the abandoned chain opens nothing")
+	drain(t, m, m.clearTick(m.clears.gen-1))
+	require.Len(t, *cleared, 1, "a tick from the abandoned chain clears nothing")
 }
 
-// walkOne advances the queue by a single chat. The due message is delivered
-// by hand instead of waited out, and of what comes back only the hand-over is
-// run, so the walk stops where the test wants it.
-func walkOne(t *testing.T, m Model) Model {
+// clearOne advances the queue by a single chat. The due message is delivered
+// by hand instead of waited out, and of what comes back only the clear is
+// run, so the sweep stops where the test wants it.
+func clearOne(t *testing.T, m Model) Model {
 	t.Helper()
-	next, cmd := m.Update(applinkDueMsg{m.applinks.gen})
+	next, cmd := m.Update(clearDueMsg{m.clears.gen})
 	m = next.(Model)
 	batch, ok := cmd().(tea.BatchMsg)
-	require.True(t, ok, "a due slot hands back the open and the slot behind it")
+	require.True(t, ok, "a due slot hands back the clear and the slot behind it")
 	for _, c := range batch {
-		if fired, ok := c().(applinkFiredMsg); ok {
+		if fired, ok := c().(clearFiredMsg); ok {
 			counted, _ := m.Update(fired)
 			m = counted.(Model)
 		}
@@ -304,13 +284,8 @@ func TestRunCommand_ReadAllTakesTheSamePathAsTheButton(t *testing.T) {
 	require.Equal(t, "2 chats marked read", m.notice)
 }
 
-// errFailedOpen stands for macOS refusing an applink, which is all the caller
-// ever learns.
-var errFailedOpen = errors.New("no application knows how to open URL")
+var errFailedClear = errors.New("session cookie missing")
 
-// The markers are one visit's record of what was waiting. A mark-all is the
-// reader saying none of it is, so they go with the counts, and the panel drawn
-// beside the list answers the press rather than the watch's next beat.
 func TestOnMarkAllDone_DropsTheMarkersAndReanchorsThePanel(t *testing.T) {
 	t.Parallel()
 	m, st, _, _ := sweepModel(t, 2)

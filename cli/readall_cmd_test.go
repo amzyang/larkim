@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"path/filepath"
 	"strconv"
@@ -13,9 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// readAllApp is n chats each carrying one message Feishu still reports
-// unseen, with the opener recorded instead of reaching macOS.
-func readAllApp(t *testing.T, n int, openErr error) (*App, *[][]string, *error) {
+func readAllApp(t *testing.T, n int, clearErr error) (*App, *[]store.ChatUnread, *error) {
 	t.Helper()
 	dir := t.TempDir()
 	st, err := storetest.Open(t, filepath.Join(dir, "larkim.db"))
@@ -37,17 +36,14 @@ func readAllApp(t *testing.T, n int, openErr error) (*App, *[][]string, *error) 
 	require.NoError(t, st.Close())
 
 	var out bytes.Buffer
-	var walked [][]string
-	refuse := openErr
-	// A pace of 1ms rather than the configured second: what these cases are
-	// about is which chats get walked, not how far apart.
-	a := &App{Out: &out, Err: &out, jsonOut: true, cfg: config.Config{DataDir: dir, ApplinkPaceMS: 1},
-		openURL: func(targets []string, background bool) error {
-			require.True(t, background, "the walk must leave the screen to whatever the reader is in")
-			walked = append(walked, targets)
+	var cleared []store.ChatUnread
+	refuse := clearErr
+	a := &App{Out: &out, Err: &out, jsonOut: true, cfg: config.Config{DataDir: dir},
+		clearBadge: func(_ context.Context, c store.ChatUnread) error {
+			cleared = append(cleared, c)
 			return refuse
 		}}
-	return a, &walked, &refuse
+	return a, &cleared, &refuse
 }
 
 func runReadAll(t *testing.T, a *App, args ...string) string {
@@ -60,27 +56,28 @@ func runReadAll(t *testing.T, a *App, args ...string) string {
 	return a.Out.(*bytes.Buffer).String()
 }
 
-func TestReadAllCmd_WalksTheClientOntoEveryChatThatWasWaiting(t *testing.T) {
-	a, walked, _ := readAllApp(t, 3, nil)
+func TestReadAllCmd_ClearsEveryChatThatWasWaiting(t *testing.T) {
+	a, cleared, _ := readAllApp(t, 3, nil)
 
 	out := runReadAll(t, a)
 
-	require.Equal(t, [][]string{
-		{"lark://applink.feishu.cn/client/chat/open?openChatId=oc_0&position=1"},
-		{"lark://applink.feishu.cn/client/chat/open?openChatId=oc_1&position=1"},
-		{"lark://applink.feishu.cn/client/chat/open?openChatId=oc_2&position=1"},
-	}, *walked, "one applink per chat, each on its own, each landing on that chat's newest unread")
+	require.Equal(t, []store.ChatUnread{
+		{ChatID: "oc_0", Position: 1},
+		{ChatID: "oc_1", Position: 1},
+		{ChatID: "oc_2", Position: 1},
+	}, *cleared)
 	require.Contains(t, out, `"messages": 3`)
 	require.Contains(t, out, `"chats": 3`)
 	require.Contains(t, out, `"failed": 0`)
+	require.NotContains(t, out, `"mode"`)
 }
 
-func TestReadAllCmd_SettlesTheLocalHalfEvenWhenOpenRefuses(t *testing.T) {
-	a, walked, _ := readAllApp(t, 2, errors.New("no application knows how to open URL"))
+func TestReadAllCmd_SettlesTheLocalHalfEvenWhenTheClearFails(t *testing.T) {
+	a, cleared, _ := readAllApp(t, 2, errors.New("session cookie missing"))
 
 	out := runReadAll(t, a)
 
-	require.Len(t, *walked, 2, "the chat behind a refusal has a dot of its own")
+	require.Len(t, *cleared, 2, "the chat behind a refusal has a dot of its own")
 	require.Contains(t, out, `"failed": 2`)
 
 	st, err := storetest.Open(t, a.cfg.DBPath())
@@ -96,15 +93,15 @@ func TestReadAllCmd_SettlesTheLocalHalfEvenWhenOpenRefuses(t *testing.T) {
 	require.Len(t, left, 2, "and the refused chats are still the client's, so the next pass finds them")
 }
 
-func TestReadAllCmd_WalksAgainWhatTheLastPassFailedToClear(t *testing.T) {
-	a, walked, refuse := readAllApp(t, 2, errors.New("no application knows how to open URL"))
+func TestReadAllCmd_ClearsAgainWhatTheLastPassFailedToClear(t *testing.T) {
+	a, cleared, refuse := readAllApp(t, 2, errors.New("session cookie missing"))
 	runReadAll(t, a)
-	require.Len(t, *walked, 2)
-	*refuse, *walked = nil, nil
+	require.Len(t, *cleared, 2)
+	*refuse, *cleared = nil, nil
 
 	out := runReadAll(t, a)
 
-	require.Len(t, *walked, 2,
+	require.Len(t, *cleared, 2,
 		"no receipt said the dots came down, so the chats are still the client's and the pass is repeatable")
 	require.Contains(t, out, `"chats": 2`)
 	require.Contains(t, out, `"failed": 0`)
@@ -112,13 +109,14 @@ func TestReadAllCmd_WalksAgainWhatTheLastPassFailedToClear(t *testing.T) {
 }
 
 func TestReadAllCmd_DryRunCountsAndWritesNothing(t *testing.T) {
-	a, walked, _ := readAllApp(t, 2, nil)
+	a, cleared, _ := readAllApp(t, 2, nil)
 
 	out := runReadAll(t, a, "--dry-run")
 
-	require.Empty(t, *walked)
+	require.Empty(t, *cleared)
 	require.Contains(t, out, `"chats": 2`)
 	require.Contains(t, out, `"messages": 0`)
+	require.NotContains(t, out, `"mode"`)
 
 	st, err := storetest.Open(t, a.cfg.DBPath())
 	require.NoError(t, err)
@@ -128,11 +126,31 @@ func TestReadAllCmd_DryRunCountsAndWritesNothing(t *testing.T) {
 	require.Len(t, left, 2, "a look must not be a write")
 }
 
-func TestReadAllCmd_OnAReadStoreOpensNothing(t *testing.T) {
-	a, walked, _ := readAllApp(t, 0, nil)
+func TestReadAllCmd_OnAReadStoreClearsNothing(t *testing.T) {
+	a, cleared, _ := readAllApp(t, 0, nil)
 
 	out := runReadAll(t, a)
 
-	require.Empty(t, *walked)
+	require.Empty(t, *cleared)
 	require.Contains(t, out, `"chats": 0`)
+}
+
+func TestReadAllCmd_SaysClearedInText(t *testing.T) {
+	a, _, _ := readAllApp(t, 2, nil)
+	a.jsonOut = false
+	var out bytes.Buffer
+	a.Out, a.Err = &out, &out
+	a.clearBadge = func(_ context.Context, c store.ChatUnread) error {
+		if c.ChatID == "oc_1" {
+			return errors.New("session cookie missing")
+		}
+		return nil
+	}
+	cmd := a.readAllCmd()
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	require.NoError(t, cmd.Execute())
+	text := out.String()
+	require.Contains(t, text, "2 messages read, 1 chats cleared in Feishu")
+	require.Contains(t, text, "1 chats kept their red dot: not matched to the web client, or refused")
 }

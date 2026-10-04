@@ -98,7 +98,7 @@ func TestCmdComp_ATargetsIDIsItsInfo(t *testing.T) {
 func TestCmdComp_ASettingsInfoIsItsHelpValueAndReach(t *testing.T) {
 	t.Parallel()
 	m := press(t, cmdModel(t), "s", "e", "t", " ", "tab")
-	require.Equal(t, "set applink_pace_ms=", typed(m))
+	require.Equal(t, "set mark_read.browser=", typed(m))
 	info := focusedInfo(m)
 	require.Len(t, info, 2)
 	require.Contains(t, info[1], "takes effect now", ":set reaches only live keys")
@@ -259,23 +259,21 @@ func TestCmdComp_CompletesASettingWithItsEqualsAlready(t *testing.T) {
 	// An option only ever reads as a pair, so the = comes along and the
 	// reader's next keystroke is the value.
 	m := press(t, cmdModel(t), "s", "e", "t", " ")
-	require.Equal(t, []string{"applink_pace_ms", "mark_read.mode", "mark_read.browser", "ai.agent", "ai.model", "ai.context",
+	require.Equal(t, []string{"mark_read.browser", "ai.agent", "ai.model", "ai.context",
 		"ai.jev_key_env", "ai.jev_endpoint", "ai.history", "todoist.token", "todoist.project_id"}, offers(m),
 		":set reaches only the keys a change takes effect on, which with a daemon owning the sweep excludes the sweep's own")
 
 	m = press(t, m, "tab")
-	require.Equal(t, "set applink_pace_ms=", typed(m))
+	require.Equal(t, "set mark_read.browser=", typed(m))
 }
 
-func TestCmdComp_CompletesAModeWithTheWordsItTakes(t *testing.T) {
+func TestCmdComp_CompletesABrowserWithTheWordsItTakes(t *testing.T) {
 	t.Parallel()
-	// mark_read.mode takes one of two words; offering them is what spares the
-	// reader a round trip through the refusal.
-	m := press(t, cmdModel(t), []string{"s", "e", "t", " ", "m", "a", "r", "k", "_", "r", "e", "a", "d", ".", "m", "o", "d", "e", "="}...)
-	require.Equal(t, []string{"applink", "web"}, offers(m))
+	m := press(t, cmdModel(t), []string{"s", "e", "t", " ", "m", "a", "r", "k", "_", "r", "e", "a", "d", ".", "b", "r", "o", "w", "s", "e", "r", "="}...)
+	require.Equal(t, []string{"brave", "chrome", "chromium", "edge"}, offers(m))
 
-	m = press(t, m, "w", "tab")
-	require.Equal(t, "set mark_read.mode=web", typed(m))
+	m = press(t, m, "e", "tab")
+	require.Equal(t, "set mark_read.browser=edge", typed(m))
 }
 
 func TestCmdComp_CompletesAConfigKeyBare(t *testing.T) {

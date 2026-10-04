@@ -108,11 +108,11 @@ func TestFeishuMeetingLink_ReachesTheClientWithoutABrowser(t *testing.T) {
 
 // callPage is a chat holding one call, with the opener replaced so the links
 // a click or a keypress fires are recorded instead of reaching macOS.
-func callPage(t *testing.T, contentRaw string) (Model, *[]openCall) {
+func callPage(t *testing.T, contentRaw string) (Model, *[][]string) {
 	t.Helper()
-	var calls []openCall
-	m := New(Deps{Self: "ou_me", OpenURL: func(targets []string, background bool) error {
-		calls = append(calls, openCall{targets, background})
+	var calls [][]string
+	m := New(Deps{Self: "ou_me", OpenURL: func(targets []string) error {
+		calls = append(calls, targets)
 		return nil
 	}})
 	m.width, m.height = 120, 36
@@ -150,8 +150,8 @@ func TestOnClick_TheJoinButtonEntersTheMeeting(t *testing.T) {
 	m, calls := callPage(t, liveCall)
 	i := joinRowIndex(t, m)
 	collect(clickAt(m, i, firstZone(m.msgRows[i]).x0))
-	require.Equal(t, []openCall{opened("lark://vc.feishu.cn/j/100000000", false)}, *calls,
-		"joining takes the screen, unlike the applink that clears a badge")
+	require.Equal(t, [][]string{{"lark://vc.feishu.cn/j/100000000"}}, *calls,
+		"joining takes the screen, unlike the clear that drops a badge")
 }
 
 func TestOnClick_OnlyTheButtonItselfJoins(t *testing.T) {
@@ -169,14 +169,14 @@ func TestOnNormalKey_OOpensALiveCallByJoiningIt(t *testing.T) {
 	t.Parallel()
 	m, calls := callPage(t, liveCall)
 	collect(mustCmd(m.onNormalKey("o")))
-	require.Equal(t, []openCall{opened("lark://vc.feishu.cn/j/100000000", false)}, *calls)
+	require.Equal(t, [][]string{{"lark://vc.feishu.cn/j/100000000"}}, *calls)
 }
 
 func TestOnNormalKey_OOnAnEndedCallOpensTheMessage(t *testing.T) {
 	t.Parallel()
 	m, calls := callPage(t, endedCall)
 	collect(mustCmd(m.onNormalKey("o")))
-	require.Equal(t, []openCall{opened("lark://applink.feishu.cn/client/chat/open?openChatId=oc_a&position=227&messageId=om_1", false)}, *calls,
+	require.Equal(t, [][]string{{"lark://applink.feishu.cn/client/chat/open?openChatId=oc_a&position=227&messageId=om_1"}}, *calls,
 		"once the call is over there is nothing to join")
 }
 

@@ -76,7 +76,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Bubble Tea/Bubbles/Lipgloss 用 `charm.land/...` v2 模块路径，不是 `github.com/charmbracelet/...`
 - SQLite 用 `modernc.org/sqlite`（纯 Go），构建 `CGO_ENABLED=0`
 - 无飞书 Go SDK：所有数据读写经外部 `lark-cli` 子进程（`larkcli.ExecClient`），认证由 lark-cli 管理，larkim 不存凭据
-- 唯一例外是 `larkweb`：`mark_read.mode: web` 时直连 web client 的 `/im/gateway/`（protobuf，经 `protowire`），
+- 唯一例外是 `larkweb`：mark-read 直连 web client 的 `/im/gateway/`（protobuf，经 `protowire`），
   因为 OpenAPI 没有 mark-read。凭据是浏览器里的飞书 web 登录，经 kooky 每次调用时从 jar 读取，
   不落盘、不进 SQLite、不进配置；web client 用数字 chat id，靠 inbox 里各会话最新一条消息的
   `(create_ms, message_position)` 对到 `oc_`（`store.ChatAt`），对上唯一一个会话才记进

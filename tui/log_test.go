@@ -2,14 +2,13 @@ package tui
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"log/slog"
 	"path/filepath"
 	"testing"
 
 	"github.com/amzyang/larkim/applink"
-	"github.com/amzyang/larkim/config"
-	"github.com/amzyang/larkim/markread"
 	"github.com/amzyang/larkim/store"
 	"github.com/amzyang/larkim/store/storetest"
 	"github.com/stretchr/testify/require"
@@ -42,11 +41,11 @@ func logDeps(t *testing.T, openErr error) (Deps, *bytes.Buffer) {
 	t.Helper()
 	var buf bytes.Buffer
 	log := slog.New(slog.NewTextHandler(&buf, nil))
-	open := func([]string, bool) error { return openErr }
+	open := func([]string) error { return openErr }
 	return Deps{
 		Log:        log,
 		OpenURL:    open,
-		ClearBadge: markread.New(config.Default().MarkRead, log, nil, open),
+		ClearBadge: func(context.Context, store.ChatUnread) error { return openErr },
 	}, &buf
 }
 
@@ -54,7 +53,7 @@ func TestFireBadgeClear_LogsAFailureInsteadOfTakingTheNoticeBar(t *testing.T) {
 	t.Parallel()
 	d, buf := logDeps(t, errors.New("no application knows how to open URL"))
 
-	msg := fireBadgeClear(d, store.ChatUnread{ChatID: "oc_quiet"}, 3)().(applinkFiredMsg)
+	msg := fireBadgeClear(d, store.ChatUnread{ChatID: "oc_quiet"}, 3)().(clearFiredMsg)
 
 	require.Error(t, msg.err, "the queue counts it; a chat switch is not reported as the reader's error")
 	require.Contains(t, buf.String(), "clear feishu badge")
@@ -88,7 +87,7 @@ func TestOpenZone_LogsTheTargetsTheNoticeBarCannotHold(t *testing.T) {
 
 func TestOpenURL_CarriesWhatOpenRefusedOn(t *testing.T) {
 	t.Parallel()
-	err := applink.Open(slog.New(slog.DiscardHandler), []string{filepath.Join(t.TempDir(), "nothing-here.txt")}, true)
+	err := applink.Open(slog.New(slog.DiscardHandler), []string{filepath.Join(t.TempDir(), "nothing-here.txt")})
 
 	require.ErrorContains(t, err, "does not exist",
 		"exec drops stderr, which is the only place open says why")
@@ -99,13 +98,11 @@ func TestOpenURL_LogsTheArgvItBuilt(t *testing.T) {
 	var buf bytes.Buffer
 	log := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
-	// A file that is not there: open refuses it after the line is logged, where
-	// a lark:// link would move the Feishu client of whoever runs the test.
 	target := filepath.Join(t.TempDir(), "open?openChatId=oc_quiet")
-	applink.Open(log, []string{target}, true)
+	applink.Open(log, []string{target})
 
-	require.Contains(t, buf.String(), `open -g '`+target+`'`,
-		"-g is this function's own decision, so no caller can log it")
+	require.Contains(t, buf.String(), `open '`+target+`'`,
+		"the argv is logged whole and quoted, so it pastes back into a shell")
 }
 
 func TestNew_GivesTheDefaultOpenerTheLog(t *testing.T) {
@@ -115,7 +112,7 @@ func TestNew_GivesTheDefaultOpenerTheLog(t *testing.T) {
 	var buf bytes.Buffer
 	m := New(Deps{Log: slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))})
 
-	m.deps.OpenURL([]string{filepath.Join(t.TempDir(), "nothing-here.txt")}, false)
+	m.deps.OpenURL([]string{filepath.Join(t.TempDir(), "nothing-here.txt")})
 
 	require.Contains(t, buf.String(), "nothing-here.txt", "the opener New installs must not log into the void")
 }

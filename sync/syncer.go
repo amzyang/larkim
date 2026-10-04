@@ -153,11 +153,11 @@ type Syncer struct {
 	// settle, when set, settles a chat's server-side read watermark
 	// at a position the silence rules chose, so the Feishu clients' dots
 	// follow them too; nil disables the settle step. It is the lever
-	// mark_read.mode names (markread.Clear), the same one a read settles
-	// through, so the two writes reach Feishu the same way.
+	// markread.Clear, the same one a read settles through, so the two writes
+	// reach Feishu the same way.
 	//
 	// Behind an atomic for the same reason opts is: silence_sync and
-	// mark_read.mode retune it mid-run.
+	// mark_read.browser retune it mid-run.
 	settle atomic.Pointer[markread.Clear]
 	// Recover, when set, is deferred at the top of the goroutine Run starts for
 	// discovery, so a panic there is reported the way one in Run's own

@@ -83,7 +83,7 @@ const unreadCounted = unreadBadge + ` AND m.silenced = 0`
 
 ## 服务端同步（silence_sync）
 
-`silence_sync: true`（需 `mark_read.mode: web`，配置加载时校验）把静音效果推向飞书其他端：sweep 对被静音的未读消息推一次 web 客户端的已读水位（`larkweb.Client.MarkRead`，cmd 40），桌面/网页/手机端的红点与计数随之收敛。与 `markread.Clear` 是同一根杠杆，走的同一条网关路径。
+`silence_sync: true` 把静音效果推向飞书其他端：sweep 对被静音的未读消息推一次 web 客户端的已读水位（`larkweb.Client.MarkRead`，cmd 40），桌面/网页/手机端的红点与计数随之收敛。与 `markread.Clear` 是同一根杠杆，走的同一条网关路径。
 
 wire 实测（安全会话，3 条未读推第 1 条的 position）：
 

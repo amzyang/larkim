@@ -12,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/amzyang/larkim/applink"
 	"github.com/amzyang/larkim/jev"
 	"github.com/amzyang/larkim/larkweb"
 	"github.com/amzyang/larkim/store"
@@ -27,9 +26,9 @@ type Config struct {
 	LarkCLIPath string `yaml:"lark_cli_path"`
 	// PollIntervalMS is the pause in milliseconds between sweep ticks, and
 	// discovery's pace; a TUI syncing in-process runs discovery back to back
-	// while its window has focus. Milliseconds rather than a duration string for the same reason as
-	// ApplinkPaceMS: the unit belongs in the key's name once a reader retunes
-	// the value by hand.
+	// while its window has focus. Milliseconds rather than a duration string
+	// because the unit belongs in the key's name once a reader retunes the
+	// value by hand.
 	PollIntervalMS int `yaml:"poll_interval_ms"`
 	// Overlap is how far each search window reaches behind the watermark to
 	// absorb search-index latency (measured ≈10s).
@@ -44,58 +43,25 @@ type Config struct {
 	SlowPathEvery time.Duration `yaml:"slow_path_every"`
 	// RepairEvery is the interval of the 7-day edit/recall repair pass.
 	RepairEvery time.Duration `yaml:"repair_every"`
-	// ApplinkPaceMS is the gap in milliseconds the applink queue leaves
-	// between two lark:// navigations. Milliseconds rather than a duration
-	// string because this is the one key a reader retunes by hand, from the
-	// TUI's :set and from --set, where 1500 beats "1500ms".
-	ApplinkPaceMS int `yaml:"applink_pace_ms"`
-	// MarkRead picks which lever drops the Feishu client's own red dot.
-	MarkRead  MarkRead  `yaml:"mark_read"`
-	Resources Resources `yaml:"resources"`
-	AI        AI        `yaml:"ai"`
-	Todoist   Todoist   `yaml:"todoist"`
+	MarkRead    MarkRead      `yaml:"mark_read"`
+	Resources   Resources     `yaml:"resources"`
+	AI          AI            `yaml:"ai"`
+	Todoist     Todoist       `yaml:"todoist"`
 	// Silence keeps matching messages out of the unread badge and out of the
 	// chat list's ordering; see docs/silence/PRD.md.
 	Silence store.SilenceRules `yaml:"silence"`
 	// SilenceSync settles the server-side read watermark past silenced
-	// messages, so the Feishu clients' own dots follow the same rules. It
-	// needs mark_read.mode: web — the watermark is the one lever that names a
-	// position — and is one-way: dropping a rule never re-lights a dot
-	// anywhere.
+	// messages, so the Feishu clients' own dots follow the same rules. It is
+	// one-way: dropping a rule never re-lights a dot anywhere.
 	SilenceSync bool `yaml:"silence_sync"`
 }
 
-// Mark-read modes.
-const (
-	// MarkReadApplink walks the desktop client onto the chat and lets it send
-	// the receipt itself.
-	MarkReadApplink = "applink"
-	// MarkReadWeb posts the read watermark to the web client's gateway with
-	// cookies borrowed from a browser.
-	MarkReadWeb = "web"
-)
-
-// MarkRead configures how the Feishu client's own red dot comes down. Both
-// modes take the chat as read locally the same way; they differ only in what
-// they ask Feishu.
+// MarkRead is how the Feishu client's own red dot comes down: by posting the
+// chat's read watermark to the web client with the Feishu login of Browser's
+// cookie jar.
 type MarkRead struct {
-	// Mode is applink or web. applink drives the desktop client, so it needs
-	// the client running and answers nothing about whether the dot fell; web
-	// posts one request per chat and reports a status, but needs a browser
-	// logged into Feishu.
-	Mode string `yaml:"mode"`
-	// Browser names the cookie jar web mode reads, as kooky registers it.
+	// Browser names the cookie jar, as kooky registers it.
 	Browser string `yaml:"browser"`
-}
-
-// ValidMarkReadMode names the accepted words, which YAML's own error would
-// not: to the decoder any string is a string.
-func ValidMarkReadMode(mode string) error {
-	switch mode {
-	case MarkReadApplink, MarkReadWeb:
-		return nil
-	}
-	return fmt.Errorf("mark_read.mode: %q is not %s or %s", mode, MarkReadApplink, MarkReadWeb)
 }
 
 // Values is the fixed set a key takes, for the keys that have one, so
@@ -103,8 +69,6 @@ func ValidMarkReadMode(mode string) error {
 // that takes any value answers nil.
 func Values(key string) []string {
 	switch key {
-	case "mark_read.mode":
-		return []string{MarkReadApplink, MarkReadWeb}
 	case "mark_read.browser":
 		return larkweb.Browsers
 	case "silence_sync":
@@ -123,16 +87,9 @@ func ValidMarkReadBrowser(browser string) error {
 	return fmt.Errorf("mark_read.browser: %q is not one of %s", browser, strings.Join(larkweb.Browsers, ", "))
 }
 
-// Validate refuses a mode nobody implements rather than falling back to one,
-// so a typo is a message at startup instead of dots that never come down.
+// Validate refuses a browser the jar reader cannot open at startup.
 func (m MarkRead) Validate() error {
-	if err := ValidMarkReadMode(m.Mode); err != nil {
-		return err
-	}
-	if m.Mode == MarkReadWeb {
-		return ValidMarkReadBrowser(m.Browser)
-	}
-	return nil
+	return ValidMarkReadBrowser(m.Browser)
 }
 
 // AI configures the TUI assistant.
@@ -218,11 +175,8 @@ func Default() Config {
 		ChatsRefreshEvery: 10 * time.Minute,
 		SlowPathEvery:     10 * time.Minute,
 		RepairEvery:       6 * time.Hour,
-		ApplinkPaceMS:     applink.DefaultPaceMS,
-		// Browser is filled even in applink mode, which does not read a jar, so
-		// that switching modes is one key rather than two.
-		MarkRead:  MarkRead{Mode: MarkReadApplink, Browser: "chrome"},
-		Resources: Resources{MaxBytes: 50 << 20},
+		MarkRead:          MarkRead{Browser: "chrome"},
+		Resources:         Resources{MaxBytes: 50 << 20},
 		AI: AI{Agent: "omp --mode acp", Model: "cursor/composer-2.5-fast", Context: 10,
 			JevKeyEnv: "TYPESAFE_API_KEY", JevEndpoint: jev.DefaultEndpoint},
 	}
@@ -304,9 +258,6 @@ func (c Config) Validate() error {
 	}
 	if err := c.MarkRead.Validate(); err != nil {
 		return err
-	}
-	if c.SilenceSync && c.MarkRead.Mode != MarkReadWeb {
-		return fmt.Errorf("silence_sync needs mark_read.mode: %s", MarkReadWeb)
 	}
 	return nil
 }

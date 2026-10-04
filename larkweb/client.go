@@ -20,10 +20,9 @@ const gatewayHost = "internal-api-lark-api.feishu.cn"
 
 const gatewayURL = "https://" + gatewayHost + "/im/gateway/"
 
-// Pace is the gap between two mark-reads in a sweep. The applink gap exists
-// for a desktop client that draws slowly; a POST needs none, but a sweep of a
-// few dozen chats fired back to back is a burst the gateway's own limits were
-// not measured against.
+// Pace is the gap between two mark-reads in a sweep. A sweep of a few dozen
+// chats fired back to back is a burst the gateway's own limits were not
+// measured against.
 const Pace = 100 * time.Millisecond
 
 // appID identifies the web client to the gateway. The web app reads it

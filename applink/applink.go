@@ -1,10 +1,5 @@
-// Package applink is larkim's one lever on the Feishu desktop client: the
-// lark:// URLs that navigate it, and the pace they may be fired at.
-//
-// Feishu has no mark-read call. Walking the client onto a chat is what makes
-// it send the read receipt, so clearing a red dot means opening a URL
-// (docs/read-sync/PRD.md). Both the TUI and the read-all command do that, and
-// they share one desktop client, so they share the pace as well.
+// Package applink holds the lark:// URLs that address the desktop client and
+// the one hand-over to macOS.
 package applink
 
 import (
@@ -19,18 +14,6 @@ import (
 
 	"github.com/amzyang/larkim/larkcli"
 )
-
-// DefaultPaceMS is the gap in milliseconds between two applinks. The client
-// renders the chat it was walked onto before it sends a receipt, so firing
-// faster than it draws loses the chats it was hurried through. A client that
-// has been sitting in the background draws slower than the active app and
-// nothing on macOS reports the difference without cgo, so the default has to
-// cover the slow case; config's applink_pace_ms is how a reader narrows it.
-const DefaultPaceMS = 1000
-
-// DefaultPace is DefaultPaceMS as a duration, for the callers that have no
-// configuration to read.
-const DefaultPace = DefaultPaceMS * time.Millisecond
 
 // openTimeout bounds one invocation of the launcher.
 const openTimeout = 20 * time.Second
@@ -85,35 +68,27 @@ func EventLink(calendarID, eventID string, startMs int64) string {
 	return "lark://applink.feishu.cn/client/calendar/event/detail?" + q.Encode()
 }
 
-// Open hands targets to macOS. A keypress asking for the Feishu client wants
-// the screen; an applink fired to clear a badge must leave the reader in the
-// terminal, which is what background buys.
+// Open hands targets to macOS. The receiving app comes forward, because every
+// caller is a keypress asking to see the thing.
 //
 // Several targets go in one invocation rather than one each, because that is
 // what puts a message's pictures in a single viewer window with the rest in
 // its sidebar — the way the client opens them — instead of scattering them
-// over as many windows as the message had pictures. Applinks are the opposite
-// case and go one per call: the client can only be in one chat, so a set of
-// them arrives as a single navigation and only the last one is answered.
-func Open(log *slog.Logger, targets []string, background bool) error {
-	args := targets
-	if background {
-		args = append([]string{"-g"}, targets...)
-	}
-	// -g is decided here, not by the caller, so this is the only place the
-	// argv exists whole. It carries at info because an applink moves the
-	// Feishu client under the reader's hands and a call that lands leaves no
-	// other trace. The argv is quoted and nothing is elided, so the line
-	// pastes back into a shell to see what macOS was asked.
-	log.Info("open", "argv", "open "+larkcli.ArgvLine(args))
+// over as many windows as the message had pictures.
+func Open(log *slog.Logger, targets []string) error {
+	// The argv exists whole only here. It carries at info because an open
+	// moves the Feishu client under the reader's hands and a call that lands
+	// leaves no other trace. The argv is quoted and nothing is elided, so the
+	// line pastes back into a shell to see what macOS was asked.
+	log.Info("open", "argv", "open "+larkcli.ArgvLine(targets))
 	// open hands the URL to LaunchServices and returns, so a call still
-	// running after this is one that will not return; the applink queue waits
+	// running after this is one that will not return; the clear queue waits
 	// on it, and a wait with no end would stop the sweep for good.
 	ctx, cancel := context.WithTimeout(context.Background(), openTimeout)
 	defer cancel()
 	// open reports why it refused on stderr and nothing but a status to the
 	// caller, so dropping stderr would leave every failure as "exit status 1".
-	cmd := exec.CommandContext(ctx, "open", args...)
+	cmd := exec.CommandContext(ctx, "open", targets...)
 	var stderr strings.Builder
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {

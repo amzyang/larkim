@@ -40,7 +40,7 @@ func TestSet_NamesAKeyTheConfigHasNot(t *testing.T) {
 
 func TestSet_IsRepeatableAndAppliesInOrder(t *testing.T) {
 	first, last := t.TempDir(), t.TempDir()
-	out, err := runRoot(t, "--set", "data_dir="+first, "--set", "applink_pace_ms=1500", "--set", "data_dir="+last, "db", "path")
+	out, err := runRoot(t, "--set", "data_dir="+first, "--set", "poll_interval_ms=1500", "--set", "data_dir="+last, "db", "path")
 	require.NoError(t, err)
 	require.Equal(t, filepath.Join(last, "larkim.db"), out)
 }

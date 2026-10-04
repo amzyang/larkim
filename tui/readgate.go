@@ -5,7 +5,7 @@ import "slices"
 // readKey names the newest thing waiting on the page the reader has in front
 // of them, or "" when nothing is waiting or the page is not being shown at
 // all. Reading is the moment this changes, not the state itself: firing on the
-// state would put one markChatRead — and one applink behind it — on every
+// state would put one markChatRead — and one clear behind it — on every
 // screen beat for as long as the reader sat still.
 //
 // Keyed on the newest unread rather than the newest message, because unread
@@ -22,7 +22,7 @@ import "slices"
 // then, and a chat whose only unread was a reply would have gone permanently
 // unsettled, redrawing its marker on every visit. The page folds replies into
 // their root's line now, so it carries none to settle and none to redraw —
-// markThreadRead answers for those when the thread is opened. The applink is
+// markThreadRead answers for those when the thread is opened. The clear is
 // gated separately, by unreadWaiting.
 func (m Model) readKey(tailed bool) string {
 	if !m.pageShown(tailed) {

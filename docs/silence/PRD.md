@@ -32,7 +32,7 @@ silence:
 - `chat` 与 `sender` 是 `chat_id` / `sender_id` 精确匹配。id 从 `larkim chats list` 和 `larkim contacts list --search` 取。
 - `contains` 是大小写不敏感子串，匹配消息的人读渲染（`messages.content`）；渲染未到时退到原始 body。
 - 只写 `chat` 即整会话本地静音，比飞书的免打扰更彻底——它连计数都不留。
-- `silence_sync: false`（默认）只在本机生效；置 `true` 需搭配 `mark_read.mode: web`，配置加载时校验。
+- `silence_sync: false`（默认）只在本机生效；置 `true` 时 sweep 会把 web 客户端的已读水位推过被静音的消息。
 
 ## 行为
 

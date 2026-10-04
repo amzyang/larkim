@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/amzyang/larkim/applink"
 	"github.com/amzyang/larkim/store"
 	"github.com/stretchr/testify/require"
 )
@@ -48,63 +47,50 @@ func TestLoad_RejectsASilenceRuleThatMatchesEverything(t *testing.T) {
 	require.ErrorContains(t, err, "silence rule 1")
 }
 
-func TestDefault_KeepsTheApplinkLever(t *testing.T) {
-	// A config that names no mode clears dots through the desktop client.
-	require.Equal(t, MarkRead{Mode: MarkReadApplink, Browser: "chrome"}, Default().MarkRead)
+func TestDefault_ReadsChromesJar(t *testing.T) {
+	require.Equal(t, MarkRead{Browser: "chrome"}, Default().MarkRead)
 }
 
-func TestLoad_TakesTheWebMode(t *testing.T) {
+func TestLoad_TakesTheBrowser(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "c.yaml")
-	require.NoError(t, os.WriteFile(p, []byte("mark_read:\n  mode: web\n  browser: edge\n"), 0o644))
+	require.NoError(t, os.WriteFile(p, []byte("mark_read:\n  browser: edge\n"), 0o644))
 	cfg, err := Load(p)
 	require.NoError(t, err)
-	require.Equal(t, MarkRead{Mode: MarkReadWeb, Browser: "edge"}, cfg.MarkRead)
-}
+	require.Equal(t, MarkRead{Browser: "edge"}, cfg.MarkRead)
 
-func TestLoad_RejectsAModeNothingImplements(t *testing.T) {
-	// A typo must be a message at startup, not dots that silently never fall.
-	p := filepath.Join(t.TempDir(), "c.yaml")
-	require.NoError(t, os.WriteFile(p, []byte("mark_read:\n  mode: webb\n"), 0o644))
-	_, err := Load(p)
-	require.ErrorContains(t, err, `mark_read.mode: "webb" is not applink or web`)
+	require.NoError(t, os.WriteFile(p, []byte("applink_pace_ms: 100\nmark_read:\n  mode: web\n  browser: edge\n"), 0o644))
+	cfg, err = Load(p)
+	require.NoError(t, err)
+	require.Equal(t, MarkRead{Browser: "edge"}, cfg.MarkRead)
 }
 
 func TestLoad_RejectsWebModeWithNoBrowser(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "c.yaml")
-	require.NoError(t, os.WriteFile(p, []byte("mark_read:\n  mode: web\n  browser: \"\"\n"), 0o644))
+	require.NoError(t, os.WriteFile(p, []byte("mark_read:\n  browser: \"\"\n"), 0o644))
 	_, err := Load(p)
 	require.ErrorContains(t, err, "mark_read.browser")
 }
 
 func TestLoad_RejectsABrowserWebModeCannotRead(t *testing.T) {
-	// Safari's jar is never registered, so naming it is a typo to report,
-	// not a browser with no Feishu login.
 	p := filepath.Join(t.TempDir(), "c.yaml")
-	require.NoError(t, os.WriteFile(p, []byte("mark_read:\n  mode: web\n  browser: safari\n"), 0o644))
+	require.NoError(t, os.WriteFile(p, []byte("mark_read:\n  browser: safari\n"), 0o644))
 	_, err := Load(p)
 	require.ErrorContains(t, err, `mark_read.browser: "safari" is not one of`)
 }
 
-func TestDefault_TakesThePaceFromApplink(t *testing.T) {
-	// One source for the number, so config.example.yaml and the TUI's :set&
-	// cannot come to name different defaults.
-	require.Equal(t, applink.DefaultPaceMS, Default().ApplinkPaceMS)
-}
-
 func TestLoadWith_BeatsTheFile(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "c.yaml")
-	require.NoError(t, os.WriteFile(p, []byte("applink_pace_ms: 250\nbackfill_days: 7\n"), 0o644))
-	cfg, err := LoadWith(p, []string{"applink_pace_ms=1500"})
+	require.NoError(t, os.WriteFile(p, []byte("poll_interval_ms: 250\nbackfill_days: 7\n"), 0o644))
+	cfg, err := LoadWith(p, []string{"poll_interval_ms=1500"})
 	require.NoError(t, err)
-	require.Equal(t, 1500, cfg.ApplinkPaceMS)
+	require.Equal(t, 1500, cfg.PollIntervalMS)
 	require.Equal(t, 7, cfg.BackfillDays, "a key the flag left alone keeps the file's value")
 }
 
 func TestLoadWith_AppliesToAMissingFile(t *testing.T) {
-	// --set is how a run happens without a config file at all.
-	cfg, err := LoadWith(filepath.Join(t.TempDir(), "nope.yaml"), []string{"applink_pace_ms=1500"})
+	cfg, err := LoadWith(filepath.Join(t.TempDir(), "nope.yaml"), []string{"poll_interval_ms=1500"})
 	require.NoError(t, err)
-	require.Equal(t, 1500, cfg.ApplinkPaceMS)
+	require.Equal(t, 1500, cfg.PollIntervalMS)
 }
 
 func TestLoadWith_ReachesANestedKey(t *testing.T) {
@@ -139,18 +125,18 @@ func TestLoad_KeepsASubSecondPollInterval(t *testing.T) {
 }
 
 func TestLoadWith_NamesAKeyTheConfigHasNot(t *testing.T) {
-	_, err := LoadWith(filepath.Join(t.TempDir(), "nope.yaml"), []string{"applnk_pace_ms=1500"})
-	require.ErrorContains(t, err, "applnk_pace_ms")
+	_, err := LoadWith(filepath.Join(t.TempDir(), "nope.yaml"), []string{"pol_interval_ms=1500"})
+	require.ErrorContains(t, err, "pol_interval_ms")
 }
 
 func TestLoadWith_RefusesSomethingThatIsNotAPair(t *testing.T) {
-	_, err := LoadWith(filepath.Join(t.TempDir(), "nope.yaml"), []string{"applink_pace_ms"})
+	_, err := LoadWith(filepath.Join(t.TempDir(), "nope.yaml"), []string{"poll_interval_ms"})
 	require.ErrorContains(t, err, "key=value")
 }
 
 func TestKeys_NamesEveryFieldAndDotsTheNestedOnes(t *testing.T) {
 	keys := Keys()
-	require.Subset(t, keys, []string{"data_dir", "applink_pace_ms", "silence", "resources.max_bytes", "ai.model"})
+	require.Subset(t, keys, []string{"data_dir", "poll_interval_ms", "silence", "resources.max_bytes", "ai.model"})
 	require.NotContains(t, keys, "resources", "a section is not a key a value can be set on")
 	// Every key Keys names must be one --set can actually reach, or the
 	// completion offers what the flag then refuses.
@@ -196,18 +182,13 @@ func TestGet_RefusesAKeyThatIsNotOne(t *testing.T) {
 	require.False(t, ok)
 }
 
-func TestLoad_ParsesSilenceSyncOnlyWithWebMode(t *testing.T) {
+func TestLoad_ParsesSilenceSync(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "c.yaml")
-	require.NoError(t, os.WriteFile(p, []byte("silence_sync: true\nmark_read:\n  mode: web\n  browser: edge\n"), 0o644))
+	require.NoError(t, os.WriteFile(p, []byte("silence_sync: true\nmark_read:\n  browser: edge\n"), 0o644))
 	cfg, err := Load(p)
 	require.NoError(t, err)
 	require.True(t, cfg.SilenceSync)
 	require.False(t, Default().SilenceSync, "off is the default: it writes the user's account state")
-
-	require.NoError(t, os.WriteFile(p, []byte("silence_sync: true\n"), 0o644))
-	_, err = Load(p)
-	require.ErrorContains(t, err, "silence_sync needs mark_read.mode: web",
-		"applink cannot settle a position, so the pairing is refused where it is typed")
 }
 
 func TestDefault_DisablesTodoistUntilATokenIsSet(t *testing.T) {

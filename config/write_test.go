@@ -26,12 +26,12 @@ func TestSetFile_KeepsCommentsAndSiblings(t *testing.T) {
 	before, err := Load(p)
 	require.NoError(t, err)
 
-	require.NoError(t, SetFile(p, "applink_pace_ms", "1500"))
+	require.NoError(t, SetFile(p, "poll_interval_ms", "1500"))
 
 	after, err := Load(p)
 	require.NoError(t, err)
-	require.Equal(t, 1500, after.ApplinkPaceMS)
-	after.ApplinkPaceMS = before.ApplinkPaceMS
+	require.Equal(t, 1500, after.PollIntervalMS)
+	after.PollIntervalMS = before.PollIntervalMS
 	require.Equal(t, before, after, "no other key moved")
 
 	text, err := os.ReadFile(p)

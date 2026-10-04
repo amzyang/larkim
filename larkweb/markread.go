@@ -9,8 +9,9 @@ const cmdPutReadMessages int32 = 40
 
 // PutReadMessagesRequest's field numbers. messageIds (2) names messages one
 // by one, which the watermark makes redundant. threadId (4) and
-// threadMaxPosition (5) would settle a thread's own dot, which no applink can
-// reach; they are left out until the badge count means to include thread
+// threadMaxPosition (5) would settle a thread's own dot, which the watermark
+// path does not reach yet; they are left out until the badge count means to
+// include thread
 // replies.
 const (
 	fieldReadChatID      protowire.Number = 1

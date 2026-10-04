@@ -10,9 +10,9 @@ import (
 )
 
 // scrolledBack is a chat whose page does not fit the pane, opened, read, and
-// then wheeled back into its history. The applink the visit fired is dropped,
+// then wheeled back into its history. The clear the visit fired is dropped,
 // so what a test records is what happened after the reader scrolled away.
-func scrolledBack(t *testing.T) (Model, *store.Store, *[]openCall) {
+func scrolledBack(t *testing.T) (Model, *store.Store, *[]store.ChatUnread) {
 	t.Helper()
 	m, st, calls := badgeModel(t)
 	m.height = 16
@@ -74,7 +74,7 @@ func TestUpdate_ScrollingBackToTheTailTakesWhatWasWaiting(t *testing.T) {
 	wheel(t, m, tea.MouseWheelDown, 20)
 
 	require.Zero(t, unreadOf(t, st, "oc_a"), "reaching the message reads it")
-	require.Equal(t, []openCall{opened("lark://applink.feishu.cn/client/chat/open?openChatId=oc_a", true)}, *calls,
+	require.Equal(t, []store.ChatUnread{{ChatID: "oc_a"}}, *calls,
 		"and settles the client's dot in the same breath")
 }
 
@@ -92,7 +92,7 @@ func TestUpdate_ScrollingWithinTheHistoryTakesNothing(t *testing.T) {
 	require.Empty(t, *calls)
 }
 
-func TestUpdate_LeavingTheTailAndComingBackFiresOneApplink(t *testing.T) {
+func TestUpdate_LeavingTheTailAndComingBackClearsOnce(t *testing.T) {
 	t.Parallel()
 	m, st, calls := scrolledBack(t)
 	lands(t, st, "om_new", "ou_b", "李四", "刚发现一个问题", 900)
@@ -102,7 +102,7 @@ func TestUpdate_LeavingTheTailAndComingBackFiresOneApplink(t *testing.T) {
 	m = wheel(t, m, tea.MouseWheelUp, 5)
 	wheel(t, m, tea.MouseWheelDown, 20)
 
-	require.Len(t, *calls, 1, "the reader reached one message, so the client is walked onto the chat once")
+	require.Len(t, *calls, 1, "the reader reached one message, so the chat is cleared once")
 }
 
 func TestUpdate_TheReadFlagLandingLateStillTakesTheChatRead(t *testing.T) {

@@ -32,25 +32,14 @@ slow_path_every: 10m
 # Re-list the chats active in the last week so edits and recalls land.
 repair_every: 6h
 
-# Gap in milliseconds between two lark:// navigations of the Feishu desktop
-# client. The client sends its read receipt once it has drawn the chat it was
-# walked onto, so too small a gap loses the chats a sweep hurried it through —
-# a client sitting in the background draws slower than the active app.
-# `:set applink_pace_ms=<n>` retunes it for one TUI session; `:config` writes
-# the value that stays.
-applink_pace_ms: 1000
-
-# How the Feishu client's own red dot comes down once larkim has read a chat.
-# applink walks the desktop client onto the chat and it sends the receipt; it
-# needs the client running and reports nothing back. web posts the chat's read
-# watermark to the web client with the Feishu login of `browser`, and each chat
-# answers for itself. A chat is matched to the web client once, through its
-# newest message, and stays clearable after that, Done included; one never
-# matched is reported and left lit. The first read of a process asks for
-# Keychain access to that browser's cookies. browser is one of brave, chrome,
-# chromium, edge.
+# How the Feishu client's own red dot comes down once larkim has read a chat:
+# posts the chat's read watermark to the web client with the Feishu login of
+# `browser`, and each chat answers for itself. A chat is matched to the web
+# client once, through its newest message, and stays clearable after that, Done
+# included; one never matched is reported and left lit. The first read of a
+# process asks for Keychain access to that browser's cookies. browser is one
+# of brave, chrome, chromium, edge.
 mark_read:
-  mode: applink
   browser: chrome
 
 # Messages matching any rule keep their place in the chat but carry no unread
@@ -62,7 +51,7 @@ silence: []
 #    sender: cli_c        # sender_id, from `larkim contacts list --search`
 #  - contains: nightly build   # case-insensitive substring of the message text
 # Settle the server-side read watermark past silenced messages too, so the
-# Feishu clients' own dots follow the same rules (needs mark_read.mode: web).
+# Feishu clients' own dots follow the same rules.
 # One-way: dropping a rule never re-lights a dot anywhere.
 silence_sync: false
 
