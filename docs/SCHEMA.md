@@ -2,7 +2,7 @@
 
 Database: `larkim db path` (default `~/.larkim/larkim.db`). WAL mode; readers never block the daemon. The authoritative DDL is `larkim schema` (embedded migrations in `store/migrations/`). All timestamps are Unix **milliseconds** in UTC unless the column name says otherwise.
 
-Ownership: `daemon.lock` names the one process that runs the sweep — discovery, backfill, and the global cursors in `sync_state`. Everything a reader reaches for is a write any larkim process may make: a send, a reaction, an expanded forward, a page of older history and a cold search hit all name ids Feishu just answered for and upsert the same rows whoever asks. `read_state.local_read_at` and `drafts` belong to the TUI. How far a reader outside larkim has got is its own state, not a column here; see [Consumer cursors](#consumer-cursors).
+Ownership: `daemon.lock` names the one process that runs the sweep — discovery, backfill, and the global cursors in `sync_state`. Everything a reader reaches for is a write any larkim process may make: a send, a reaction, an expanded forward, a page of older history and a cold search hit all name ids Feishu just answered for and upsert the same rows whoever asks. `drafts` belong to the TUI. How far a reader outside larkim has got is its own state, not a column here; see [Consumer cursors](#consumer-cursors).
 
 ## chats
 
@@ -132,17 +132,14 @@ WHERE root_message_id = 'om_xxx' AND upper_message_id = 'om_xxx' ORDER BY seq;
 
 ## read_state
 
-Per-message read state, joined on `message_id`. A row exists for a message whose remote flag has been checked, and for one stored unread on arrival: somebody else's message, neither a system notice nor recalled, first stored within two minutes of being sent, which the client would show unread from the moment it landed. `local_read_at` updates rows that already exist and never creates one.
+Per-message read state, joined on `message_id`. A row exists for a message whose remote flag has been checked, and for one stored unread on arrival: somebody else's message, neither a system notice nor recalled, first stored within two minutes of being sent, which the client would show unread from the moment it landed.
 
 | column | meaning |
 |---|---|
-| `is_read_remote` | NULL unknown, 0 unread, 1 read, as reported by Feishu for the current user; a row stored unread on arrival holds 0 until Feishu first reports. The flag is a per-message read receipt, which flips only on messages the user actually viewed; it is not the client's chat-level badge. Messages older than the 7-day polling horizon go back to NULL, since nothing can refresh them |
-| `remote_checked_at`, `check_count`, `next_check_at` | polling schedule for the remote flag; `remote_checked_at` is 0 on a row stored unread on arrival until Feishu first answers for it |
-| `local_read_at` | local: the reader had the message in front of them in larkim, which is set for a whole chat at once when it is opened. Feishu offers no way to write a read receipt, so this is what lets a badge fall without leaving larkim; the Feishu client's own red dot is unaffected |
+| `is_read_remote` | NULL unknown, 0 unread, 1 read. Feishu OpenAPI read-status polling sets it from answers; a successful web-gateway mark-read watermark sets it to 1 for main-flow messages up to the posted position (`AcceptRemoteRead`). While `remote_checked_at` is 0 after such a write, the row is accepted but unconfirmed until the read-status probe confirms or reverts it. Messages older than the 7-day polling horizon go back to NULL, since nothing can refresh them |
+| `remote_checked_at`, `check_count`, `next_check_at` | polling schedule for the remote flag; `remote_checked_at` is 0 on a row stored unread on arrival until Feishu first answers for it, and again after an accepted watermark until the probe confirms |
 
-`is_read_remote` is also read on its own, without `local_read_at`: on a live message with a non-negative `message_position` that combination means the Feishu desktop client still shows a red dot for the chat, which reading the chat in larkim never takes down. That is the set `larkim read-all` walks the client over, and it is bounded only by the 7-day horizon, so it is wider than any badge — a chat whose badge is 0 can still be in it.
-
-A chat's badge counts the rows where `is_read_remote` is 0 and `local_read_at` is 0 on a live, unsilenced message with a non-negative `message_position`; thread replies are left out. Both flags can only witness that a message was seen, so taking either one as read adds no false unread. Marking a chat read is deliberately wider than the badge: it takes every live row with both flags still unset in the chat, silenced messages and thread replies included, because the chat's page put them in front of the reader too. Anything that page shows but marking read cannot collect keeps its flags for good, and the unread marker beside it relights on every visit.
+A chat's badge counts live rows where `is_read_remote` is 0 on an unsilenced message with a non-negative `message_position`; thread replies are left out. That is the same set `larkim read-all` walks for Feishu red dots. Silenced main-flow messages still flip on a successful watermark POST even though they do not increment the badge.
 
 ## silence_settle_queue
 
@@ -156,8 +153,8 @@ Derived state: rebuild it by re-queuing every chat with a silenced message still
 
 ## drafts
 
-What the reader has typed but not sent, one row per composer. Consumer-owned,
-like `read_state.local_read_at`: the daemon never writes it, and it is outside
+What the reader has typed but not sent, one row per composer. Consumer-owned:
+the daemon never writes it, and it is outside
 the `data_rev` triggers, since the process that writes a draft is the one that
 displays it.
 
@@ -371,7 +368,7 @@ How far a consumer has got through the messages is its own state; nothing here r
 -- Unread-by-me messages from the last day, newest first, on the badge's rule
 SELECT m.message_id, m.chat_id, m.sender_name, m.content
 FROM messages m LEFT JOIN read_state r ON r.message_id = m.message_id
-WHERE m.create_ms > (unixepoch() - 86400) * 1000 AND r.is_read_remote = 0 AND r.local_read_at = 0 AND m.deleted = 0 AND m.silenced = 0
+WHERE m.create_ms > (unixepoch() - 86400) * 1000 AND r.is_read_remote = 0 AND m.deleted = 0 AND m.message_position >= 0 AND m.silenced = 0
 ORDER BY m.create_ms DESC;
 
 -- A thread in order
