@@ -174,10 +174,10 @@ func (m Model) onSilenceKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "shift+tab":
 		return m.switchConfigTab(-1)
 	case "a":
-		return m.openSilenceForm(-1)
+		return m.openSilenceForm(-1, store.SilenceRule{})
 	case "enter", "i":
 		if t.idx < len(m.cfg.Silence) {
-			return m.openSilenceForm(t.idx)
+			return m.openSilenceForm(t.idx, store.SilenceRule{})
 		}
 	case "d":
 		t.confirmDelete = t.idx < len(m.cfg.Silence)
@@ -197,18 +197,22 @@ func (m Model) onSilenceKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// openSilenceForm opens the form on rule at, or on an empty rule for -1. It
-// starts on contains when the rule has one, so an edit of the text is a keypress
-// away; otherwise on chat, which is where a new rule usually begins.
-func (m Model) openSilenceForm(at int) (tea.Model, tea.Cmd) {
+// openSilenceForm opens the form on rule at, or on a new one carrying seed for
+// -1. It starts on contains when the rule has one, so an edit of the text is a
+// keypress away, and on a seed that already names a chat and a sender, which
+// has only its text left to write; otherwise on chat, which is where a rule
+// built by hand usually begins.
+func (m Model) openSilenceForm(at int, seed store.SilenceRule) (tea.Model, tea.Cmd) {
 	f := silenceForm{open: true, at: at, contains: m.newQueryInput()}
 	if at >= 0 {
 		f.rule = m.cfg.Silence[at]
+	} else {
+		f.rule = seed
 	}
 	f.contains.SetValue(f.rule.Contains)
 	f.contains.SetWidth(m.silenceValueWidth())
 	m.config.silence.form = f
-	if f.rule.Contains != "" {
+	if f.rule.Contains != "" || (at < 0 && f.rule.Chat != "" && f.rule.Sender != "") {
 		return m.focusSilenceField(fieldContains)
 	}
 	return m, nil

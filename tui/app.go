@@ -2899,6 +2899,16 @@ func (m Model) runCommand(line string) (tea.Model, tea.Cmd) {
 	case "config":
 		m = m.openConfig(rest)
 		return m, m.configLoads()
+	case "silence":
+		// The rule a message under the cursor needs is its own chat and sender;
+		// with none, the empty form is the one :config silence and a open.
+		rule := store.SilenceRule{}
+		if x, ok := m.selected(); ok {
+			rule.Chat, rule.Sender = x.ChatID, x.SenderID
+		}
+		m = m.openConfig("silence")
+		next, fcmd := m.openSilenceForm(-1, rule)
+		return next.(Model), tea.Batch(m.configLoads(), fcmd)
 	case "read-all":
 		return m.startMarkAll()
 	case "mentions":

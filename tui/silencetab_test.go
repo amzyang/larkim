@@ -67,6 +67,41 @@ func TestSilenceTab_AddsARuleThroughThePickersAndWritesTheFile(t *testing.T) {
 		"written as a block list")
 }
 
+func TestSilenceCommand_PrefillsTheFormWithTheSelectedMessage(t *testing.T) {
+	t.Parallel()
+	m := silenceModel(t)
+	require.NotEmpty(t, m.msgs, "the fixture chat has a message under the cursor")
+	out, cmd := m.runCommand("silence")
+	m = out.(Model)
+	require.True(t, m.config.open)
+	require.Equal(t, tabSilence, m.config.tab)
+	f := m.config.silence.form
+	require.True(t, f.open)
+	require.Equal(t, -1, f.at, "a new rule, not an edit of one")
+	require.Equal(t, store.SilenceRule{Chat: "oc_team", Sender: "ou_a"}, f.rule)
+	require.Equal(t, fieldContains, f.field, "both ids named, so only the text is left to write")
+	require.NotNil(t, cmd, "the loads the :config path runs too")
+
+	m = press(t, m, "enter")
+	want := store.SilenceRules{{Chat: "oc_team", Sender: "ou_a"}}
+	require.False(t, m.config.silence.form.open)
+	require.Equal(t, want, m.cfg.Silence)
+	require.Equal(t, want, configFile(t, m).Silence)
+	require.Equal(t, want, m.deps.Store.Silence())
+}
+
+func TestSilenceCommand_WithoutAMessageOpensTheEmptyForm(t *testing.T) {
+	t.Parallel()
+	m := silenceModel(t)
+	m.msgs, m.msgIdx = nil, 0
+	out, _ := m.runCommand("silence")
+	m = out.(Model)
+	f := m.config.silence.form
+	require.True(t, f.open)
+	require.Equal(t, store.SilenceRule{}, f.rule)
+	require.Equal(t, fieldChat, f.field, "the form a opens, where a rule built by hand begins")
+}
+
 func TestSilenceTab_ARuleReachesTheStoredMessagesWhereTheSweepRunsHere(t *testing.T) {
 	t.Parallel()
 	m := silenceModel(t)
