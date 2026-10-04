@@ -84,6 +84,26 @@ func TestPullFromCursor_RecordsAPermanentRefusalAndPullsTheRest(t *testing.T) {
 	}
 }
 
+func TestPullFromCursor_A2200IsRetriedNotRecorded(t *testing.T) {
+	t.Parallel()
+	s, f, clk := newSyncer(t)
+	ctx := t.Context()
+	backfilled(t, s, clk.t, "oc_a")
+	f.ListErr = map[string]error{"oc_a": &larkcli.Error{
+		ExitCode: larkcli.ExitAPI, Type: "api", Subtype: "server_error",
+		Code: 2200, Message: "Something went wrong"}}
+
+	_, _, err := s.pullFromCursor(ctx, []string{"oc_a"}, "test", clk.t)
+	le, ok := errors.AsType[*larkcli.Error](err)
+	require.True(t, ok, "2200 must reach the caller that paces the tick")
+	require.Equal(t, 2200, le.Code)
+	require.False(t, le.IsPermanent())
+
+	c, err := s.Store.GetChat(ctx, "oc_a")
+	require.NoError(t, err)
+	require.Empty(t, c.SyncError, "recording it would retire the chat over a timing answer")
+}
+
 func TestPullFromCursor_ReturnsAFatalRefusalWithoutRecordingIt(t *testing.T) {
 	t.Parallel()
 	s, f, clk := newSyncer(t)

@@ -292,7 +292,14 @@ func (e *Error) IsRateLimit() bool { return e.Subtype == "rate_limit" }
 // against them are the same answer every time. 401 and 403 are left out
 // because a token midway through a refresh looks like both, and 408 and 429
 // are the two 4xx that ask to be retried.
+//
+// 2200 is Feishu's generic internal error: the docs say it usually means the
+// API was called too often, and to slow down or retry. It is not a verdict
+// about the chat, file, or document the call named.
 func (e *Error) IsPermanent() bool {
+	if e.Code == 2200 || e.APICode == 2200 {
+		return false
+	}
 	if e.ExitCode == ExitAPI {
 		return !e.IsRateLimit()
 	}

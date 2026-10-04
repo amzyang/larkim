@@ -169,6 +169,8 @@ func TestIsPermanent_CoversBothWaysLarkCLIReportsARefusal(t *testing.T) {
 	}{
 		{"api rejection", &Error{ExitCode: ExitAPI, Code: 234003}, true},
 		{"api rate limit", &Error{ExitCode: ExitAPI, Subtype: "rate_limit"}, false},
+		{"feishu 2200 is a retryable internal error", &Error{ExitCode: ExitAPI, Subtype: "server_error", Code: 2200}, false},
+		{"feishu 2200 lifted from a download body", &Error{ExitCode: ExitNetwork, Code: 400, APICode: 2200}, false},
 		{"download of a deleted resource", &Error{ExitCode: ExitNetwork, Code: 400}, true},
 		{"download of a missing resource", &Error{ExitCode: ExitNetwork, Code: 404}, true},
 		{"download of a gone resource", &Error{ExitCode: ExitNetwork, Code: 410}, true},

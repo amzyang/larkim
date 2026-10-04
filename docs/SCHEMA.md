@@ -23,7 +23,7 @@ One row per chat the user is (or was) in, from `GET /im/v1/chats` with `types=p2
 | `backfill_done_at` | set once the historical pull (`backfill_days`) finished |
 | `history_floor_ms` | oldest `create_ms` the chat has been pulled back to, and 0 once the whole of it is stored. Meaningless while `backfill_done_at` is 0, which is what tells that zero from this one |
 | `left_at` | non-zero when a full listing no longer contains the chat; reset when it reappears |
-| `sync_error` | last permanent API rejection (e.g. restricted-mode chats cannot be listed); such chats still receive messages via search |
+| `sync_error` | last permanent API rejection (e.g. restricted-mode chats cannot be listed); such chats still receive messages via search. Feishu 2200 is not stored here: it is a retryable internal error |
 | `repaired_at` | when the last repair pass re-listed the chat's recent week |
 | `first_seen_at` | when the chat was first stored, whether by a full listing or by a message arriving from one larkim had not listed yet; never rewritten |
 | `last_seen_at` | when the chat was last confirmed present: a full listing restamps every row it carries. `left_at` is set by comparing this against the stamp of the listing that just finished, so a chat missing from one is the chat whose `last_seen_at` stayed behind |

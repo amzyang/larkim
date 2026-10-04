@@ -87,6 +87,31 @@ func TestMigrate_QueuesCardImagesThatRanOutOfAttempts(t *testing.T) {
 	require.Equal(t, 5, clip[0].Attempts)
 }
 
+func TestMigrate_ClearsA2200SyncErrorAndLeavesARealRefusal(t *testing.T) {
+	dir := t.TempDir()
+	ctx := t.Context()
+	s, err := openAt(t, filepath.Join(dir, "t.db"))
+	require.NoError(t, err)
+	require.NoError(t, s.EnsureChat(ctx, "oc_transient", 1))
+	require.NoError(t, s.EnsureChat(ctx, "oc_restricted", 1))
+	require.NoError(t, s.SetChatSyncError(ctx, "oc_transient", "2200: Something went wrong. Please contact technical support", 2))
+	require.NoError(t, s.SetChatSyncError(ctx, "oc_restricted", "231203: The chat type is not supported", 2))
+	_, err = s.db.ExecContext(ctx, `DELETE FROM schema_migrations WHERE version = 51`)
+	require.NoError(t, err)
+	s.Close()
+
+	s, err = Open(filepath.Join(dir, "t.db"))
+	require.NoError(t, err)
+	defer s.Close()
+
+	transient, err := s.GetChat(ctx, "oc_transient")
+	require.NoError(t, err)
+	require.Empty(t, transient.SyncError, "2200 is a timing answer, not a chat refusal")
+	restricted, err := s.GetChat(ctx, "oc_restricted")
+	require.NoError(t, err)
+	require.Equal(t, "231203: The chat type is not supported", restricted.SyncError)
+}
+
 func TestUpsertMessages_PreservesRenderingAndRecalledContent(t *testing.T) {
 	s := openTest(t)
 	ctx := t.Context()
