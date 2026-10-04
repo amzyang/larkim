@@ -161,9 +161,9 @@ func (m Model) messageContextItems(sel store.Message) []contextMenuItem {
 			action: func(m Model) (tea.Model, tea.Cmd) { return m.askRecall() },
 		})
 	}
-	if _, bad := m.recallable("re-edit", "re-edited"); bad == "" {
+	if x, bad := m.recallable("re-edit", "re-edited"); bad == "" && reEditableReason(x) == "" {
 		items = append(items, contextMenuItem{
-			hint: KeyBinding{Keys: "E", Desc: "Edit"}, icon: ctxIconEdit,
+			hint: KeyBinding{Keys: "E", Desc: "Edit Message"}, icon: ctxIconEdit,
 			action: func(m Model) (tea.Model, tea.Cmd) { return m.askReEdit() },
 		})
 	}

@@ -63,6 +63,8 @@ func TestContextMenu_RightClickMessageOpensMenu(t *testing.T) {
 	require.Contains(t, labels, "Copy Text")
 	require.Contains(t, labels, "Copy Context")
 	require.Contains(t, labels, "Open in Feishu")
+	require.NotContains(t, labels, "Recall")
+	require.NotContains(t, labels, "Edit Message")
 }
 
 func TestContextMenu_IconsUseFullSizeNerdGlyphs(t *testing.T) {
@@ -288,6 +290,59 @@ func TestContextMenu_SpaceOpensAtCursor(t *testing.T) {
 	m := pickerModel(t)
 	m = press(t, m, " ")
 	require.Equal(t, modeContextMenu, m.mode)
+}
+
+func ownMessageMenuModel(t *testing.T) Model {
+	t.Helper()
+	m, _ := recallModel(t)
+	m.width, m.height = 120, 36
+	m.layout()
+	next, _ := m.openContextMenuAtCursor()
+	m = next.(Model)
+	require.Equal(t, modeContextMenu, m.mode)
+	require.NotEmpty(t, m.contextMenu.items)
+	return m
+}
+
+func TestContextMenu_OwnMessageShowsRecallAndEditMessage(t *testing.T) {
+	t.Parallel()
+	labels := contextMenuLabels(ownMessageMenuModel(t))
+	require.Contains(t, labels, "Recall")
+	require.Contains(t, labels, "Edit Message")
+}
+
+func TestContextMenu_OthersMessageOmitsRecallAndEditMessage(t *testing.T) {
+	t.Parallel()
+	m, _ := recallModel(t)
+	m.width, m.height = 120, 36
+	m.layout()
+	m.msgIdx = 1
+	next, _ := m.openContextMenuAtCursor()
+	m = next.(Model)
+	labels := contextMenuLabels(m)
+	require.NotContains(t, labels, "Recall")
+	require.NotContains(t, labels, "Edit Message")
+}
+
+func TestContextMenu_RecallMnemonic(t *testing.T) {
+	t.Parallel()
+	m := ownMessageMenuModel(t)
+	next, _ := m.onContextMenuKey(keyMsg("D"))
+	m = next.(Model)
+	require.Equal(t, modeNormal, m.mode)
+	require.Equal(t, confirmRecall, m.confirm.kind)
+	require.Equal(t, "om_mine", m.confirm.messageID)
+}
+
+func TestContextMenu_EditMessageMnemonic(t *testing.T) {
+	t.Parallel()
+	m := ownMessageMenuModel(t)
+	next, _ := m.onContextMenuKey(keyMsg("E"))
+	m = next.(Model)
+	require.Equal(t, modeNormal, m.mode)
+	require.Equal(t, confirmReEdit, m.confirm.kind)
+	require.NotNil(t, m.reEdit)
+	require.Equal(t, "om_mine", m.confirm.messageID)
 }
 
 func contextMenuLabels(m Model) []string {

@@ -12,6 +12,18 @@ import (
 // composer could hold.
 var reEditTypes = []string{"text", "post"}
 
+// reEditableReason is empty when x can be taken back into the composer; otherwise
+// the same user-facing sentence askReEdit would notify.
+func reEditableReason(x store.Message) string {
+	if !slices.Contains(reEditTypes, x.MsgType) {
+		return "only text and post messages can be re-edited"
+	}
+	if x.RenderedAt == 0 || x.Content == "" {
+		return "that message has no text to take back yet"
+	}
+	return ""
+}
+
 // reEditPending is what the composer is refilled with once Feishu has taken
 // the message back. The text is captured before the call because a recall
 // drops the body, and the rendering goes with it.
@@ -34,13 +46,8 @@ func (m Model) askReEdit() (tea.Model, tea.Cmd) {
 	if bad != "" {
 		return m.notify(bad, true), nil
 	}
-	if !slices.Contains(reEditTypes, x.MsgType) {
-		return m.notify("only text and post messages can be re-edited", true), nil
-	}
-	// The rendering is what the composer takes: the raw body spells mentions
-	// as @_user_1 placeholders, and a post as style runs rather than markdown.
-	if x.RenderedAt == 0 || x.Content == "" {
-		return m.notify("that message has no text to take back yet", true), nil
+	if reason := reEditableReason(x); reason != "" {
+		return m.notify(reason, true), nil
 	}
 	m.confirm = confirmation{kind: confirmReEdit, messageID: x.MessageID}
 	m.reEdit = &reEditPending{messageID: x.MessageID, text: x.Content,
