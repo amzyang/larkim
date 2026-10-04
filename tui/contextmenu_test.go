@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/amzyang/larkim/larkcli"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/stretchr/testify/require"
@@ -62,6 +63,23 @@ func TestContextMenu_RightClickMessageOpensMenu(t *testing.T) {
 	require.Contains(t, labels, "Copy Text")
 	require.Contains(t, labels, "Copy Context")
 	require.Contains(t, labels, "Open in Feishu")
+}
+
+func TestContextMenu_IconsUseFullSizeNerdGlyphs(t *testing.T) {
+	t.Parallel()
+	m := pickerModel(t)
+	line := firstMessageLine(m)
+	require.NotEqual(t, -1, line)
+	x := chatsWidth + m.messagesWidth()/2
+	y := messageClickY(m, line)
+
+	next, _ := m.onRightClick(tea.Mouse{Button: tea.MouseRight, X: x, Y: y})
+	m = next.(Model)
+	require.NotEmpty(t, m.contextMenu.items)
+	for i, it := range m.contextMenu.items {
+		require.True(t, strings.HasSuffix(it.icon, enSpace), "item %d (%s)", i, it.hint.Desc)
+		require.Equal(t, pickerIconCols, lipgloss.Width(it.icon), "item %d (%s)", i, it.hint.Desc)
+	}
 }
 
 func TestContextMenu_RightClickChatOpensMenu(t *testing.T) {

@@ -32,6 +32,24 @@ type contextMenuState struct {
 	cursor int
 }
 
+// Context menu icons use the same Codicons / Font Awesome PUA block as chat
+// badges (botBadge, draftGlyph, …). Each must end with enSpace so width is
+// pickerIconCols and the terminal draws the glyph full size.
+const (
+	ctxIconReply       = "\uf122" + enSpace
+	ctxIconReplyThread = "\uf086" + enSpace
+	ctxIconReact       = "\uf118" + enSpace
+	ctxIconForward     = candSendIcon + enSpace
+	ctxIconCopy        = "\uf0c5" + enSpace
+	ctxIconOpen        = "\uf054" + enSpace
+	ctxIconTodoist     = "\uf046" + enSpace
+	ctxIconRecall      = "\uf0e2" + enSpace
+	ctxIconEdit        = draftGlyph
+	ctxIconExternal    = "\uf08e" + enSpace
+	ctxIconMarkRead    = markAllGlyph
+	ctxIconMute        = muteGlyph
+)
+
 func (m Model) closeContextMenu() Model {
 	m.mode = modeNormal
 	m.contextMenu = contextMenuState{}
@@ -94,30 +112,30 @@ func (m Model) messageContextItems(sel store.Message) []contextMenuItem {
 	var items []contextMenuItem
 	reply := sel
 	items = append(items, contextMenuItem{
-		hint: KeyBinding{Keys: "r", Desc: "Reply"}, icon: "↩",
+		hint: KeyBinding{Keys: "r", Desc: "Reply"}, icon: ctxIconReply,
 		action: func(m Model) (tea.Model, tea.Cmd) { return m.startInsert(&reply, false) },
 	})
 	items = append(items, contextMenuItem{
-		hint: KeyBinding{Keys: "R", Desc: "Reply in Thread"}, icon: "⤷",
+		hint: KeyBinding{Keys: "R", Desc: "Reply in Thread"}, icon: ctxIconReplyThread,
 		action: func(m Model) (tea.Model, tea.Cmd) { return m.startInsert(&reply, true) },
 	})
 	items = append(items, contextMenuItem{
-		hint: KeyBinding{Keys: "e", Desc: "React..."}, icon: "☺",
+		hint: KeyBinding{Keys: "e", Desc: "React..."}, icon: ctxIconReact,
 		action: func(m Model) (tea.Model, tea.Cmd) { return m.openPicker() },
 	})
 	items = append(items, contextMenuItem{
-		hint: KeyBinding{Keys: "f", Desc: "Forward..."}, icon: "➤",
+		hint: KeyBinding{Keys: "f", Desc: "Forward..."}, icon: ctxIconForward,
 		action: func(m Model) (tea.Model, tea.Cmd) { return m.openForward() },
 	})
 	items = append(items, contextMenuItem{
-		hint: KeyBinding{Keys: "y", Desc: "Copy Text"}, icon: "⎘",
+		hint: KeyBinding{Keys: "y", Desc: "Copy Text"}, icon: ctxIconCopy,
 		action: func(m Model) (tea.Model, tea.Cmd) {
 			out, cmd, _ := m.onYankKey("c")
 			return out, cmd
 		},
 	})
 	items = append(items, contextMenuItem{
-		hint: KeyBinding{Keys: "Y", Desc: "Copy Context"}, icon: "⎘",
+		hint: KeyBinding{Keys: "Y", Desc: "Copy Context"}, icon: ctxIconCopy,
 		action: func(m Model) (tea.Model, tea.Cmd) { return m.copySelection() },
 	})
 	if f, ok := m.containerAtCursor(); ok {
@@ -128,30 +146,30 @@ func (m Model) messageContextItems(sel store.Message) []contextMenuItem {
 		frame := f
 		p := m.focus
 		items = append(items, contextMenuItem{
-			hint: KeyBinding{Keys: "t", Desc: label}, icon: "▸",
+			hint: KeyBinding{Keys: "t", Desc: label}, icon: ctxIconOpen,
 			action: func(m Model) (tea.Model, tea.Cmd) { return m.openContainer(p, frame) },
 		})
 	}
 	if m.deps.Todoist != nil {
 		items = append(items, contextMenuItem{
-			hint: KeyBinding{Keys: "T", Desc: "Add to Todoist"}, icon: "☑",
+			hint: KeyBinding{Keys: "T", Desc: "Add to Todoist"}, icon: ctxIconTodoist,
 			action: func(m Model) (tea.Model, tea.Cmd) { return m.todoistTask() },
 		})
 	}
 	if _, bad := m.recallable("recall", "recalled"); bad == "" {
 		items = append(items, contextMenuItem{
-			hint: KeyBinding{Keys: "D", Desc: "Recall"}, icon: "↶",
+			hint: KeyBinding{Keys: "D", Desc: "Recall"}, icon: ctxIconRecall,
 			action: func(m Model) (tea.Model, tea.Cmd) { return m.askRecall() },
 		})
 	}
 	if _, bad := m.recallable("re-edit", "re-edited"); bad == "" {
 		items = append(items, contextMenuItem{
-			hint: KeyBinding{Keys: "E", Desc: "Edit"}, icon: "✎",
+			hint: KeyBinding{Keys: "E", Desc: "Edit"}, icon: ctxIconEdit,
 			action: func(m Model) (tea.Model, tea.Cmd) { return m.askReEdit() },
 		})
 	}
 	items = append(items, contextMenuItem{
-		hint: KeyBinding{Keys: "o", Desc: "Open in Feishu"}, icon: "↗",
+		hint: KeyBinding{Keys: "o", Desc: "Open in Feishu"}, icon: ctxIconExternal,
 		action: func(m Model) (tea.Model, tea.Cmd) { return m.contextOpenTarget() },
 	})
 	return items
@@ -160,7 +178,7 @@ func (m Model) messageContextItems(sel store.Message) []contextMenuItem {
 func (m Model) chatContextItems(row listRow) []contextMenuItem {
 	var items []contextMenuItem
 	items = append(items, contextMenuItem{
-		hint: KeyBinding{Desc: "Open Chat"}, icon: "▸",
+		hint: KeyBinding{Desc: "Open Chat"}, icon: ctxIconOpen,
 		action: func(m Model) (tea.Model, tea.Cmd) { return m.activate() },
 	})
 	chatID := row.chatID()
@@ -174,7 +192,7 @@ func (m Model) chatContextItems(row listRow) []contextMenuItem {
 	}
 	id, apply := chatID, want
 	items = append(items, contextMenuItem{
-		hint: KeyBinding{Keys: "M", Desc: label}, icon: "\uf1f6",
+		hint: KeyBinding{Keys: "M", Desc: label}, icon: ctxIconMute,
 		action: func(m Model) (tea.Model, tea.Cmd) {
 			return m.notify(note, false), setChatMutedCmd(m.deps, id, apply)
 		},
@@ -182,19 +200,19 @@ func (m Model) chatContextItems(row listRow) []contextMenuItem {
 	if m.inFeed() {
 		chatID := row.chatID()
 		items = append(items, contextMenuItem{
-			hint: KeyBinding{Keys: "m", Desc: "Mark Read"}, icon: "✓",
+			hint: KeyBinding{Keys: "m", Desc: "Mark Read"}, icon: ctxIconMarkRead,
 			action: func(m Model) (tea.Model, tea.Cmd) { return m.markSectionRead(chatID) },
 		})
 	}
 	items = append(items, contextMenuItem{
-		hint: KeyBinding{Keys: "y", Desc: "Copy Chat ID"}, icon: "⎘",
+		hint: KeyBinding{Keys: "y", Desc: "Copy Chat ID"}, icon: ctxIconCopy,
 		action: func(m Model) (tea.Model, tea.Cmd) {
 			out, cmd, _ := m.onYankKey("y")
 			return out, cmd
 		},
 	})
 	items = append(items, contextMenuItem{
-		hint: KeyBinding{Keys: "o", Desc: "Open in Feishu"}, icon: "↗",
+		hint: KeyBinding{Keys: "o", Desc: "Open in Feishu"}, icon: ctxIconExternal,
 		action: func(m Model) (tea.Model, tea.Cmd) {
 			return m, openInFeishu(m.deps, chatID, "", 0)
 		},
@@ -349,10 +367,7 @@ func (m Model) contextMenuFloater() (floater, bool) {
 	if len(items) == 0 {
 		return floater{}, false
 	}
-	const (
-		iconCol = 2
-		gap     = 3
-	)
+	const gap = 3
 	maxDesc := 0
 	maxKey := 0
 	for _, it := range items {
@@ -363,7 +378,7 @@ func (m Model) contextMenuFloater() (floater, bool) {
 		}
 		maxKey = max(maxKey, lipgloss.Width(macKeys(k)))
 	}
-	chrome := iconCol + 1 + gap + maxKey + 4 // +4 for borders and padding
+	chrome := pickerIconCols + 1 + gap + maxKey + 4 // +4 for borders and padding
 	maxDesc = min(maxDesc, max(8, m.width-chrome))
 	maxDesc = min(maxDesc, 32)
 
@@ -391,7 +406,7 @@ func (m Model) contextMenuFloater() (floater, bool) {
 }
 
 func (m Model) contextMenuRow(it contextMenuItem, maxDesc, maxKey int, selected bool) string {
-	icon := fit(it.icon, 2)
+	icon := fit(it.icon, pickerIconCols)
 	desc := fit(truncate(it.hint.Desc, maxDesc), maxDesc)
 	k := it.hint.Keys
 	if k == "" {
