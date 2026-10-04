@@ -1952,7 +1952,7 @@ func (m Model) onAIKey(s string) (Model, tea.Cmd, bool) {
 		return next.(Model), cmd, true
 	case "y":
 		m.pendingY = true
-		return m.notify("y… y card", false), nil, true
+		return m.notify("", false), nil, true
 	case "Y":
 		next, cmd, _ := m.copyAnswer()
 		return next.(Model), cmd, true

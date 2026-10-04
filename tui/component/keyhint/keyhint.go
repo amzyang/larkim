@@ -17,6 +17,17 @@ type Binding struct {
 	Desc string
 }
 
+// Combined is a leader key armed in the UI, waiting on one of Choices.
+type Combined struct {
+	Prefix  string
+	Choices []Binding
+}
+
+// Bar renders Prefix, an ellipsis, and Choices with the same styling as HintBar.
+func (c Combined) Bar(w int, st Styles) string {
+	return PrefixBar(c.Prefix, c.Choices, w, st)
+}
+
 // Styles paints keys and descriptions. HintBar separators use Desc.
 type Styles struct {
 	Key  lipgloss.Style
@@ -60,6 +71,24 @@ func RenderDesc(b Binding, st Styles) string {
 		out += " " + st.Desc.Render(b.Desc)
 	}
 	return out
+}
+
+// PrefixBar renders an armed prefix key, an ellipsis, and follow-up bindings
+// joined with a dim middle dot, truncating to width w.
+func PrefixBar(prefix string, bindings []Binding, w int, st Styles) string {
+	if w <= 0 || len(bindings) == 0 {
+		return ""
+	}
+	head := RenderKey(prefix, st) + st.Desc.Render("… ")
+	headW := lipgloss.Width(head)
+	if headW >= w {
+		return truncate(head, w)
+	}
+	rest := HintBar(bindings, w-headW, st)
+	if rest == "" {
+		return truncate(head, w)
+	}
+	return head + rest
 }
 
 // HintBar joins bindings with a dim middle dot, truncating to width w.

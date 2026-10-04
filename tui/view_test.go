@@ -381,6 +381,33 @@ func TestView_AtMinWidth78_LayoutFits(t *testing.T) {
 	require.Contains(t, ansi.Strip(v.Content), "Chats")
 }
 
+func TestRenderStatus_YPrefixUsesKeyhintFollowUp(t *testing.T) {
+	t.Parallel()
+	m := sized(120, 36)
+	m.focus, m.msgIdx = paneMessages, 1
+	mm, _ := m.onNormalKey("y")
+	m = mm.(Model)
+	require.True(t, m.pendingY)
+	s := ansi.Strip(m.renderStatus())
+	require.Contains(t, s, "id")
+	require.Contains(t, s, "json")
+	require.Contains(t, s, "content")
+	rendered := renderCombinedHints(yankCombined, 80)
+	require.Contains(t, s, ansi.Strip(rendered))
+}
+
+func TestRenderStatus_GPrefixUsesKeyhintFollowUp(t *testing.T) {
+	t.Parallel()
+	m := sized(120, 36)
+	m.focus, m.msgIdx = paneMessages, 20
+	mm, _ := m.onNormalKey("g")
+	m = mm.(Model)
+	require.True(t, m.pendingG)
+	s := ansi.Strip(m.renderStatus())
+	require.Contains(t, s, "top")
+	require.Contains(t, s, ansi.Strip(renderCombinedHints(gCombined, 80)))
+}
+
 func TestRenderStatus_ConfirmHighlightsKeys(t *testing.T) {
 	t.Parallel()
 	m := sized(120, 36)

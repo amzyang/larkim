@@ -2259,7 +2259,7 @@ func (m Model) onVisualKey(s string) (tea.Model, tea.Cmd) {
 // three of them is more than a key worth guessing at.
 func (m Model) startYank() (tea.Model, tea.Cmd) {
 	m.pendingY = true
-	return m.notify("y… y id · r json · c content", false), nil
+	return m.notify("", false), nil
 }
 
 // onYankKey resolves the second key of the y family and reports whether it
@@ -2340,7 +2340,7 @@ func (m Model) startVisual() (tea.Model, tea.Cmd) {
 	}
 	m.visualAnchor = m.focusedList()[m.cursor(m.focus)].MessageID
 	m.mode = modeVisual
-	return m.notify("j/k extend · Y copies · y id/json/content · Esc cancels", false), nil
+	return m.notify("", false), nil
 }
 
 // cursor is the selected row of a message list pane.

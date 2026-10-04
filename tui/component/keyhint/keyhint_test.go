@@ -41,6 +41,30 @@ func TestRenderDesc(t *testing.T) {
 	require.Contains(t, got, "search")
 }
 
+func TestPrefixBar(t *testing.T) {
+	got := ansi.Strip(PrefixBar("y", []Binding{
+		{Keys: "y", Desc: "id"},
+		{Keys: "r", Desc: "json"},
+		{Keys: "c", Desc: "content"},
+	}, 80, testStyles()))
+	require.Contains(t, got, "y")
+	require.Contains(t, got, "id")
+	require.Contains(t, got, "json")
+	require.Contains(t, got, "content")
+}
+
+func TestCombined_BarMatchesPrefixBar(t *testing.T) {
+	st := testStyles()
+	c := Combined{
+		Prefix: "g",
+		Choices: []Binding{{Keys: "g", Desc: "top"}},
+	}
+	require.Equal(t,
+		PrefixBar("g", c.Choices, 40, st),
+		c.Bar(40, st),
+	)
+}
+
 func TestHintBar_TruncatesToWidth(t *testing.T) {
 	bar := HintBar([]Binding{
 		{Keys: "Enter", Desc: "send"},

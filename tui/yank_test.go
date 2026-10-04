@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/amzyang/larkim/store"
 	"github.com/stretchr/testify/require"
 )
@@ -84,8 +85,13 @@ func TestOnNormalKey_UnboundSecondKeyCancelsTheYPrefix(t *testing.T) {
 
 	mm, cmd := m.onNormalKey("y")
 	require.Nil(t, cmd)
-	require.True(t, mm.(Model).pendingY)
-	require.Contains(t, mm.(Model).notice, "y id · r json · c content")
+	m = mm.(Model)
+	require.True(t, m.pendingY)
+	require.Empty(t, m.notice)
+	s := ansi.Strip(m.renderStatus())
+	require.Contains(t, s, "id")
+	require.Contains(t, s, "json")
+	require.Contains(t, s, "content")
 
 	out, cmd := mm.(Model).onNormalKey("j")
 	require.Nil(t, cmd, "the clipboard is left alone")

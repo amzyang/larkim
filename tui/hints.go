@@ -62,6 +62,26 @@ var (
 		{Keys: "esc", Desc: "cancel"},
 	}
 	replyBarHintBinding = KeyBinding{Keys: "^r", Desc: "drops the quote"}
+	yankCombined = keyhint.Combined{
+		Prefix: "y",
+		Choices: []KeyBinding{
+			{Keys: "y", Desc: "id"},
+			{Keys: "r", Desc: "json"},
+			{Keys: "c", Desc: "content"},
+		},
+	}
+	aiYCombined = keyhint.Combined{
+		Prefix: "y",
+		Choices: []KeyBinding{
+			{Keys: "y", Desc: "card"},
+		},
+	}
+	gCombined = keyhint.Combined{
+		Prefix: "g",
+		Choices: []KeyBinding{
+			{Keys: "g", Desc: "top"},
+		},
+	}
 )
 
 func keyhintStyles() keyhint.Styles {
@@ -89,4 +109,8 @@ func renderKeyHintBar(bindings []KeyBinding, w int) string {
 
 func packKeyHints(bindings []KeyBinding, availWidth int, gap string) string {
 	return keyhint.Pack(bindings, availWidth, gap, keyhintStyles())
+}
+
+func renderCombinedHints(c keyhint.Combined, availWidth int) string {
+	return c.Bar(availWidth, keyhintStyles())
 }

@@ -1387,6 +1387,15 @@ func (m Model) styledSyncGlyph() string {
 }
 
 func (m Model) statusKeyHints(availWidth int) string {
+	switch {
+	case m.pendingY:
+		if m.focus == paneThread && m.aiOpen() {
+			return renderCombinedHints(aiYCombined, availWidth)
+		}
+		return renderCombinedHints(yankCombined, availWidth)
+	case m.pendingG:
+		return renderCombinedHints(gCombined, availWidth)
+	}
 	var pool []KeyBinding
 	switch m.mode {
 	case modeInsert:
@@ -1397,7 +1406,9 @@ func (m Model) statusKeyHints(availWidth int) string {
 		}
 	case modeVisual:
 		pool = []KeyBinding{
-			{Keys: "y", Desc: "yank"},
+			{Keys: "j/k", Desc: "extend"},
+			{Keys: "Y", Desc: "copy ctx"},
+			{Keys: "y", Desc: "copy"},
 			{Keys: "f", Desc: "fwd"},
 			{Keys: "t", Desc: "thread"},
 			{Keys: "Esc", Desc: "cancel"},
