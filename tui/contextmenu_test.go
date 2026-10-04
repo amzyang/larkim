@@ -116,6 +116,13 @@ func TestContextMenu_MutedChatShowsUnmute(t *testing.T) {
 	labels := contextMenuLabels(m)
 	require.Contains(t, labels, "Unmute")
 	require.NotContains(t, labels, "Mute")
+	for _, it := range m.contextMenu.items {
+		if it.hint.Desc == "Unmute" {
+			require.Equal(t, bellUnmuteGlyph, it.icon)
+			return
+		}
+	}
+	t.Fatal("Unmute item missing")
 }
 
 func TestContextMenu_MuteMnemonic(t *testing.T) {
@@ -127,6 +134,12 @@ func TestContextMenu_MuteMnemonic(t *testing.T) {
 	y := 1 + headerHeight + rowOf(0)*chatRowStride
 	next, _ := m.onRightClick(tea.Mouse{Button: tea.MouseRight, X: 4, Y: y})
 	m = next.(Model)
+	for _, it := range m.contextMenu.items {
+		if it.hint.Desc == "Mute" {
+			require.Equal(t, muteGlyph, it.icon)
+			break
+		}
+	}
 
 	f := larkcli.NewFake()
 	f.Chats = []larkcli.RawChat{{ChatID: m.chats[0].ChatID, Name: m.chats[0].Name}}

@@ -23,7 +23,8 @@ func TestNerdGlyphs_EachCarriesTheCellThatKeepsItFullSize(t *testing.T) {
 	t.Parallel()
 	for name, g := range map[string]string{
 		"botBadge":     botBadge,
-		"muteGlyph":    muteGlyph,
+		"muteGlyph":       muteGlyph,
+		"bellUnmuteGlyph": bellUnmuteGlyph,
 		"draftGlyph":   draftGlyph,
 		"markAllGlyph": markAllGlyph,
 		"replyGlyph":   replyGlyph,

@@ -69,9 +69,14 @@ func botMark(senderType string) string {
 	return botBadge
 }
 
-// muteGlyph is the crossed-out bell, from the Nerd Font the terminal maps the
-// private use area to. Unlike the emoji bell it takes the colour it is given,
-// which is what lets it sit dim behind the summary.
+// bellUnmuteGlyph is the outline bell (FA bell-o): the Unmute action in the
+// chat context menu. Like muteGlyph it comes from the Nerd Font PUA block so
+// it takes the colour it is given.
+const bellUnmuteGlyph = "\uf0a2" + enSpace
+
+// muteGlyph is the outline bell with slash (FA bell-slash): muted chats in the
+// list and the Mute action. Unlike the emoji bell it takes the colour it is
+// given, which is what lets it sit dim behind the summary.
 const muteGlyph = "\uf1f6" + enSpace
 
 // draftPencil is the icon alone, so the marker can carry its underline on the

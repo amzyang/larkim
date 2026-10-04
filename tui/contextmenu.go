@@ -47,7 +47,6 @@ const (
 	ctxIconEdit        = draftGlyph
 	ctxIconExternal    = "\uf08e" + enSpace
 	ctxIconMarkRead    = markAllGlyph
-	ctxIconMute        = muteGlyph
 )
 
 func (m Model) closeContextMenu() Model {
@@ -191,8 +190,12 @@ func (m Model) chatContextItems(row listRow) []contextMenuItem {
 		note = "unmuting…"
 	}
 	id, apply := chatID, want
+	muteIcon := muteGlyph
+	if muted {
+		muteIcon = bellUnmuteGlyph
+	}
 	items = append(items, contextMenuItem{
-		hint: KeyBinding{Keys: "M", Desc: label}, icon: ctxIconMute,
+		hint: KeyBinding{Keys: "M", Desc: label}, icon: muteIcon,
 		action: func(m Model) (tea.Model, tea.Cmd) {
 			return m.notify(note, false), setChatMutedCmd(m.deps, id, apply)
 		},
