@@ -174,11 +174,10 @@ type Model struct {
 	// pane that draws them do not each summarise every visible row.
 	gists *gistCache
 	// pics draws message images. It stays nil, and the avatars colour blocks,
-	// until the terminal says it draws pictures: by the handshake when it
-	// answered before the first frame, by an event when it did not.
+	// until the handshake said this terminal draws pictures.
 	pics *pictures
 	// cellW, cellH are the last cell size the terminal reported, kept for the
-	// renderers graphics swaps in after the answer came.
+	// renderers, so a resize can hand them the new grid.
 	cellW, cellH int
 	// disp is the display scale as last reported, kept for the same reason.
 	disp       display
@@ -495,11 +494,7 @@ func Run(ctx context.Context, d Deps) error {
 }
 
 func (m Model) Init() tea.Cmd {
-	// The handshake asked before the first frame; asking again covers the run
-	// that raced it out of its answers. Every reply lands as the event that
-	// re-syncs it, and one the handshake already had changes nothing.
-	cmds := tea.Batch(tea.Raw(handshakeQuery),
-		loadChats(m.deps), readSyncStatus(m.deps.Store), pollSyncStatus(m.deps.Store), waitForRev(m.revs),
+	cmds := tea.Batch(loadChats(m.deps), readSyncStatus(m.deps.Store), pollSyncStatus(m.deps.Store), waitForRev(m.revs),
 		loadSelfName(m.deps), keychainStartup(m.deps))
 	if claim := kittyClaimPaste(); claim != nil {
 		cmds = tea.Batch(cmds, claim)
@@ -653,22 +648,6 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if !m.disp.read(msg.Content) || !m.pics.setDisplay(m.disp) {
 			return m, nil
 		}
-		clear(m.gists.rows)
-		m.layout()
-		return m, nil
-	case tea.BackgroundColorMsg:
-		m.setBackground(msg, msg.IsDark())
-		return m, nil
-	case uv.KittyGraphicsEvent:
-		if !graphicsOK(msg) || m.pics != nil || m.deps.DataDir == "" {
-			return m, nil
-		}
-		k := newKittyAvatars(m.deps.DataDir)
-		k.setCellSize(m.cellW, m.cellH)
-		m.avatars = k
-		m.pics = newPictures(m.deps.DataDir, true)
-		m.pics.setCellSize(m.cellW, m.cellH)
-		m.pics.setDisplay(m.disp)
 		clear(m.gists.rows)
 		m.layout()
 		return m, nil

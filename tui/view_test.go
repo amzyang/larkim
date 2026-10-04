@@ -299,16 +299,14 @@ func TestView_TooSmallTerminal(t *testing.T) {
 	require.Contains(t, m.View().Content, "too small")
 }
 
-func TestUpdate_BackgroundColorDrivesSelectionShade(t *testing.T) {
+func TestSetBackground_DrivesSelectionShade(t *testing.T) {
 	t.Parallel()
 	m := New(Deps{})
 	light := lipgloss.Color("#eff1f5")
-	mm, _ := m.Update(tea.BackgroundColorMsg{Color: light})
-	m = mm.(Model)
+	m.setBackground(light, false)
 	require.Less(t, luma(m.th.sel.GetBackground()), luma(light), "light theme: selection darker than the background")
 	dark := lipgloss.Color("#1e1e2e")
-	mm, _ = m.Update(tea.BackgroundColorMsg{Color: dark})
-	m = mm.(Model)
+	m.setBackground(dark, true)
 	require.Greater(t, luma(m.th.sel.GetBackground()), luma(dark), "dark theme: selection lighter than the background")
 }
 

@@ -1,9 +1,9 @@
 package tui
 
 import (
+	"errors"
 	"fmt"
 	"image/color"
-	"io"
 	"os"
 	"time"
 
@@ -85,57 +85,77 @@ func Probe(in, out *os.File) Handshake {
 		return h
 	}
 	defer term.Restore(int(in.Fd()), old)
-	// The deadline is what a terminal that says nothing is waited on with,
-	// and it must be gone before anything else reads this fd — the TUI's own
-	// reader, next.
-	defer in.SetReadDeadline(time.Time{})
-	if err := in.SetReadDeadline(time.Now().Add(handshakeWait)); err != nil {
-		// Without a deadline the answers could not be bounded, so they are
-		// not asked for.
-		return h
-	}
 	if _, err := out.WriteString(handshakeQuery); err != nil {
 		return h
 	}
-	return collectHandshake(in, h)
+	return probeAnswers(in, h)
 }
 
-// collectHandshake reads the answers until the device attributes close the
-// batch, the reader fails, or — a deadline the caller holds — time runs out.
-// Keys typed inside the window are read and dropped: the window is
-// milliseconds, before there is anything to type into.
-func collectHandshake(in io.Reader, h Handshake) Handshake {
+// probeAnswers reads the answers until the device attributes close the batch,
+// the reader fails, or handshakeWait runs out. Keys typed inside the window
+// are read and dropped: the window is milliseconds, before there is anything
+// to type into.
+//
+// The fd is polled rather than given an os.File deadline: darwin never
+// registers a blocking tty with the runtime poller, so SetReadDeadline fails
+// on it, and a reader goroutine abandoned mid-Read would race whatever owns
+// the fd next — the TUI's own reader — for its keystrokes.
+func probeAnswers(in *os.File, h Handshake) Handshake {
+	fd := int(in.Fd())
+	unix.SetNonblock(fd, true)
+	defer unix.SetNonblock(fd, false)
+	deadline := time.Now().Add(handshakeWait)
 	var dec uv.EventDecoder
-	buf := make([]byte, 256)
 	pending := []byte{}
+	buf := make([]byte, 256)
 	for {
-		n, err := in.Read(buf)
-		pending = append(pending, buf[:n]...)
-		for len(pending) > 0 {
-			size, ev := dec.Decode(pending)
-			if size == 0 {
-				break
-			}
-			pending = pending[size:]
-			switch e := ev.(type) {
-			case uv.KittyGraphicsEvent:
-				h.Graphics = graphicsOK(e)
-			case uv.BackgroundColorEvent:
-				h.BG, h.Dark = e.Color, e.IsDark()
-			case uv.CellSizeEvent:
-				if e.Width > 0 && e.Height > 0 {
-					h.CellW, h.CellH = e.Width, e.Height
-				}
-			case uv.CapabilityEvent:
-				h.Display.read(e.Content)
-			case uv.PrimaryDeviceAttributesEvent:
-				return h
-			}
+		left := time.Until(deadline)
+		if left <= 0 {
+			return h
 		}
-		if err != nil {
+		ready, err := unix.Poll([]unix.PollFd{{Fd: int32(fd), Events: unix.POLLIN}}, int(left.Milliseconds()))
+		if err != nil || ready == 0 {
+			return h
+		}
+		n, err := in.Read(buf)
+		if n == 0 && errors.Is(err, unix.EAGAIN) {
+			continue
+		}
+		pending = append(pending, buf[:n]...)
+		var done bool
+		h, pending, done = decodeHandshake(&dec, pending, h)
+		if done || err != nil {
 			return h
 		}
 	}
+}
+
+// decodeHandshake folds the answer bytes as they arrive into h, keeping what
+// a later read has to finish. done says the device attributes closed the
+// batch: nothing more is coming, so the caller stops waiting.
+func decodeHandshake(dec *uv.EventDecoder, pending []byte, h Handshake) (Handshake, []byte, bool) {
+	for len(pending) > 0 {
+		size, ev := dec.Decode(pending)
+		if size == 0 {
+			break
+		}
+		pending = pending[size:]
+		switch e := ev.(type) {
+		case uv.KittyGraphicsEvent:
+			h.Graphics = graphicsOK(e)
+		case uv.BackgroundColorEvent:
+			h.BG, h.Dark = e.Color, e.IsDark()
+		case uv.CellSizeEvent:
+			if e.Width > 0 && e.Height > 0 {
+				h.CellW, h.CellH = e.Width, e.Height
+			}
+		case uv.CapabilityEvent:
+			h.Display.read(e.Content)
+		case uv.PrimaryDeviceAttributesEvent:
+			return h, pending, true
+		}
+	}
+	return h, pending, false
 }
 
 // graphicsOK says whether a graphics reply is the yes to handshakeQuery.

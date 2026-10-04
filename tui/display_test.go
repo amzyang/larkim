@@ -2,7 +2,6 @@ package tui
 
 import (
 	"encoding/hex"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -13,17 +12,19 @@ func kittyAnswer(name, value string) string {
 	return "\x1bP1+r" + hex.EncodeToString([]byte(name)) + "=" + hex.EncodeToString([]byte(value)) + "\x1b\\"
 }
 
-func TestCollectHandshake_TakesTheDisplayScaleKittyStates(t *testing.T) {
+func TestDecodeHandshake_TakesTheDisplayScaleKittyStates(t *testing.T) {
 	t.Parallel()
 	stream := kittyAnswer("kitty-query-dpi_x", "144") + kittyAnswer("kitty-query-os_name", "macos") + "\x1b[?62c"
-	h := collectHandshake(strings.NewReader(stream), Handshake{})
+	h, done := decode(t, Handshake{}, stream)
+	require.True(t, done)
 	require.Equal(t, 2.0, h.Display.scale())
 }
 
-func TestCollectHandshake_RefusedDisplayQueryLeavesScaleOne(t *testing.T) {
+func TestDecodeHandshake_RefusedDisplayQueryLeavesScaleOne(t *testing.T) {
 	t.Parallel()
 	stream := "\x1bP0+r" + hex.EncodeToString([]byte("kitty-query-dpi_x")) + "\x1b\\\x1b[?62c"
-	h := collectHandshake(strings.NewReader(stream), Handshake{})
+	h, done := decode(t, Handshake{}, stream)
+	require.True(t, done)
 	require.Equal(t, 1.0, h.Display.scale())
 }
 
