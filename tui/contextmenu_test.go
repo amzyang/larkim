@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/amzyang/larkim/larkcli"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/stretchr/testify/require"
 )
@@ -77,8 +78,47 @@ func TestContextMenu_RightClickChatOpensMenu(t *testing.T) {
 	require.Equal(t, menuChat, m.contextMenu.kind)
 	labels := contextMenuLabels(m)
 	require.Contains(t, labels, "Open Chat")
+	require.Contains(t, labels, "Mute")
 	require.Contains(t, labels, "Copy Chat ID")
 	require.Contains(t, labels, "Open in Feishu")
+}
+
+func TestContextMenu_MutedChatShowsUnmute(t *testing.T) {
+	t.Parallel()
+	m := cursorModel(t)
+	m.focus = paneChats
+	m.chatIdx = 1
+	m.chats[0].Muted = true // chatIdx 1 is the first chat after Unread (oc_0)
+	m.rows = newRowsCache() // interleave caches chat fields; rebuild after muting
+
+	y := 1 + headerHeight + rowOf(0)*chatRowStride
+	next, _ := m.onRightClick(tea.Mouse{Button: tea.MouseRight, X: 4, Y: y})
+	m = next.(Model)
+
+	labels := contextMenuLabels(m)
+	require.Contains(t, labels, "Unmute")
+	require.NotContains(t, labels, "Mute")
+}
+
+func TestContextMenu_MuteMnemonic(t *testing.T) {
+	t.Parallel()
+	m := cursorModel(t)
+	m.focus = paneChats
+	m.chatIdx = 1
+
+	y := 1 + headerHeight + rowOf(0)*chatRowStride
+	next, _ := m.onRightClick(tea.Mouse{Button: tea.MouseRight, X: 4, Y: y})
+	m = next.(Model)
+
+	f := larkcli.NewFake()
+	f.Chats = []larkcli.RawChat{{ChatID: m.chats[0].ChatID, Name: m.chats[0].Name}}
+	m.deps.Client = f
+
+	next, cmd := m.onContextMenuKey(keyMsg("M"))
+	m = next.(Model)
+	require.Equal(t, modeNormal, m.mode)
+	require.Contains(t, m.notice, "muting")
+	require.NotNil(t, cmd)
 }
 
 func TestContextMenu_MouseHoverUpdatesCursor(t *testing.T) {
@@ -268,4 +308,9 @@ func TestContextMenu_RenderedBlockHasNormalBorderAndStructuredColumns(t *testing
 	require.Contains(t, firstRow, "Reply")
 	require.Contains(t, firstRow, "r")
 	require.Contains(t, lines[1], "231;238;252")
+
+	// Unselected rows style their shortcut key through keyhint (renderKey).
+	secondRow := ansi.Strip(lines[2])
+	require.Contains(t, secondRow, "Reply in Thread")
+	require.Contains(t, lines[2], renderKey("R"))
 }

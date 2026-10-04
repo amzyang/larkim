@@ -942,6 +942,19 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.fillReEdit(*p)
 		}
 		return m.notify("recalled", false), m.reloadCurrent()
+	case chatMutedMsg:
+		if msg.err != nil {
+			verb := "unmute"
+			if msg.muted {
+				verb = "mute"
+			}
+			return m.notify(verb+": "+msg.err.Error(), true), nil
+		}
+		note := "unmuted"
+		if msg.muted {
+			note = "muted"
+		}
+		return m.notify(note, false), m.reloadCurrent()
 	case markAllSetMsg:
 		return m.onMarkAllSet(msg)
 	case sectionDotMsg:

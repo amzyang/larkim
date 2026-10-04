@@ -750,6 +750,33 @@ func (c *ExecClient) MuteStatus(ctx context.Context, chatIDs []string) (map[stri
 	return muted, unknown, nil
 }
 
+// SetChatMuted writes do-not-disturb for one chat through batch_update, the
+// write counterpart to MuteStatus's batch_get_mute_status lookup.
+func (c *ExecClient) SetChatMuted(ctx context.Context, chatID string, muted bool) error {
+	data, err := c.run(ctx, "api", "POST", "/open-apis/im/v1/chat_user_setting/batch_update",
+		"--data", jsonArg(map[string]any{
+			"chat_settings": []map[string]any{{"chat_id": chatID, "is_muted": muted}},
+		}))
+	if err != nil {
+		return err
+	}
+	var resp struct {
+		Invalid []struct {
+			ID  string `json:"id"`
+			Msg string `json:"msg"`
+		} `json:"invalid_ids"`
+	}
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return fmt.Errorf("decode mute update: %w", err)
+	}
+	for _, it := range resp.Invalid {
+		if it.ID == chatID {
+			return fmt.Errorf("%s: %s", it.ID, it.Msg)
+		}
+	}
+	return nil
+}
+
 // MaxMessageIDsPerReactionCall is the upstream cap on one reaction lookup.
 const MaxMessageIDsPerReactionCall = 20
 

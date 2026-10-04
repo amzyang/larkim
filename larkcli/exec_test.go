@@ -376,6 +376,35 @@ echo '{"ok":true,"identity":"user","data":{"items":[]}}'`)
 	require.Equal(t, 5, strings.Count(lines[1], ",")+1, "the last call holds the remainder")
 }
 
+func TestSetChatMuted_CallsBatchUpdate(t *testing.T) {
+	t.Parallel()
+	c := fakeBinary(t, `
+echo "$*" >> "$(dirname "$0")/calls"
+echo '{"ok":true,"identity":"user","data":{}}'`)
+	err := c.SetChatMuted(t.Context(), "oc_a", true)
+	require.NoError(t, err)
+
+	calls, err := os.ReadFile(filepath.Join(c.Dir, "calls"))
+	require.NoError(t, err)
+	body := string(calls)
+	require.Contains(t, body, "POST /open-apis/im/v1/chat_user_setting/batch_update")
+	require.Contains(t, body, `"chat_settings"`)
+	require.Contains(t, body, `"chat_id":"oc_a"`)
+	require.Contains(t, body, `"is_muted":true`)
+	require.Contains(t, body, "--as user")
+}
+
+func TestSetChatMuted_SurfacesInvalidID(t *testing.T) {
+	t.Parallel()
+	c := fakeBinary(t, `
+echo "$*" >> "$(dirname "$0")/calls"
+echo '{"ok":true,"identity":"user","data":{"invalid_ids":[{"id":"oc_x","msg":"not_a_member"}]}}'`)
+	err := c.SetChatMuted(t.Context(), "oc_x", true)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "oc_x")
+	require.Contains(t, err.Error(), "not_a_member")
+}
+
 func wireOf(o Outgoing) []string {
 	msgType, content := o.wire()
 	return []string{msgType, content}

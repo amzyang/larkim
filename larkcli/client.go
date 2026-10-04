@@ -67,6 +67,9 @@ type Client interface {
 	// carries the chats the API declined to answer for, which a caller must
 	// not read as "not muted".
 	MuteStatus(ctx context.Context, chatIDs []string) (muted map[string]bool, unknown []string, err error)
+	// SetChatMuted sets the signed-in user's do-not-disturb for one chat.
+	// Identity is user-only, same as MuteStatus.
+	SetChatMuted(ctx context.Context, chatID string, muted bool) error
 	// SearchUsers finds users by keyword (name or email) or by open_id list.
 	SearchUsers(ctx context.Context, query string, ids []string) ([]User, error)
 	// AppDetail fetches one app's name and icon, which is how a bot's

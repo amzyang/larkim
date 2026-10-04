@@ -469,6 +469,24 @@ func (f *Fake) MuteStatus(_ context.Context, chatIDs []string) (map[string]bool,
 	return muted, unknown, nil
 }
 
+func (f *Fake) SetChatMuted(_ context.Context, chatID string, muted bool) error {
+	if err := f.record("set-chat-muted"); err != nil {
+		return err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, c := range f.Chats {
+		if c.ChatID == chatID {
+			if f.Muted == nil {
+				f.Muted = map[string]bool{}
+			}
+			f.Muted[chatID] = muted
+			return nil
+		}
+	}
+	return fmt.Errorf("not a member")
+}
+
 func (f *Fake) ChatMembers(_ context.Context, chatID string) ([]ChatMember, bool, error) {
 	if err := f.record("members:" + chatID); err != nil {
 		return nil, false, err

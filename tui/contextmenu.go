@@ -163,6 +163,22 @@ func (m Model) chatContextItems(row listRow) []contextMenuItem {
 		hint: KeyBinding{Desc: "Open Chat"}, icon: "▸",
 		action: func(m Model) (tea.Model, tea.Cmd) { return m.activate() },
 	})
+	chatID := row.chatID()
+	muted := row.chat.Muted
+	want := !muted
+	label := "Mute"
+	note := "muting…"
+	if muted {
+		label = "Unmute"
+		note = "unmuting…"
+	}
+	id, apply := chatID, want
+	items = append(items, contextMenuItem{
+		hint: KeyBinding{Keys: "M", Desc: label}, icon: "\uf1f6",
+		action: func(m Model) (tea.Model, tea.Cmd) {
+			return m.notify(note, false), setChatMutedCmd(m.deps, id, apply)
+		},
+	})
 	if m.inFeed() {
 		chatID := row.chatID()
 		items = append(items, contextMenuItem{
@@ -177,7 +193,6 @@ func (m Model) chatContextItems(row listRow) []contextMenuItem {
 			return out, cmd
 		},
 	})
-	chatID := row.chatID()
 	items = append(items, contextMenuItem{
 		hint: KeyBinding{Keys: "o", Desc: "Open in Feishu"}, icon: "↗",
 		action: func(m Model) (tea.Model, tea.Cmd) {
@@ -344,9 +359,9 @@ func (m Model) contextMenuFloater() (floater, bool) {
 		maxDesc = max(maxDesc, lipgloss.Width(it.hint.Desc))
 		k := it.hint.Keys
 		if k == "" {
-			k = "↵"
+			k = "enter"
 		}
-		maxKey = max(maxKey, lipgloss.Width(k))
+		maxKey = max(maxKey, lipgloss.Width(macKeys(k)))
 	}
 	chrome := iconCol + 1 + gap + maxKey + 4 // +4 for borders and padding
 	maxDesc = min(maxDesc, max(8, m.width-chrome))
@@ -380,14 +395,14 @@ func (m Model) contextMenuRow(it contextMenuItem, maxDesc, maxKey int, selected 
 	desc := fit(truncate(it.hint.Desc, maxDesc), maxDesc)
 	k := it.hint.Keys
 	if k == "" {
-		k = "↵"
+		k = "enter"
 	}
-	key := fit(k, maxKey)
-	row := icon + " " + desc + "   " + key
+	key := fit(macKeys(k), maxKey)
+	row := icon + " " + desc + "   " + renderKey(key)
 	if selected {
 		return paint(stChatSel, row)
 	}
-	return icon + " " + desc + "   " + stDim.Render(key)
+	return row
 }
 func (m Model) contextMenuAnchorChats() (int, int) {
 	row := m.chatIdx - m.chatTop

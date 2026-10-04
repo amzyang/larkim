@@ -95,3 +95,20 @@ func TestFake_UploadImageHonoursInjectedErrors(t *testing.T) {
 	_, err := f.UploadImage(t.Context(), "/Users/linlan/Desktop/shot.png")
 	require.ErrorContains(t, err, "nope")
 }
+
+func TestFake_SetChatMuted_UpdatesMap(t *testing.T) {
+	t.Parallel()
+	f := NewFake()
+	f.Chats = []RawChat{{ChatID: "oc_a", Name: "平台组"}}
+
+	require.NoError(t, f.SetChatMuted(t.Context(), "oc_a", true))
+	muted, unknown, err := f.MuteStatus(t.Context(), []string{"oc_a"})
+	require.NoError(t, err)
+	require.Empty(t, unknown)
+	require.True(t, muted["oc_a"])
+
+	require.NoError(t, f.SetChatMuted(t.Context(), "oc_a", false))
+	muted, _, err = f.MuteStatus(t.Context(), []string{"oc_a"})
+	require.NoError(t, err)
+	require.False(t, muted["oc_a"])
+}
