@@ -77,6 +77,26 @@ func todoStored(s string) bool {
 	return strings.HasPrefix(s, "\u2610") || strings.HasPrefix(s, "\u2611")
 }
 
+// todoGist swaps the plain box a todo's one-line summary begins with for the
+// circles the message list draws the task with: the finished check in the
+// green it is drawn there, the open circle in the line's own colour, the way
+// the pane's takes the bold of the line it heads. done is the task state the
+// row carries as data, not the box the rendering happens to spell. The icon
+// comes back styled with its air, so it rides outside the base style the
+// caller renders the rest of the line in. A summary that carries no box names
+// no task, so it keeps its words.
+func todoGist(done bool, body string) (lead, rest string) {
+	if !todoStored(body) {
+		return "", body
+	}
+	_, rest, _ = strings.Cut(body, " ")
+	box, st := todoBoxOpen, stDim
+	if done {
+		box, st = todoBoxDone, stTodoDone
+	}
+	return st.Render(box) + " ", rest
+}
+
 // todoBoxRow is the card's first line, split between the box and its
 // summary: the circles alone toggle the task, the rest of the line opens the
 // detail page. Zone columns are measured before the hyperlink goes on, whose

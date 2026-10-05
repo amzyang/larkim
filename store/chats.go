@@ -62,6 +62,10 @@ type Chat struct {
 	LastReactionsJSON string `json:"last_reactions_json,omitempty"`
 	LastRenderedAt    int64  `json:"last_rendered_at,omitempty"`
 	LastDeleted       bool   `json:"last_deleted,omitempty"`
+	// LastTodoDone is that message's task completion, read from todo_done the
+	// way a message row reads it: the box the gist draws is a task's state,
+	// which lives outside the rendering the last_* columns hold.
+	LastTodoDone bool `json:"last_todo_done,omitempty"`
 	// LastUnsilencedMs is the newest main-flow message the silence rules
 	// left alone, and the key the list orders on: noise changes what the
 	// row says, never where it sits. Zero when every message is silenced,
@@ -129,13 +133,16 @@ const chatColumns = `c.chat_id, c.name, c.description, c.chat_mode, c.chat_statu
  c.muted, c.mute_checked_at,
  COALESCE(NULLIF(ct.enterprise_email, ''), ct.email, '') AS peer_account,
  COALESCE(ct.avatar_path, '') AS peer_avatar_path,
- COALESCE(NULLIF(lct.enterprise_email, ''), lct.email, '') AS last_sender_account`
+ COALESCE(NULLIF(lct.enterprise_email, ''), lct.email, '') AS last_sender_account,
+ COALESCE(td.done, 0) AS last_todo_done`
 
 // chatFrom is what chatColumns selects from: the chat, the peer it names for
-// a p2p title, and whoever spoke last, who is named on the summary line.
+// a p2p title, whoever spoke last, who is named on the summary line, and the
+// task state a todo's checkbox stands for.
 const chatFrom = ` FROM chats c
  LEFT JOIN contacts ct ON ct.open_id = c.p2p_target_id
- LEFT JOIN contacts lct ON lct.open_id = c.last_sender_id `
+ LEFT JOIN contacts lct ON lct.open_id = c.last_sender_id
+ LEFT JOIN todo_done td ON td.message_id = c.last_message_id `
 
 // chatDest are the scan targets for chatColumns, in order.
 func chatDest(c *Chat) []any {
@@ -143,7 +150,7 @@ func chatDest(c *Chat) []any {
 		&c.AvatarURL, &c.AvatarPath, &c.CursorMs, &c.BackfillDoneAt, &c.HistoryFloorMs, &c.MembersSyncedAt, &c.MembersTruncated, &c.FirstSeenAt, &c.LastSeenAt, &c.LeftAt, &c.SyncError, &c.RepairedAt, &c.RawJSON,
 		&c.LastMessageID, &c.LastMessageMs, &c.LastSenderID, &c.LastSenderName, &c.LastSenderType, &c.LastMsgType, &c.LastContent, &c.LastContentRaw, &c.LastMentionsJSON, &c.LastReactionsJSON, &c.LastRenderedAt, &c.LastDeleted, &c.LastUnsilencedMs,
 		&c.Muted, &c.MuteCheckedAt,
-		&c.PeerAccount, &c.PeerAvatarPath, &c.LastSenderAccount}
+		&c.PeerAccount, &c.PeerAvatarPath, &c.LastSenderAccount, &c.LastTodoDone}
 }
 
 func scanChat(sc scanner) (Chat, error) {

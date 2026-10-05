@@ -65,6 +65,41 @@ func TestChatSummary_TellsSameNamedSendersApart(t *testing.T) {
 	require.Equal(t, "张三01 recalled a message", ansi.Strip(summaryText(c)))
 }
 
+func TestChatSummary_DrawsTheTodoBoxTheMessageListDraws(t *testing.T) {
+	t.Parallel()
+	base := store.Chat{ChatID: "oc_a", ChatMode: "group", LastMessageID: "om_1",
+		LastSenderID: "ou_a", LastSenderName: "李四", LastMsgType: "todo",
+		LastContent: "☐ 修打印机\nDue: 2026-10-06 09:00:00", LastRenderedAt: 1}
+
+	open := summaryText(base)
+	require.True(t, strings.Contains(open, stDim.Render(todoBoxOpen)),
+		"the open task carries the hollow circle the pane draws, in the line's own dim")
+	require.Equal(t, "李四: "+todoBoxOpen+" 修打印机 Due: 2026-10-06 09:00:00", ansi.Strip(open),
+		"the plain box the rendering stores is not the line's spelling")
+
+	done := base
+	done.LastTodoDone = true
+	require.True(t, strings.Contains(summaryText(done), stTodoDone.Render(todoBoxDone)),
+		"the finished task checks in the green the pane draws it in, read from the state the row carries")
+
+	typed := base
+	typed.LastMsgType, typed.LastContent = "text", "☐ 只是打个勾选符号"
+	require.NotContains(t, summaryText(typed), "\uf10c",
+		"a ballot box a text message types is its own words, not a task's state")
+}
+
+func TestChatSummary_PrependsTheTodoBoxToThePicturesOnTheLine(t *testing.T) {
+	t.Parallel()
+	c := store.Chat{ChatID: "oc_a", ChatMode: "group", LastMessageID: "om_1",
+		LastSenderID: "ou_a", LastSenderName: "李四", LastMsgType: "todo",
+		LastContent: "☐ [了解]一下", LastRenderedAt: 1}
+	_, segs := chatSummary(c, "ou_me", chipPics(t, getKey))
+	require.NotNil(t, segs, "the spelled emoji still stands in as a picture")
+	require.True(t, strings.HasSuffix(segs[0].text, stDim.Render(todoBoxOpen)+" "),
+		"the box sits after the sender even on a line the pictures split")
+	require.Contains(t, segText2(chatRow{segs: segs}), "一下")
+}
+
 func TestChatTime_BucketsByCalendarDay(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {

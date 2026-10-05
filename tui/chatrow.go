@@ -305,6 +305,14 @@ func chatSummary(c store.Chat, self string, pics emojiPics) (string, []rowSeg) {
 	default:
 		body = msgTypeLabel(c.LastMsgType)
 	}
+	// A todo's rendering leads with the box its task state keeps; the line the
+	// gist draws stands the same circles in for it the pane below does, read
+	// from the state the row carries rather than the glyph it spells. The
+	// gate keeps a ballot box a text message merely types as its own words.
+	lead := ""
+	if c.LastMsgType == "todo" {
+		lead, body = todoGist(c.LastTodoDone, body)
+	}
 
 	// p2p names the peer in the title already, so only the user's own turn
 	// needs a prefix there. A system message is nobody's turn.
@@ -319,10 +327,18 @@ func chatSummary(c store.Chat, self string, pics emojiPics) (string, []rowSeg) {
 	// The line is dim as a whole, so an @ that reaches the reader is the one
 	// thing on it that still carries a colour.
 	ms := mentionsIn(c.LastMentionsJSON, self).on(stDim).spelling(spellOf(c.LastMsgType))
-	if segs := ms.segs(prefix+body, pics.gist); segs != nil {
-		return "", segs
+	if lead == "" {
+		if segs := ms.segs(prefix+body, pics.gist); segs != nil {
+			return "", segs
+		}
+		return ms.render(prefix + body), nil
 	}
-	return ms.render(prefix + body), nil
+	// The box sits between the sender and the task: the prefix is the list's
+	// chrome, the box the message's own content.
+	if segs := ms.segs(body, pics.gist); segs != nil {
+		return "", append([]rowSeg{{text: ms.render(prefix) + lead}}, segs...)
+	}
+	return ms.render(prefix) + lead + ms.render(body), nil
 }
 
 // lastMessageSummary is the chat's newest message pressed onto one line. A
