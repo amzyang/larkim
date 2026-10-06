@@ -468,12 +468,21 @@ func senderDisc(x store.Message, st msgStyle) []lead {
 	name := senderLabel(x, "")
 	if st.disc != nil {
 		if pic := st.disc(st.avatars[x.SenderID], x.SenderID, name, avatarWidth, avatarHeight); pic.cols > 0 {
+			pic.silenced = x.Silenced
 			rows := make([]lead, 0, pic.rows)
 			for row := range pic.rows {
 				rows = append(rows, lead{pic: pic, picRow: row})
 			}
 			return rows
 		}
+	}
+	if x.Silenced {
+		rows := []lead{{box: avatarSilenceBlock(avatarWidth)}}
+		blank := stDim.Render(strings.Repeat(" ", avatarWidth))
+		for range avatarHeight - 1 {
+			rows = append(rows, lead{box: blank})
+		}
+		return rows
 	}
 	// The stand-in carries the name on its first line and nothing on the rest,
 	// the way the chat list draws the same block.
@@ -601,7 +610,8 @@ func mergeable(head, x store.Message, st msgStyle) bool {
 	// and only its magnitude can decide whether the block is still open.
 	gap := x.CreateMs - head.CreateMs
 	return head.SenderID == x.SenderID && head.SenderName == x.SenderName &&
-		head.ChatID == x.ChatID && unread(head, st) == unread(x, st) &&
+		head.ChatID == x.ChatID && head.Silenced == x.Silenced &&
+		unread(head, st) == unread(x, st) &&
 		max(gap, -gap) <= runSpan.Milliseconds() && !solo(x, st)
 }
 

@@ -208,6 +208,15 @@ func avatarBlock(id, name string, w int) string {
 	return avatarStyle(id).Render(strings.Repeat(" ", left) + initial + strings.Repeat(" ", pad-left))
 }
 
+// avatarSilenceBlock is the text stand-in for a silenced message's avatar: a
+// dotted circle centred in the column, where Kitty graphics would draw a dashed rim.
+func avatarSilenceBlock(w int) string {
+	glyph := "◌"
+	pad := w - lipgloss.Width(glyph)
+	left := pad / 2
+	return stDim.Render(strings.Repeat(" ", left) + glyph + strings.Repeat(" ", pad-left))
+}
+
 // chatTime buckets a timestamp the way the Feishu client does: the closer it
 // is, the more precise the label.
 func chatTime(ms int64, now time.Time) string {

@@ -848,6 +848,55 @@ func TestBlockHeads_ASystemNoticeEndsTheBlockAboveIt(t *testing.T) {
 		"the sender coming back writes a sender line of their own")
 }
 
+func TestBlockHeads_SplitsOnSilenceState(t *testing.T) {
+	t.Parallel()
+	base := store.Message{SenderID: "ou_a", SenderName: "张三", ChatID: "oc_1", CreateMs: msgAt(23, 9, 0)}
+	msgs := []store.Message{
+		base,
+		{MessageID: "om_2", SenderID: "ou_a", SenderName: "张三", ChatID: "oc_1",
+			CreateMs: msgAt(23, 9, 1), Silenced: true},
+		{MessageID: "om_3", SenderID: "ou_a", SenderName: "张三", ChatID: "oc_1", CreateMs: msgAt(23, 9, 2)},
+		{MessageID: "om_4", SenderID: "ou_a", SenderName: "张三", ChatID: "oc_1",
+			CreateMs: msgAt(23, 9, 3), Silenced: true},
+	}
+	msgs[0].MessageID = "om_1"
+
+	require.Equal(t, []int{0, 1, 2, 3}, blockHeads(msgs, baseStyle()),
+		"silence flips open a block; consecutive silenced messages still merge")
+	msgs[3].Silenced = false
+	require.Equal(t, []int{0, 1, 2, 2}, blockHeads(msgs, baseStyle()),
+		"two unsilenced messages in a row share one block")
+}
+
+func TestRenderRows_SilencedMessageCarriesCircle(t *testing.T) {
+	t.Parallel()
+	msgs := []store.Message{
+		{MessageID: "om_1", SenderID: "ou_a", SenderName: "构建机器人", ChatID: "oc_1",
+			Content: "nightly build ok", CreateMs: msgAt(23, 9, 0), RenderedAt: 1, Silenced: true},
+	}
+	st := baseStyle()
+	st.avatars = map[string]string{"ou_a": "users/bot.png"}
+	st.disc = func(file, id, name string, cols, rows int) picture {
+		return picture{path: file, cols: cols, rows: rows, disc: true}
+	}
+	rows := drawn(renderRows(msgs, st))
+
+	require.True(t, rows[0].lead.pic.silenced, "the disc carries silence for kitty rim drawing")
+	require.NotContains(t, rowText(rows), "Silenced", "silence is shown on the avatar, not the head line")
+}
+
+func TestRenderRows_SilencedTextStandinCarriesCircle(t *testing.T) {
+	t.Parallel()
+	msgs := []store.Message{
+		{MessageID: "om_1", SenderID: "ou_a", SenderName: "构建机器人", ChatID: "oc_1",
+			Content: "nightly build ok", CreateMs: msgAt(23, 9, 0), RenderedAt: 1, Silenced: true},
+	}
+	rows := drawn(renderRows(msgs, baseStyle()))
+
+	require.Equal(t, avatarSilenceBlock(avatarWidth), rows[0].lead.box)
+	require.Equal(t, stDim.Render(strings.Repeat(" ", avatarWidth)), rows[1].lead.box)
+}
+
 func TestRenderRows_MarksTheWordsASearchWasLookingFor(t *testing.T) {
 	t.Parallel()
 	st := baseStyle()

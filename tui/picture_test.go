@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"image"
+	"image/color"
 	"os"
 	"path/filepath"
 	"testing"
@@ -202,6 +203,63 @@ func TestPicturePlace_ADiscKeepsAKeyOfItsOwn(t *testing.T) {
 	disc.disc = true
 	require.NotEqual(t, plain.key(), disc.key(),
 		"the mask changes the pixels, so the two cannot share an image id")
+}
+
+func TestPictureKey_SilencedSeparatesPlacementCache(t *testing.T) {
+	t.Parallel()
+	plain := picture{path: "a.png", cols: 2, rows: 1, disc: true}
+	silenced := plain
+	silenced.silenced = true
+	require.NotEqual(t, plain.key(), silenced.key(),
+		"the rim changes the pixels, so silenced discs cannot share an image id")
+}
+
+func TestPicturesPrepare_SilencedDiscAppliesStroke(t *testing.T) {
+	t.Parallel()
+	const side = 40
+	fill := color.RGBA{R: 0xFF, G: 0, B: 0, A: 0xFF}
+	m := image.NewRGBA(image.Rect(0, 0, side, side))
+	for y := range side {
+		for x := range side {
+			m.Set(x, y, fill)
+		}
+	}
+	maskDisc(m)
+	strokeDiscDashed(m, colSilenceRim, silenceRingWidth, silenceDashes, silenceDashOn)
+	require.NotEqual(t, fill, pixAt(m, side/2, 1), "a dash tints pixels along the disc edge")
+
+	solid := image.NewRGBA(image.Rect(0, 0, side, side))
+	for y := range side {
+		for x := range side {
+			solid.Set(x, y, fill)
+		}
+	}
+	maskDisc(solid)
+	strokeDisc(solid, colSilenceRim, silenceRingWidth)
+	dashed := image.NewRGBA(image.Rect(0, 0, side, side))
+	for y := range side {
+		for x := range side {
+			dashed.Set(x, y, fill)
+		}
+	}
+	maskDisc(dashed)
+	strokeDiscDashed(dashed, colSilenceRim, silenceRingWidth, silenceDashes, silenceDashOn)
+	require.Less(t, countPix(dashed, colSilenceRim), countPix(solid, colSilenceRim),
+		"dashes leave gaps a solid rim would have filled")
+
+	dir := t.TempDir()
+	path := writeFilledPNG(t, dir, "a.png", side, side)
+	plain := picturesIn(dir).place(path, 2, 1)
+	plain.disc = true
+	silenced := plain
+	silenced.silenced = true
+	sent := func(pic picture) string {
+		p := picturesIn(dir)
+		out := p.prepare([]picture{pic})
+		require.NotEmpty(t, out)
+		return out
+	}
+	require.NotEqual(t, sent(plain), sent(silenced), "prepare draws the silence rim on silenced discs")
 }
 
 func TestPicturesPrepare_ADiscIsClippedToTheCircle(t *testing.T) {

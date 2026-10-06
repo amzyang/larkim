@@ -218,6 +218,33 @@ func strokeDisc(m *image.RGBA, c color.RGBA, share float64) {
 	}
 }
 
+// strokeDiscDashed lays the same rim band as strokeDisc, but only on arcs
+// spaced evenly around the disc so the silence marker reads as a dashed circle.
+func strokeDiscDashed(m *image.RGBA, c color.RGBA, share float64, dashes int, dashOn float64) {
+	b := m.Bounds()
+	w, h := float64(b.Dx()), float64(b.Dy())
+	t := math.Max(1, math.Min(w, h)*share)
+	cx, cy := w/2, h/2
+	for y := range b.Dy() {
+		for x := range b.Dx() {
+			d := discEdge(w, h, x, y)
+			cover := math.Min(math.Min(d+0.5, 1), math.Min(t-d+0.5, 1))
+			if cover <= 0 {
+				continue
+			}
+			theta := math.Atan2(float64(y)+0.5-cy, float64(x)+0.5-cx)
+			if theta < 0 {
+				theta += 2 * math.Pi
+			}
+			seg := theta / (2 * math.Pi) * float64(dashes)
+			if seg-math.Floor(seg) > dashOn {
+				continue
+			}
+			blendAt(m, m.PixOffset(x, y), c, cover)
+		}
+	}
+}
+
 // blendAt lays c over the pixel at offset i with the coverage given. color.RGBA
 // is alpha-premultiplied, so every channel blends the same way.
 func blendAt(m *image.RGBA, i int, c color.RGBA, cover float64) {

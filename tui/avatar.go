@@ -133,15 +133,15 @@ func (k *kittyAvatars) box() (w, h int) {
 
 func newKittyAvatars(dataDir string) *kittyAvatars {
 	return &kittyAvatars{
-		dataDir: dataDir,
-		id:      map[string]int{},
-		used:    map[string]int64{},
+		dataDir:    dataDir,
+		id:         map[string]int{},
+		used:       map[string]int64{},
 		badge:      map[string]int64{},
 		badgeMuted: map[string]bool{},
 		failed:     map[string]bool{},
-		pix:     map[string]*image.RGBA{},
-		pixUsed: map[string]int64{},
-		pixCap:  avatarPixCache,
+		pix:        map[string]*image.RGBA{},
+		pixUsed:    map[string]int64{},
+		pixCap:     avatarPixCache,
 	}
 }
 

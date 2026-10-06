@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"image"
+	"image/color"
 	"image/png"
 	"os"
 	"path/filepath"
@@ -20,7 +21,13 @@ const (
 	// Only the ratio matters here, and 1:2 is what a terminal cell usually is.
 	defCellW = 10
 	defCellH = 20
+
+	silenceRingWidth = 0.028
+	silenceDashes    = 18
+	silenceDashOn    = 0.5
 )
+
+var colSilenceRim = color.RGBA{R: 0x8F, G: 0x95, B: 0x9E, A: 0xFF}
 
 // picture is one image placed in the message list, at the size it will occupy.
 type picture struct {
@@ -37,6 +44,8 @@ type picture struct {
 	// disc clips the picture to the circle the client draws an avatar in.
 	// Unlike chip it changes the pixels, so it travels in the key.
 	disc bool
+	// silenced draws a rim on a disc avatar for messages matched by silence rules.
+	silenced bool
 }
 
 // gap holds a picture's cells while it is still on its way to the terminal.
@@ -52,6 +61,9 @@ func (p picture) key() string {
 	k := fmt.Sprintf("%s|%dx%d", p.path, p.cols, p.rows)
 	if p.disc {
 		k += "|disc"
+	}
+	if p.silenced {
+		k += "|silenced"
 	}
 	return k
 }
@@ -356,7 +368,11 @@ func (p *pictures) prepare(pics []picture) string {
 			// slack along with it would flatten the arc where the picture ends.
 			drawn := image.Rect(0, 0, pic.w, pic.h)
 			for _, f := range frames {
-				maskDisc(f.SubImage(drawn).(*image.RGBA))
+				sub := f.SubImage(drawn).(*image.RGBA)
+				maskDisc(sub)
+				if pic.silenced {
+					strokeDiscDashed(sub, colSilenceRim, silenceRingWidth, silenceDashes, silenceDashOn)
+				}
 			}
 		}
 		id := p.take(key)
