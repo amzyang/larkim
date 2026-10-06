@@ -6,6 +6,7 @@ import (
 	"image/color"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/charmbracelet/x/ansi"
@@ -225,8 +226,11 @@ func TestPicturesPrepare_SilencedDiscAppliesStroke(t *testing.T) {
 		}
 	}
 	maskDisc(m)
+	bare := slices.Clone(m.Pix)
 	strokeDiscDashed(m, colSilenceRim, silenceRingWidth, silenceDashes, silenceDashOn)
-	require.NotEqual(t, fill, pixAt(m, side/2, 1), "a dash tints pixels along the disc edge")
+	// Any one rim pixel may sit in a gap, depending on the dash phase, so the
+	// whole picture is compared.
+	require.NotEqual(t, bare, m.Pix, "a dash tints pixels along the disc edge")
 
 	solid := image.NewRGBA(image.Rect(0, 0, side, side))
 	for y := range side {
