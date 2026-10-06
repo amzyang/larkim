@@ -1,0 +1,18 @@
+# Gitignored local files copied into each new worktree (.gitignore syntax).
+# Only paths that match here AND are gitignored get copied; tracked files never are.
+# Honored by Claude Code (--worktree, subagent worktrees, desktop parallel sessions)
+# and Codex managed worktrees; not by `git worktree add` or a WorktreeCreate hook.
+# https://code.claude.com/docs/en/worktrees#copy-gitignored-files-into-worktrees
+# https://learn.chatgpt.com/docs/environments/git-worktrees
+
+# Holds the real chat ids CLAUDE.md's "Write targets" limits writes to; without it
+# the @import breaks and e2e/manual sends in the worktree have no allowed target.
+/CLAUDE.local.md
+
+# `just run` and `./larkim --config ./dev.yaml` read it. data_dir is under ~, so
+# every worktree shares one dev database instead of cold-syncing its own.
+/dev.yaml
+
+# Deliberately not copied:
+# - .claude/settings.local.json: permission approvals are stored in and read from
+#   the main checkout for every worktree; a copy would be a second source of truth.
