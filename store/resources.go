@@ -308,6 +308,14 @@ func scanChatUnread(sc scanner) (ChatUnread, error) {
 	return c, sc.Scan(&c.ChatID, &c.Position)
 }
 
+// ChatBadgeCount is how many messages count toward the chat list badge.
+func (s *Store) ChatBadgeCount(ctx context.Context, chatID string) (int64, error) {
+	var n int64
+	err := s.db.QueryRowContext(ctx, `SELECT count(*) FROM messages m JOIN read_state r ON r.message_id = m.message_id
+ WHERE m.chat_id = ? AND `+unreadCounted, chatID).Scan(&n)
+	return n, err
+}
+
 // ChatAt names the chat holding the message sent at createMs with position.
 // The pair is how a chat is recognised across id spaces that share nothing
 // else — the web client's numeric chat ids against the OpenAPI's oc_ ones — so

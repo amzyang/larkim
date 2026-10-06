@@ -820,6 +820,13 @@ func (s *Syncer) upsertRaw(ctx context.Context, msgs []larkcli.RawMessage, now t
 		return 0, 0, err
 	}
 	fresh = len(unknown)
+	beforeBadge := make(map[string]int64, len(chats))
+	for id := range chats {
+		beforeBadge[id], err = s.Store.ChatBadgeCount(ctx, id)
+		if err != nil {
+			return 0, fresh, err
+		}
+	}
 	for id := range chats {
 		if err := s.Store.EnsureChat(ctx, id, now.UnixMilli()); err != nil {
 			return 0, 0, err
@@ -851,6 +858,7 @@ func (s *Syncer) upsertRaw(ctx context.Context, msgs []larkcli.RawMessage, now t
 			return n, fresh, err
 		}
 	}
+	s.muteOnMessageArrival(ctx, msgs, unknown, chats, beforeBadge, now)
 	return n, fresh, nil
 }
 
@@ -887,14 +895,7 @@ func (s *Syncer) muteSlice(ctx context.Context, now time.Time) (int, error) {
 	for _, c := range chats {
 		ids = append(ids, c.ChatID)
 	}
-	muted, unknown, err := s.Client.MuteStatus(ctx, ids)
-	if err != nil {
-		return 0, err
-	}
-	if err := s.Store.SetMuteStatus(ctx, muted, unknown, now.UnixMilli()); err != nil {
-		return 0, err
-	}
-	return len(muted), nil
+	return s.refreshMuteForChats(ctx, ids, now)
 }
 
 func (s *Syncer) refreshChats(ctx context.Context, now time.Time) (int, error) {
