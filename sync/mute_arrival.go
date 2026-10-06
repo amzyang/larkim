@@ -24,9 +24,17 @@ func (s *Syncer) refreshMuteForChats(ctx context.Context, chatIDs []string, now 
 	return len(muted), nil
 }
 
+// muteStaleBefore is the mute_checked_at below which an answer is no longer
+// trusted: the chat refresh asks again on the same cadence.
+func (s *Syncer) muteStaleBefore(now time.Time) int64 {
+	return now.Add(-s.Opt().ChatsRefreshEvery).UnixMilli()
+}
+
 // muteOnMessageArrival refreshes mute for chats that just gained a first-seen
 // message or whose badge count rose from zero, so discovery does not wait for
-// the periodic chats refresh.
+// the periodic chats refresh. A chat answered within the refresh window is
+// skipped: the lookup runs ahead of rendering on discovery's hot path, and
+// asking on every message would put a round trip in front of each one.
 func (s *Syncer) muteOnMessageArrival(ctx context.Context, msgs []larkcli.RawMessage, unknown []string, chats map[string]struct{}, beforeBadge map[string]int64, now time.Time) {
 	unk := make(map[string]struct{}, len(unknown))
 	for _, id := range unknown {
@@ -38,8 +46,17 @@ func (s *Syncer) muteOnMessageArrival(ctx context.Context, msgs []larkcli.RawMes
 			freshChat[m.ChatID] = true
 		}
 	}
+	staleBefore := s.muteStaleBefore(now)
 	var ids []string
 	for id := range chats {
+		chat, err := s.Store.GetChat(ctx, id)
+		if err != nil {
+			s.log().WarnContext(ctx, "mute on arrival: chat", "chat", id, "err", err)
+			continue
+		}
+		if chat.MuteCheckedAt >= staleBefore {
+			continue
+		}
 		after, err := s.Store.ChatBadgeCount(ctx, id)
 		if err != nil {
 			s.log().WarnContext(ctx, "mute on arrival: badge count", "chat", id, "err", err)

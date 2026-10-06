@@ -50,6 +50,33 @@ func TestUpsertRaw_SkipsMuteWhenOverlapOnly(t *testing.T) {
 	require.Zero(t, callsTo(f, "mute-status"))
 }
 
+func TestUpsertRaw_SkipsMuteWhileTheLastAnswerIsCurrent(t *testing.T) {
+	t.Parallel()
+	s, f, clk := newSyncer(t)
+	ctx := t.Context()
+	now := clk.t
+	f.Chats = []larkcli.RawChat{{ChatID: "oc_a", Name: "Alpha", ChatMode: "group"}}
+	f.Muted = map[string]bool{"oc_a": true}
+	require.NoError(t, s.Store.SetState(ctx, KeySelfOpenID, "ou_me"))
+
+	_, _, err := s.upsertRaw(ctx, []larkcli.RawMessage{msg("om_1", "oc_a", now, "hi")}, now)
+	require.NoError(t, err)
+	require.Equal(t, 1, callsTo(f, "mute-status"))
+
+	f.Calls = nil
+	later := now.Add(s.Opt().ChatsRefreshEvery - time.Second)
+	_, fresh, err := s.upsertRaw(ctx, []larkcli.RawMessage{msg("om_2", "oc_a", later, "again")}, later)
+	require.NoError(t, err)
+	require.Equal(t, 1, fresh)
+	require.Zero(t, callsTo(f, "mute-status"), "the answer from the first message still holds")
+
+	f.Calls = nil
+	stale := now.Add(s.Opt().ChatsRefreshEvery + time.Second)
+	_, _, err = s.upsertRaw(ctx, []larkcli.RawMessage{msg("om_3", "oc_a", stale, "later")}, stale)
+	require.NoError(t, err)
+	require.Equal(t, 1, callsTo(f, "mute-status"), "an answer older than a refresh is asked again")
+}
+
 func TestMuteOnMessageArrival_WhenBadgeRisesWithoutFreshMessage(t *testing.T) {
 	t.Parallel()
 	s, f, clk := newSyncer(t)

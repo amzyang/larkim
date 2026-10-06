@@ -890,7 +890,7 @@ const muteActiveDays = 30
 // single round trip; chats beyond it come round on the next refresh.
 func (s *Syncer) muteSlice(ctx context.Context, now time.Time) (int, error) {
 	active := now.AddDate(0, 0, -muteActiveDays).UnixMilli()
-	chats, err := s.Store.ChatsNeedingMute(ctx, active, now.Add(-s.Opt().ChatsRefreshEvery).UnixMilli(), larkcli.MaxChatIDsPerMuteCall)
+	chats, err := s.Store.ChatsNeedingMute(ctx, active, s.muteStaleBefore(now), larkcli.MaxChatIDsPerMuteCall)
 	if err != nil || len(chats) == 0 {
 		return 0, err
 	}

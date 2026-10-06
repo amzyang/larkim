@@ -414,12 +414,22 @@ func TestTick_MuteRidesTheChatRefresh(t *testing.T) {
 		{ChatID: "oc_b", Name: "Beta", ChatMode: "group"},
 	}
 	f.Muted = map[string]bool{"oc_a": true}
-	f.AddMessage(msg("om_a", "oc_a", now.Add(-time.Minute), "hi"))
-	f.AddMessage(msg("om_b", "oc_b", now.Add(-time.Minute), "hi"))
+	// Already stored, so discovery re-lists them without an arrival and the
+	// refresh is the only path left to ask.
+	for _, m := range []larkcli.RawMessage{
+		msg("om_a", "oc_a", now.Add(-time.Minute), "hi"),
+		msg("om_b", "oc_b", now.Add(-time.Minute), "hi"),
+	} {
+		f.AddMessage(m)
+		require.NoError(t, s.Store.EnsureChat(ctx, m.ChatID, now.UnixMilli()))
+		_, err := s.Store.UpsertMessages(ctx, []store.Message{ToRow(m)}, now.UnixMilli())
+		require.NoError(t, err)
+	}
 
 	rep, err := s.Tick(ctx)
 	require.NoError(t, err)
 	require.Equal(t, 2, rep.Muted)
+	require.Equal(t, 1, callsTo(f, "mute-status"), "both chats ride the one refresh call")
 
 	chats, err := s.Store.ListChats(ctx, store.ChatQuery{})
 	require.NoError(t, err)
