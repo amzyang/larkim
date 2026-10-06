@@ -292,16 +292,19 @@ func (s *Syncer) EnsureIdentity(ctx context.Context) (larkcli.Identity, error) {
 // search, chat refresh, slow path, backfill, rendering and the rest. It is
 // what a one-shot sync runs; Run keeps discovery on a loop of its own. It
 // records a sync_runs row either way.
-func (s *Syncer) Tick(ctx context.Context) (Report, error) { return s.pass(ctx, true) }
+func (s *Syncer) Tick(ctx context.Context) (Report, error) { return s.pass(ctx, true, &timeoutRun{}) }
 
-// pass is one tick, with discovery at its head when discover is set.
-func (s *Syncer) pass(ctx context.Context, discover bool) (Report, error) {
+// pass is one tick, with discovery at its head when discover is set. A
+// timeout the run excuses is recorded as an empty tick.
+func (s *Syncer) pass(ctx context.Context, discover bool, timeouts *timeoutRun) (Report, error) {
 	start := s.now()
 	rep, err := s.tick(ctx, start, discover)
 	end := s.now()
-	run := store.Run{Kind: "tick", StartedAt: start.UnixMilli(), FinishedAt: end.UnixMilli(), OK: err == nil,
+	err = timeouts.judge(err, end)
+	ok := err == nil || excused(err)
+	run := store.Run{Kind: "tick", StartedAt: start.UnixMilli(), FinishedAt: end.UnixMilli(), OK: ok,
 		Fetched: rep.Hits, Upserted: rep.Upserted + rep.Backfilled + rep.SlowPath}
-	if err != nil {
+	if !ok {
 		run.Error = err.Error()
 	}
 	if rerr := s.Store.RecordRun(ctx, run); rerr != nil {
@@ -1288,8 +1291,9 @@ func (s *Syncer) setStateTime(ctx context.Context, key string, t time.Time) erro
 // lark-cli's error classification. Discovery landing something ends the
 // sweep's pause.
 func (s *Syncer) Run(ctx context.Context) error {
+	var timeouts timeoutRun
 	if _, err := s.EnsureIdentity(ctx); err != nil {
-		s.SetStatus(ctx, err)
+		s.SetStatus(ctx, timeouts.judge(err, s.now()))
 	}
 	s.signals()
 	var wg stdsync.WaitGroup
@@ -1310,19 +1314,24 @@ func (s *Syncer) Run(ctx context.Context) error {
 		if s.BeforeTick != nil {
 			s.BeforeTick()
 		}
-		rep, err := s.pass(ctx, false)
+		rep, err := s.pass(ctx, false, &timeouts)
 		delay := s.Opt().PollInterval
 		wake := s.wake
-		if err != nil {
+		switch {
+		case excused(err):
+			// This cycle had no data; the next one keeps the usual poll pace.
+			failures = 0
+			s.log().Info("tick timed out", "err", err)
+		case err != nil:
 			failures++
 			delay = s.delayFor(err, failures)
-			// A find is no reason to retry an API that just failed.
+			// A find is no reason to retry an API that just refused.
 			wake = nil
 			s.log().Warn("tick failed", "err", err, "class", errClass(err), "failures", failures, "retry_in", delay)
 			if s.OnError != nil {
 				s.OnError(err)
 			}
-		} else {
+		default:
 			failures = 0
 			level := slog.LevelDebug
 			if rep.changed() {
@@ -1361,10 +1370,55 @@ func errClass(err error) string {
 	return "api"
 }
 
+// transientFailure reports a call that timed out.
+func transientFailure(err error) bool {
+	le, ok := errors.AsType[*larkcli.Error](err)
+	return ok && le.IsTransient()
+}
+
+// timeoutGrace is how long a run of nothing but timeouts stays an empty cycle.
+// The handshake timeouts of a flapping network clear within a minute or two;
+// past that the path is down, and the loops report it the way they report any
+// other failure.
+const timeoutGrace = 2 * time.Minute
+
+// timeoutRun is one loop's unbroken run of timed-out cycles. Each loop keeps
+// its own: the sweep and discovery fail apart, and a one-shot tick has no run
+// to extend.
+type timeoutRun struct{ since time.Time }
+
+// judge is the outcome of a cycle that ended at now: err itself, or err
+// excused while the run that ends in it is younger than timeoutGrace. Any
+// other outcome ends the run.
+func (r *timeoutRun) judge(err error, now time.Time) error {
+	if !transientFailure(err) {
+		r.since = time.Time{}
+		return err
+	}
+	if r.since.IsZero() {
+		r.since = now
+	}
+	if now.Sub(r.since) < timeoutGrace {
+		return excusedTimeout{err}
+	}
+	return err
+}
+
+// excusedTimeout marks a timeout a loop takes for an empty cycle, so the run
+// record and sync_state, which are written past the loop, judge it the same.
+type excusedTimeout struct{ error }
+
+func (e excusedTimeout) Unwrap() error { return e.error }
+
+func excused(err error) bool {
+	_, ok := errors.AsType[excusedTimeout](err)
+	return ok
+}
+
 func (s *Syncer) delayFor(err error, failures int) time.Duration {
 	if le, ok := errors.AsType[*larkcli.Error](err); ok {
 		switch {
-		case le.IsAuth(), le.IsNetwork():
+		case le.IsAuth():
 			return Backoff(failures, 30*time.Second, 10*time.Minute)
 		case le.IsRateLimit():
 			return max(le.RetryAfter, 30*time.Second)
@@ -1375,8 +1429,12 @@ func (s *Syncer) delayFor(err error, failures int) time.Duration {
 	return Backoff(failures, max(s.Opt().PollInterval, time.Second), 5*time.Minute)
 }
 
-// SetStatus records the outcome of the last tick in sync_state.
+// SetStatus records the outcome of the last tick in sync_state. An excused
+// timeout says nothing about the login or the API, so the last verdict stands.
 func (s *Syncer) SetStatus(ctx context.Context, err error) {
+	if excused(err) {
+		return
+	}
 	status, msg := StatusRunning, ""
 	if err != nil {
 		status, msg = StatusError, err.Error()

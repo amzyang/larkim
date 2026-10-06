@@ -189,6 +189,30 @@ func TestIsPermanent_CoversBothWaysLarkCLIReportsARefusal(t *testing.T) {
 	}
 }
 
+func TestIsTransient_OnlyATimeout(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name string
+		err  *Error
+		want bool
+	}{
+		{"timeout", &Error{ExitCode: ExitNetwork, Subtype: "timeout"}, true},
+		{"request timeout status", &Error{ExitCode: ExitNetwork, Subtype: "timeout", Code: 408}, true},
+		{"dns", &Error{ExitCode: ExitNetwork, Subtype: "dns"}, false},
+		{"connection reset", &Error{ExitCode: ExitNetwork, Subtype: "transport"}, false},
+		{"certificate", &Error{ExitCode: ExitNetwork, Subtype: "tls"}, false},
+		{"upstream 5xx", &Error{ExitCode: ExitNetwork, Subtype: "server_error", Code: 503}, false},
+		{"protocol", &Error{ExitCode: ExitNetwork, Subtype: "protocol"}, false},
+		{"page stop carries no subtype", &Error{ExitCode: ExitNetwork}, false},
+		{"api", &Error{ExitCode: ExitAPI, Subtype: "timeout"}, false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			require.Equal(t, c.want, c.err.IsTransient())
+		})
+	}
+}
+
 func TestDecodeError_LiftsFeishuCodeOutOfADownloadFailure(t *testing.T) {
 	t.Parallel()
 	// What lark-cli prints when a resource is served outside the API

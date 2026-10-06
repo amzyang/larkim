@@ -280,6 +280,13 @@ func (e *Error) IsAuth() bool { return e.ExitCode == ExitAuth }
 // IsNetwork reports a transport failure.
 func (e *Error) IsNetwork() bool { return e.ExitCode == ExitNetwork }
 
+// IsTransient reports a call that ran out of time (a dial, TLS handshake or
+// read timeout, or a 408). Timeouts are the only transport failure taken as
+// passing: lark-cli's other subtypes are dns, transport (reset, refused), tls,
+// server_error and protocol, which say the network, the certificate chain or
+// Feishu is down and keep saying it, so a caller should back off for them.
+func (e *Error) IsTransient() bool { return e.IsNetwork() && e.Subtype == "timeout" }
+
 // IsRateLimit reports a gateway rate limit; RetryAfter is populated when known.
 func (e *Error) IsRateLimit() bool { return e.Subtype == "rate_limit" }
 

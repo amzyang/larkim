@@ -84,10 +84,13 @@ type scout struct {
 
 // owing is what a chat whose listing failed is owed: how many times in a row
 // it has failed, and when it may be listed again. Without the wait, a chat
-// failing for a reason of its own — a listing the gateway refuses, a thread
-// that times out every time — would be relisted every cycle for as long as it
-// keeps failing, since the loop's own backoff counts the cycles that reported
-// the failure rather than the ones that caused it.
+// failing for a reason of its own, such as a listing the gateway refuses,
+// would be relisted every cycle for as long as it keeps failing, since the
+// loop's own backoff counts the cycles that reported the failure rather than
+// the ones that caused it. A timeout leaves the count alone and the chat on
+// the usual pace: every one seen so far was a TLS handshake, which is the
+// network rather than the chat, and the network is what the loop's own
+// timeoutRun watches through the probe.
 type owing struct {
 	failures int
 	dueAt    time.Time
@@ -131,6 +134,9 @@ func (s *Syncer) scoutOnce(ctx context.Context, sc *scout, now time.Time) (named
 			if n > 0 {
 				s.log().InfoContext(ctx, "discovery", "chat_id", id, "probed", n)
 			}
+			if transientFailure(err) {
+				s.log().InfoContext(ctx, "discovery timed out", "chat_id", id, "err", err)
+			}
 			return n, err
 		})
 	}
@@ -162,13 +168,18 @@ func (sc *scout) launch(id string, pull func() (int, error)) {
 			delete(sc.owed, id)
 		case !errors.Is(err, context.Canceled):
 			owed := sc.owed[id]
-			owed.failures++
-			// From the failure rather than from the launch: a listing that
-			// takes its whole timeout to fail would otherwise come due the
-			// moment it failed.
-			owed.dueAt = sc.now().Add(sc.delay(err, owed.failures))
+			if transientFailure(err) {
+				// Empty cycle for this chat; try again on the usual pace.
+				owed.dueAt = sc.now().Add(sc.delay(nil, 0))
+			} else {
+				owed.failures++
+				// From the failure rather than from the launch: a listing that
+				// takes its whole timeout to fail would otherwise come due the
+				// moment it failed.
+				owed.dueAt = sc.now().Add(sc.delay(err, owed.failures))
+				sc.err = cmp.Or(sc.err, err)
+			}
 			sc.owed[id] = owed
-			sc.err = cmp.Or(sc.err, err)
 		}
 	})
 }
@@ -233,6 +244,7 @@ func (s *Syncer) runDiscovery(ctx context.Context) {
 	sc := newScout(s.now, s.delayFor)
 	defer sc.wg.Wait()
 	failures := 0
+	var timeouts timeoutRun
 	for {
 		loggedOut, err := s.loggedOut(ctx)
 		var moved int
@@ -241,6 +253,11 @@ func (s *Syncer) runDiscovery(ctx context.Context) {
 		}
 		if ctx.Err() != nil {
 			return
+		}
+		if err = timeouts.judge(err, s.now()); excused(err) {
+			// An empty cycle, on the usual pace.
+			s.log().InfoContext(ctx, "discovery timed out", "err", err)
+			err = nil
 		}
 		wake := s.attend
 		if err != nil {
@@ -258,7 +275,7 @@ func (s *Syncer) runDiscovery(ctx context.Context) {
 			if s.OnError != nil {
 				s.OnError(err)
 			}
-		case !loggedOut:
+		case !loggedOut && moved > 0:
 			s.log().DebugContext(ctx, "discovery", "moved", moved)
 		}
 		select {

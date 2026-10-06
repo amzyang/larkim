@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"log/slog"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -77,6 +79,50 @@ func TestRun_IdleTickIsStillThereUnderDebug(t *testing.T) {
 
 	require.Contains(t, buf.String(), "msg=tick")
 	require.Contains(t, buf.String(), "level=DEBUG")
+}
+
+// logLine is the first record buf holds for a message of more than one word,
+// which the text handler quotes, or "".
+func logLine(buf *bytes.Buffer, msg string) string {
+	for line := range strings.Lines(buf.String()) {
+		if strings.Contains(line, "msg="+strconv.Quote(msg)) {
+			return line
+		}
+	}
+	return ""
+}
+
+func TestRun_ATimedOutTickReachesTheDefaultLog(t *testing.T) {
+	t.Parallel()
+	s, f, _ := newSyncer(t)
+	f.Err = handshakeTimeout()
+	buf := atLevel(s, slog.LevelInfo)
+
+	runOneTick(t, s)
+
+	line := logLine(buf, "tick timed out")
+	require.Contains(t, line, "level=INFO", "a timeout is excused, not hidden: the daemon logs at info")
+	require.Contains(t, line, "TLS handshake timeout")
+}
+
+func TestRunDiscovery_ATimedOutProbeReachesTheDefaultLog(t *testing.T) {
+	t.Parallel()
+	s, f, clk := newSyncer(t)
+	f.Chats = []larkcli.RawChat{{ChatID: "oc_a", ChatMode: "group"}}
+	discovering(t, s, f, clk.t)
+	s.SetAttended(true)
+	f.Err = handshakeTimeout()
+	buf := atLevel(s, slog.LevelInfo)
+
+	// Shorter than the attended pause, so exactly one cycle runs.
+	ctx, cancel := context.WithTimeout(t.Context(), attendedDiscoveryPause/2)
+	defer cancel()
+	s.runDiscovery(ctx)
+
+	line := logLine(buf, "discovery timed out")
+	require.Contains(t, line, "level=INFO")
+	require.Contains(t, line, "active probe")
+	require.Empty(t, logLine(buf, "discovery failed"), "inside the grace a timeout is not a failure")
 }
 
 func TestErrClass_NamesWhyTheLoopBacksOff(t *testing.T) {

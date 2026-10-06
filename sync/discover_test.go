@@ -3,6 +3,7 @@ package sync
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -277,6 +278,54 @@ func TestScoutOnce_AFailedListingBacksOffAndIsOwed(t *testing.T) {
 	require.NoError(t, err, "the ordering no longer names oc_e, so the failure has to")
 }
 
+func TestScoutOnce_ATimedOutListingIsOwedWithoutBackingOff(t *testing.T) {
+	t.Parallel()
+	s, f, clk := newSyncer(t)
+	ctx := t.Context()
+	f.Chats = []larkcli.RawChat{{ChatID: "oc_a", ChatMode: "group"}}
+	discovering(t, s, f, clk.t)
+	f.ListErr = map[string]error{"oc_a": handshakeTimeout()}
+	buf := atLevel(s, slog.LevelInfo)
+	sc := newScout(s.now, s.delayFor)
+
+	_, err := s.scoutOnce(ctx, sc, clk.t)
+	require.NoError(t, err)
+	sc.wg.Wait()
+	_, err = s.scoutOnce(ctx, sc, clk.t)
+	require.NoError(t, err, "a timeout is an empty cycle, not a failure the loop backs off for")
+	sc.wg.Wait()
+	require.Equal(t, 1, callsTo(f, "list:chat:oc_a"), "the chat rests until the usual pace")
+	line := logLine(buf, "discovery timed out")
+	require.Contains(t, line, "level=INFO")
+	require.Contains(t, line, "chat_id=oc_a")
+
+	for i := range 3 {
+		clk.t = clk.t.Add(s.Opt().PollInterval)
+		_, err = s.scoutOnce(ctx, sc, clk.t)
+		require.NoError(t, err)
+		sc.wg.Wait()
+		require.Equal(t, i+2, callsTo(f, "list:chat:oc_a"), "a timeout leaves the chat's wait where it was")
+	}
+}
+
+func TestScoutOnce_AnotherNetworkFailureBacksOff(t *testing.T) {
+	t.Parallel()
+	s, f, clk := newSyncer(t)
+	ctx := t.Context()
+	f.Chats = []larkcli.RawChat{{ChatID: "oc_a", ChatMode: "group"}}
+	discovering(t, s, f, clk.t)
+	f.ListErr = map[string]error{"oc_a": &larkcli.Error{ExitCode: larkcli.ExitNetwork, Type: "network", Subtype: "dns"}}
+	sc := newScout(s.now, s.delayFor)
+
+	_, err := s.scoutOnce(ctx, sc, clk.t)
+	require.NoError(t, err)
+	sc.wg.Wait()
+	_, err = s.scoutOnce(ctx, sc, clk.t)
+	le, ok := errors.AsType[*larkcli.Error](err)
+	require.True(t, ok, "the loop backs off for a dns failure")
+	require.Equal(t, "dns", le.Subtype)
+}
+
 func TestScoutOnce_AChatThatKeepsFailingIsAskedAgainLessOften(t *testing.T) {
 	t.Parallel()
 	s, f, clk := newSyncer(t)
@@ -285,7 +334,7 @@ func TestScoutOnce_AChatThatKeepsFailingIsAskedAgainLessOften(t *testing.T) {
 	discovering(t, s, f, clk.t)
 	// Not a *larkcli.Error, so nothing pins the failure on the chat itself:
 	// the ordering names oc_a every cycle, and only its own wait holds it back.
-	f.ListErr = map[string]error{"oc_a": errors.New("dial tcp: i/o timeout")}
+	f.ListErr = map[string]error{"oc_a": errors.New("decode messages: unexpected end of JSON input")}
 	sc := newScout(s.now, s.delayFor)
 	cycle := func() {
 		t.Helper()

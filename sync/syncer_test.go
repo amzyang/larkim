@@ -2,6 +2,7 @@ package sync
 
 import (
 	"errors"
+	"fmt"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -180,6 +181,126 @@ func TestTick_AuthErrorSetsNeedsLoginAndProbesBeforeRetry(t *testing.T) {
 	require.Equal(t, StatusRunning, st)
 	self, _, _ := s.Store.GetState(ctx, KeySelfOpenID)
 	require.Equal(t, "ou_self", self)
+}
+
+// handshakeTimeout is the shape every timeout in the daemon's log has taken.
+func handshakeTimeout() *larkcli.Error {
+	return &larkcli.Error{
+		ExitCode: larkcli.ExitNetwork,
+		Type:     "network",
+		Subtype:  "timeout",
+		Message:  `API call failed: Get "https://open.feishu.cn/...": net/http: TLS handshake timeout`,
+	}
+}
+
+func TestTimeoutRun_ExcusesTimeoutsOnlyWithinTheGrace(t *testing.T) {
+	t.Parallel()
+	at := time.Date(2026, 9, 22, 12, 0, 0, 0, time.UTC)
+	timeout := fmt.Errorf("search: %w", handshakeTimeout())
+	var run timeoutRun
+
+	first := run.judge(timeout, at)
+	require.True(t, excused(first), "the first timeout of a run is an empty cycle")
+	require.ErrorIs(t, first, timeout, "excusing keeps the cause")
+	require.True(t, excused(run.judge(timeout, at.Add(timeoutGrace-time.Millisecond))))
+	require.False(t, excused(run.judge(timeout, at.Add(timeoutGrace))),
+		"a run of nothing but timeouts this long is the path, not a blip")
+	require.False(t, excused(run.judge(timeout, at.Add(2*timeoutGrace))), "and stays a failure until the run ends")
+
+	require.NoError(t, run.judge(nil, at.Add(2*timeoutGrace)))
+	require.True(t, excused(run.judge(timeout, at.Add(3*timeoutGrace))), "a success ends the run")
+
+	dns := &larkcli.Error{ExitCode: larkcli.ExitNetwork, Type: "network", Subtype: "dns"}
+	require.False(t, excused(run.judge(dns, at.Add(4*timeoutGrace))), "only a timeout is ever excused")
+	require.True(t, excused(run.judge(timeout, at.Add(4*timeoutGrace))),
+		"any other failure ends the run too: the loop has already reported it")
+}
+
+func TestSetStatus_AnExcusedTimeoutLeavesSyncState(t *testing.T) {
+	t.Parallel()
+	s, _, _ := newSyncer(t)
+	ctx := t.Context()
+	require.NoError(t, s.Store.SetState(ctx, KeyStatus, StatusError))
+	require.NoError(t, s.Store.SetState(ctx, KeyLastError, "slow path: boom"))
+	var run timeoutRun
+	s.SetStatus(ctx, run.judge(fmt.Errorf("search: %w", handshakeTimeout()), s.now()))
+	st, _, _ := s.Store.GetState(ctx, KeyStatus)
+	require.Equal(t, StatusError, st, "an excused timeout says nothing of the login or the API")
+	last, _, _ := s.Store.GetState(ctx, KeyLastError)
+	require.Equal(t, "slow path: boom", last)
+}
+
+func TestSetStatus_ATimeoutPastTheGraceIsAnError(t *testing.T) {
+	t.Parallel()
+	s, _, _ := newSyncer(t)
+	ctx := t.Context()
+	err := fmt.Errorf("search: %w", handshakeTimeout())
+	s.SetStatus(ctx, err)
+	st, _, _ := s.Store.GetState(ctx, KeyStatus)
+	require.Equal(t, StatusError, st, "a sync that has stopped says so")
+	last, _, _ := s.Store.GetState(ctx, KeyLastError)
+	require.Equal(t, err.Error(), last)
+}
+
+func TestSetStatus_OtherNetworkFailureIsAnError(t *testing.T) {
+	t.Parallel()
+	s, _, _ := newSyncer(t)
+	ctx := t.Context()
+	err := fmt.Errorf("search: %w", &larkcli.Error{ExitCode: larkcli.ExitNetwork, Type: "network", Subtype: "dns"})
+	s.SetStatus(ctx, err)
+	st, _, _ := s.Store.GetState(ctx, KeyStatus)
+	require.Equal(t, StatusError, st)
+	last, _, _ := s.Store.GetState(ctx, KeyLastError)
+	require.Equal(t, err.Error(), last)
+}
+
+func TestPass_ATimeoutWithinTheGraceRecordsOK(t *testing.T) {
+	t.Parallel()
+	s, f, _ := newSyncer(t)
+	ctx := t.Context()
+	f.Err = handshakeTimeout()
+	var run timeoutRun
+	_, err := s.pass(ctx, false, &run)
+	require.True(t, excused(err))
+	runs, err := s.Store.LastRuns(ctx, 1)
+	require.NoError(t, err)
+	require.Len(t, runs, 1)
+	require.True(t, runs[0].OK, "a timeout is an empty tick, not a failed run")
+	require.Empty(t, runs[0].Error)
+}
+
+func TestPass_TimeoutsPastTheGraceRecordAFailure(t *testing.T) {
+	t.Parallel()
+	s, f, clk := newSyncer(t)
+	ctx := t.Context()
+	f.Err = handshakeTimeout()
+	var run timeoutRun
+	_, err := s.pass(ctx, false, &run)
+	require.True(t, excused(err))
+
+	clk.t = clk.t.Add(timeoutGrace)
+	_, err = s.pass(ctx, false, &run)
+	require.True(t, transientFailure(err))
+	require.False(t, excused(err), "nothing but timeouts for this long is a sync that has stopped")
+	runs, err := s.Store.LastRuns(ctx, 1)
+	require.NoError(t, err)
+	require.Len(t, runs, 1)
+	require.False(t, runs[0].OK)
+	require.Contains(t, runs[0].Error, "TLS handshake timeout")
+}
+
+func TestPass_UpstreamServerErrorRecordsAFailure(t *testing.T) {
+	t.Parallel()
+	s, f, _ := newSyncer(t)
+	ctx := t.Context()
+	f.Err = &larkcli.Error{ExitCode: larkcli.ExitNetwork, Type: "network", Subtype: "server_error", Code: 503}
+	_, err := s.pass(ctx, false, &timeoutRun{})
+	require.Error(t, err)
+	runs, err := s.Store.LastRuns(ctx, 1)
+	require.NoError(t, err)
+	require.Len(t, runs, 1)
+	require.False(t, runs[0].OK)
+	require.NotEmpty(t, runs[0].Error)
 }
 
 func TestDelayFor_RateLimitHonoursRetryAfter(t *testing.T) {
