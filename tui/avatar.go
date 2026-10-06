@@ -83,9 +83,11 @@ type kittyAvatars struct {
 	id    map[string]int
 	used  map[string]int64
 	clock int64
-	// badge is the unread count drawn into each live picture. The counter is
-	// part of the image, so a chat whose count moved needs a new one.
-	badge map[string]int64
+	// badge and badgeMuted are the unread count and do-not-disturb shade
+	// drawn into each live picture. Both are part of the image, so either
+	// moving needs a new one.
+	badge      map[string]int64
+	badgeMuted map[string]bool
 	// failed remembers chats whose file could not be turned into a picture,
 	// so a broken avatar is decoded once, not every frame.
 	failed map[string]bool
@@ -113,6 +115,7 @@ func (k *kittyAvatars) setCellSize(w, h int) bool {
 	k.id = map[string]int{}
 	k.used = map[string]int64{}
 	k.badge = map[string]int64{}
+	k.badgeMuted = map[string]bool{}
 	k.failed = map[string]bool{}
 	clear(k.pix)
 	clear(k.pixUsed)
@@ -133,8 +136,9 @@ func newKittyAvatars(dataDir string) *kittyAvatars {
 		dataDir: dataDir,
 		id:      map[string]int{},
 		used:    map[string]int64{},
-		badge:   map[string]int64{},
-		failed:  map[string]bool{},
+		badge:      map[string]int64{},
+		badgeMuted: map[string]bool{},
+		failed:     map[string]bool{},
 		pix:     map[string]*image.RGBA{},
 		pixUsed: map[string]int64{},
 		pixCap:  avatarPixCache,
@@ -148,7 +152,9 @@ func (k *kittyAvatars) cells(r listRow, unread int64) (string, string, bool) {
 	}
 	// Until the next prepare redraws it, the live picture still carries the
 	// previous count, so the row has to print the new one itself.
-	return placeholderRow(id, 0, avatarWidth), placeholderRow(id, 1, avatarWidth), k.badge[r.key()] == unread
+	key := r.key()
+	return placeholderRow(id, 0, avatarWidth), placeholderRow(id, 1, avatarWidth),
+		k.badge[key] == unread && k.badgeMuted[key] == r.chat.Muted
 }
 
 // placeholderRow is one row of a picture's cells: the image id travels in the
@@ -166,9 +172,10 @@ func placeholderRow(id, row, cols int) string {
 }
 
 // prepare transmits the pictures of chats that do not have one yet or whose
-// unread counter has moved, evicting the least recently prepared when the id
-// space is full. Transmitting over a live id replaces that picture, so no
-// delete is needed and a redraw keeps the id its cells already name.
+// unread counter or mute setting has moved, evicting the least recently
+// prepared when the id space is full. Transmitting over a live id replaces
+// that picture, so no delete is needed and a redraw keeps the id its cells
+// already name.
 func (k *kittyAvatars) prepare(rows []listRow, unread map[string]int64) string {
 	k.clock++
 	// Touch every picture this pass will draw before any of them can be
@@ -183,8 +190,9 @@ func (k *kittyAvatars) prepare(rows []listRow, unread map[string]int64) string {
 	for _, r := range rows {
 		key, n := r.key(), r.unread(unread)
 		id, live := k.id[key]
+		muted := r.chat.Muted
 		if live {
-			if k.badge[key] == n {
+			if k.badge[key] == n && k.badgeMuted[key] == muted {
 				continue
 			}
 		} else if k.failed[key] {
@@ -199,7 +207,7 @@ func (k *kittyAvatars) prepare(rows []listRow, unread map[string]int64) string {
 		// The counter is stamped on a copy, so the composite behind it stays
 		// the one the next count can be stamped on too.
 		img := cloneRGBA(clean)
-		drawBadge(img, n, r.chat.Muted)
+		drawBadge(img, n, muted)
 		if !live {
 			id = k.take(key)
 		}
@@ -209,10 +217,12 @@ func (k *kittyAvatars) prepare(rows []listRow, unread map[string]int64) string {
 			delete(k.id, key)
 			delete(k.used, key)
 			delete(k.badge, key)
+			delete(k.badgeMuted, key)
 			k.failed[key] = true
 			continue
 		}
 		k.badge[key] = n
+		k.badgeMuted[key] = muted
 	}
 	return out.String()
 }

@@ -410,6 +410,25 @@ func TestKittyAvatars_RedrawsWhenTheUnreadCountMoves(t *testing.T) {
 	require.Equal(t, id, k.id["oc_1"], "and a redraw keeps the id the cells already name")
 }
 
+func TestKittyAvatars_RedrawsWhenMuteFlips(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	k := newKittyAvatars(dir)
+	c := store.Chat{ChatID: "oc_1", Name: "群", AvatarPath: writePNG(t, dir, "a.png", 8, 8)}
+	unread := map[string]int64{"oc_1": 2}
+
+	require.NotEmpty(t, k.prepare(rowsOf([]store.Chat{c}), unread))
+	require.Empty(t, k.prepare(rowsOf([]store.Chat{c}), unread), "same count and mute need no new picture")
+
+	c.Muted = true
+	require.NotEmpty(t, k.prepare(rowsOf([]store.Chat{c}), unread),
+		"do-not-disturb changes the badge colour even when the count is unchanged")
+	require.True(t, k.badgeMuted["oc_1"])
+
+	_, _, badged := k.cells(listRow{chat: c}, 2)
+	require.True(t, badged, "the picture now carries the quiet badge")
+}
+
 func TestKittyAvatars_CellsClaimTheCountOnlyOnceTheyCarryIt(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
