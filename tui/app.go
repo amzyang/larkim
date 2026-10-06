@@ -2422,10 +2422,12 @@ func (m Model) inSelection(p pane, idx int) bool {
 
 // copySelection puts the agent context of the current focus on the clipboard:
 // the cursor's message or the VISUAL range from a message list, the last day
-// of the highlighted chat from the chats pane.
+// of the highlighted chat from the chats pane. The Unread page is a message
+// list too: Y copies the message under the cursor, from the chat that message
+// belongs to. Search hits stay out, because a hit is opened rather than copied.
 func (m Model) copySelection() (Model, tea.Cmd) {
 	switch {
-	case m.searching, m.feed != nil:
+	case m.searching:
 		return m.notify("press Enter to open the hit; Y copies from inside a chat", true), nil
 	case m.focus == paneChats:
 		vis := m.visibleRows()
@@ -2440,7 +2442,18 @@ func (m Model) copySelection() (Model, tea.Cmd) {
 			return m.notify("nothing to copy", true), nil
 		}
 		lo, hi := m.selectionRange()
-		return m.notify("copying…", false), copyContext(m.deps, copySpec{chatID: m.chatID, msgs: list[lo : hi+1]})
+		msgs := list[lo : hi+1]
+		chatID := m.chatID
+		// The feed draws several chats on one page, and the composer can stay
+		// pointed at a chat the cursor has already left. The message names
+		// its own chat.
+		if m.inFeed() {
+			chatID = msgs[0].ChatID
+		}
+		if chatID == "" {
+			return m.notify("nothing to copy", true), nil
+		}
+		return m.notify("copying…", false), copyContext(m.deps, copySpec{chatID: chatID, msgs: msgs})
 	}
 	return m.notify("nothing to copy here", true), nil
 }

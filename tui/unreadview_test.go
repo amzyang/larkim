@@ -319,6 +319,27 @@ func TestYank_TheUnreadRowHasNothingToCopy(t *testing.T) {
 	require.Equal(t, "nothing to copy", next.notice)
 }
 
+// Y on the Unread page copies the message under the cursor, from that
+// message's own chat, the way it does inside a chat.
+func TestYank_TheUnreadPageCopiesTheCursorMessage(t *testing.T) {
+	t.Parallel()
+	m := feedModel(t)
+	m.focus = paneMessages
+	for m.msgIdx < len(m.msgs) && !selectable(m.msgs[m.msgIdx]) {
+		m.msgIdx++
+	}
+	require.Less(t, m.msgIdx, len(m.msgs))
+	want := m.msgs[m.msgIdx]
+
+	next, cmd := m.copySelection()
+	require.Equal(t, "copying…", next.notice)
+	require.NotNil(t, cmd)
+	got, ok := cmd().(contextMsg)
+	require.True(t, ok)
+	require.Equal(t, 1, got.n)
+	require.Contains(t, got.text, want.MessageID)
+}
+
 // The note counts the chats the page leaves out, so it counts over the
 // listing the chats pane beside it is drawing.
 func TestFeed_TheNoteFollowsTheChatsListing(t *testing.T) {
