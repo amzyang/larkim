@@ -243,14 +243,27 @@ func (s *Store) ChatsNeedingBackfill(ctx context.Context, limit int) ([]Chat, er
 	return s.queryChats(ctx, `WHERE c.backfill_done_at = 0 AND c.left_at = 0 ORDER BY c.last_message_ms DESC, c.last_seen_at DESC LIMIT ?`, limit)
 }
 
+// muteUnreadJoin is the badge aggregate ChatsNeedingMute orders by. A chat
+// never asked about mute but already badged should not wait behind a long
+// rotation of quieter ones.
+const muteUnreadJoin = `LEFT JOIN (
+ SELECT m.chat_id, count(*) AS n FROM messages m JOIN read_state r ON r.message_id = m.message_id
+ WHERE ` + unreadCounted + ` GROUP BY m.chat_id
+) mu ON mu.chat_id = c.chat_id `
+
 // ChatsNeedingMute returns up to limit chats whose do-not-disturb setting has
 // not been looked up since beforeMs, least recently checked first so a run
 // bounded by the API's batch size still comes round to every one of them.
 // Chats with nothing since activeAfterMs are left out: the list only marks
 // conversations a person is still reading.
+//
+// Never-checked chats that already carry a badge are ordered ahead of the
+// rest, so a new unread on a muted conversation is not mis-drawn until the
+// full rotation reaches it.
 func (s *Store) ChatsNeedingMute(ctx context.Context, activeAfterMs, beforeMs int64, limit int) ([]Chat, error) {
-	return s.queryChats(ctx, `WHERE c.left_at = 0 AND c.last_message_ms >= ? AND c.mute_checked_at < ?
- ORDER BY c.mute_checked_at, c.last_message_ms DESC LIMIT ?`, activeAfterMs, beforeMs, limit)
+	return s.queryChats(ctx, muteUnreadJoin+`WHERE c.left_at = 0 AND c.last_message_ms >= ? AND c.mute_checked_at < ?
+ ORDER BY CASE WHEN c.mute_checked_at = 0 AND COALESCE(mu.n, 0) > 0 THEN 0 ELSE 1 END,
+ c.mute_checked_at, c.last_message_ms DESC LIMIT ?`, activeAfterMs, beforeMs, limit)
 }
 
 // SetMuteStatus records a mute lookup. unknown are the chats it declined to

@@ -33,6 +33,29 @@ func TestChatsNeedingMute_TakesTheLongestUnansweredAndSkipsQuietChats(t *testing
 		"never asked comes first, and a chat with nothing recent is not asked about at all")
 }
 
+func TestChatsNeedingMute_PrioritisesNeverCheckedChatsWithABadge(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	now := int64(100 * dayMs)
+	for _, id := range []string{"oc_unread", "oc_loud"} {
+		require.NoError(t, s.EnsureChat(ctx, id, 1))
+	}
+	_, err := s.UpsertMessages(ctx, []Message{
+		msgAt("om_old", "oc_unread", now-2*dayMs, 1, "waiting"),
+		msgAt("om_new", "oc_loud", now-dayMs, 1, "read already"),
+	}, 1)
+	require.NoError(t, err)
+	markUnread(t, s, "om_old")
+	read := true
+	require.NoError(t, s.SetReadStatus(ctx, "om_new", &read, now, 0))
+
+	chats, err := s.ChatsNeedingMute(ctx, now-30*dayMs, now, 10)
+	require.NoError(t, err)
+	require.Len(t, chats, 2)
+	require.Equal(t, "oc_unread", chats[0].ChatID,
+		"never checked with a badge beats a newer chat that has nothing waiting")
+}
+
 func TestSetMuteStatus_StampsTheChatsItCouldNotAnswerFor(t *testing.T) {
 	s := openTest(t)
 	ctx := t.Context()
