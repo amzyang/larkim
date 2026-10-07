@@ -186,3 +186,11 @@ func commentLines(s string) []string {
 	}
 	return out
 }
+
+func TestSetFile_AnEmptyValueReadsBackEmpty(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "c.yaml")
+	require.NoError(t, SetFile(path, "ai.model", ""))
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	require.Equal(t, "", cfg.AI.Model, "cleared, not left to fall back on the default")
+}

@@ -208,3 +208,13 @@ func TestKeys_NamesTheTodoistKeys(t *testing.T) {
 	require.Contains(t, Keys(), "todoist.token")
 	require.Contains(t, Keys(), "todoist.project_id")
 }
+
+func TestSet_AnEmptyValueClearsTheKey(t *testing.T) {
+	c := Default()
+	c.Todoist.ProjectID = "p_home"
+	require.NoError(t, c.Set("todoist.project_id", ""))
+	require.Equal(t, "", c.Todoist.ProjectID)
+
+	require.NoError(t, c.Set("ai.model", ""))
+	require.Equal(t, "", c.AI.Model, "a key with a default clears too")
+}

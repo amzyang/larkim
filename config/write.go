@@ -27,7 +27,7 @@ const fileMode = 0o644
 // The value is not validated here. Config.Set is what judges it, and a caller
 // that skips it writes whatever it was handed.
 func SetFile(path, key, value string) error {
-	node, err := valueNode(value)
+	node, err := valueNode(yamlScalar(key, value))
 	if err != nil {
 		return fmt.Errorf("%s: %w", key, err)
 	}

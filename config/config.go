@@ -297,15 +297,23 @@ func (c *Config) Set(key, value string) error {
 // back through Set unchanged. The second result is false for a key Keys() does
 // not name.
 func (c Config) Get(key string) (string, bool) {
-	v := reflect.ValueOf(c)
+	v, ok := fieldAt(reflect.ValueOf(c), key)
+	if !ok {
+		return "", false
+	}
+	return formatValue(v)
+}
+
+// fieldAt walks a dotted key down through the nested sections of v.
+func fieldAt(v reflect.Value, key string) (reflect.Value, bool) {
 	for part := range strings.SplitSeq(key, ".") {
 		f, ok := fieldByYAML(v, part)
 		if !ok {
-			return "", false
+			return reflect.Value{}, false
 		}
 		v = f
 	}
-	return formatValue(v)
+	return v, true
 }
 
 // shortDuration spells a whole number of hours, minutes or seconds the way a
@@ -376,8 +384,23 @@ func setDoc(key, value string) string {
 	}
 	// The value goes in verbatim; quoting it here would turn every number and
 	// duration into a string.
-	fmt.Fprintf(&b, "%s%s: %s\n", strings.Repeat("  ", len(parts)-1), parts[len(parts)-1], value)
+	fmt.Fprintf(&b, "%s%s: %s\n", strings.Repeat("  ", len(parts)-1), parts[len(parts)-1], yamlScalar(key, value))
 	return b.String()
+}
+
+// yamlScalar is the YAML text a value for key is parsed from. An empty value
+// for a string key is spelled "": bare, it is YAML's null, which Set reads as
+// "leave the field as it was" and Load as "fall back to the default", so
+// clearing the key would never take. For any other kind an empty value is
+// nothing typed, and null is right.
+func yamlScalar(key, value string) string {
+	if strings.TrimSpace(value) != "" {
+		return value
+	}
+	if v, ok := fieldAt(reflect.ValueOf(Config{}), key); ok && v.Kind() == reflect.String {
+		return `""`
+	}
+	return value
 }
 
 // Keys names every key a file or a --set may carry, dotted through the nested
