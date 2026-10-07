@@ -44,6 +44,10 @@ type App struct {
 	// builds markread.New.
 	clearBadge markread.Clear
 
+	// todoistBase is where the todoist.project completion lists projects. A
+	// test points it at a local server; left empty, the client's default.
+	todoistBase string
+
 	clientOnce gosync.Once
 	// larkClient is the Feishu boundary every command shares. A test sets it
 	// before the command runs so a fake stands where the subprocess would;
@@ -104,7 +108,7 @@ func New(version, buildDSN string) *cobra.Command {
 		app.sendCmd(), app.replyCmd(), app.reactCmd(), app.watchCmd(), app.readAllCmd(), app.silenceCmd(), app.tuiCmd(), app.dbCmd(),
 		app.schemaCmd(), app.emojiCmd(), app.sentryCmd(), app.unreadCmd(), app.lintCmd(), app.candidatesCmd())
 	mustWire(root.MarkPersistentFlagFilename("config", "yaml", "yml"))
-	mustWire(root.RegisterFlagCompletionFunc("set", completeConfigKey))
+	mustWire(root.RegisterFlagCompletionFunc("set", app.completeConfigKey))
 	completeNoFileDefault(root)
 	return root
 }

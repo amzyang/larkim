@@ -41,7 +41,7 @@ func configFile(t *testing.T, m Model) config.Config {
 }
 
 // configRow is the rendered line the cursor rests on, styling stripped.
-func configRow(m Model) string { return cursorLine(m.configLines(), m.config.idx, m.config.top) }
+func configRow(m Model) string { return cursorLine(m.configLines(), m.config.idx, m.configTop()) }
 
 // cursorLine is the line of a panel's window that the cursor at idx rests on,
 // styling stripped and runs of spaces closed up.
@@ -375,7 +375,7 @@ func TestConfig_TheEditorWindowsAValueLongerThanItsColumn(t *testing.T) {
 	for _, r := range long {
 		m = press(t, m, string(r))
 	}
-	cell, at := m.configEditorCell(m.configValueWidth())
+	cell, at := m.inputCell(m.config.editor, m.configValueWidth())
 	require.Equal(t, m.configValueWidth(), lipgloss.Width(ansi.Strip(cell)), "the field keeps its column")
 	require.Less(t, at, m.configValueWidth(), "and the caret stays inside it")
 	require.Contains(t, ansi.Strip(cell), "deep", "showing the end being typed")

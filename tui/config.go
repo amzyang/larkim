@@ -54,6 +54,9 @@ type configPanel struct {
 	// err is a value the row refused, kept on screen beside the typed text
 	// rather than thrown away with it.
 	err string
+	// project is the todoist.project chooser, which stands in for the editor
+	// on that row.
+	project projectPick
 	// tab is the page on screen; silence is the Silence page's own state.
 	tab     configTab
 	silence silenceTab
@@ -177,6 +180,8 @@ func (m Model) forwardConfig(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	var cmd tea.Cmd
 	switch {
+	case m.config.project.open:
+		return m.typeIntoProjectPick(msg)
 	case m.config.editing:
 		m.config.editor, cmd = m.config.editor.Update(msg)
 	case m.config.filtering:
@@ -203,6 +208,9 @@ func (m Model) typeIntoConfigFilter(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m Model) onConfigKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if m.config.tab == tabSilence {
 		return m.onSilenceKey(k)
+	}
+	if m.config.project.open {
+		return m.onProjectPickKey(k)
 	}
 	s := k.String()
 	if m.config.editing {
@@ -289,6 +297,9 @@ func (m Model) editConfig() (tea.Model, tea.Cmd) {
 		m.config.tab = tabSilence
 		return m, m.configLoads()
 	}
+	if s.pickProject {
+		return m.openProjectPick()
+	}
 	in := m.newQueryInput()
 	in.SetValue(m.settingValue(s))
 	in.SetWidth(m.configValueWidth())
@@ -297,19 +308,13 @@ func (m Model) editConfig() (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-// configEditorCell draws the value being typed, shaded across the whole
-// column the way a selected row is, and returns how far into that column the
-// caret sits. The input's own View is not drawn: it ends in a reset and in a
-// cursor cell of its own, and both leave unshaded seams in the field.
+// inputCell draws the value being typed, shaded across the whole column the
+// way a selected row is, and returns how far into that column the caret sits.
+// The input's own View is not drawn: it ends in a reset and in a cursor cell
+// of its own, and both leave unshaded seams in the field.
 //
 // The text is windowed on the caret, so a value longer than the column is
 // typed at rather than scrolled past.
-func (m Model) configEditorCell(valw int) (string, int) {
-	return m.inputCell(m.config.editor, valw)
-}
-
-// inputCell draws in as a shaded field valw wide, windowed on its caret, and
-// returns how far into the field the caret sits.
 func (m Model) inputCell(in textinput.Model, valw int) (string, int) {
 	v := []rune(in.Value())
 	pos := clamp(in.Position(), 0, len(v))
@@ -391,6 +396,23 @@ func (m Model) configValueWidth() int {
 	return max(4, m.configWidth()-configKeyWidth()-2-configGap)
 }
 
+// configValueLeft is where the value column starts inside a row: past the
+// cursor lead, the key column and the gap. The caret and the project list
+// under a row both line up on it.
+func configValueLeft() int { return len("  ") + configKeyWidth() + configGap }
+
+// configLiveInput is the input typed into the focused row's cell, if one is:
+// the line editor, or the project chooser's query that stands in for it.
+func (m Model) configLiveInput() (textinput.Model, bool) {
+	switch {
+	case m.config.project.open:
+		return m.config.project.input, true
+	case m.config.editing:
+		return m.config.editor, true
+	}
+	return textinput.Model{}, false
+}
+
 // configLines is the list of keys laid out for the current width. A value
 // still at its default is dimmed, so what this machine has actually changed is
 // what stands out; the one being edited is shaded whole, the way a selected
@@ -399,26 +421,38 @@ func (m Model) configLines() []string {
 	gap := strings.Repeat(" ", configGap)
 	w, keyw, valw := m.configWidth(), configKeyWidth(), m.configValueWidth()
 	def := config.Default()
+	rows := m.configRows()
+	top := m.configTop()
 	var out []string
-	for i, h := range window(m.config.hits, m.config.top, m.configRows()) {
-		row := m.config.top + i
+	for i, h := range window(m.config.hits, top, rows) {
+		row := top + i
 		lead := cursorLead(row == m.config.idx)
 		key := markName(h.s.key, h.mark, stBold)
 		var cell string
-		switch {
-		case row == m.config.idx && m.config.editing:
-			cell, _ = m.configEditorCell(valw)
-		default:
-			value := settingCell(m.cfg, h.s)
+		if in, ok := m.configLiveInput(); ok && row == m.config.idx {
+			cell, _ = m.inputCell(in, valw)
+		} else {
+			value := m.settingCell(m.cfg, h.s)
 			style := lipgloss.NewStyle()
-			if settingCell(def, h.s) == value {
+			if m.settingCell(def, h.s) == value {
 				style = stDim
 			}
 			cell = style.Render(truncate(value, valw))
 		}
 		out = append(out, fit(lead+fit(key, keyw)+gap+cell, w))
+		if row == m.config.idx && m.config.project.open {
+			out = append(out, m.projectPickLines(configValueLeft(), w)...)
+		}
 	}
-	return out
+	return out[:min(len(out), rows)]
+}
+
+// configTop is the first row drawn. It is the scroll the cursor keeps, moved
+// down while the project chooser is open as far as it takes for the list to
+// hang under its row rather than off the foot of the panel.
+func (m Model) configTop() int {
+	need := m.config.idx + m.projectPickHeight() - m.configRows() + 1
+	return max(m.config.top, need)
 }
 
 // configDetail is the line under the list: what the focused key is for, and
@@ -441,9 +475,12 @@ func (m Model) renderConfig() string {
 	idx, n := m.config.idx, len(m.config.hits)
 	body, detail := m.configLines, m.configDetail
 	var hintBar []KeyBinding
-	if m.config.editing {
+	switch {
+	case m.config.project.open:
+		hintBar = configPickHintBar
+	case m.config.editing:
 		hintBar = configEditHintBar
-	} else {
+	default:
 		hintBar = configHintBar
 	}
 	if m.config.tab == tabSilence {
@@ -515,11 +552,11 @@ func (m Model) configCursor() *tea.Cursor {
 		return m.silenceCursor()
 	}
 	switch {
-	case m.config.editing:
-		_, at := m.configEditorCell(m.configValueWidth())
+	case m.config.editing || m.config.project.open:
+		in, _ := m.configLiveInput()
+		_, at := m.inputCell(in, m.configValueWidth())
 		// The head row and the blank under it, under the box's own top border.
-		c := tea.NewCursor(configLeft+len("  ")+configKeyWidth()+configGap+at,
-			3+m.config.idx-m.config.top)
+		c := tea.NewCursor(configLeft+configValueLeft()+at, 3+m.config.idx-m.configTop())
 		c.Shape, c.Blink = tea.CursorBar, true
 		return c
 	case m.config.filtering:

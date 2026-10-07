@@ -18,6 +18,13 @@ import (
 type fakeTasks struct {
 	got []todoist.Task
 	err error
+	// projects is the account Projects lists, or listErr what it fails with.
+	projects []todoist.Project
+	listErr  error
+}
+
+func (f *fakeTasks) Projects(context.Context) ([]todoist.Project, error) {
+	return f.projects, f.listErr
 }
 
 func (f *fakeTasks) CreateTask(_ context.Context, t todoist.Task) (todoist.Task, error) {

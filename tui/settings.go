@@ -40,8 +40,12 @@ type setting struct {
 	// it and hands it to the tab that edits it whole; no single-line edit or
 	// reset reaches it.
 	readOnly bool
-	// summary draws a value too long for its cell. Nil draws the value.
-	summary func(config.Config) string
+	// summary draws a value its cell should not show as spelled: too long, or
+	// an id the session can name. Nil draws the value.
+	summary func(Model, config.Config) string
+	// pickProject opens the Todoist project chooser on enter in place of the
+	// line editor: the value is an id, and nobody types one from memory.
+	pickProject bool
 }
 
 // settings names every key of the configuration, in config.Keys() order, which
@@ -130,7 +134,7 @@ var settings = []setting{{
 	key:      "ai.snippets",
 	help:     "the assistant panel's snippet offers, name and text; enter edits them in the config file",
 	readOnly: true,
-	summary:  func(c config.Config) string { return plural(len(c.AI.Snippets), "snippet", "snippets") },
+	summary:  func(_ Model, c config.Config) string { return plural(len(c.AI.Snippets), "snippet", "snippets") },
 }, {
 	key:  "ai.history",
 	help: "let the agent read this chat's synced history itself, through the read-only larkim commands the prompt teaches; anything else it runs stops the answer. Run the agent with --tools bash when on, --no-tools when off",
@@ -139,17 +143,19 @@ var settings = []setting{{
 	key:   "todoist.token",
 	help:  "the Todoist API token behind the T key; empty leaves the key answering that it is not configured",
 	live:  true,
-	apply: rebuildTodoist,
+	apply: retokenTodoist,
 }, {
-	key:   "todoist.project_id",
-	help:  "the project T files tasks into; empty is Todoist's Inbox",
-	live:  true,
-	apply: rebuildTodoist,
+	key:         "todoist.project",
+	help:        "the project T files tasks into, picked from the account's own; empty is Todoist's Inbox",
+	live:        true,
+	apply:       rebuildTodoist,
+	pickProject: true,
+	summary:     func(m Model, c config.Config) string { return m.projectCell(c.Todoist.Project) },
 }, {
 	key:      "silence",
 	help:     "rules whose messages carry no unread badge; enter edits them in the Silence tab",
 	readOnly: true,
-	summary:  func(c config.Config) string { return plural(len(c.Silence), "rule", "rules") },
+	summary:  func(_ Model, c config.Config) string { return plural(len(c.Silence), "rule", "rules") },
 }, {
 	key:   "silence_sync",
 	help:  "settle Feishu's own read watermark past silenced messages, so every client's dot follows the same rules",
@@ -216,7 +222,14 @@ func rebuildTodoist(m *Model) {
 	if m.deps.NewTodoist == nil {
 		return
 	}
-	m.deps.Todoist = m.deps.NewTodoist(m.cfg.Todoist.Token, m.cfg.Todoist.ProjectID)
+	m.deps.Todoist = m.deps.NewTodoist(m.cfg.Todoist.Token, m.cfg.Todoist.Project)
+}
+
+// retokenTodoist is rebuildTodoist for a new token, which also forgets the
+// projects listed under the old one: they were another account's.
+func retokenTodoist(m *Model) {
+	m.todoistProjects = nil
+	rebuildTodoist(m)
 }
 
 // retuneSweep hands the sweep the options m.cfg now spells. Every option is
@@ -284,7 +297,7 @@ func (m Model) settingReach(s setting) string {
 // settingInfo is what the box beside the : line's list says about a key: what
 // it is for, then what it is set to under cfg and how far a change reaches.
 func (m Model) settingInfo(s setting) []string {
-	value := settingCell(m.cfg, s)
+	value := m.settingCell(m.cfg, s)
 	if value != "" {
 		value += " · "
 	}
@@ -292,9 +305,9 @@ func (m Model) settingInfo(s setting) []string {
 }
 
 // settingCell is what the General tab draws for a key under cfg.
-func settingCell(cfg config.Config, s setting) string {
+func (m Model) settingCell(cfg config.Config, s setting) string {
 	if s.summary != nil {
-		return s.summary(cfg)
+		return s.summary(m, cfg)
 	}
 	v, _ := cfg.Get(s.key)
 	return v

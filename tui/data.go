@@ -60,14 +60,15 @@ type Deps struct {
 	// names no key.
 	Suggest    ReactSuggester
 	NewSuggest func(keyEnv, endpoint string) ReactSuggester
-	// Todoist files the selected message or chat as a task; nil when no
-	// token is configured, which leaves the T key answering a notice instead
-	// of failing a request that cannot land. NewTodoist builds it again when
-	// :config changes the token or the project, and returns nil for an empty
-	// token. A nil NewTodoist leaves it as it was, which is what a test that
-	// injects a fake wants.
-	Todoist    TaskAdder
-	NewTodoist func(token, projectID string) TaskAdder
+	// Todoist files the selected message or chat as a task and lists the
+	// projects :config offers for todoist.project; nil when no token is
+	// configured, which leaves the T key answering a notice instead of failing
+	// a request that cannot land. NewTodoist builds it again when :config
+	// changes the token or the project, and returns nil for an empty token. A
+	// nil NewTodoist leaves it as it was, which is what a test that injects a
+	// fake wants.
+	Todoist    TodoistClient
+	NewTodoist func(token, project string) TodoistClient
 	// Nudge signals that the store changed, so the watch checks without
 	// waiting out its interval. It carries this process's own writes, the
 	// sweep's too when the sweep runs here; a daemon's land on the interval.
@@ -127,11 +128,12 @@ type ReactSuggester interface {
 	Rank(ctx context.Context, ask jev.Ask) (jev.Rank, error)
 }
 
-// TaskAdder is the one call the T key makes, named here for the same reason
-// as ReactSuggester: the call crosses the network, and a key nobody can drive
-// is a key nobody can test.
-type TaskAdder interface {
+// TodoistClient is the call the T key makes and the listing the project
+// chooser draws from, named here for the same reason as ReactSuggester: both
+// cross the network, and a key nobody can drive is a key nobody can test.
+type TodoistClient interface {
 	CreateTask(ctx context.Context, task todoist.Task) (todoist.Task, error)
+	Projects(ctx context.Context) ([]todoist.Project, error)
 }
 
 // discardLog stands in for a Deps built by hand — in a test — which has no

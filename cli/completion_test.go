@@ -2,6 +2,9 @@ package cli
 
 import (
 	"bytes"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -241,6 +244,42 @@ func TestCompleteConfigKey_NeedsNoDatabase(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	lines := completeArgs(t, "--set", "backfill")
 	require.Equal(t, []string{"backfill_days="}, lines[:len(lines)-1])
+}
+
+// todoistAccount serves the projects endpoint the way Todoist answers it, Inbox
+// not first, and points an App with a token at it.
+func todoistAccount(t *testing.T, token string) *App {
+	t.Helper()
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "/projects", r.URL.Path)
+		io.WriteString(w, `{"results":[{"id":"p_work","name":"平台组"},`+
+			`{"id":"p_inbox","name":"Inbox","inbox_project":true},{"id":"p_home","name":"Home"}],"next_cursor":null}`)
+	}))
+	t.Cleanup(s.Close)
+	return &App{cfg: config.Config{Todoist: config.Todoist{Token: token}}, todoistBase: s.URL}
+}
+
+func TestCompleteConfigKey_OffersTheAccountsProjectsInboxFirst(t *testing.T) {
+	a := todoistAccount(t, "tok_a")
+	out, d := a.completeConfigKey(nil, nil, "todoist.project=")
+	require.Equal(t, cobra.ShellCompDirectiveNoFileComp|cobra.ShellCompDirectiveKeepOrder, d)
+	require.Equal(t, []string{"todoist.project=", "todoist.project=p_work", "todoist.project=p_home"}, values(out),
+		"the Inbox is the empty value")
+	require.Equal(t, []string{"todoist.project=\tInbox", "todoist.project=p_work\t平台组", "todoist.project=p_home\tHome"}, out,
+		"the name rides as the description, since it is not what the key takes")
+}
+
+func TestCompleteConfigKey_NarrowsProjectsByTheTypedID(t *testing.T) {
+	a := todoistAccount(t, "tok_a")
+	out, _ := a.completeConfigKey(nil, nil, "todoist.project=p_h")
+	require.Equal(t, []string{"todoist.project=p_home"}, values(out))
+}
+
+func TestCompleteConfigKey_OffersNoProjectsWithoutAToken(t *testing.T) {
+	a := todoistAccount(t, "")
+	out, d := a.completeConfigKey(nil, nil, "todoist.project=")
+	require.Empty(t, out)
+	require.Equal(t, cobra.ShellCompDirectiveNoFileComp, d)
 }
 
 func TestCompleteBodySource_OffersPathsOnlyOnceTheWordOpensWithAt(t *testing.T) {

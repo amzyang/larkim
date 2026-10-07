@@ -66,7 +66,7 @@ func TestRunSet_ListsEveryOptionWhenGivenNothing(t *testing.T) {
 	t.Parallel()
 	m := setModel(t).runSet("")
 	require.Equal(t, "mark_read.browser=chrome  ai.agent=omp --mode acp  ai.model=cursor/composer-2.5-fast  ai.context=40"+
-		"  ai.jev_key_env=TYPESAFE_API_KEY  ai.jev_endpoint=https://api.typesafe.ai/v1/systemone  ai.history=false  todoist.token=  todoist.project_id=", m.notice)
+		"  ai.jev_key_env=TYPESAFE_API_KEY  ai.jev_endpoint=https://api.typesafe.ai/v1/systemone  ai.history=false  todoist.token=  todoist.project=", m.notice)
 	require.NotContains(t, m.notice, "poll_interval_ms", "a sweep key is out of reach while a daemon owns the sweep")
 	require.NotContains(t, m.notice, "data_dir", "and a key read once at startup never comes into reach")
 }
@@ -162,8 +162,8 @@ func TestRunSet_RebuildsTheTaskFilerOnANewToken(t *testing.T) {
 	t.Parallel()
 	m := setModel(t)
 	var asked []string
-	m.deps.NewTodoist = func(token, projectID string) TaskAdder {
-		asked = append(asked, token+" "+projectID)
+	m.deps.NewTodoist = func(token, project string) TodoistClient {
+		asked = append(asked, token+" "+project)
 		return nil
 	}
 	m = m.runSet("todoist.token=tok_a")

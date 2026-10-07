@@ -1,5 +1,6 @@
-// Package todoist files a message as a task. The TUI hands one task over per
-// keypress; Todoist's REST API needs nothing else from larkim.
+// Package todoist files a message as a task and lists the projects one can
+// land in. The TUI hands one task over per keypress; Todoist's REST API needs
+// nothing else from larkim.
 package todoist
 
 import (
@@ -10,33 +11,39 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"slices"
 )
 
-// DefaultEndpoint is the tasks endpoint. It is exported so the configuration's
-// default and this package name it in one place (mirrors jev.DefaultEndpoint).
-const DefaultEndpoint = "https://api.todoist.com/api/v1/tasks"
+// DefaultBase is the API root every endpoint hangs off. It is exported so the
+// configuration's default and this package name it in one place (mirrors
+// jev.DefaultEndpoint).
+const DefaultBase = "https://api.todoist.com/api/v1"
 
 // errBodyMax bounds how much of a refusal is quoted back. The reason is in
 // the first line of it.
 const errBodyMax = 2 << 10
 
-// Client talks to the tasks endpoint.
+// pageLimit is the most projects one page carries; the endpoint refuses more.
+const pageLimit = "200"
+
+// Client talks to the API.
 type Client struct {
 	token     string
 	projectID string
-	endpoint  string
+	base      string
 	http      *http.Client
 }
 
 // New builds a client for an API token, putting every task in projectID (empty
-// is Todoist's Inbox), against endpoint or DefaultEndpoint when that is empty.
-// The endpoint parameter is not a config key; it is the seam the tests point
-// at a local server, the way jev's is. Requests are bounded by the context
+// is Todoist's Inbox), against base or DefaultBase when that is empty. The
+// base parameter is not a config key; it is the seam the tests point at a
+// local server, the way jev's endpoint is. Requests are bounded by the context
 // they are given rather than by a client-wide timeout, because one caller's
 // idea of too long is not another's.
-func New(token, projectID, endpoint string) *Client {
+func New(token, projectID, base string) *Client {
 	return &Client{token: token, projectID: projectID,
-		endpoint: cmp.Or(endpoint, DefaultEndpoint), http: &http.Client{}}
+		base: cmp.Or(base, DefaultBase), http: &http.Client{}}
 }
 
 // Task is one task. Only the fields this package sends or reads are named;
@@ -49,6 +56,33 @@ type Task struct {
 	ID          string `json:"id"`
 }
 
+// Project is one place a task can land. Inbox marks the one Todoist files a
+// task without a project into.
+type Project struct {
+	ID    string `json:"id"`
+	Name  string `json:"name"`
+	Inbox bool   `json:"inbox_project"`
+}
+
+// Value is the project id a task names to land in p. The Inbox is the empty
+// value: a task that names no project is where Todoist files it.
+func (p Project) Value() string {
+	if p.Inbox {
+		return ""
+	}
+	return p.ID
+}
+
+// InboxFirst moves the Inbox to the head of ps, the rest in the order Todoist
+// keeps them: it is the default, and the value an empty setting stands for.
+func InboxFirst(ps []Project) []Project {
+	i := slices.IndexFunc(ps, func(p Project) bool { return p.Inbox })
+	if i <= 0 {
+		return ps
+	}
+	return slices.Concat(ps[i:i+1], ps[:i], ps[i+1:])
+}
+
 // CreateTask posts one task and answers it as Todoist stored it, so the
 // caller can name what was filed.
 func (c *Client) CreateTask(ctx context.Context, t Task) (Task, error) {
@@ -59,26 +93,61 @@ func (c *Client) CreateTask(ctx context.Context, t Task) (Task, error) {
 	if err != nil {
 		return Task{}, fmt.Errorf("todoist: encode request: %w", err)
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.endpoint, bytes.NewReader(b))
+	var out Task
+	if err := c.do(ctx, http.MethodPost, "/tasks", bytes.NewReader(b), &out); err != nil {
+		return Task{}, err
+	}
+	return out, nil
+}
+
+// Projects lists every active project, in the order Todoist answers them,
+// walking the pages until the endpoint names no further cursor.
+func (c *Client) Projects(ctx context.Context) ([]Project, error) {
+	var all []Project
+	cursor := ""
+	for {
+		q := url.Values{"limit": {pageLimit}}
+		if cursor != "" {
+			q.Set("cursor", cursor)
+		}
+		var page struct {
+			Results    []Project `json:"results"`
+			NextCursor string    `json:"next_cursor"`
+		}
+		if err := c.do(ctx, http.MethodGet, "/projects?"+q.Encode(), nil, &page); err != nil {
+			return nil, err
+		}
+		all = append(all, page.Results...)
+		if page.NextCursor == "" {
+			return all, nil
+		}
+		cursor = page.NextCursor
+	}
+}
+
+// do sends one request under the token and decodes a 200 into out.
+func (c *Client) do(ctx context.Context, method, path string, body io.Reader, out any) error {
+	req, err := http.NewRequestWithContext(ctx, method, c.base+path, body)
 	if err != nil {
-		return Task{}, fmt.Errorf("todoist: build request: %w", err)
+		return fmt.Errorf("todoist: build request: %w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+c.token)
-	req.Header.Set("Content-Type", "application/json")
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return Task{}, fmt.Errorf("todoist: %w", err)
+		return fmt.Errorf("todoist: %w", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		// The body carries the reason — a rejected token, a refused project —
 		// and it is the only place it is said.
 		why, _ := io.ReadAll(io.LimitReader(resp.Body, errBodyMax))
-		return Task{}, fmt.Errorf("todoist: %s: %s", resp.Status, bytes.TrimSpace(why))
+		return fmt.Errorf("todoist: %s: %s", resp.Status, bytes.TrimSpace(why))
 	}
-	var out Task
-	if err := json.UnmarshalRead(resp.Body, &out); err != nil {
-		return Task{}, fmt.Errorf("todoist: decode answer: %w", err)
+	if err := json.UnmarshalRead(resp.Body, out); err != nil {
+		return fmt.Errorf("todoist: decode answer: %w", err)
 	}
-	return out, nil
+	return nil
 }

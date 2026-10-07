@@ -108,6 +108,12 @@ func TestForward_EveryInputTakesAPaste(t *testing.T) {
 		{"config editor", func(t *testing.T) Model {
 			return press(t, configModel(t).openConfig("ai.model"), "enter", "ctrl+u")
 		}, func(t *testing.T, m Model) { require.Equal(t, "平台", m.config.editor.Value()) }},
+		{"todoist project chooser", func(t *testing.T) Model {
+			return openProjects(t, projectModel(t, &fakeTasks{projects: fakeAccount}))
+		}, func(t *testing.T, m Model) {
+			require.Equal(t, "平台", m.config.project.input.Value())
+			require.Equal(t, []string{"平台组"}, projectOffers(m), "the chooser narrows to it")
+		}},
 		{"silence picker", func(t *testing.T) Model { return press(t, silenceModel(t), "a", "enter") },
 			func(t *testing.T, m Model) {
 				require.Equal(t, "oc_quiet", m.config.silence.form.pick.hits[0].id, "the picker searches on it")

@@ -61,6 +61,11 @@ var (
 		{Keys: "enter", Desc: "save"},
 		{Keys: "esc", Desc: "cancel"},
 	}
+	configPickHintBar = []KeyBinding{
+		{Keys: "^n/^p", Desc: "move"},
+		{Keys: "enter", Desc: "save"},
+		{Keys: "esc", Desc: "cancel"},
+	}
 	replyBarHintBinding = KeyBinding{Keys: "^r", Desc: "drops the quote"}
 	yankCombined        = keyhint.Combined{
 		Prefix: "y",

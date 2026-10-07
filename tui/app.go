@@ -27,6 +27,7 @@ import (
 	"github.com/amzyang/larkim/markread"
 	"github.com/amzyang/larkim/store"
 	"github.com/amzyang/larkim/sync"
+	"github.com/amzyang/larkim/todoist"
 	"github.com/amzyang/larkim/tui/component/spinner"
 	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/ansi"
@@ -142,6 +143,11 @@ type Model struct {
 	// config is the :config overlay, the editor of the configuration file.
 	// It takes every key too, and stands over the help panel's own.
 	config configPanel
+	// todoistProjects is the account's projects as last listed, Inbox first.
+	// It outlives the chooser so the todoist.project row names its project
+	// rather than its id, and a new token empties it: the list was another
+	// account's.
+	todoistProjects []todoist.Project
 	// ai is the assistant, seeded from Deps and built again when :config
 	// changes the model or the variable the key is read from. It lives on the
 	// Model rather than on Deps so that change reaches the next question.
@@ -927,6 +933,8 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.onSilenceMatches(msg), nil
 	case silenceRosterLoadedMsg:
 		return m.onSilenceRoster(msg), nil
+	case todoistProjectsMsg:
+		return m.onTodoistProjects(msg), nil
 	case forwardedMsg:
 		if msg.err != nil {
 			return m.notify("forward: "+msg.err.Error(), true), nil
@@ -3245,6 +3253,13 @@ func (m Model) onWheel(ms tea.Mouse) (tea.Model, tea.Cmd) {
 	// An overlay covers the panes, so the wheel scrolls what is on screen
 	// rather than what the pointer would have been over.
 	if m.config.open {
+		// An open chooser owns the panel's cursor: moving it would hang the
+		// list under another row, and enter would write that row instead. It
+		// moves by one, the way the popup over the panes does.
+		if m.config.project.open {
+			m.projectPickScroll(cmp.Compare(step, 0))
+			return m, nil
+		}
 		m.configScroll(step)
 		return m, nil
 	}

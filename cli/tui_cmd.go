@@ -71,15 +71,15 @@ func (a *App) runTUI(_ *cobra.Command, _ []string) error {
 		return jev.New(key, endpoint)
 	}
 	deps.Suggest = deps.NewSuggest(a.cfg.AI.JevKeyEnv, a.cfg.AI.JevEndpoint)
-	deps.NewTodoist = func(token, projectID string) tui.TaskAdder {
+	deps.NewTodoist = func(token, project string) tui.TodoistClient {
 		// An empty token leaves the key reporting that it is not configured
 		// rather than failing a request that cannot land.
 		if token == "" {
 			return nil
 		}
-		return todoist.New(token, projectID, "")
+		return todoist.New(token, project, "")
 	}
-	deps.Todoist = deps.NewTodoist(a.cfg.Todoist.Token, a.cfg.Todoist.ProjectID)
+	deps.Todoist = deps.NewTodoist(a.cfg.Todoist.Token, a.cfg.Todoist.Project)
 	deps.Self = selfOpenID(ctx, st)
 	// Every process pulls what the reader asks for: each of those
 	// calls names ids Feishu just answered for and upserts them, so

@@ -6,9 +6,11 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/amzyang/larkim/config"
 	"github.com/amzyang/larkim/store"
+	"github.com/amzyang/larkim/todoist"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -21,6 +23,10 @@ const compCmdName = "completion"
 // narrows the candidates again against the typed word, so this bounds how
 // long a Tab press takes rather than how many candidates survive it.
 const completionLimit = 200
+
+// completionTimeout bounds the one completion that asks a remote API. A Tab
+// that hangs is worse than one that offers nothing.
+const completionTimeout = 3 * time.Second
 
 // completionMessages is how many recent messages a message-id completion
 // offers. An id says nothing by itself, so each carries the message's text as
@@ -92,10 +98,14 @@ func hasPrefixFold(s, prefix string) bool {
 //
 // The candidates come from the config struct's own yaml tags, so a key added
 // to the file is offered here without a second list to remember.
-func completeConfigKey(_ *cobra.Command, _ []string, prefix string) ([]cobra.Completion, cobra.ShellCompDirective) {
+func (a *App) completeConfigKey(_ *cobra.Command, _ []string, prefix string) ([]cobra.Completion, cobra.ShellCompDirective) {
 	// Past the =, only a key with a fixed set of values has anything to
-	// offer; any other value is the reader's, not ours to narrow.
+	// offer; any other value is the reader's, not ours to narrow. The one
+	// exception is a Todoist project, whose values are the account's.
 	if key, val, typed := strings.Cut(prefix, "="); typed {
+		if key == "todoist.project" {
+			return a.completeTodoistProject(val)
+		}
 		var out []cobra.Completion
 		for _, v := range config.Values(key) {
 			if hasPrefixFold(v, val) {
@@ -111,6 +121,35 @@ func completeConfigKey(_ *cobra.Command, _ []string, prefix string) ([]cobra.Com
 		}
 	}
 	return out, cobra.ShellCompDirectiveNoFileComp | cobra.ShellCompDirectiveNoSpace
+}
+
+// completeTodoistProject offers the account's project ids under the token in
+// the config file, each named in its description, since the name is what a
+// reader recognises and the id is what the key takes. The Inbox is offered as
+// the empty value, which is how the file spells it, and comes first.
+//
+// It is the one completion that leaves the machine, so it is bounded by
+// completionTimeout and answers nothing rather than an error a shell would
+// print over the prompt.
+func (a *App) completeTodoistProject(typed string) ([]cobra.Completion, cobra.ShellCompDirective) {
+	if a.cfg.Todoist.Token == "" {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), completionTimeout)
+	defer cancel()
+	ps, err := todoist.New(a.cfg.Todoist.Token, "", a.todoistBase).Projects(ctx)
+	if err != nil {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+	var out []cobra.Completion
+	for _, p := range todoist.InboxFirst(ps) {
+		// hasPrefixFold never matches an empty value, and the Inbox's is one:
+		// it is offered until something is typed.
+		if v := p.Value(); v == typed || hasPrefixFold(v, typed) {
+			out = append(out, candidate("todoist.project="+v, p.Name))
+		}
+	}
+	return out, cobra.ShellCompDirectiveNoFileComp | cobra.ShellCompDirectiveKeepOrder
 }
 
 // completeBodySource completes the path in a body flag, but only once the

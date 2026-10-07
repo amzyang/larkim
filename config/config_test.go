@@ -198,22 +198,22 @@ func TestDefault_DisablesTodoistUntilATokenIsSet(t *testing.T) {
 func TestLoad_TakesTheTodoistSection(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "c.yaml")
 	require.NoError(t, os.WriteFile(path, []byte(
-		"todoist:\n  token: tk_1\n  project_id: proj_1\n"), 0o644))
+		"todoist:\n  token: tk_1\n  project: proj_1\n"), 0o644))
 	cfg, err := Load(path)
 	require.NoError(t, err)
-	require.Equal(t, Todoist{Token: "tk_1", ProjectID: "proj_1"}, cfg.Todoist)
+	require.Equal(t, Todoist{Token: "tk_1", Project: "proj_1"}, cfg.Todoist)
 }
 
 func TestKeys_NamesTheTodoistKeys(t *testing.T) {
 	require.Contains(t, Keys(), "todoist.token")
-	require.Contains(t, Keys(), "todoist.project_id")
+	require.Contains(t, Keys(), "todoist.project")
 }
 
 func TestSet_AnEmptyValueClearsTheKey(t *testing.T) {
 	c := Default()
-	c.Todoist.ProjectID = "p_home"
-	require.NoError(t, c.Set("todoist.project_id", ""))
-	require.Equal(t, "", c.Todoist.ProjectID)
+	c.Todoist.Project = "p_home"
+	require.NoError(t, c.Set("todoist.project", ""))
+	require.Equal(t, "", c.Todoist.Project)
 
 	require.NoError(t, c.Set("ai.model", ""))
 	require.Equal(t, "", c.AI.Model, "a key with a default clears too")

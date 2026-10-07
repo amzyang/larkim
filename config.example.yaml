@@ -95,5 +95,6 @@ todoist:
   # Settings -> Integrations -> Developer); empty leaves the key answering
   # that it is not configured.
   token: ""
-  # Project tasks land in; empty is Todoist's Inbox.
-  project_id: ""
+  # Id of the project tasks land in; empty is Todoist's Inbox. :config lists
+  # the projects to pick from, and --set todoist.project=<Tab> completes them.
+  project: ""

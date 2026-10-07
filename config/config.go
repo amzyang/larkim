@@ -157,8 +157,10 @@ type Resources struct {
 type Todoist struct {
 	// Token is the Todoist API token. Empty disables the T key.
 	Token string `yaml:"token"`
-	// ProjectID is the project tasks land in; empty is Todoist's Inbox.
-	ProjectID string `yaml:"project_id"`
+	// Project is the id of the project tasks land in; empty is Todoist's
+	// Inbox. An id rather than a name, because a name is renamed and repeated
+	// where an id is neither, and creating a task takes an id anyway.
+	Project string `yaml:"project"`
 }
 
 // minPollIntervalMS is the smallest pause LoadWith will hand the daemon.
