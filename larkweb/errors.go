@@ -3,7 +3,8 @@ package larkweb
 import "fmt"
 
 // Error is a gateway call that did not land. No field ever holds a cookie
-// value: Reason is written here, not copied from anything the jar produced.
+// value: Reason is written here, and a jar failure in Err is kooky's, which
+// names a row before its value is decrypted.
 type Error struct {
 	// Op names what was attempted, e.g. "mark read".
 	Op string

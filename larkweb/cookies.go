@@ -3,6 +3,9 @@ package larkweb
 import (
 	"cmp"
 	"context"
+	"errors"
+	"fmt"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -51,10 +54,11 @@ type BrowserJar struct {
 // answer for every profile of every registered browser, and one unreadable
 // profile is not a reason to fail a call the named browser can serve. The
 // absence that does matter — no session cookie — is reported as such, so a
-// reader is told to log in rather than left to read a 401 off the gateway.
+// reader is told to log in rather than left to read a 401 off the gateway;
+// when rows failed to read, the session may be there behind them, and the
+// error carries that failure instead.
 func (j BrowserJar) Cookies(ctx context.Context, host string) ([]*http.Cookie, error) {
-	var out []*http.Cookie
-	var haveSession bool
+	r := jarRead{browser: j.Browser, host: host, log: j.log()}
 	// The browser is picked per store, before any cookie is read. Filtering
 	// cookies afterwards would still decrypt every registered browser's jar,
 	// and each Chromium-family browser has its own Keychain entry: a prompt
@@ -69,28 +73,67 @@ func (j BrowserJar) Cookies(ctx context.Context, host string) ([]*http.Cookie, e
 			store.Close()
 			continue
 		}
-		for c, err := range store.TraverseCookies(kooky.Valid, kooky.DomainHasSuffix(cookieDomain)) {
-			if err != nil {
-				j.log().Debug("read cookie store", "profile", store.Profile(), "err", err)
-				continue
-			}
-			if !sentTo(c.Domain, host) {
-				continue
-			}
-			if c.Name == sessionCookie {
-				haveSession = true
-			}
-			out = append(out, &http.Cookie{Name: c.Name, Value: c.Value})
-		}
+		r.add(store.Profile(), store.TraverseCookies(kooky.Valid, kooky.DomainHasSuffix(cookieDomain)))
 		store.Close()
 	}
-	if !haveSession {
+	return r.result()
+}
+
+// jarRead folds the stores of one browser into the cookies a host is sent.
+type jarRead struct {
+	browser string
+	host    string
+	log     *slog.Logger
+
+	cookies     []*http.Cookie
+	haveSession bool
+	// failed is the first row that could not be read. One is enough: a
+	// Keychain that refuses the key fails every row with the same cause.
+	failed error
+}
+
+func (r *jarRead) add(profile string, seq kooky.CookieSeq) {
+	for c, err := range seq {
+		// Each profile lists a store path for every layout Chrome has used,
+		// so a missing file is the expected case, not a failed read.
+		if errors.Is(err, fs.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			if r.failed == nil {
+				r.failed = fmt.Errorf("profile %q: %w", profile, err)
+			}
+			continue
+		}
+		if !sentTo(c.Domain, r.host) {
+			continue
+		}
+		if c.Name == sessionCookie {
+			r.haveSession = true
+		}
+		r.cookies = append(r.cookies, &http.Cookie{Name: c.Name, Value: c.Value})
+	}
+}
+
+func (r *jarRead) result() ([]*http.Cookie, error) {
+	switch {
+	case r.haveSession:
+		if r.failed != nil {
+			r.log.Debug("read cookie store", "browser", r.browser, "err", r.failed)
+		}
+		return r.cookies, nil
+	case r.failed != nil:
 		return nil, &Error{
 			Op:     "read cookies",
-			Reason: "no Feishu web session in " + j.Browser + "; log in at feishu.cn",
+			Reason: "cannot read the Feishu web session in " + r.browser,
+			Err:    r.failed,
+		}
+	default:
+		return nil, &Error{
+			Op:     "read cookies",
+			Reason: "no Feishu web session in " + r.browser + "; log in at feishu.cn",
 		}
 	}
-	return out, nil
 }
 
 func (j BrowserJar) log() *slog.Logger {
