@@ -2,12 +2,14 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/stretchr/testify/require"
 
+	"github.com/amzyang/larkim/larkcli"
 	"github.com/amzyang/larkim/store"
 )
 
@@ -134,37 +136,347 @@ func TestFeed_EscGoesBackToTheChatThatWasOpen(t *testing.T) {
 	require.Equal(t, paneChats, m.focus)
 }
 
-// Nothing here is taken as read: the reader is looking at a page of many
-// chats, and none of them has been opened.
-func TestFeed_TakesNothingRead(t *testing.T) {
-	t.Parallel()
+// readingFeed is the panel with the badge clearer recorded and Feishu faked,
+// so a gesture runs end to end without reaching either.
+func readingFeed(t *testing.T) (Model, *larkcli.Fake, *[]store.ChatUnread) {
+	t.Helper()
 	m := feedModel(t)
-	var opened [][]string
-	m.deps.OpenURL = func(targets []string) error { opened = append(opened, targets); return nil }
-
-	for range 30 {
-		next, cmd := m.Update(tea.KeyPressMsg{Code: 'j', Text: "j"})
-		m = applyAll(t, next.(Model), cmd)
+	fake := larkcli.NewFake()
+	m.deps.Client, m.deps.Syncer.Client = fake, fake
+	m.deps.DataDir = t.TempDir()
+	var cleared []store.ChatUnread
+	m.deps.ClearBadge = func(_ context.Context, c store.ChatUnread) error {
+		cleared = append(cleared, c)
+		return nil
 	}
-
-	require.Empty(t, m.readKey(true), "the page is not a chat's")
-	require.Empty(t, opened, "so nothing is cleared")
-	got, err := m.deps.Store.UnreadAnchors(t.Context())
-	require.NoError(t, err)
-	require.Len(t, got, 2, "and both chats still owe an answer")
+	return m, fake, &cleared
 }
 
-// The marker is all that says a row is still waiting, the chats it names being
-// ones the reader has not opened.
-func TestFeed_TheUnreadMarkersSurviveTheCursor(t *testing.T) {
-	t.Parallel()
-	m := feedModel(t)
-	require.Len(t, m.dots, 3)
+// keyThrough presses keys through Update, the seam the reading hook sits on,
+// and follows what each press answers with.
+func keyThrough(t *testing.T, m Model, keys ...string) Model {
+	t.Helper()
+	for _, k := range keys {
+		next, cmd := m.Update(keyMsg(k))
+		m = applyAll(t, next.(Model), cmd)
+	}
+	return m
+}
 
-	next, _ := m.move(1)
+// messageLineOf is the page line of a message's last body row, which no
+// button sits on.
+func messageLineOf(t *testing.T, m Model, id string) int {
+	t.Helper()
+	idx, line := indexOfID(m.msgs, id), -1
+	for i, r := range m.msgRows {
+		if !r.plain && r.idx == idx {
+			line = i
+		}
+	}
+	require.GreaterOrEqual(t, line, 0, "no row for %s", id)
+	return line
+}
+
+// Landing on a message is the panel's counterpart to opening a chat in the
+// client: the reader is reading it now. The whole chat is taken as read, its
+// newest waiting message being the watermark, not the one the cursor is on.
+func TestFeed_LandingOnAMessageReadsItsChat(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name, read, waiting string
+		land                func(Model) Model
+	}{
+		{"j", "oc_platform", "oc_project", func(m Model) Model { return keyThrough(t, m, "j") }},
+		{"n", "oc_project", "oc_platform", func(m Model) Model { return keyThrough(t, m, "n") }},
+		{"tab", "oc_platform", "oc_project", func(m Model) Model {
+			m.focus = paneChats
+			return keyThrough(t, m, "tab")
+		}},
+		{"click", "oc_project", "oc_platform", func(m Model) Model {
+			next, cmd := clickPane(m, 2, messageLineOf(t, m, "om_j1"))
+			return applyAll(t, next.(Model), cmd)
+		}},
+		{"click on the pane's head", "oc_platform", "oc_project", func(m Model) Model {
+			m.focus = paneChats
+			next, cmd := m.onClick(tea.Mouse{Button: tea.MouseLeft, X: chatsWidth + 5, Y: 1})
+			return applyAll(t, next.(Model), cmd)
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			m, _, cleared := readingFeed(t)
+
+			m = tc.land(m)
+
+			want := map[string]int64{"oc_platform": 200, "oc_project": 300}[tc.read]
+			require.Equal(t, []store.ChatUnread{{ChatID: tc.read, Position: want}}, *cleared)
+			require.Equal(t, []string{tc.waiting}, waitingChats(t, m))
+		})
+	}
+}
+
+// A section stops at its cap; the chat it was cut from does not. The client's
+// dot falls with the whole backlog, not 80 messages short of it.
+func TestFeed_LandingReadsPastACutSection(t *testing.T) {
+	t.Parallel()
+	m, cleared := loudFeed(t)
+	m.focus = paneMessages
+
+	keyThrough(t, m, "j")
+
+	require.Equal(t, []store.ChatUnread{{ChatID: "oc_loud", Position: unreadSectionLimit + 10}}, *cleared)
+}
+
+// What the reader reads here does not move the page out from under them: the
+// section, its messages, the cursor and the viewport all stay, and only the
+// count on its rule answers the read.
+func TestFeed_ReadingAChatLeavesThePageWhereItIs(t *testing.T) {
+	t.Parallel()
+	m, _, _ := readingFeed(t)
+	m = keyThrough(t, m, "j")
+	sel, idx, top := idAt(m.msgs, m.msgIdx), m.msgIdx, m.msgTop
+	require.Equal(t, []string{"oc_project"}, waitingChats(t, m))
+
+	m = applyAll(t, m, m.reloadCurrent())
+
+	require.Equal(t, []string{"oc_platform", "oc_project"},
+		[]string{m.feed.sections[0].chatID, m.feed.sections[1].chatID})
+	require.Equal(t, []string{"om_p1", "om_p2", "om_j1"}, idsOf(m.msgs))
+	require.Equal(t, sel, idAt(m.msgs, m.msgIdx))
+	require.Equal(t, idx, m.msgIdx)
+	require.Equal(t, top, m.msgTop)
+	require.Zero(t, m.feed.sections[0].count, "the rule says what the chat's row says")
+}
+
+// A chat read here holds its section for the rest of the visit, however it is
+// settled afterwards; one the reader never touched leaves when it is settled
+// elsewhere. Leaving drops the visit, so the next one opens on the backlog as
+// it stands.
+func TestFeed_AChatReadHereStaysUntilTheReaderLeaves(t *testing.T) {
+	t.Parallel()
+	m, _, _ := readingFeed(t)
+	m = keyThrough(t, m, "n")
+	_, err := m.deps.Store.AcceptRemoteRead(t.Context(), "oc_platform", 200)
+	require.NoError(t, err)
+
+	m = applyAll(t, m, m.reloadCurrent())
+
+	require.Len(t, m.feed.sections, 1)
+	require.Equal(t, "oc_project", m.feed.sections[0].chatID)
+	require.Equal(t, []string{"om_j1"}, idsOf(m.msgs))
+	require.Empty(t, waitingChats(t, m))
+
+	m = keyThrough(t, m, "esc")
+	require.Nil(t, m.feed)
+	say(t, m.deps.Store, "om_p3", "oc_platform", 400, "又来一个")
+	owing(t, m.deps.Store, "om_p3")
+	next, cmd := m.openUnread()
+	m = applyAll(t, next.(Model), cmd)
+
+	require.Equal(t, []string{"om_p3"}, idsOf(m.msgs), "a fresh visit opens where the backlog starts now")
+}
+
+// Feishu is told each watermark once per visit. Walking about inside a chat
+// already read asks for nothing, and a clear the gateway refused is not
+// retried behind the reader's back: m is the reader asking again.
+func TestFeed_AWatermarkIsAskedForOnce(t *testing.T) {
+	t.Parallel()
+	m, _, _ := readingFeed(t)
+	attempts := 0
+	m.deps.ClearBadge = func(context.Context, store.ChatUnread) error {
+		attempts++
+		return errFailedClear
+	}
+
+	m = keyThrough(t, m, "j", "k", "j")
+
+	require.Equal(t, 1, attempts)
+	require.Contains(t, waitingChats(t, m), "oc_platform", "the refused clear left the chat waiting")
+
+	m = keyThrough(t, m, "m")
+	require.Equal(t, 2, attempts)
+}
+
+// A message landing in a chat already read raises its watermark, and the next
+// landing asks for the new one.
+func TestFeed_ANewerMessageIsAskedForOnTheNextLanding(t *testing.T) {
+	t.Parallel()
+	m, _, cleared := readingFeed(t)
+	m = keyThrough(t, m, "j")
+	say(t, m.deps.Store, "om_p3", "oc_platform", 250, "还有一件事")
+	owing(t, m.deps.Store, "om_p3")
+	m = applyAll(t, m, m.reloadCurrent())
+
+	keyThrough(t, m, "j")
+
+	require.Equal(t, []store.ChatUnread{{ChatID: "oc_platform", Position: 200}, {ChatID: "oc_platform", Position: 250}},
+		*cleared)
+}
+
+// Acting on a message is reading it, whether or not the act then reaches
+// Feishu: the reader has dealt with the message either way. The chat read is
+// the message's own, not the one the cursor's section belongs to.
+func TestFeed_ActingOnAMessageReadsItsChat(t *testing.T) {
+	t.Parallel()
+	for _, act := range []string{"reaction", "reply", "send"} {
+		t.Run(act, func(t *testing.T) {
+			t.Parallel()
+			m, fake, cleared := readingFeed(t)
+			fake.Err = errors.New("network unavailable")
+			x := m.msgs[indexOfID(m.msgs, "om_j1")]
+
+			var next tea.Model
+			var cmd tea.Cmd
+			switch act {
+			case "reaction":
+				next, cmd = m.toggleReaction(x, "THUMBSUP")
+			case "reply":
+				next, cmd = m.startInsert(&x, false)
+			case "send":
+				m.replyTo = &x
+				m.input.SetValue("收到")
+				next, cmd = m.submit()
+			}
+			m = applyAll(t, next.(Model), cmd)
+
+			require.Equal(t, []store.ChatUnread{{ChatID: "oc_project", Position: 300}}, *cleared)
+			require.Equal(t, []string{"oc_platform"}, waitingChats(t, m))
+		})
+	}
+}
+
+// Seeing the page is not reading it, and an act the panel refused never
+// happened: the wheel, the window, a reload, a key that moves nothing, a
+// chooser opened and shut, an empty send and a reply to a recalled message
+// all leave every chat waiting.
+func TestFeed_LookingIsNotReading(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name string
+		do   func(Model) Model
+	}{
+		{"wheel", func(m Model) Model {
+			next, cmd := m.Update(tea.MouseWheelMsg{X: chatsWidth + 5, Y: 8, Button: tea.MouseWheelDown})
+			return applyAll(t, next.(Model), cmd)
+		}},
+		{"focus and resize", func(m Model) Model {
+			for _, msg := range []tea.Msg{tea.BlurMsg{}, tea.FocusMsg{}, tea.WindowSizeMsg{Width: 100, Height: 30}} {
+				next, cmd := m.Update(msg)
+				m = applyAll(t, next.(Model), cmd)
+			}
+			return m
+		}},
+		{"reload", func(m Model) Model { return applyAll(t, m, m.reloadCurrent()) }},
+		{"k at the top", func(m Model) Model { return keyThrough(t, m, "k") }},
+		{"chooser shut", func(m Model) Model {
+			next, _ := m.openPicker()
+			return keyThrough(t, next.(Model), "esc")
+		}},
+		{"empty send", func(m Model) Model {
+			next, cmd := m.startInsert(nil, false)
+			m = applyAll(t, next.(Model), cmd)
+			next, cmd = m.submit()
+			return applyAll(t, next.(Model), cmd)
+		}},
+		{"reply to a recall", func(m Model) Model {
+			x := m.msgs[indexOfID(m.msgs, "om_j1")]
+			x.Deleted = true
+			next, cmd := m.startInsert(&x, false)
+			return applyAll(t, next.(Model), cmd)
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			m, _, cleared := readingFeed(t)
+
+			m = tc.do(m)
+
+			require.Empty(t, *cleared)
+			require.ElementsMatch(t, []string{"oc_platform", "oc_project"}, waitingChats(t, m))
+			require.Empty(t, m.readKey(true), "the page is not a chat's")
+		})
+	}
+}
+
+// m on a chat already read here costs Feishu nothing more — its dot fell with
+// the read — and takes the section off the page as it always does.
+func TestFeed_MOnAChatReadHereTakesItsSection(t *testing.T) {
+	t.Parallel()
+	m, _, cleared := readingFeed(t)
+	m = keyThrough(t, m, "j")
+	require.Len(t, *cleared, 1)
+
+	m = keyThrough(t, m, "m")
+	m = applyAll(t, m, m.reloadCurrent())
+
+	require.Len(t, *cleared, 1)
+	require.Len(t, m.feed.sections, 1)
+	require.Equal(t, []string{"om_j1"}, idsOf(m.msgs))
+}
+
+// Mark All is the reader saying every chat is done, so it releases the ones
+// held because they were read here, even when Feishu had nothing left to
+// clear.
+func TestFeed_MarkAllTakesTheChatsReadHere(t *testing.T) {
+	t.Parallel()
+	m, _, _ := readingFeed(t)
+	m = keyThrough(t, m, "j", "n")
+	require.Empty(t, waitingChats(t, m))
+	require.Len(t, m.feed.sections, 2)
+
+	next, cmd := m.startMarkAll()
+	m = drain(t, next.(Model), cmd)
+
+	require.Empty(t, m.feed.sections)
+	require.Empty(t, m.msgs)
+}
+
+// A page read before the reader read a chat cannot know that chat is held,
+// and must not take its section away when it lands after the read settled.
+func TestFeed_APageFromBeforeAReadIsReadAgain(t *testing.T) {
+	t.Parallel()
+	m, _, _ := readingFeed(t)
+	stale := m.reloadCurrent()
+	m = keyThrough(t, m, "j")
+	require.Equal(t, []string{"oc_project"}, waitingChats(t, m))
+
+	m = applyAll(t, m, stale)
+
+	require.Len(t, m.feed.sections, 2)
+	require.Equal(t, []string{"om_p1", "om_p2", "om_j1"}, idsOf(m.msgs))
+}
+
+// A send from the panel leaves the cursor on the message it was on. The page
+// is a pass over many chats, and the bubble waiting under its own section is
+// not where the reader is going next.
+func TestFeed_ASendLeavesTheCursorWhereItWas(t *testing.T) {
+	t.Parallel()
+	m, _, _ := readingFeed(t)
+	m.selfName = "林岚"
+	x := m.msgs[indexOfID(m.msgs, "om_j1")]
+	m.replyTo = &x
+	m.input.SetValue("收到")
+
+	next, _ := m.submit()
 	m = next.(Model)
 
-	require.Len(t, m.dots, 3, "walking onto a block is not reading the chat it came from")
+	require.Equal(t, "om_p1", idAt(m.msgs, m.msgIdx))
+	require.Equal(t, 0, m.msgTop)
+}
+
+// Markers behave the way a chat's own page has them: the block the cursor
+// lands on is read and loses its marker, the rest keep theirs until the
+// cursor reaches them.
+func TestFeed_TheUnreadMarkersGoOutUnderTheCursor(t *testing.T) {
+	t.Parallel()
+	m, _, _ := readingFeed(t)
+	require.Len(t, m.dots, 3)
+
+	m = keyThrough(t, m, "j")
+	require.Equal(t, map[string]bool{"om_j1": true}, m.dots, "平台组's one block went out under the cursor")
+
+	m = keyThrough(t, m, "n")
+	require.Empty(t, m.dots)
 }
 
 func TestFeed_ASendWaitsUnderItsOwnSection(t *testing.T) {

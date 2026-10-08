@@ -165,7 +165,7 @@ type UnreadScreen struct {
 // UnreadRows is the messages the Unread panel would show, in the order it
 // shows them: one chat's stretch after another, oldest backlog first.
 func UnreadRows(ctx context.Context, d Deps) ([]store.Message, error) {
-	p, err := readFeed(ctx, d, nil)
+	p, err := readFeed(ctx, d, nil, nil)
 	return p.msgs, err
 }
 
@@ -175,7 +175,7 @@ func UnreadRows(ctx context.Context, d Deps) ([]store.Message, error) {
 // beside it, so a field the panes learn to draw reaches this page too.
 // Empty when nothing is waiting.
 func UnreadPage(ctx context.Context, d Deps, sc UnreadScreen) (string, error) {
-	p, err := readFeed(ctx, d, nil)
+	p, err := readFeed(ctx, d, nil, nil)
 	if err != nil {
 		return "", err
 	}

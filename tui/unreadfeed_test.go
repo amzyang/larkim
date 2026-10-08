@@ -93,7 +93,7 @@ func TestGatherUnread_OrdersSectionsByTheOldestBacklog(t *testing.T) {
 	t.Parallel()
 	st, chats := backlog(t)
 
-	secs, msgs, _, err := gatherUnread(t.Context(), st, "ou_me", chats, nil)
+	secs, msgs, _, err := gatherUnread(t.Context(), st, "ou_me", chats, nil, nil)
 	require.NoError(t, err)
 
 	require.Equal(t, []string{"oc_platform", "oc_project"}, []string{secs[0].chatID, secs[1].chatID},
@@ -112,7 +112,7 @@ func TestGatherUnread_ASectionRunsFromItsAnchorToTheNewest(t *testing.T) {
 	read := true
 	require.NoError(t, st.SetReadStatus(t.Context(), "om_p3", &read, 100, 0))
 
-	_, msgs, _, err := gatherUnread(t.Context(), st, "ou_me", chats, nil)
+	_, msgs, _, err := gatherUnread(t.Context(), st, "ou_me", chats, nil, nil)
 	require.NoError(t, err)
 
 	require.Equal(t, []string{"om_p1", "om_p2", "om_p3", "om_j1"}, idsOf(msgs))
@@ -129,7 +129,7 @@ func TestGatherUnread_ASectionKeepsARecallInTheBacklog(t *testing.T) {
 	_, err := st.UpsertMessages(t.Context(), []store.Message{gone}, 2)
 	require.NoError(t, err)
 
-	_, msgs, _, err := gatherUnread(t.Context(), st, "ou_me", chats, nil)
+	_, msgs, _, err := gatherUnread(t.Context(), st, "ou_me", chats, nil, nil)
 	require.NoError(t, err)
 
 	require.Contains(t, idsOf(msgs), "om_p3")
@@ -195,7 +195,7 @@ func TestGatherUnread_ASectionOfExactlyTheCapIsNotCut(t *testing.T) {
 	st, ids := firehose(t, unreadSectionLimit)
 	chats := []store.Chat{{ChatID: "oc_loud", Name: "平台组", UnreadCount: int64(len(ids))}}
 
-	secs, msgs, _, err := gatherUnread(t.Context(), st, "ou_me", chats, nil)
+	secs, msgs, _, err := gatherUnread(t.Context(), st, "ou_me", chats, nil, nil)
 	require.NoError(t, err)
 
 	require.False(t, secs[0].cut)
@@ -222,7 +222,7 @@ func TestGatherUnread_CutsAFirehoseSectionAndSaysSo(t *testing.T) {
 	st, ids := firehose(t, unreadSectionLimit+10)
 	chats := []store.Chat{{ChatID: "oc_loud", Name: "平台组", UnreadCount: int64(len(ids))}}
 
-	secs, msgs, _, err := gatherUnread(t.Context(), st, "ou_me", chats, nil)
+	secs, msgs, _, err := gatherUnread(t.Context(), st, "ou_me", chats, nil, nil)
 	require.NoError(t, err)
 
 	require.True(t, secs[0].cut)
@@ -235,7 +235,7 @@ func TestGatherUnread_CutsAFirehoseSectionAndSaysSo(t *testing.T) {
 func TestGatherUnread_AChatStillWaitingKeepsTheAnchorItWasDrawnOn(t *testing.T) {
 	t.Parallel()
 	st, chats := backlog(t)
-	secs, _, _, err := gatherUnread(t.Context(), st, "ou_me", chats, nil)
+	secs, _, _, err := gatherUnread(t.Context(), st, "ou_me", chats, nil, nil)
 	require.NoError(t, err)
 
 	read := true
@@ -244,29 +244,49 @@ func TestGatherUnread_AChatStillWaitingKeepsTheAnchorItWasDrawnOn(t *testing.T) 
 	require.NoError(t, err)
 	require.Equal(t, int64(200), fresh[0].FirstMs, "the store has moved on")
 
-	held, msgs, _, err := gatherUnread(t.Context(), st, "ou_me", chats, secs)
+	held, msgs, _, err := gatherUnread(t.Context(), st, "ou_me", chats, secs, nil)
 	require.NoError(t, err)
 	require.Equal(t, int64(100), held[0].anchorMs, "the section has not")
 	require.Equal(t, []string{"om_p1", "om_p2", "om_j1"}, idsOf(msgs))
 }
 
-// The panel writes nothing, so a chat's backlog only ever settles from outside
-// it. A chat with none left leaves the page, taking the anchor it held: that
-// anchor is what would re-open the read stretch when the chat next speaks.
+// A chat the reader has not read here leaves the page once its backlog is
+// settled, taking the anchor it held: that anchor is what would re-open the
+// read stretch when the chat next speaks.
 func TestGatherUnread_AChatReadElsewhereLeavesThePage(t *testing.T) {
 	t.Parallel()
 	st, chats := backlog(t)
-	secs, _, _, err := gatherUnread(t.Context(), st, "ou_me", chats, nil)
+	secs, _, _, err := gatherUnread(t.Context(), st, "ou_me", chats, nil, nil)
 	require.NoError(t, err)
 
 	_, err = st.AcceptRemoteRead(t.Context(), "oc_platform", 200)
 	require.NoError(t, err)
 
-	held, msgs, _, err := gatherUnread(t.Context(), st, "ou_me", chats, secs)
+	held, msgs, _, err := gatherUnread(t.Context(), st, "ou_me", chats, secs, nil)
 	require.NoError(t, err)
 	require.Equal(t, []string{"oc_project"}, []string{held[0].chatID})
 	require.Len(t, held, 1)
 	require.Equal(t, []string{"om_j1"}, idsOf(msgs))
+}
+
+// A chat read here stays where it is with nothing left waiting, the rule
+// saying what the chat's row now does: the reader is still inside it.
+func TestGatherUnread_AChatReadHereKeepsItsStretch(t *testing.T) {
+	t.Parallel()
+	st, chats := backlog(t)
+	secs, _, _, err := gatherUnread(t.Context(), st, "ou_me", chats, nil, nil)
+	require.NoError(t, err)
+
+	_, err = st.AcceptRemoteRead(t.Context(), "oc_platform", 200)
+	require.NoError(t, err)
+	chats[0].UnreadCount = 0
+
+	held, msgs, _, err := gatherUnread(t.Context(), st, "ou_me", chats, secs, map[string]int64{"oc_platform": 200})
+	require.NoError(t, err)
+	require.Equal(t, []string{"oc_platform", "oc_project"}, []string{held[0].chatID, held[1].chatID})
+	require.Equal(t, int64(100), held[0].anchorMs)
+	require.Zero(t, held[0].count)
+	require.Equal(t, []string{"om_p1", "om_p2", "om_j1"}, idsOf(msgs))
 }
 
 // The stretch a chat opens after its whole backlog is written off starts at
@@ -274,7 +294,7 @@ func TestGatherUnread_AChatReadElsewhereLeavesThePage(t *testing.T) {
 func TestGatherUnread_ReanchorsAChatAfterItsBacklogIsRead(t *testing.T) {
 	t.Parallel()
 	st, chats := backlog(t)
-	first, _, _, err := gatherUnread(t.Context(), st, "ou_me", chats, nil)
+	first, _, _, err := gatherUnread(t.Context(), st, "ou_me", chats, nil, nil)
 	require.NoError(t, err)
 	require.Equal(t, int64(100), first[0].anchorMs)
 
@@ -282,14 +302,14 @@ func TestGatherUnread_ReanchorsAChatAfterItsBacklogIsRead(t *testing.T) {
 	for _, id := range []string{"om_p1", "om_p2", "om_j1"} {
 		require.NoError(t, st.SetReadStatus(t.Context(), id, &read, 900, 0))
 	}
-	settled, _, _, err := gatherUnread(t.Context(), st, "ou_me", chats, first)
+	settled, _, _, err := gatherUnread(t.Context(), st, "ou_me", chats, first, nil)
 	require.NoError(t, err)
 	require.Empty(t, settled, "nothing is waiting, so nothing holds a stretch")
 
 	say(t, st, "om_p9", "oc_platform", 500, "接口好了")
 	owing(t, st, "om_p9")
 
-	again, msgs, _, err := gatherUnread(t.Context(), st, "ou_me", chats, settled)
+	again, msgs, _, err := gatherUnread(t.Context(), st, "ou_me", chats, settled, nil)
 	require.NoError(t, err)
 	require.Equal(t, []string{"oc_platform"}, []string{again[0].chatID})
 	require.Equal(t, int64(500), again[0].anchorMs)
@@ -306,7 +326,7 @@ func TestGatherUnread_AChatWithNothingWaitingIsNoSection(t *testing.T) {
 		{chatID: "oc_empty", name: "空的", anchorMs: 100},
 	}
 
-	secs, msgs, _, err := gatherUnread(t.Context(), st, "ou_me", chats, keep)
+	secs, msgs, _, err := gatherUnread(t.Context(), st, "ou_me", chats, keep, nil)
 	require.NoError(t, err)
 
 	require.Len(t, secs, 2)
@@ -334,7 +354,7 @@ func TestUnreadMore_CountsWhatThePageLeavesOut(t *testing.T) {
 func TestGatherUnread_AChatThatStartsWaitingJoinsThePage(t *testing.T) {
 	t.Parallel()
 	st, chats := backlog(t)
-	held, _, _, err := gatherUnread(t.Context(), st, "ou_me", chats, nil)
+	held, _, _, err := gatherUnread(t.Context(), st, "ou_me", chats, nil, nil)
 	require.NoError(t, err)
 
 	require.NoError(t, st.EnsureChat(t.Context(), "oc_late", 1))
@@ -342,7 +362,7 @@ func TestGatherUnread_AChatThatStartsWaitingJoinsThePage(t *testing.T) {
 	owing(t, st, "om_l1")
 	chats = append(chats, store.Chat{ChatID: "oc_late", Name: "后来的", UnreadCount: 1})
 
-	secs, msgs, _, err := gatherUnread(t.Context(), st, "ou_me", chats, held)
+	secs, msgs, _, err := gatherUnread(t.Context(), st, "ou_me", chats, held, nil)
 	require.NoError(t, err)
 
 	require.Len(t, secs, 3)
@@ -358,7 +378,7 @@ func TestGatherUnread_AChatThatStartsWaitingJoinsThePage(t *testing.T) {
 func TestGatherUnread_AnEmptyPageTakesTheFirstChatToStartWaiting(t *testing.T) {
 	t.Parallel()
 	st := feedStore(t)
-	held, msgs, _, err := gatherUnread(t.Context(), st, "ou_me", nil, nil)
+	held, msgs, _, err := gatherUnread(t.Context(), st, "ou_me", nil, nil, nil)
 	require.NoError(t, err)
 	require.Empty(t, held)
 	require.Empty(t, msgs)
@@ -368,7 +388,7 @@ func TestGatherUnread_AnEmptyPageTakesTheFirstChatToStartWaiting(t *testing.T) {
 	owing(t, st, "om_l1")
 	chats := []store.Chat{{ChatID: "oc_late", Name: "后来的", UnreadCount: 1}}
 
-	secs, msgs, _, err := gatherUnread(t.Context(), st, "ou_me", chats, held)
+	secs, msgs, _, err := gatherUnread(t.Context(), st, "ou_me", chats, held, nil)
 	require.NoError(t, err)
 
 	require.Len(t, secs, 1)

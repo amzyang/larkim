@@ -21,11 +21,27 @@
 
 两道门，各管一件事。
 
-**`pageShown(tailed)`（`tui/readgate.go`）决定读不读。** 每一项都是「消息面板其实没在读者眼前」的一种：搜索/Mentions 面板借同一套 `msgRows`/`msgTop` 画自己的命中（`m.searching` 两者都置位），Unread 面板借同一套画每个还欠着的会话（`m.feed` 非 nil；`m.chatID` 全程指着某个真实会话，但摆在读者眼前的是一页很多会话，光标停的那个并没有在被读——`Enter` 进去才是），帮助层整屏盖住，终端窄到 `foldRight` 让右栏顶掉消息面板，尺寸低于 `minWidth`/`minHeight` 时 `View` 两栏都不画。视口本身的问题交给 `atTail` —— 滚轮把光标留在最新消息上也答不了它。
+**`pageShown(tailed)`（`tui/readgate.go`）决定读不读。** 每一项都是「消息面板其实没在读者眼前」的一种：搜索/Mentions 面板借同一套 `msgRows`/`msgTop` 画自己的命中（`m.searching` 两者都置位），Unread 面板借同一套画每个还欠着的会话（`m.feed` 非 nil；`m.chatID` 全程指着某个真实会话，但摆在读者眼前的是一页很多会话，摆着不等于在读——面板按自己的规则读，见下节「Unread 面板」），帮助层整屏盖住，终端窄到 `foldRight` 让右栏顶掉消息面板，尺寸低于 `minWidth`/`minHeight` 时 `View` 两栏都不画。视口本身的问题交给 `atTail` —— 滚轮把光标留在最新消息上也答不了它。
 
 **`unreadWaiting(msgs)`（`tui/badgeclear.go`）决定清不清 Feishu 红点。** 它与批量清理的集合**不同**，这是故意的：自动路径每次 reload 都跑，上界必须是「每条未读消息一次」，所以它绑在 `markChatRead` 的写上；批量清理是读者按一次才跑一次，上界是按下的次数，所以它绑在回执上。逐项复刻 `store.unreadBadge`——`is_read_remote = 0`、`local_read_at = 0`、`message_position >= 0`、未撤回。**它取的正是 `markChatRead` 的集合（`store.unreadBadge`），这是清红点次数的上界所在**：这一页判为真的每一条，`markChatRead` 都在同一个 batch 里记为本地已读，下一页因此判为假。谓词放宽到那个集合之外，就会出现 `markChatRead` 永远收不掉的消息，每次 reload 都清一次，直到会话被切走。
 
 判据必须读页面查询时的状态：`markChatRead` 紧接着就把 `local_read_at` 写上，改用当前徽标数会被本次访问自己的写入打败。
+
+## Unread 面板
+
+面板不走 `pageShown`，按客户端「打开会话即已读」的语义自己读：读者落到某个会话的一条消息上，或对它做了动作，就读掉那个会话。
+
+- **落到**：键盘在 `Update` 里判——KeyPress 后光标换了消息，或焦点从会话列表 / 右栏进入消息面板（`j`/`n`/`Tab`）；点击在 `onClick` 里判——点中消息行，或点消息面板头把焦点交过来。点中不属于任何消息、光标也没动的行（钉住的 rule 下那行空白）不算。从 composer 或 picker 退回消息面板不算，那不是落到新地方。
+- **动作**：Reaction（`toggleReaction`、`sendEmojiPicture`）、`r`/`R`（`startInsert`）、已派发的发送（`submit`），都在拒绝分支之后调 `readFeedChat`，不管请求最终成没成。
+- **不算**：滚轮、reload、data_rev、焦点 / 尺寸变化、开关 picker、空发送、被拒绝的动作。
+
+**水位**：`readFeedChat` 查 `ChatWithUnread`，取整个会话最新一条仍欠着的消息的 position，不受 section 80 条上限影响，进 `clearQueue`。`unreadFeed.readHere` 按会话记本次访问请求过的最高水位：同一水位只请求一次，`j`/`k` 来回不重发，失败也不在每次按键时重试——显式 `m` 才重试；新消息抬高水位后下一次落到会请求新的。队里已有该会话时 `pushClears` 取较大水位，否则后到的更高水位被吞，那条消息在本次访问里再也请求不到。
+
+**section 去留**：`readHere` 里的会话留到离开面板为止，读完不再有未读也留着，锚点、消息、光标与视口都不动，只有 rule 上的计数跟着会话行变（`gatherUnread` 从会话行把它补回 `joinUnread` 的候选集）。`m`、✓、右键菜单把会话移出 `readHere`，Mark All 清空它，这些会话在下一页按是否还有未读决定去留。读者没碰过的会话照旧：仍有未读就持锚，结清就离开，空位由等待中的会话补上。
+
+**竞态**：`readFeedChat` 在手势当下同步登记 `readHere`，不等水位回来，所以之后读出的页都知道要留它。登记前就发出的页带着 `gen`，落地时落后就重读一次，否则它会在已读落地后拿走读者正在看的 section。移出不计 `gen`：移出前的页只是多留一页。Mark All 只在飞书无可清时自己 reload；有可清时每条清成功的 data_rev 各自带出 reload，抢在清之前读的页会把刚按灭的标记重新点亮。
+
+**标记**：与会话页一致，光标落到哪块哪块熄（`clearDotsAtCursor` 对面板同样生效），reload 不清 `m.dots`。
 
 ## 清红点队列
 
@@ -149,3 +165,21 @@ Collapsed Chats 在 inbox 顶层只是一张 `type=BOX` 的卡片，折进去的
 | `TestUpdate_AFoldedAwayMessagePaneLeavesTheChatUnread` | `foldRight` 顶掉消息面板时不落，拉宽才落 |
 | `TestUpdate_AJumpIntoHistoryLeavesWhatIsBelowItUnread` | 跳到历史中间的命中不落，滚到末尾才落 |
 | `TestReadKey_IsEmptyWhileTheSearchPanelIsOpen` | 搜索/Mentions 面板开着时 `readKey` 为 `""` |
+
+`tui/unreadpanel_test.go` 管 Unread 面板的读。`readingFeed` 把 `ClearBadge` 换成 recorder、飞书换成 `larkcli.Fake`，`keyThrough` 让按键走 `Update`，读的钩子挂在那里：
+
+| 用例 | 断言 |
+|---|---|
+| `TestFeed_LandingOnAMessageReadsItsChat` | `j`/`n`/`Tab`/点击消息/点面板头各读一次，水位是整个会话最新欠着的那条 |
+| `TestFeed_LandingReadsPastACutSection` | 超过 section 上限的会话按整个会话的水位清 |
+| `TestFeed_ActingOnAMessageReadsItsChat` | Reaction/回复/发送读消息自己的会话，请求失败也读 |
+| `TestFeed_LookingIsNotReading` | 滚轮、焦点与尺寸、reload、到顶的 `k`、开关 picker、空发送、回复已撤回消息都不读 |
+| `TestFeed_ReadingAChatLeavesThePageWhereItIs` | 读完 reload，section、消息、光标、视口不动，rule 计数归零 |
+| `TestFeed_AChatReadHereStaysUntilTheReaderLeaves` | 读过的留到离开；没碰过的在别处结清后离开；重开只收当前未读 |
+| `TestFeed_AWatermarkIsAskedForOnce` | 同一水位只请求一次，失败不随按键重试，`m` 重试 |
+| `TestFeed_ANewerMessageIsAskedForOnTheNextLanding` | 新消息抬高水位，下一次落到请求新的 |
+| `TestFeed_APageFromBeforeAReadIsReadAgain` | 登记前发出的页落地后重读，不拿走读者所在的 section |
+| `TestFeed_MOnAChatReadHereTakesItsSection` | 读过的会话按 `m` 不再 POST，section 离开 |
+| `TestFeed_MarkAllTakesTheChatsReadHere` | Mark All 放掉读过的会话，飞书无可清时也放 |
+| `TestFeed_ASendLeavesTheCursorWhereItWas` | 发送不把光标带到新气泡 |
+| `TestFeed_TheUnreadMarkersGoOutUnderTheCursor` | 标记随光标逐块熄 |

@@ -527,6 +527,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// will draw. The cache is held through a pointer, so what it drops here
 	// is gone for the picturePrepare below and the View that follows.
 	nm.gists.hold(nm.rows.all(nm.chats, nm.threads))
+	// On the Unread page a key that lands the cursor on another message, or
+	// the focus on the pane from the list or the frame beside it, reads that
+	// message's chat. Clicks read in onClick, which knows what was hit;
+	// stepping back out of the composer or a chooser lands nowhere new.
+	if _, key := msg.(tea.KeyPressMsg); key && m.inFeed() && nm.inFeed() && nm.focus == paneMessages &&
+		(idAt(m.msgs, m.msgIdx) != idAt(nm.msgs, nm.msgIdx) || m.focus == paneChats || m.focus == paneThread) {
+		read := nm.readFeedCursor()
+		cmd = tea.Batch(cmd, read)
+	}
 	// Reading is settled here rather than where a page arrives, because
 	// arriving is only one of the ways a page comes to be in front of the
 	// reader: scrolling back to the tail, closing the help overlay, widening
@@ -844,9 +853,16 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, infoCmd
 	case unreadFeedLoadedMsg:
-		// The panel may have come down while the page was out.
-		if m.feed == nil {
+		// The panel may have come down, or gone up again as another visit,
+		// while the page was out.
+		if msg.visit != m.feed {
 			return m, nil
+		}
+		// A page read before a chat was read here does not know to hold it,
+		// and once that read lands it takes away the section the reader is in.
+		if msg.gen != m.feed.gen {
+			cmd := m.reloadCurrent()
+			return m, cmd
 		}
 		// A reload is not a cursor move: cursor and viewport are each held by
 		// the message they were on, the way a chat's own reload holds them. A
@@ -858,8 +874,8 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.msgsBase, m.meta = msg.msgs, msg.meta
 		m.metaGen++
 		m.applyOutbox()
-		// Nothing here is taken as read, so every marker the page arrives with
-		// stands until the reader goes into the chat and reads it there.
+		// A marker goes out under the cursor, as on a chat's own page, not
+		// with the read: the ones the page arrives with stand until then.
 		m.markDots(msg.msgs)
 		m.rebuildMessages()
 		// With nothing waiting there is no section for the composer to answer,
@@ -967,6 +983,8 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.onMarkAllSet(msg)
 	case sectionDotMsg:
 		return m.pushClears(msg.chats)
+	case feedReadMsg:
+		return m.onFeedRead(msg)
 	case clearDueMsg:
 		return m.onClearDue(msg)
 	case clearFiredMsg:
@@ -1471,12 +1489,13 @@ func (m *Model) markDots(msgs []store.Message) {
 // closest a list with a cursor comes to the client's own "the reader has seen
 // this".
 //
-// The search pane and the Unread panel are left alone: their rows run across
-// chats, none of which the reader has opened, so the marker is all that says
-// one is still waiting.
+// The Unread panel goes the same way, landing on a block there being reading
+// its chat. The search pane is left alone: its rows run across chats none of
+// which the reader has opened, so the marker is all that says one is still
+// waiting.
 func (m *Model) clearDotsAtCursor() bool {
 	switch {
-	case m.focus == paneMessages && m.chatPage():
+	case m.focus == paneMessages && !m.searching:
 		return m.clearBlockDots(m.msgs, m.msgIdx, m.msgStyleFor(m.messagesWidth()-2, m.meta))
 	case m.focus == paneThread && !m.aiOpen():
 		return m.clearBlockDots(m.thread, m.threadIdx, m.msgStyleFor(m.rightWidth()-2, m.threadMeta))
@@ -1597,7 +1616,7 @@ func (m Model) reloadCurrent() tea.Cmd {
 	case m.feed != nil:
 		// The anchors travel with the reload: they are what holds a section
 		// still while the reader is inside it.
-		cmds = append(cmds, loadUnreadFeed(m.deps, m.feed.sections))
+		cmds = append(cmds, loadUnreadFeed(m.deps, m.feed))
 	case m.chatID != "":
 		cmds = append(cmds, loadMessages(m.deps, m.chatID, m.msgSince, m.msgLimit))
 	}
@@ -2698,12 +2717,17 @@ func (m Model) startInsert(replyTo *store.Message, inThread bool) (tea.Model, te
 		// there is nothing there to retarget.
 		panel = m.feedAnswer(replyTo)
 	}
+	// Answering a message on the Unread page is reading its chat.
+	var read tea.Cmd
+	if replyTo != nil {
+		read = m.readFeedChat(replyTo.ChatID)
+	}
 	// Planned before setQuote lays the panes out, so the session's first
 	// frame previews the draft the composer actually holds.
 	m.replan()
 	m.setQuote(replyTo, inThread)
 	cmd := m.areap().Focus()
-	return m, tea.Batch(panel, cmd)
+	return m, tea.Batch(panel, read, cmd)
 }
 
 // resumeInsert goes back to writing in the box that already has the keys,
@@ -2774,11 +2798,14 @@ func (m Model) submit() (tea.Model, tea.Cmd) {
 			it.threadID = m.replyTo.ThreadID
 		}
 	}
-	cmd := m.sendItem(it)
+	// Sending into a chat on the Unread page is reading it, whether or not
+	// the send then lands.
+	cmd := tea.Batch(m.sendItem(it), m.readFeedChat(it.chatID))
 	m.enqueue(it)
 	m.areap().Reset()
 	m.replan()
 	m.setQuote(nil, false)
+	wasOn, top := idAt(m.msgs, m.msgIdx), topAnchor(m.msgRows, m.msgs, m.msgTop)
 	m.refreshPanes()
 	if m.side == sideRight {
 		if i := indexOfID(m.thread, it.localID); i >= 0 {
@@ -2786,6 +2813,15 @@ func (m Model) submit() (tea.Model, tea.Cmd) {
 			m.rebuildThread()
 			m.scrollThreadToSelection()
 		}
+		return m.notify("", false), cmd
+	}
+	// The Unread page is a pass over many chats: the bubble waits under its
+	// own section, and the cursor stays where the reader is going on from.
+	if m.inFeed() {
+		if i := indexOfID(m.msgs, wasOn); i >= 0 {
+			m.msgIdx = i
+		}
+		m.msgTop = holdTop(m.msgRows, m.msgs, top, false, m.msgTop, m.msgListHeight())
 		return m.notify("", false), cmd
 	}
 	if i := indexOfID(m.msgs, it.localID); i >= 0 {
@@ -3094,6 +3130,12 @@ func (m Model) onClick(ms tea.Mouse) (tea.Model, tea.Cmd) {
 					return m.pressZone(paneThread, nil, 0, z)
 				}
 			}
+			// Focus handed to the Unread page lands on the cursor's message,
+			// the way Tab does.
+			if p == paneMessages {
+				cmd := m.readFeedCursor()
+				return m, cmd
+			}
 			return m, nil
 		}
 	}
@@ -3141,12 +3183,22 @@ func (m Model) onClick(ms tea.Mouse) (tea.Model, tea.Cmd) {
 			return m.pressZone(paneMessages, m.msgRows, line, z)
 		}
 		if idx := rowAt(m.msgRows, line); idx >= 0 {
+			// On the Unread page a click that hits no message and moves
+			// nothing has landed nowhere: it reads nothing and puts no
+			// marker out.
+			landed := !m.inFeed() || idx != m.msgIdx || !m.msgRows[line].plain
 			m.msgIdx = idx
-			m.clearDotsAtCursor()
+			var read tea.Cmd
+			if landed {
+				m.clearDotsAtCursor()
+				read = m.readFeedCursor()
+			}
 			m.rebuildMessages()
 			if double {
-				return m.activate()
+				next, cmd := m.activate()
+				return next, tea.Batch(read, cmd)
 			}
+			return m, read
 		}
 	case paneThread:
 		// The assistant column draws over the frame: its rows are its own,

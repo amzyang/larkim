@@ -28,8 +28,19 @@ func (m Model) onMarkAllSet(msg markAllSetMsg) (Model, tea.Cmd) {
 	if msg.err != nil {
 		return m.notify(msg.err.Error(), true), nil
 	}
+	// Every chat is done, the ones held on the Unread page because they were
+	// read there included. With clears to make, each settled one raises the
+	// revision that reads the page again; a page read here, before them, would
+	// put back the markers this press drops. With none, nothing else will.
+	if m.feed != nil {
+		clear(m.feed.readHere)
+	}
 	if len(msg.chats) == 0 {
-		return m.notify("nothing waiting in Feishu", false), nil
+		var reload tea.Cmd
+		if m.feed != nil {
+			reload = m.reloadCurrent()
+		}
+		return m.notify("nothing waiting in Feishu", false), reload
 	}
 	chats := slices.Clone(msg.chats)
 	if i := slices.IndexFunc(chats, func(c store.ChatUnread) bool { return c.ChatID == m.chatID }); i >= 0 {

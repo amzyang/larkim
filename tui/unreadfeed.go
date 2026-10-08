@@ -5,13 +5,14 @@ package tui
 // them one at a time. This lays every waiting chat out as one page instead,
 // parted into a section each, because the round trip a terminal pays to open a
 // chat is a whole page rebuild and the client pays nothing for it. The
-// semantics stay the client's: Enter goes to the chat, r answers it, and
-// nothing is taken as read by being seen here — the check on a section's rule,
-// or m, is the reader saying so.
+// semantics stay the client's: Enter goes to the chat, r answers it, and a
+// chat is read the way opening it reads it there — by the reader landing on
+// one of its messages or acting on one. Being on the page is not reading it.
 
 import (
 	"cmp"
 	"context"
+	"maps"
 	"slices"
 	"strconv"
 
@@ -37,11 +38,23 @@ const (
 // unreadFeed is one visit to the panel. A section's anchor is the one thing
 // taken once and held for as long as the chat is still waiting: one that
 // re-anchored on every reload would shrink under the page the reader is on. A
-// chat whose backlog is settled leaves instead, taking its anchor with it. A
-// chat that starts waiting later joins at the end, where there is nothing
-// above it to renumber. Leaving drops the feed, which is what re-orders it.
+// chat whose backlog is settled leaves instead, taking its anchor with it,
+// unless the reader read it here — then the reader is still inside it, and it
+// stays until they leave. A chat that starts waiting later joins at the end,
+// where there is nothing above it to renumber. Leaving drops the feed, which
+// is what re-orders it.
 type unreadFeed struct {
 	sections []unreadSection
+	// readHere is every chat the reader read on this visit, with the
+	// watermark Feishu was last asked to settle it to: -1 until the first
+	// answer, so the first one is always asked for. Holding the section and
+	// asking once per watermark both read it.
+	readHere map[string]int64
+	// gen counts the chats added to readHere. A page carries the count it was
+	// read under: one read before a chat was added would take away the
+	// section the reader is in once that chat's read lands. A release needs
+	// no count — a page from before it holds the chat one page longer.
+	gen int
 	// from is the chat that was open when the panel went up, so Esc puts the
 	// reader back where they were rather than nowhere.
 	from string
@@ -106,11 +119,14 @@ func (f *unreadFeed) section(chatID string) unreadSection {
 	return unreadSection{chatID: chatID}
 }
 
-// unreadFeedLoadedMsg carries a page of the panel.
+// unreadFeedLoadedMsg carries a page of the panel, with the visit it was read
+// for and that visit's gen at the time.
 type unreadFeedLoadedMsg struct {
 	sections []unreadSection
 	msgs     []store.Message
 	meta     msgMeta
+	visit    *unreadFeed
+	gen      int
 }
 
 // chatSideMsg is what a chat owns outside its messages: the draft written into
@@ -143,8 +159,7 @@ func unreadAnchors(rows []store.UnreadAnchor, chats []store.Chat) []unreadSectio
 		if !ok {
 			continue
 		}
-		out = append(out, unreadSection{chatID: a.ChatID, name: c.Name, anchorMs: a.FirstMs,
-			count: c.UnreadCount, atMe: c.UnreadMention, muted: c.Muted})
+		out = append(out, chatSection(c, a.FirstMs))
 	}
 	slices.SortFunc(out, func(a, b unreadSection) int {
 		return cmp.Or(cmp.Compare(a.anchorMs, b.anchorMs), cmp.Compare(a.chatID, b.chatID))
@@ -152,22 +167,30 @@ func unreadAnchors(rows []store.UnreadAnchor, chats []store.Chat) []unreadSectio
 	return out
 }
 
-// joinUnread is the page's sections after a reload: the ones still waiting, in
-// the order they are already drawn in, and then whatever has started waiting
-// since. A chat whose backlog has been settled leaves with it, so the anchor it
-// held cannot re-open that stretch when the chat next says something. A
-// newcomer joins at the end however old its backlog — the only part of the page
-// free to grow is the part below the rows the reader has seen.
+// chatSection is a chat's section opening at anchorMs, carrying what the
+// chat's row in the list says about it.
+func chatSection(c store.Chat, anchorMs int64) unreadSection {
+	return unreadSection{chatID: c.ChatID, name: c.Name, anchorMs: anchorMs,
+		count: c.UnreadCount, atMe: c.UnreadMention, muted: c.Muted}
+}
+
+// joinUnread is the page's sections after a reload: the ones the page may still
+// hold, in the order they are already drawn in, and then whatever has started
+// waiting since. fresh is that set — the chats still waiting, and the ones read
+// here. A chat in neither leaves, so the anchor it held cannot re-open that
+// stretch when the chat next says something. A newcomer joins at the end
+// however old its backlog — the only part of the page free to grow is the part
+// below the rows the reader has seen.
 func joinUnread(held, fresh []unreadSection) []unreadSection {
-	stillWaiting := make(map[string]unreadSection, len(fresh))
+	holdable := make(map[string]unreadSection, len(fresh))
 	for _, s := range fresh {
-		stillWaiting[s.chatID] = s
+		holdable[s.chatID] = s
 	}
 	// Built fresh rather than appended to: held is the page the model is still
 	// drawing, and its spare capacity is not this function's to write into.
 	out := make([]unreadSection, 0, len(held)+len(fresh))
 	for _, s := range held {
-		cur, ok := stillWaiting[s.chatID]
+		cur, ok := holdable[s.chatID]
 		if !ok {
 			continue
 		}
@@ -198,14 +221,26 @@ func feedWaiting(r listRow, unread map[string]int64) bool {
 }
 
 // gatherUnread reads one page of the panel. keep is the anchors already held,
-// nil on the first page; it answers with the sections it could fill, each
-// carrying whether it was cut short.
-func gatherUnread(ctx context.Context, st *store.Store, self string, chats []store.Chat, keep []unreadSection) ([]unreadSection, []store.Message, msgMeta, error) {
+// nil on the first page, and readHere the chats read on this visit; it answers
+// with the sections it could fill, each carrying whether it was cut short.
+func gatherUnread(ctx context.Context, st *store.Store, self string, chats []store.Chat, keep []unreadSection, readHere map[string]int64) ([]unreadSection, []store.Message, msgMeta, error) {
 	anchors, err := st.UnreadAnchors(ctx)
 	if err != nil {
 		return nil, nil, msgMeta{}, err
 	}
-	keep = joinUnread(keep, unreadAnchors(anchors, chats))
+	fresh := unreadAnchors(anchors, chats)
+	// A chat read here has nothing waiting once its read lands, so the anchors
+	// no longer name it. Its row still says what the rule should, and the
+	// anchor is the held one either way.
+	for _, s := range keep {
+		if _, ok := readHere[s.chatID]; !ok || slices.ContainsFunc(fresh, func(f unreadSection) bool { return f.chatID == s.chatID }) {
+			continue
+		}
+		if i := slices.IndexFunc(chats, func(c store.Chat) bool { return c.ChatID == s.chatID }); i >= 0 {
+			fresh = append(fresh, chatSection(chats[i], s.anchorMs))
+		}
+	}
+	keep = joinUnread(keep, fresh)
 	sections := make([]unreadSection, 0, len(keep))
 	var msgs []store.Message
 	for _, sec := range keep {
@@ -250,24 +285,26 @@ type feedPage struct {
 // from the model: it is what says a chat exists and what its rule is named,
 // and the one the model holds is by definition the one from before whatever
 // prompted the reload.
-func readFeed(ctx context.Context, d Deps, keep []unreadSection) (feedPage, error) {
+func readFeed(ctx context.Context, d Deps, keep []unreadSection, readHere map[string]int64) (feedPage, error) {
 	chats, err := d.Store.ListChats(ctx, store.ChatQuery{Self: d.Self})
 	if err != nil {
 		return feedPage{}, err
 	}
 	p := feedPage{chats: chats}
-	p.sections, p.msgs, p.meta, err = gatherUnread(ctx, d.Store, d.Self, chats, keep)
+	p.sections, p.msgs, p.meta, err = gatherUnread(ctx, d.Store, d.Self, chats, keep, readHere)
 	return p, err
 }
 
-// loadUnreadFeed reads the page for the panel.
-func loadUnreadFeed(d Deps, keep []unreadSection) tea.Cmd {
+// loadUnreadFeed reads the page for the visit. What it reads by is copied
+// here, on the update loop: the visit goes on changing while the page is out.
+func loadUnreadFeed(d Deps, visit *unreadFeed) tea.Cmd {
+	keep, readHere, gen := slices.Clone(visit.sections), maps.Clone(visit.readHere), visit.gen
 	return func() tea.Msg {
-		p, err := readFeed(context.Background(), d, keep)
+		p, err := readFeed(context.Background(), d, keep, readHere)
 		if err != nil {
 			return errMsg{err}
 		}
-		return unreadFeedLoadedMsg{sections: p.sections, msgs: p.msgs, meta: p.meta}
+		return unreadFeedLoadedMsg{sections: p.sections, msgs: p.msgs, meta: p.meta, visit: visit, gen: gen}
 	}
 }
 

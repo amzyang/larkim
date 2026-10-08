@@ -263,7 +263,10 @@ func (m Model) toggleReaction(x store.Message, key string) (tea.Model, tea.Cmd) 
 	// and the viewport is held by the message on its top row across the row
 	// the strip takes or gives back.
 	m.layout()
-	return m, react(m.deps, p)
+	// Reacting to a message on the Unread page is reading its chat, whether
+	// or not Feishu then takes the reaction.
+	read := m.readFeedChat(x.ChatID)
+	return m, tea.Batch(react(m.deps, p), read)
 }
 
 // sendEmojiPicture answers a choice of an emoji Feishu will not take as a
@@ -289,7 +292,7 @@ func (m Model) sendEmojiPicture(x store.Message, e emoji.Emoji) (tea.Model, tea.
 	if x.ThreadID != "" && x.MessagePosition < 0 {
 		it.inThread, it.threadID = true, x.ThreadID
 	}
-	cmd := m.sendItem(it)
+	cmd := tea.Batch(m.sendItem(it), m.readFeedChat(x.ChatID))
 	m.enqueue(it)
 	m.refreshPanes()
 	return m.notify("sending "+e.Name()+" as a picture", false), cmd

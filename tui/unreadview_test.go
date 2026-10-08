@@ -50,7 +50,7 @@ func applyAll(t *testing.T, m Model, cmd tea.Cmd) Model {
 			return m
 		}
 		switch msg.(type) {
-		case unreadFeedLoadedMsg, chatSideMsg, messagesLoadedMsg, chatsLoadedMsg, sectionDotMsg, clearDueMsg, clearFiredMsg:
+		case unreadFeedLoadedMsg, chatSideMsg, messagesLoadedMsg, chatsLoadedMsg, sectionDotMsg, feedReadMsg, clearDueMsg, clearFiredMsg:
 		case errMsg:
 			require.NoError(t, msg.(errMsg).err)
 			return m
@@ -132,7 +132,7 @@ func TestFeed_BlocksDoNotMergeAcrossASectionBoundary(t *testing.T) {
 	owing(t, st, "om_j2")
 	chats[1].UnreadCount = 2
 
-	_, msgs, meta, err := gatherUnread(t.Context(), st, "ou_me", chats, nil)
+	_, msgs, meta, err := gatherUnread(t.Context(), st, "ou_me", chats, nil, nil)
 	require.NoError(t, err)
 	feed := &unreadFeed{sections: []unreadSection{
 		{chatID: "oc_platform", name: "平台组", anchorMs: 100},

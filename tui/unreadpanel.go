@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	tea "charm.land/bubbletea/v2"
 
@@ -12,8 +13,9 @@ import (
 // openUnread puts the panel up. It borrows the chat's own machinery whole —
 // m.msgs, the normal key handler, the composer, the outbox — because unlike a
 // search hit, a message here is one the reader answers where it stands. All
-// that differs is that the page runs across chats and that nothing on it is
-// taken as read.
+// that differs is that the page runs across chats, and that a chat on it is
+// read by the reader landing on or acting on one of its messages rather than
+// by being shown.
 func (m Model) openUnread() (tea.Model, tea.Cmd) {
 	cmd := m.startUnread(true)
 	return m, cmd
@@ -34,7 +36,7 @@ func (m *Model) startUnread(take bool) tea.Cmd {
 	// The composer belongs to the chat that is open, so its contents go back
 	// there before the panel takes the widget over.
 	keep := m.saveComposer()
-	m.feed = &unreadFeed{from: m.chatID}
+	m.feed = &unreadFeed{from: m.chatID, readHere: map[string]int64{}}
 	m.mode = modeNormal
 	if take {
 		m.focus = paneMessages
@@ -47,7 +49,7 @@ func (m *Model) startUnread(take bool) tea.Cmd {
 	m.clearMessagePane()
 	m.msgSince, m.msgLimit = 0, 0
 	m.rebuildMessages()
-	return tea.Batch(keep, loadUnreadFeed(m.deps, nil))
+	return tea.Batch(keep, loadUnreadFeed(m.deps, m.feed))
 }
 
 // closeUnread takes the panel down, putting the reader back in the chat that
@@ -146,6 +148,9 @@ func (m Model) jumpSection(step int) (tea.Model, tea.Cmd) {
 		return m.notify("nothing else waiting", false), nil
 	}
 	m.msgIdx, m.focus = at, paneMessages
+	if m.clearDotsAtCursor() {
+		m.rebuildMessages()
+	}
 	m.scrollMessagesToSelection()
 	cmd := m.feedRetarget()
 	return m.notify("", false), cmd
@@ -208,6 +213,9 @@ func (m Model) markSectionRead(chatID string) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	label := m.feed.section(chatID).label()
+	// A chat read here is held only because the reader was still in it, and
+	// this is the reader saying they are done with it.
+	delete(m.feed.readHere, chatID)
 	// The reload answers the press rather than waiting on the store's own
 	// revision, the way onMarkAllDone does.
 	cmds := tea.Batch(sectionDot(m.deps, chatID), m.reloadCurrent())
@@ -232,6 +240,57 @@ func sectionDot(d Deps, chatID string) tea.Cmd {
 		}
 		return sectionDotMsg{chats: []store.ChatUnread{c}}
 	}
+}
+
+// readFeedChat reads a chat on the page the way opening it reads it in the
+// client: the whole chat, past what its section shows. The chat is held from
+// this moment rather than from when its watermark comes back, so no page read
+// from here on can take its section away while the read is landing.
+func (m *Model) readFeedChat(chatID string) tea.Cmd {
+	if !m.inFeed() || !slices.ContainsFunc(m.feed.sections, func(s unreadSection) bool { return s.chatID == chatID }) {
+		return nil
+	}
+	if _, ok := m.feed.readHere[chatID]; !ok {
+		m.feed.readHere[chatID] = -1
+		m.feed.gen++
+	}
+	return feedRead(m.deps, m.feed, chatID)
+}
+
+// readFeedCursor reads the chat of the message the cursor is on.
+func (m *Model) readFeedCursor() tea.Cmd { return m.readFeedChat(m.feedChatAt(m.msgIdx)) }
+
+// feedReadMsg carries a chat's watermark back to the visit that read it.
+type feedReadMsg struct {
+	visit   *unreadFeed
+	chat    store.ChatUnread
+	waiting bool
+}
+
+// feedRead reads the dot the client still draws for a chat the reader read.
+func feedRead(d Deps, visit *unreadFeed, chatID string) tea.Cmd {
+	return func() tea.Msg {
+		c, ok, err := d.Store.ChatWithUnread(context.Background(), chatID)
+		if err != nil {
+			d.Log.Warn("read feishu dot", "chat_id", chatID, "err", err)
+		}
+		return feedReadMsg{visit: visit, chat: c, waiting: ok}
+	}
+}
+
+// onFeedRead asks Feishu to settle a chat read here, once per watermark:
+// walking about inside a chat already read asks for nothing, a message landing
+// since raises the watermark, and a refused clear waits for m rather than being
+// retried on every key. A chat let go meanwhile by m or Mark All is settled by
+// them. The visit the read came from is the one consulted, so a read made just
+// before the reader left still reaches Feishu.
+func (m Model) onFeedRead(msg feedReadMsg) (Model, tea.Cmd) {
+	asked, held := msg.visit.readHere[msg.chat.ChatID]
+	if !msg.waiting || !held || msg.chat.Position <= asked {
+		return m, nil
+	}
+	msg.visit.readHere[msg.chat.ChatID] = msg.chat.Position
+	return m.pushClears([]store.ChatUnread{msg.chat})
 }
 
 // feedTitle names the panel and the chat a reply would go to.
