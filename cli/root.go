@@ -58,6 +58,7 @@ type App struct {
 // New builds the root command. buildDSN is the Sentry DSN baked in at build
 // time (empty in local builds, so telemetry is off unless configured).
 func New(version, buildDSN string) *cobra.Command {
+	version = buildVersion(version)
 	app := &App{Version: version, Out: os.Stdout, Err: os.Stderr, In: os.Stdin, buildDSN: buildDSN}
 	root := &cobra.Command{
 		Use:           "larkim",
