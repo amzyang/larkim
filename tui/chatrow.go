@@ -609,10 +609,11 @@ func padBetween(left, right string, w int) string {
 }
 
 // chatsHeader is the list's title row: the pane's name carrying the number of
-// messages waiting, and, at the far right, the dot that says the
-// do-not-disturb chats have something too. The dot sits in the column every row's mute mark
-// is right-aligned to, so the setting reads down a single column.
-func chatsHeader(rows []listRow, unread map[string]int64, filter string, w int) string {
+// messages waiting, then the build's version, and, at the far right, the dot
+// that says the do-not-disturb chats have something too. The dot sits in the
+// column every row's mute mark is right-aligned to, so the setting reads down
+// a single column.
+func chatsHeader(rows []listRow, unread map[string]int64, filter, version string, w int) string {
 	n, muted := unreadMessages(rows, unread)
 	count, dot := "", ""
 	if label := badgeLabel(n); label != "" {
@@ -632,7 +633,23 @@ func chatsHeader(rows []listRow, unread map[string]int64, filter string, w int) 
 	// A press with nothing waiting says so.
 	right := stDim.Render(markAllGlyph) + cmp.Or(dot, " ")
 	room := w - lipgloss.Width(count) - lipgloss.Width(right) - 1
-	return padBetween(stBold.Render(truncate(title, room))+count, right, w)
+	left := stBold.Render(truncate(title, room)) + count
+	// The client names its version only under Settings › About, which the TUI
+	// has no counterpart for. It is the first thing to go: shown whole after a
+	// title that fits, or not at all.
+	if tag := versionTag(version); tag != "" && lipgloss.Width(title)+1+lipgloss.Width(tag) <= room {
+		left += " " + stDim.Render(tag)
+	}
+	return padBetween(left, right, w)
+}
+
+// versionTag is how the header spells a version: a release reads v0.21.7, a
+// local build's dev-<commit> as it is.
+func versionTag(version string) string {
+	if version != "" && version[0] >= '0' && version[0] <= '9' {
+		return "v" + version
+	}
+	return version
 }
 
 // unreadMessages sums the messages waiting for an answer and reports whether

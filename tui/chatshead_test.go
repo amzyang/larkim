@@ -26,7 +26,7 @@ func headRows(spec string) ([]listRow, map[string]int64) {
 
 func head(t *testing.T, rows []listRow, unread map[string]int64, filter string, w int) string {
 	t.Helper()
-	line := chatsHeader(rows, unread, filter, w)
+	line := chatsHeader(rows, unread, filter, "", w)
 	require.Equal(t, w, lipgloss.Width(line), "the header always fills the pane")
 	return ansi.Strip(line)
 }
@@ -159,7 +159,7 @@ func TestChatsHeader_LongFilterYieldsToTheSignals(t *testing.T) {
 func TestChatsHeader_IsDrawnInTheUnreadColour(t *testing.T) {
 	t.Parallel()
 	rows, unread := headRows("mu")
-	line := chatsHeader(rows, unread, "", 36)
+	line := chatsHeader(rows, unread, "", "", 36)
 	require.Contains(t, line, stUnread.Render("¹"), "the count carries the unread red")
 	require.Contains(t, line, stDim.Render(mutedDot), "the dot stays dim")
 }
@@ -210,4 +210,30 @@ func TestOnClick_ThePanesRightBorderIsNotTheButton(t *testing.T) {
 	m, _, _ := badgeModel(t)
 	_, cmd := m.onClick(tea.Mouse{Button: tea.MouseLeft, X: chatsWidth - 1, Y: 1})
 	require.Nil(t, cmd)
+}
+
+func TestChatsHeader_NamesTheVersionBesideTheTitle(t *testing.T) {
+	t.Parallel()
+	rows, unread := headRows("uuu")
+	line := chatsHeader(rows, unread, "", "0.21.7", 36)
+	require.Equal(t, 36, lipgloss.Width(line))
+	require.Contains(t, ansi.Strip(line), "Chats³ v0.21.7 ")
+	require.Contains(t, line, stDim.Render("v0.21.7"), "the version stays dim")
+	require.True(t, strings.HasSuffix(ansi.Strip(line), markAllGlyph+" "), "the button keeps its column")
+}
+
+func TestChatsHeader_LocalBuildVersionTakesNoPrefix(t *testing.T) {
+	t.Parallel()
+	rows, unread := headRows("u")
+	unread["a"] = 0
+	require.Contains(t, ansi.Strip(chatsHeader(rows, unread, "", "dev-4981d0d+dirty", 36)), "Chats dev-4981d0d+dirty ")
+}
+
+func TestChatsHeader_VersionYieldsToTheTitle(t *testing.T) {
+	t.Parallel()
+	rows, unread := headRows("mu")
+	for _, filter := range []string{strings.Repeat("x", 20), strings.Repeat("x", 60)} {
+		require.Equal(t, chatsHeader(rows, unread, filter, "", 36), chatsHeader(rows, unread, filter, "0.21.7", 36),
+			"a title that needs the room keeps it, and the version is dropped whole")
+	}
 }

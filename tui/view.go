@@ -1027,7 +1027,7 @@ func (m Model) renderChats(h int) string {
 	for len(lines) < h-headerHeight {
 		lines = append(lines, fit("", w))
 	}
-	content := chatsHeader(all, m.unread, m.chatFilter, w) + "\n" + strings.Join(lines, "\n")
+	content := chatsHeader(all, m.unread, m.chatFilter, m.deps.Version, w) + "\n" + strings.Join(lines, "\n")
 	return paneStyle(m.focus == paneChats).Height(h).Render(content)
 }
 
