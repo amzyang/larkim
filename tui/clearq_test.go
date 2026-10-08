@@ -58,3 +58,18 @@ func TestClearQueue_PushWhileLastClearInFlightStillClears(t *testing.T) {
 	require.Contains(t, fired, "oc_a")
 	require.Contains(t, fired, "oc_b")
 }
+
+// A chat already queued takes the newer watermark rather than a second slot:
+// queued at the old one, it would settle short of the message that raised it,
+// and nothing would ask for that message again.
+func TestPushClears_AQueuedChatTakesTheNewerWatermark(t *testing.T) {
+	t.Parallel()
+	m := sized(120, 36)
+	m.clears.armed = true
+
+	m, _ = m.pushClears([]store.ChatUnread{{ChatID: "oc_a", Position: 1}})
+	m, _ = m.pushClears([]store.ChatUnread{{ChatID: "oc_a", Position: 5}, {ChatID: "oc_b", Position: 2}})
+	m, _ = m.pushClears([]store.ChatUnread{{ChatID: "oc_a", Position: 3}})
+
+	require.Equal(t, []store.ChatUnread{{ChatID: "oc_a", Position: 5}, {ChatID: "oc_b", Position: 2}}, m.clears.left)
+}

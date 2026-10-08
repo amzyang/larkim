@@ -55,10 +55,14 @@ type clearFiredMsg struct {
 
 // pushClears queues chats to clear and arms the chain if it is not already
 // running. A chat already waiting is not queued twice: the gateway only has
-// to be told once, however many times it was asked.
+// to be told once, however many times it was asked, and it is told the newest
+// watermark asked for. Kept at the older one, the clear would settle short of
+// the message that raised it, and the reader's read of that message has
+// already been spent.
 func (m Model) pushClears(chats []store.ChatUnread) (Model, tea.Cmd) {
 	for _, c := range chats {
-		if slices.ContainsFunc(m.clears.left, func(q store.ChatUnread) bool { return q.ChatID == c.ChatID }) {
+		if i := slices.IndexFunc(m.clears.left, func(q store.ChatUnread) bool { return q.ChatID == c.ChatID }); i >= 0 {
+			m.clears.left[i].Position = max(m.clears.left[i].Position, c.Position)
 			continue
 		}
 		m.clears.left = append(m.clears.left, c)
