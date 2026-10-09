@@ -7,6 +7,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/alecthomas/chroma/v2"
 	"github.com/alecthomas/chroma/v2/lexers"
+	"github.com/alecthomas/chroma/v2/styles"
 	"github.com/amzyang/larkim/store"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/stretchr/testify/require"
@@ -247,6 +248,15 @@ func TestHighlightCode_ResolvesEachLanguageOnce(t *testing.T) {
 	}
 	require.Equal(t, []string{"json", "plain_text"}, asked(),
 		"a language chroma refuses is refused once, not once per code block")
+}
+
+func TestCodeStyles_NameRegisteredPalettes(t *testing.T) {
+	t.Parallel()
+	// styles.Get answers an unknown name with its fallback rather than an
+	// error, so a misspelt palette would only show as the wrong colours.
+	for _, name := range []string{codeStyleLight, codeStyleDark} {
+		require.Equal(t, name, styles.Get(name).Name)
+	}
 }
 
 // lipglossWidth is the display width of a styled row, which is what the pane

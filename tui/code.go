@@ -15,12 +15,12 @@ import (
 // card's ▌ so a block inside a message does not read as a card of its own.
 const codeRule = "▏"
 
-// codeStyles are the two chroma palettes, picked by the terminal background.
-// GitHub's are tuned for a white and a near-black backing respectively, which
-// is as close as a fixed palette gets to the terminal it lands on.
+// codeStyles are the two chroma palettes, picked by the terminal background:
+// Catppuccin's light and dark flavours, which share one set of hues so a block
+// reads the same whichever way the terminal is themed.
 const (
-	codeStyleLight = "github"
-	codeStyleDark  = "github-dark"
+	codeStyleLight = "catppuccin-latte"
+	codeStyleDark  = "catppuccin-mocha"
 )
 
 // codeCopyGlyph is the block's Copy action (FA copy), drawn at its top right
