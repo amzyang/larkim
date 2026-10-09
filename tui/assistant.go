@@ -520,7 +520,14 @@ func (m Model) aiDraftText() string {
 // submitAI is Enter in the panel's box: the question becomes a turn of the
 // session on screen, and the asking itself happens off the Update loop.
 func (m Model) submitAI() (tea.Model, tea.Cmd) {
-	return m.askAI(strings.TrimSpace(m.aiP.input.Value()), "", false)
+	next, cmd, took := m.askAI(strings.TrimSpace(m.aiP.input.Value()), "", false)
+	if !took {
+		// A refused question stays in the box, and so do the keys, to send
+		// it again.
+		return next, cmd
+	}
+	out, keep := next.(Model).leaveInsert()
+	return out, tea.Batch(cmd, keep)
 }
 
 // cloneMsg copies a message the way a recorded context wants it: nobody's
@@ -1754,24 +1761,25 @@ func (m Model) askCommand(input string) (tea.Model, tea.Cmd) {
 		}
 	}
 	next, cmd := m.openAI(m.aiChat(), true)
-	out, ask := next.askAI(input, sent, false)
+	out, ask, _ := next.askAI(input, sent, false)
 	return out, tea.Batch(cmd, ask)
 }
 
 // askAI turns a question into a turn of the session on screen and starts it.
 // sent is what the model is asked when it differs from the question shown,
 // which is a snippet's text under the name the reader typed. intoChat asks
-// with the answer streaming into the chat as one card.
-func (m Model) askAI(ask, sent string, intoChat bool) (tea.Model, tea.Cmd) {
+// with the answer streaming into the chat as one card. The bool reports whether
+// the question became a turn rather than being refused.
+func (m Model) askAI(ask, sent string, intoChat bool) (tea.Model, tea.Cmd, bool) {
 	p := m.aiP
 	if ask == "" {
-		return m, nil
+		return m, nil, false
 	}
 	if p.chat == "" {
-		return m.notify("open a chat first", true), nil
+		return m.notify("open a chat first", true), nil, false
 	}
 	if p.busy() {
-		return m.notify("assistant is still answering", true), nil
+		return m.notify("assistant is still answering", true), nil, false
 	}
 	if p.session() == nil {
 		p.sess = append(p.sess, &aiSession{id: uuid.New().String(), created: time.Now().UnixMilli()})
@@ -1805,7 +1813,7 @@ func (m Model) askAI(ask, sent string, intoChat bool) (tea.Model, tea.Cmd) {
 	m.layout()
 	asking := askTurn(m.deps, m.ai, off, p, s, t, m.aiHistory())
 	return m.notify("asking "+m.agentName()+"…", false),
-		tea.Batch(saveSessionCmd(m.deps, p.chat, s), saveTurnCmd(m.deps, s, t), asking)
+		tea.Batch(saveSessionCmd(m.deps, p.chat, s), saveTurnCmd(m.deps, s, t), asking), true
 }
 
 // aiHistory is the reading reach the next ask carries: the chat it is about

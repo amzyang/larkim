@@ -1918,29 +1918,7 @@ func (m Model) onInsertKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	}
 	switch k.String() {
 	case "esc":
-		m.mode = modeNormal
-		m.areap().Blur()
-		// The band is back at its resting height, so the textareas have to be
-		// resized to it: they keep whatever sized last wrote, and the box would
-		// go on drawing rows the panes above it have taken back — which fitBlock
-		// makes room for by dropping the quote off the top.
-		switch m.side {
-		case sideAI:
-			// The box belongs to the assistant column, so that is the pane
-			// behind it to step back into.
-			m.focus = paneThread
-			m.layout()
-			return m, nil
-		case sideRight:
-			// The box belongs to the right column, so that is the pane behind
-			// it to step back into.
-			m.focus = paneThread
-			m.layout()
-			return m, nil
-		}
-		next, keep := m.focusMessages()
-		next.layout()
-		return next, keep
+		return m.leaveInsert()
 	case "ctrl+r":
 		if m.side == sideAI {
 			m.dropAIChip()
@@ -1972,6 +1950,28 @@ func (m Model) onInsertKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m.submit()
 	}
 	return m.typeIntoComposer(k)
+}
+
+// leaveInsert puts the keys back in the pane behind the box. It is Esc, and
+// what a send ends with: the message has gone, so the next key is about the
+// conversation it went into, not about another draft.
+func (m Model) leaveInsert() (Model, tea.Cmd) {
+	m.mode = modeNormal
+	m.areap().Blur()
+	// The band is back at its resting height, so the textareas have to be
+	// resized to it: they keep whatever sized last wrote, and the box would
+	// go on drawing rows the panes above it have taken back — which fitBlock
+	// makes room for by dropping the quote off the top.
+	if m.side == sideAI || m.side == sideRight {
+		// The box belongs to the column on the right, so that is the pane
+		// behind it to step back into.
+		m.focus = paneThread
+		m.layout()
+		return m, nil
+	}
+	next, keep := m.focusMessages()
+	next.layout()
+	return next, keep
 }
 
 // typeIntoComposer hands a message to the writing area and brings what the
@@ -2807,29 +2807,30 @@ func (m Model) submit() (tea.Model, tea.Cmd) {
 	m.setQuote(nil, false)
 	wasOn, top := idAt(m.msgs, m.msgIdx), topAnchor(m.msgRows, m.msgs, m.msgTop)
 	m.refreshPanes()
-	if m.side == sideRight {
+	switch {
+	case m.side == sideRight:
 		if i := indexOfID(m.thread, it.localID); i >= 0 {
 			m.threadIdx = i
 			m.rebuildThread()
 			m.scrollThreadToSelection()
 		}
-		return m.notify("", false), cmd
-	}
-	// The Unread page is a pass over many chats: the bubble waits under its
-	// own section, and the cursor stays where the reader is going on from.
-	if m.inFeed() {
+	case m.inFeed():
+		// The Unread page is a pass over many chats: the bubble waits under
+		// its own section, and the cursor stays where the reader is going on
+		// from.
 		if i := indexOfID(m.msgs, wasOn); i >= 0 {
 			m.msgIdx = i
 		}
 		m.msgTop = holdTop(m.msgRows, m.msgs, top, false, m.msgTop, m.msgListHeight())
-		return m.notify("", false), cmd
+	default:
+		if i := indexOfID(m.msgs, it.localID); i >= 0 {
+			m.msgIdx = i
+			m.rebuildMessages()
+			m.scrollMessagesToSelection()
+		}
 	}
-	if i := indexOfID(m.msgs, it.localID); i >= 0 {
-		m.msgIdx = i
-		m.rebuildMessages()
-		m.scrollMessagesToSelection()
-	}
-	return m.notify("", false), cmd
+	next, keep := m.leaveInsert()
+	return next.notify("", false), tea.Batch(cmd, keep)
 }
 
 // tagMentions rewrites the @ runs in a body into the tags Feishu notifies on.

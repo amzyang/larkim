@@ -657,3 +657,32 @@ func TestResolveDraft_LeavesAnImageReferenceInACodeSpanAlone(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, p.images)
 }
+
+func TestSubmit_ReturnsToNormalMode(t *testing.T) {
+	t.Parallel()
+	m, _ := newOutboxModel(t)
+	m = writeIn(m, "好的")
+
+	mm, _ := m.submit()
+	m = mm.(Model)
+
+	require.Equal(t, modeNormal, m.mode)
+	require.Equal(t, paneMessages, m.focus)
+	require.False(t, m.input.Focused())
+	require.Equal(t, "好的", m.msgs[m.msgIdx].Content, "the cursor sits on the bubble just sent")
+}
+
+func TestSubmit_KeepsInsertWhenTheDraftCannotBePlanned(t *testing.T) {
+	t.Parallel()
+	m, _ := newOutboxModel(t)
+	m.files = fakeFiles(map[string]int64{"/Users/linlan/big.zip": maxFileBytes + 1})
+	m = writeIn(m, "[big.zip](~/big.zip)")
+
+	mm, _ := m.submit()
+	m = mm.(Model)
+
+	require.Equal(t, modeInsert, m.mode)
+	require.Equal(t, paneInput, m.focus)
+	require.True(t, m.input.Focused())
+	require.Equal(t, "[big.zip](~/big.zip)", m.input.Value())
+}

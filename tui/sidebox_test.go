@@ -327,3 +327,18 @@ func TestQuotedOn_ADetailsFrameQuotesNothingUntilAsked(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, "om_root", x.MessageID)
 }
+
+func TestSubmit_ThreadBoxReturnsToTheThreadPane(t *testing.T) {
+	t.Parallel()
+	m := threadFrame(130, 30)
+	m.focus = paneThread
+	m = writeIn(m, "我来看看")
+
+	mm, _ := m.submit()
+	m = mm.(Model)
+
+	require.Equal(t, modeNormal, m.mode)
+	require.Equal(t, paneThread, m.focus)
+	require.False(t, m.rightInput.Focused())
+	require.True(t, m.rightOpen(), "the frame stays open on the answer")
+}

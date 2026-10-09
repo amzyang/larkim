@@ -119,7 +119,7 @@ func (m Model) answerConfirm(key string) (tea.Model, tea.Cmd, bool) {
 		next, cmd := m.aiSendCard(*pending.aiSend, withFile)
 		return next, cmd, true
 	case confirmAIStream:
-		next, cmd := m.askAI(pending.aiStream, "", true)
+		next, cmd, _ := m.askAI(pending.aiStream, "", true)
 		return next, cmd, true
 	}
 	return m, nil, true

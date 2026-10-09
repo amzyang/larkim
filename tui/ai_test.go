@@ -1641,7 +1641,7 @@ func TestAIPanel_RebuildReusesTurnsThatDidNotMove(t *testing.T) {
 	m = press(t, m, "a")
 	m, t1 := ask(t, m, "第一问")
 	m = answerDone(t, m, t1, "<reply>\n一\n</reply>")
-	aout, acmd := m.askAI("第二问", "", false)
+	aout, acmd, _ := m.askAI("第二问", "", false)
 	m = aout.(Model)
 	astarted := askStarted(t, acmd)
 	asout, _ := m.onAIStarted(astarted)
@@ -1666,4 +1666,31 @@ func TestAIPanel_RebuildReusesTurnsThatDidNotMove(t *testing.T) {
 
 	m.aiP.rebuild(m)
 	require.False(t, has(m), "and the re-laid-out turn is cached again under its new key")
+}
+
+func TestSubmitAI_ReturnsToNormalModeOnThePanel(t *testing.T) {
+	t.Parallel()
+	m := aiFixture(t, newFakeAI())
+	m, _ = ask(t, m, "总结一下")
+
+	require.Equal(t, modeNormal, m.mode)
+	require.Equal(t, paneThread, m.focus)
+	require.False(t, m.aiP.input.Focused())
+	require.True(t, m.aiOpen(), "the panel stays open on the answer")
+}
+
+func TestSubmitAI_KeepsInsertWhileTheAssistantIsAnswering(t *testing.T) {
+	t.Parallel()
+	m := aiFixture(t, newFakeAI())
+	m, _ = ask(t, m, "总结一下")
+	m = press(t, m, "i")
+	require.Equal(t, modeInsert, m.mode)
+	m.aiP.input.SetValue("再详细点")
+
+	out, _ := m.submitAI()
+	m = out.(Model)
+
+	require.Equal(t, modeInsert, m.mode)
+	require.True(t, m.aiP.input.Focused())
+	require.Equal(t, "再详细点", m.aiP.input.Value(), "the question waits for the answer to finish")
 }
