@@ -129,6 +129,9 @@ type clickZone struct {
 	// does with one.
 	task     string
 	taskDone bool
+	// copy is the text a code block's icon puts on the clipboard: the block's
+	// source, which the drawn rows no longer are once they wrap.
+	copy string
 	// label names the target the way the chooser lists it, and note is what
 	// the status bar says once it has been handed over. They differ because a
 	// list wants the thing and a status line wants the act.
@@ -138,7 +141,7 @@ type clickZone struct {
 
 // live reports whether the zone leads anywhere at all.
 func (z clickZone) live() bool {
-	return len(z.urls) > 0 || z.react != "" || z.jump != "" || z.open != "" || z.task != "" || z.act.kind != actNone || z.cand.c.Mid != ""
+	return len(z.urls) > 0 || z.react != "" || z.jump != "" || z.open != "" || z.task != "" || z.copy != "" || z.act.kind != actNone || z.cand.c.Mid != ""
 }
 
 func (z clickZone) hit(x int) bool { return z.live() && x >= z.x0 && x < z.x1 }
@@ -179,10 +182,10 @@ func (r *msgRow) reindent(indent, s string) {
 	r.placeZones()
 }
 
-// shift charges a picture row the indent its block owes. The blanks ride in
-// text, which a picture row otherwise leaves unset, because the cells are the
-// terminal's to fill and nothing can be written in front of them but the
-// columns they start at; the target over them moves the same distance.
+// shift charges a row the indent its block owes, moving its targets the same
+// distance. A picture row needs it most: its text is otherwise unset, the
+// cells being the terminal's to fill, so nothing can be written in front of
+// them but the columns they start at.
 func (r *msgRow) shift(pad string) {
 	if pad == "" {
 		return

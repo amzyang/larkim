@@ -3264,6 +3264,9 @@ func (m Model) pressZone(p pane, rows []msgRow, line int, z clickZone) (tea.Mode
 	if z.task != "" {
 		return m, toggleTodo(m.deps, z.task, z.taskDone)
 	}
+	if z.copy != "" {
+		return m.notify(z.note, false), tea.SetClipboard(z.copy)
+	}
 	if z.react == "" {
 		return m, openZone(m.deps, z)
 	}

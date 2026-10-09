@@ -129,8 +129,11 @@ func (d mdDoc) block(n ast.Node, depth, indent int) []msgRow {
 	case ast.KindCodeBlock:
 		c := n.(*ast.CodeBlock)
 		lang, _ := c.Language(d.src)
-		code := strings.Split(strings.TrimRight(c.Value.Str(d.src), "\n"), "\n")
-		return text(codeRows(code, lang, room, d.st.dark))
+		rows := codeBlock(c.Value.Str(d.src), lang, room, d.st.dark, d.idx, d.g)
+		for i := range rows {
+			rows[i].shift(pad)
+		}
+		return rows
 
 	case gast.KindTable:
 		return text(d.table(n, room))

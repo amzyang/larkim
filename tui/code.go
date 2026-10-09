@@ -9,7 +9,6 @@ import (
 	"github.com/alecthomas/chroma/v2"
 	"github.com/alecthomas/chroma/v2/lexers"
 	"github.com/alecthomas/chroma/v2/styles"
-	"github.com/charmbracelet/x/ansi"
 )
 
 // codeRule is the left edge a code block is drawn behind, thinner than the
@@ -24,32 +23,57 @@ const (
 	codeStyleDark  = "github-dark"
 )
 
+// codeCopyGlyph is the block's Copy action (FA copy), drawn at its top right
+// where the client puts the button it shows on hover. A terminal has no hover,
+// so it is always there, dim. Like the other Nerd glyphs it pairs with an
+// en-space to hold its two columns.
+const codeCopyGlyph = "" + enSpace
+
+// codeCopyCols is what every code row gives up so the icon's column stays
+// clear down the block: the gap before the icon, then the icon.
+var codeCopyCols = 1 + lipgloss.Width(codeCopyGlyph)
+
+// codeBlock lays a code block's source out as body rows, the copy icon's
+// target on the first.
+func codeBlock(src, lang string, width int, dark bool, idx int, g *leads) []msgRow {
+	src = strings.TrimRight(src, "\n")
+	lines, zones := codeRows(src, lang, width, dark)
+	rows := textRows(lines, idx, g)
+	rows[0].addZones(zones)
+	return rows
+}
+
 // codeRows draws a code block the way the Feishu client frames one: the lines
-// numbered down a rule, syntax coloured, and each cut to the pane rather than
-// wrapped — a wrapped statement loses the shape that makes it readable, and
-// `y` still copies the block whole.
-func codeRows(code []string, lang string, width int, dark bool) []string {
-	if len(code) == 0 {
-		return nil
-	}
+// numbered down a rule, syntax coloured, and wrapped to the pane so nothing
+// of a long line is lost. Only a line's first row carries its number, which
+// is what keeps a wrapped statement legible as one line. The zone is the copy
+// icon on the first row, in the columns of the strings returned; a block too
+// narrow to frame has none.
+func codeRows(src, lang string, width int, dark bool) ([]string, []clickZone) {
+	code := highlightCode(src, lang, dark)
 	digits := len(strconv.Itoa(len(code)))
-	room := width - digits - 3
+	room := width - digits - 3 - codeCopyCols
 	if room < 8 {
 		// Too narrow to frame: the code itself is worth more than the gutter.
-		digits, room = 0, width
+		var out []string
+		for _, line := range code {
+			out = append(out, wrap(line, width)...)
+		}
+		return out, nil
 	}
+	cont := stDim.Render(codeRule + strings.Repeat(" ", digits+2))
 	out := make([]string, 0, len(code))
-	for i, line := range highlightCode(strings.Join(code, "\n"), lang, dark) {
-		gutter := ""
-		if digits > 0 {
-			gutter = stDim.Render(codeRule + " " + pad(strconv.Itoa(i+1), digits) + " ")
+	for i, line := range code {
+		for j, row := range wrap(line, room) {
+			gutter := cont
+			if j == 0 {
+				gutter = stDim.Render(codeRule + " " + pad(strconv.Itoa(i+1), digits) + " ")
+			}
+			out = append(out, gutter+row)
 		}
-		if ansi.StringWidth(line) > room {
-			line = cut(line, max(1, room-1)) + "…"
-		}
-		out = append(out, gutter+line)
 	}
-	return out
+	out[0] += " " + stDim.Render(codeCopyGlyph)
+	return out, []clickZone{{x0: width - codeCopyCols + 1, x1: width, copy: src, note: "code copied"}}
 }
 
 // pad right-aligns a line number under the widest one in the block.

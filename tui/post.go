@@ -164,8 +164,7 @@ func (d postDoc) paragraph(para []sync.PostElem) []msgRow {
 			rows = append(rows, pictureRows(el.ImageKey, d.x, d.idx, d.st, d.g)...)
 		case "code_block":
 			flush()
-			code := strings.Split(strings.TrimRight(el.Text, "\n"), "\n")
-			rows = append(rows, textRows(codeRows(code, el.Language, d.st.inner(), d.st.dark), d.idx, d.g)...)
+			rows = append(rows, codeBlock(el.Text, el.Language, d.st.inner(), d.st.dark, d.idx, d.g)...)
 		case "md":
 			// The one element whose text is markdown by the client's own
 			// doing, so it is the one that goes to the markdown path. Its
