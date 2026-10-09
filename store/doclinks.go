@@ -66,10 +66,18 @@ var docPathTypes = []struct{ prefix, docType string }{
 	{"/slides/", "slides"},
 }
 
-// docURL matches a Feishu URL written out in a body. The trailing class is
-// the one bare links are found by elsewhere: a full stop or a closing bracket
-// after a URL belongs to the sentence, not the link.
-var docURL = regexp.MustCompile(`https?://[\w.-]*feishu\.cn/[^\s<>"'` + "`" + `\[\]()]*[^\s<>"'` + "`" + `\[\]().,;:!?，。；：！？、]`)
+// BareURL matches a URL written out rather than spelled as a link. Feishu
+// makes one pressable wherever it appears, so larkim has to find it in the
+// text the same way. An address is ASCII, so Chinese running straight on after
+// one — the bracket it was put in, the sentence it sits in — ends the match
+// instead of being swallowed into the target. The trailing class leaves out
+// the marks a sentence ends on besides: a full stop or a closing bracket after
+// a URL belongs to the sentence.
+//
+// The pane that draws a link and the scan that registers its document for a
+// title share this one pattern: the title is found by the token the match
+// spells, so two boundaries would register one document and look up another.
+var BareURL = regexp.MustCompile(`https?://[^\s<>"'\x60\[\]()\x{80}-\x{10FFFF}]*[^\s<>"'\x60\[\]().,;:!?\x{80}-\x{10FFFF}]`)
 
 // ParseDocURL reads the document a Feishu URL addresses. Only the path
 // decides: a pasted link almost always carries ?from= and a #fragment naming
@@ -104,7 +112,7 @@ func ParseDocURL(raw string) (DocRef, bool) {
 // twice is returned twice; registering it is idempotent.
 func FindDocRefs(text string) []DocRef {
 	var refs []DocRef
-	for _, raw := range docURL.FindAllString(text, -1) {
+	for _, raw := range BareURL.FindAllString(text, -1) {
 		if ref, ok := ParseDocURL(raw); ok {
 			refs = append(refs, ref)
 		}

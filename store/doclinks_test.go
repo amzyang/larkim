@@ -61,6 +61,12 @@ func TestFindDocRefs_ReadsEveryDocumentABodyLinksTo(t *testing.T) {
 		"the full stop after a URL belongs to the sentence")
 }
 
+func TestFindDocRefs_EndsATokenWhereChineseRunsStraightOn(t *testing.T) {
+	refs := FindDocRefs("https://example.feishu.cn/sheets/Xyz789这是9月的明细\n（https://example.feishu.cn/docx/AbC123）")
+	require.Equal(t, []DocRef{{"sheet", "Xyz789"}, {"docx", "AbC123"}}, refs,
+		"an address is ASCII: the sentence or bracket it runs into is not part of the token")
+}
+
 func TestDeferDocLinks_PushesBackWhatCameBackUnanswered(t *testing.T) {
 	s := openTest(t)
 	ctx := t.Context()

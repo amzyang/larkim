@@ -123,20 +123,11 @@ func linkCuts(line string) []inlineCut {
 	return cuts
 }
 
-// bareURL matches a URL written out rather than spelled as a link. Feishu
-// makes one pressable wherever it appears, so larkim has to find it in the
-// text the same way. An address is ASCII, so Chinese running straight on after
-// one — the bracket it was put in, the sentence it sits in — ends the match
-// instead of being swallowed into the target. The trailing class leaves out
-// the marks a sentence ends on besides: a full stop or a closing bracket after
-// a URL belongs to the sentence.
-var bareURL = regexp.MustCompile(`https?://[^\s<>"'\x60\[\]()\x{80}-\x{10FFFF}]*[^\s<>"'\x60\[\]().,;:!?\x{80}-\x{10FFFF}]`)
-
 // autoLinkCuts finds the URLs a line writes out, skipping any inside a link
 // already spelled with a label: that one has been cut, target and all.
 func autoLinkCuts(line string, links []inlineCut, doc func(url string) (store.DocLabel, bool)) []inlineCut {
 	var cuts []inlineCut
-	for _, m := range bareURL.FindAllStringIndex(line, -1) {
+	for _, m := range store.BareURL.FindAllStringIndex(line, -1) {
 		if slices.ContainsFunc(links, func(l inlineCut) bool { return m[0] < l.hi && m[1] > l.lo }) {
 			continue
 		}
