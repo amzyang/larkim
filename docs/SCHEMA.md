@@ -34,7 +34,7 @@ One row per chat the user is (or was) in, from `GET /im/v1/chats` with `types=p2
 | `last_mentions_json` | that message's mentions, the shape `messages.mentions_json` holds |
 | `last_reactions_json` | that message's reaction block, the shape `messages.reactions_json` holds; empty while nobody has reacted |
 | `last_rendered_at`, `last_deleted` | that message's rendering state and recall flag |
-| `last_unsilenced_ms` | the newest main-flow message no silence rule matched, and the key the list orders on; 0 when every message is silenced |
+| `last_unsilenced_ms` | the newest main-flow message no silence rule matched, `system` messages left out unless the chat has no other main-flow message, and the key the list orders on; 0 when every non-`system` message is silenced |
 | `silence_settled_pos` | the read watermark `silence_sync` last settled for the chat; messages at or below it never queue or settle again. The settle moves the feed's unread count only, never the per-message `is_read_remote` |
 | `muted`, `mute_checked_at` | the user's do-not-disturb setting and when it was last answered; 0 means it has never been asked |
 | `web_chat_id` | the Feishu web client's numeric id for the chat, which no OpenAPI response carries; empty until matched. Written by the processes that clear Feishu badges, never by the daemon |
@@ -45,7 +45,7 @@ A chat first seen only through a message (before the next full listing) exists w
 
 `muted` comes from `POST /im/v1/chat_user_setting/batch_get_mute_status` under user identity, since no chat listing carries it. The lookup rides the full chat refresh, covers at most 100 chats per round and only those with a message in the last 30 days, taking the longest unanswered first. Chats the API declines to answer for (non-member, malformed id) keep their previous `muted` and are stamped all the same, so `mute_checked_at` says when a chat was last asked about, not that the answer changed.
 
-The `last_*` columns mirror the newest message whose `message_position` is non-negative, so the list shows what the chat's main flow shows: thread replies are excluded, thread roots are not. `UpsertMessages` and `UpdateRendered` rewrite them in their own transaction, which covers ingest, edits, recalls and rendering. Order chats by `last_unsilenced_ms` rather than by `last_message_ms` or an aggregate over `messages`: the `last_*` columns say what arrived last, the sort key says what last mattered, and the two differ exactly where a silence rule matched. `ListChats` orders on `last_unsilenced_ms DESC, last_message_ms DESC, name, chat_id`; read status is not part of it, and `chat_id` closes it because both ms keys are 0 for every chat with no message yet.
+The `last_*` columns mirror the newest message whose `message_position` is non-negative, so the list shows what the chat's main flow shows: thread replies are excluded, thread roots are not. `UpsertMessages` and `UpdateRendered` rewrite them in their own transaction, which covers ingest, edits, recalls and rendering. Order chats by `last_unsilenced_ms` rather than by `last_message_ms` or an aggregate over `messages`: the `last_*` columns say what arrived last, the sort key says what last mattered, and the two differ exactly where a silence rule matched or a `system` message (a member joining, a rename, a call ending) came last. `ListChats` orders on `last_unsilenced_ms DESC, last_message_ms DESC, name, chat_id`; read status is not part of it, and `chat_id` closes it because both ms keys are 0 for every chat with no message yet.
 
 ## messages
 

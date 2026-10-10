@@ -277,3 +277,58 @@ func TestFillPlaceholderChats_NamesOnlyAChatFirstSeenThroughAMessage(t *testing.
 	_, err = s.GetChat(ctx, "oc_unseen")
 	require.ErrorIs(t, err, ErrNotFound, "a chat with no message stored is the full listing's to add")
 }
+
+func sysAt(id, chatID string, createMs, position int64) Message {
+	return Message{
+		MessageID: id, ChatID: chatID, MsgType: "system",
+		ContentRaw: `{"template":"{from_user} invited {to_chatters} to the group.","from_user":["张三"],"to_chatters":["李四"]}`,
+		CreateMs:   createMs, UpdateMs: createMs, MessagePosition: position,
+	}
+}
+
+func TestListChats_KeepsAChatInPlaceWhenASystemNoticeLands(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	for _, id := range []string{"oc_recent", "oc_joined"} {
+		require.NoError(t, s.EnsureChat(ctx, id, 1))
+	}
+	_, err := s.UpsertMessages(ctx, []Message{
+		msgAt("om_recent", "oc_recent", 800, 1, "hello"),
+		msgAt("om_old", "oc_joined", 100, 1, "morning"),
+		sysAt("om_invite", "oc_joined", 900, 2),
+	}, 1)
+	require.NoError(t, err)
+
+	chats := listChats(t, s)
+	require.Equal(t, []string{"oc_recent", "oc_joined"}, chatIDs(chats),
+		"the client does not lift a chat for a member joining")
+	c := summaryOf(t, s, "oc_joined")
+	require.Equal(t, "om_invite", c.LastMessageID, "the row still shows what arrived last")
+	require.Equal(t, int64(100), c.LastUnsilencedMs)
+}
+
+func TestListChats_PlacesAChatHoldingOnlySystemNoticesByThem(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	require.NoError(t, s.EnsureChat(ctx, "oc_new", 1))
+	_, err := s.UpsertMessages(ctx, []Message{sysAt("om_started", "oc_new", 500, 1)}, 1)
+	require.NoError(t, err)
+
+	require.Equal(t, int64(500), summaryOf(t, s, "oc_new").LastUnsilencedMs,
+		"a group one was just added to sits by that, not with the empty chats")
+}
+
+func TestListChats_SinksAChatWhoseOnlyRealMessagesAreSilenced(t *testing.T) {
+	s := openTest(t)
+	s.SetSilence(SilenceRules{{Sender: "cli_c"}})
+	ctx := t.Context()
+	require.NoError(t, s.EnsureChat(ctx, "oc_quiet", 1))
+	_, err := s.UpsertMessages(ctx, []Message{
+		fromBot("om_noise", "oc_quiet", 100, "nightly build #418 passed"),
+		sysAt("om_invite", "oc_quiet", 300, 300),
+	}, 1)
+	require.NoError(t, err)
+
+	require.Zero(t, summaryOf(t, s, "oc_quiet").LastUnsilencedMs,
+		"a notice does not lift a chat that silence sank")
+}

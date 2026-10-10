@@ -69,9 +69,10 @@ type Chat struct {
 	// which lives outside the rendering the last_* columns hold.
 	LastTodoDone bool `json:"last_todo_done,omitempty"`
 	// LastUnsilencedMs is the newest main-flow message the silence rules
-	// left alone, and the key the list orders on: noise changes what the
-	// row says, never where it sits. Zero when every message is silenced,
-	// which sinks the chat to the bottom with the empty ones.
+	// left alone, system notices aside unless the chat holds nothing else,
+	// and the key the list orders on: noise changes what the row says, never
+	// where it sits. Zero when every non-notice message is silenced, which
+	// sinks the chat to the bottom with the empty ones.
 	LastUnsilencedMs int64 `json:"last_unsilenced_ms"`
 
 	// Muted is the user's do-not-disturb setting, which only a lookup of its
@@ -494,11 +495,19 @@ const chatSummaryQuery = `SELECT message_id, create_ms, sender_id, sender_name, 
  ORDER BY create_ms DESC, message_position DESC, id DESC LIMIT 1`
 
 // chatSummarySortKey is the newest main-flow message the silence rules left
-// alone. It is a second query rather than a column of the first, because the
-// message the list shows and the message that decides the chat's place are
-// not the same one once a rule matches.
-const chatSummarySortKey = `SELECT COALESCE(max(create_ms), 0) FROM messages
- WHERE chat_id = ? AND message_position >= 0 AND silenced = 0`
+// alone, system notices aside: the client does not lift a chat for a member
+// joining or a call ending. It is a second query rather than a column of the
+// first, because the message the list shows and the message that decides the
+// chat's place are not the same one once a rule matches or a notice lands.
+// Notices place a chat only when it has nothing else — a group one was just
+// added to — and not one whose real messages a rule sank.
+const chatSummarySortKey = `SELECT CASE
+ WHEN EXISTS (SELECT 1 FROM messages WHERE chat_id = ?1 AND message_position >= 0 AND msg_type <> 'system')
+ THEN (SELECT COALESCE(max(create_ms), 0) FROM messages
+       WHERE chat_id = ?1 AND message_position >= 0 AND silenced = 0 AND msg_type <> 'system')
+ ELSE (SELECT COALESCE(max(create_ms), 0) FROM messages
+       WHERE chat_id = ?1 AND message_position >= 0 AND silenced = 0)
+ END`
 
 const chatSummaryUpdate = `UPDATE chats SET
  last_message_id = ?, last_message_ms = ?, last_sender_id = ?, last_sender_name = ?, last_sender_type = ?,
