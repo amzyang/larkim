@@ -993,3 +993,17 @@ func TestProbeReadStatus_RevertsWhenFeishuStillReportsUnread(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, chats, 1)
 }
+
+func TestSlowPath_NamesANewChatBelowTheProbesPage(t *testing.T) {
+	t.Parallel()
+	s, f, clk := newSyncer(t)
+	ctx := t.Context()
+	f.Chats = []larkcli.RawChat{{ChatID: "oc_new", Name: "平台组", ChatMode: "group"}}
+	require.NoError(t, s.Store.EnsureChat(ctx, "oc_new", clk.t.UnixMilli()))
+
+	_, err := s.slowPath(ctx, clk.t)
+	require.NoError(t, err)
+	got, err := s.Store.GetChat(ctx, "oc_new")
+	require.NoError(t, err)
+	require.Equal(t, "平台组", got.Name)
+}

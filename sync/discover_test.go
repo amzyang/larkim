@@ -357,3 +357,20 @@ func TestScoutOnce_AChatThatKeepsFailingIsAskedAgainLessOften(t *testing.T) {
 		require.Equal(t, i+2, callsTo(f, "list:chat:oc_a"), "the wait after failure %d is up", i+1)
 	}
 }
+
+func TestDiscover_NamesANewChatWithoutWaitingForTheFullListing(t *testing.T) {
+	t.Parallel()
+	s, f, clk := newSyncer(t)
+	ctx := t.Context()
+	f.Chats = []larkcli.RawChat{{ChatID: "oc_new", Name: "张三", ChatMode: "p2p", P2PTargetID: "ou_a", P2PTargetType: "user"}}
+	// The search found the chat's first message before any listing named it.
+	require.NoError(t, s.Store.EnsureChat(ctx, "oc_new", clk.t.UnixMilli()))
+
+	_, _, err := s.discover(ctx, clk.t)
+	require.NoError(t, err)
+	got, err := s.Store.GetChat(ctx, "oc_new")
+	require.NoError(t, err)
+	require.Equal(t, "张三", got.Name)
+	require.Equal(t, "ou_a", got.P2PTargetID)
+	require.Zero(t, callsTo(f, "chats"), "the probe's own page carries the chat")
+}

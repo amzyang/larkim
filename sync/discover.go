@@ -27,7 +27,7 @@ const livePage = 30
 // such lag either. It waits for every listing, which is what a one-shot tick
 // wants; the loop Run keeps goes through scoutOnce instead.
 func (s *Syncer) discover(ctx context.Context, now time.Time) (moved, probed int, err error) {
-	prev, order, err := s.activeProbe(ctx)
+	prev, order, err := s.activeProbe(ctx, now)
 	if err != nil {
 		return 0, 0, fmt.Errorf("active probe: %w", err)
 	}
@@ -124,7 +124,7 @@ func (s *Syncer) scoutOnce(ctx context.Context, sc *scout, now time.Time) (named
 	if err := sc.failure(); err != nil {
 		return 0, err
 	}
-	prev, order, err := s.activeProbe(ctx)
+	prev, order, err := s.activeProbe(ctx, now)
 	if err != nil {
 		return 0, fmt.Errorf("active probe: %w", err)
 	}
@@ -198,8 +198,8 @@ func (sc *scout) failure() error {
 // and the ordering the last probe recorded. Feishu puts a chat that just
 // received a message at position 1, so the first page is complete for this
 // purpose however many chats there are.
-func (s *Syncer) activeProbe(ctx context.Context) (prev, order []string, err error) {
-	chats, err := s.Client.ActiveChats(ctx, livePage)
+func (s *Syncer) activeProbe(ctx context.Context, now time.Time) (prev, order []string, err error) {
+	chats, err := s.activeChats(ctx, livePage, now)
 	if err != nil {
 		return nil, nil, err
 	}

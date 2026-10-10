@@ -253,3 +253,27 @@ func TestChats_HistoryFloorRecordsHowFarBackAChatReaches(t *testing.T) {
 	c, _ = s.GetChat(ctx, "oc_a")
 	require.Zero(t, c.HistoryFloorMs, "0 under a set backfill_done_at means the whole chat is stored")
 }
+
+func TestFillPlaceholderChats_NamesOnlyAChatFirstSeenThroughAMessage(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	require.NoError(t, s.EnsureChat(ctx, "oc_new", 1))
+	require.NoError(t, s.UpsertChats(ctx, []Chat{{ChatID: "oc_known", Name: "平台组", ChatMode: "group"}}, 1))
+
+	require.NoError(t, s.FillPlaceholderChats(ctx, []Chat{
+		{ChatID: "oc_new", Name: "张三", ChatMode: "p2p", P2PTargetID: "ou_a", P2PTargetType: "user"},
+		{ChatID: "oc_known", Name: "Renamed", ChatMode: "group"},
+		{ChatID: "oc_unseen", Name: "李四", ChatMode: "p2p"},
+	}, 2))
+
+	got, err := s.GetChat(ctx, "oc_new")
+	require.NoError(t, err)
+	require.Equal(t, "张三", got.Name)
+	require.Equal(t, "p2p", got.ChatMode)
+	require.Equal(t, "ou_a", got.P2PTargetID, "the peer is what the title's account and avatar join on")
+	got, err = s.GetChat(ctx, "oc_known")
+	require.NoError(t, err)
+	require.Equal(t, "平台组", got.Name, "a listed chat is the full listing's to rename")
+	_, err = s.GetChat(ctx, "oc_unseen")
+	require.ErrorIs(t, err, ErrNotFound, "a chat with no message stored is the full listing's to add")
+}

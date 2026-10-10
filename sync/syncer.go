@@ -909,12 +909,7 @@ func (s *Syncer) refreshChats(ctx context.Context, now time.Time) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	rows := make([]store.Chat, 0, len(chats))
-	for _, c := range chats {
-		rows = append(rows, store.Chat{ChatID: c.ChatID, Name: c.Name, Description: c.Description, ChatMode: c.ChatMode,
-			ChatStatus: c.ChatStatus, OwnerID: c.OwnerID, External: c.External, P2PTargetID: c.P2PTargetID,
-			P2PTargetType: c.P2PTargetType, AvatarURL: c.Avatar, RawJSON: string(c.Raw)})
-	}
+	rows := chatRows(chats)
 	ms := now.UnixMilli()
 	if err := s.Store.UpsertChats(ctx, rows, ms); err != nil {
 		return 0, err
@@ -925,6 +920,28 @@ func (s *Syncer) refreshChats(ctx context.Context, now time.Time) (int, error) {
 	return len(rows), s.setStateTime(ctx, KeyChatsRefreshed, now)
 }
 
+func chatRows(chats []larkcli.RawChat) []store.Chat {
+	rows := make([]store.Chat, 0, len(chats))
+	for _, c := range chats {
+		rows = append(rows, store.Chat{ChatID: c.ChatID, Name: c.Name, Description: c.Description, ChatMode: c.ChatMode,
+			ChatStatus: c.ChatStatus, OwnerID: c.OwnerID, External: c.External, P2PTargetID: c.P2PTargetID,
+			P2PTargetType: c.P2PTargetType, AvatarURL: c.Avatar, RawJSON: string(c.Raw)})
+	}
+	return rows
+}
+
+// activeChats reads the n most recently active chats and hands the page to the
+// chats a message brought in before any listing named them: a chat whose
+// first message has just landed is at the top, so this page is the earliest a
+// listing names it.
+func (s *Syncer) activeChats(ctx context.Context, n int, now time.Time) ([]larkcli.RawChat, error) {
+	chats, err := s.Client.ActiveChats(ctx, n)
+	if err != nil {
+		return nil, err
+	}
+	return chats, s.Store.FillPlaceholderChats(ctx, chatRows(chats), now.UnixMilli())
+}
+
 // maxActivePage is the largest page the chat list answers.
 const maxActivePage = 100
 
@@ -932,7 +949,7 @@ const maxActivePage = 100
 // ordering itself rather than taking discovery's: discovery keeps its page
 // short for speed, and active_top_k may ask for more than that.
 func (s *Syncer) slowPath(ctx context.Context, now time.Time) (int, error) {
-	chats, err := s.Client.ActiveChats(ctx, min(s.Opt().ActiveTopK, maxActivePage))
+	chats, err := s.activeChats(ctx, min(s.Opt().ActiveTopK, maxActivePage), now)
 	if err != nil {
 		return 0, err
 	}

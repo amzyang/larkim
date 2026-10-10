@@ -3,8 +3,10 @@ package store
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -201,10 +203,58 @@ func (s *Store) MarkChatsLeft(ctx context.Context, seenAt int64) (int64, error) 
 	return res.RowsAffected()
 }
 
-// EnsureChat creates a placeholder for a chat first seen through a message.
+// EnsureChat creates a placeholder for a chat first seen through a message:
+// a row whose chat_mode is still empty, since no listing has named it.
 func (s *Store) EnsureChat(ctx context.Context, chatID string, now int64) error {
 	_, err := s.db.ExecContext(ctx, `INSERT INTO chats (chat_id, first_seen_at, last_seen_at) VALUES (?, ?, ?) ON CONFLICT(chat_id) DO NOTHING`, chatID, now, now)
 	return err
+}
+
+// FillPlaceholderChats gives the rows EnsureChat left bare what a partial
+// listing knows of them, so a new chat has its title and peer within seconds
+// rather than at the next full listing. A row a listing has already filled is
+// left alone: chat_mode is never empty in a listing, and renames, additions
+// and departures stay the full listing's to judge.
+//
+// The placeholders are looked up before anything is written: the live probe
+// calls this every cycle, a placeholder almost never sits on its page, and a
+// cycle with nothing to fill should not take the write lock.
+func (s *Store) FillPlaceholderChats(ctx context.Context, chats []Chat, now int64) error {
+	ids := make([]string, len(chats))
+	for i, c := range chats {
+		ids[i] = c.ChatID
+	}
+	listed, err := json.Marshal(ids)
+	if err != nil {
+		return err
+	}
+	bare, err := queryAll(ctx, s.db, scanOne[string],
+		`SELECT chat_id FROM chats WHERE chat_mode = '' AND chat_id IN (SELECT value FROM json_each(?))`, string(listed))
+	if err != nil || len(bare) == 0 {
+		return err
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	stmt, err := tx.PrepareContext(ctx, `UPDATE chats SET name = ?, description = ?, chat_mode = ?, chat_status = ?, owner_id = ?, external = ?,
+ p2p_target_id = ?, p2p_target_type = ?, avatar_url = ?, last_seen_at = ?, raw_json = ?
+ WHERE chat_id = ? AND chat_mode = ''`)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+	for _, c := range chats {
+		if !slices.Contains(bare, c.ChatID) {
+			continue
+		}
+		if _, err := stmt.ExecContext(ctx, c.Name, c.Description, c.ChatMode, c.ChatStatus, c.OwnerID, c.External,
+			c.P2PTargetID, c.P2PTargetType, c.AvatarURL, now, c.RawJSON, c.ChatID); err != nil {
+			return fmt.Errorf("fill chat %s: %w", c.ChatID, err)
+		}
+	}
+	return tx.Commit()
 }
 
 // SetChatCursor advances the per-chat pull cursor (never backwards).
