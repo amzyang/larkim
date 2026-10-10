@@ -233,7 +233,7 @@ func TestTriager_TellsTheJudgeTheReadersName(t *testing.T) {
 	require.Equal(t, [][]string{selfAliases}, j.aliases)
 }
 
-func TestTriager_SkipsBannerWhenReadElsewhereRepliedOrLarkimFocused(t *testing.T) {
+func TestTriager_SkipsBannerWhenReadElsewhereAnsweredOrLarkimFocused(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t)
 	h.arrive(t, text("om_read", "oc_peer", "ou_a", "一"), 3*time.Second)
@@ -246,6 +246,11 @@ func TestTriager_SkipsBannerWhenReadElsewhereRepliedOrLarkimFocused(t *testing.T
 	h.arrive(t, text("om_mine", "oc_peer", "ou_self", "好"), time.Second)
 	h.pass(t)
 	require.Empty(t, h.notifier.shown(), "the reader already answered")
+
+	h.arrive(t, text("om_acked", "oc_peer", "ou_a", "周报已发"), time.Second)
+	require.NoError(t, h.st.UpdateReactions(t.Context(), "om_acked", reactedBySelf))
+	h.pass(t)
+	require.Empty(t, h.notifier.shown(), "the reader already reacted")
 
 	h.presence.peers = []presence.State{{PID: 1, Focused: true}}
 	h.arrive(t, text("om_focus", "oc_team", "ou_a", "@林岚"), 0)
@@ -380,6 +385,35 @@ func TestTriager_AnEmptyDraftIsDoneWithoutCandidates(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, cands)
 	require.NotZero(t, h.verdicts(t)["om_fyi"].DraftedMs)
+}
+
+// reactedBySelf is a reaction block holding one reaction of the reader's.
+const reactedBySelf = `{"details":[{"emoji_type":"OK","action_time":"1","operator":{"operator_id":"ou_self","operator_type":"user"}}]}`
+
+func TestTriager_StoresAReactionOnlyAnswer(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	h.tr.Drafter = &fakeDrafter{draft: Draft{Reactions: []string{"Get"}, Format: "text"}}
+	h.arrive(t, text("om_fyi", "oc_peer", "ou_a", "周报已发"), 0)
+	h.pass(t)
+	require.NoError(t, h.tr.DraftPass(t.Context()))
+	cands, err := h.st.ChatCandidates(t.Context(), "oc_peer", "ou_self")
+	require.NoError(t, err)
+	require.Len(t, cands, 1)
+	require.Equal(t, "Get", cands[0].Reaction)
+}
+
+func TestTriager_SkipsDraftingAMessageTheReaderReactedTo(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	d := &fakeDrafter{draft: Draft{Texts: []string{"好"}, Format: "text"}}
+	h.tr.Drafter = d
+	h.arrive(t, text("om_q", "oc_peer", "ou_a", "在吗"), time.Second)
+	h.pass(t)
+	require.NoError(t, h.st.UpdateReactions(t.Context(), "om_q", reactedBySelf))
+	require.NoError(t, h.tr.DraftPass(t.Context()))
+	require.Empty(t, d.asked, "a reaction already answered it")
+	require.NotZero(t, h.verdicts(t)["om_q"].DraftedMs)
 }
 
 func TestTriager_ResumesAfterRestart(t *testing.T) {

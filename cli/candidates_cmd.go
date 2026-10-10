@@ -8,12 +8,12 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// candidatesCmd lists the reply drafts triage wrote for urgent messages, the
-// ones the TUI offers at the composer.
+// candidatesCmd lists the drafts triage wrote for urgent messages, replies and
+// reactions both, the ones the TUI offers.
 func (a *App) candidatesCmd() *cobra.Command {
 	candidates := &cobra.Command{
 		Use:   "candidates",
-		Short: "Reply drafts written for urgent messages, offered at the TUI composer",
+		Short: "Reply and reaction drafts written for urgent messages, offered in the TUI",
 	}
 
 	var chat string
@@ -33,7 +33,7 @@ func (a *App) candidatesCmd() *cobra.Command {
 					return err
 				}
 			}
-			// Replied is a TUI distinction; the listing reads without a self
+			// Answered is a TUI distinction; the listing reads without a self
 			// id and leaves it unset.
 			rows, err := st.ChatCandidates(ctx, chat, "")
 			if err != nil {
@@ -44,7 +44,11 @@ func (a *App) candidatesCmd() *cobra.Command {
 			}
 			out := make([][]string, 0, len(rows))
 			for i, c := range rows {
-				out = append(out, []string{circled(i + 1), c.Mid, c.ChatID, c.Format, firstLine(c.Text)})
+				draft := firstLine(c.Text)
+				if c.Reaction != "" {
+					draft = "[" + reactName(c.Reaction) + "]"
+				}
+				out = append(out, []string{circled(i + 1), c.Mid, c.ChatID, c.Format, draft})
 			}
 			table(a.Out, []string{"#", "message_id", "chat_id", "format", "draft"}, out)
 			return nil

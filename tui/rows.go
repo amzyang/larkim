@@ -932,6 +932,20 @@ func reactors(c emoji.Chip, st msgStyle) string {
 	return who
 }
 
+// emojiFace is how a reaction emoji is drawn: the client's picture, or its
+// name in brackets where this terminal draws none. A key this build has no
+// entry for is its own label.
+func emojiFace(key string, st msgStyle) (picture, string) {
+	e, ok := emoji.ByKey(key)
+	if !ok {
+		return picture{}, "[" + key + "]"
+	}
+	if pic := st.emojiChip(e.Key); pic.cols > 0 {
+		return pic, ""
+	}
+	return picture{}, "[" + e.Name() + "]"
+}
+
 // reactionChip is one emoji's standing on a message, drawn as the chip the
 // client puts it on: the emoji and who put it there share one tint, closed by
 // a round cap either side. The emoji is the client's own picture — the client
@@ -941,16 +955,7 @@ func reactors(c emoji.Chip, st msgStyle) string {
 // The strip wraps between chips but never cuts inside one, so a chip crowded
 // with names is fitted here rather than left to run past the pane.
 func reactionChip(c emoji.Chip, st msgStyle) []rowSeg {
-	e, known := emoji.ByKey(c.Key)
-	label := "[" + c.Key + "]"
-	var pic picture
-	if known {
-		if pic = st.emojiChip(e.Key); pic.cols > 0 {
-			label = ""
-		} else {
-			label = "[" + e.Name() + "]"
-		}
-	}
+	pic, label := emojiFace(c.Key, st)
 	// Nothing inside a chip is spaced off anything: a cap's flat side is the
 	// cell edge it hands over on, an emoji carries its own side bearing, and a
 	// picture is drawn at its own shape inside the cells it rounded to.

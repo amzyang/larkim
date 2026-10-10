@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 
+	"github.com/amzyang/larkim/emoji"
 	"github.com/amzyang/larkim/store"
 
 	tea "charm.land/bubbletea/v2"
@@ -16,24 +17,37 @@ import (
 // its own: a candidate is picked, not edited — editing is what the composer it
 // lands in is for.
 
-// candSpec draws a draft by its opening line, numbered for the digit that
-// picks it. One the reader has answered past is dimmed: it is a wording to
-// borrow, not a reply still owed.
+// candSpec draws a reply by its opening line and a reaction by its emoji,
+// numbered for the digit that picks it. One the reader has answered past is
+// dimmed: it is a wording to borrow, not a reply still owed.
 var candSpec = menuSpec[store.Candidate]{
 	row: func(c store.Candidate) offer {
-		name := firstDisplayLine(c.Text)
-		if c.Replied {
-			name = stDim.Render(name)
+		var o offer
+		if c.Reaction != "" {
+			e, _ := emoji.ByKey(c.Reaction)
+			o = offer{icon: emojiIcon(e), name: e.Name()}
+		} else {
+			o = offer{name: firstDisplayLine(c.Text)}
 		}
-		return offer{name: name}
+		if c.Answered {
+			o.name = stDim.Render(o.name)
+		}
+		return o
 	},
 	info: func(c store.Candidate) []string {
 		var marks []string
+		if c.Reaction != "" {
+			marks = append(marks, "reaction")
+		}
 		if c.Format == "markdown" {
 			marks = append(marks, "markdown")
 		}
-		if c.Replied {
-			marks = append(marks, "replied after")
+		if c.Answered {
+			marks = append(marks, "answered after")
+		}
+		if c.Reaction != "" {
+			e, _ := emoji.ByKey(c.Reaction)
+			return infoLines(e.Name(), emojiKey(e), strings.Join(marks, " · "))
 		}
 		return infoLines(strings.TrimSpace(c.Text), strings.Join(marks, " · "))
 	},
@@ -87,15 +101,24 @@ func (m Model) onCandidatesKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// chooseCandidate hands the draft at i to the composer. The mid is remembered
+// chooseCandidate hands the reply at i to the composer. The mid is remembered
 // so the send that leaves the composer can drop the row: the message has been
-// answered, and its other drafts with it.
+// answered, and its other drafts with it. A reaction has no wording to edit,
+// so it goes on the source message there and then.
 func (m Model) chooseCandidate(i int) (tea.Model, tea.Cmd) {
 	if i < 0 || i >= len(m.cand.items) {
 		return m, nil
 	}
 	c := m.cand.items[i]
 	m = m.closeCandidates()
+	if c.Reaction != "" {
+		for _, msgs := range [][]store.Message{m.msgs, m.thread} {
+			if j := indexOfID(msgs, c.Mid); j >= 0 {
+				return m.reactCandidate(c, msgs[j])
+			}
+		}
+		return m.notify("the message it answers is not loaded", true), nil
+	}
 	m.areap().SetValue(strings.TrimSpace(c.Text))
 	m.replan()
 	m.candFilled = c.Mid

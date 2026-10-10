@@ -129,12 +129,12 @@ func (s *Store) ListTriage(ctx context.Context, q TriageQuery) ([]TriageEntry, e
 	}, query, q.ChatID, q.ChatID, q.Level, q.Level, limit)
 }
 
-// RepliedSince reports whether self has sent a live message in the chat after
-// sinceMs: the reader already answered, so a banner would only repeat it.
-func (s *Store) RepliedSince(ctx context.Context, chatID, self string, sinceMs int64) (bool, error) {
+// Answered reports whether the reader has answered message mid: spoken in its
+// chat after it, or reacted to it. A banner or a draft would only repeat that.
+func (s *Store) Answered(ctx context.Context, mid, self string) (bool, error) {
 	var ok bool
-	err := s.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM messages
- WHERE chat_id = ? AND sender_id = ? AND create_ms > ? AND deleted = 0)`, chatID, self, sinceMs).Scan(&ok)
+	err := s.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM messages src WHERE src.message_id = ? AND `+
+		answeredSince("src.chat_id", "src.create_ms", "src.message_id")+`)`, mid, self, self).Scan(&ok)
 	return ok, err
 }
 

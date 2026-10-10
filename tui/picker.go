@@ -221,14 +221,20 @@ func (m *Model) closePicker() {
 	m.layout()
 }
 
-// toggleReaction puts the emoji on the message, or takes it back when it is
-// already the reader's. Every way of reacting — the chooser, :react, a press
-// on the chip itself — arrives here.
+// toggleReaction is reactAs for a press that stands for no reaction candidate.
+func (m Model) toggleReaction(x store.Message, key string) (tea.Model, tea.Cmd) {
+	return m.reactAs(x, key, "")
+}
+
+// reactAs puts the emoji on the message, or takes it back when it is already
+// the reader's. Every way of reacting — the chooser, :react, a press on the
+// chip itself, a reaction candidate — arrives here; candMid names the mid
+// whose drafts the press answers, when a candidate made it.
 //
 // The press is drawn before it is sent, and taken back off the strip only if
 // Feishu refuses it. A chip that moved only once the round trip came back
 // reads as a press that did not land, and the reader presses again.
-func (m Model) toggleReaction(x store.Message, key string) (tea.Model, tea.Cmd) {
+func (m Model) reactAs(x store.Message, key, candMid string) (tea.Model, tea.Cmd) {
 	if m.onForwardedChild() {
 		return m.notify("a forwarded message belongs to its own chat", true), nil
 	}
@@ -258,7 +264,7 @@ func (m Model) toggleReaction(x store.Message, key string) (tea.Model, tea.Cmd) 
 	if asPicture {
 		return m.sendEmojiPicture(x, e)
 	}
-	p := m.pressReaction(x, key)
+	p := m.pressReaction(x, key, candMid)
 	// layout rather than a bare rebuild: a press can open or close a strip,
 	// and the viewport is held by the message on its top row across the row
 	// the strip takes or gives back.

@@ -112,9 +112,9 @@ func TestPressReaction_ReplacesTheEarlierPressOnTheSameEmoji(t *testing.T) {
 	m := Model{}
 	m.deps.Self = "ou_me"
 	x := store.Message{MessageID: "om_a"}
-	first := m.pressReaction(x, "THUMBSUP")
+	first := m.pressReaction(x, "THUMBSUP", "")
 	require.True(t, first.on)
-	second := m.pressReaction(x, "thumbsup")
+	second := m.pressReaction(x, "thumbsup", "")
 	require.False(t, second.on, "the direction answers the strip the first press already changed")
 	require.Len(t, m.reacts, 1, "the last press is what the reader means")
 	require.Equal(t, second.seq, m.reacts[0].seq)

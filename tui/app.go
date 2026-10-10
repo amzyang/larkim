@@ -748,7 +748,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case candidatesLoadedMsg:
 		rows := m.visibleCandidates(msg.rows)
 		if len(rows) == 0 {
-			return m.notify("no pending reply drafts in this chat", true), nil
+			return m.notify("no pending drafts in this chat", true), nil
 		}
 		m.mode = modeCandidates
 		m.cand = fillMenu(rows, candSpec)
@@ -1017,7 +1017,14 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// out. The press stays until that reload lands, so the strip does
 			// not flicker back to the summary it is about to replace.
 			m.answerReact(msg.p.seq)
-			return m, m.reloadCurrent()
+			var clear tea.Cmd
+			if mid := msg.p.candMid; mid != "" {
+				m.pruneChatCands(mid)
+				m.rebuildMessages()
+				clear = clearCandidate(m.deps, mid)
+			}
+			cmd := m.reloadCurrent()
+			return m, tea.Batch(cmd, clear)
 		}
 		m.dropReact(msg.p.seq)
 		m.layout()

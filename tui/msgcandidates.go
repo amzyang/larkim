@@ -8,6 +8,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/amzyang/larkim/emoji"
 	"github.com/amzyang/larkim/store"
 )
 
@@ -20,7 +21,7 @@ const (
 )
 
 // candidateKey names one draft for session-local ignore.
-func candidateKey(c store.Candidate) string { return c.Mid + "\x00" + c.Text }
+func candidateKey(c store.Candidate) string { return c.Mid + "\x00" + c.Text + "\x00" + c.Reaction }
 
 func (m Model) visibleCandidates(cands []store.Candidate) []store.Candidate {
 	if len(cands) == 0 {
@@ -28,7 +29,7 @@ func (m Model) visibleCandidates(cands []store.Candidate) []store.Candidate {
 	}
 	out := make([]store.Candidate, 0, len(cands))
 	for _, c := range cands {
-		if c.Replied {
+		if c.Answered {
 			continue
 		}
 		if m.candIgnored != nil {
@@ -63,8 +64,9 @@ func (m Model) visibleCountForMid(mid string) int {
 	return n
 }
 
-// candidateRows draws pending reply drafts under a message's
-// reaction strip: ignore icon, send icon, opening line of the draft.
+// candidateRows draws pending drafts under a message's reaction strip: ignore
+// icon, send icon, then the opening line of a reply or the emoji of a
+// reaction.
 func candidateRows(x store.Message, idx int, st msgStyle, g *leads) []msgRow {
 	if standsAlone(x) {
 		return nil
@@ -77,13 +79,17 @@ func candidateRows(x store.Message, idx int, st msgStyle, g *leads) []msgRow {
 	for _, c := range cs {
 		ignore := stDim.Render(fit(candIgnoreIcon, pickerIconCols))
 		send := stDim.Render(fit(candSendIcon, pickerIconCols))
-		preview := firstDisplayLine(c.Text)
-		if c.Format == "markdown" {
-			preview += stDim.Render(" markdown")
-		}
-		line := ignore + send + " " + preview
 		iw, sw := lipgloss.Width(ignore), lipgloss.Width(send)
-		row := msgRow{lead: g.take(), text: line, idx: idx}
+		row := msgRow{lead: g.take(), idx: idx}
+		if c.Reaction != "" {
+			row.segs = append([]rowSeg{{text: ignore + send + " "}}, candidateEmoji(c.Reaction, st)...)
+		} else {
+			preview := firstDisplayLine(c.Text)
+			if c.Format == "markdown" {
+				preview += stDim.Render(" markdown")
+			}
+			row.text = ignore + send + " " + preview
+		}
 		row.addZones([]clickZone{
 			{x0: 0, x1: iw, cand: candZone{c: c}},
 			{x0: iw, x1: iw + sw, cand: candZone{c: c, send: true}},
@@ -91,6 +97,20 @@ func candidateRows(x store.Message, idx int, st msgStyle, g *leads) []msgRow {
 		rows = append(rows, row)
 	}
 	return rows
+}
+
+// candidateEmoji draws a reaction candidate the way the strip above it draws
+// a chip's emoji: the client's picture, its name in brackets where the
+// terminal draws none, and the name after it either way, since a suggestion
+// has to be read before it is sent.
+func candidateEmoji(key string, st msgStyle) []rowSeg {
+	e, _ := emoji.ByKey(key)
+	name := stDim.Render(" " + e.Name())
+	pic, label := emojiFace(key, st)
+	if pic.cols > 0 {
+		return []rowSeg{{pic: pic}, {text: name}}
+	}
+	return []rowSeg{{text: label + name}}
 }
 
 type candZone struct {
@@ -121,6 +141,10 @@ func (m Model) ignoreInlineCandidate(c store.Candidate) (Model, tea.Cmd) {
 }
 
 func (m Model) sendInlineCandidate(c store.Candidate, x store.Message) (Model, tea.Cmd) {
+	if c.Reaction != "" {
+		mm, cmd := m.reactCandidate(c, x)
+		return mm.(Model), cmd
+	}
 	text := strings.TrimSpace(c.Text)
 	if text == "" {
 		return m.notify("empty draft", true), nil
@@ -142,4 +166,16 @@ func (m Model) sendInlineCandidate(c store.Candidate, x store.Message) (Model, t
 	m.refreshPanes()
 	m.rebuildMessages()
 	return m.notify("sending reply draft", false), cmd
+}
+
+// reactCandidate puts a reaction candidate on its source message. It goes
+// through the same press every reaction does, carrying the mid so that the
+// drafts go once Feishu has taken it and stay if Feishu refuses. A candidate
+// only ever adds: one that is already the reader's is said so, not toggled
+// off.
+func (m Model) reactCandidate(c store.Candidate, x store.Message) (tea.Model, tea.Cmd) {
+	if mineOn(m.drawnChips(x), c.Reaction) {
+		return m.notify("already reacted with that", false), nil
+	}
+	return m.reactAs(x, c.Reaction, c.Mid)
 }

@@ -14,7 +14,7 @@ import (
 // reply drafts: three candidates on the older one, one on the newer.
 func candModel(t *testing.T) (Model, *store.Store) {
 	t.Helper()
-	m := pickerModel(t)
+	m := unreactedModel(t)
 	st := m.deps.Store
 	ctx := t.Context()
 	require.NoError(t, st.EnsureChat(ctx, "oc_elsewhere", 1))
@@ -22,8 +22,8 @@ func candModel(t *testing.T) (Model, *store.Store) {
 		MsgType: "text", SenderID: "ou_a", SenderName: "李四",
 		ContentRaw: `{"text":"接口什么时候好"}`, CreateMs: 200, UpdateMs: 200}}, 1)
 	require.NoError(t, err)
-	require.NoError(t, st.PutCandidates(ctx, "om_a", "oc_team", []string{"缓冲话术", "放行话术", "拦下话术"}, "text", 100))
-	require.NoError(t, st.PutCandidates(ctx, "om_b", "oc_team", []string{"已排期，周四发"}, "markdown", 200))
+	require.NoError(t, st.PutCandidates(ctx, "om_a", "oc_team", []string{"缓冲话术", "放行话术", "拦下话术"}, nil, "text", 100))
+	require.NoError(t, st.PutCandidates(ctx, "om_b", "oc_team", []string{"已排期，周四发"}, nil, "markdown", 200))
 	return m, st
 }
 
@@ -74,6 +74,29 @@ func TestChooseCandidate_FillsTheComposerAndRemembersTheMid(t *testing.T) {
 	require.Equal(t, "om_a", m.candFilled, "the send this seeds has to know which row to clear")
 }
 
+func TestChooseCandidate_AReactionReactsInsteadOfFillingTheComposer(t *testing.T) {
+	t.Parallel()
+	m, st := candModel(t)
+	require.NoError(t, st.PutCandidates(t.Context(), "om_a", "oc_team", nil, []string{"OnIt"}, "text", 100))
+	next, cmd := m.openCandidates()
+	mm, _ := next.(Model).update(cmd())
+	m = mm.(Model)
+	require.Len(t, m.cand.items, 2, "om_a's reaction, then om_b's reply")
+	require.Equal(t, "OnIt", m.cand.items[0].Reaction)
+	require.Contains(t, ansi.Strip(candSpec.row(m.cand.items[0]).name), "WorkingOnIt")
+
+	mm, cmd = m.onCandidatesKey(keyMsg("enter"))
+	m = mm.(Model)
+	require.NotNil(t, cmd)
+	require.Equal(t, modeNormal, m.mode)
+	require.Empty(t, m.input.Value(), "a reaction is not a wording to edit")
+	require.Empty(t, m.candFilled)
+	require.Len(t, m.reacts, 1)
+	require.Equal(t, "om_a", m.reacts[0].messageID)
+	require.Equal(t, "OnIt", m.reacts[0].emojiType)
+	require.Equal(t, "om_a", m.reacts[0].candMid)
+}
+
 func TestChooseCandidate_LeavesTheComposerAloneOnEsc(t *testing.T) {
 	t.Parallel()
 	m, _ := candModel(t)
@@ -115,7 +138,7 @@ func TestSentMsg_ClearsTheSeededCandidateRow(t *testing.T) {
 	t.Parallel()
 	m, st := candModel(t)
 	m.candFilled = "om_b"
-	require.NoError(t, st.PutCandidates(t.Context(), "om_keep", "oc_elsewhere", []string{"x"}, "text", 1))
+	require.NoError(t, st.PutCandidates(t.Context(), "om_keep", "oc_elsewhere", []string{"x"}, nil, "text", 1))
 
 	mm, _ := m.update(sentMsg{localID: "local"})
 	m = mm.(Model)
@@ -177,7 +200,7 @@ func TestCandidates_StandOverThePaneNumbered(t *testing.T) {
 func TestCandidates_TheBoxBesideTheListReadsTheWholeDraft(t *testing.T) {
 	t.Parallel()
 	m, st := candModel(t)
-	require.NoError(t, st.PutCandidates(t.Context(), "om_c", "oc_team", []string{"第一行\n第二行"}, "markdown", 300))
+	require.NoError(t, st.PutCandidates(t.Context(), "om_c", "oc_team", []string{"第一行\n第二行"}, nil, "markdown", 300))
 	next, cmd := m.openCandidates()
 	mm, _ := next.(Model).update(cmd())
 	m = mm.(Model)
@@ -198,7 +221,7 @@ func TestCandidates_CapAtTheTenRowsTheDigitsReach(t *testing.T) {
 	for i := range texts {
 		texts[i] = "草稿" + string(rune('a'+i))
 	}
-	require.NoError(t, st.PutCandidates(t.Context(), "om_many", "oc_team", texts, "text", 300))
+	require.NoError(t, st.PutCandidates(t.Context(), "om_many", "oc_team", texts, nil, "text", 300))
 	next, cmd := m.openCandidates()
 	mm, _ := next.(Model).update(cmd())
 	m = mm.(Model)

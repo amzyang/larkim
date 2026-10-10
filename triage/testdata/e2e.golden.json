@@ -60,41 +60,46 @@
       "Mid": "om_at",
       "ChatID": "oc_team",
       "Text": "在的，直接说就行",
+      "Reaction": "",
       "Format": "text",
       "CreatedMs": 1791633600000,
-      "Replied": false
+      "Answered": false
     },
     {
       "Mid": "om_boss",
       "ChatID": "oc_team",
       "Text": "在的，直接说就行",
+      "Reaction": "",
       "Format": "text",
       "CreatedMs": 1791633600000,
-      "Replied": false
+      "Answered": false
     },
     {
       "Mid": "om_dm",
       "ChatID": "oc_peer",
       "Text": "在的，直接说就行",
+      "Reaction": "",
       "Format": "text",
       "CreatedMs": 1791633600000,
-      "Replied": false
+      "Answered": false
     },
     {
       "Mid": "om_gray",
       "ChatID": "oc_team",
       "Text": "在的，直接说就行",
+      "Reaction": "",
       "Format": "text",
       "CreatedMs": 1791633600000,
-      "Replied": false
+      "Answered": false
     },
     {
       "Mid": "om_kw",
       "ChatID": "oc_team",
       "Text": "在的，直接说就行",
+      "Reaction": "",
       "Format": "text",
       "CreatedMs": 1791633600000,
-      "Replied": false
+      "Answered": false
     }
   ],
   "opened_in_client": [

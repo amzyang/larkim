@@ -6,8 +6,11 @@ import (
 	_ "embed"
 	"encoding/json/v2"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
+
+	"github.com/amzyang/larkim/emoji"
 )
 
 // instructions lead the drafter's one turn. They hold only rules a transcript
@@ -21,7 +24,8 @@ var instructions string
 // the form a person reads off the message.
 const remindLayout = "2006-01-02 15:04"
 
-// maxDrafts is how many candidates a message keeps, the 1–3 the rules ask for.
+// maxDrafts is how many replies, and separately how many reactions, a message
+// keeps: the 1–3 the rules ask for.
 const maxDrafts = 3
 
 // Answerer is the agent call AgentDrafter makes.
@@ -29,15 +33,17 @@ type Answerer interface {
 	Answer(ctx context.Context, transcript, prompt, instructions string) (string, error)
 }
 
-// AgentDrafter asks the ACP agent for reply candidates and a reminder.
+// AgentDrafter asks the ACP agent for reply and reaction candidates and a
+// reminder.
 type AgentDrafter struct {
 	Answerer Answerer
 }
 
 type answer struct {
-	Drafts []string `json:"drafts"`
-	Format string   `json:"format"`
-	Remind *struct {
+	Drafts    []string `json:"drafts"`
+	Reactions []string `json:"reactions"`
+	Format    string   `json:"format"`
+	Remind    *struct {
 		At    string `json:"at"`
 		Title string `json:"title"`
 	} `json:"remind"`
@@ -80,6 +86,15 @@ func parseDraft(out string) (Draft, error) {
 	for _, s := range a.Drafts {
 		if s = strings.TrimSpace(s); s != "" && len(d.Texts) < maxDrafts {
 			d.Texts = append(d.Texts, s)
+		}
+	}
+	// A key the agent made up, or one Feishu refuses as a reaction, costs only
+	// itself: the replies beside it are still good. What is kept is spelled
+	// the way the API takes it, which is case-sensitive.
+	for _, k := range a.Reactions {
+		e, ok := emoji.ByKey(strings.TrimSpace(k))
+		if ok && e.Reactable() && !slices.Contains(d.Reactions, e.Key) && len(d.Reactions) < maxDrafts {
+			d.Reactions = append(d.Reactions, e.Key)
 		}
 	}
 	if a.Remind != nil {

@@ -123,6 +123,14 @@ func TestAgentDrafter_ReadsTheAnswersJSON(t *testing.T) {
 		"more than three is three": {`{"drafts":["一","二","三","四"]}`,
 			Draft{Texts: []string{"一", "二", "三"}, Format: "text"}},
 		"markdown": {`{"drafts":["**好**"],"format":"markdown"}`, Draft{Texts: []string{"**好**"}, Format: "markdown"}},
+		"reactions in their wire spelling": {`{"drafts":["周四好"],"reactions":["thumbsup","Lark_Emoji_OnIt_0"]}`,
+			Draft{Texts: []string{"周四好"}, Reactions: []string{"THUMBSUP", "OnIt"}, Format: "text"}},
+		"a reaction-only answer": {`{"drafts":[],"reactions":["Get"]}`,
+			Draft{Reactions: []string{"Get"}, Format: "text"}},
+		"unknown and refused reactions are dropped": {`{"drafts":["好"],"reactions":["NoSuchEmoji","ATTENTION","OK"]}`,
+			Draft{Texts: []string{"好"}, Reactions: []string{"OK"}, Format: "text"}},
+		"reactions dedupe and cap at three": {`{"reactions":["OK","ok","DONE","Get","LGTM"]}`,
+			Draft{Reactions: []string{"OK", "DONE", "Get"}, Format: "text"}},
 	} {
 		t.Run(name, func(t *testing.T) {
 			a := &fakeAnswerer{answer: tc.answer}

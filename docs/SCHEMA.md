@@ -195,10 +195,13 @@ it does not survive the process.
 
 ## draft_candidates
 
-The reply drafts written for a P0 message (see `triage`), offered at the TUI
-composer. The process holding `daemon.lock` writes them once the agent answers;
-the TUI reads them and clears a message's row after a send left a composer it
-filled, or once the reader has dismissed the last draft it offered.
+The drafts written for a P0 message (see `triage`): replies offered at the TUI
+composer, and reactions the TUI puts on the source message. The process holding
+`daemon.lock` writes them once the agent answers; the TUI reads them and clears
+a message's row after a send left a composer it filled, after Feishu took a
+reaction it suggested, or once the reader has dismissed the last draft it
+offered. A row the reader has answered — spoken in the chat after `created_ms`,
+or reacted to `mid` — stays in the table but no longer counts as pending.
 One row per source message, so a re-draft overwrites. Unlike `drafts` this
 table is inside the `data_rev` triggers — the writer is not the displayer —
 and it is the only table here with a DELETE trigger.
@@ -207,9 +210,10 @@ and it is the only table here with a DELETE trigger.
 |---|---|
 | `mid` | the source message the drafts answer, and the primary key |
 | `chat_id` | its chat |
-| `draft` | candidate 0, the one recommended |
-| `format` | `text` or `markdown`, applying to every candidate of the mid |
-| `extras` | minimal JSON array holding candidates 1..n |
+| `draft` | reply 0, the one recommended; `''` on a row holding only reactions |
+| `format` | `text` or `markdown`, applying to every reply of the mid |
+| `extras` | minimal JSON array holding replies 1..n |
+| `reactions` | minimal JSON array of `emoji_type` keys, each one Feishu takes as a reaction, most fitting first |
 | `created_ms` | when the drafts were written, Unix ms UTC |
 
 ## triage

@@ -35,7 +35,7 @@ func TestCandidatesList_AnswersForEveryChatAndForOne(t *testing.T) {
 	a, st := candidatesApp(t)
 	defer st.Close()
 	ctx := t.Context()
-	require.NoError(t, st.PutCandidates(ctx, "om_ask", "oc_quiet", []string{"first line\nsecond line"}, "markdown", 1))
+	require.NoError(t, st.PutCandidates(ctx, "om_ask", "oc_quiet", []string{"first line\nsecond line"}, nil, "markdown", 1))
 
 	for _, args := range [][]string{{"list"}, {"list", "--chat", "平台组"}} {
 		a.Out.(*bytes.Buffer).Reset()
@@ -44,4 +44,15 @@ func TestCandidatesList_AnswersForEveryChatAndForOne(t *testing.T) {
 		require.NoError(t, cmd.Execute())
 		require.Contains(t, a.Out.(*bytes.Buffer).String(), "first line …")
 	}
+}
+
+func TestCandidatesList_NamesAReactionRow(t *testing.T) {
+	a, st := candidatesApp(t)
+	defer st.Close()
+	require.NoError(t, st.PutCandidates(t.Context(), "om_ask", "oc_quiet", nil, []string{"THUMBSUP"}, "text", 1))
+
+	cmd := a.candidatesCmd()
+	cmd.SetArgs([]string{"list"})
+	require.NoError(t, cmd.Execute())
+	require.Contains(t, a.Out.(*bytes.Buffer).String(), "[Like]")
 }

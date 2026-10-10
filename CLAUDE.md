@@ -100,7 +100,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - 时间戳一律 Unix 毫秒 UTC；消息顺序 `ORDER BY create_ms, message_position, id`；`message_position` 为负表示 thread 回复（哨兵值由 API 定，当前数据是 -3，判据只能是符号）
 - FTS5 用 trigram 分词（unicode61 把整段 CJK 当一个 token），MATCH 仅对 ≥3 字符词有效，短词走 `instr` 回退
 - JSON 列（`mentions_json`、`reactions_json`、`chats.last_*_json`）一律存最小化形式，由 store 的 `compactJSON` 在写入时保证；`namesSelf` 按文本匹配 id 就靠这条。lark-cli 的输出是缩进的，绕过 `UpdateRendered`/`UpdateReactions` 直接写这几列会让 @我 标记和 `:mentions` 面板静默失效
-- `daemon.lock` 只圈定 sweep 的所有者（discovery、backfill、`sync_state` 全局游标）；读者按键触发的拉取（发送、reaction、展开转发、回溯历史、冷搜索命中）每个进程都能做，它们是对飞书刚答复过的 id 的幂等 upsert。`read_state.local_read_at` 与 `drafts` 归 TUI，`chats.web_chat_id` 归清红点的进程（TUI 与 `read-all`），daemon 不写；`ai_sessions`/`ai_turns` 同样归 TUI；外部消费者的处理进度由消费者自持，库里不记。`triage`、`reminders`、`draft_candidates` 的写入与桌面横幅归持锁进程（daemon 或嵌入 sweep 的 TUI），TUI 只读、只在发送后清一行 candidates；每个 TUI 在 `<data_dir>/tui/<pid>.sock` 报告自己的焦点与 kitty 窗口，横幅点击经它打开会话
+- `daemon.lock` 只圈定 sweep 的所有者（discovery、backfill、`sync_state` 全局游标）；读者按键触发的拉取（发送、reaction、展开转发、回溯历史、冷搜索命中）每个进程都能做，它们是对飞书刚答复过的 id 的幂等 upsert。`read_state.local_read_at` 与 `drafts` 归 TUI，`chats.web_chat_id` 归清红点的进程（TUI 与 `read-all`），daemon 不写；`ai_sessions`/`ai_turns` 同样归 TUI；外部消费者的处理进度由消费者自持，库里不记。`triage`、`reminders`、`draft_candidates` 的写入与桌面横幅归持锁进程（daemon 或嵌入 sweep 的 TUI），TUI 只读、只在发送或 reaction 被飞书接受后清一行 candidates；每个 TUI 在 `<data_dir>/tui/<pid>.sock` 报告自己的焦点与 kitty 窗口，横幅点击经它打开会话
 - 发给飞书的时间必须用 `larkTimeLayout`，绝不输出 `Z`（`messages/search` 原样转发）
 
 ## Telemetry

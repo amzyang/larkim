@@ -118,20 +118,36 @@ func TestTriageQueues_HandOutP0RowsUntilStamped(t *testing.T) {
 	require.Equal(t, "张三", rows[0].SenderName)
 }
 
-func TestRepliedSince_SeesTheReadersOwnLaterMessage(t *testing.T) {
+func TestAnswered_SeesTheReadersOwnLaterMessage(t *testing.T) {
 	s := openTest(t)
 	ctx := t.Context()
 	seedTriage(t, s)
-	replied, err := s.RepliedSince(ctx, "oc_quiet", "ou_self", 6_000)
+	answered, err := s.Answered(ctx, "om_fresh", "ou_self")
 	require.NoError(t, err)
-	require.False(t, replied)
+	require.False(t, answered)
 
 	_, err = s.UpsertMessages(ctx, []Message{{MessageID: "om_mine", ChatID: "oc_quiet", MsgType: "text",
 		SenderID: "ou_self", SenderType: "user", ContentRaw: `{"text":"好"}`, CreateMs: 6_500, MessagePosition: 6_500, RawJSON: "{}"}}, 1)
 	require.NoError(t, err)
-	replied, err = s.RepliedSince(ctx, "oc_quiet", "ou_self", 6_000)
+	answered, err = s.Answered(ctx, "om_fresh", "ou_self")
 	require.NoError(t, err)
-	require.True(t, replied)
+	require.True(t, answered)
+}
+
+func TestAnswered_CountsAReactionOnTheSourceMessage(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	seedTriage(t, s)
+	require.NoError(t, s.UpdateReactions(ctx, "om_fresh",
+		`{"details":[{"emoji_type":"OK","action_time":"1","operator":{"operator_id":"ou_self","operator_type":"user"}}]}`))
+
+	answered, err := s.Answered(ctx, "om_fresh", "ou_self")
+	require.NoError(t, err)
+	require.True(t, answered, "an acknowledging reaction is how an ack is answered")
+
+	answered, err = s.Answered(ctx, "om_old", "ou_self")
+	require.NoError(t, err)
+	require.False(t, answered, "the reaction answers only the message it is on")
 }
 
 func TestReminders_FireOnceDueAndASameMessageReplanReplaces(t *testing.T) {

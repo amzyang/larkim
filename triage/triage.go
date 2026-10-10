@@ -103,9 +103,12 @@ type DraftAsk struct {
 // Draft is what the drafter answered: reply candidates, best first, none
 // empty, in Format, and a reminder when the message named a later time.
 type Draft struct {
-	Texts  []string
-	Format string
-	Remind *Remind
+	Texts []string
+	// Reactions are emoji_type keys to react to the message with, each one
+	// Feishu takes as a reaction.
+	Reactions []string
+	Format    string
+	Remind    *Remind
 }
 
 // Remind is a reminder a message asked for.
@@ -409,11 +412,11 @@ func (t *Triager) banner(ctx context.Context, o store.Triage, self string, now t
 	if m.Deleted || now.Sub(time.UnixMilli(m.CreateMs)) > bannerFresh {
 		return Banner{}, false, nil
 	}
-	replied, err := t.Store.RepliedSince(ctx, m.ChatID, self, m.CreateMs)
+	answered, err := t.Store.Answered(ctx, m.MessageID, self)
 	if err != nil {
 		return Banner{}, false, err
 	}
-	if read := m.IsReadRemote != nil && *m.IsReadRemote; read || replied || attending() {
+	if read := m.IsReadRemote != nil && *m.IsReadRemote; read || answered || attending() {
 		return Banner{}, false, nil
 	}
 	c, err := t.Store.GetChat(ctx, m.ChatID)
@@ -584,11 +587,11 @@ func (t *Triager) draft(ctx context.Context, o store.Triage, self string) error 
 	if err != nil {
 		return err
 	}
-	replied, err := t.Store.RepliedSince(ctx, m.ChatID, self, m.CreateMs)
+	answered, err := t.Store.Answered(ctx, m.MessageID, self)
 	if err != nil {
 		return err
 	}
-	if replied {
+	if answered {
 		return done()
 	}
 	c, err := t.Store.GetChat(ctx, m.ChatID)
@@ -610,8 +613,8 @@ func (t *Triager) draft(ctx context.Context, o store.Triage, self string) error 
 	if err != nil {
 		return err
 	}
-	if len(d.Texts) > 0 {
-		if err := t.Store.PutCandidates(ctx, m.MessageID, m.ChatID, d.Texts, d.Format, now.UnixMilli()); err != nil {
+	if len(d.Texts) > 0 || len(d.Reactions) > 0 {
+		if err := t.Store.PutCandidates(ctx, m.MessageID, m.ChatID, d.Texts, d.Reactions, d.Format, now.UnixMilli()); err != nil {
 			return fmt.Errorf("candidates: %w", err)
 		}
 	}

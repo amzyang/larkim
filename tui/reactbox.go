@@ -37,8 +37,11 @@ type reactPending struct {
 	// take back a different reaction than the one on the message.
 	emojiType string
 	key       string // folded, which is how a chip's key is matched
-	on        bool
-	at        time.Time
+	// candMid names the mid whose drafts this press answers, when a reaction
+	// candidate made it; the drafts go once Feishu takes it.
+	candMid string
+	on      bool
+	at      time.Time
 	// answered marks a press Feishu has taken. React brings the summary up to
 	// date before it returns, so from that point the store is the truth and
 	// the press is held only until a reload has drawn it.
@@ -65,11 +68,11 @@ func (m Model) reactStates() map[string]map[string]bool {
 // caller can hand the same record to the command that sends it. Pressing the
 // same emoji again replaces the record rather than queueing behind it: the
 // last press is what the reader means.
-func (m *Model) pressReaction(x store.Message, key string) reactPending {
+func (m *Model) pressReaction(x store.Message, key, candMid string) reactPending {
 	folded := emoji.Fold(key)
 	m.reactSeq++
 	p := reactPending{seq: m.reactSeq, messageID: x.MessageID, emojiType: key, key: folded,
-		on: !mineOn(m.drawnChips(x), folded), at: time.Now()}
+		candMid: candMid, on: !mineOn(m.drawnChips(x), folded), at: time.Now()}
 	m.reacts = slices.DeleteFunc(m.reacts, func(q reactPending) bool {
 		return q.messageID == p.messageID && q.key == p.key
 	})
