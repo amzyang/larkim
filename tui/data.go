@@ -532,7 +532,7 @@ func loadChats(d Deps) tea.Cmd {
 		}
 		// A chat whose mirror count cannot be answered for keeps its rows and
 		// loses only the marker, the same trade the drafts make.
-		cands, err := d.Store.CandidateChats(ctx)
+		cands, err := d.Store.CandidateChats(ctx, d.Self)
 		if err != nil {
 			d.log().Error("load candidates", "err", err)
 			cands = nil

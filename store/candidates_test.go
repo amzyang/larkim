@@ -90,10 +90,41 @@ func TestCandidateChats_CountsRowsPerChat(t *testing.T) {
 	require.NoError(t, s.PutCandidates(ctx, "om_ask2", "oc_quiet", []string{"c"}, "text", 2))
 	require.NoError(t, s.PutCandidates(ctx, "om_elsewhere", "oc_other", []string{"d"}, "text", 3))
 
-	counts, err := s.CandidateChats(ctx)
+	counts, err := s.CandidateChats(ctx, "ou_self")
 	require.NoError(t, err)
 	require.Equal(t, map[string]int{"oc_quiet": 2, "oc_other": 1},
 		counts, "one row per pending message, not per candidate")
+}
+
+func TestCandidateChats_SkipsRowsTheReaderRepliedPast(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	seedCandidateChat(t, s)
+	require.NoError(t, s.PutCandidates(ctx, "om_ask", "oc_quiet", []string{"a"}, "text", 100))
+	require.NoError(t, s.PutCandidates(ctx, "om_ask2", "oc_quiet", []string{"b"}, "text", 300))
+	// The reader spoke between the two drafts: the older one is answered, the
+	// newer one still pending.
+	_, err := s.UpsertMessages(ctx, []Message{
+		{MessageID: "om_mine", ChatID: "oc_quiet", MsgType: "text", SenderID: "ou_self",
+			SenderType: "user", SenderName: "林岚", ContentRaw: `{"text":"在看"}`,
+			Content: "在看", CreateMs: 200, MessagePosition: 2, RawJSON: "{}"},
+	}, 1)
+	require.NoError(t, err)
+
+	counts, err := s.CandidateChats(ctx, "ou_self")
+	require.NoError(t, err)
+	require.Equal(t, map[string]int{"oc_quiet": 1}, counts, "only the draft the reader has not answered counts")
+
+	_, err = s.UpsertMessages(ctx, []Message{
+		{MessageID: "om_mine2", ChatID: "oc_quiet", MsgType: "text", SenderID: "ou_self",
+			SenderType: "user", SenderName: "林岚", ContentRaw: `{"text":"好了"}`,
+			Content: "好了", CreateMs: 400, MessagePosition: 3, RawJSON: "{}"},
+	}, 1)
+	require.NoError(t, err)
+
+	counts, err = s.CandidateChats(ctx, "ou_self")
+	require.NoError(t, err)
+	require.Empty(t, counts, "a chat whose drafts are all answered past draws no marker")
 }
 
 func TestClearCandidate_DropsTheRowAndBumpsTheRevision(t *testing.T) {

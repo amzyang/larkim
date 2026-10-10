@@ -19,17 +19,21 @@ type Candidate struct {
 	Replied bool
 }
 
+// repliedPast is the Replied predicate, binding the reader's open id. The
+// chat-list marker and the message view must agree on what is still pending,
+// so both queries take it from here.
+const repliedPast = `EXISTS(SELECT 1 FROM messages
+	               WHERE chat_id = draft_candidates.chat_id
+	                 AND sender_id = ? AND create_ms > draft_candidates.created_ms
+	                 AND deleted = 0)`
+
 // ChatCandidates expands the draft_candidates rows of one chat into one
 // Candidate per draft, ordered oldest pending first, draft order within a mid.
 // The extras column is written as minimal JSON, so a decode failure drops the
 // later candidates rather than the row. An empty chatID lists every chat —
 // the CLI's view; the TUI always names its chat.
 func (s *Store) ChatCandidates(ctx context.Context, chatID, selfID string) ([]Candidate, error) {
-	query := `SELECT mid, chat_id, draft, format, extras, created_ms,
-	        EXISTS(SELECT 1 FROM messages
-	               WHERE chat_id = draft_candidates.chat_id
-	                 AND sender_id = ? AND create_ms > draft_candidates.created_ms
-	                 AND deleted = 0)
+	query := `SELECT mid, chat_id, draft, format, extras, created_ms, ` + repliedPast + `
 	 FROM draft_candidates`
 	args := []any{selfID}
 	if chatID != "" {
@@ -79,11 +83,12 @@ func (s *Store) PutCandidates(ctx context.Context, mid, chatID string, drafts []
 	return err
 }
 
-// CandidateChats counts draft_candidates rows per chat, feeding the chat-list
-// marker. Chats without candidates are absent from the map.
-func (s *Store) CandidateChats(ctx context.Context) (map[string]int, error) {
+// CandidateChats counts the draft_candidates rows per chat the reader has not
+// replied past, feeding the chat-list marker. Chats with none are absent from
+// the map.
+func (s *Store) CandidateChats(ctx context.Context, selfID string) (map[string]int, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT chat_id, COUNT(*) FROM draft_candidates GROUP BY chat_id`)
+		`SELECT chat_id, COUNT(*) FROM draft_candidates WHERE NOT `+repliedPast+` GROUP BY chat_id`, selfID)
 	if err != nil {
 		return nil, err
 	}
