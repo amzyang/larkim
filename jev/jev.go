@@ -67,13 +67,23 @@ type Ask struct {
 	// question and leaves Rank.Fits at 1: a caller that did not ask has no
 	// reason to be told the answer is no.
 	Fits, True, False string
+	// Nouls are further yes/no questions over the same state, keyed by the
+	// caller's own names. They ride the same request because the model judges
+	// each question on its own: a condition asked as an option of the pick
+	// competes with what the message is about, asked alone it does not.
+	Nouls map[string]Noul
 }
+
+// Noul is one yes/no question and what a yes and a no mean.
+type Noul struct{ Instructions, True, False string }
 
 // Rank is one answer: the options best first, and how strongly the situation
 // called for an option at all.
 type Rank struct {
 	Options []Option
 	Fits    float64
+	// Nouls answers Ask.Nouls under the same names, from 0 for no to 1 for yes.
+	Nouls map[string]float64
 }
 
 // Option is one of the options the question offered and the probability the
@@ -91,6 +101,8 @@ type Option struct {
 const (
 	pickID = "pick"
 	fitsID = "fits"
+	// noulPrefix keeps a caller's noul names apart from the two above.
+	noulPrefix = "noul:"
 )
 
 // Rank answers a. The options come back sorted by probability, best first,
@@ -103,6 +115,10 @@ func (c *Client) Rank(ctx context.Context, a Ask) (Rank, error) {
 	if a.Fits != "" {
 		qs[fitsID] = question{Type: "noul", Instructions: a.Fits,
 			Criteria: map[string]string{"true": a.True, "false": a.False}}
+	}
+	for name, n := range a.Nouls {
+		qs[noulPrefix+name] = question{Type: "noul", Instructions: n.Instructions,
+			Criteria: map[string]string{"true": n.True, "false": n.False}}
 	}
 	var res response
 	if err := c.post(ctx, request{State: a.State, Model: model, Questions: qs}, &res); err != nil {
@@ -120,6 +136,16 @@ func (c *Client) Rank(ctx context.Context, a Ask) (Rank, error) {
 	}
 	if fits, ok := res.Answers[fitsID]; ok {
 		out.Fits = fits.Noul
+	}
+	if len(a.Nouls) > 0 {
+		out.Nouls = make(map[string]float64, len(a.Nouls))
+	}
+	for name := range a.Nouls {
+		n, ok := res.Answers[noulPrefix+name]
+		if !ok {
+			return Rank{}, fmt.Errorf("jev: no answer for %q", name)
+		}
+		out.Nouls[name] = n.Noul
 	}
 	return out, nil
 }

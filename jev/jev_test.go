@@ -59,6 +59,48 @@ func TestRank_SendsTheStateAndBothQuestions(t *testing.T) {
 		got.Questions[fitsID].Criteria)
 }
 
+func TestRank_AsksEveryNamedNoulInTheSameRequest(t *testing.T) {
+	var got request
+	c := serve(t, func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		require.NoError(t, json.Unmarshal(b, &got))
+		io.WriteString(w, `{"answers":{"pick":{"probabilities":{"ROCKET":1}},"fits":{"noul":0.8},"noul:mine":{"noul":0.3}}}`)
+	})
+	a := ask
+	a.Nouls = map[string]Noul{"mine": {Instructions: "is this mine?", True: "it names me", False: "it names someone else"}}
+	r, err := c.Rank(t.Context(), a)
+	require.NoError(t, err)
+	require.Len(t, got.Questions, 3)
+	q := got.Questions["noul:mine"]
+	require.Equal(t, "noul", q.Type)
+	require.Equal(t, "is this mine?", q.Instructions)
+	require.Equal(t, map[string]string{"true": "it names me", "false": "it names someone else"}, q.Criteria)
+	require.Equal(t, map[string]float64{"mine": 0.3}, r.Nouls)
+	require.InDelta(t, 0.8, r.Fits, 1e-9)
+}
+
+func TestRank_ANamedNoulCannotTakeTheCompanionsPlace(t *testing.T) {
+	c := serve(t, func(w http.ResponseWriter, _ *http.Request) {
+		io.WriteString(w, `{"answers":{"pick":{"probabilities":{"ROCKET":1}},"fits":{"noul":0.8},"noul:fits":{"noul":0.1}}}`)
+	})
+	a := ask
+	a.Nouls = map[string]Noul{"fits": {Instructions: "x", True: "y", False: "z"}}
+	r, err := c.Rank(t.Context(), a)
+	require.NoError(t, err)
+	require.InDelta(t, 0.8, r.Fits, 1e-9)
+	require.Equal(t, map[string]float64{"fits": 0.1}, r.Nouls)
+}
+
+func TestRank_AnAnswerMissingANamedNoulIsAnError(t *testing.T) {
+	c := serve(t, func(w http.ResponseWriter, _ *http.Request) {
+		io.WriteString(w, `{"answers":{"pick":{"probabilities":{"ROCKET":1}},"fits":{"noul":0.8}}}`)
+	})
+	a := ask
+	a.Nouls = map[string]Noul{"mine": {Instructions: "x", True: "y", False: "z"}}
+	_, err := c.Rank(t.Context(), a)
+	require.ErrorContains(t, err, "mine")
+}
+
 func TestRank_OrdersTheOptionsByProbability(t *testing.T) {
 	c := serve(t, func(w http.ResponseWriter, _ *http.Request) {
 		io.WriteString(w, `{"answers":{"pick":{"probabilities":{"BUG":0.1,"ROCKET":0.9,"OK":0.4}},"fits":{"noul":0.8}}}`)
