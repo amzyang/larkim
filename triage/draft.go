@@ -47,7 +47,11 @@ type answer struct {
 func (d AgentDrafter) Draft(ctx context.Context, a DraftAsk) (Draft, error) {
 	prompt := fmt.Sprintf("当前时间：%s\n", a.Now.Local().Format(remindLayout))
 	if a.Reader != "" {
-		prompt += fmt.Sprintf("用户：%s\n", a.Reader)
+		prompt += "用户：" + a.Reader
+		if len(a.Aliases) > 0 {
+			prompt += "（也被叫作：" + strings.Join(a.Aliases, "、") + "）"
+		}
+		prompt += "\n"
 	}
 	prompt += "\n目标消息：\n" + a.Target
 	out, err := d.Answerer.Answer(ctx, a.Transcript, prompt, instructions)
