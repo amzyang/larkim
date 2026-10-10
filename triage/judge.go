@@ -20,8 +20,34 @@ const attention = 0.5
 // on both sides.
 const addressed = 0.5
 
-// toReader names the addressee question in the request and its answer.
-const toReader = "to_reader"
+// asking is the share of the pick over which a message counts as asking
+// something of the reader. It is read off reply and act together rather than
+// off the top option: the two split one meaning between them, and an ask that
+// leans neither way loses to fyi option by option while outweighing it summed.
+const asking = 0.5
+
+// ToReader names the addressee question in the request, its answer, and its
+// entry in a stored Judgment.
+const ToReader = "to_reader"
+
+// Judgment is Jev's answer as triage stores it beside the verdict, which is
+// every number a cut here is made on: re-reading a cut off stored judgments
+// needs no second call.
+type Judgment struct {
+	Model string             `json:"model,omitempty"`
+	Pick  map[string]float64 `json:"pick"`
+	Fits  float64            `json:"fits"`
+	Nouls map[string]float64 `json:"nouls,omitempty"`
+}
+
+// NewJudgment is r as stored.
+func NewJudgment(r jev.Rank) Judgment {
+	j := Judgment{Model: r.Model, Fits: r.Fits, Nouls: r.Nouls, Pick: make(map[string]float64, len(r.Options))}
+	for _, o := range r.Options {
+		j.Pick[o.Key] = o.P
+	}
+	return j
+}
 
 // Ranker is the one call JevJudge makes.
 type Ranker interface {
@@ -46,16 +72,21 @@ var asks = map[string]string{
 
 // grayState is what Jev reads about the message.
 type grayState struct {
-	Chat    string   `json:"chat"`
-	Reader  string   `json:"reader,omitempty"`
-	Sender  string   `json:"sender"`
-	Message string   `json:"message"`
-	Before  []string `json:"before"`
+	Chat string `json:"chat"`
+	// Reader stays in the state when it is empty: the questions name
+	// `reader`, and a path that is not there is not one the model can read
+	// as "unknown".
+	Reader string `json:"reader"`
+	// ReaderAliases stays in the state when empty for the same reason.
+	ReaderAliases []string `json:"reader_aliases"`
+	Sender        string   `json:"sender"`
+	Message       string   `json:"message"`
+	Before        []string `json:"before"`
 }
 
 // Judge answers a.
 func (j JevJudge) Judge(ctx context.Context, a GrayAsk) (Verdict, error) {
-	state := grayState{Chat: cmp.Or(a.Chat.Name, a.Chat.ChatID), Reader: a.Reader,
+	state := grayState{Chat: cmp.Or(a.Chat.Name, a.Chat.ChatID), Reader: a.Reader, ReaderAliases: append([]string{}, a.Aliases...),
 		Sender: cmp.Or(a.Message.SenderName, a.Message.SenderID), Message: Text(a.Message), Before: []string{}}
 	for _, m := range a.Context {
 		if l := ai.Line(m, a.Self, nil); l != "" {
@@ -72,24 +103,34 @@ func (j JevJudge) Judge(ctx context.Context, a GrayAsk) (Verdict, error) {
 		// Asked as its own question rather than as an option of the pick: as
 		// an option it loses to the content, and a log pasted for a colleague
 		// who @-ed its sender comes out act.
-		Nouls: map[string]jev.Noul{toReader: {
-			Instructions: "The reader, named `reader`, is a member of the group chat `chat`; their own lines in `before` are marked (me). Is `message` meant for the reader?",
-			True:         "yes: it names the reader, answers or follows up on a (me) line, or calls on everyone in the chat",
+		Nouls: map[string]jev.Noul{ToReader: {
+			Instructions: "The reader, named `reader`, is a member of the group chat `chat`; `reader_aliases` are other names only the reader goes by, and their own lines in `before` are marked (me). Is `message` meant for the reader?",
+			True:         "yes: it names the reader by name or alias, answers or follows up on a (me) line, or calls on everyone in the chat",
 			False:        "no: it continues an exchange in `before` between other people, such as an answer to someone else's @ or something pasted for whoever asked for it",
 		}},
 	})
 	if err != nil {
 		return Verdict{}, err
 	}
-	top := ""
+	top, p := "", map[string]float64{}
 	if len(r.Options) > 0 {
 		top = r.Options[0].Key
 	}
-	v := Verdict{Level: P1, Reason: "jev:" + top, JevP: new(r.Fits)}
-	if r.Fits < attention || (top != "reply" && top != "act") {
+	for _, o := range r.Options {
+		p[o.Key] = o.P
+	}
+	asks := p["reply"]+p["act"] >= asking
+	if asks {
+		top = "reply"
+		if p["act"] > p["reply"] {
+			top = "act"
+		}
+	}
+	v := Verdict{Level: P1, Reason: "jev:" + top, JevP: new(r.Fits), Jev: &r}
+	if r.Fits < attention || !asks {
 		return v, nil
 	}
-	if r.Nouls[toReader] < addressed {
+	if r.Nouls[ToReader] < addressed {
 		v.Reason = "jev:others"
 		return v, nil
 	}

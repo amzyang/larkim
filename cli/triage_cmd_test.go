@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"encoding/json/jsontext"
 	"encoding/json/v2"
 	"testing"
 
@@ -15,7 +16,8 @@ func TestTriageList_FiltersByLevelAndChat(t *testing.T) {
 	ctx := t.Context()
 	require.NoError(t, st.UpdateRendered(ctx, "om_ask", "接口什么时候好", "", 2))
 	p := 0.62
-	require.NoError(t, st.PutTriage(ctx, store.Triage{MessageID: "om_ask", ChatID: "oc_quiet", Level: "P0", Reason: "jev:reply", JevP: &p, JudgedMs: 2}))
+	require.NoError(t, st.PutTriage(ctx, store.Triage{MessageID: "om_ask", ChatID: "oc_quiet", Level: "P0", Reason: "jev:reply", JevP: &p,
+		Jev: jsontext.Value(`{"model":"jev-1.13.0","pick":{"reply":0.7},"fits":0.62,"nouls":{"to_reader":0.83}}`), JudgedMs: 2}))
 	require.NoError(t, st.PutTriage(ctx, store.Triage{MessageID: "om_other", ChatID: "oc_other", Level: "P1", Reason: "p1", JudgedMs: 1}))
 
 	out := a.Out.(*bytes.Buffer)
@@ -29,6 +31,8 @@ func TestTriageList_FiltersByLevelAndChat(t *testing.T) {
 	require.Equal(t, "om_ask", rows[0].MessageID)
 	require.Equal(t, "平台组", rows[0].ChatName)
 	require.Equal(t, "接口什么时候好", rows[0].Content)
+	require.JSONEq(t, `{"model":"jev-1.13.0","pick":{"reply":0.7},"fits":0.62,"nouls":{"to_reader":0.83}}`, string(rows[0].Jev),
+		"the answer is embedded as JSON, not as a quoted string")
 
 	out.Reset()
 	cmd = a.triageCmd()
@@ -44,6 +48,8 @@ func TestTriageList_FiltersByLevelAndChat(t *testing.T) {
 	require.NoError(t, cmd.Execute())
 	require.Contains(t, out.String(), "jev:reply")
 	require.Contains(t, out.String(), "0.62")
+	require.Contains(t, out.String(), "to-me")
+	require.Contains(t, out.String(), "0.83", "whether it was meant for the reader is read off beside the attention")
 }
 
 func TestTriageList_RefusesALevelThatIsNotOne(t *testing.T) {

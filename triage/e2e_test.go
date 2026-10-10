@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/amzyang/larkim/config"
+	"github.com/amzyang/larkim/jev"
 	"github.com/amzyang/larkim/store"
 	"github.com/stretchr/testify/require"
 )
@@ -24,7 +25,8 @@ func TestTriager_EndToEnd(t *testing.T) {
 	h := newHarness(t)
 	h.tr.SetRules(NewRules(config.Notifications{Watch: config.Strings{"ou_boss"}, Keywords: config.Strings{"故障"}}))
 	p := 0.81
-	h.tr.Judge = &fakeJudge{verdict: Verdict{Level: P0, Reason: "jev:act", JevP: &p}}
+	h.tr.Judge = &fakeJudge{verdict: Verdict{Level: P0, Reason: "jev:act", JevP: &p, Jev: &jev.Rank{Model: "jev-1.13.0", Fits: p,
+		Options: []jev.Option{{Key: "act", P: 0.7}, {Key: "reply", P: 0.2}, {Key: "fyi", P: 0.1}}, Nouls: map[string]float64{ToReader: 0.9}}}}
 	h.tr.Drafter = &fakeDrafter{draft: Draft{Texts: []string{"在的，直接说就行"}, Format: "text",
 		Remind: &Remind{At: t0.Add(20 * time.Minute), Title: "12:20 评审"}}, remindOn: "12:20 评审"}
 	h.notifier.action = ActionOpen

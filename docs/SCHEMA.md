@@ -230,6 +230,7 @@ at `P1`. Outside `data_rev`: no TUI draws it. `larkim triage list` reads it.
 | `level` | `P0`, `P1` or `drop` |
 | `reason` | what decided: `self`, `non-user`, `empty`, `vc`, `p2p`, `at-me`, `watch-user`, `watch-chat`, `keyword:<pattern>`, `muted`, `p1` (no judge), `jev:<pick>` (`reply`, `act`, `fyi`, `chatter`), `jev:others` (a `reply` or `act` meant for someone else), `jev-error` |
 | `jev_p` | Jev's probability that the message cannot wait; NULL when a rule decided |
+| `jev_json` | Jev's whole answer as compact JSON: `model` (the version that answered, e.g. `jev-1.13.0`), `pick` (probability per `reply`/`act`/`fyi`/`chatter`), `fits` (same as `jev_p`), `nouls` (`to_reader`: probability the message is meant for the reader). A `jev:<pick>` reason means `reply`+`act` reached 0.5 together, naming the larger, or else the top option. NULL when a rule decided or the call failed |
 | `judged_ms` | Unix ms UTC |
 | `drafted_ms` | `P0` only: when drafting finished, whatever it produced; 0 while owed |
 | `draft_tries` | failed drafting attempts; drafting stops at 2 |

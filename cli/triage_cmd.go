@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"encoding/json/v2"
 	"fmt"
 	"slices"
 	"strconv"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/amzyang/larkim/card"
 	"github.com/amzyang/larkim/store"
+	"github.com/amzyang/larkim/triage"
 	"github.com/spf13/cobra"
 )
 
@@ -19,7 +21,7 @@ var triageLevels = []string{"P0", "P1", "drop"}
 // counterpart — it notifies on every unmuted message — so this names its own
 // command rather than borrowing one of the client's words.
 func (a *App) triageCmd() *cobra.Command {
-	triage := &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "triage",
 		Short: "Verdicts on fresh arrivals: which raised a banner, and why",
 	}
@@ -56,14 +58,20 @@ func (a *App) triageCmd() *cobra.Command {
 			}
 			out := make([][]string, 0, len(rows))
 			for _, r := range rows {
-				p := ""
+				p, toMe := "", ""
 				if r.JevP != nil {
 					p = strconv.FormatFloat(*r.JevP, 'f', 2, 64)
 				}
-				out = append(out, []string{time.UnixMilli(r.JudgedMs).Local().Format("01-02 15:04:05"), r.Level, r.Reason, p,
+				var j triage.Judgment
+				if r.Jev != nil && json.Unmarshal(r.Jev, &j) == nil {
+					if q, ok := j.Nouls[triage.ToReader]; ok {
+						toMe = strconv.FormatFloat(q, 'f', 2, 64)
+					}
+				}
+				out = append(out, []string{time.UnixMilli(r.JudgedMs).Local().Format("01-02 15:04:05"), r.Level, r.Reason, p, toMe,
 					r.ChatName, r.SenderName, firstLine(r.Content)})
 			}
-			table(a.Out, []string{"judged", "level", "reason", "jev", "chat", "sender", "message"}, out)
+			table(a.Out, []string{"judged", "level", "reason", "jev", "to-me", "chat", "sender", "message"}, out)
 			return nil
 		},
 	}
@@ -72,7 +80,7 @@ func (a *App) triageCmd() *cobra.Command {
 	list.Flags().IntVar(&limit, "limit", 100, "at most this many rows")
 	mustWire(list.RegisterFlagCompletionFunc("chat", a.completeChatRef))
 	mustWire(list.RegisterFlagCompletionFunc("level", cobra.FixedCompletions(triageLevels, cobra.ShellCompDirectiveNoFileComp)))
-	triage.AddCommand(list)
-	completeNoFileDefault(triage)
-	return triage
+	cmd.AddCommand(list)
+	completeNoFileDefault(cmd)
+	return cmd
 }

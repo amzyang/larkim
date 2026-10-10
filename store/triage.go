@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"encoding/json/jsontext"
 )
 
 // Triage is the verdict on one arrival and how far the work it set off has
@@ -12,11 +13,13 @@ type Triage struct {
 	Level     string `json:"level"`
 	Reason    string `json:"reason"`
 	// JevP is Jev's attention probability, nil when a rule decided.
-	JevP       *float64 `json:"jev_p,omitempty"`
-	JudgedMs   int64    `json:"judged_ms"`
-	DraftedMs  int64    `json:"drafted_ms,omitzero"`
-	DraftTries int      `json:"draft_tries,omitzero"`
-	NotifiedMs int64    `json:"notified_ms,omitzero"`
+	JevP *float64 `json:"jev_p,omitempty"`
+	// Jev is Jev's whole answer, empty when a rule decided or the call failed.
+	Jev        jsontext.Value `json:"jev_json,omitzero"`
+	JudgedMs   int64          `json:"judged_ms"`
+	DraftedMs  int64          `json:"drafted_ms,omitzero"`
+	DraftTries int            `json:"draft_tries,omitzero"`
+	NotifiedMs int64          `json:"notified_ms,omitzero"`
 }
 
 // TriageEntry is a verdict with what a reader needs to recognise the message.
@@ -53,18 +56,21 @@ func (s *Store) Untriaged(ctx context.Context, sinceMs int64, limit int) ([]Mess
 // PutTriage records a verdict. A message is judged once: a second verdict for
 // the same id is dropped, so two passes racing over one arrival agree.
 func (s *Store) PutTriage(ctx context.Context, t Triage) error {
-	_, err := s.db.ExecContext(ctx, `INSERT INTO triage(message_id, chat_id, level, reason, jev_p, judged_ms)
- VALUES(?, ?, ?, ?, ?, ?) ON CONFLICT(message_id) DO NOTHING`,
-		t.MessageID, t.ChatID, t.Level, t.Reason, t.JevP, t.JudgedMs)
+	_, err := s.db.ExecContext(ctx, `INSERT INTO triage(message_id, chat_id, level, reason, jev_p, jev_json, judged_ms)
+ VALUES(?, ?, ?, ?, ?, NULLIF(?, ''), ?) ON CONFLICT(message_id) DO NOTHING`,
+		t.MessageID, t.ChatID, t.Level, t.Reason, t.JevP, compactJSON(string(t.Jev)), t.JudgedMs)
 	return err
 }
 
-const triageColumns = `t.message_id, t.chat_id, t.level, t.reason, t.jev_p, t.judged_ms, t.drafted_ms, t.draft_tries, t.notified_ms`
+const triageColumns = `t.message_id, t.chat_id, t.level, t.reason, t.jev_p, t.jev_json, t.judged_ms,
+ t.drafted_ms, t.draft_tries, t.notified_ms`
 
-// triageDest is where triageColumns scan into. JevP is scanned as a pointer,
-// which database/sql leaves nil for NULL.
+// triageDest is where triageColumns scan into. JevP is scanned as a pointer
+// and Jev as bytes, both of which database/sql leaves nil for NULL: an empty
+// but non-nil Jev is not valid JSON, and omitzero would not drop it.
 func triageDest(t *Triage) []any {
-	return []any{&t.MessageID, &t.ChatID, &t.Level, &t.Reason, &t.JevP, &t.JudgedMs, &t.DraftedMs, &t.DraftTries, &t.NotifiedMs}
+	return []any{&t.MessageID, &t.ChatID, &t.Level, &t.Reason, &t.JevP, (*[]byte)(&t.Jev), &t.JudgedMs,
+		&t.DraftedMs, &t.DraftTries, &t.NotifiedMs}
 }
 
 func scanTriage(sc scanner) (Triage, error) {

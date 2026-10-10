@@ -1,6 +1,7 @@
 package store
 
 import (
+	"encoding/json/jsontext"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -42,6 +43,28 @@ func TestUntriaged_ReadsRecentRenderedLiveUnsilencedArrivalsOnce(t *testing.T) {
 	got, err = s.Untriaged(ctx, 5_000, 50)
 	require.NoError(t, err)
 	require.Empty(t, got, "a judged message is not judged again")
+}
+
+func TestPutTriage_StoresJevsAnswerCompactAndARuleVerdictWithout(t *testing.T) {
+	s := openTest(t)
+	ctx := t.Context()
+	seedTriage(t, s)
+	require.NoError(t, s.PutTriage(ctx, Triage{MessageID: "om_fresh", ChatID: "oc_quiet", Level: "P1", Reason: "jev:fyi",
+		Jev: jsontext.Value("{\n  \"model\": \"jev-1.13.0\",\n  \"fits\": 0.2\n}"), JudgedMs: 1}))
+	require.NoError(t, s.PutTriage(ctx, Triage{MessageID: "om_old", ChatID: "oc_quiet", Level: "P0", Reason: "p2p", JudgedMs: 1}))
+
+	var stored *string
+	require.NoError(t, s.DB().QueryRowContext(ctx, `SELECT jev_json FROM triage WHERE message_id = 'om_old'`).Scan(&stored))
+	require.Nil(t, stored, "a rule verdict has no answer: NULL, not an empty string")
+
+	rows, err := s.ListTriage(ctx, TriageQuery{})
+	require.NoError(t, err)
+	byID := map[string]TriageEntry{}
+	for _, r := range rows {
+		byID[r.MessageID] = r
+	}
+	require.Equal(t, `{"model":"jev-1.13.0","fits":0.2}`, string(byID["om_fresh"].Jev))
+	require.Empty(t, byID["om_old"].Jev)
 }
 
 func TestPutTriage_KeepsTheFirstVerdict(t *testing.T) {

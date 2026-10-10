@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/amzyang/larkim/config"
+	"github.com/amzyang/larkim/jev"
 	"github.com/amzyang/larkim/presence"
 	"github.com/amzyang/larkim/store"
 	"github.com/amzyang/larkim/store/storetest"
@@ -28,11 +29,13 @@ type fakeJudge struct {
 	err     error
 	asked   []string
 	readers []string
+	aliases [][]string
 }
 
 func (j *fakeJudge) Judge(_ context.Context, a GrayAsk) (Verdict, error) {
 	j.asked = append(j.asked, a.Message.MessageID)
 	j.readers = append(j.readers, a.Reader)
+	j.aliases = append(j.aliases, a.Aliases)
 	return j.verdict, j.err
 }
 
@@ -204,12 +207,16 @@ func TestTriager_GrayZoneFallsToP1WithoutJudgeOrOnJevError(t *testing.T) {
 	require.Equal(t, "jev-error", h.verdicts(t)["om_b"].Reason)
 
 	p := 0.9
-	j.err, j.verdict = nil, Verdict{Level: P0, Reason: "jev", JevP: &p}
+	j.err, j.verdict = nil, Verdict{Level: P0, Reason: "jev", JevP: &p, Jev: &jev.Rank{Model: "jev-1.13.0", Fits: p,
+		Options: []jev.Option{{Key: "act", P: 1}}, Nouls: map[string]float64{ToReader: 0.8}}}
 	h.arrive(t, text("om_c", "oc_team", "ou_a", "线上报错了"), time.Second)
 	h.arrive(t, text("om_d", "oc_muted", "ou_a", "线上报错了"), time.Second)
 	h.pass(t)
 	require.Equal(t, "P0", h.verdicts(t)["om_c"].Level)
 	require.InDelta(t, 0.9, *h.verdicts(t)["om_c"].JevP, 1e-9)
+	require.JSONEq(t, `{"model":"jev-1.13.0","pick":{"act":1},"fits":0.9,"nouls":{"to_reader":0.8}}`,
+		string(h.verdicts(t)["om_c"].Jev), "the whole answer is kept beside the verdict")
+	require.Empty(t, h.verdicts(t)["om_b"].Jev, "a failed call has no answer to keep")
 	require.Equal(t, "muted", h.verdicts(t)["om_d"].Reason, "a muted chat is not asked about")
 	require.Equal(t, []string{"om_b", "om_c"}, j.asked)
 }
@@ -223,6 +230,7 @@ func TestTriager_TellsTheJudgeTheReadersName(t *testing.T) {
 	h.arrive(t, text("om_a", "oc_team", "ou_a", "林岚 帮忙看下"), time.Second)
 	h.pass(t)
 	require.Equal(t, []string{"林岚"}, j.readers)
+	require.Equal(t, [][]string{selfAliases}, j.aliases)
 }
 
 func TestTriager_SkipsBannerWhenReadElsewhereRepliedOrLarkimFocused(t *testing.T) {
@@ -358,6 +366,7 @@ func TestTriager_TellsTheDrafterTheReadersName(t *testing.T) {
 	require.NoError(t, h.tr.DraftPass(t.Context()))
 	require.Len(t, d.asked, 1)
 	require.Equal(t, "林岚", d.asked[0].Reader)
+	require.Equal(t, selfAliases, d.asked[0].Aliases)
 }
 
 func TestTriager_AnEmptyDraftIsDoneWithoutCandidates(t *testing.T) {

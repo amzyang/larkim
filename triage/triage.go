@@ -3,6 +3,7 @@ package triage
 import (
 	"cmp"
 	"context"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -61,6 +62,11 @@ const (
 	bodyMax       = 200
 )
 
+// selfAliases are names colleagues call the reader by besides their display
+// name. Feishu's profile has no field for them, and each is the reader's
+// alone, so a message that uses one without an @ is about the reader.
+var selfAliases = []string{"大师兄"}
+
 // GrayAsk is a message no rule decided, with what the judge reads around it.
 type GrayAsk struct {
 	Message store.Message
@@ -70,6 +76,8 @@ type GrayAsk struct {
 	// Reader is the reader's display name, empty when the contacts table does
 	// not have it yet.
 	Reader string
+	// Aliases are the other names only the reader goes by.
+	Aliases []string
 }
 
 // Judge decides what the rules leave open.
@@ -84,7 +92,9 @@ type DraftAsk struct {
 	// not have it yet. The transcript marks their lines (me), but a window
 	// they have not spoken in leaves them anonymous, and then a message to
 	// whoever was @-ed reads as one to them.
-	Reader     string
+	Reader string
+	// Aliases are the other names only the user goes by.
+	Aliases    []string
 	Transcript string
 	Target     string
 	Now        time.Time
@@ -328,7 +338,8 @@ func (t *Triager) judgeGray(ctx context.Context, m store.Message, c store.Chat, 
 	reader, _ := t.Store.GetContact(ctx, self)
 	ctx, cancel := context.WithTimeout(ctx, judgeTimeout)
 	defer cancel()
-	v, err := t.Judge.Judge(ctx, GrayAsk{Message: m, Chat: c, Context: before, Self: self, Reader: reader.Name})
+	v, err := t.Judge.Judge(ctx, GrayAsk{Message: m, Chat: c, Context: before, Self: self,
+		Reader: reader.Name, Aliases: selfAliases})
 	if err != nil {
 		t.log().WarnContext(ctx, "triage judge", "message", m.MessageID, "chat", m.ChatID, "err", err)
 		return Verdict{Level: P1, Reason: "jev-error"}
@@ -337,8 +348,16 @@ func (t *Triager) judgeGray(ctx context.Context, m store.Message, c store.Chat, 
 }
 
 func (t *Triager) put(ctx context.Context, m store.Message, v Verdict, now time.Time) error {
-	if err := t.Store.PutTriage(ctx, store.Triage{MessageID: m.MessageID, ChatID: m.ChatID, Level: string(v.Level),
-		Reason: v.Reason, JevP: v.JevP, JudgedMs: now.UnixMilli()}); err != nil {
+	row := store.Triage{MessageID: m.MessageID, ChatID: m.ChatID, Level: string(v.Level),
+		Reason: v.Reason, JevP: v.JevP, JudgedMs: now.UnixMilli()}
+	if v.Jev != nil {
+		b, err := json.Marshal(NewJudgment(*v.Jev), json.Deterministic(true))
+		if err != nil {
+			return fmt.Errorf("triage: encode judgment: %w", err)
+		}
+		row.Jev = b
+	}
+	if err := t.Store.PutTriage(ctx, row); err != nil {
 		return err
 	}
 	if v.Level == P0 && t.drafted != nil {
@@ -586,7 +605,7 @@ func (t *Triager) draft(ctx context.Context, o store.Triage, self string) error 
 	reader, _ := t.Store.GetContact(ctx, self)
 	dctx, cancel := context.WithTimeout(ctx, draftTimeout)
 	defer cancel()
-	d, err := t.Drafter.Draft(dctx, DraftAsk{ChatName: name, Reader: reader.Name, Transcript: ai.Transcript(name, recent, self, nil),
+	d, err := t.Drafter.Draft(dctx, DraftAsk{ChatName: name, Reader: reader.Name, Aliases: selfAliases, Transcript: ai.Transcript(name, recent, self, nil),
 		Target: ai.Line(m, self, nil), Now: now})
 	if err != nil {
 		return err

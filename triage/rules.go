@@ -16,6 +16,7 @@ import (
 
 	"github.com/amzyang/larkim/card"
 	"github.com/amzyang/larkim/config"
+	"github.com/amzyang/larkim/jev"
 	"github.com/amzyang/larkim/store"
 )
 
@@ -37,6 +38,8 @@ type Verdict struct {
 	Reason string
 	// JevP is the judge's attention probability, nil when a rule decided.
 	JevP *float64
+	// Jev is the judge's whole answer, nil when a rule decided.
+	Jev *jev.Rank
 }
 
 // vcTypes are the messages that start or share a call. They are urgent by
