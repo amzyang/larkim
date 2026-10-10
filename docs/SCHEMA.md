@@ -228,7 +228,7 @@ at `P1`. Outside `data_rev`: no TUI draws it. `larkim triage list` reads it.
 | `message_id` | the judged message, and the primary key |
 | `chat_id` | its chat |
 | `level` | `P0`, `P1` or `drop` |
-| `reason` | what decided: `self`, `non-user`, `empty`, `vc`, `p2p`, `at-me`, `watch-user`, `watch-chat`, `keyword:<pattern>`, `muted`, `p1` (no judge), `jev:<pick>` (`reply`, `act`, `fyi`, `chatter`), `jev-error` |
+| `reason` | what decided: `self`, `non-user`, `empty`, `vc`, `p2p`, `at-me`, `watch-user`, `watch-chat`, `keyword:<pattern>`, `muted`, `p1` (no judge), `jev:<pick>` (`reply`, `act`, `fyi`, `chatter`), `jev:others` (a `reply` or `act` meant for someone else), `jev-error` |
 | `jev_p` | Jev's probability that the message cannot wait; NULL when a rule decided |
 | `judged_ms` | Unix ms UTC |
 | `drafted_ms` | `P0` only: when drafting finished, whatever it produced; 0 while owed |

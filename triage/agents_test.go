@@ -13,41 +13,48 @@ import (
 
 type fakeRanker struct {
 	rank jev.Rank
-	ask  jev.Ask
+	asks []jev.Ask
 }
 
 func (r *fakeRanker) Rank(_ context.Context, a jev.Ask) (jev.Rank, error) {
-	r.ask = a
+	r.asks = append(r.asks, a)
 	return r.rank, nil
 }
 
 func TestJevJudge_CallsForTheReaderOnlyWhenAskedToActAndItCannotWait(t *testing.T) {
 	t.Parallel()
-	ask := GrayAsk{Message: text("om_q", "oc_team", "ou_a", "谁能看下线上报错"), Chat: group, Self: "ou_self"}
+	ask := GrayAsk{Message: text("om_q", "oc_team", "ou_a", "谁能看下线上报错"), Chat: group, Self: "ou_self", Reader: "林岚"}
 	for name, tc := range map[string]struct {
-		top   string
-		fits  float64
-		level Level
+		top    string
+		fits   float64
+		toMe   float64
+		level  Level
+		reason string
 	}{
-		"a request that cannot wait":    {"act", attention + 0.01, P0},
-		"a question that cannot wait":   {"reply", attention + 0.01, P0},
-		"a request that can wait":       {"act", attention - 0.01, P1},
-		"news that cannot wait is news": {"fyi", 0.99, P1},
+		"a request that cannot wait":          {"act", attention + 0.01, addressed + 0.01, P0, "jev:act"},
+		"a question that cannot wait":         {"reply", attention + 0.01, addressed + 0.01, P0, "jev:reply"},
+		"a request that can wait":             {"act", attention - 0.01, 0.99, P1, "jev:act"},
+		"news that cannot wait is news":       {"fyi", 0.99, 0.99, P1, "jev:fyi"},
+		"someone else's request is not yours": {"act", 0.99, addressed - 0.01, P1, "jev:others"},
 	} {
 		t.Run(name, func(t *testing.T) {
-			r := &fakeRanker{rank: jev.Rank{Options: []jev.Option{{Key: tc.top, P: 0.6}, {Key: "chatter", P: 0.1}}, Fits: tc.fits}}
+			r := &fakeRanker{rank: jev.Rank{Options: []jev.Option{{Key: tc.top, P: 0.6}, {Key: "chatter", P: 0.1}},
+				Fits: tc.fits, Nouls: map[string]float64{toReader: tc.toMe}}}
 			v, err := JevJudge{Ranker: r}.Judge(t.Context(), ask)
 			require.NoError(t, err)
 			require.Equal(t, tc.level, v.Level)
-			require.Equal(t, "jev:"+tc.top, v.Reason)
+			require.Equal(t, tc.reason, v.Reason)
 			require.InDelta(t, tc.fits, *v.JevP, 1e-9)
 		})
 	}
-	r := &fakeRanker{rank: jev.Rank{Options: []jev.Option{{Key: "fyi", P: 1}}}}
+	r := &fakeRanker{rank: jev.Rank{Options: []jev.Option{{Key: "fyi", P: 1}}, Nouls: map[string]float64{toReader: 1}}}
 	_, err := JevJudge{Ranker: r}.Judge(t.Context(), ask)
 	require.NoError(t, err)
-	require.ElementsMatch(t, []string{"reply", "act", "fyi", "chatter"}, slices.Collect(maps.Keys(r.ask.Options)))
-	require.NotEmpty(t, r.ask.Fits, "the attention question rides the same call")
+	require.Len(t, r.asks, 1, "every question rides one request")
+	require.ElementsMatch(t, []string{"reply", "act", "fyi", "chatter"}, slices.Collect(maps.Keys(r.asks[0].Options)))
+	require.NotEmpty(t, r.asks[0].Fits, "the attention question rides the same call")
+	require.Contains(t, r.asks[0].Nouls, toReader, "whom it is for rides the same call too")
+	require.Equal(t, "林岚", r.asks[0].State.(grayState).Reader, "a message that names the reader can only be read as theirs if their name is known")
 }
 
 type fakeAnswerer struct {
@@ -77,10 +84,11 @@ func TestAgentDrafter_ReadsTheAnswersJSON(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			a := &fakeAnswerer{answer: tc.answer}
-			d, err := AgentDrafter{Answerer: a}.Draft(t.Context(), DraftAsk{ChatName: "张三", Target: "[10-10 09:00] 张三: 在吗", Now: now})
+			d, err := AgentDrafter{Answerer: a}.Draft(t.Context(), DraftAsk{ChatName: "张三", Reader: "林岚", Target: "[10-10 09:00] 张三: 在吗", Now: now})
 			require.NoError(t, err)
 			require.Equal(t, tc.want, d)
 			require.Contains(t, a.prompt, "2026-10-10 09:00", "the drafter is told what time it is")
+			require.Contains(t, a.prompt, "用户：林岚", "the drafter is told who the user is, who may have no line in the window")
 			require.Contains(t, a.prompt, "张三: 在吗")
 		})
 	}

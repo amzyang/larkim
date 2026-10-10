@@ -67,6 +67,9 @@ type GrayAsk struct {
 	Chat    store.Chat
 	Context []store.Message
 	Self    string
+	// Reader is the reader's display name, empty when the contacts table does
+	// not have it yet.
+	Reader string
 }
 
 // Judge decides what the rules leave open.
@@ -76,7 +79,12 @@ type Judge interface {
 
 // DraftAsk is one P0 message to draft replies for.
 type DraftAsk struct {
-	ChatName   string
+	ChatName string
+	// Reader is the user's display name, empty when the contacts table does
+	// not have it yet. The transcript marks their lines (me), but a window
+	// they have not spoken in leaves them anonymous, and then a message to
+	// whoever was @-ed reads as one to them.
+	Reader     string
 	Transcript string
 	Target     string
 	Now        time.Time
@@ -317,9 +325,10 @@ func (t *Triager) judgeGray(ctx context.Context, m store.Message, c store.Chat, 
 		t.log().WarnContext(ctx, "triage judge context", "message", m.MessageID, "err", err)
 	}
 	slices.Reverse(before)
+	reader, _ := t.Store.GetContact(ctx, self)
 	ctx, cancel := context.WithTimeout(ctx, judgeTimeout)
 	defer cancel()
-	v, err := t.Judge.Judge(ctx, GrayAsk{Message: m, Chat: c, Context: before, Self: self})
+	v, err := t.Judge.Judge(ctx, GrayAsk{Message: m, Chat: c, Context: before, Self: self, Reader: reader.Name})
 	if err != nil {
 		t.log().WarnContext(ctx, "triage judge", "message", m.MessageID, "chat", m.ChatID, "err", err)
 		return Verdict{Level: P1, Reason: "jev-error"}
@@ -574,9 +583,10 @@ func (t *Triager) draft(ctx context.Context, o store.Triage, self string) error 
 	}
 	slices.Reverse(recent)
 	name := cmp.Or(c.Name, m.ChatID)
+	reader, _ := t.Store.GetContact(ctx, self)
 	dctx, cancel := context.WithTimeout(ctx, draftTimeout)
 	defer cancel()
-	d, err := t.Drafter.Draft(dctx, DraftAsk{ChatName: name, Transcript: ai.Transcript(name, recent, self, nil),
+	d, err := t.Drafter.Draft(dctx, DraftAsk{ChatName: name, Reader: reader.Name, Transcript: ai.Transcript(name, recent, self, nil),
 		Target: ai.Line(m, self, nil), Now: now})
 	if err != nil {
 		return err

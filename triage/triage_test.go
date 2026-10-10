@@ -27,10 +27,12 @@ type fakeJudge struct {
 	verdict Verdict
 	err     error
 	asked   []string
+	readers []string
 }
 
 func (j *fakeJudge) Judge(_ context.Context, a GrayAsk) (Verdict, error) {
 	j.asked = append(j.asked, a.Message.MessageID)
+	j.readers = append(j.readers, a.Reader)
 	return j.verdict, j.err
 }
 
@@ -212,6 +214,17 @@ func TestTriager_GrayZoneFallsToP1WithoutJudgeOrOnJevError(t *testing.T) {
 	require.Equal(t, []string{"om_b", "om_c"}, j.asked)
 }
 
+func TestTriager_TellsTheJudgeTheReadersName(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	require.NoError(t, h.st.UpsertContacts(t.Context(), []store.Contact{{OpenID: "ou_self", Name: "林岚"}}, 1))
+	j := &fakeJudge{verdict: Verdict{Level: P1, Reason: "jev:fyi"}}
+	h.tr.Judge = j
+	h.arrive(t, text("om_a", "oc_team", "ou_a", "林岚 帮忙看下"), time.Second)
+	h.pass(t)
+	require.Equal(t, []string{"林岚"}, j.readers)
+}
+
 func TestTriager_SkipsBannerWhenReadElsewhereRepliedOrLarkimFocused(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t)
@@ -332,6 +345,19 @@ func TestTriager_DraftsP0IntoCandidatesAndGivesUpAfterTwoTries(t *testing.T) {
 	cands, err = h.st.ChatCandidates(t.Context(), "oc_peer", "ou_self")
 	require.NoError(t, err)
 	require.Len(t, cands, 1)
+}
+
+func TestTriager_TellsTheDrafterTheReadersName(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	require.NoError(t, h.st.UpsertContacts(t.Context(), []store.Contact{{OpenID: "ou_self", Name: "林岚"}}, 1))
+	d := &fakeDrafter{}
+	h.tr.Drafter = d
+	h.arrive(t, text("om_q", "oc_peer", "ou_a", "在吗"), time.Second)
+	h.pass(t)
+	require.NoError(t, h.tr.DraftPass(t.Context()))
+	require.Len(t, d.asked, 1)
+	require.Equal(t, "林岚", d.asked[0].Reader)
 }
 
 func TestTriager_AnEmptyDraftIsDoneWithoutCandidates(t *testing.T) {
