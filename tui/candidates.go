@@ -9,7 +9,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 )
 
-// The drafts picker lists the reply drafts lark-watch is holding for the open
+// the drafts picker lists the reply drafts triage wrote for the open
 // chat, open only in modeCandidates. It stands over the panes as a list the way
 // a completion does, so the draft a pick would replace stays in sight under it,
 // and the focused draft is read whole in the box beside it. It holds no text of
@@ -88,8 +88,8 @@ func (m Model) onCandidatesKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 }
 
 // chooseCandidate hands the draft at i to the composer. The mid is remembered
-// so the send that leaves the composer can drop the mirrored row — the card on
-// Feishu stays lark-watch's and resolves on its own.
+// so the send that leaves the composer can drop the row: the message has been
+// answered, and its other drafts with it.
 func (m Model) chooseCandidate(i int) (tea.Model, tea.Cmd) {
 	if i < 0 || i >= len(m.cand.items) {
 		return m, nil

@@ -79,7 +79,7 @@ func TestCmdComp_UsageAndHelpAreTheFocusedRowsInfoNotItsName(t *testing.T) {
 	// A command that takes nothing has only its help to say.
 	m = press(t, m, "ctrl+n", "ctrl+n")
 	require.Equal(t, "candidates", typed(m))
-	require.Equal(t, []string{"pick a pending lark-watch reply draft into the composer"}, focusedInfo(m))
+	require.Equal(t, []string{"pick a pending reply draft into the composer"}, focusedInfo(m))
 }
 
 func TestCmdComp_ATargetsIDIsItsInfo(t *testing.T) {

@@ -5,9 +5,9 @@ import (
 	json "encoding/json/v2"
 )
 
-// Candidate is one reply draft lark-watch is holding for a source message.
-// The writer is lark-watch (mirroring its pending table); the TUI only reads
-// and clears, so unlike drafts this table is counted by the data_rev triggers.
+// Candidate is one reply draft triage wrote for an urgent source message.
+// The writer is the process holding daemon.lock; the TUI reads and clears, so
+// unlike drafts this table is counted by the data_rev triggers.
 type Candidate struct {
 	Mid       string // source message the drafts answer
 	ChatID    string
@@ -64,9 +64,8 @@ func (s *Store) ChatCandidates(ctx context.Context, chatID, selfID string) ([]Ca
 	return out, rows.Err()
 }
 
-// PutCandidates mirrors lark-watch's pending drafts for one source message:
-// candidate 0 in draft, the rest in extras as minimal JSON. A same-mid
-// re-draft overwrites, matching lark-watch's own pending upsert.
+// PutCandidates stores the drafts for one source message: candidate 0 in
+// draft, the rest in extras as minimal JSON. A same-mid re-draft overwrites.
 func (s *Store) PutCandidates(ctx context.Context, mid, chatID string, drafts []string, format string, nowMs int64) error {
 	extras, err := json.Marshal(drafts[1:])
 	if err != nil {
@@ -101,9 +100,8 @@ func (s *Store) CandidateChats(ctx context.Context) (map[string]int, error) {
 	return out, rows.Err()
 }
 
-// ClearCandidate drops one mid's mirrored drafts, which is what the TUI does
-// after a send left a composer it filled with one of them. lark-watch's own
-// pending row and Feishu card are unaffected — they resolve on their own.
+// ClearCandidate drops one mid's drafts, which is what the TUI does after a
+// send left a composer it filled with one of them.
 func (s *Store) ClearCandidate(ctx context.Context, mid string) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM draft_candidates WHERE mid = ?`, mid)
 	return err

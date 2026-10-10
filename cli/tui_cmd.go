@@ -4,18 +4,15 @@ import (
 	"context"
 	"errors"
 	"os"
-	"os/exec"
 	"os/signal"
-	"path/filepath"
-	"strings"
 	"syscall"
 
-	"github.com/amzyang/larkim/ai"
 	"github.com/amzyang/larkim/config"
 	"github.com/amzyang/larkim/emoji"
-	"github.com/amzyang/larkim/jev"
+	"github.com/amzyang/larkim/presence"
 	"github.com/amzyang/larkim/sync"
 	"github.com/amzyang/larkim/todoist"
+	"github.com/amzyang/larkim/triage"
 	"github.com/amzyang/larkim/tui"
 	"github.com/spf13/cobra"
 )
@@ -46,29 +43,22 @@ func (a *App) runTUI(_ *cobra.Command, _ []string) error {
 	deps := tui.Deps{Store: st, Client: client, Version: a.Version,
 		DataDir: a.cfg.DataDir, ConfigPath: config.Resolve(a.configPath), Log: a.logger(),
 		Config: a.cfg}
-	// The agent runs in a directory of its own with nothing in it, since the
-	// transcript is all it is meant to read.
-	aiDir := filepath.Join(a.cfg.DataDir, "ai")
-	if err := os.MkdirAll(aiDir, 0o700); err != nil {
+	if err := a.makeAIDir(); err != nil {
 		return err
 	}
+	// Each returns nil, not a typed nil, so the field reads as unset.
 	deps.NewAI = func(agent, model string) tui.AIStreamer {
-		argv := strings.Fields(agent)
-		if len(argv) == 0 {
-			return nil
+		if c := a.newAgent(agent, model); c != nil {
+			return c
 		}
-		if _, err := exec.LookPath(argv[0]); err != nil {
-			return nil
-		}
-		return ai.New(argv, model, aiDir, deps.Log)
+		return nil
 	}
 	deps.AI = deps.NewAI(a.cfg.AI.Agent, a.cfg.AI.Model)
 	deps.NewSuggest = func(keyEnv, endpoint string) tui.ReactSuggester {
-		key := os.Getenv(keyEnv)
-		if key == "" {
-			return nil
+		if c := a.newJev(keyEnv, endpoint); c != nil {
+			return c
 		}
-		return jev.New(key, endpoint, deps.Log)
+		return nil
 	}
 	deps.Suggest = deps.NewSuggest(a.cfg.AI.JevKeyEnv, a.cfg.AI.JevEndpoint)
 	deps.NewTodoist = func(token, project string) tui.TodoistClient {
@@ -99,13 +89,26 @@ func (a *App) runTUI(_ *cobra.Command, _ []string) error {
 	// The model starts focused (tui.New), and the terminal reports only
 	// changes, so discovery starts out attended with it.
 	s.SetAttended(true)
+	// Every TUI answers for itself, whoever raises the banners: the daemon's
+	// banner is clicked into whichever TUI is open.
+	deps.Presence = &presence.Live{KittyWindowID: os.Getenv("KITTY_WINDOW_ID"), KittyListenOn: os.Getenv("KITTY_LISTEN_ON")}
+	deps.PresenceDir = a.presenceDir()
 	if lock, err := sync.TryLock(a.cfg.DataDir); err == nil {
 		defer lock.Unlock()
 		a.logger().Info("tui", "sync", "embedded")
 		deps.Embedded = true
+		t, err := a.triager(st)
+		if err != nil {
+			return err
+		}
+		deps.SetNotifications = func(n config.Notifications) { t.SetRules(triage.NewRules(n)) }
 		go func() {
 			defer sentryRecoverRepanic()
 			s.Run(ctx)
+		}()
+		go func() {
+			defer sentryRecoverRepanic()
+			t.Run(ctx)
 		}()
 	} else if errors.Is(err, sync.ErrLocked) {
 		a.logger().Info("tui", "sync", "daemon", "reason", "a daemon owns the sweep")

@@ -80,6 +80,43 @@ type silenceHit struct {
 	mark     []int
 }
 
+// move steps the cursor through the hits, rows of them showing.
+func (p *silencePick) move(d, rows int) { moveCursor(&p.idx, &p.top, d, len(p.hits), rows) }
+
+// chosen is the hit under the cursor, else the query itself: a query that
+// names nothing is taken as the id.
+func (p silencePick) chosen() string {
+	if p.idx < len(p.hits) {
+		return p.hits[p.idx].id
+	}
+	return strings.TrimSpace(p.input.Value())
+}
+
+// typeInto hands msg to the query and re-runs search when it came back
+// changed.
+func (p *silencePick) typeInto(msg tea.Msg, search func(string) []silenceHit) tea.Cmd {
+	before := p.input.Value()
+	var cmd tea.Cmd
+	p.input, cmd = p.input.Update(msg)
+	if q := p.input.Value(); q != before {
+		p.hits, p.idx, p.top = search(q), 0, 0
+	}
+	return cmd
+}
+
+// lines is the query line after prompt, then rows of the hits under it.
+func (p silencePick) lines(prompt string, rows, w int) []string {
+	right := stDim.Render(strconv.Itoa(len(p.hits)))
+	if len(p.hits) == 0 && strings.TrimSpace(p.input.Value()) != "" {
+		right = stDim.Render("enter takes it as the id")
+	}
+	out := []string{padBetween(prompt+p.input.View(), right, w)}
+	for i, h := range window(p.hits, p.top, rows) {
+		out = append(out, padBetween(cursorLead(p.top+i == p.idx)+markName(h.name, h.mark, lipgloss.NewStyle()), stDim.Render(h.id), w))
+	}
+	return out
+}
+
 type silenceMatchesMsg struct{ counts map[string]silenceCount }
 
 type silenceRosterLoadedMsg struct {
@@ -293,13 +330,9 @@ func (m Model) onSilencePickKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		f.pick = silencePick{}
 		return m, nil
 	case "enter":
-		// A query that names nothing is taken as the id itself: a bot that
-		// has only ever posted is not always among the contacts.
-		id := strings.TrimSpace(p.input.Value())
-		if p.idx < len(p.hits) {
-			id = p.hits[p.idx].id
-		}
-		if id != "" {
+		// A bot that has only ever posted is not always among the contacts,
+		// so a typed id is taken too.
+		if id := p.chosen(); id != "" {
 			*f.idField() = id
 			f.err = ""
 		}
@@ -312,10 +345,10 @@ func (m Model) onSilencePickKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case "up", "ctrl+p":
-		moveCursor(&p.idx, &p.top, -1, len(p.hits), rows)
+		p.move(-1, rows)
 		return m, nil
 	case "down", "ctrl+n":
-		moveCursor(&p.idx, &p.top, 1, len(p.hits), rows)
+		p.move(1, rows)
 		return m, nil
 	}
 	return m.typeIntoSilencePick(k)
@@ -325,13 +358,7 @@ func (m Model) onSilencePickKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 // search when it came back changed.
 func (m Model) typeIntoSilencePick(msg tea.Msg) (tea.Model, tea.Cmd) {
 	f := &m.config.silence.form
-	p := &f.pick
-	before := p.input.Value()
-	var cmd tea.Cmd
-	p.input, cmd = p.input.Update(msg)
-	if q := p.input.Value(); q != before {
-		p.hits, p.idx, p.top = m.silenceSearch(f.field, q), 0, 0
-	}
+	cmd := f.pick.typeInto(msg, func(q string) []silenceHit { return m.silenceSearch(f.field, q) })
 	return m, cmd
 }
 
@@ -354,19 +381,10 @@ func (m Model) forwardSilence(msg tea.Msg) (tea.Model, tea.Cmd) {
 // its roster first, the way @ does, then everyone else in contacts.
 func (m Model) silenceSearch(field silenceField, query string) []silenceHit {
 	ix := fuzzy.NewIndex()
-	var out []silenceHit
 	if field == fieldChat {
-		for _, c := range m.chats {
-			if len(out) == fwdLimit {
-				break
-			}
-			name := flatten(c.Name)
-			if mark, ok := ix.Match(c.ChatID, name, query); ok {
-				out = append(out, silenceHit{id: c.ChatID, name: name, mark: mark})
-			}
-		}
-		return out
+		return m.chatHits(ix, query)
 	}
+	var out []silenceHit
 	roster := m.config.silence.form.roster
 	seen := make(map[string]bool, len(roster)+len(m.contacts))
 	add := func(p store.Contact) {
@@ -384,6 +402,21 @@ func (m Model) silenceSearch(field silenceField, query string) []silenceHit {
 	}
 	for _, p := range m.contacts {
 		add(p)
+	}
+	return out
+}
+
+// chatHits narrows the chats, in the list's order, to fwdLimit of them.
+func (m Model) chatHits(ix *fuzzy.Index, query string) []silenceHit {
+	var out []silenceHit
+	for _, c := range m.chats {
+		if len(out) == fwdLimit {
+			break
+		}
+		name := flatten(c.Name)
+		if mark, ok := ix.Match(c.ChatID, name, query); ok {
+			out = append(out, silenceHit{id: c.ChatID, name: name, mark: mark})
+		}
 	}
 	return out
 }
@@ -584,17 +617,7 @@ func (m Model) silenceFormLines() []string {
 	if !f.pick.open {
 		return out
 	}
-	p := f.pick
-	right := stDim.Render(strconv.Itoa(len(p.hits)))
-	if len(p.hits) == 0 && strings.TrimSpace(p.input.Value()) != "" {
-		right = stDim.Render("enter takes it as the id")
-	}
-	out = append(out, padBetween(m.silencePickPrompt()+p.input.View(), right, w))
-	for i, h := range window(p.hits, p.top, m.silencePickRows()) {
-		lead := cursorLead(p.top+i == p.idx)
-		out = append(out, padBetween(lead+markName(h.name, h.mark, lipgloss.NewStyle()), stDim.Render(h.id), w))
-	}
-	return out
+	return append(out, f.pick.lines(m.silencePickPrompt(), m.silencePickRows(), w)...)
 }
 
 func (m Model) silencePickPrompt() string {
@@ -654,7 +677,7 @@ func (m Model) silenceHintBar() []KeyBinding {
 		{Keys: "a", Desc: "add"},
 		{Keys: "enter", Desc: "edit"},
 		{Keys: "d", Desc: "delete"},
-		{Keys: "tab", Desc: "General"},
+		{Keys: "tab", Desc: nextTabName(m.config.tab)},
 		{Keys: "esc", Desc: "close"},
 	}
 }

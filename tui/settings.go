@@ -37,9 +37,10 @@ type setting struct {
 	// Nil where reading m.cfg is enough.
 	apply func(*Model)
 	// readOnly marks a value no single line can carry. The General tab shows
-	// it and hands it to the tab that edits it whole; no single-line edit or
-	// reset reaches it.
+	// it and hands it to tab, which edits it whole, or to the file when tab is
+	// General; no single-line edit or reset reaches it.
 	readOnly bool
+	tab      configTab
 	// summary draws a value its cell should not show as spelled: too long, or
 	// an id the session can name. Nil draws the value.
 	summary func(Model, config.Config) string
@@ -155,6 +156,7 @@ var settings = []setting{{
 	key:      "silence",
 	help:     "rules whose messages carry no unread badge; enter edits them in the Silence tab",
 	readOnly: true,
+	tab:      tabSilence,
 	summary:  func(_ Model, c config.Config) string { return plural(len(c.Silence), "rule", "rules") },
 }, {
 	key:   "silence_sync",
@@ -162,6 +164,20 @@ var settings = []setting{{
 	live:  true,
 	sweep: true,
 	apply: rebuildSettle,
+}, {
+	key:      "notifications.watch",
+	help:     "people (ou_) and chats (oc_) whose every message raises a desktop banner; enter edits them in the Notifications tab",
+	readOnly: true,
+	tab:      tabNotify,
+	summary:  func(_ Model, c config.Config) string { return strconv.Itoa(len(c.Notifications.Watch)) + " watched" },
+}, {
+	key:      "notifications.keywords",
+	help:     "RE2 patterns; a message whose text matches one raises a desktop banner; enter edits them in the Notifications tab",
+	readOnly: true,
+	tab:      tabNotify,
+	summary: func(_ Model, c config.Config) string {
+		return plural(len(c.Notifications.Keywords), "keyword", "keywords")
+	},
 }}
 
 // nonEmpty judges a key with no default to fall back on: an empty command
@@ -281,11 +297,19 @@ func (m Model) isLive(s setting) bool {
 	return s.live && (!s.sweep || (m.deps.Embedded && m.deps.Syncer != nil))
 }
 
+// editedIn is where a read-only key is edited: its own tab, or the file.
+func (s setting) editedIn() string {
+	if s.tab == tabGeneral {
+		return "the config file"
+	}
+	return "the " + configTabs[s.tab] + " tab"
+}
+
 // settingReach is how far a change to the key goes.
 func (m Model) settingReach(s setting) string {
 	switch {
 	case s.readOnly:
-		return "Silence tab"
+		return s.editedIn()
 	case m.isLive(s):
 		return "takes effect now"
 	case s.sweep:
@@ -318,7 +342,7 @@ func (m Model) settingCell(cfg config.Config, s setting) string {
 // :config can ask what a value means before it writes the file.
 func nextValue(cfg config.Config, s setting, value string) (config.Config, error) {
 	if s.readOnly {
-		return cfg, errors.New("edit it in the Silence tab")
+		return cfg, errors.New("edit it in " + s.editedIn())
 	}
 	if s.check != nil {
 		if err := s.check(value); err != nil {

@@ -24,14 +24,20 @@ type configHit struct {
 // configTab is one page of the :config overlay. The Lark client's Settings
 // window opens on General too; it has no page for local silence rules, which
 // are larkim's own, so Silence has no client counterpart to follow.
+// Notifications borrows the client's name for the page that decides what
+// notifies.
 type configTab int
 
 const (
 	tabGeneral configTab = iota
 	tabSilence
+	tabNotify
 )
 
-var configTabs = []string{"General", "Silence"}
+var configTabs = []string{"General", "Silence", "Notifications"}
+
+// nextTabName is the tab Tab steps to from t, for the hint bars.
+func nextTabName(t configTab) string { return configTabs[(int(t)+1)%len(configTabs)] }
 
 // configPanel is the :config overlay. A zero value is closed.
 //
@@ -57,9 +63,11 @@ type configPanel struct {
 	// project is the todoist.project chooser, which stands in for the editor
 	// on that row.
 	project projectPick
-	// tab is the page on screen; silence is the Silence page's own state.
+	// tab is the page on screen; silence and notify are those pages' own
+	// state.
 	tab     configTab
 	silence silenceTab
+	notify  notifyTab
 }
 
 // openConfig opens the panel, on the row key names when it names one. A key
@@ -84,27 +92,33 @@ func (m Model) openConfig(key string) Model {
 
 // configLoads fetches what the tab on screen draws from outside the model.
 func (m Model) configLoads() tea.Cmd {
-	if m.config.tab != tabSilence {
-		return nil
+	switch m.config.tab {
+	case tabSilence:
+		return tea.Batch(loadContacts(m.deps), loadSilenceMatches(m.deps, m.cfg.Silence))
+	case tabNotify:
+		return loadContacts(m.deps)
 	}
-	return tea.Batch(loadContacts(m.deps), loadSilenceMatches(m.deps, m.cfg.Silence))
+	return nil
 }
 
 // switchConfigTab steps to the neighbouring tab, wrapping round.
 func (m Model) switchConfigTab(d int) (Model, tea.Cmd) {
 	n := configTab(len(configTabs))
 	m.config.tab = (m.config.tab + configTab(d) + n) % n
-	m.config.err, m.config.silence.confirmDelete = "", false
+	m.config.err, m.config.silence.confirmDelete, m.config.notify.confirmDelete = "", false, false
 	return m, m.configLoads()
 }
 
 // configScroll moves the cursor of whichever tab is on screen.
 func (m *Model) configScroll(d int) {
-	if m.config.tab == tabSilence {
+	switch m.config.tab {
+	case tabSilence:
 		m.silenceMove(d)
-		return
+	case tabNotify:
+		m.notifyMove(d)
+	default:
+		m.configMove(d)
 	}
-	m.configMove(d)
 }
 
 func (m Model) closeConfig() Model {
@@ -175,8 +189,11 @@ func (m Model) configFocus() (setting, bool) {
 // forwardConfig is forward for the panel: a paste, bracketed or the reply to
 // an input's own ctrl+v, reaches the input a keypress would.
 func (m Model) forwardConfig(msg tea.Msg) (tea.Model, tea.Cmd) {
-	if m.config.tab == tabSilence {
+	switch m.config.tab {
+	case tabSilence:
 		return m.forwardSilence(msg)
+	case tabNotify:
+		return m.forwardNotify(msg)
 	}
 	var cmd tea.Cmd
 	switch {
@@ -206,8 +223,11 @@ func (m Model) typeIntoConfigFilter(msg tea.Msg) (tea.Model, tea.Cmd) {
 // editor takes everything it can edit with, the filter likewise, and only the
 // browsing state reads bare letters as commands.
 func (m Model) onConfigKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
-	if m.config.tab == tabSilence {
+	switch m.config.tab {
+	case tabSilence:
 		return m.onSilenceKey(k)
+	case tabNotify:
+		return m.onNotifyKey(k)
 	}
 	if m.config.project.open {
 		return m.onProjectPickKey(k)
@@ -294,7 +314,10 @@ func (m Model) editConfig() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if s.readOnly {
-		m.config.tab = tabSilence
+		if s.tab == tabGeneral {
+			return m.notify(s.key+": edit it in "+s.editedIn(), false), nil
+		}
+		m.config.tab = s.tab
 		return m, m.configLoads()
 	}
 	if s.pickProject {
@@ -330,7 +353,7 @@ func (m Model) resetConfig() Model {
 		return m
 	}
 	if s.readOnly {
-		return m.notify(s.key+": edit it in the Silence tab", true)
+		return m.notify(s.key+": edit it in "+s.editedIn(), true)
 	}
 	v, _ := config.Default().Get(s.key)
 	return m.commitConfig(v)
@@ -483,10 +506,15 @@ func (m Model) renderConfig() string {
 	default:
 		hintBar = configHintBar
 	}
-	if m.config.tab == tabSilence {
+	switch m.config.tab {
+	case tabSilence:
 		idx, n = m.config.silence.idx, len(m.cfg.Silence)
 		body, detail = m.silenceLines, m.silenceDetail
 		hintBar = m.silenceHintBar()
+	case tabNotify:
+		idx, n = m.config.notify.idx, len(m.notifyEntries())
+		body, detail = m.notifyLines, m.notifyDetail
+		hintBar = m.notifyHintBar()
 	}
 	where := strconv.Itoa(min(idx+1, n)) + "/" + strconv.Itoa(n)
 	path := shortPath(underHome(m.deps.ConfigPath), max(8, w-lipgloss.Width(title)-len(where)-4))
@@ -548,8 +576,11 @@ func shortPath(path string, w int) string {
 // The overlay is drawn as one block rather than into the pane grid, so its
 // coordinates are counted from the screen rather than taken from the layout.
 func (m Model) configCursor() *tea.Cursor {
-	if m.config.tab == tabSilence {
+	switch m.config.tab {
+	case tabSilence:
 		return m.silenceCursor()
+	case tabNotify:
+		return m.notifyCursor()
 	}
 	switch {
 	case m.config.editing || m.config.project.open:

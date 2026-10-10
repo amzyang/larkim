@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -54,6 +55,51 @@ type Config struct {
 	// messages, so the Feishu clients' own dots follow the same rules. It is
 	// one-way: dropping a rule never re-lights a dot anywhere.
 	SilenceSync bool `yaml:"silence_sync"`
+	// Notifications widens which arrivals raise a desktop banner beyond the
+	// ones that always do (p2p, @me, calls).
+	Notifications Notifications `yaml:"notifications"`
+}
+
+// Notifications names what the banner treats as addressed to the reader even
+// though nothing in the message says so.
+type Notifications struct {
+	// Watch is people (ou_) and chats (oc_) whose every message is urgent.
+	Watch Strings `yaml:"watch"`
+	// Keywords are RE2 patterns; a message whose text matches one is urgent.
+	Keywords Strings `yaml:"keywords"`
+}
+
+// Validate refuses a watch entry that is not an id and a pattern that does
+// not compile: either would otherwise match nothing without saying so.
+func (n Notifications) Validate() error {
+	for _, w := range n.Watch {
+		if !strings.HasPrefix(w, "ou_") && !strings.HasPrefix(w, "oc_") {
+			return fmt.Errorf("notifications.watch: %q is neither a user (ou_) nor a chat (oc_)", w)
+		}
+	}
+	for _, k := range n.Keywords {
+		if _, err := regexp.Compile(k); err != nil {
+			return fmt.Errorf("notifications.keywords: %w", err)
+		}
+	}
+	return nil
+}
+
+// Strings reads an empty list as unset, so `[]` written back by :config
+// round-trips equal to a key the file never named.
+type Strings []string
+
+// UnmarshalYAML decodes the list and normalizes an empty one to nil.
+func (s *Strings) UnmarshalYAML(n *yaml.Node) error {
+	var list []string
+	if err := n.Decode(&list); err != nil {
+		return err
+	}
+	*s = nil
+	if len(list) > 0 {
+		*s = list
+	}
+	return nil
 }
 
 // MarkRead is how the Feishu client's own red dot comes down: by posting the
@@ -261,7 +307,7 @@ func (c Config) Validate() error {
 	if err := c.MarkRead.Validate(); err != nil {
 		return err
 	}
-	return nil
+	return c.Notifications.Validate()
 }
 
 func applySets(cfg *Config, sets []string) error {

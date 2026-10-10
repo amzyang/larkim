@@ -11,7 +11,7 @@ import (
 )
 
 // candModel is a chat open with two of its messages carrying pending
-// lark-watch drafts: three candidates on the older one, one on the newer.
+// reply drafts: three candidates on the older one, one on the newer.
 func candModel(t *testing.T) (Model, *store.Store) {
 	t.Helper()
 	m := pickerModel(t)

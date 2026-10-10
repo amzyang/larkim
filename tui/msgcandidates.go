@@ -11,7 +11,7 @@ import (
 	"github.com/amzyang/larkim/store"
 )
 
-// There is no Lark desktop counterpart for lark-watch reply drafts drawn under
+// There is no Lark desktop counterpart for the reply drafts triage writes, drawn under
 // a message's reactions; the float picker under C has none either.
 
 const (
@@ -63,7 +63,7 @@ func (m Model) visibleCountForMid(mid string) int {
 	return n
 }
 
-// candidateRows draws pending lark-watch reply drafts under a message's
+// candidateRows draws pending reply drafts under a message's
 // reaction strip: ignore icon, send icon, opening line of the draft.
 func candidateRows(x store.Message, idx int, st msgStyle, g *leads) []msgRow {
 	if standsAlone(x) {

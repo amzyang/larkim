@@ -120,6 +120,12 @@ func TestForward_EveryInputTakesAPaste(t *testing.T) {
 			}},
 		{"silence contains", func(t *testing.T) Model { return press(t, silenceModel(t), "a", "tab", "tab") },
 			func(t *testing.T, m Model) { require.Equal(t, "平台", m.config.silence.form.contains.Value()) }},
+		{"notifications watch picker", func(t *testing.T) Model { return press(t, notifyModel(t), "a") },
+			func(t *testing.T, m Model) {
+				require.Equal(t, "oc_quiet", m.config.notify.pick.hits[0].id, "the picker searches on it")
+			}},
+		{"notifications keyword", func(t *testing.T) Model { return press(t, notifyModel(t), "A") },
+			func(t *testing.T, m Model) { require.Equal(t, "平台", m.config.notify.keyword.Value()) }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			tc.check(t, paste(t, tc.open(t), "平台"))

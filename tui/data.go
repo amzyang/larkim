@@ -21,6 +21,7 @@ import (
 	"github.com/amzyang/larkim/jev"
 	"github.com/amzyang/larkim/larkcli"
 	"github.com/amzyang/larkim/markread"
+	"github.com/amzyang/larkim/presence"
 	"github.com/amzyang/larkim/store"
 	"github.com/amzyang/larkim/sync"
 	"github.com/amzyang/larkim/todoist"
@@ -106,6 +107,14 @@ type Deps struct {
 	// here, so anything worth knowing has to reach the log file or be lost.
 	// New fills it with a discard logger when nil.
 	Log *slog.Logger
+	// Presence is what this TUI's socket reports, kept current by Update, and
+	// PresenceDir is where Run opens the socket; empty runs without one.
+	Presence    *presence.Live
+	PresenceDir string
+	// SetNotifications hands an edited notifications section to the banner
+	// side running in this process; nil where a daemon runs it and rereads
+	// the file itself.
+	SetNotifications func(config.Notifications)
 }
 
 // AIStreamer is the pair of calls the assistant pane makes. They are named
@@ -174,7 +183,7 @@ type (
 		drafts map[string]store.Draft
 		// frameDrafts is the same for the thread rows, keyed by thread.
 		frameDrafts map[string]store.Draft
-		// cands counts each chat's pending lark-watch drafts, for the marker
+		// cands counts each chat's pending reply drafts, for the marker
 		// beside the drafts one.
 		cands map[string]int
 	}
@@ -190,7 +199,7 @@ type (
 		// roster is who is in the chat, for @ completion and for turning the
 		// names it inserted into tags on the way out.
 		roster []store.Contact
-		// cands are the lark-watch reply drafts mirrored for this chat, drawn
+		// cands are the reply drafts triage wrote for this chat, drawn
 		// under each message's reactions on the page.
 		cands []store.Candidate
 	}

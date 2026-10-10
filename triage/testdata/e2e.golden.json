@@ -1,0 +1,198 @@
+{
+  "banners": [
+    {
+      "Title": "项目协作群",
+      "Body": "张三: @林岚 帮忙看下",
+      "Icon": "",
+      "ChatID": "oc_team",
+      "MessageID": "om_at",
+      "Position": 1791633540000,
+      "JoinLink": ""
+    },
+    {
+      "Title": "项目协作群",
+      "Body": "李四: 进度怎样",
+      "Icon": "",
+      "ChatID": "oc_team",
+      "MessageID": "om_boss",
+      "Position": 1791633550000,
+      "JoinLink": ""
+    },
+    {
+      "Title": "张三",
+      "Body": "12:20 评审，记得来",
+      "Icon": "",
+      "ChatID": "oc_peer",
+      "MessageID": "om_dm",
+      "Position": 1791633530000,
+      "JoinLink": ""
+    },
+    {
+      "Title": "项目协作群",
+      "Body": "张三: 支付故障了",
+      "Icon": "",
+      "ChatID": "oc_team",
+      "MessageID": "om_kw",
+      "Position": 1791633560000,
+      "JoinLink": ""
+    },
+    {
+      "Title": "项目协作群",
+      "Body": "张三: 谁有空看下这个报错",
+      "Icon": "",
+      "ChatID": "oc_team",
+      "MessageID": "om_gray",
+      "Position": 1791633570000,
+      "JoinLink": ""
+    },
+    {
+      "Title": "⏰ 张三",
+      "Body": "12:20 评审",
+      "Icon": "",
+      "ChatID": "oc_peer",
+      "MessageID": "om_dm",
+      "Position": 0,
+      "JoinLink": ""
+    }
+  ],
+  "candidates": [
+    {
+      "Mid": "om_at",
+      "ChatID": "oc_team",
+      "Text": "在的，直接说就行",
+      "Format": "text",
+      "CreatedMs": 1791633600000,
+      "Replied": false
+    },
+    {
+      "Mid": "om_boss",
+      "ChatID": "oc_team",
+      "Text": "在的，直接说就行",
+      "Format": "text",
+      "CreatedMs": 1791633600000,
+      "Replied": false
+    },
+    {
+      "Mid": "om_dm",
+      "ChatID": "oc_peer",
+      "Text": "在的，直接说就行",
+      "Format": "text",
+      "CreatedMs": 1791633600000,
+      "Replied": false
+    },
+    {
+      "Mid": "om_gray",
+      "ChatID": "oc_team",
+      "Text": "在的，直接说就行",
+      "Format": "text",
+      "CreatedMs": 1791633600000,
+      "Replied": false
+    },
+    {
+      "Mid": "om_kw",
+      "ChatID": "oc_team",
+      "Text": "在的，直接说就行",
+      "Format": "text",
+      "CreatedMs": 1791633600000,
+      "Replied": false
+    }
+  ],
+  "opened_in_client": [
+    "lark://applink.feishu.cn/client/chat/open?openChatId=oc_team&position=1791633540000&messageId=om_at",
+    "lark://applink.feishu.cn/client/chat/open?openChatId=oc_team&position=1791633550000&messageId=om_boss",
+    "lark://applink.feishu.cn/client/chat/open?openChatId=oc_peer&position=1791633530000&messageId=om_dm",
+    "lark://applink.feishu.cn/client/chat/open?openChatId=oc_team&position=1791633560000&messageId=om_kw",
+    "lark://applink.feishu.cn/client/chat/open?openChatId=oc_team&position=1791633570000&messageId=om_gray",
+    "lark://applink.feishu.cn/client/chat/open?openChatId=oc_peer&messageId=om_dm"
+  ],
+  "triage": [
+    {
+      "message_id": "om_quiet",
+      "chat_id": "oc_muted",
+      "level": "P1",
+      "reason": "muted",
+      "judged_ms": 1791633600000,
+      "chat_name": "闲聊群",
+      "sender_name": "张三",
+      "create_ms": 1791633580000,
+      "content": "周末去哪"
+    },
+    {
+      "message_id": "om_mine",
+      "chat_id": "oc_muted",
+      "level": "drop",
+      "reason": "self",
+      "judged_ms": 1791633600000,
+      "chat_name": "闲聊群",
+      "sender_name": "林岚",
+      "create_ms": 1791633590000,
+      "content": "我看下"
+    },
+    {
+      "message_id": "om_kw",
+      "chat_id": "oc_team",
+      "level": "P0",
+      "reason": "keyword:故障",
+      "judged_ms": 1791633600000,
+      "drafted_ms": 1791633600000,
+      "notified_ms": 1791633600000,
+      "chat_name": "项目协作群",
+      "sender_name": "张三",
+      "create_ms": 1791633560000,
+      "content": "支付故障了"
+    },
+    {
+      "message_id": "om_gray",
+      "chat_id": "oc_team",
+      "level": "P0",
+      "reason": "jev:act",
+      "jev_p": 0.81,
+      "judged_ms": 1791633600000,
+      "drafted_ms": 1791633600000,
+      "notified_ms": 1791633600000,
+      "chat_name": "项目协作群",
+      "sender_name": "张三",
+      "create_ms": 1791633570000,
+      "content": "谁有空看下这个报错"
+    },
+    {
+      "message_id": "om_dm",
+      "chat_id": "oc_peer",
+      "level": "P0",
+      "reason": "p2p",
+      "judged_ms": 1791633600000,
+      "drafted_ms": 1791633600000,
+      "notified_ms": 1791633600000,
+      "chat_name": "张三",
+      "sender_name": "张三",
+      "create_ms": 1791633530000,
+      "content": "12:20 评审，记得来"
+    },
+    {
+      "message_id": "om_boss",
+      "chat_id": "oc_team",
+      "level": "P0",
+      "reason": "watch-user",
+      "judged_ms": 1791633600000,
+      "drafted_ms": 1791633600000,
+      "notified_ms": 1791633600000,
+      "chat_name": "项目协作群",
+      "sender_name": "李四",
+      "create_ms": 1791633550000,
+      "content": "进度怎样"
+    },
+    {
+      "message_id": "om_at",
+      "chat_id": "oc_team",
+      "level": "P0",
+      "reason": "at-me",
+      "judged_ms": 1791633600000,
+      "drafted_ms": 1791633600000,
+      "notified_ms": 1791633600000,
+      "chat_name": "项目协作群",
+      "sender_name": "张三",
+      "create_ms": 1791633540000,
+      "content": "@林岚 帮忙看下"
+    }
+  ]
+}

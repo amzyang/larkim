@@ -163,7 +163,9 @@ func TestConfig_ResetRefusesTheSilenceList(t *testing.T) {
 	t.Parallel()
 	m := configModel(t)
 	m.cfg.Silence = store.SilenceRules{{Chat: "oc_quiet"}}
-	m = press(t, m, "G", "k", "&")
+	m = m.closeConfig().openConfig("silence")
+	m.config.tab = tabGeneral
+	m = press(t, m, "&")
 	require.True(t, m.noticeErr)
 	require.Contains(t, m.notice, "Silence tab")
 	require.Equal(t, store.SilenceRules{{Chat: "oc_quiet"}}, m.cfg.Silence, "the rules stay")
@@ -176,24 +178,27 @@ func TestConfig_SilenceKeyOpensTheSilenceTab(t *testing.T) {
 	require.Equal(t, tabSilence, m.config.tab, ":config silence")
 
 	m = configModel(t)
-	m = press(t, m, "G", "k")
+	m = press(t, m, "G", "k", "k", "k")
 	require.Equal(t, "❯ silence 0 rules", configRow(m), "the list is summed up, not spelled inline")
 	m = press(t, m, "enter")
 	require.Equal(t, tabSilence, m.config.tab, "enter on the row")
 	require.False(t, m.config.editing)
 }
 
-func TestConfig_TabSwitchesBetweenGeneralAndSilence(t *testing.T) {
+func TestConfig_TabStepsThroughGeneralSilenceAndNotifications(t *testing.T) {
 	t.Parallel()
 	m := configModel(t)
 	m = press(t, m, "j", "tab")
 	require.Equal(t, tabSilence, m.config.tab)
 	require.Contains(t, ansi.Strip(m.renderConfig()), "no silence rules")
+	require.Contains(t, ansi.Strip(m.renderConfig()), "⇥ Notifications", "the hint names where tab goes")
+	m = press(t, m, "tab")
+	require.Equal(t, tabNotify, m.config.tab)
 	m = press(t, m, "tab")
 	require.Equal(t, tabGeneral, m.config.tab)
 	require.Equal(t, 1, m.config.idx, "General keeps where it was")
 	m = press(t, m, "shift+tab")
-	require.Equal(t, tabSilence, m.config.tab, "and back the other way")
+	require.Equal(t, tabNotify, m.config.tab, "and back the other way")
 }
 
 func TestConfig_TabIsTypedIntoAnOpenEditor(t *testing.T) {
@@ -272,7 +277,7 @@ func TestConfig_TakesEveryKeyAheadOfTheHelpPanel(t *testing.T) {
 
 func TestConfig_RenderFillsTheBoxAtEveryWidth(t *testing.T) {
 	t.Parallel()
-	for _, tab := range []configTab{tabGeneral, tabSilence} {
+	for _, tab := range []configTab{tabGeneral, tabSilence, tabNotify} {
 		for _, w := range []int{minWidth, 100, 160} {
 			m := configModel(t)
 			m.width, m.height = w, 24

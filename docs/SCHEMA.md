@@ -195,26 +195,59 @@ it does not survive the process.
 
 ## draft_candidates
 
-The reply drafts lark-watch is holding for a message, mirrored so the TUI can
-offer them at the composer. lark-watch owns the writes and reaches them through
-the `larkim candidates` command, never the database file: `candidates put`
-when it sends a confirmation card, `candidates clear` when the pending
-resolves — a card button, a banner send, a quick reply, the 24h TTL sweep.
-One row per pending source message, the same `mid` key lark-watch's own
-`pending` table uses, so a re-draft overwrites. The TUI only reads the rows and
-clears one after a send left a composer it filled; the Feishu card stays
-lark-watch's and resolves on its own. Unlike `drafts` this table is inside the
-`data_rev` triggers — the writer is not the displayer — and it is the only
-table here with a DELETE trigger.
+The reply drafts written for a P0 message (see `triage`), offered at the TUI
+composer. The process holding `daemon.lock` writes them once the agent answers;
+the TUI reads them and clears a message's row after a send left a composer it
+filled, or once the reader has dismissed the last draft it offered.
+One row per source message, so a re-draft overwrites. Unlike `drafts` this
+table is inside the `data_rev` triggers — the writer is not the displayer —
+and it is the only table here with a DELETE trigger.
 
 | column | meaning |
 |---|---|
 | `mid` | the source message the drafts answer, and the primary key |
-| `chat_id` | its chat, looked up from `messages` at `candidates put` time |
-| `draft` | candidate 0 |
+| `chat_id` | its chat |
+| `draft` | candidate 0, the one recommended |
 | `format` | `text` or `markdown`, applying to every candidate of the mid |
 | `extras` | minimal JSON array holding candidates 1..n |
-| `created_ms` | when `candidates put` ran, Unix ms UTC |
+| `created_ms` | when the drafts were written, Unix ms UTC |
+
+## triage
+
+The verdict on each fresh arrival the process holding `daemon.lock` judged, and
+how far the work it set off has got. A message is judged once, when it is
+rendered, live, unsilenced and at most 15 minutes old; nothing older is ever
+judged, so a backfill never reads as news. Rules decide first — the reader's
+own messages, bots and empty bodies are `drop`; calls, p2p, @me, the
+`notifications.watch` ids and the `notifications.keywords` patterns are `P0` —
+and Jev decides what they leave open, a muted chat or a missing key leaving it
+at `P1`. Outside `data_rev`: no TUI draws it. `larkim triage list` reads it.
+
+| column | meaning |
+|---|---|
+| `message_id` | the judged message, and the primary key |
+| `chat_id` | its chat |
+| `level` | `P0`, `P1` or `drop` |
+| `reason` | what decided: `self`, `non-user`, `empty`, `vc`, `p2p`, `at-me`, `watch-user`, `watch-chat`, `keyword:<pattern>`, `muted`, `p1` (no judge), `jev:<pick>` (`reply`, `act`, `fyi`, `chatter`), `jev-error` |
+| `jev_p` | Jev's probability that the message cannot wait; NULL when a rule decided |
+| `judged_ms` | Unix ms UTC |
+| `drafted_ms` | `P0` only: when drafting finished, whatever it produced; 0 while owed |
+| `draft_tries` | failed drafting attempts; drafting stops at 2 |
+| `notified_ms` | `P0` only: when the banner was settled — raised, or held back because the message was read elsewhere, already answered, older than 3 minutes, or the reader was in the client or a focused larkim; 0 while owed |
+
+## reminders
+
+Banners a P0 message asked for at a later time it named, planned with its
+drafts and raised by the process holding `daemon.lock` once due. One per
+message; a replan moves it.
+
+| column | meaning |
+|---|---|
+| `message_id` | the message that named the time, and the primary key |
+| `chat_id` | its chat |
+| `fire_ms` | when the banner is due, Unix ms UTC |
+| `title` | the banner's text |
+| `fired_ms` | when it was raised, or dropped for being over 15 minutes late; 0 while owed |
 
 ## ai_sessions, ai_turns
 

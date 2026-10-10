@@ -121,7 +121,7 @@ type clickZone struct {
 	// head's Regenerate or Stop — which are not places to open but things to
 	// do, naming the answer and the card within it.
 	act aiAct
-	// cand is a lark-watch reply draft offered under the message.
+	// cand is a reply draft offered under the message.
 	cand candZone
 	// task names the task a todo's checkbox toggles when pressed, and
 	// taskDone the state the box is drawn in — a press flips it. A checkbox
@@ -286,7 +286,7 @@ type msgStyle struct {
 	// peer is who the reader is talking to in such a chat, which is how far an
 	// @ in it carries: a name that is neither of theirs reaches nobody here.
 	peer string
-	// candidates are pending lark-watch drafts keyed by source message id.
+	// candidates are pending reply drafts keyed by source message id.
 	candidates map[string][]store.Candidate
 }
 

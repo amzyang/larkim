@@ -16,6 +16,7 @@ import (
 	"github.com/amzyang/larkim/markread"
 	"github.com/amzyang/larkim/store"
 	"github.com/amzyang/larkim/sync"
+	"github.com/amzyang/larkim/triage"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )
@@ -107,7 +108,7 @@ func New(version, buildDSN string) *cobra.Command {
 	root.SetFlagErrorFunc(func(_ *cobra.Command, err error) error { return &usageError{err} })
 	root.AddCommand(app.syncCmd(), app.statusCmd(), app.daemonCmd(), app.chatsCmd(), app.messagesCmd(), app.contactsCmd(),
 		app.sendCmd(), app.replyCmd(), app.reactCmd(), app.watchCmd(), app.readAllCmd(), app.silenceCmd(), app.tuiCmd(), app.dbCmd(),
-		app.schemaCmd(), app.emojiCmd(), app.sentryCmd(), app.unreadCmd(), app.lintCmd(), app.candidatesCmd())
+		app.schemaCmd(), app.emojiCmd(), app.sentryCmd(), app.unreadCmd(), app.lintCmd(), app.candidatesCmd(), app.triageCmd())
 	mustWire(root.MarkPersistentFlagFilename("config", "yaml", "yml"))
 	mustWire(root.RegisterFlagCompletionFunc("set", app.completeConfigKey))
 	completeNoFileDefault(root)
@@ -209,7 +210,7 @@ func (a *App) settle(cfg config.Config, st *store.Store) markread.Clear {
 //
 // --set still wins: the overrides are applied over the reread file the same
 // way they were over the first read, so a flag is not undone by an edit.
-func (a *App) reloadOnChange(s *sync.Syncer, st *store.Store) func() {
+func (a *App) reloadOnChange(s *sync.Syncer, st *store.Store, t *triage.Triager) func() {
 	path := config.Resolve(a.configPath)
 	stamp, started := configStamp(path), a.cfg
 	return func() {
@@ -233,6 +234,7 @@ func (a *App) reloadOnChange(s *sync.Syncer, st *store.Store) func() {
 		// The tick this runs before opens on ReapplySilence, which sees the
 		// new fingerprint and rebuilds every flag from these rules.
 		st.SetSilence(cfg.Silence)
+		t.SetRules(triage.NewRules(cfg.Notifications))
 		a.logger().Info("config reloaded", "path", path, "poll_interval_ms", cfg.PollIntervalMS)
 		for _, k := range frozenKeys(started, cfg) {
 			a.logger().Warn("config key needs a restart", "key", k)

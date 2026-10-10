@@ -108,7 +108,7 @@ const draftGlyph = draftPencil + enSpace
 // takes the colour it is given.
 const candGlyph = "\uf0eb" + enSpace
 
-// candMark is what a chat with pending lark-watch drafts draws. The count is
+// candMark is what a chat with pending reply drafts draws. The count is
 // the picker's first line, not the row's: one glyph is enough to say drafts
 // are waiting, and a number beside the unread one would be read as theirs.
 func candMark(n int) string {

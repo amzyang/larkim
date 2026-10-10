@@ -218,3 +218,46 @@ func TestSet_AnEmptyValueClearsTheKey(t *testing.T) {
 	require.NoError(t, c.Set("ai.model", ""))
 	require.Equal(t, "", c.AI.Model, "a key with a default clears too")
 }
+
+func TestLoad_TakesTheNotificationsSection(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "c.yaml")
+	require.NoError(t, os.WriteFile(p, []byte("notifications:\n  watch: [ou_a, oc_quiet]\n  keywords: ['上线|故障']\n"), 0o644))
+	cfg, err := Load(p)
+	require.NoError(t, err)
+	require.Equal(t, Strings{"ou_a", "oc_quiet"}, cfg.Notifications.Watch)
+	require.Equal(t, Strings{"上线|故障"}, cfg.Notifications.Keywords)
+}
+
+func TestConfig_NotificationsValidate(t *testing.T) {
+	for name, tc := range map[string]struct {
+		n    Notifications
+		want string
+	}{
+		"a display name is not an id":   {Notifications{Watch: Strings{"平台组"}}, "notifications.watch"},
+		"an app id is not watchable":    {Notifications{Watch: Strings{"cli_c"}}, "notifications.watch"},
+		"a keyword must compile":        {Notifications{Keywords: Strings{"("}}, "notifications.keywords"},
+		"users, chats and patterns are": {Notifications{Watch: Strings{"ou_a", "oc_quiet"}, Keywords: Strings{"上线"}}, ""},
+	} {
+		t.Run(name, func(t *testing.T) {
+			cfg := Default()
+			cfg.Notifications = tc.n
+			err := cfg.Validate()
+			if tc.want == "" {
+				require.NoError(t, err)
+				return
+			}
+			require.ErrorContains(t, err, tc.want)
+		})
+	}
+}
+
+func TestKeys_NamesTheNotificationsKeys(t *testing.T) {
+	require.Contains(t, Keys(), "notifications.watch")
+	require.Contains(t, Keys(), "notifications.keywords")
+}
+
+func TestSet_AnEmptyListKeepsTheUnsetValue(t *testing.T) {
+	cfg := Default()
+	require.NoError(t, cfg.Set("notifications.watch", "[]"))
+	require.Nil(t, cfg.Notifications.Watch, "an empty list round-trips equal to an unset one")
+}

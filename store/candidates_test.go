@@ -70,8 +70,8 @@ func TestChatCandidates_DropsLaterCandidatesWhenExtrasDoNotDecode(t *testing.T) 
 	s := openTest(t)
 	ctx := t.Context()
 	seedCandidateChat(t, s)
-	// Only lark-watch writes this table; a hand-edited row is the one way
-	// extras stops being JSON.
+	// PutCandidates writes extras as JSON; a hand-edited row is the one way
+	// it stops being JSON.
 	_, err := s.db.ExecContext(ctx,
 		`INSERT INTO draft_candidates(mid, chat_id, draft, format, extras, created_ms)
 		 VALUES('om_ask', 'oc_quiet', 'candidate 0', 'text', 'not json', 1)`)

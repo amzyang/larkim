@@ -9,6 +9,7 @@ import (
 	"github.com/amzyang/larkim/config"
 	"github.com/amzyang/larkim/store"
 	"github.com/amzyang/larkim/store/storetest"
+	"github.com/amzyang/larkim/triage"
 	"github.com/stretchr/testify/require"
 )
 
@@ -37,11 +38,26 @@ func rewrite(t *testing.T, path, body string) {
 	require.NoError(t, os.Chtimes(path, time.Now(), time.Now().Add(time.Second)))
 }
 
+func TestReloadOnChange_HandsTriageTheEditedWatchList(t *testing.T) {
+	a, st := reloadApp(t, "notifications:\n  watch: [ou_a]\n")
+	tr := &triage.Triager{}
+	tr.SetRules(triage.NewRules(a.cfg.Notifications))
+	reload := a.reloadOnChange(a.syncer(st), st, tr)
+	rewrite(t, a.configPath, "notifications:\n  watch: [ou_boss]\n")
+
+	reload()
+
+	r, ok := tr.Rules()
+	require.True(t, ok)
+	require.True(t, r.Watches("ou_boss"))
+	require.False(t, r.Watches("ou_a"))
+}
+
 func TestReloadOnChange(t *testing.T) {
 	t.Run("hands the sweep what the file now says", func(t *testing.T) {
 		a, st := reloadApp(t, "poll_interval_ms: 3000\n")
 		s := a.syncer(st)
-		reload := a.reloadOnChange(s, st)
+		reload := a.reloadOnChange(s, st, &triage.Triager{})
 		rewrite(t, a.configPath, "poll_interval_ms: 9000\nactive_top_k: 7\n")
 
 		reload()
@@ -53,7 +69,7 @@ func TestReloadOnChange(t *testing.T) {
 	t.Run("keeps --set over an edited file", func(t *testing.T) {
 		a, st := reloadApp(t, "poll_interval_ms: 3000\n", "poll_interval_ms=1000")
 		s := a.syncer(st)
-		reload := a.reloadOnChange(s, st)
+		reload := a.reloadOnChange(s, st, &triage.Triager{})
 		require.Equal(t, time.Second, s.Opt().PollInterval)
 		rewrite(t, a.configPath, "poll_interval_ms: 9000\nactive_top_k: 7\n")
 
@@ -66,7 +82,7 @@ func TestReloadOnChange(t *testing.T) {
 	t.Run("keeps the data dir it opened the database in", func(t *testing.T) {
 		a, st := reloadApp(t, "poll_interval_ms: 3000\n")
 		s := a.syncer(st)
-		reload := a.reloadOnChange(s, st)
+		reload := a.reloadOnChange(s, st, &triage.Triager{})
 		started := a.cfg.DataDir
 		rewrite(t, a.configPath, "data_dir: /tmp/somewhere-else\n")
 
@@ -79,7 +95,7 @@ func TestReloadOnChange(t *testing.T) {
 	t.Run("stays on what it has when the file stops loading", func(t *testing.T) {
 		a, st := reloadApp(t, "poll_interval_ms: 9000\n")
 		s := a.syncer(st)
-		reload := a.reloadOnChange(s, st)
+		reload := a.reloadOnChange(s, st, &triage.Triager{})
 		rewrite(t, a.configPath, "poll_interval_ms: [not a number\n")
 
 		reload()
@@ -90,7 +106,7 @@ func TestReloadOnChange(t *testing.T) {
 	t.Run("turns the silence settle on and off", func(t *testing.T) {
 		a, st := reloadApp(t, "mark_read:\n  browser: chrome\n")
 		s := a.syncer(st)
-		reload := a.reloadOnChange(s, st)
+		reload := a.reloadOnChange(s, st, &triage.Triager{})
 		require.Nil(t, s.SettleSilenced())
 
 		rewrite(t, a.configPath, "mark_read:\n  browser: chrome\nsilence_sync: true\n")
@@ -105,7 +121,7 @@ func TestReloadOnChange(t *testing.T) {
 	t.Run("hands the store the new silence rules", func(t *testing.T) {
 		a, st := reloadApp(t, "poll_interval_ms: 3000\n")
 		s := a.syncer(st)
-		reload := a.reloadOnChange(s, st)
+		reload := a.reloadOnChange(s, st, &triage.Triager{})
 		require.Empty(t, st.Silence())
 
 		rewrite(t, a.configPath, "silence:\n  - sender: cli_c\n")
@@ -118,7 +134,7 @@ func TestReloadOnChange(t *testing.T) {
 	t.Run("leaves the options alone until the file changes", func(t *testing.T) {
 		a, st := reloadApp(t, "poll_interval_ms: 3000\n")
 		s := a.syncer(st)
-		reload := a.reloadOnChange(s, st)
+		reload := a.reloadOnChange(s, st, &triage.Triager{})
 		before := s.Opt()
 
 		reload()

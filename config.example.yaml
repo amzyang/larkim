@@ -55,6 +55,15 @@ silence: []
 # One-way: dropping a rule never re-lights a dot anywhere.
 silence_sync: false
 
+# The process holding the sweep raises a desktop banner for urgent arrivals:
+# p2p, @me and calls always are; a group message is when it comes from a
+# watched person or chat, matches a keyword, or Jev (ai.jev_key_env) judges it
+# needs the reader. Silenced messages never are. `larkim triage list` shows
+# what was judged and why. :config edits both lists in the Notifications tab.
+notifications:
+  watch: []      # ou_ users and oc_ chats
+  keywords: []   # RE2 patterns matched against the message text
+
 resources:
   # Skip attachments larger than this; 0 means unlimited.
   max_bytes: 52428800 # 50 MiB

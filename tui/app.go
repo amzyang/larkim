@@ -25,6 +25,7 @@ import (
 	"github.com/amzyang/larkim/larkmd"
 	"github.com/amzyang/larkim/larkweb"
 	"github.com/amzyang/larkim/markread"
+	"github.com/amzyang/larkim/presence"
 	"github.com/amzyang/larkim/store"
 	"github.com/amzyang/larkim/sync"
 	"github.com/amzyang/larkim/todoist"
@@ -94,9 +95,9 @@ type Model struct {
 	drafts map[string]store.Draft
 	// frameDrafts is the same for the thread rows, keyed by thread.
 	frameDrafts map[string]store.Draft
-	// cands is how many pending lark-watch drafts each chat holds, for the
-	// chat list's marker. lark-watch mirrors them in; the revision bump a
-	// put or clear costs is what refreshes this map.
+	// cands is how many pending reply drafts each chat holds, for the chat
+	// list's marker. Triage writes them, possibly in a daemon; the revision
+	// bump a put or clear costs is what refreshes this map.
 	cands map[string]int
 	// chatPollInFlight holds the open chat's poll to one call at a time, so a
 	// slow one costs a skipped beat instead of a queue.
@@ -108,7 +109,7 @@ type Model struct {
 	// targets is the chooser over what the selected message leads to, open
 	// only in modeTarget.
 	targets targets
-	// cand is the chooser over lark-watch's pending drafts for the open
+	// cand is the chooser over the pending reply drafts for the open
 	// chat, open only in modeCandidates.
 	cand menu[store.Candidate]
 	// candFilled names the mid whose candidate the composer was seeded with,
@@ -497,7 +498,21 @@ func Run(ctx context.Context, d Deps) error {
 	m := New(d)
 	m.cancel = cancel
 	m.revs = d.Store.WatchRev(ctx, watchEvery, d.Nudge)
-	_, err := tea.NewProgram(m, tea.WithContext(ctx)).Run()
+	p := tea.NewProgram(m, tea.WithContext(ctx))
+	if d.Presence != nil && d.PresenceDir != "" {
+		// A TUI with no socket is one banners cannot reach, which degrades
+		// them to the client's applink rather than stopping the TUI.
+		if srv, err := presence.Listen(d.PresenceDir); err != nil {
+			m.deps.Log.Warn("presence", "dir", d.PresenceDir, "err", err)
+		} else {
+			go func() {
+				if err := srv.Serve(ctx, d.Presence, func(chat string) { p.Send(openFromBannerMsg{chat: chat}) }); err != nil {
+					m.deps.Log.Warn("presence", "err", err)
+				}
+			}()
+		}
+	}
+	_, err := p.Run()
 	cancel()
 	return err
 }
@@ -527,6 +542,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// will draw. The cache is held through a pointer, so what it drops here
 	// is gone for the picturePrepare below and the View that follows.
 	nm.gists.hold(nm.rows.all(nm.chats, nm.threads))
+	nm.reportPresence()
 	// On the Unread page a key that lands the cursor on another message, or
 	// the focus on the pane from the list or the frame beside it, reads that
 	// message's chat. Clicks read in onClick, which knows what was hit;
@@ -705,6 +721,8 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.focused = false
 		m.deps.Syncer.SetAttended(false)
 		return m, m.saveComposer()
+	case openFromBannerMsg:
+		return m.openFromBanner(msg.chat)
 	case chatsLoadedMsg:
 		vis := m.visibleRows()
 		wasCursor, wasTop := rowKeyAt(vis, m.chatIdx), rowKeyAt(vis, m.chatTop)

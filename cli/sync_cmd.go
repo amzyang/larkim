@@ -86,8 +86,16 @@ func (a *App) daemonCmd() *cobra.Command {
 			ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 			defer cancel()
 			s := a.syncer(st)
-			s.BeforeTick = a.reloadOnChange(s, st)
+			t, err := a.triager(st)
+			if err != nil {
+				return err
+			}
+			s.BeforeTick = a.reloadOnChange(s, st, t)
 			s.Log.Info("larkim daemon starting", "version", a.Version, "data_dir", a.cfg.DataDir, "poll_interval_ms", a.cfg.PollIntervalMS)
+			go func() {
+				defer sentryRecoverRepanic()
+				t.Run(ctx)
+			}()
 			err = s.Run(ctx)
 			if errors.Is(err, context.Canceled) {
 				return nil

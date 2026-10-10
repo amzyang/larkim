@@ -11,8 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// candidatesApp is one chat holding one message from someone else, which is
-// the minimum a `candidates put` needs: a mid whose chat the store can name.
+// candidatesApp is one chat holding one message from someone else.
 func candidatesApp(t *testing.T) (*App, *store.Store) {
 	t.Helper()
 	dir := t.TempDir()
@@ -32,71 +31,17 @@ func candidatesApp(t *testing.T) (*App, *store.Store) {
 	return &App{Out: &out, Err: &out, cfg: config.Config{DataDir: dir}}, st
 }
 
-func runCandidates(t *testing.T, a *App, args ...string) {
-	t.Helper()
-	cmd := a.candidatesCmd()
-	cmd.SetArgs(args)
-	require.NoError(t, cmd.Execute())
-}
-
-func TestCandidatesPut_ResolvesTheChatFromTheMessage(t *testing.T) {
-	a, st := candidatesApp(t)
-	defer st.Close()
-
-	runCandidates(t, a, "put", "om_ask", "--draft", "缓冲话术", "--draft", "放行话术")
-
-	rows, err := st.ChatCandidates(t.Context(), "oc_quiet", "")
-	require.NoError(t, err)
-	require.Len(t, rows, 2)
-	require.Equal(t, "om_ask", rows[0].Mid)
-	require.Equal(t, "缓冲话术", rows[0].Text)
-}
-
-func TestCandidatesPut_RefusesAMessageTheStoreHasNeverSeen(t *testing.T) {
-	a, st := candidatesApp(t)
-	defer st.Close()
-
-	cmd := a.candidatesCmd()
-	cmd.SetArgs([]string{"put", "om_elsewhere", "--draft", "x"})
-	err := cmd.Execute()
-	require.ErrorIs(t, err, store.ErrNotFound,
-		"a row without a chat would badge nothing and scope the picker to nowhere")
-}
-
-func TestCandidatesPut_RequiresAtLeastOneNonBlankDraft(t *testing.T) {
-	a, st := candidatesApp(t)
-	defer st.Close()
-
-	for _, args := range [][]string{
-		{"put", "om_ask"},
-		{"put", "om_ask", "--draft", "  "},
-		{"put", "om_ask", "--draft", "x", "--format", "rich"},
-	} {
-		cmd := a.candidatesCmd()
-		cmd.SetArgs(args)
-		require.Error(t, cmd.Execute(), "args: %v", args)
-	}
-}
-
-func TestCandidatesClear_DropsTheMirroredDrafts(t *testing.T) {
-	a, st := candidatesApp(t)
-	defer st.Close()
-	ctx := t.Context()
-	require.NoError(t, st.PutCandidates(ctx, "om_ask", "oc_quiet", []string{"a"}, "text", 1))
-
-	runCandidates(t, a, "clear", "om_ask")
-
-	rows, err := st.ChatCandidates(ctx, "oc_quiet", "")
-	require.NoError(t, err)
-	require.Empty(t, rows)
-}
-
 func TestCandidatesList_AnswersForEveryChatAndForOne(t *testing.T) {
 	a, st := candidatesApp(t)
 	defer st.Close()
 	ctx := t.Context()
 	require.NoError(t, st.PutCandidates(ctx, "om_ask", "oc_quiet", []string{"first line\nsecond line"}, "markdown", 1))
 
-	runCandidates(t, a, "list")
-	runCandidates(t, a, "list", "--chat", "平台组")
+	for _, args := range [][]string{{"list"}, {"list", "--chat", "平台组"}} {
+		a.Out.(*bytes.Buffer).Reset()
+		cmd := a.candidatesCmd()
+		cmd.SetArgs(args)
+		require.NoError(t, cmd.Execute())
+		require.Contains(t, a.Out.(*bytes.Buffer).String(), "first line …")
+	}
 }

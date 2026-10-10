@@ -99,6 +99,28 @@ func (c *Client) StreamHistory(ctx context.Context, transcript, prompt string, h
 	return c.stream(ctx, transcript, prompt, systemCore+"\n\n"+h.instructions(), h.gate())
 }
 
+// Answer asks one question under instructions of the caller's own and returns
+// the whole answer, for a caller that parses it rather than shows it. No tool
+// is offered; the caller's context bounds the turn.
+func (c *Client) Answer(ctx context.Context, transcript, prompt, instructions string) (string, error) {
+	var b strings.Builder
+	text := frame(instructions, transcript, prompt)
+	if err := c.ask(ctx, text, func(t string) bool { b.WriteString(t); return true }, nil); err != nil {
+		return "", c.wrap(err)
+	}
+	return b.String(), nil
+}
+
+// frame is the one turn an ask sends. ACP has no system prompt, so the
+// instructions lead it. The window travels as data between tags, never as
+// instructions, because colleagues wrote it.
+func frame(instructions, transcript, prompt string) string {
+	return instructions + "\n\n<data>\n" + transcript + "\n</data>\n\n" + prompt
+}
+
+// wrap names the agent a failed turn ran on.
+func (c *Client) wrap(err error) error { return fmt.Errorf("%s: %w", filepath.Base(c.argv[0]), err) }
+
 func (c *Client) stream(ctx context.Context, transcript, prompt, instructions string, gate *toolGate) <-chan Chunk {
 	out := make(chan Chunk, 64)
 	go func() {
@@ -123,10 +145,7 @@ func (c *Client) stream(ctx context.Context, transcript, prompt, instructions st
 				}
 			}
 		}
-		// ACP has no system prompt, so the instructions lead the one turn.
-		// The window travels as data between tags, never as instructions,
-		// because colleagues wrote it.
-		text := instructions + "\n\n<data>\n" + transcript + "\n</data>\n\n" + prompt
+		text := frame(instructions, transcript, prompt)
 		emit := func(t string) bool { return send(Chunk{Text: t}) }
 		if gate != nil {
 			emitTrace := func(line string) bool { return send(Chunk{Trace: line}) }
@@ -137,7 +156,7 @@ func (c *Client) stream(ctx context.Context, transcript, prompt, instructions st
 				send(Chunk{Stopped: true, Done: true})
 				return
 			}
-			send(Chunk{Err: fmt.Errorf("%s: %w", filepath.Base(c.argv[0]), err), Done: true})
+			send(Chunk{Err: c.wrap(err), Done: true})
 			return
 		}
 		send(Chunk{Done: true})

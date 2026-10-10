@@ -58,7 +58,7 @@ var commands = []command{
 	{name: "send", arg: argTarget, usage: "<chat|ou_> <text>", help: "send without opening the chat"},
 	{name: "search", aliases: []string{"s"}, usage: "<text>", help: "the panel Ctrl+f opens, with the text already in it"},
 	{name: "mentions", aliases: []string{"at"}, help: "every message that named you"},
-	{name: "candidates", help: "pick a pending lark-watch reply draft into the composer"},
+	{name: "candidates", help: "pick a pending reply draft into the composer"},
 	{name: "unread", aliases: []string{"u"}, help: "every chat still waiting, parted by chat — the Unread row of the list"},
 	{name: "read-all", help: "take every chat as read and clear the Feishu client's red dots"},
 	{name: "set", arg: argSetting, usage: "[<option>[=<value>]]", help: "read or retune a runtime option for this session"},
