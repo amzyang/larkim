@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/amzyang/larkim/internal/oplog"
 	"github.com/stretchr/testify/require"
@@ -145,6 +146,55 @@ func TestRank_QuotesTheReasonARefusalGives(t *testing.T) {
 	_, err := c.Rank(t.Context(), ask)
 	require.ErrorContains(t, err, "401")
 	require.ErrorContains(t, err, "invalid api key")
+}
+
+func TestRank_NamesTheModelThatAnswered(t *testing.T) {
+	c := serve(t, func(w http.ResponseWriter, _ *http.Request) {
+		io.WriteString(w, `{"model":"jev-1.13.0","answers":{"pick":{"probabilities":{"ROCKET":1}}}}`)
+	})
+	r, err := c.Rank(t.Context(), ask)
+	require.NoError(t, err)
+	require.Equal(t, "jev-1.13.0", r.Model)
+}
+
+func TestRank_RetriesAnOverloadedOrRateLimitedEndpoint(t *testing.T) {
+	for _, status := range []int{http.StatusTooManyRequests, 529} {
+		calls := 0
+		c := serve(t, func(w http.ResponseWriter, _ *http.Request) {
+			if calls++; calls == 1 {
+				w.WriteHeader(status)
+				return
+			}
+			io.WriteString(w, `{"answers":{"pick":{"probabilities":{"ROCKET":1}}}}`)
+		})
+		r, err := c.Rank(t.Context(), ask)
+		require.NoError(t, err, status)
+		require.Equal(t, 2, calls, status)
+		require.Equal(t, "ROCKET", r.Options[0].Key)
+	}
+}
+
+func TestRank_DoesNotRetryARefusal(t *testing.T) {
+	calls := 0
+	c := serve(t, func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+		w.WriteHeader(http.StatusUnauthorized)
+	})
+	_, err := c.Rank(t.Context(), ask)
+	require.ErrorContains(t, err, "401")
+	require.Equal(t, 1, calls)
+}
+
+func TestRank_GivesUpOnAnOverloadWithTheReasonAndTheDeadline(t *testing.T) {
+	c := serve(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(529)
+		io.WriteString(w, `{"error":"overloaded"}`)
+	})
+	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
+	defer cancel()
+	_, err := c.Rank(ctx, ask)
+	require.ErrorContains(t, err, "overloaded", "the last refusal is what says why")
+	require.ErrorIs(t, err, context.DeadlineExceeded)
 }
 
 func TestRank_AnAnswerMissingTheChoiceIsAnError(t *testing.T) {

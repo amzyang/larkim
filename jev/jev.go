@@ -10,12 +10,14 @@ import (
 	"cmp"
 	"context"
 	"encoding/json/v2"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"maps"
 	"net/http"
 	"slices"
+	"time"
 
 	"github.com/amzyang/larkim/internal/oplog"
 )
@@ -26,10 +28,20 @@ import (
 const DefaultEndpoint = "https://api.typesafe.ai/v1/systemone"
 
 // model is the alias rather than a pinned version. An alias moves when a
-// release ships, which is worth taking here: nothing downstream is calibrated
-// against a particular version beyond one threshold the caller owns, and that
-// threshold is a floor on a companion yes/no rather than a tuned cut.
+// release ships, which is worth taking here: the callers' cuts are coarse,
+// midpoints and floors rather than tuned to a decimal, and Rank.Model names
+// the version that answered, so a cut that drifts with a release can be read
+// back against the version it was measured on.
 const model = "jev-latest"
+
+// Retrying. The endpoint asks for exponential backoff on 429 and 529 alone;
+// every other refusal says something about the request that a second try
+// would only repeat. The caller's deadline bounds the waiting, and maxTries
+// bounds it under a caller that gave none.
+const (
+	backoff  = 250 * time.Millisecond
+	maxTries = 4
+)
 
 // errBodyMax bounds how much of a refusal is quoted back. The reason is in the
 // first line of it; the rest is whatever the gateway felt like saying.
@@ -80,6 +92,9 @@ type Noul struct{ Instructions, True, False string }
 // Rank is one answer: the options best first, and how strongly the situation
 // called for an option at all.
 type Rank struct {
+	// Model is the version that answered, such as jev-1.13.0, which the alias
+	// the request names does not say.
+	Model   string
 	Options []Option
 	Fits    float64
 	// Nouls answers Ask.Nouls under the same names, from 0 for no to 1 for yes.
@@ -128,7 +143,7 @@ func (c *Client) Rank(ctx context.Context, a Ask) (Rank, error) {
 	if !ok {
 		return Rank{}, fmt.Errorf("jev: no answer for %q", pickID)
 	}
-	out := Rank{Fits: 1}
+	out := Rank{Model: res.Model, Fits: 1}
 	for _, key := range slices.SortedFunc(maps.Keys(pick.Probabilities), func(x, y string) int {
 		return cmp.Or(cmp.Compare(pick.Probabilities[y], pick.Probabilities[x]), cmp.Compare(x, y))
 	}) {
@@ -150,38 +165,62 @@ func (c *Client) Rank(ctx context.Context, a Ask) (Rank, error) {
 	return out, nil
 }
 
-// post sends one request and decodes the answer into out.
+// post sends one request and decodes the answer into out, trying again while
+// the endpoint says it is overloaded or rate-limited. Asking twice is safe: a
+// judgment changes nothing on the other side.
 func (c *Client) post(ctx context.Context, body request, out *response) error {
 	b, err := json.Marshal(body)
 	if err != nil {
 		return fmt.Errorf("jev: encode request: %w", err)
 	}
+	wait := backoff
+	for try := 1; ; try++ {
+		busy, err := c.send(ctx, b, out)
+		if !busy || try == maxTries {
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return errors.Join(err, ctx.Err())
+		case <-time.After(wait):
+		}
+		wait *= 2
+	}
+}
+
+// send makes one attempt. busy reports a refusal worth trying again.
+func (c *Client) send(ctx context.Context, b []byte, out *response) (busy bool, err error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.endpoint, bytes.NewReader(b))
 	if err != nil {
-		return fmt.Errorf("jev: build request: %w", err)
+		return false, fmt.Errorf("jev: build request: %w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+c.key)
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return fmt.Errorf("jev: %w", err)
+		return false, fmt.Errorf("jev: %w", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		// The body carries the reason — a rejected key, a rate limit, a
 		// question the endpoint refused — and it is the only place it is said.
 		why, _ := io.ReadAll(io.LimitReader(resp.Body, errBodyMax))
-		return fmt.Errorf("jev: %s: %s", resp.Status, bytes.TrimSpace(why))
+		return resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode == statusOverloaded,
+			fmt.Errorf("jev: %s: %s", resp.Status, bytes.TrimSpace(why))
 	}
 	if err := json.UnmarshalRead(resp.Body, out); err != nil {
-		return fmt.Errorf("jev: decode answer: %w", err)
+		return false, fmt.Errorf("jev: decode answer: %w", err)
 	}
-	return nil
+	return false, nil
 }
 
+// statusOverloaded is the endpoint's own "try again later", which net/http
+// has no name for.
+const statusOverloaded = 529
+
 // Wire shapes. Only the fields this package reads are named; the endpoint
-// sends more — usage, the version that answered, each answer's own type — and
-// none of it changes what a caller does with the answer.
+// sends more — usage, each answer's own type and confidence — and none of it
+// changes what a caller does with the answer.
 type (
 	request struct {
 		State     any                 `json:"state"`
@@ -196,6 +235,7 @@ type (
 		Criteria map[string]string `json:"criteria,omitempty"`
 	}
 	response struct {
+		Model   string            `json:"model"`
 		Answers map[string]answer `json:"answers"`
 	}
 	answer struct {
