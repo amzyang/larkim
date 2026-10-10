@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"context"
 	"slices"
 	"strconv"
 	"time"
@@ -156,14 +155,14 @@ func (m Model) closeSweep() Model {
 // fireBadgeClear drops one chat's red dot and accepts the receipt on success.
 func fireBadgeClear(d Deps, c store.ChatUnread, gen int) tea.Cmd {
 	return func() tea.Msg {
-		ctx := context.Background()
+		ctx := begin("clear-badge")
 		err := d.ClearBadge(ctx, c)
 		if err != nil {
-			d.Log.Warn("clear feishu badge", "chat_id", c.ChatID, "err", err)
+			d.Log.WarnContext(ctx, "clear feishu badge", "chat_id", c.ChatID, "err", err)
 			return clearFiredMsg{gen: gen, err: err}
 		}
 		if _, err := d.Store.AcceptRemoteRead(ctx, c.ChatID, c.Position); err != nil {
-			d.Log.Warn("accept remote read", "chat_id", c.ChatID, "err", err)
+			d.Log.WarnContext(ctx, "accept remote read", "chat_id", c.ChatID, "err", err)
 			return clearFiredMsg{gen: gen, err: err}
 		}
 		return clearFiredMsg{gen: gen}

@@ -4,10 +4,13 @@ import (
 	"context"
 	"encoding/json/v2"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
+	"github.com/amzyang/larkim/internal/oplog"
 	"github.com/stretchr/testify/require"
 )
 
@@ -15,9 +18,14 @@ import (
 // client at it.
 func serve(t *testing.T, h http.HandlerFunc) *Client {
 	t.Helper()
+	return serveLogged(t, h, nil)
+}
+
+func serveLogged(t *testing.T, h http.HandlerFunc, log *slog.Logger) *Client {
+	t.Helper()
 	s := httptest.NewServer(h)
 	t.Cleanup(s.Close)
-	return New("k", s.URL)
+	return New("k", s.URL, log)
 }
 
 // ask is the shape every case here sends.
@@ -116,6 +124,22 @@ func TestRank_CarriesTheCallersDeadline(t *testing.T) {
 }
 
 func TestNew_FallsBackToTheDefaultEndpoint(t *testing.T) {
-	require.Equal(t, DefaultEndpoint, New("k", "").endpoint)
-	require.Equal(t, "http://x", New("k", "http://x").endpoint)
+	require.Equal(t, DefaultEndpoint, New("k", "", nil).endpoint)
+	require.Equal(t, "http://x", New("k", "http://x", nil).endpoint)
+}
+
+func TestClient_LogsEveryCallUnderTheCallersOperation(t *testing.T) {
+	var buf strings.Builder
+	log := oplog.NewText(&buf, slog.LevelDebug)
+	c := serveLogged(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusTeapot)
+	}, log)
+	ctx := oplog.With(t.Context(), "probe")
+	op, _ := oplog.From(ctx)
+
+	_, err := c.Rank(ctx, ask)
+	require.Error(t, err)
+
+	require.Contains(t, buf.String(), "name=jev")
+	require.Contains(t, buf.String(), "op_id="+op.ID)
 }

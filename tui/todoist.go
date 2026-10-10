@@ -55,13 +55,13 @@ func taskExcerpt(m store.Message) string {
 // sendTodoist makes the one request and answers for it in the notice bar.
 func sendTodoist(d Deps, task todoist.Task) tea.Cmd {
 	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), sendTimeout)
+		ctx, cancel := context.WithTimeout(begin("todoist-task"), sendTimeout)
 		defer cancel()
 		t, err := d.Todoist.CreateTask(ctx, task)
 		if err != nil {
 			// The notice bar holds the message and is gone at the next
 			// keypress; what was being filed only exists here.
-			d.log().Error("todoist task", "err", err, "content", task.Content)
+			d.log().ErrorContext(ctx, "todoist task", "err", err, "content", task.Content)
 			return errMsg{err}
 		}
 		return noticeMsg{"todoist: " + t.Content}

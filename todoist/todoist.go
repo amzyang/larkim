@@ -10,9 +10,12 @@ import (
 	"encoding/json/v2"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"slices"
+
+	"github.com/amzyang/larkim/internal/oplog"
 )
 
 // DefaultBase is the API root every endpoint hangs off. It is exported so the
@@ -40,10 +43,11 @@ type Client struct {
 // base parameter is not a config key; it is the seam the tests point at a
 // local server, the way jev's endpoint is. Requests are bounded by the context
 // they are given rather than by a client-wide timeout, because one caller's
-// idea of too long is not another's.
-func New(token, projectID, base string) *Client {
+// idea of too long is not another's. Every request is logged to log; nil
+// discards.
+func New(token, projectID, base string, log *slog.Logger) *Client {
 	return &Client{token: token, projectID: projectID,
-		base: cmp.Or(base, DefaultBase), http: &http.Client{}}
+		base: cmp.Or(base, DefaultBase), http: &http.Client{Transport: oplog.Transport{Log: log, Name: "todoist"}}}
 }
 
 // Task is one task. Only the fields this package sends or reads are named;

@@ -60,7 +60,7 @@ func (a *App) sendCmd() *cobra.Command {
 				target.UserID = u.OpenID
 				label = u.Name
 			}
-			msg, err := body.outgoing(ctx, client, sync.HTTPFetch)
+			msg, err := body.outgoing(ctx, client, sync.HTTPFetcher(a.logger()))
 			if err != nil {
 				return err
 			}
@@ -335,7 +335,7 @@ func (a *App) replyCmd() *cobra.Command {
 			defer st.Close()
 			ctx := context.Background()
 			client := a.client()
-			msg, err := body.outgoing(ctx, client, sync.HTTPFetch)
+			msg, err := body.outgoing(ctx, client, sync.HTTPFetcher(a.logger()))
 			if err != nil {
 				return err
 			}

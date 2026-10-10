@@ -16,12 +16,13 @@ type recalledMsg struct {
 // (Recalled) at once rather than on the next tick.
 func recallCmd(d Deps, messageID string) tea.Cmd {
 	return func() tea.Msg {
-		ctx, cancel := waited(sendTimeout)
+		op := begin("recall")
+		ctx, cancel := waited(op, sendTimeout)
 		defer cancel()
 		if err := d.Client.Recall(ctx, messageID); err != nil {
 			return recalledMsg{messageID: messageID, err: err}
 		}
-		return recalledMsg{messageID: messageID, err: ingestMessage(d, messageID)}
+		return recalledMsg{messageID: messageID, err: ingestMessage(op, d, messageID)}
 	}
 }
 

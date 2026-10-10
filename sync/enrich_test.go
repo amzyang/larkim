@@ -1,15 +1,20 @@
 package sync
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/amzyang/larkim/internal/oplog"
 	"github.com/amzyang/larkim/larkcli"
 	"github.com/amzyang/larkim/store"
 	"github.com/stretchr/testify/require"
@@ -393,8 +398,27 @@ func TestFetchToTemp_RefusesAnEmptyOrTruncatedBody(t *testing.T) {
 	_, err := FetchToTemp(t.Context(), reply(nil), "https://example.com/a.png")
 	require.ErrorContains(t, err, "empty response")
 
-	// HTTPFetch truncates at the ceiling rather than failing, so a body that
+	// HTTPFetcher truncates at the ceiling rather than failing, so a body that
 	// long may be half a picture.
 	_, err = FetchToTemp(t.Context(), reply(make([]byte, RemoteCeiling)), "https://example.com/a.png")
 	require.ErrorContains(t, err, "over the limit")
+}
+
+func TestHTTPFetcher_LogsTheDownloadUnderTheCallersOperation(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Write([]byte("png bytes"))
+	}))
+	t.Cleanup(srv.Close)
+	var buf bytes.Buffer
+	log := oplog.NewText(&buf, slog.LevelDebug)
+	ctx := oplog.With(t.Context(), "send")
+	op, _ := oplog.From(ctx)
+
+	body, _, err := HTTPFetcher(log)(ctx, srv.URL+"/a.png")
+	require.NoError(t, err)
+	require.Equal(t, "png bytes", string(body))
+	require.Contains(t, buf.String(), "name=fetch")
+	require.Contains(t, buf.String(), "path=/a.png")
+	require.Contains(t, buf.String(), "op_id="+op.ID)
 }

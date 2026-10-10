@@ -17,6 +17,7 @@ import (
 	"github.com/amzyang/larkim/config"
 	"github.com/amzyang/larkim/emoji"
 	"github.com/amzyang/larkim/fuzzy"
+	"github.com/amzyang/larkim/internal/oplog"
 	"github.com/amzyang/larkim/jev"
 	"github.com/amzyang/larkim/larkcli"
 	"github.com/amzyang/larkim/markread"
@@ -76,7 +77,7 @@ type Deps struct {
 	// OpenURL hands links, applinks and local files to the desktop, which comes
 	// forward. New fills it when nil; tests replace it to keep the real `open`
 	// out of the run. Several targets are opened together rather than one by one.
-	OpenURL func(targets []string) error
+	OpenURL func(ctx context.Context, targets []string) error
 	// ClearBadge drops the Feishu client's own red dot for one chat. New fills
 	// it when nil; tests replace it to keep the gateway out of the run.
 	//
@@ -98,7 +99,7 @@ type Deps struct {
 	// osascript and the machine's own clipboard out of the run.
 	Clipboard func(stageDir string) (clip, error)
 	// Fetch downloads a remote image a draft names, returning the bytes and
-	// the response content type. New fills it with sync.HTTPFetch; tests
+	// the response content type. New fills it with sync.HTTPFetcher; tests
 	// replace it to keep the network out of the run.
 	Fetch func(ctx context.Context, url string) ([]byte, string, error)
 	// Log records what the TUI cannot show. stderr is the alternate screen
@@ -671,20 +672,28 @@ func readSyncStatus(st *store.Store) tea.Cmd {
 // exists so a stalled gateway cannot hold the background lane for good.
 const syncTickTimeout = 5 * time.Minute
 
-// waited builds the context for a lark-cli call somebody pressed a key for. It
-// takes the interactive lane, so a send or a reaction does not queue behind
-// the syncer's sweeps or the open chat's beat — both run every few seconds, so
-// a shared line would be occupied more often than not.
-func waited(d time.Duration) (context.Context, context.CancelFunc) {
-	return context.WithTimeout(larkcli.WithLane(context.Background(), larkcli.LaneInteractive), d)
+// begin starts the operation a Cmd carries out. Every call the Cmd makes takes
+// its ctx from the one begin returned, so a send's uploads, the send and the
+// ingest after it are one op_id in the log rather than four.
+func begin(name string) context.Context {
+	return oplog.With(context.Background(), name)
+}
+
+// waited builds the context for a lark-cli call somebody pressed a key for,
+// inside the operation op. It takes the interactive lane, so a send or a
+// reaction does not queue behind the syncer's sweeps or the open chat's beat —
+// both run every few seconds, so a shared line would be occupied more often
+// than not.
+func waited(op context.Context, d time.Duration) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(larkcli.WithLane(op, larkcli.LaneInteractive), d)
 }
 
 // beat builds the context for a timer-driven refresh of what is already on
 // screen. Nobody pressed a key for it, so it takes a lane of its own: sharing
 // the interactive line, the 1.5s beat's two calls held two of its three slots
 // and a send landed behind them.
-func beat(d time.Duration) (context.Context, context.CancelFunc) {
-	return context.WithTimeout(larkcli.WithLane(context.Background(), larkcli.LaneBeat), d)
+func beat(op context.Context, d time.Duration) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(larkcli.WithLane(op, larkcli.LaneBeat), d)
 }
 
 // sendMsg hands a chat one message. localID doubles as the idempotency key,
@@ -692,39 +701,41 @@ func beat(d time.Duration) (context.Context, context.CancelFunc) {
 // than a second delivery.
 func sendMsg(d Deps, localID string, target larkcli.Target, msg larkcli.Outgoing, imgs []draftImage, file draftFile, done []string) tea.Cmd {
 	return func() tea.Msg {
-		msg, keys, err := uploadDraft(d, msg, imgs, file, done)
+		op := begin("send")
+		msg, keys, err := uploadDraft(op, d, msg, imgs, file, done)
 		if err != nil {
 			return sentMsg{localID: localID, keys: keys, err: err}
 		}
-		ctx, cancel := waited(sendTimeout)
+		ctx, cancel := waited(op, sendTimeout)
 		defer cancel()
 		sent, err := d.Client.Send(ctx, target, msg, localID)
-		return stored(d, localID, keys, sent, err)
+		return stored(op, d, localID, keys, sent, err)
 	}
 }
 
 func replyMsg(d Deps, localID, messageID string, msg larkcli.Outgoing, inThread bool, imgs []draftImage, file draftFile, done []string) tea.Cmd {
 	return func() tea.Msg {
-		msg, keys, err := uploadDraft(d, msg, imgs, file, done)
+		op := begin("reply")
+		msg, keys, err := uploadDraft(op, d, msg, imgs, file, done)
 		if err != nil {
 			return sentMsg{localID: localID, keys: keys, err: err}
 		}
-		ctx, cancel := waited(sendTimeout)
+		ctx, cancel := waited(op, sendTimeout)
 		defer cancel()
 		sent, err := d.Client.Reply(ctx, messageID, msg, inThread, localID)
-		return stored(d, localID, keys, sent, err)
+		return stored(op, d, localID, keys, sent, err)
 	}
 }
 
 // stored puts a message Feishu just took into the store before the send is
 // answered, so the row the panes draw comes from the store like every other
 // and the bubble can hand over to it on the reload that write causes.
-func stored(d Deps, localID string, keys []string, sent larkcli.SentMessage, err error) sentMsg {
+func stored(op context.Context, d Deps, localID string, keys []string, sent larkcli.SentMessage, err error) sentMsg {
 	out := sentMsg{localID: localID, messageID: sent.MessageID, keys: keys, err: err}
 	if err != nil {
 		return out
 	}
-	ctx, cancel := waited(sendTimeout)
+	ctx, cancel := waited(op, sendTimeout)
 	defer cancel()
 	out.ingestErr = d.Syncer.IngestSent(ctx, sent)
 	return out
@@ -736,7 +747,7 @@ func stored(d Deps, localID string, keys []string, sent larkcli.SentMessage, err
 // upload leaving an orphan key behind. Uploads run one at a time because
 // lark-cli calls are serialised anyway, and each gets its own deadline rather
 // than sharing one budget with the send that follows.
-func uploadDraft(d Deps, msg larkcli.Outgoing, imgs []draftImage, file draftFile, done []string) (larkcli.Outgoing, []string, error) {
+func uploadDraft(op context.Context, d Deps, msg larkcli.Outgoing, imgs []draftImage, file draftFile, done []string) (larkcli.Outgoing, []string, error) {
 	// An attachment and a set of pictures never arrive together: Feishu
 	// carries a file as a message of its own.
 	if file.local != "" {
@@ -744,13 +755,13 @@ func uploadDraft(d Deps, msg larkcli.Outgoing, imgs []draftImage, file draftFile
 			msg.FileKey = done[0]
 			return msg, done, nil
 		}
-		ctx, cancel := waited(sendTimeout)
+		ctx, cancel := waited(op, sendTimeout)
 		defer cancel()
 		key, err := d.Client.UploadFile(ctx, file.local)
 		if err != nil {
 			return msg, nil, fmt.Errorf("upload %s: %w", filepath.Base(file.local), err)
 		}
-		keepSent(d, key, "file", file.local)
+		keepSent(op, d, key, "file", file.local)
 		msg.FileKey = key
 		return msg, []string{key}, nil
 	}
@@ -764,20 +775,20 @@ func uploadDraft(d Deps, msg larkcli.Outgoing, imgs []draftImage, file draftFile
 		case i < len(done):
 			key = done[i]
 		case img.local != "":
-			up, err := uploadOne(d, img.local)
+			up, err := uploadOne(op, d, img.local)
 			if err != nil {
 				return msg, keys, err
 			}
-			keepSent(d, up, "image", img.local)
+			keepSent(op, d, up, "image", img.local)
 			key = up
 		case img.url != "":
-			path, err := fetchRemote(d, img.url)
+			path, err := fetchRemote(op, d, img.url)
 			if err != nil {
 				return msg, keys, err
 			}
-			up, err := uploadOne(d, path)
+			up, err := uploadOne(op, d, path)
 			if err == nil {
-				keepSent(d, up, "image", path)
+				keepSent(op, d, up, "image", path)
 			}
 			os.Remove(path)
 			if err != nil {
@@ -796,16 +807,16 @@ func uploadDraft(d Deps, msg larkcli.Outgoing, imgs []draftImage, file draftFile
 
 // keepSent files what was just uploaded under its key. A failure costs only
 // the download the message would have had anyway, so the send goes on.
-func keepSent(d Deps, key, typ, path string) {
-	if err := d.Syncer.KeepSent(context.Background(), key, typ, path); err != nil {
-		d.Log.Warn("keep sent file", "key", key, "err", err)
+func keepSent(op context.Context, d Deps, key, typ, path string) {
+	if err := d.Syncer.KeepSent(op, key, typ, path); err != nil {
+		d.Log.WarnContext(op, "keep sent file", "key", key, "err", err)
 	}
 }
 
 // uploadOne puts one file on Feishu under a deadline of its own, rather than
 // sharing one budget with the send and every other image behind it.
-func uploadOne(d Deps, path string) (string, error) {
-	ctx, cancel := waited(sendTimeout)
+func uploadOne(op context.Context, d Deps, path string) (string, error) {
+	ctx, cancel := waited(op, sendTimeout)
 	defer cancel()
 	key, err := d.Client.UploadImage(ctx, path)
 	if err != nil {
@@ -817,8 +828,8 @@ func uploadOne(d Deps, path string) (string, error) {
 // fetchRemote downloads an image a draft named by URL under a deadline of its
 // own, the way each upload beside it has one. The lane waited takes is
 // lark-cli's, and this call reaches a CDN rather than lark-cli.
-func fetchRemote(d Deps, url string) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), sendTimeout)
+func fetchRemote(op context.Context, d Deps, url string) (string, error) {
+	ctx, cancel := context.WithTimeout(op, sendTimeout)
 	defer cancel()
 	return sync.FetchToTemp(ctx, d.Fetch, url)
 }
@@ -834,8 +845,8 @@ func pasteClipboard(d Deps) tea.Cmd {
 
 // ingestMessage pulls one message back from Feishu into the store, so what a
 // send, a recall or a forward just did shows up without waiting for a tick.
-func ingestMessage(d Deps, messageID string) error {
-	ctx, cancel := waited(sendTimeout)
+func ingestMessage(op context.Context, d Deps, messageID string) error {
+	ctx, cancel := waited(op, sendTimeout)
 	defer cancel()
 	return d.Syncer.IngestIDs(ctx, []string{messageID})
 }
@@ -882,10 +893,11 @@ func (d Deps) env() func(string) string {
 // openInFeishu opens a chat (optionally at a message position) in the desktop client.
 func openInFeishu(d Deps, chatID, messageID string, position int64) tea.Cmd {
 	return func() tea.Msg {
-		if err := d.OpenURL([]string{applink.ChatLink(chatID, messageID, position)}); err != nil {
+		ctx := begin("open")
+		if err := d.OpenURL(ctx, []string{applink.ChatLink(chatID, messageID, position)}); err != nil {
 			// The notice bar holds the message and is gone at the next
 			// keypress; which chat was asked for only exists here.
-			d.Log.Error("open in feishu", "chat_id", chatID, "position", position, "err", err)
+			d.Log.ErrorContext(ctx, "open in feishu", "chat_id", chatID, "position", position, "err", err)
 			return errMsg{err}
 		}
 		return noticeMsg{"opened in Feishu"}
@@ -900,11 +912,12 @@ func openZone(d Deps, z clickZone) tea.Cmd {
 		if len(z.urls) == 0 {
 			return nil
 		}
-		if err := d.OpenURL(z.urls); err != nil {
+		ctx := begin("open")
+		if err := d.OpenURL(ctx, z.urls); err != nil {
 			// The notice bar has room for the message but not for what was
 			// handed over, and a zone carries as many targets as the message
 			// had attachments.
-			d.Log.Error("open zone", "targets", z.urls, "err", err)
+			d.Log.ErrorContext(ctx, "open zone", "targets", z.urls, "err", err)
 			return errMsg{err}
 		}
 		return noticeMsg{z.note}
@@ -970,7 +983,7 @@ func coldHits(ctx context.Context, d Deps, found []larkcli.SearchHit, rendered [
 	if err != nil {
 		// The hits still carry their text and their date; only the names
 		// beside them are lost, which is not worth discarding a search for.
-		d.Log.Warn("name search hit senders", "senders", len(senders), "err", err)
+		d.Log.WarnContext(ctx, "name search hit senders", "senders", len(senders), "err", err)
 	}
 	hits := make([]searchHit, 0, len(rendered))
 	for _, r := range rendered {
@@ -996,7 +1009,7 @@ func coldHits(ctx context.Context, d Deps, found []larkcli.SearchHit, rendered [
 // but an id.
 func ingestThenOpen(d Deps, messageID string) tea.Cmd {
 	return func() tea.Msg {
-		ctx, cancel := waited(sendTimeout)
+		ctx, cancel := waited(begin("open-message"), sendTimeout)
 		defer cancel()
 		if err := d.Syncer.IngestIDs(ctx, []string{messageID}); err != nil {
 			return errMsg{err}

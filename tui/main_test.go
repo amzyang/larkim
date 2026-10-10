@@ -18,7 +18,7 @@ import (
 // clear lever; drain and collect run every tick they are handed, so the real
 // delays are waited out in full.
 func TestMain(m *testing.M) {
-	openApplink = func(*slog.Logger, []string) error { return nil }
+	openApplink = func(context.Context, *slog.Logger, []string) error { return nil }
 	newClearBadge = func(config.MarkRead, *slog.Logger, larkweb.Store) markread.Clear {
 		return func(context.Context, store.ChatUnread) error { return nil }
 	}

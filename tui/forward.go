@@ -173,13 +173,14 @@ func (m Model) chooseForward() (tea.Model, tea.Cmd) {
 // shows up in the destination without waiting for a sync tick.
 func forwardCmd(d Deps, messageID string, target larkcli.Target) tea.Cmd {
 	return func() tea.Msg {
-		ctx, cancel := waited(sendTimeout)
+		op := begin("forward")
+		ctx, cancel := waited(op, sendTimeout)
 		defer cancel()
 		sent, err := d.Client.Forward(ctx, messageID, target, uuid.New().String())
 		if err != nil {
 			return forwardedMsg{messageID: messageID, err: err}
 		}
-		return forwardedMsg{messageID: sent.MessageID, err: ingestMessage(d, sent.MessageID)}
+		return forwardedMsg{messageID: sent.MessageID, err: ingestMessage(op, d, sent.MessageID)}
 	}
 }
 

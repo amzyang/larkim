@@ -4,10 +4,13 @@ import (
 	"context"
 	"encoding/json/v2"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
+	"github.com/amzyang/larkim/internal/oplog"
 	"github.com/stretchr/testify/require"
 )
 
@@ -15,9 +18,14 @@ import (
 // client at it.
 func serve(t *testing.T, h http.HandlerFunc) *Client {
 	t.Helper()
+	return serveLogged(t, h, nil)
+}
+
+func serveLogged(t *testing.T, h http.HandlerFunc, log *slog.Logger) *Client {
+	t.Helper()
 	s := httptest.NewServer(h)
 	t.Cleanup(s.Close)
-	return New("k", "proj_1", s.URL)
+	return New("k", "proj_1", s.URL, log)
 }
 
 func TestCreateTask_SendsTheTokenContentAndDescription(t *testing.T) {
@@ -55,7 +63,7 @@ func TestCreateTask_LeavesTheProjectOutWhenNoneIsConfigured(t *testing.T) {
 		io.WriteString(w, `{}`)
 	}))
 	t.Cleanup(s.Close)
-	c := New("k", "", s.URL)
+	c := New("k", "", s.URL, nil)
 	_, err := c.CreateTask(t.Context(), Task{Content: "ship it"})
 	require.NoError(t, err)
 	require.NotContains(t, raw, "project_id", "no project means Todoist's Inbox, not an empty one")
@@ -89,8 +97,8 @@ func TestCreateTask_CarriesTheCallersDeadline(t *testing.T) {
 }
 
 func TestNew_FallsBackToTheDefaultBase(t *testing.T) {
-	require.Equal(t, DefaultBase, New("k", "", "").base)
-	require.Equal(t, "http://elsewhere", New("k", "", "http://elsewhere").base)
+	require.Equal(t, DefaultBase, New("k", "", "", nil).base)
+	require.Equal(t, "http://elsewhere", New("k", "", "http://elsewhere", nil).base)
 }
 
 func TestCreateTask_PostsUnderTheBaseItWasGiven(t *testing.T) {
@@ -157,4 +165,20 @@ func TestInboxFirst_MovesTheInboxAheadKeepingTheRestInOrder(t *testing.T) {
 func TestProjectValue_IsEmptyForTheInbox(t *testing.T) {
 	require.Equal(t, "", Project{ID: "p_inbox", Inbox: true}.Value())
 	require.Equal(t, "p_home", Project{ID: "p_home"}.Value())
+}
+
+func TestClient_LogsEveryCallUnderTheCallersOperation(t *testing.T) {
+	var buf strings.Builder
+	log := oplog.NewText(&buf, slog.LevelDebug)
+	c := serveLogged(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusTeapot)
+	}, log)
+	ctx := oplog.With(t.Context(), "probe")
+	op, _ := oplog.From(ctx)
+
+	_, err := c.CreateTask(ctx, Task{Content: "x"})
+	require.Error(t, err)
+
+	require.Contains(t, buf.String(), "name=todoist")
+	require.Contains(t, buf.String(), "op_id="+op.ID)
 }

@@ -137,7 +137,7 @@ func (a *App) completeTodoistProject(typed string) ([]cobra.Completion, cobra.Sh
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), completionTimeout)
 	defer cancel()
-	ps, err := todoist.New(a.cfg.Todoist.Token, "", a.todoistBase).Projects(ctx)
+	ps, err := todoist.New(a.cfg.Todoist.Token, "", a.todoistBase, a.logger()).Projects(ctx)
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}

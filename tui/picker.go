@@ -309,7 +309,7 @@ type reactedMsg struct {
 // bumps the data revision, so the panes reload on their own.
 func react(d Deps, p reactPending) tea.Cmd {
 	return func() tea.Msg {
-		ctx, cancel := waited(reactTimeout)
+		ctx, cancel := waited(begin("react"), reactTimeout)
 		defer cancel()
 		return reactedMsg{p: p, err: d.Syncer.React(ctx, p.messageID, p.emojiType, p.on)}
 	}

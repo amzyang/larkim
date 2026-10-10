@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/amzyang/larkim/internal/oplog"
 	"github.com/spf13/cobra"
 )
 
@@ -36,7 +37,7 @@ func (a *App) initLog(cmd *cobra.Command) {
 		fmt.Fprintln(a.Err, "larkim: log file unavailable:", err)
 		w = a.Err
 	}
-	a.log = slog.New(slog.NewTextHandler(w, &slog.HandlerOptions{Level: level})).
+	a.log = oplog.NewText(w, level).
 		With("pid", os.Getpid(), "cmd", cmd.Name())
 	if rotate != nil {
 		// Reported here rather than where it happened, because the logger it

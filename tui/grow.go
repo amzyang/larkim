@@ -87,9 +87,12 @@ func (m *Model) pullOlder() tea.Cmd {
 	m.msgPullInFlight = true
 	d, chatID := m.deps, m.chatID
 	return func() tea.Msg {
-		ctx, cancel := beat(chatPollTimeout)
+		ctx, cancel := beat(begin("pull-older"), chatPollTimeout)
 		defer cancel()
 		_, err := d.Syncer.PullOlder(ctx, chatID)
+		if err != nil && !errors.Is(err, context.Canceled) {
+			d.log().WarnContext(ctx, "pull older", "chat_id", chatID, "err", err)
+		}
 		return olderPulledMsg{chatID: chatID, err: err}
 	}
 }
@@ -113,7 +116,6 @@ func (m *Model) noteOlderPull(msg olderPulledMsg) tea.Cmd {
 	}
 	m.msgPullInFlight = false
 	if msg.err != nil && !errors.Is(msg.err, context.Canceled) {
-		m.deps.log().Warn("pull older", "chat_id", msg.chatID, "err", msg.err)
 		*m = m.notify("could not reach further back: "+msg.err.Error(), true)
 		return nil
 	}

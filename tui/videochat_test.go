@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -111,7 +112,7 @@ func TestFeishuMeetingLink_ReachesTheClientWithoutABrowser(t *testing.T) {
 func callPage(t *testing.T, contentRaw string) (Model, *[][]string) {
 	t.Helper()
 	var calls [][]string
-	m := New(Deps{Self: "ou_me", OpenURL: func(targets []string) error {
+	m := New(Deps{Self: "ou_me", OpenURL: func(_ context.Context, targets []string) error {
 		calls = append(calls, targets)
 		return nil
 	}})

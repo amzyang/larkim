@@ -151,7 +151,7 @@ func TestTakeRead_IgnoresUnreadTheChatBadgeLeavesOut(t *testing.T) {
 func TestOpenInFeishu_HandsTheChatLinkToTheDesktop(t *testing.T) {
 	t.Parallel()
 	var calls [][]string
-	m := New(Deps{Log: discardLog, OpenURL: func(targets []string) error {
+	m := New(Deps{Log: discardLog, OpenURL: func(_ context.Context, targets []string) error {
 		calls = append(calls, targets)
 		return nil
 	}})

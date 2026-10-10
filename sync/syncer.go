@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/amzyang/larkim/config"
+	"github.com/amzyang/larkim/internal/oplog"
 	"github.com/amzyang/larkim/larkcli"
 	"github.com/amzyang/larkim/larkweb"
 	"github.com/amzyang/larkim/markread"
@@ -292,7 +293,9 @@ func (s *Syncer) EnsureIdentity(ctx context.Context) (larkcli.Identity, error) {
 // search, chat refresh, slow path, backfill, rendering and the rest. It is
 // what a one-shot sync runs; Run keeps discovery on a loop of its own. It
 // records a sync_runs row either way.
-func (s *Syncer) Tick(ctx context.Context) (Report, error) { return s.pass(ctx, true, &timeoutRun{}) }
+func (s *Syncer) Tick(ctx context.Context) (Report, error) {
+	return s.pass(oplog.With(ctx, "tick"), true, &timeoutRun{})
+}
 
 // pass is one tick, with discovery at its head when discover is set. A
 // timeout the run excuses is recorded as an empty tick.
@@ -308,10 +311,10 @@ func (s *Syncer) pass(ctx context.Context, discover bool, timeouts *timeoutRun) 
 		run.Error = err.Error()
 	}
 	if rerr := s.Store.RecordRun(ctx, run); rerr != nil {
-		s.log().Warn("record run", "err", rerr)
+		s.log().WarnContext(ctx, "record run", "err", rerr)
 	}
 	if serr := s.setStateTime(ctx, KeyLastTickAt, end); serr != nil {
-		s.log().Warn("stamp last tick", "err", serr)
+		s.log().WarnContext(ctx, "stamp last tick", "err", serr)
 	}
 	if s.OnChange != nil {
 		s.OnChange()
@@ -347,7 +350,7 @@ func (s *Syncer) tick(ctx context.Context, now time.Time, discover bool) (Report
 	if silenced, err := s.Store.ReapplySilence(ctx); err != nil {
 		return rep, fmt.Errorf("silence: %w", err)
 	} else if silenced > 0 {
-		s.log().Info("silence rules changed", "messages", silenced)
+		s.log().InfoContext(ctx, "silence rules changed", "messages", silenced)
 	}
 
 	// 1. Discovery, when this pass carries it: a one-shot tick has nobody else
@@ -614,16 +617,16 @@ func (s *Syncer) settleSilenced(ctx context.Context) (int, error) {
 			time.Sleep(larkweb.Pace)
 		}
 		if err := settle(ctx, store.ChatUnread{ChatID: p.ChatID, Position: p.Position}); err != nil {
-			s.log().Warn("silence settle failed", "chat_id", p.ChatID, "err", err)
+			s.log().WarnContext(ctx, "silence settle failed", "chat_id", p.ChatID, "err", err)
 			if serr := s.Store.SilenceSettleFailed(ctx, p.ChatID); serr != nil {
-				s.log().Warn("count silence settle failure", "chat_id", p.ChatID, "err", serr)
+				s.log().WarnContext(ctx, "count silence settle failure", "chat_id", p.ChatID, "err", serr)
 			}
 			continue
 		}
 		if _, err := s.Store.AcceptRemoteRead(ctx, p.ChatID, p.Position); err != nil {
-			s.log().Warn("accept remote read", "chat_id", p.ChatID, "err", err)
+			s.log().WarnContext(ctx, "accept remote read", "chat_id", p.ChatID, "err", err)
 			if serr := s.Store.SilenceSettleFailed(ctx, p.ChatID); serr != nil {
-				s.log().Warn("count silence settle failure", "chat_id", p.ChatID, "err", serr)
+				s.log().WarnContext(ctx, "count silence settle failure", "chat_id", p.ChatID, "err", serr)
 			}
 			continue
 		}
@@ -648,7 +651,7 @@ func (s *Syncer) searchWindow(ctx context.Context, w Window) ([]larkcli.SearchHi
 	}
 	a, b, ok := Halves(w)
 	if !ok {
-		s.log().Warn("search window truncated at minimum width; some messages may only arrive via slow path", "start", w.Start, "end", w.End)
+		s.log().WarnContext(ctx, "search window truncated at minimum width; some messages may only arrive via slow path", "start", w.Start, "end", w.End)
 		return hits, w.End, nil
 	}
 	h1, end1, err := s.searchWindow(ctx, a)
@@ -1102,7 +1105,7 @@ func (s *Syncer) pullStakedThreads(ctx context.Context, now time.Time) (int, err
 		// tick. The chat it lives in is refused the same way, and recording
 		// that on the chat is what drops the thread from the staked set.
 		if le, ok := errors.AsType[*larkcli.Error](err); ok && le.IsPermanent() {
-			s.log().Warn("thread listing rejected; skipping the pass", "code", le.Code, "error", le.Message)
+			s.log().WarnContext(ctx, "thread listing rejected; skipping the pass", "code", le.Code, "error", le.Message)
 			return 0, nil
 		}
 		return 0, err
@@ -1120,9 +1123,9 @@ func (s *Syncer) recordChatError(ctx context.Context, chatID string, err error, 
 	if !ok || !le.IsPermanent() {
 		return false
 	}
-	s.log().Warn("chat listing rejected; skipping chat", "chat_id", chatID, "code", le.Code, "error", le.Message)
+	s.log().WarnContext(ctx, "chat listing rejected; skipping chat", "chat_id", chatID, "code", le.Code, "error", le.Message)
 	if serr := s.Store.SetChatSyncError(ctx, chatID, fmt.Sprintf("%d: %s", le.Code, le.Message), now.UnixMilli()); serr != nil {
-		s.log().Warn("record chat error", "err", serr)
+		s.log().WarnContext(ctx, "record chat error", "err", serr)
 	}
 	return true
 }
@@ -1314,20 +1317,23 @@ func (s *Syncer) Run(ctx context.Context) error {
 		if s.BeforeTick != nil {
 			s.BeforeTick()
 		}
-		rep, err := s.pass(ctx, false, &timeouts)
+		// Each tick is an operation of its own, and the lines on how it ended
+		// belong to it.
+		tick := oplog.With(ctx, "tick")
+		rep, err := s.pass(tick, false, &timeouts)
 		delay := s.Opt().PollInterval
 		wake := s.wake
 		switch {
 		case excused(err):
 			// This cycle had no data; the next one keeps the usual poll pace.
 			failures = 0
-			s.log().Info("tick timed out", "err", err)
+			s.log().InfoContext(tick, "tick timed out", "err", err)
 		case err != nil:
 			failures++
 			delay = s.delayFor(err, failures)
 			// A find is no reason to retry an API that just refused.
 			wake = nil
-			s.log().Warn("tick failed", "err", err, "class", errClass(err), "failures", failures, "retry_in", delay)
+			s.log().WarnContext(tick, "tick failed", "err", err, "class", errClass(err), "failures", failures, "retry_in", delay)
 			if s.OnError != nil {
 				s.OnError(err)
 			}
@@ -1337,12 +1343,12 @@ func (s *Syncer) Run(ctx context.Context) error {
 			if rep.changed() {
 				level = slog.LevelInfo
 			}
-			s.log().Log(ctx, level, "tick", "hits", rep.Hits, "new", rep.New, "rendered", rep.Rendered,
+			s.log().Log(tick, level, "tick", "hits", rep.Hits, "new", rep.New, "rendered", rep.Rendered,
 				"backfilled", rep.Backfilled, "slow_path", rep.SlowPath, "history", rep.History,
 				"downloaded", rep.Downloaded, "repaired", rep.Repaired, "chats", rep.Chats,
 				"searched", rep.Searched, "complete", rep.Complete)
 		}
-		s.SetStatus(ctx, err)
+		s.SetStatus(tick, err)
 		select {
 		case <-ctx.Done():
 			return ctx.Err()

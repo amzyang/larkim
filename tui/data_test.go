@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/amzyang/larkim/applink"
+	"github.com/amzyang/larkim/internal/oplog"
 	"github.com/amzyang/larkim/larkcli"
 	"github.com/amzyang/larkim/store"
 	"github.com/amzyang/larkim/store/storetest"
@@ -96,10 +97,13 @@ func TestLoadMeta_NamesTheThreadReplierThePageNeverHeardFrom(t *testing.T) {
 // the syncer's sweeps.
 func TestWaited_TakesTheInteractiveLane(t *testing.T) {
 	t.Parallel()
-	ctx, cancel := waited(time.Second)
+	ctx, cancel := waited(begin("send"), time.Second)
 	defer cancel()
 	require.Equal(t, larkcli.LaneInteractive, larkcli.LaneOf(ctx))
-	_, ok := ctx.Deadline()
+	op, ok := oplog.From(ctx)
+	require.True(t, ok, "every line the keypress causes is filed under it")
+	require.Equal(t, "send", op.Name)
+	_, ok = ctx.Deadline()
 	require.True(t, ok, "an interactive call still needs a deadline of its own")
 }
 
@@ -108,9 +112,11 @@ func TestWaited_TakesTheInteractiveLane(t *testing.T) {
 // landed behind them.
 func TestBeat_TakesTheBeatLane(t *testing.T) {
 	t.Parallel()
-	ctx, cancel := beat(time.Second)
+	ctx, cancel := beat(begin("poll-chat"), time.Second)
 	defer cancel()
 	require.Equal(t, larkcli.LaneBeat, larkcli.LaneOf(ctx))
+	op, _ := oplog.From(ctx)
+	require.Equal(t, "poll-chat", op.Name)
 	_, ok := ctx.Deadline()
 	require.True(t, ok, "a beat still needs a deadline of its own")
 }

@@ -1,14 +1,18 @@
 package larkweb
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 
+	"github.com/amzyang/larkim/internal/oplog"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/encoding/protowire"
 )
@@ -207,4 +211,34 @@ func field(t *testing.T, b []byte, want protowire.Number) ([]byte, uint64) {
 	}))
 	require.True(t, found, "field %d absent", want)
 	return bs, v
+}
+
+func TestClient_LogsTheCallUnderTheOperationWithItsRequestID(t *testing.T) {
+	var sent string
+	c := clientTo(t, func(w http.ResponseWriter, r *http.Request) {
+		sent = r.Header.Get("x-request-id")
+		w.Header().Set("X-Tt-Logid", "lg_web")
+	}, sessionJar())
+	var buf bytes.Buffer
+	c.Log = oplog.NewText(&buf, slog.LevelDebug)
+	ctx := oplog.With(t.Context(), "clear-badge")
+	op, _ := oplog.From(ctx)
+
+	require.NoError(t, c.MarkRead(ctx, "oc_quiet", 4096))
+
+	var call, reply string
+	for l := range strings.Lines(buf.String()) {
+		switch {
+		case strings.Contains(l, `msg="gateway call"`):
+			call = l
+		case strings.Contains(l, `msg="gateway reply"`):
+			reply = l
+		}
+	}
+	for _, l := range []string{call, reply} {
+		require.Contains(t, l, "req_id="+sent, "the id the gateway saw is the one the log carries")
+		require.Contains(t, l, "op_id="+op.ID)
+	}
+	require.Regexp(t, `dur_ms=\d+ `, reply)
+	require.Contains(t, reply, "log_id=lg_web")
 }

@@ -181,7 +181,7 @@ func (a *App) client() larkcli.Client {
 
 func (a *App) syncer(st *store.Store) *sync.Syncer {
 	s := &sync.Syncer{Client: a.client(), Store: st, Clock: sync.RealClock{},
-		Log: a.logger(), OnError: captureError, Fetch: sync.HTTPFetch, Recover: sentryRecoverRepanic}
+		Log: a.logger(), OnError: captureError, Fetch: sync.HTTPFetcher(a.logger()), Recover: sentryRecoverRepanic}
 	s.SetOptions(sync.OptionsFrom(a.cfg))
 	s.SetSettleSilenced(a.settle(a.cfg, st))
 	return s

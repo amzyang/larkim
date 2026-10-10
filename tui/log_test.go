@@ -26,7 +26,7 @@ func logDeps(t *testing.T, openErr error) (Deps, *bytes.Buffer) {
 	t.Helper()
 	var buf bytes.Buffer
 	log := slog.New(slog.NewTextHandler(&buf, nil))
-	open := func([]string) error { return openErr }
+	open := func(context.Context, []string) error { return openErr }
 	return Deps{
 		Log:        log,
 		OpenURL:    open,
@@ -72,7 +72,7 @@ func TestOpenZone_LogsTheTargetsTheNoticeBarCannotHold(t *testing.T) {
 
 func TestOpenURL_CarriesWhatOpenRefusedOn(t *testing.T) {
 	t.Parallel()
-	err := applink.Open(slog.New(slog.DiscardHandler), []string{filepath.Join(t.TempDir(), "nothing-here.txt")})
+	err := applink.Open(t.Context(), slog.New(slog.DiscardHandler), []string{filepath.Join(t.TempDir(), "nothing-here.txt")})
 
 	require.ErrorContains(t, err, "does not exist",
 		"exec drops stderr, which is the only place open says why")
@@ -84,10 +84,21 @@ func TestOpenURL_LogsTheArgvItBuilt(t *testing.T) {
 	log := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
 	target := filepath.Join(t.TempDir(), "open?openChatId=oc_quiet")
-	applink.Open(log, []string{target})
+	applink.Open(t.Context(), log, []string{target})
 
 	require.Contains(t, buf.String(), `open '`+target+`'`,
 		"the argv is logged whole and quoted, so it pastes back into a shell")
+}
+
+func TestOpenURL_LogsHowLongOpenTook(t *testing.T) {
+	t.Parallel()
+	var buf bytes.Buffer
+	log := slog.New(slog.NewTextHandler(&buf, nil))
+
+	applink.Open(t.Context(), log, []string{filepath.Join(t.TempDir(), "nothing-here.txt")})
+
+	require.Regexp(t, `msg="open done" dur_ms=\d+ err=`, buf.String(),
+		"the pair brackets the call, so one that hangs is the one with no closing line")
 }
 
 func TestNew_GivesTheDefaultOpenerTheLog(t *testing.T) {
@@ -97,7 +108,7 @@ func TestNew_GivesTheDefaultOpenerTheLog(t *testing.T) {
 	var buf bytes.Buffer
 	m := New(Deps{Log: slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))})
 
-	m.deps.OpenURL([]string{filepath.Join(t.TempDir(), "nothing-here.txt")})
+	m.deps.OpenURL(t.Context(), []string{filepath.Join(t.TempDir(), "nothing-here.txt")})
 
 	require.Contains(t, buf.String(), "nothing-here.txt", "the opener New installs must not log into the void")
 }

@@ -125,6 +125,9 @@ type aiTurn struct {
 	traces []string
 	ch     <-chan ai.Chunk
 	cancel context.CancelFunc
+	// op is the operation the asking started: the agent's stream and every
+	// write of the card it streams into are logged under it.
+	op context.Context
 	// cache holds the turn's laid-out rows under their key. A rebuild runs
 	// on every chunk of an answer; the turns that did not move are the whole
 	// session, and re-rendering them at 20 chunks a second is what makes a
@@ -554,6 +557,8 @@ type aiStartedMsg struct {
 // under a keypress. off, when set, is the failure the turn ends with instead:
 // a panel without an agent takes the question and answers it with the notice.
 func askTurn(d Deps, client AIStreamer, off error, p *aiPanel, s *aiSession, t *aiTurn, h ai.History) tea.Cmd {
+	ctx := begin("ai-turn")
+	t.op = ctx
 	if off != nil {
 		return func() tea.Msg {
 			return aiStartedMsg{turn: t.id, ch: errCh(ai.Chunk{Err: off, Done: true})}
@@ -577,7 +582,6 @@ func askTurn(d Deps, client AIStreamer, off error, p *aiPanel, s *aiSession, t *
 	sel := slices.Clone(t.sel)
 	compose, window, until := t.compose, t.window, t.at.UnixMilli()
 	return func() tea.Msg {
-		ctx := context.Background()
 		in, extra, err := aiWindow(ctx, d, chatID, window, anchor, sel, compose, until)
 		if err != nil {
 			return aiStartedMsg{turn: t.id, ch: errCh(ai.Chunk{Err: err, Done: true})}
@@ -2182,10 +2186,16 @@ func writeStreamCard(d Deps, t *aiTurn, text string) tea.Cmd {
 		}
 	}
 	patchID := c.messageID
+	// A turn restored from the store was asked in an earlier run; a retry of
+	// its card is an operation of its own.
+	op := t.op
+	if op == nil {
+		op = begin("ai-card")
+	}
 	return func() tea.Msg {
 		// The card's own lane: rewrites are serial per message by the API's
 		// own accounting, and a line of width one cannot outrun itself.
-		ctx, cancel := waited(sendTimeout)
+		ctx, cancel := waited(op, sendTimeout)
 		defer cancel()
 		ctx = larkcli.WithLane(ctx, larkcli.LaneCard)
 		if patchID != "" {

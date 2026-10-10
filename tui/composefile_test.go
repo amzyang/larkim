@@ -1,8 +1,10 @@
 package tui
 
 import (
+	"context"
 	"testing"
 
+	"github.com/amzyang/larkim/internal/oplog"
 	"github.com/amzyang/larkim/larkcli"
 
 	"github.com/stretchr/testify/assert"
@@ -138,10 +140,45 @@ func TestUploadDraft_RetryReusesTheKeyItAlreadyUploaded(t *testing.T) {
 	m, f := newOutboxModel(t)
 	file := draftFile{ref: "~/a.pdf", local: "/Users/linlan/a.pdf"}
 
-	msg, keys, err := uploadDraft(m.deps, larkcli.Outgoing{}, nil, file, []string{"file_fake_1"})
+	msg, keys, err := uploadDraft(t.Context(), m.deps, larkcli.Outgoing{}, nil, file, []string{"file_fake_1"})
 
 	require.NoError(t, err)
 	assert.Equal(t, "file_fake_1", msg.FileKey)
 	assert.Equal(t, []string{"file_fake_1"}, keys)
 	assert.Empty(t, f.Uploads, "nothing went up a second time")
+}
+
+// opSpy records the operation each call to Feishu ran under.
+type opSpy struct {
+	*larkcli.Fake
+	ops []oplog.Op
+}
+
+func (s *opSpy) UploadFile(ctx context.Context, path string) (string, error) {
+	op, _ := oplog.From(ctx)
+	s.ops = append(s.ops, op)
+	return s.Fake.UploadFile(ctx, path)
+}
+
+func (s *opSpy) Send(ctx context.Context, target larkcli.Target, msg larkcli.Outgoing, key string) (larkcli.SentMessage, error) {
+	op, _ := oplog.From(ctx)
+	s.ops = append(s.ops, op)
+	return s.Fake.Send(ctx, target, msg, key)
+}
+
+func TestSubmit_UploadAndSendRunUnderOneOperation(t *testing.T) {
+	t.Parallel()
+	m, f := newOutboxModel(t)
+	spy := &opSpy{Fake: f}
+	m.deps.Client = spy
+	m.files = fakeFiles(map[string]int64{"/Users/linlan/a.pdf": 2048})
+	m.input.SetValue("[a.pdf](/Users/linlan/a.pdf)")
+
+	_, cmd := m.submit()
+	require.NoError(t, cmd().(sentMsg).err)
+
+	require.Len(t, spy.ops, 2)
+	require.Equal(t, "send", spy.ops[0].Name)
+	require.NotEmpty(t, spy.ops[0].ID)
+	require.Equal(t, spy.ops[0], spy.ops[1], "one keypress, one operation, however many calls it takes")
 }

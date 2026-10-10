@@ -12,9 +12,12 @@ import (
 	"encoding/json/v2"
 	"fmt"
 	"io"
+	"log/slog"
 	"maps"
 	"net/http"
 	"slices"
+
+	"github.com/amzyang/larkim/internal/oplog"
 )
 
 // DefaultEndpoint is the evaluation endpoint. Every model is served by it and
@@ -42,9 +45,10 @@ type Client struct {
 // New builds a client for an API key, against endpoint or DefaultEndpoint when
 // that is empty. Requests are bounded by the context they are given rather than
 // by a client-wide timeout, because one caller's idea of too long is not
-// another's.
-func New(key, endpoint string) *Client {
-	return &Client{key: key, endpoint: cmp.Or(endpoint, DefaultEndpoint), http: &http.Client{}}
+// another's. Every request is logged to log; nil discards.
+func New(key, endpoint string, log *slog.Logger) *Client {
+	return &Client{key: key, endpoint: cmp.Or(endpoint, DefaultEndpoint),
+		http: &http.Client{Transport: oplog.Transport{Log: log, Name: "jev"}}}
 }
 
 // Ask is one ranking question with a companion yes/no over the same state.

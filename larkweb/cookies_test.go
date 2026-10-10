@@ -74,7 +74,7 @@ func TestJarRead_ReportsWhyTheSessionCouldNotBeRead(t *testing.T) {
 		fmt.Errorf("decrypting cookie lang: keyring password retrieval failed: %w", keyErr),
 	))
 
-	_, err := r.result()
+	_, err := r.result(t.Context())
 
 	require.ErrorIs(t, err, keyErr)
 	require.ErrorContains(t, err, "Default")
@@ -87,7 +87,7 @@ func TestJarRead_SendsToLogInWhenNoStoreHoldsASession(t *testing.T) {
 	r.add("Default", cookieSeq(errMissingStore))
 	r.add("Default", cookieSeq(jarCookie("lang")))
 
-	_, err := r.result()
+	_, err := r.result(t.Context())
 
 	require.ErrorContains(t, err, "no Feishu web session in chrome; log in at feishu.cn")
 	require.NotErrorIs(t, err, fs.ErrNotExist)
@@ -102,7 +102,7 @@ func TestJarRead_ASessionOutweighsRowsThatFailed(t *testing.T) {
 		&kooky.Cookie{Cookie: http.Cookie{Name: "tenant", Value: "v", Domain: "gaotu.feishu.cn"}},
 	))
 
-	cookies, err := r.result()
+	cookies, err := r.result(t.Context())
 
 	require.NoError(t, err)
 	require.Equal(t, []*http.Cookie{{Name: "session", Value: "v"}}, cookies)

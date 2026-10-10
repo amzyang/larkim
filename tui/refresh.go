@@ -31,13 +31,13 @@ func (m *Model) claimChatRefresh(chatID string) bool {
 // nothing is returned on success.
 func refreshReadStatus(d Deps, chatID string) tea.Cmd {
 	return func() tea.Msg {
-		ctx, cancel := beat(chatPollTimeout)
+		ctx, cancel := beat(begin("refresh-read-status"), chatPollTimeout)
 		defer cancel()
 		// Nobody asked for this refresh, so a failure belongs in the log
 		// rather than the notice bar, which is where the poll it rides with
 		// puts its own.
 		if _, err := d.Syncer.RefreshReadStatus(ctx, chatID); err != nil {
-			d.Log.Warn("refresh read status", "chat_id", chatID, "err", err)
+			d.Log.WarnContext(ctx, "refresh read status", "chat_id", chatID, "err", err)
 		}
 		return nil
 	}
@@ -48,10 +48,10 @@ func refreshReadStatus(d Deps, chatID string) tea.Cmd {
 // reloads the panes; nothing is returned on success.
 func refreshReactions(d Deps, chatID string) tea.Cmd {
 	return func() tea.Msg {
-		ctx, cancel := beat(chatPollTimeout)
+		ctx, cancel := beat(begin("refresh-reactions"), chatPollTimeout)
 		defer cancel()
 		if _, err := d.Syncer.RefreshReactions(ctx, chatID); err != nil {
-			d.Log.Warn("refresh reactions", "chat_id", chatID, "err", err)
+			d.Log.WarnContext(ctx, "refresh reactions", "chat_id", chatID, "err", err)
 		}
 		return nil
 	}

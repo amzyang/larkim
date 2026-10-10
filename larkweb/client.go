@@ -98,7 +98,8 @@ func (c *Client) do(ctx context.Context, op string, p Payload) ([]byte, error) {
 	req.Header.Set("x-lgw-os-type", "1")
 	req.Header.Set("x-lgw-terminal-type", "2")
 	req.Header.Set("x-source", "web")
-	req.Header.Set("x-request-id", uuid.New().String())
+	reqID := uuid.New().String()
+	req.Header.Set("x-request-id", reqID)
 	req.Header.Set("origin", webOrigin)
 	req.Header.Set("referer", webOrigin+"/")
 	req.Header.Set("user-agent", userAgent)
@@ -107,8 +108,11 @@ func (c *Client) do(ctx context.Context, op string, p Payload) ([]byte, error) {
 	}
 	// Cookie names only. A value here is a live credential and answers no
 	// question the names do not.
-	c.log().Debug("gateway call", "op", op, "cmd", cmd, "cookies", cookieNames(cookies))
+	// rpc, not op: op is the operation this call belongs to, which the
+	// handler adds from ctx.
+	c.log().DebugContext(ctx, "gateway call", "rpc", op, "cmd", cmd, "req_id", reqID, "cookies", cookieNames(cookies))
 
+	started := time.Now()
 	resp, err := c.http().Do(req)
 	if err != nil {
 		return nil, &Error{Op: op, Err: err}
@@ -124,7 +128,11 @@ func (c *Client) do(ctx context.Context, op string, p Payload) ([]byte, error) {
 		return nil, &Error{Op: op, HTTPStatus: resp.StatusCode, Reason: "reply larger than " + strconv.Itoa(maxReply) + " bytes"}
 	}
 	// Quoted: a protobuf reply is binary, and the escapes keep it one line.
-	c.log().Debug("gateway reply", "op", op, "cmd", cmd, "http", resp.StatusCode, "bytes", len(reply),
+	// X-Tt-Logid is the gateway's own id for the request, the handle its
+	// side is searched with.
+	c.log().DebugContext(ctx, "gateway reply", "rpc", op, "cmd", cmd, "req_id", reqID,
+		"log_id", resp.Header.Get("X-Tt-Logid"), "dur_ms", time.Since(started).Milliseconds(),
+		"http", resp.StatusCode, "bytes", len(reply),
 		"body", strconv.Quote(string(reply[:min(len(reply), loggedBody)])))
 	if resp.StatusCode != http.StatusOK {
 		// The body is the only place the gateway says which part it refused;

@@ -408,11 +408,11 @@ func New(d Deps) Model {
 	if d.Clipboard == nil {
 		d.Clipboard = readClipboard
 	}
-	if d.Fetch == nil {
-		d.Fetch = sync.HTTPFetch
-	}
 	if d.Log == nil {
 		d.Log = discardLog
+	}
+	if d.Fetch == nil {
+		d.Fetch = sync.HTTPFetcher(d.Log)
 	}
 	// A puller is what every reach for something Feishu holds goes through,
 	// so it is never absent: the injected one carries the sweep's options
@@ -428,7 +428,7 @@ func New(d Deps) Model {
 	// TUI makes, and it logs the argv it builds.
 	if d.OpenURL == nil {
 		log := d.Log
-		d.OpenURL = func(targets []string) error { return openApplink(log, targets) }
+		d.OpenURL = func(ctx context.Context, targets []string) error { return openApplink(ctx, log, targets) }
 	}
 	if d.ClearBadge == nil && d.NewClearBadge == nil {
 		log, st := d.Log, d.Store
@@ -3000,7 +3000,7 @@ func (m Model) runCommand(line string) (tea.Model, tea.Cmd) {
 			// A tick fans out over every chat that moved, so it needs room;
 			// what it must not have is forever, which would hold the whole
 			// background lane against a gateway that stopped answering.
-			ctx, cancel := context.WithTimeout(context.Background(), syncTickTimeout)
+			ctx, cancel := context.WithTimeout(begin("sync"), syncTickTimeout)
 			defer cancel()
 			if _, err := s.Tick(ctx); err != nil {
 				return errMsg{err}
@@ -3284,10 +3284,10 @@ func (m Model) pressZone(p pane, rows []msgRow, line int, z clickZone) (tea.Mode
 // displays the state comes back with the write instead.
 func toggleTodo(d Deps, guid string, done bool) tea.Cmd {
 	return func() tea.Msg {
-		ctx, cancel := waited(reactTimeout)
+		ctx, cancel := waited(begin("toggle-todo"), reactTimeout)
 		defer cancel()
 		if err := d.Syncer.ToggleTodo(ctx, guid, !done); err != nil {
-			d.Log.Error("toggle todo", "guid", guid, "err", err)
+			d.Log.ErrorContext(ctx, "toggle todo", "guid", guid, "err", err)
 			return noticeMsg{"could not toggle the task: " + err.Error()}
 		}
 		return nil

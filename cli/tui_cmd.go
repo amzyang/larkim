@@ -68,7 +68,7 @@ func (a *App) runTUI(_ *cobra.Command, _ []string) error {
 		if key == "" {
 			return nil
 		}
-		return jev.New(key, endpoint)
+		return jev.New(key, endpoint, deps.Log)
 	}
 	deps.Suggest = deps.NewSuggest(a.cfg.AI.JevKeyEnv, a.cfg.AI.JevEndpoint)
 	deps.NewTodoist = func(token, project string) tui.TodoistClient {
@@ -77,7 +77,7 @@ func (a *App) runTUI(_ *cobra.Command, _ []string) error {
 		if token == "" {
 			return nil
 		}
-		return todoist.New(token, project, "")
+		return todoist.New(token, project, "", deps.Log)
 	}
 	deps.Todoist = deps.NewTodoist(a.cfg.Todoist.Token, a.cfg.Todoist.Project)
 	deps.Self = selfOpenID(ctx, st)

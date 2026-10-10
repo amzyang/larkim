@@ -50,12 +50,16 @@ func (m *Model) claimChatPoll(now time.Time) string {
 // pollChat re-lists the open chat straight from the message store. It takes
 // the beat lane: the words on screen are what it fetches, so queueing it
 // behind an attachment download on the background lane would reintroduce the
-// delay it exists to remove.
+// delay it exists to remove. Nobody asked for this poll, so a failure goes to
+// the log, under the op its calls were, rather than the notice bar.
 func pollChat(d Deps, chatID, threadID string) tea.Cmd {
 	return func() tea.Msg {
-		ctx, cancel := beat(chatPollTimeout)
+		ctx, cancel := beat(begin("poll-chat"), chatPollTimeout)
 		defer cancel()
 		_, err := d.Syncer.RefreshChat(ctx, chatID, threadID)
+		if err != nil && !errors.Is(err, context.Canceled) {
+			d.log().WarnContext(ctx, "chat poll", "chat_id", chatID, "err", err)
+		}
 		return chatPolledMsg{err}
 	}
 }
@@ -73,14 +77,9 @@ func (m Model) rideAlong(chatID string) tea.Cmd {
 }
 
 // notePollResult clears the in-flight flag and stands the beat down when the
-// gateway refuses. Nobody asked for this poll, so a failure belongs in the log
-// rather than the notice bar.
+// gateway refuses.
 func (m *Model) notePollResult(err error, now time.Time) {
 	m.chatPollInFlight = false
-	if err == nil || errors.Is(err, context.Canceled) {
-		return
-	}
-	m.deps.Log.Warn("chat poll", "chat_id", m.openingChat(), "err", err)
 	if le, ok := errors.AsType[*larkcli.Error](err); ok && le.IsRateLimit() {
 		m.chatPollPausedUntil = now.Add(max(le.RetryAfter, chatPollBackoff))
 	}

@@ -59,11 +59,11 @@ type todoistProjectsMsg struct {
 // loadTodoistProjects lists the account's projects for the chooser.
 func loadTodoistProjects(d Deps, token string) tea.Cmd {
 	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), sendTimeout)
+		ctx, cancel := context.WithTimeout(begin("todoist-projects"), sendTimeout)
 		defer cancel()
 		ps, err := d.Todoist.Projects(ctx)
 		if err != nil {
-			d.log().Error("todoist projects", "err", err)
+			d.log().ErrorContext(ctx, "todoist projects", "err", err)
 			return todoistProjectsMsg{token: token, err: err}
 		}
 		return todoistProjectsMsg{token: token, projects: todoist.InboxFirst(ps)}

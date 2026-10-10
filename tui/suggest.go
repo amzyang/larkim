@@ -243,17 +243,20 @@ func (m *Model) armSuggest(x store.Message) tea.Cmd {
 	}
 	m.picker.suggest = suggestWaiting
 	m.suggestGen++
-	return suggestCmd(m.deps, m.suggester, m.suggestGen, m.askSuggest(x))
+	return suggestCmd(m.deps, m.suggester, m.suggestGen, x.MessageID, m.askSuggest(x))
 }
 
 // suggestCmd asks the question and hands the answer back under gen, which is
 // how one that arrives after its picker closed is told from the one the
 // picker now open is waiting for.
-func suggestCmd(d Deps, s ReactSuggester, gen int64, ask jev.Ask) tea.Cmd {
+func suggestCmd(d Deps, s ReactSuggester, gen int64, messageID string, ask jev.Ask) tea.Cmd {
 	return func() tea.Msg {
-		ctx, cancel := waited(suggestTimeout)
+		ctx, cancel := waited(begin("suggest"), suggestTimeout)
 		defer cancel()
 		r, err := s.Rank(ctx, ask)
+		if err != nil {
+			d.log().ErrorContext(ctx, "jev suggest", "message", messageID, "err", err)
+		}
 		return suggestedMsg{gen: gen, rank: r, err: err}
 	}
 }
@@ -264,11 +267,11 @@ func (m Model) onSuggested(msg suggestedMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if msg.err != nil {
-		// The row is best effort, so a failure says so in the row itself and
-		// nowhere else: taking the notification line for it would cost the
-		// reader a message about something they did ask for. It is not
-		// cached either — the next press is worth another try.
-		m.deps.log().Error("jev suggest", "message", m.picker.target.MessageID, "err", msg.err)
+		// The row is best effort, so a failure says so in the row itself
+		// and, past the log suggestCmd wrote, nowhere else: taking the
+		// notification line for it would cost the reader a message about
+		// something they did ask for. It is not cached either — the next
+		// press is worth another try.
 		m.picker.suggest = suggestFailed
 		m.pickerGrid()
 		return m, nil

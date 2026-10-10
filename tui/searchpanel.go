@@ -91,7 +91,7 @@ func (m *Model) startRemote() tea.Cmd {
 	if len([]rune(strings.TrimSpace(m.searchQuery))) < remoteMinQuery {
 		return nil
 	}
-	ctx, cancel := context.WithCancel(larkcli.WithLane(context.Background(), larkcli.LaneInteractive))
+	ctx, cancel := context.WithCancel(larkcli.WithLane(begin("remote-search"), larkcli.LaneInteractive))
 	m.searchCancel, m.searchBusy = cancel, true
 	return remoteSearch(ctx, m.deps, m.searchQuery, m.searchGen)
 }

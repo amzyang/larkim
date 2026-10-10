@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"mime"
 	"net/http"
 	"os"
@@ -13,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/amzyang/larkim/internal/oplog"
 	"github.com/amzyang/larkim/larkcli"
 	"github.com/amzyang/larkim/store"
 )
@@ -20,25 +22,28 @@ import (
 // Fetcher downloads a URL; avatars are public CDN files that need no token.
 type Fetcher func(ctx context.Context, url string) (body []byte, contentType string, err error)
 
-// HTTPFetch is the production Fetcher.
-func HTTPFetch(ctx context.Context, url string) ([]byte, string, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return nil, "", err
+// HTTPFetcher is the production Fetcher. Every download is logged to log.
+func HTTPFetcher(log *slog.Logger) Fetcher {
+	c := &http.Client{Timeout: 30 * time.Second, Transport: oplog.Transport{Log: log, Name: "fetch"}}
+	return func(ctx context.Context, url string) ([]byte, string, error) {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+		if err != nil {
+			return nil, "", err
+		}
+		resp, err := c.Do(req)
+		if err != nil {
+			return nil, "", err
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			return nil, "", fmt.Errorf("GET %s: %s", url, resp.Status)
+		}
+		body, err := io.ReadAll(io.LimitReader(resp.Body, RemoteCeiling))
+		return body, resp.Header.Get("Content-Type"), err
 	}
-	resp, err := (&http.Client{Timeout: 30 * time.Second}).Do(req)
-	if err != nil {
-		return nil, "", err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return nil, "", fmt.Errorf("GET %s: %s", url, resp.Status)
-	}
-	body, err := io.ReadAll(io.LimitReader(resp.Body, RemoteCeiling))
-	return body, resp.Header.Get("Content-Type"), err
 }
 
-// RemoteCeiling is what HTTPFetch reads at most. It truncates rather than
+// RemoteCeiling is what HTTPFetcher reads at most. It truncates rather than
 // failing, so a body that comes back at exactly the ceiling is refused:
 // uploading a half-downloaded picture is worse than refusing to send.
 const RemoteCeiling = 8 << 20
@@ -239,7 +244,7 @@ func (s *Syncer) resolveBotAvatarURLs(ctx context.Context, now time.Time) error 
 		}
 		if name != "" {
 			if err := s.Store.UpsertContacts(ctx, []store.Contact{{OpenID: b.OpenID, Name: name, IsBot: true}}, now.UnixMilli()); err != nil {
-				s.log().Warn("name a bot", "open_id", b.OpenID, "err", err)
+				s.log().WarnContext(ctx, "name a bot", "open_id", b.OpenID, "err", err)
 			}
 		}
 	}
@@ -355,7 +360,7 @@ func (s *Syncer) resolveAvatarURLs(ctx context.Context, now time.Time) error {
 		// A name refresh riding along with the avatar lookup is best-effort:
 		// the next lookup brings the same names round again.
 		if err := s.Store.UpsertContacts(ctx, named, now.UnixMilli()); err != nil {
-			s.log().Warn("refresh contact names", "contacts", len(named), "err", err)
+			s.log().WarnContext(ctx, "refresh contact names", "contacts", len(named), "err", err)
 		}
 	}
 	return nil
@@ -366,7 +371,7 @@ func (s *Syncer) resolveAvatarURLs(ctx context.Context, now time.Time) error {
 func (s *Syncer) downloadAvatar(ctx context.Context, kind, id, url string) string {
 	body, ctype, err := s.Fetch(ctx, url)
 	if err != nil || len(body) == 0 {
-		s.log().Warn("avatar download failed", "id", id, "err", err)
+		s.log().WarnContext(ctx, "avatar download failed", "id", id, "err", err)
 		return store.AvatarFailed
 	}
 	ext := ".img"
@@ -383,7 +388,7 @@ func (s *Syncer) downloadAvatar(ctx context.Context, kind, id, url string) strin
 		return store.AvatarFailed
 	}
 	if err := os.WriteFile(abs, body, 0o600); err != nil {
-		s.log().Warn("avatar write failed", "path", abs, "err", err)
+		s.log().WarnContext(ctx, "avatar write failed", "path", abs, "err", err)
 		return store.AvatarFailed
 	}
 	return rel

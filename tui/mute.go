@@ -16,7 +16,7 @@ type chatMutedMsg struct {
 
 func setChatMutedCmd(d Deps, chatID string, muted bool) tea.Cmd {
 	return func() tea.Msg {
-		ctx, cancel := waited(sendTimeout)
+		ctx, cancel := waited(begin("mute"), sendTimeout)
 		defer cancel()
 		if err := d.Client.SetChatMuted(ctx, chatID, muted); err != nil {
 			return chatMutedMsg{chatID: chatID, muted: muted, err: err}

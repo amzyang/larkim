@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"context"
 	"log/slog"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/amzyang/larkim/internal/oplog"
 	"github.com/amzyang/larkim/larkcli"
 	"github.com/stretchr/testify/require"
 )
@@ -41,7 +43,7 @@ func runOneTick(t *testing.T, s *Syncer) {
 
 func atLevel(s *Syncer, level slog.Level) *bytes.Buffer {
 	var buf bytes.Buffer
-	s.Log = slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: level}))
+	s.Log = oplog.NewText(&buf, level)
 	return &buf
 }
 
@@ -140,4 +142,85 @@ func TestReport_NamingTheHeadIsNotARecord(t *testing.T) {
 		"the probe names the head on every tick, so naming alone says nothing landed")
 	require.True(t, Report{Probed: 1}.changed(),
 		"reaching a message the store had not seen does")
+}
+
+// opIDs collects the op_id of every record in buf, and fails on a record that
+// carries none: a line outside the operation is one a grep cannot follow.
+func opIDs(t *testing.T, buf *bytes.Buffer) []string {
+	t.Helper()
+	var ids []string
+	for line := range strings.Lines(buf.String()) {
+		_, after, ok := strings.Cut(line, " op_id=")
+		require.True(t, ok, "record outside the operation: %s", line)
+		id, _, _ := strings.Cut(strings.TrimSpace(after), " ")
+		ids = append(ids, id)
+	}
+	return ids
+}
+
+func TestTick_LogsEveryRecordUnderOneOperation(t *testing.T) {
+	t.Parallel()
+	s, f, clk := newSyncer(t)
+	f.Chats = []larkcli.RawChat{{ChatID: "oc_a", Name: "Alpha", ChatMode: "group"}}
+	f.AddMessage(msg("om_new", "oc_a", clk.t.Add(-30*time.Second), "fresh"))
+	first := atLevel(s, slog.LevelDebug)
+
+	_, err := s.Tick(t.Context())
+	require.NoError(t, err)
+	a := opIDs(t, first)
+	require.NotEmpty(t, a)
+	require.Len(t, slices.Compact(slices.Clone(a)), 1, "one tick is one operation")
+	require.Contains(t, first.String(), "op=tick")
+
+	second := atLevel(s, slog.LevelDebug)
+	_, err = s.Tick(t.Context())
+	require.NoError(t, err)
+	b := opIDs(t, second)
+	require.NotEmpty(t, b)
+	require.NotEqual(t, a[0], b[0], "the next tick is the next operation")
+}
+
+func TestTick_StaysInsideTheCallersOperation(t *testing.T) {
+	t.Parallel()
+	s, _, _ := newSyncer(t)
+	buf := atLevel(s, slog.LevelDebug)
+	ctx := oplog.With(t.Context(), "sync")
+	op, _ := oplog.From(ctx)
+
+	_, err := s.Tick(ctx)
+	require.NoError(t, err)
+	for _, id := range opIDs(t, buf) {
+		require.Equal(t, op.ID, id, ":sync from the TUI reads as the keypress that asked for it")
+	}
+}
+
+func TestRun_LogsATimedOutTickUnderItsOperation(t *testing.T) {
+	t.Parallel()
+	s, f, _ := newSyncer(t)
+	f.Err = handshakeTimeout()
+	buf := atLevel(s, slog.LevelInfo)
+
+	runOneTick(t, s)
+
+	line := logLine(buf, "tick timed out")
+	require.Contains(t, line, "op=tick")
+	require.Contains(t, line, "op_id=")
+}
+
+func TestRunDiscovery_LogsEachCycleUnderItsOwnOperation(t *testing.T) {
+	t.Parallel()
+	s, f, clk := newSyncer(t)
+	f.Chats = []larkcli.RawChat{{ChatID: "oc_a", ChatMode: "group"}}
+	discovering(t, s, f, clk.t)
+	s.SetAttended(true)
+	f.Err = handshakeTimeout()
+	buf := atLevel(s, slog.LevelInfo)
+
+	ctx, cancel := context.WithTimeout(t.Context(), attendedDiscoveryPause/2)
+	defer cancel()
+	s.runDiscovery(ctx)
+
+	line := logLine(buf, "discovery timed out")
+	require.Contains(t, line, "op=discover")
+	require.Contains(t, line, "op_id=")
 }

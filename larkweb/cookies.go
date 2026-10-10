@@ -66,7 +66,7 @@ func (j BrowserJar) Cookies(ctx context.Context, host string) ([]*http.Cookie, e
 	for store, err := range kooky.TraverseCookieStores(ctx) {
 		if err != nil {
 			// Named at debug: a jar this call does not need is the common case.
-			j.log().Debug("find cookie store", "err", err)
+			j.log().DebugContext(ctx, "find cookie store", "err", err)
 			continue
 		}
 		if store.Browser() != j.Browser {
@@ -76,7 +76,7 @@ func (j BrowserJar) Cookies(ctx context.Context, host string) ([]*http.Cookie, e
 		r.add(store.Profile(), store.TraverseCookies(kooky.Valid, kooky.DomainHasSuffix(cookieDomain)))
 		store.Close()
 	}
-	return r.result()
+	return r.result(ctx)
 }
 
 // jarRead folds the stores of one browser into the cookies a host is sent.
@@ -115,11 +115,11 @@ func (r *jarRead) add(profile string, seq kooky.CookieSeq) {
 	}
 }
 
-func (r *jarRead) result() ([]*http.Cookie, error) {
+func (r *jarRead) result(ctx context.Context) ([]*http.Cookie, error) {
 	switch {
 	case r.haveSession:
 		if r.failed != nil {
-			r.log.Debug("read cookie store", "browser", r.browser, "err", r.failed)
+			r.log.DebugContext(ctx, "read cookie store", "browser", r.browser, "err", r.failed)
 		}
 		return r.cookies, nil
 	case r.failed != nil:

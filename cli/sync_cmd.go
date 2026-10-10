@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/amzyang/larkim/internal/oplog"
 	"github.com/amzyang/larkim/store"
 	"github.com/amzyang/larkim/sync"
 	"github.com/spf13/cobra"
@@ -36,6 +37,8 @@ func (a *App) syncCmd() *cobra.Command {
 			defer lock.Unlock()
 			ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 			defer cancel()
+			// The identity check and the tick are one run, and the tick keeps it.
+			ctx = oplog.With(ctx, "sync")
 			s := a.syncer(st)
 			if _, err := s.EnsureIdentity(ctx); err != nil {
 				return err

@@ -86,27 +86,32 @@ func EventLink(calendarID, eventID string, startMs int64) string {
 // what puts a message's pictures in a single viewer window with the rest in
 // its sidebar — the way the client opens them — instead of scattering them
 // over as many windows as the message had pictures.
-func Open(log *slog.Logger, targets []string) error {
+func Open(ctx context.Context, log *slog.Logger, targets []string) error {
 	// The argv exists whole only here. It carries at info because an open
 	// moves the Feishu client under the reader's hands and a call that lands
 	// leaves no other trace. The argv is quoted and nothing is elided, so the
 	// line pastes back into a shell to see what macOS was asked.
-	log.Info("open", "argv", "open "+larkcli.ArgvLine(targets))
+	log.InfoContext(ctx, "open", "argv", "open "+larkcli.ArgvLine(targets))
 	// open hands the URL to LaunchServices and returns, so a call still
 	// running after this is one that will not return; the clear queue waits
 	// on it, and a wait with no end would stop the sweep for good.
-	ctx, cancel := context.WithTimeout(context.Background(), openTimeout)
+	ctx, cancel := context.WithTimeout(ctx, openTimeout)
 	defer cancel()
 	// open reports why it refused on stderr and nothing but a status to the
 	// caller, so dropping stderr would leave every failure as "exit status 1".
 	cmd := exec.CommandContext(ctx, "open", targets...)
 	var stderr strings.Builder
 	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
+	started := time.Now()
+	err := cmd.Run()
+	if err != nil {
 		if msg := strings.TrimSpace(stderr.String()); msg != "" {
-			return fmt.Errorf("open: %w: %s", err, msg)
+			err = fmt.Errorf("open: %w: %s", err, msg)
+		} else {
+			err = fmt.Errorf("open: %w", err)
 		}
-		return fmt.Errorf("open: %w", err)
 	}
-	return nil
+	// The closing half of the pair: an open that hangs is the one without it.
+	log.InfoContext(ctx, "open done", "dur_ms", time.Since(started).Milliseconds(), "err", err)
+	return err
 }

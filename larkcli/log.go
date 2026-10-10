@@ -15,7 +15,7 @@ import (
 // place, that wait is the difference between a slow gateway and a busy sweep.
 func (c *ExecClient) logRequest(ctx context.Context, call uint64, args []string, l Lane, queued time.Duration) {
 	c.logger().DebugContext(ctx, "lark-cli request", "call", call, "argv", ArgvLine(args),
-		"lane", l, "queued", queued)
+		"lane", l, "queued_ms", queued.Milliseconds())
 }
 
 // logResponse closes the pair. A refusal is logged whether or not debug is on,
@@ -28,7 +28,7 @@ func (c *ExecClient) logResponse(ctx context.Context, call uint64, args []string
 	}
 	if exitCode != 0 {
 		e := decodeError(exitCode, stderr)
-		attrs := []any{"call", call, "argv", ArgvLine(args), "dur", dur, "exit", exitCode,
+		attrs := []any{"call", call, "argv", ArgvLine(args), "dur_ms", dur.Milliseconds(), "exit", exitCode,
 			"type", e.Type, "subtype", e.Subtype, "code", e.Code, "log_id", e.LogID,
 			"retry_after", e.RetryAfter}
 		if e.APICode != 0 {
@@ -39,7 +39,7 @@ func (c *ExecClient) logResponse(ctx context.Context, call uint64, args []string
 		c.logger().WarnContext(ctx, "lark-cli response", attrs...)
 		return
 	}
-	attrs := []any{"call", call, "cmd", args[0], "dur", dur, "bytes", len(stdout)}
+	attrs := []any{"call", call, "cmd", args[0], "dur_ms", dur.Milliseconds(), "bytes", len(stdout)}
 	if n := pages(stderr); n > 0 {
 		attrs = append(attrs, "pages", n)
 	}

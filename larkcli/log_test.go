@@ -7,13 +7,14 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/amzyang/larkim/internal/oplog"
 	"github.com/stretchr/testify/require"
 )
 
 // logged attaches a logger at level to c and returns what it writes.
 func logged(c *ExecClient, level slog.Level) *bytes.Buffer {
 	var buf bytes.Buffer
-	c.Log = slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: level}))
+	c.Log = oplog.NewText(&buf, level)
 	return &buf
 }
 
@@ -44,9 +45,27 @@ func TestExec_LogsARequestAndAResponseForEveryCall(t *testing.T) {
 	require.Contains(t, resp[0], "call=1", "the pair carries the same id so interleaved lanes stay readable")
 	require.Contains(t, req[0], "/open-apis/im/v1/chats", "the argv is the request detail")
 	require.Contains(t, req[0], "lane=background")
-	require.Contains(t, req[0], "queued=")
-	require.Contains(t, resp[0], "dur=")
+	require.Contains(t, req[0], "queued_ms=")
+	require.Regexp(t, `dur_ms=\d+ `, resp[0], "whole milliseconds, so the field sorts and filters as a number")
 	require.Contains(t, resp[0], "bytes=")
+}
+
+func TestExec_LogsEveryLineUnderTheCallersOperation(t *testing.T) {
+	t.Parallel()
+	c := fakeBinary(t, `echo '{"ok":false,"identity":"user","error":{"type":"api","code":231203,"message":"nope"}}'`)
+	buf := logged(c, slog.LevelDebug)
+	ctx := oplog.With(t.Context(), "send")
+	op, _ := oplog.From(ctx)
+
+	_, err := c.ListChats(ctx)
+	require.Error(t, err)
+
+	for _, msg := range []string{"lark-cli request", "lark-cli response", "lark-cli refused"} {
+		got := lines(buf, msg)
+		require.Len(t, got, 1, msg)
+		require.Contains(t, got[0], "op=send", msg)
+		require.Contains(t, got[0], "op_id="+op.ID, msg)
+	}
 }
 
 func TestExec_LogsARefusalWhenDebugIsOff(t *testing.T) {

@@ -11,6 +11,7 @@ import (
 	stdsync "sync"
 	"time"
 
+	"github.com/amzyang/larkim/internal/oplog"
 	"github.com/amzyang/larkim/larkcli"
 )
 
@@ -246,17 +247,18 @@ func (s *Syncer) runDiscovery(ctx context.Context) {
 	failures := 0
 	var timeouts timeoutRun
 	for {
-		loggedOut, err := s.loggedOut(ctx)
+		cycle := oplog.With(ctx, "discover")
+		loggedOut, err := s.loggedOut(cycle)
 		var moved int
 		if err == nil && !loggedOut {
-			moved, err = s.scoutOnce(ctx, sc, s.now())
+			moved, err = s.scoutOnce(cycle, sc, s.now())
 		}
 		if ctx.Err() != nil {
 			return
 		}
 		if err = timeouts.judge(err, s.now()); excused(err) {
 			// An empty cycle, on the usual pace.
-			s.log().InfoContext(ctx, "discovery timed out", "err", err)
+			s.log().InfoContext(cycle, "discovery timed out", "err", err)
 			err = nil
 		}
 		wake := s.attend
@@ -271,12 +273,12 @@ func (s *Syncer) runDiscovery(ctx context.Context) {
 		pause := s.discoveryPause(loggedOut, err, failures)
 		switch {
 		case err != nil:
-			s.log().Warn("discovery failed", "err", err, "class", errClass(err), "failures", failures, "retry_in", pause)
+			s.log().WarnContext(cycle, "discovery failed", "err", err, "class", errClass(err), "failures", failures, "retry_in", pause)
 			if s.OnError != nil {
 				s.OnError(err)
 			}
 		case !loggedOut && moved > 0:
-			s.log().DebugContext(ctx, "discovery", "moved", moved)
+			s.log().DebugContext(cycle, "discovery", "moved", moved)
 		}
 		select {
 		case <-ctx.Done():

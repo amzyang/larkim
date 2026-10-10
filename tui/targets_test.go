@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"path/filepath"
 	"testing"
 
@@ -86,7 +87,7 @@ func TestBodyRows_AnUndownloadedPictureHasNothingToOpen(t *testing.T) {
 func targetPage(t *testing.T, msg store.Message, res []store.Resource) (Model, *[][]string) {
 	t.Helper()
 	var calls [][]string
-	m := New(Deps{Self: "ou_me", DataDir: "/data", OpenURL: func(targets []string) error {
+	m := New(Deps{Self: "ou_me", DataDir: "/data", OpenURL: func(_ context.Context, targets []string) error {
 		calls = append(calls, targets)
 		return nil
 	}})

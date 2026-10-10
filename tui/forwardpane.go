@@ -212,7 +212,7 @@ func (m Model) onForwardExpanded(msg forwardExpandedMsg) (tea.Model, tea.Cmd) {
 // background sweep it would otherwise queue behind runs every few seconds.
 func expandForward(d Deps, bundleID, level string) tea.Cmd {
 	return func() tea.Msg {
-		ctx, cancel := waited(expandTimeout)
+		ctx, cancel := waited(begin("expand-forward"), expandTimeout)
 		defer cancel()
 		// The queue row belongs to the outermost bundle; one call brings back
 		// every level of the tree, this one among them.
