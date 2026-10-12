@@ -515,7 +515,13 @@ func (t *Triager) show(ctx context.Context, b Banner) {
 				t.open(ctx, b.JoinLink)
 			}
 		case ActionOpen:
-			t.goTo(ctx, b)
+			// A live call is there to be joined, not read: the click goes
+			// into it rather than to the chat.
+			if b.JoinLink != "" {
+				t.open(ctx, b.JoinLink)
+			} else {
+				t.goTo(ctx, b)
+			}
 		}
 	})
 }

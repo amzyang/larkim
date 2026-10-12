@@ -32,7 +32,7 @@ func (a Alerter) Show(ctx context.Context, b Banner) (string, error) {
 
 // alerterArgs spells b for alerter. A body clicked is the Open the client's
 // own banner offers, so only a call gets a button: Join, which goes straight
-// into it.
+// into it, as a click on a live call's body does too.
 func alerterArgs(b Banner) []string {
 	args := []string{"--title", noFlag(b.Title), "--message", noFlag(b.Body), "--close-label", "Dismiss",
 		"--timeout", "60", "--ignore-dnd"}

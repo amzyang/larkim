@@ -331,6 +331,26 @@ func TestTriager_VCBannerOffersJoinOnlyForLiveCallWithNumber(t *testing.T) {
 	require.Equal(t, []string{"lark://vc.feishu.cn/j/100000000"}, h.desktop.urls())
 }
 
+func TestTriager_ClickOnALiveCallBannerJoinsItWithoutTheTUI(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	h.notifier.action = ActionOpen
+	h.presence.peers = []presence.State{{PID: 1}}
+	call := store.Message{MessageID: "om_live", ChatID: "oc_team", MsgType: "video_chat", SenderID: "ou_a",
+		SenderType: "user", SenderName: "张三", ContentRaw: `{"topic":"站会","meet_number":"100000000","start_time":"1"}`}
+	h.arrive(t, call, 0)
+	h.pass(t)
+	require.Equal(t, []string{"lark://vc.feishu.cn/j/100000000"}, h.desktop.urls())
+	require.Empty(t, h.presence.opened)
+	require.Empty(t, h.presence.raised)
+
+	ended := call
+	ended.MessageID, ended.ContentRaw = "om_ended", `{"topic":"站会","meet_number":"100000000","start_time":"1","end_time":"60"}`
+	h.arrive(t, ended, 0)
+	h.pass(t)
+	require.Equal(t, []string{"oc_team"}, h.presence.opened, "an ended call has nothing to join, so its chat opens")
+}
+
 func TestTriager_DraftsP0IntoCandidatesAndGivesUpAfterTwoTries(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t)
