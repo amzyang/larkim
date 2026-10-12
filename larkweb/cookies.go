@@ -56,7 +56,8 @@ type BrowserJar struct {
 // absence that does matter — no session cookie — is reported as such, so a
 // reader is told to log in rather than left to read a 401 off the gateway;
 // when rows failed to read, the session may be there behind them, and the
-// error carries that failure instead.
+// error carries that failure instead, as it does for a store the system
+// refused to open.
 func (j BrowserJar) Cookies(ctx context.Context, host string) ([]*http.Cookie, error) {
 	r := jarRead{browser: j.Browser, host: host, log: j.log()}
 	// The browser is picked per store, before any cookie is read. Filtering
@@ -65,8 +66,7 @@ func (j BrowserJar) Cookies(ctx context.Context, host string) ([]*http.Cookie, e
 	// for Edge's key on a machine configured to read Chrome.
 	for store, err := range kooky.TraverseCookieStores(ctx) {
 		if err != nil {
-			// Named at debug: a jar this call does not need is the common case.
-			j.log().DebugContext(ctx, "find cookie store", "err", err)
+			r.unopened(ctx, err)
 			continue
 		}
 		if store.Browser() != j.Browser {
@@ -112,6 +112,21 @@ func (r *jarRead) add(profile string, seq kooky.CookieSeq) {
 			r.haveSession = true
 		}
 		r.cookies = append(r.cookies, &http.Cookie{Name: c.Name, Value: c.Value})
+	}
+}
+
+// unopened takes a store the finders could not open. A browser that was never
+// installed has no store to open, which is the common case; anything else is
+// the store being there and refused, and it counts like a row that failed.
+// The finders do not say whose store it was, so a refusal is kept whichever
+// browser it belonged to: it only surfaces when no session was found.
+func (r *jarRead) unopened(ctx context.Context, err error) {
+	if errors.Is(err, fs.ErrNotExist) {
+		r.log.DebugContext(ctx, "find cookie store", "err", err)
+		return
+	}
+	if r.failed == nil {
+		r.failed = err
 	}
 }
 

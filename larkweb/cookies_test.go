@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/fs"
 	"net/http"
+	"syscall"
 	"testing"
 
 	"github.com/browserutils/kooky"
@@ -91,6 +92,34 @@ func TestJarRead_SendsToLogInWhenNoStoreHoldsASession(t *testing.T) {
 
 	require.ErrorContains(t, err, "no Feishu web session in chrome; log in at feishu.cn")
 	require.NotErrorIs(t, err, fs.ErrNotExist)
+}
+
+// macOS refuses a process whose binary is gone the browser's data directory,
+// so the store is never opened at all. That is not a logged-out browser
+// either, and the refusal is what has to reach the reader.
+func TestJarRead_ReportsAStoreTheSystemRefusedToOpen(t *testing.T) {
+	denied := &fs.PathError{Op: "open", Path: "/Users/linlan/Chrome/Local State", Err: syscall.EPERM}
+	r := newJarRead()
+	r.unopened(t.Context(), &fs.PathError{Op: "open", Path: "/Users/linlan/Chromium/Local State", Err: fs.ErrNotExist})
+	r.unopened(t.Context(), denied)
+
+	_, err := r.result(t.Context())
+
+	require.ErrorIs(t, err, fs.ErrPermission)
+	require.ErrorContains(t, err, "/Users/linlan/Chrome/Local State")
+	require.NotContains(t, err.Error(), "log in")
+}
+
+// A browser the machine never installed leaves no store to open; with the
+// installed one readable, a missing session still means logging in.
+func TestJarRead_ABrowserThatIsNotInstalledIsNotAFailure(t *testing.T) {
+	r := newJarRead()
+	r.unopened(t.Context(), &fs.PathError{Op: "open", Path: "/Users/linlan/Brave/Local State", Err: fs.ErrNotExist})
+	r.add("Default", cookieSeq(jarCookie("lang")))
+
+	_, err := r.result(t.Context())
+
+	require.ErrorContains(t, err, "no Feishu web session in chrome; log in at feishu.cn")
 }
 
 func TestJarRead_ASessionOutweighsRowsThatFailed(t *testing.T) {
