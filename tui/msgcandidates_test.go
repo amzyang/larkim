@@ -60,6 +60,27 @@ func TestCandidateRows_DrawAReactionByItsEmoji(t *testing.T) {
 	out := ansi.Strip(rowText(renderRows(m.msgs, st)))
 	require.Less(t, strings.Index(out, "收到"), strings.Index(out, "[Like]"), "the reply leads, the reactions follow")
 	require.Contains(t, out, "[GotIt]")
+	require.NotContains(t, out, "[Like] Like", "the bracketed name is the emoji, not a label before its name")
+}
+
+// A suggested reaction is not on the message yet, so it is drawn as an emoji
+// standing in text is: no chip tint behind it, and no name after it.
+func TestCandidateRows_DrawAReactionAsABarePicture(t *testing.T) {
+	t.Parallel()
+	m, _ := reactCandModel(t)
+	dir := t.TempDir()
+	writeTestEmoji(t, dir, "THUMBSUP")
+	writeTestEmoji(t, dir, "Get")
+	st := baseStyle()
+	st.dataDir = dir
+	st.place = picturesIn(dir).place
+	st.candidates = m.candidatesForStyle()
+
+	segs := candidateEmoji("THUMBSUP", st)
+	require.Len(t, segs, 1, "the picture alone")
+	require.Positive(t, segs[0].pic.cols)
+	require.False(t, segs[0].pic.chip, "no reaction tint behind a suggestion")
+	require.NotContains(t, ansi.Strip(rowText(renderRows(m.msgs, st))), "Like")
 }
 
 func TestCandidateRows_SendOnAReactionReactsToTheSource(t *testing.T) {

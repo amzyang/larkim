@@ -99,18 +99,18 @@ func candidateRows(x store.Message, idx int, st msgStyle, g *leads) []msgRow {
 	return rows
 }
 
-// candidateEmoji draws a reaction candidate the way the strip above it draws
-// a chip's emoji: the client's picture, its name in brackets where the
-// terminal draws none, and the name after it either way, since a suggestion
-// has to be read before it is sent.
+// candidateEmoji draws a reaction candidate as an emoji standing in text, not
+// as a chip: it is not on the message yet, so it carries no reaction tint. The
+// client's picture alone, or its name in brackets where the terminal draws none.
 func candidateEmoji(key string, st msgStyle) []rowSeg {
-	e, _ := emoji.ByKey(key)
-	name := stDim.Render(" " + e.Name())
-	pic, label := emojiFace(key, st)
-	if pic.cols > 0 {
-		return []rowSeg{{pic: pic}, {text: name}}
+	e, ok := emoji.ByKey(key)
+	if !ok {
+		return []rowSeg{{text: "[" + key + "]"}}
 	}
-	return []rowSeg{{text: label + name}}
+	if pic := st.emojiInline(e.Key); pic.cols > 0 {
+		return []rowSeg{{pic: pic}}
+	}
+	return []rowSeg{{text: "[" + e.Name() + "]"}}
 }
 
 type candZone struct {
