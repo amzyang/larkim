@@ -593,6 +593,10 @@ func (t *Triager) draft(ctx context.Context, o store.Triage, self string) error 
 	if err != nil {
 		return err
 	}
+	// A call is answered by joining it; there is nothing to reply or react.
+	if slices.Contains(vcTypes, m.MsgType) {
+		return done()
+	}
 	answered, err := t.Store.Answered(ctx, m.MessageID, self)
 	if err != nil {
 		return err

@@ -351,6 +351,23 @@ func TestTriager_ClickOnALiveCallBannerJoinsItWithoutTheTUI(t *testing.T) {
 	require.Equal(t, []string{"oc_team"}, h.presence.opened, "an ended call has nothing to join, so its chat opens")
 }
 
+func TestTriager_DoesNotDraftForACall(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	d := &fakeDrafter{draft: Draft{Texts: []string{"马上到"}, Reactions: []string{"OK"}, Format: "text"}}
+	h.tr.Drafter = d
+	h.arrive(t, store.Message{MessageID: "om_call", ChatID: "oc_team", MsgType: "video_chat", SenderID: "ou_a",
+		SenderType: "user", SenderName: "张三", ContentRaw: `{"topic":"站会","meet_number":"100000000","start_time":"1"}`}, 0)
+	h.pass(t)
+	require.Equal(t, "P0", h.verdicts(t)["om_call"].Level)
+	require.NoError(t, h.tr.DraftPass(t.Context()))
+	require.Empty(t, d.asked)
+	cands, err := h.st.ChatCandidates(t.Context(), "oc_team", "ou_self")
+	require.NoError(t, err)
+	require.Empty(t, cands)
+	require.NotZero(t, h.verdicts(t)["om_call"].DraftedMs)
+}
+
 func TestTriager_DraftsP0IntoCandidatesAndGivesUpAfterTwoTries(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t)
