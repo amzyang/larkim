@@ -152,6 +152,7 @@ func TestMarkAllRead_AClearFailureIsReportedAndDoesNotStopTheChain(t *testing.T)
 
 	require.Len(t, *cleared, 3, "the chats behind a refusal have dots of their own")
 	require.Contains(t, m.notice, "3 not cleared in Feishu")
+	require.Contains(t, m.notice, errFailedClear.Error(), "the count alone does not say what to do about it")
 	require.True(t, m.noticeErr)
 }
 

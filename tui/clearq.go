@@ -35,6 +35,13 @@ type clearQueue struct {
 	// request to open anything, and an error banner there would blame the
 	// reader's navigation for a dot only the client still draws.
 	swept, failed int
+	// cause is the first failure of a mark-all, carried into its report: a
+	// count alone does not say whether to log in again or wait it out.
+	cause error
+	// asked holds the chats the reader took as read one at a time, by the
+	// label their section had, until their clear settles. Unlike the read
+	// gate's, that clear was asked for, so a refusal is reported.
+	asked map[string]string
 	// inflight counts the clears that have been fired and not yet answered.
 	// One routinely outlives the tick that started it, so the queue running
 	// dry is not the sweep being over — the last failures are still on their
@@ -48,8 +55,9 @@ type clearDueMsg struct{ gen int }
 // clearFiredMsg closes one clear, so the failures can be counted while the
 // chain keeps going.
 type clearFiredMsg struct {
-	gen int
-	err error
+	gen    int
+	chatID string
+	err    error
 }
 
 // pushClears queues chats to clear and arms the chain if it is not already
@@ -118,6 +126,15 @@ func (m Model) onClearFired(msg clearFiredMsg) (Model, tea.Cmd) {
 	m.clears.inflight--
 	if msg.err != nil {
 		m.clears.failed++
+		if m.clears.cause == nil {
+			m.clears.cause = msg.err
+		}
+	}
+	if label, ok := m.clears.asked[msg.chatID]; ok {
+		delete(m.clears.asked, msg.chatID)
+		if msg.err != nil {
+			m = m.notify(label+" not cleared in Feishu: "+msg.err.Error(), true)
+		}
 	}
 	if len(m.clears.left) == 0 && m.clears.inflight == 0 {
 		return m.closeSweep(), nil
@@ -139,15 +156,15 @@ func sweepNote(left int) string {
 // its own.
 func (m Model) closeSweep() Model {
 	m.clears.armed = false
-	swept, failed := m.clears.swept, m.clears.failed
-	m.clears.swept, m.clears.failed = 0, 0
+	swept, failed, cause := m.clears.swept, m.clears.failed, m.clears.cause
+	m.clears.swept, m.clears.failed, m.clears.cause = 0, 0, nil
 	if swept == 0 {
 		return m
 	}
 	note := strconv.Itoa(swept) + " chats marked read"
 	isErr := failed > 0
 	if isErr {
-		note += ", " + strconv.Itoa(failed) + " not cleared in Feishu"
+		note += ", " + strconv.Itoa(failed) + " not cleared in Feishu: " + cause.Error()
 	}
 	return m.notify(note, isErr)
 }
@@ -159,12 +176,12 @@ func fireBadgeClear(d Deps, c store.ChatUnread, gen int) tea.Cmd {
 		err := d.ClearBadge(ctx, c)
 		if err != nil {
 			d.Log.WarnContext(ctx, "clear feishu badge", "chat_id", c.ChatID, "err", err)
-			return clearFiredMsg{gen: gen, err: err}
+			return clearFiredMsg{gen: gen, chatID: c.ChatID, err: err}
 		}
 		if _, err := d.Store.AcceptRemoteRead(ctx, c.ChatID, c.Position); err != nil {
 			d.Log.WarnContext(ctx, "accept remote read", "chat_id", c.ChatID, "err", err)
-			return clearFiredMsg{gen: gen, err: err}
+			return clearFiredMsg{gen: gen, chatID: c.ChatID, err: err}
 		}
-		return clearFiredMsg{gen: gen}
+		return clearFiredMsg{gen: gen, chatID: c.ChatID}
 	}
 }

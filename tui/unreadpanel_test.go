@@ -870,6 +870,23 @@ func TestFeed_MTakesTheChatUnderTheCursorAsRead(t *testing.T) {
 	require.Contains(t, out, "项目协作群", "and the one still waiting stays")
 }
 
+// m is the reader asking for the chat to be read in Feishu too, so a clear the
+// gateway refuses is theirs to hear about, with the reason it gave: the local
+// read has already landed and nothing else on screen says the dot stayed.
+func TestFeed_MReportsAClearFeishuRefused(t *testing.T) {
+	t.Parallel()
+	m := feedModel(t)
+	m = onSection(t, m, "oc_platform")
+	m.deps.ClearBadge = func(context.Context, store.ChatUnread) error { return errFailedClear }
+
+	next, cmd := m.Update(tea.KeyPressMsg{Code: 'm', Text: "m"})
+	m = drain(t, next.(Model), cmd)
+
+	require.True(t, m.noticeErr)
+	require.Contains(t, m.notice, "平台组 not cleared in Feishu")
+	require.Contains(t, m.notice, errFailedClear.Error())
+}
+
 // loudFeed is the panel open on one chat owing more than a section holds, with
 // the badge clearer recorded instead of reaching Feishu.
 func loudFeed(t *testing.T) (Model, *[]store.ChatUnread) {

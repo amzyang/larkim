@@ -1000,7 +1000,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case markAllSetMsg:
 		return m.onMarkAllSet(msg)
 	case sectionDotMsg:
-		return m.pushClears(msg.chats)
+		return m.onSectionDot(msg)
 	case feedReadMsg:
 		return m.onFeedRead(msg)
 	case clearDueMsg:

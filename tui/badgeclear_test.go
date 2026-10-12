@@ -117,11 +117,12 @@ func TestFireBadgeClear_LeavesUnreadWhenClearFails(t *testing.T) {
 		}})
 	m.width, m.height = 120, 36
 	next, cmd := m.takeRead("oc_a", unreadPage())
-	drain(t, next, cmd)
+	m = drain(t, next, cmd)
 
 	got, err := st.GetMessage(t.Context(), "om_a")
 	require.NoError(t, err)
 	require.False(t, *got.IsReadRemote)
+	require.Empty(t, m.notice, "a clear the reader never asked for is not theirs to hear about")
 }
 
 func TestTakeRead_ClearsAgainForAMessageLandingInTheOpenChat(t *testing.T) {

@@ -218,18 +218,34 @@ func (m Model) markSectionRead(chatID string) (tea.Model, tea.Cmd) {
 	delete(m.feed.readHere, chatID)
 	// The reload answers the press rather than waiting on the store's own
 	// revision, the way onMarkAllDone does.
-	cmds := tea.Batch(sectionDot(m.deps, chatID), m.reloadCurrent())
+	cmds := tea.Batch(sectionDot(m.deps, chatID, label), m.reloadCurrent())
 	return m.notify(label+" taken as read", false), cmds
 }
 
 // sectionDotMsg carries the chat a section's mark-read still owes Feishu,
-// nothing when the client has no dot for it.
-type sectionDotMsg struct{ chats []store.ChatUnread }
+// nothing when the client has no dot for it, and the label the reader saw it
+// under for when the clear is refused.
+type sectionDotMsg struct {
+	chats []store.ChatUnread
+	label string
+}
+
+// onSectionDot queues the clear a section's mark-read owes and marks it as
+// asked for, so its refusal reaches the status line.
+func (m Model) onSectionDot(msg sectionDotMsg) (Model, tea.Cmd) {
+	for _, c := range msg.chats {
+		if m.clears.asked == nil {
+			m.clears.asked = map[string]string{}
+		}
+		m.clears.asked[c.ChatID] = msg.label
+	}
+	return m.pushClears(msg.chats)
+}
 
 // sectionDot reads the dot the client still draws for a chat. It does not
 // depend on local_read_at, so it reads the same whether or not the local
 // write batched beside it has landed.
-func sectionDot(d Deps, chatID string) tea.Cmd {
+func sectionDot(d Deps, chatID, label string) tea.Cmd {
 	return func() tea.Msg {
 		c, ok, err := d.Store.ChatWithUnread(context.Background(), chatID)
 		if err != nil {
@@ -238,7 +254,7 @@ func sectionDot(d Deps, chatID string) tea.Cmd {
 		if !ok {
 			return sectionDotMsg{}
 		}
-		return sectionDotMsg{chats: []store.ChatUnread{c}}
+		return sectionDotMsg{chats: []store.ChatUnread{c}, label: label}
 	}
 }
 
