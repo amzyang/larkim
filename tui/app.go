@@ -3206,7 +3206,16 @@ func (m Model) onClick(ms tea.Mouse) (tea.Model, tea.Cmd) {
 			return m.markSectionRead(m.feedChatAt(m.msgRows[line].idx))
 		}
 		if z, ok := zoneAt(m.msgRows, line, ms.X-chatsWidth-1); ok {
-			return m.pressZone(paneMessages, m.msgRows, line, z)
+			// Pressing a button on the Unread page acts on its message, which
+			// reads that message's chat the way landing on it does: the client
+			// only offers the button with the chat open. The cursor stays put,
+			// since a press selects nothing.
+			var read tea.Cmd
+			if m.inFeed() {
+				read = m.readFeedChat(m.feedChatAt(rowAt(m.msgRows, line)))
+			}
+			next, cmd := m.pressZone(paneMessages, m.msgRows, line, z)
+			return next, tea.Batch(read, cmd)
 		}
 		if idx := rowAt(m.msgRows, line); idx >= 0 {
 			// On the Unread page a click that hits no message and moves

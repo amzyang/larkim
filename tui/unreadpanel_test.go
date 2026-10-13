@@ -215,6 +215,44 @@ func TestFeed_LandingOnAMessageReadsItsChat(t *testing.T) {
 	}
 }
 
+// Pressing a link a message draws acts on that message, which reads its chat
+// the way landing on it does: in the client the button is only there to press
+// with the chat open. The cursor stays put, as a button press selects nothing.
+func TestOnClick_ALinkOnTheUnreadPageReadsItsChat(t *testing.T) {
+	t.Parallel()
+	m, _, cleared := readingFeed(t)
+	var opened []string
+	m.deps.OpenURL = func(_ context.Context, targets []string) error {
+		opened = append(opened, targets...)
+		return nil
+	}
+	body := "[去审批](https://example.com/approve)"
+	_, err := m.deps.Store.UpsertMessages(t.Context(), []store.Message{sayMsg("om_j2", "oc_project", 400, body)}, 1)
+	require.NoError(t, err)
+	require.NoError(t, m.deps.Store.UpdateRendered(t.Context(), "om_j2", body, "", 2))
+	owing(t, m.deps.Store, "om_j2")
+	m = applyAll(t, m, loadUnreadFeed(m.deps, m.feed))
+
+	line, col := -1, 0
+	for i, r := range m.msgRows {
+		for _, z := range r.zones {
+			if slices.Contains(z.urls, "https://example.com/approve") {
+				line, col = i, z.x0
+			}
+		}
+	}
+	require.GreaterOrEqual(t, line, 0, "the link draws a zone")
+	at := m.msgIdx
+
+	next, cmd := clickPane(m, col, line)
+	m = applyAll(t, next.(Model), cmd)
+
+	require.Equal(t, []string{"https://example.com/approve"}, opened)
+	require.Equal(t, []store.ChatUnread{{ChatID: "oc_project", Position: 400}}, *cleared)
+	require.Equal(t, []string{"oc_platform"}, waitingChats(t, m))
+	require.Equal(t, at, m.msgIdx, "the press does not move the cursor")
+}
+
 // A section stops at its cap; the chat it was cut from does not. The client's
 // dot falls with the whole backlog, not 80 messages short of it.
 func TestFeed_LandingReadsPastACutSection(t *testing.T) {
