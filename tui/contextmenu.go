@@ -39,7 +39,7 @@ const (
 	ctxIconReply       = "\uf122" + enSpace
 	ctxIconReplyThread = "\uf086" + enSpace
 	ctxIconReact       = "\uf118" + enSpace
-	ctxIconForward     = candSendIcon + enSpace
+	ctxIconForward     = "\uf1d8" + enSpace
 	ctxIconCopy        = "\uf0c5" + enSpace
 	ctxIconOpen        = "\uf054" + enSpace
 	ctxIconTodoist     = "\uf046" + enSpace

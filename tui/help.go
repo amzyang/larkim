@@ -153,7 +153,7 @@ func buildHelpEntries() []helpEntry {
 		{"MOUSE", "", "click a forwarded bundle's line to open it in the right pane"},
 		{"MOUSE", "", "one opened from inside that pane stacks over it; Esc peels one off"},
 		{"MOUSE", "", "click a reaction to add yours or take it back"},
-		{"MOUSE", "", "under a message's reactions, click x to dismiss a reply draft or the send icon to reply with it"},
+		{"MOUSE", "", "click a draft under a message's reactions: a reply goes into the composer, a reaction onto the message, x dismisses them all"},
 		{"MOUSE", "", "click the double check in the chats header to take every chat as read"},
 		{"MOUSE", "", "click the single check on a rule in Unread to take that one chat as read"},
 		{"MOUSE", "wheel", "scrolls"},

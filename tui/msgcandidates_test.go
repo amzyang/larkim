@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/amzyang/larkim/store"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/stretchr/testify/require"
@@ -18,6 +19,7 @@ func candMsgModel(t *testing.T) (Model, *store.Store) {
 	ctx := t.Context()
 	require.NoError(t, st.PutCandidates(ctx, "om_a", "oc_team", []string{"缓冲话术", "放行话术"}, nil, "text", 100))
 	m.chatCands, _ = st.ChatCandidates(ctx, "oc_team", "ou_me")
+	m.rebuildMessages()
 	return m, st
 }
 
@@ -52,15 +54,70 @@ func candWith(t *testing.T, m Model, reaction string) store.Candidate {
 	return m.chatCands[i]
 }
 
-func TestCandidateRows_DrawAReactionByItsEmoji(t *testing.T) {
+// candPress presses the target the chat pane drew for c, the way a click on
+// it does, or the box's dismiss button when dismiss is set.
+func candPress(t *testing.T, m Model, c store.Candidate, dismiss bool) (Model, tea.Cmd) {
+	t.Helper()
+	for line, r := range m.msgRows {
+		for _, z := range r.zones {
+			if z.cand.dismiss != dismiss || z.cand.c.Mid != c.Mid || !dismiss && z.cand.c != c {
+				continue
+			}
+			mm, cmd := m.pressZone(paneMessages, m.msgRows, line, z)
+			return mm.(Model), cmd
+		}
+	}
+	require.Fail(t, "no target drawn", "%+v dismiss=%v", c, dismiss)
+	return m, nil
+}
+
+// draftBox is the stripped lines of the box drawn for om_a's drafts, its
+// rounded corners included. Every line of it must be as wide as its border:
+// pictures and trimmed drafts alike take the cells the border counted.
+func draftBox(t *testing.T, rows []msgRow) []string {
+	t.Helper()
+	lines := strings.Split(strings.TrimSuffix(rowText(rows), "\n"), "\n")
+	top := slices.IndexFunc(lines, func(s string) bool { return strings.Contains(s, "╭") })
+	require.GreaterOrEqual(t, top, 0, "no box drawn:\n%s", strings.Join(lines, "\n"))
+	bottom := slices.IndexFunc(lines[top:], func(s string) bool { return strings.Contains(s, "╰") })
+	require.Positive(t, bottom, "the box is never closed")
+	box := lines[top : top+bottom+1]
+	w := ansi.StringWidth(box[0])
+	for _, l := range box {
+		require.Equal(t, w, ansi.StringWidth(l), "every line of the box is as wide as its border: %q", l)
+	}
+	return box
+}
+
+func TestCandidateRows_DrawTheDraftsInsideARoundedBox(t *testing.T) {
 	t.Parallel()
 	m, _ := reactCandModel(t)
 	st := baseStyle()
 	st.candidates = m.candidatesForStyle()
-	out := ansi.Strip(rowText(renderRows(m.msgs, st)))
-	require.Less(t, strings.Index(out, "收到"), strings.Index(out, "[Like]"), "the reply leads, the reactions follow")
-	require.Contains(t, out, "[GotIt]")
-	require.NotContains(t, out, "[Like] Like", "the bracketed name is the emoji, not a label before its name")
+	box := draftBox(t, renderRows(m.msgs, st))
+	require.Len(t, box, 4, "border, the reactions, the reply, border:\n%s", strings.Join(box, "\n"))
+	require.Contains(t, box[1], "[Like]")
+	require.Contains(t, box[1], "[GotIt]", "every reaction shares one line")
+	require.Greater(t, strings.Index(box[1], candDismissIcon), strings.Index(box[1], "[GotIt]"),
+		"dismiss closes the reactions line on its right")
+	require.Contains(t, box[2], "收到")
+	require.NotContains(t, box[2], candDismissIcon, "one dismiss for the whole box")
+	for _, l := range box {
+		require.NotContains(t, l, "\uf1d8", "no send icon before a draft")
+	}
+}
+
+func TestCandidateRows_DrawOneReplyPerLine(t *testing.T) {
+	t.Parallel()
+	m, _ := candMsgModel(t)
+	st := baseStyle()
+	st.candidates = m.candidatesForStyle()
+	box := draftBox(t, renderRows(m.msgs, st))
+	require.Len(t, box, 4)
+	require.Contains(t, box[1], "缓冲话术")
+	require.Contains(t, box[1], candDismissIcon, "with no reactions dismiss sits on the first reply")
+	require.Contains(t, box[2], "放行话术")
+	require.NotContains(t, box[2], candDismissIcon)
 }
 
 // A suggested reaction is not on the message yet, so it is drawn as an emoji
@@ -80,14 +137,47 @@ func TestCandidateRows_DrawAReactionAsABarePicture(t *testing.T) {
 	require.Len(t, segs, 1, "the picture alone")
 	require.Positive(t, segs[0].pic.cols)
 	require.False(t, segs[0].pic.chip, "no reaction tint behind a suggestion")
-	require.NotContains(t, ansi.Strip(rowText(renderRows(m.msgs, st))), "Like")
+	box := draftBox(t, renderRows(m.msgs, st))
+	require.NotContains(t, strings.Join(box, "\n"), "Like")
 }
 
-func TestCandidateRows_SendOnAReactionReactsToTheSource(t *testing.T) {
+// A narrow pane trims a long draft rather than letting it push the box's right
+// edge out of line.
+func TestCandidateRows_ANarrowPaneKeepsTheBoxSquare(t *testing.T) {
+	t.Parallel()
+	m, st := candMsgModel(t)
+	require.NoError(t, st.PutCandidates(t.Context(), "om_a", "oc_team",
+		[]string{strings.Repeat("很长的回复草稿", 12)}, nil, "text", 100))
+	m.chatCands, _ = st.ChatCandidates(t.Context(), "oc_team", "ou_me")
+	sty := baseStyle()
+	sty.width = 40
+	sty.candidates = m.candidatesForStyle()
+	box := draftBox(t, renderRows(m.msgs, sty))
+	_, border, _ := strings.Cut(box[0], "╭")
+	require.LessOrEqual(t, 1+ansi.StringWidth(border), sty.inner(), "the box, its marker column aside, fits the pane")
+	require.Contains(t, box[1], candDismissIcon, "the trim never costs the dismiss")
+}
+
+func TestCandidateRows_PressingAReplyPutsItInTheComposer(t *testing.T) {
+	t.Parallel()
+	m, _ := candMsgModel(t)
+	c := m.chatCands[1]
+	m, _ = candPress(t, m, c, false)
+	require.Equal(t, modeInsert, m.mode)
+	require.Equal(t, "放行话术", m.area().Value())
+	require.NotNil(t, m.replyTo)
+	require.Equal(t, "om_a", m.replyTo.MessageID, "the draft answers the message it sits under")
+	require.Empty(t, m.outbox, "nothing goes until Enter")
+	require.Equal(t, "om_a", m.candFilled)
+	require.Len(t, m.candidatesForStyle()["om_a"], 2, "the drafts stay until the reply is sent")
+}
+
+func TestCandidateRows_PressingAReactionReactsToTheSource(t *testing.T) {
 	t.Parallel()
 	m, st := reactCandModel(t)
-	m, cmd := m.sendInlineCandidate(candWith(t, m, "Get"), m.msgs[0])
+	m, cmd := candPress(t, m, candWith(t, m, "Get"), false)
 	require.NotNil(t, cmd)
+	require.Equal(t, modeNormal, m.mode, "a reaction has no wording to edit")
 	require.Empty(t, m.outbox, "a reaction is no message")
 	require.Len(t, m.reacts, 1)
 	p := m.reacts[0]
@@ -110,7 +200,7 @@ func TestCandidateRows_SendOnAReactionReactsToTheSource(t *testing.T) {
 func TestCandidateRows_AFailedReactionKeepsTheRow(t *testing.T) {
 	t.Parallel()
 	m, _ := reactCandModel(t)
-	m, _ = m.sendInlineCandidate(candWith(t, m, "Get"), m.msgs[0])
+	m, _ = candPress(t, m, candWith(t, m, "Get"), false)
 	mm, _ := m.update(reactedMsg{p: m.reacts[0], err: errors.New("no network")})
 	m = mm.(Model)
 	require.Len(t, m.candidatesForStyle()["om_a"], 3, "a refused press loses no suggestion")
@@ -125,8 +215,9 @@ func TestCandidateRows_AReactionAlreadyMineIsNotTakenBack(t *testing.T) {
 		`{"counts":[{"reaction_type":"THUMBSUP","count":"1"}],"details":[{"emoji_type":"THUMBSUP","operator":{"operator_id":"ou_me"}}]}`))
 	m.msgsBase, _ = m.deps.Store.ListMessages(t.Context(), store.MessageQuery{ChatID: "oc_team", Limit: 10})
 	m.applyOutbox()
+	m.rebuildMessages()
 
-	m, cmd := m.sendInlineCandidate(c, m.msgs[0])
+	m, cmd := candPress(t, m, c, false)
 	require.Nil(t, cmd)
 	require.Empty(t, m.reacts, "a candidate never takes a reaction back")
 	require.Contains(t, m.notice, "already")
@@ -149,49 +240,24 @@ func TestCandidateRows_DrawUnderReactions(t *testing.T) {
 	require.Contains(t, out, "放行话术")
 }
 
-func TestCandidateRows_IgnoreHidesDraft(t *testing.T) {
+// Dismiss answers the whole box: every draft under the message goes, here and
+// in the store, so the next reload cannot bring one back.
+func TestCandidateRows_DismissDropsEveryDraft(t *testing.T) {
 	t.Parallel()
-	m, st := candMsgModel(t)
-	c0 := m.chatCands[0]
-	m, cmd := m.ignoreInlineCandidate(c0)
-	require.Nil(t, cmd, "one draft left: mirror stays until all are dismissed")
-	stStyle := baseStyle()
-	stStyle.candidates = m.candidatesForStyle()
-	out := rowText(renderRows(m.msgs, stStyle))
-	require.NotContains(t, out, "缓冲话术")
-	require.Contains(t, out, "放行话术")
-	c1 := m.chatCands[1]
-	m, cmd = m.ignoreInlineCandidate(c1)
+	m, st := reactCandModel(t)
+	m, cmd := candPress(t, m, m.chatCands[0], true)
 	require.NotNil(t, cmd)
-	clearCandidate(m.deps, c0.Mid)()
-	rows, err := st.ChatCandidates(t.Context(), "oc_team", "")
-	require.NoError(t, err)
-	for _, r := range rows {
-		require.NotEqual(t, "om_a", r.Mid)
-	}
-}
-
-func TestCandidateRows_SendPostsReply(t *testing.T) {
-	t.Parallel()
-	m, st := candMsgModel(t)
-	c := m.chatCands[1]
-	msg := m.msgs[0]
-	m, cmd := m.sendInlineCandidate(c, msg)
-	require.NotNil(t, cmd)
-	require.Len(t, m.outbox, 1)
-	require.Equal(t, "om_a", m.outbox[0].replyTo)
-	require.Equal(t, "放行话术", strings.TrimSpace(m.outbox[0].body))
-	require.Equal(t, "om_a", m.candFilled)
 	require.Empty(t, m.candidatesForStyle()["om_a"])
-	mm, _ := m.update(sentMsg{localID: m.outbox[0].localID, messageID: "om_sent_1"})
-	m = mm.(Model)
-	require.Empty(t, m.candFilled)
-	clearCandidate(m.deps, "om_a")()
+	require.NotContains(t, rowText(m.msgRows), "╭", "no box is left behind")
+	require.Empty(t, m.reacts, "dismissing reacts with nothing")
+	require.Empty(t, m.outbox, "dismissing sends nothing")
+	cmd()
 	rows, err := st.ChatCandidates(t.Context(), "oc_team", "")
 	require.NoError(t, err)
-	for _, r := range rows {
-		require.NotEqual(t, "om_a", r.Mid)
-	}
+	require.Empty(t, rows)
+
+	m.chatCands, _ = st.ChatCandidates(t.Context(), "oc_team", "ou_me")
+	require.Empty(t, m.candidatesForStyle()["om_a"])
 }
 
 func TestVisibleCandidates_FiltersReplied(t *testing.T) {

@@ -3282,10 +3282,7 @@ func (m Model) pressZone(p pane, rows []msgRow, line int, z clickZone) (tea.Mode
 		if !ok {
 			return m, nil
 		}
-		if z.cand.send {
-			return m.sendInlineCandidate(z.cand.c, x)
-		}
-		return m.ignoreInlineCandidate(z.cand.c)
+		return m.pressCandidate(p, z.cand, x)
 	}
 	if z.jump != "" {
 		return m.jumpToQuoted(p, z.jump)

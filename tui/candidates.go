@@ -101,10 +101,8 @@ func (m Model) onCandidatesKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// chooseCandidate hands the reply at i to the composer. The mid is remembered
-// so the send that leaves the composer can drop the row: the message has been
-// answered, and its other drafts with it. A reaction has no wording to edit,
-// so it goes on the source message there and then.
+// chooseCandidate hands the reply at i to the composer. A reaction has no
+// wording to edit, so it goes on the source message there and then.
 func (m Model) chooseCandidate(i int) (tea.Model, tea.Cmd) {
 	if i < 0 || i >= len(m.cand.items) {
 		return m, nil
@@ -119,10 +117,16 @@ func (m Model) chooseCandidate(i int) (tea.Model, tea.Cmd) {
 		}
 		return m.notify("the message it answers is not loaded", true), nil
 	}
+	m.seedComposer(c)
+	return m.notify("candidate placed in the composer: i to edit, Enter to send", false), nil
+}
+
+// seedComposer puts a reply draft's wording in the composer and remembers its
+// mid, so the send that leaves the composer drops the message's drafts.
+func (m *Model) seedComposer(c store.Candidate) {
 	m.areap().SetValue(strings.TrimSpace(c.Text))
 	m.replan()
 	m.candFilled = c.Mid
-	return m.notify("candidate placed in the composer: i to edit, Enter to send", false), nil
 }
 
 // closeCandidates puts the composer back.

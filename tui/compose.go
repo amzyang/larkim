@@ -11,7 +11,6 @@ import (
 
 	"github.com/amzyang/larkim/larkcli"
 	"github.com/amzyang/larkim/larkmd"
-	"github.com/amzyang/larkim/store"
 )
 
 // draftKind is the Feishu message type a draft will be sent as. The composer
@@ -229,11 +228,6 @@ func (f draftFiles) planDraft(draft string) (draftPlan, error) {
 		p.send = larkcli.Markdown(p.body)
 	}
 	return p, nil
-}
-
-// planCandidate is what an inline or float draft send uses.
-func (f draftFiles) planCandidate(c store.Candidate) (draftPlan, error) {
-	return f.planDraft(strings.TrimSpace(c.Text))
 }
 
 // resolveImage turns one reference into something sendable: a key passes
