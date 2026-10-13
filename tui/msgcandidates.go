@@ -14,7 +14,7 @@ import (
 // a message's reactions; the float picker under C has none either.
 
 // candDismissIcon closes the box of drafts a message drew.
-const candDismissIcon = "\uf00d"
+const candDismissIcon = "✕"
 
 // candidateKey names one draft for session-local ignore.
 func candidateKey(c store.Candidate) string { return c.Mid + "\x00" + c.Text + "\x00" + c.Reaction }
