@@ -61,6 +61,7 @@ func TestTriager_EndToEnd(t *testing.T) {
 	require.NoError(t, err)
 	got, err := json.Marshal(map[string]any{
 		"triage": rows, "banners": h.notifier.shown(), "opened_in_client": h.desktop.urls(), "candidates": cands,
+		"marked_read": h.reader.posted(),
 	}, json.Deterministic(true), jsontext.WithIndent("  "))
 	require.NoError(t, err)
 

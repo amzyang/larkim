@@ -1,6 +1,7 @@
 // Package markread is the lever that drops the Feishu client's own red dot
 // once larkim has taken a chat as read, by posting the read watermark through
-// larkweb. The TUI, larkim read-all, and the silence settle share it.
+// larkweb. The TUI, larkim read-all, the silence settle and an answered
+// desktop banner share it.
 package markread
 
 import (
@@ -16,8 +17,8 @@ import (
 // Clear drops one chat's red dot.
 type Clear func(ctx context.Context, chat store.ChatUnread) error
 
-// timeout bounds one clear. Both callers wait on each before the next, so one
-// that never returns would stop a sweep for good; a first web clear lists the
+// timeout bounds one clear. Callers wait on each before the next, so one that
+// never returns would stop a sweep for good; a first web clear lists the
 // whole inbox, which this has to cover.
 const timeout = 30 * time.Second
 

@@ -121,6 +121,26 @@ func (p *fakePresence) Raise(_ context.Context, s presence.State) error {
 	return p.raiseErr
 }
 
+// fakeReader records every watermark a banner's answer posts.
+type fakeReader struct {
+	mu   gosync.Mutex
+	err  error
+	read []store.ChatUnread
+}
+
+func (r *fakeReader) clear(_ context.Context, c store.ChatUnread) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.read = append(r.read, c)
+	return r.err
+}
+
+func (r *fakeReader) posted() []store.ChatUnread {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return slices.Clone(r.read)
+}
+
 type harness struct {
 	tr       *Triager
 	st       *store.Store
@@ -128,6 +148,7 @@ type harness struct {
 	notifier *fakeNotifier
 	desktop  *fakeDesktop
 	presence *fakePresence
+	reader   *fakeReader
 }
 
 func newHarness(t *testing.T) *harness {
@@ -138,10 +159,10 @@ func newHarness(t *testing.T) *harness {
 	require.NoError(t, st.UpsertChats(t.Context(), []store.Chat{group, p2p,
 		{ChatID: "oc_muted", Name: "闲聊群", ChatMode: "group"}}, 1))
 	require.NoError(t, st.SetMuteStatus(t.Context(), map[string]bool{"oc_muted": true}, nil, 1))
-	h := &harness{st: st, clock: &fakeClock{t: t0}, notifier: &fakeNotifier{action: ActionDismiss},
-		desktop: &fakeDesktop{idle: time.Minute}, presence: &fakePresence{}}
+	h := &harness{st: st, clock: &fakeClock{t: t0}, notifier: &fakeNotifier{action: ActionTimeout},
+		desktop: &fakeDesktop{idle: time.Minute}, presence: &fakePresence{}, reader: &fakeReader{}}
 	h.tr = &Triager{Store: st, Notifier: h.notifier, Desktop: h.desktop, Presence: h.presence,
-		Clock: h.clock, Self: func(context.Context) string { return "ou_self" }}
+		Clock: h.clock, Self: func(context.Context) string { return "ou_self" }, Read: h.reader.clear}
 	h.tr.SetRules(NewRules(config.Notifications{}))
 	return h
 }
@@ -349,6 +370,107 @@ func TestTriager_ClickOnALiveCallBannerJoinsItWithoutTheTUI(t *testing.T) {
 	h.arrive(t, ended, 0)
 	h.pass(t)
 	require.Equal(t, []string{"oc_team"}, h.presence.opened, "an ended call has nothing to join, so its chat opens")
+}
+
+// arriveUnread stores m the way the sweep does an arrival Feishu reports
+// unseen, so a watermark has something to flip.
+func (h *harness) arriveUnread(t *testing.T, m store.Message) {
+	t.Helper()
+	h.arrive(t, m, 0)
+	unread := false
+	require.NoError(t, h.st.SetReadStatus(t.Context(), m.MessageID, &unread, h.clock.t.UnixMilli(), 0))
+}
+
+func (h *harness) readRemote(t *testing.T, id string) bool {
+	t.Helper()
+	m, err := h.st.GetMessage(t.Context(), id)
+	require.NoError(t, err)
+	return m.IsReadRemote != nil && *m.IsReadRemote
+}
+
+func TestTriager_EveryAnswerButATimeoutReadsTheChat(t *testing.T) {
+	t.Parallel()
+	liveCall := store.Message{MessageID: "om_a", ChatID: "oc_team", MsgType: "video_chat", SenderID: "ou_a", SenderType: "user",
+		ContentRaw: `{"topic":"站会","meet_number":"100000000","start_time":"1"}`}
+	for name, c := range map[string]struct {
+		action string
+		msg    store.Message
+		opened []string
+	}{
+		"open a message":   {ActionOpen, text("om_a", "oc_peer", "ou_a", "在吗"), []string{"oc_peer"}},
+		"mark a message":   {ActionMarkRead, text("om_a", "oc_peer", "ou_a", "在吗"), nil},
+		"open a live call": {ActionOpen, liveCall, nil},
+		"join a live call": {ActionJoin, liveCall, nil},
+		"mark a live call": {ActionMarkRead, liveCall, nil},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			h := newHarness(t)
+			h.notifier.action = c.action
+			h.presence.peers = []presence.State{{PID: 1}}
+			h.arriveUnread(t, c.msg)
+			h.pass(t)
+			require.Len(t, h.notifier.shown(), 1)
+			require.Equal(t, c.opened, h.presence.opened)
+			pos := h.notifier.shown()[0].Position
+			require.Equal(t, []store.ChatUnread{{ChatID: c.msg.ChatID, Position: pos}}, h.reader.posted())
+			require.True(t, h.readRemote(t, "om_a"))
+		})
+	}
+}
+
+func TestTriager_ATimeoutLeavesTheChatUnread(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	h.notifier.action = ActionTimeout
+	h.arriveUnread(t, text("om_a", "oc_peer", "ou_a", "在吗"))
+	h.pass(t)
+	require.Len(t, h.notifier.shown(), 1)
+	require.Empty(t, h.reader.posted(), "a banner nobody answered leaves the chat as it was")
+	require.False(t, h.readRemote(t, "om_a"))
+}
+
+func TestTriager_MarkReadOpensNothing(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	h.notifier.action = ActionMarkRead
+	h.presence.peers = []presence.State{{PID: 1}}
+	h.arriveUnread(t, text("om_a", "oc_peer", "ou_a", "在吗"))
+	h.pass(t)
+	require.Empty(t, h.presence.opened)
+	require.Empty(t, h.presence.raised)
+	require.Empty(t, h.desktop.urls())
+}
+
+func TestTriager_AThreadReplyOrAReminderReadsNothing(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	h.notifier.action = ActionMarkRead
+	h.arriveUnread(t, text("om_reply", "oc_peer", "ou_a", "楼里回一句"))
+	_, err := h.st.DB().ExecContext(t.Context(), `UPDATE messages SET message_position = -3 WHERE message_id = 'om_reply'`)
+	require.NoError(t, err)
+	h.pass(t)
+	require.Len(t, h.notifier.shown(), 1)
+	require.Empty(t, h.reader.posted(), "the watermark reaches main-flow messages only")
+
+	require.NoError(t, h.st.PutReminder(t.Context(), store.Reminder{MessageID: "om_due", ChatID: "oc_peer",
+		FireMs: h.clock.t.UnixMilli(), Title: "交周报"}))
+	h.pass(t)
+	require.Len(t, h.notifier.shown(), 2)
+	require.Empty(t, h.reader.posted(), "a reminder is not the message it was planned from")
+}
+
+func TestTriager_ARefusedReadStillOpensAndLeavesTheChatUnread(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	h.notifier.action = ActionOpen
+	h.reader.err = errors.New("no Feishu web session")
+	h.presence.peers = []presence.State{{PID: 1}}
+	h.arriveUnread(t, text("om_a", "oc_peer", "ou_a", "在吗"))
+	h.pass(t)
+	require.Equal(t, []string{"oc_peer"}, h.presence.opened)
+	require.Len(t, h.reader.posted(), 1)
+	require.False(t, h.readRemote(t, "om_a"))
 }
 
 func TestTriager_DoesNotDraftForACall(t *testing.T) {

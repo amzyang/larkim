@@ -15,6 +15,7 @@ import (
 
 	"github.com/amzyang/larkim/ai"
 	"github.com/amzyang/larkim/applink"
+	"github.com/amzyang/larkim/markread"
 	"github.com/amzyang/larkim/presence"
 	"github.com/amzyang/larkim/store"
 	"github.com/amzyang/larkim/sync"
@@ -129,19 +130,24 @@ type Banner struct {
 	Icon      string
 	ChatID    string
 	MessageID string
-	// Position is the message's place in its chat, for the applink; 0 opens
-	// the chat at its tail.
+	// Position is the message's place in its chat, for the applink and the
+	// read watermark an answer settles; 0 opens the chat at its tail and
+	// reads nothing, as for a thread reply, which the watermark does not
+	// reach, and a reminder, which is not the message it was planned from.
 	Position int64
 	// JoinLink, when set, offers a Join action that goes straight into the
 	// call.
 	JoinLink string
 }
 
-// What a banner was answered with.
+// What a banner was answered with. The close button is labelled Mark as Read
+// rather than Dismiss because it reads the chat, and the client's banner close
+// does not; a timeout is the one answer that leaves the chat unread.
 const (
-	ActionOpen    = "@CONTENTCLICKED"
-	ActionJoin    = "Join"
-	ActionDismiss = "@CLOSED"
+	ActionOpen     = "@CONTENTCLICKED"
+	ActionJoin     = "Join"
+	ActionMarkRead = "@CLOSED"
+	ActionTimeout  = "@TIMEOUT"
 )
 
 // Notifier shows a banner and blocks until it is answered or times out.
@@ -182,6 +188,9 @@ type Triager struct {
 	// DataDir resolves the stored avatar paths a banner shows.
 	DataDir string
 	Log     *slog.Logger
+	// Read settles a chat's read watermark once a banner is answered; nil
+	// leaves every chat as the reader finds it.
+	Read markread.Clear
 
 	rules   atomic.Pointer[Rules]
 	banners gosync.WaitGroup
@@ -522,8 +531,33 @@ func (t *Triager) show(ctx context.Context, b Banner) {
 			} else {
 				t.goTo(ctx, b)
 			}
+		case ActionMarkRead:
+			// Nothing to open; only the read below.
+		default:
+			return
 		}
+		// After the open, so the click lands before the gateway answers. The
+		// join popup never reaches a chat, so without this a call's banner
+		// would leave its chat unread however it was answered.
+		t.markRead(ctx, b)
 	})
+}
+
+// markRead settles b's chat up to b's message, the way a read in the TUI
+// does. A refused post leaves the chat unread for the TUI, the client or
+// read-all to clear.
+func (t *Triager) markRead(ctx context.Context, b Banner) {
+	if t.Read == nil || b.Position <= 0 {
+		return
+	}
+	at := store.ChatUnread{ChatID: b.ChatID, Position: b.Position}
+	if err := t.Read(ctx, at); err != nil {
+		t.log().WarnContext(ctx, "banner: mark read", "chat", b.ChatID, "message", b.MessageID, "position", b.Position, "err", err)
+		return
+	}
+	if _, err := t.Store.AcceptRemoteRead(ctx, b.ChatID, b.Position); err != nil {
+		t.log().WarnContext(ctx, "banner: accept remote read", "chat", b.ChatID, "message", b.MessageID, "err", err)
+	}
 }
 
 // goTo takes the reader to the chat: in a running TUI, brought to the front,

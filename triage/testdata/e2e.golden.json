@@ -102,6 +102,28 @@
       "Answered": false
     }
   ],
+  "marked_read": [
+    {
+      "chat_id": "oc_team",
+      "position": 1791633540000
+    },
+    {
+      "chat_id": "oc_team",
+      "position": 1791633550000
+    },
+    {
+      "chat_id": "oc_peer",
+      "position": 1791633530000
+    },
+    {
+      "chat_id": "oc_team",
+      "position": 1791633560000
+    },
+    {
+      "chat_id": "oc_team",
+      "position": 1791633570000
+    }
+  ],
   "opened_in_client": [
     "lark://applink.feishu.cn/client/chat/open?openChatId=oc_team&position=1791633540000&messageId=om_at",
     "lark://applink.feishu.cn/client/chat/open?openChatId=oc_team&position=1791633550000&messageId=om_boss",

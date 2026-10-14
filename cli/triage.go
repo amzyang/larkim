@@ -9,6 +9,7 @@ import (
 
 	"github.com/amzyang/larkim/ai"
 	"github.com/amzyang/larkim/jev"
+	"github.com/amzyang/larkim/markread"
 	"github.com/amzyang/larkim/store"
 	"github.com/amzyang/larkim/sync"
 	"github.com/amzyang/larkim/triage"
@@ -52,7 +53,8 @@ func (a *App) newJev(keyEnv, endpoint string) *jev.Client {
 func (a *App) triager(st *store.Store) (*triage.Triager, error) {
 	t := &triage.Triager{Store: st, Clock: sync.RealClock{}, DataDir: a.cfg.DataDir, Log: a.logger(),
 		Desktop: triage.MacDesktop{Log: a.logger()}, Presence: triage.Sockets{Dir: a.presenceDir()},
-		Self: func(ctx context.Context) string { return selfOpenID(ctx, st) }}
+		Self: func(ctx context.Context) string { return selfOpenID(ctx, st) },
+		Read: markread.New(a.cfg.MarkRead, a.logger(), st)}
 	if j := a.newJev(a.cfg.AI.JevKeyEnv, a.cfg.AI.JevEndpoint); j != nil {
 		t.Judge = triage.JevJudge{Ranker: j}
 	}

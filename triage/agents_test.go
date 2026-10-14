@@ -164,7 +164,7 @@ func TestAgentDrafter_RefusesAnAnswerThatIsNotTheJSON(t *testing.T) {
 func TestAlerterArgs_OffersJoinOnlyForACall(t *testing.T) {
 	t.Parallel()
 	plain := alerterArgs(Banner{Title: "张三", Body: "-在吗", Icon: "/Users/linlan/.larkim/avatars/a.png"})
-	require.Equal(t, []string{"--title", "张三", "--message", " -在吗", "--close-label", "Dismiss",
+	require.Equal(t, []string{"--title", "张三", "--message", " -在吗", "--close-label", "Mark as Read",
 		"--timeout", "60", "--ignore-dnd", "--app-icon", "/Users/linlan/.larkim/avatars/a.png"}, plain,
 		"a leading dash would read as a flag")
 	call := alerterArgs(Banner{Title: "项目协作群", Body: "张三: 站会", JoinLink: "lark://vc.feishu.cn/j/100000000"})

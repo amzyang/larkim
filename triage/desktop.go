@@ -34,7 +34,7 @@ func (a Alerter) Show(ctx context.Context, b Banner) (string, error) {
 // own banner offers, so only a call gets a button: Join, which goes straight
 // into it, as a click on a live call's body does too.
 func alerterArgs(b Banner) []string {
-	args := []string{"--title", noFlag(b.Title), "--message", noFlag(b.Body), "--close-label", "Dismiss",
+	args := []string{"--title", noFlag(b.Title), "--message", noFlag(b.Body), "--close-label", "Mark as Read",
 		"--timeout", "60", "--ignore-dnd"}
 	if b.JoinLink != "" {
 		args = append(args, "--actions", ActionJoin)
