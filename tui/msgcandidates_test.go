@@ -141,6 +141,28 @@ func TestCandidateRows_DrawAReactionAsABarePicture(t *testing.T) {
 	require.NotContains(t, strings.Join(box, "\n"), "Like")
 }
 
+// The reactions line carries pictures, so it is drawn in pieces; a selection
+// must still colour it like the box's other lines, or it reads as a hole.
+func TestCandidateRows_ASelectionTintsTheReactionLine(t *testing.T) {
+	t.Parallel()
+	m, _ := reactCandModel(t)
+	dir := t.TempDir()
+	writeTestEmoji(t, dir, "THUMBSUP")
+	writeTestEmoji(t, dir, "Get")
+	st := baseStyle()
+	st.dataDir = dir
+	st.place = picturesIn(dir).place
+	st.candidates = m.candidatesForStyle()
+
+	rows := renderRows(m.msgs, st)
+	i := slices.IndexFunc(rows, func(r msgRow) bool {
+		return slices.ContainsFunc(r.zones, func(z clickZone) bool { return z.cand.c.Reaction != "" })
+	})
+	require.GreaterOrEqual(t, i, 0, "no reactions line drawn")
+	require.NotEmpty(t, rows[i].segs, "the reactions line is drawn in pieces")
+	require.True(t, rows[i].tinted, "a selection colours the reactions line")
+}
+
 // A narrow pane trims a long draft rather than letting it push the box's right
 // edge out of line.
 func TestCandidateRows_ANarrowPaneKeepsTheBoxSquare(t *testing.T) {

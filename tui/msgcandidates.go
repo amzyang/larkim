@@ -127,7 +127,9 @@ func candidateRows(x store.Message, idx int, st msgStyle, g *leads) []msgRow {
 			zones = append(zones, clickZone{x0: w, x1: cw, cand: candZone{c: c, dismiss: true}})
 		}
 		segs = slices.Concat([]rowSeg{{text: gutter}}, segs, []rowSeg{{text: strings.Repeat(" ", w-segsWidth(segs)) + tail}})
-		row := msgRow{lead: g.take(), idx: idx}
+		// A suggested emoji stands in text rather than on a chip, so a
+		// selection colours its line like the box's others.
+		row := msgRow{lead: g.take(), idx: idx, tinted: true}
 		row.text, row.segs = oneLineOr(segs)
 		for i := range zones {
 			zones[i].x0 += gw
