@@ -37,7 +37,7 @@ One row per chat the user is (or was) in, from `GET /im/v1/chats` with `types=p2
 | `last_unsilenced_ms` | the newest main-flow message no silence rule matched, `system` messages left out unless the chat has no other main-flow message, and the key the list orders on; 0 when every non-`system` message is silenced |
 | `silence_settled_pos` | the read watermark `silence_sync` last settled for the chat; messages at or below it never queue or settle again. The settle moves the feed's unread count only, never the per-message `is_read_remote` |
 | `muted`, `mute_checked_at` | the user's do-not-disturb setting and when it was last answered; 0 means it has never been asked |
-| `web_chat_id` | the Feishu web client's numeric id for the chat, which no OpenAPI response carries; empty until matched. Written by the processes that clear Feishu badges, never by the daemon |
+| `web_chat_id` | the Feishu web client's numeric id for the chat, which no OpenAPI response carries; empty until matched. Written by whichever process clears a Feishu badge (the TUI, `larkim read-all`, and the sweep owner's silence settle and banner answers), only when it resolves one |
 
 A chat first seen only through a message (before the next full listing) exists with an empty name.
 
