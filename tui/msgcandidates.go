@@ -203,7 +203,9 @@ func (m Model) dismissCandidates(mid string) (tea.Model, tea.Cmd) {
 	}
 	m.pruneChatCands(mid)
 	if m.mode == modeCandidates {
-		if rows := m.visibleCandidates(m.chatCands); len(rows) == 0 {
+		// The picker lists the whole chat as the store read it, while
+		// chatCands holds only what the pane draws, so it prunes its own rows.
+		if rows := slices.DeleteFunc(slices.Clone(m.cand.items), func(c store.Candidate) bool { return c.Mid == mid }); len(rows) == 0 {
 			m = m.closeCandidates()
 		} else {
 			m.cand = fillMenu(rows, candSpec)

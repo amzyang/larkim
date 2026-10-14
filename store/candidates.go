@@ -49,8 +49,8 @@ var candidateAnswered = answeredSince("draft_candidates.chat_id", "draft_candida
 // Candidate per draft, ordered oldest pending first, then the replies in draft
 // order and the reactions after them: a reply is the substantive answer. The
 // JSON columns are written minimal, so a decode failure drops what that column
-// held rather than the row. An empty chatID lists every chat — the CLI's view;
-// the TUI always names its chat.
+// held rather than the row. An empty chatID lists every chat, for views that
+// run across chats: the CLI and the TUI's Unread panel.
 func (s *Store) ChatCandidates(ctx context.Context, chatID, selfID string) ([]Candidate, error) {
 	query := `SELECT mid, chat_id, draft, format, extras, reactions, created_ms, ` + candidateAnswered + `
 	 FROM draft_candidates`

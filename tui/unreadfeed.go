@@ -125,6 +125,7 @@ type unreadFeedLoadedMsg struct {
 	sections []unreadSection
 	msgs     []store.Message
 	meta     msgMeta
+	cands    []store.Candidate
 	visit    *unreadFeed
 	gen      int
 }
@@ -279,6 +280,7 @@ type feedPage struct {
 	sections []unreadSection
 	msgs     []store.Message
 	meta     msgMeta
+	cands    []store.Candidate
 }
 
 // readFeed reads one page. The chats listing is read here rather than taken
@@ -292,7 +294,19 @@ func readFeed(ctx context.Context, d Deps, keep []unreadSection, readHere map[st
 	}
 	p := feedPage{chats: chats}
 	p.sections, p.msgs, p.meta, err = gatherUnread(ctx, d.Store, d.Self, chats, keep, readHere)
-	return p, err
+	if err != nil {
+		return feedPage{}, err
+	}
+	// One read across every chat: a draft whose message is not on the page
+	// draws nothing, so there is nothing to gain from asking section by
+	// section. As on a chat's page, drafts the store cannot answer for cost
+	// the page its boxes, not its rows.
+	p.cands, err = d.Store.ChatCandidates(ctx, "", d.Self)
+	if err != nil {
+		d.log().Error("load feed candidates", "err", err)
+		p.cands = nil
+	}
+	return p, nil
 }
 
 // loadUnreadFeed reads the page for the visit. What it reads by is copied
@@ -304,7 +318,7 @@ func loadUnreadFeed(d Deps, visit *unreadFeed) tea.Cmd {
 		if err != nil {
 			return errMsg{err}
 		}
-		return unreadFeedLoadedMsg{sections: p.sections, msgs: p.msgs, meta: p.meta, visit: visit, gen: gen}
+		return unreadFeedLoadedMsg{sections: p.sections, msgs: p.msgs, meta: p.meta, cands: p.cands, visit: visit, gen: gen}
 	}
 }
 

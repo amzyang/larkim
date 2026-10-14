@@ -440,3 +440,60 @@ func TestFeed_ASectionsRuleFollowsTheChatsBadge(t *testing.T) {
 	require.NotContains(t, out, "平台组 · 2")
 	require.Contains(t, out, "4 in 2 chats", "and the title counts the same messages")
 }
+
+// putDrafts gives each message one reply draft, the way triage leaves them.
+func putDrafts(t *testing.T, st *store.Store, drafts ...[3]string) {
+	t.Helper()
+	for _, d := range drafts {
+		require.NoError(t, st.PutCandidates(t.Context(), d[0], d[1], []string{d[2]}, nil, "text", 100))
+	}
+}
+
+// The panel draws a message's drafts the way its chat's own page does, in
+// whichever section the message stands.
+func TestFeed_DrawsTheDraftsOwedOnItsMessages(t *testing.T) {
+	t.Parallel()
+	m := feedModel(t)
+	putDrafts(t, m.deps.Store,
+		[3]string{"om_p2", "oc_platform", "下午给你答复"},
+		[3]string{"om_j1", "oc_project", "收到，周四见"})
+	m = applyAll(t, m, m.reloadCurrent())
+
+	out := paneText(m)
+	require.Contains(t, out, "下午给你答复")
+	require.Contains(t, out, "收到，周四见", "a section other than the cursor's draws its drafts too")
+}
+
+// What the page draws is what the store holds for it, not the drafts of the
+// chat that was open before the panel went up.
+func TestFeed_DrawsNoDraftTheStoreDoesNotHold(t *testing.T) {
+	t.Parallel()
+	m := feedModel(t)
+	m.chatCands = []store.Candidate{{Mid: "om_p1", ChatID: "oc_platform", Text: "早就答过了"}}
+	m = applyAll(t, m, m.reloadCurrent())
+
+	require.NotContains(t, paneText(m), "早就答过了")
+}
+
+// The page holds every section's drafts, but the C picker answers the chat a
+// reply would go to, before a dismiss and after it.
+func TestFeed_ADismissKeepsThePickerToTheCursorsChat(t *testing.T) {
+	t.Parallel()
+	m := feedModel(t)
+	putDrafts(t, m.deps.Store,
+		[3]string{"om_p1", "oc_platform", "接口明天好"},
+		[3]string{"om_p2", "oc_platform", "我来看看"},
+		[3]string{"om_j1", "oc_project", "收到，周四见"})
+	m = applyAll(t, m, m.reloadCurrent())
+	next, cmd := m.openCandidates()
+	next, _ = next.(Model).Update(cmd())
+	m = next.(Model)
+	require.Equal(t, modeCandidates, m.mode)
+	require.Len(t, m.cand.items, 2, "the picker opens on the cursor's chat alone")
+
+	m, _ = candPress(t, m, store.Candidate{Mid: "om_p1"}, true)
+
+	require.Equal(t, modeCandidates, m.mode, "a draft is still owed in this chat")
+	require.Len(t, m.cand.items, 1)
+	require.Equal(t, "om_p2", m.cand.items[0].Mid)
+}

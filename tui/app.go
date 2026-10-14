@@ -116,7 +116,8 @@ type Model struct {
 	// so the send that leaves the composer can drop the mirrored row. It does
 	// not follow the reader into another chat.
 	candFilled string
-	// chatCands are the mirrored drafts for the open chat's current page.
+	// chatCands are the mirrored drafts owed on the messages the pane draws:
+	// the open chat's page, or every section's under the Unread panel.
 	chatCands []store.Candidate
 	// candIgnored hides individual drafts for this session (see candidateKey).
 	candIgnored map[string]struct{}
@@ -890,6 +891,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		anchor := topAnchor(m.msgRows, m.msgs, m.msgTop)
 		m.feed.sections = msg.sections
 		m.msgsBase, m.meta = msg.msgs, msg.meta
+		m.chatCands = msg.cands
 		m.metaGen++
 		m.applyOutbox()
 		// A marker goes out under the cursor, as on a chat's own page, not
