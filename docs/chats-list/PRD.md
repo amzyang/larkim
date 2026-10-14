@@ -44,7 +44,7 @@ TUI 左侧会话列表按飞书桌面端的信息密度重做：头像 + 两行�
 - **会话名**：`chats.name`；为空时用 `chat_id`。p2p 对方的企业邮箱前缀带数字尾号时（`liming01`），名字后追加该尾号：`李明 (01)`。尾号不参与截断，截断只作用于姓名部分。
 - **BOT 徽章**：仅 p2p 会话，看 `chats.p2p_target_type = 'bot'`。群聊的机器人发言标在第二行的发件人名后。
 - **状态标签**：p2p 对方的个人状态（`On Leave`、`出差`、`会议中`），取 `personal_status.title`。仅 p2p 会话显示。
-- **未读数**：主消息流里飞书仍报未读、且在 larkim 里也没被读过的计数（`read_state.is_read_remote = 0` 且 `local_read_at = 0`），未读红；免打扰会话画成淡色。头像上画得出徽章时不重复画这个数字；画不出的会话（解码失败、非 kitty 终端）落回文字，两种画法同色。thread 回复不计进会话行——它们数在 thread 自己那一行上，见「thread 行」。
+- **未读数**：主消息流里飞书仍报未读的计数（`read_state.is_read_remote = 0`），未读红；免打扰会话画成淡色。头像上画得出徽章时不重复画这个数字；画不出的会话（解码失败、非 kitty 终端）落回文字，两种画法同色。thread 回复不计进会话行——它们数在 thread 自己那一行上，见「thread 行」。
 - **时间戳**：会话最新消息时间，按自然日分档——今天 `HH:mm`，昨天 `Yesterday`，本周内 `Mon`…`Sun`，本年内 `MM-DD`，跨年 `YYYY-MM-DD`。
 
 宽度不足时右对齐部分先占位，BOT 与状态标签保留，会话名承担截断（尾部 `…`），下限 2 列。
@@ -124,7 +124,7 @@ TUI 左侧会话列表按飞书桌面端的信息密度重做：头像 + 两行�
 | p2p 头像 | `contacts.avatar_path`，经 `chats` 的联系人 join 取出 | 联系人详情回填 |
 | p2p 对方账号尾号 | `contacts.enterprise_email` 的前缀，同一个 join | 联系人详情回填 |
 | 最新消息 | `chats.last_*` 冷存列 | 见「冷存摘要」 |
-| 未读数 | `read_state.is_read_remote = 0` 且 `local_read_at = 0` 且 `messages.message_position >= 0` | 随同步轮询；打开会话时对该会话立即重查一次。会话页面摆到读者眼前时——进入会话、从历史滚回消息流末尾、或终端重新获得焦点——把该会话页面上的未读整批记为本地已读——主消息流上的每一条，静音的也算，它们同样摆在了读者眼前；thread 回复折在根消息那一行里，页面上一条都没有，由打开话题面板时结算。同时后台把飞书客户端导航到该会话，让它自己的红点也落下来（见 [read-sync](../read-sync/PRD.md)） |
+| 未读数 | `read_state.is_read_remote = 0` 且 `messages.message_position >= 0` | 随同步轮询；打开会话时对该会话立即重查一次。会话页面摆到读者眼前时——进入会话、从历史滚回消息流末尾、或终端重新获得焦点——向飞书提交该会话的已读水位，成功后主消息流上的未读整批翻成已读，静音的也算，它们同样摆在了读者眼前；飞书客户端的红点同时落下。thread 回复折在根消息那一行里，水位收不掉，等飞书回执（见 [read-sync](../read-sync/PRD.md)） |
 | mute | `lark-cli api POST /open-apis/im/v1/chat_user_setting/batch_get_mute_status --as user` | 随 chats 全量刷新 |
 | 个人状态 | `lark-cli contact user_profiles batch_query`，`query_option.include_personal_status = true` | 随联系人刷新 |
 | 草稿 / 发送失败 | `drafts` 表 | TUI 写入；已保存草稿同时是第二行正文的来源（见「第二行」） |
@@ -146,7 +146,7 @@ TUI 左侧会话列表按飞书桌面端的信息密度重做：头像 + 两行�
 
 新增列：`last_message_id`、`last_message_ms`、`last_sender_id`、`last_sender_name`、`last_msg_type`、`last_summary`、`last_deleted`、`muted`、`mute_checked_at`。
 
-`ListChats` 没有逐行子查询：未读徽章由一次分组聚合供给，走 `read_state(is_read_remote, local_read_at, message_id)` 索引，代价随未读条数而非消息总数增长；消息总数只有 CLI 的 chats 表用，由 `MessageCountsByChat` 单独查。
+`ListChats` 没有逐行子查询：未读徽章由一次分组聚合供给，走 `read_state(is_read_remote, message_id)` 索引，代价随未读条数而非消息总数增长；消息总数只有 CLI 的 chats 表用，由 `MessageCountsByChat` 单独查。
 
 ### contacts 新增列
 
@@ -156,7 +156,7 @@ TUI 左侧会话列表按飞书桌面端的信息密度重做：头像 + 两行�
 
 ### drafts 表
 
-消费者写的表，与 `read_state.local_read_at` 同类，daemon 不碰。
+消费者写的表，daemon 不碰。
 
 | 列 | 含义 |
 |---|---|
@@ -195,7 +195,7 @@ kitty 图形协议画真实头像，`VirtualPlacement` + Unicode placeholder（U
 - **滚轮与光标分离**：滚轮只移动视口，不改选中的会话；选中态可以停在屏幕外。重排与重载时视口锚在顶行那个会话、光标锚在它自己那个会话，互不牵引。只有光标移动（`j`/`k`、`gg`/`G`、`Ctrl+d`/`u`、点击、打开会话）才把列表滚回光标。
 - **过滤**：`/` 匹配会话名与 `chat_id`。拉丁查询走 fzf 子序列匹配，中文名同时答应它的全拼与首字母（`ptz` 找到「平台组」）；中文查询按整串匹配而非子序列——`年会` 是个词，落在「2026年高途新春启动会」的 年 和 会 上是没人问过的问题。`chat_id` 只认子串，十六进制上做模糊只会出噪音。命中行按名字里落点的字加下划线，拼音命中不加——按拼音偏移给汉字画线会指错字。过滤只决定谁进来，不决定谁在前：行序仍是列表自己的。找消息走 `ctrl+f`。
 - **`Unread` 行的打开**：和别的行一样，光标停上去就把那一页装进消息面板。差别只在焦点——按键或点击把焦点交给消息面板，光标走上去则留在列表里，下一个 `j` 仍是读者的。它是列表的第一行，走回它的唯一方式是在列表顶上按一次 `k`，不存在「路过」。
-- **TUI 打开时光标停在 `Unread` 行**：一进来先看见还有什么在等，而不是把最上面那个会话读掉——会话页摆在眼前就走 [read-sync](../read-sync/TECH.md) 的那条路径，把它的未读记为本地已读并投出 applink，客户端跟着导航过去，而读者还没看。这一页上的东西一条都不算读过，所以它是唯一能不动声色地开在这里的落点。焦点在列表，`j` 去第一个会话，`Esc` 把这一页放下、落到第一个会话。
+- **TUI 打开时光标停在 `Unread` 行**：一进来先看见还有什么在等，而不是把最上面那个会话读掉——会话页摆在眼前就走 [read-sync](../read-sync/TECH.md) 的那条路径，向飞书提交它的已读水位，两边的未读一起落下，而读者还没看。这一页上的东西一条都不算读过，所以它是唯一能不动声色地开在这里的落点。焦点在列表，`j` 去第一个会话，`Esc` 把这一页放下、落到第一个会话。
 - **草稿**：切会话保留 composer 内容与 `replyTo` / `inThrd`，重开 TUI 仍在。发送成功后清除该会话的草稿行；清空 composer 后离开会话同样落盘删除。当前打开的会话与话题在列表里完全不展示自己的草稿，离开后才出现。
 
 ## 终端要求

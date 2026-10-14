@@ -14,9 +14,9 @@ import (
 //
 // It delays; it never drops. The number of clears is still the number of
 // unread messages (docs/read-sync/PRD.md). A cooling window would drop the
-// ones that landed inside it, leaving messages markChatRead settles quietly
-// and a dot only the next sweep would find — which is the thing that
-// paragraph rules out.
+// ones that landed inside it: the reader has read them, readAt has moved past
+// them, and nothing would ask for their clear again until the next message or
+// sweep — which is the thing that paragraph rules out.
 type clearQueue struct {
 	// left is the chats still to be cleared, each with the message to land on.
 	// The reader's own chat ends up last, so the client comes to rest where
@@ -81,9 +81,9 @@ func (m Model) pushClears(chats []store.ChatUnread) (Model, tea.Cmd) {
 	return m, m.clearTick(m.clears.gen)
 }
 
-// dropClears drops whatever is still queued. The write that matters has
-// already landed; what is abandoned is the client's own dots, which the
-// read-status poller reports on either way.
+// dropClears drops whatever is still queued. Nothing has been written for a
+// chat whose clear never fired, so its badge stays lit here and in the client
+// until the next sweep or the next read of it asks again.
 func (m Model) dropClears() Model {
 	m.clears = clearQueue{gen: m.clears.gen + 1}
 	return m

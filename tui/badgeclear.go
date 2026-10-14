@@ -3,21 +3,22 @@ package tui
 import "github.com/amzyang/larkim/store"
 
 // unreadWaiting reports whether a page carries a message the chat badge
-// counts. It has to be read against the page as it was queried, before
-// takeRead's own write lands, or the reader's visit would erase the very
+// counts. It has to be read against the page as it was queried, before the
+// clear it raises is accepted, or the reader's visit would erase the very
 // evidence that the Feishu client has something to clear.
 //
 // The predicate is store.unreadBadge, down to the thread replies a chat page
 // carries but the badge leaves out. Matching it exactly is what bounds the
 // clears: every message this fires for is one AcceptRemoteRead settles after
-// the POST succeeds. A looser reading would
-// keep saying yes to something no write ever settles, and clear the chat on
-// every reload for the rest of the session.
+// the POST succeeds. A looser reading would keep saying yes to something no
+// write ever settles, and clear the chat on every reload for the rest of the
+// session.
+//
 // The position it answers with is the newest such message's; the watermark
 // settles everything up to that position. Without one the client stops on its
-// own unread
-// divider, and for a chat with a deep backlog that divider is somewhere in
-// the middle of the history — the same landing pageShown refuses to call read.
+// own unread divider, and for a chat with a deep backlog that divider is
+// somewhere in the middle of the history — the same landing pageShown refuses
+// to call read.
 func unreadWaiting(msgs []store.Message) (position int64, waiting bool) {
 	for _, m := range msgs {
 		if isUnread(m) && m.MessagePosition >= 0 && !m.Deleted {

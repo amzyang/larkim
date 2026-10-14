@@ -201,10 +201,10 @@ func (m Model) feedRuleLine(w int) (line string, pinned bool) {
 // panel's own reading gate refuses to make for the reader, reached by the check
 // on the section's rule or by m.
 //
-// The local write settles the whole chat, so the client is walked onto the
-// chat's newest waiting message as the store has it, not the page's: a
-// section stops at unreadSectionLimit, and a watermark taken from the page
-// would leave Feishu's dot on everything past the cut. Unlike takeRead's gate,
+// The press settles the whole chat, so the client is walked onto the chat's
+// newest waiting message as the store has it, not the page's: a section stops
+// at unreadSectionLimit, and a watermark taken from the page would leave
+// Feishu's dot on everything past the cut. Unlike takeRead's gate,
 // this fires once per press, the way a mark-all does, so it can read the same
 // set the sweep does. joinUnread drops the settled section on the reload that
 // follows.
@@ -242,9 +242,7 @@ func (m Model) onSectionDot(msg sectionDotMsg) (Model, tea.Cmd) {
 	return m.pushClears(msg.chats)
 }
 
-// sectionDot reads the dot the client still draws for a chat. It does not
-// depend on local_read_at, so it reads the same whether or not the local
-// write batched beside it has landed.
+// sectionDot reads the dot the client still draws for a chat.
 func sectionDot(d Deps, chatID, label string) tea.Cmd {
 	return func() tea.Msg {
 		c, ok, err := d.Store.ChatWithUnread(context.Background(), chatID)

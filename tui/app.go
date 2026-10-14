@@ -1547,21 +1547,18 @@ func (m *Model) clearBlockDots(msgs []store.Message, idx int, st msgStyle) bool 
 	return before > len(m.dots)
 }
 
-// takeRead records that the reader has had a chat's page in front of them,
-// which is what drops the badge. readKey decides when that is true; this only
-// settles it.
+// takeRead acts on the reader having had a chat's page in front of them.
+// readKey decides when that is true; this posts the read watermark.
 //
-// The Feishu client keeps a red dot of its own, which only the client itself
-// can drop. A page carrying something the badge counts therefore also clears
-// the Feishu dot, so reading here settles both badges rather than leaving one
-// lit for a later trip to Feishu. That covers the chat under the reader's
-// eyes as well as the one just opened: a message landing in it relights the
-// client's dot, and reaching it drops the dot again.
+// There is one badge: Feishu's. A successful POST drops the client's dot, and
+// AcceptRemoteRead flips the same rows here, so both fall together; a failed
+// one leaves both lit. That covers the chat under the reader's eyes as well as
+// the one just opened: a message landing in it relights the dot, and reaching
+// it drops the dot again.
 //
-// unreadWaiting is the narrower of the two gates. readKey fires for anything
-// markChatRead would settle, thread replies included; only what the chat badge
-// counts is worth a clear, because the gateway will not drop its dot for a
-// reply the chat's message flow does not show.
+// unreadWaiting is the narrower of the two gates. readKey fires for any unread
+// on the page, recalled messages included; only what the chat badge counts is
+// worth a clear, because the gateway has nothing to drop for the rest.
 func (m Model) takeRead(chatID string, msgs []store.Message) (Model, tea.Cmd) {
 	position, waiting := unreadWaiting(msgs)
 	if !waiting {
@@ -2256,10 +2253,11 @@ func (m Model) onNormalKey(s string) (tea.Model, tea.Cmd) {
 	case "esc":
 		switch {
 		// A mark-all sweep is the one thing here that keeps acting after the
-		// key that started it, so esc is scoped to it. A read gate's own
-		// a read gate's own clear is not on offer: it is the tail of a read the
-		// reader already made, not something still unfolding. Dropping it costs one
-		// dot until the next sweep, which does find that chat again.
+		// key that started it, so esc is scoped to it. A read gate's own clear
+		// is not on offer by itself: it is the tail of a read the reader
+		// already made, not something still unfolding. One queued beside a
+		// sweep goes with it, which costs that chat its badge until the next
+		// sweep, which does find it again.
 		case m.clears.swept > 0:
 			return m.dropClears().notify("stopped", false), nil
 		case m.aiOpen():

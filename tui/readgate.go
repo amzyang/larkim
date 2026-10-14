@@ -5,8 +5,8 @@ import "slices"
 // readKey names the newest thing waiting on the page the reader has in front
 // of them, or "" when nothing is waiting or the page is not being shown at
 // all. Reading is the moment this changes, not the state itself: firing on the
-// state would put one markChatRead — and one clear behind it — on every
-// screen beat for as long as the reader sat still.
+// state would put one clear on every screen beat for as long as the reader
+// sat still.
 //
 // Keyed on the newest unread rather than the newest message, because unread
 // arrives two ways and only this covers both. A new message brings its own id,
@@ -17,13 +17,10 @@ import "slices"
 // the page that lights the badge carries no new id. The same holds for a flag
 // landing on a message older than the newest.
 //
-// The predicate mirrors the set markChatRead settles, which is the chat
-// badge's own. It used to have to be wider: the page listed thread replies
-// then, and a chat whose only unread was a reply would have gone permanently
-// unsettled, redrawing its marker on every visit. The page folds replies into
-// their root's line now, so it carries none to settle and none to redraw —
-// markThreadRead answers for those when the thread is opened. The clear is
-// gated separately, by unreadWaiting.
+// The page folds thread replies into their root's line, so every unread it
+// carries is a main-flow message the watermark settles: the set AcceptRemoteRead
+// flips, which is the chat badge's own. The clear is gated separately, by
+// unreadWaiting.
 func (m Model) readKey(tailed bool) string {
 	if !m.pageShown(tailed) {
 		return ""

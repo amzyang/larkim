@@ -356,21 +356,16 @@ func forwardSummary(x store.Message, root string, idx int, st msgStyle, g *leads
 
 ### 清除
 
-受影响的是 `MarkChatRead`（store/resources.go）。它故意用更宽的 `stillUnread`，注释写着理由：页面把这些回复摆在读者面前了。折叠后该理由失效，后果是**把读者看不见的回复标成已读**——是过度标记，不是标不掉。
+读态只有飞书回执一个来源（见 [read-sync](../read-sync/TECH.md)）。打开会话时提交的已读水位只收主消息流，`AcceptRemoteRead` 按 `message_position >= 0` 翻转，话题回复不在其中——读者没见过的回复不会被标成已读。
 
-`MarkChatRead` 因此收窄到 `unreadBadge`，`MarkThreadRead(ctx, threadID, now)` 承接话题那半。集合不再是徽标集的超集，而是与它相等。thread id 全局唯一且有自己的部分索引，所以不必再传会话。
-
-`MarkThreadRead` 自己仍要是超集：它清该话题下**全部**未读回复，静音的也清。静音只决定要不要提醒，不决定读没读；漏掉它们会让一条静音回复把摘要行永久点着。
-
-触发在话题帧每一次落地——`threadLoadedMsg` 的那一臂，它本就只在可见帧是该话题时才跑，所以被压住的帧自动不结算。不另设门：已读的话题上这条 UPDATE 一行都不匹配，安静的心跳什么都不写，`data_rev` 触发器也不响。不看滚动位置，也不要求终端持有焦点——话题是一屏的东西，读者把它调到最上面就是在读它。
+打开话题面板不写读态：web gateway 的水位收不掉 thread，larkim 也没有本地的已读覆盖层。话题回复一直是未读，直到在飞书客户端里读过、read-status 轮询拉回回执。
 
 `applyOutbox`（tui/outbox.go）靠 `it.chatID == m.chatID` 把待发的话题内消息放进主流，折叠后它会闪一下再消失，所以加 `&& !it.inThread`。
 
-`threadLoadedMsg` 那一臂原本只在终端失焦时 `markDots`，理由是「会话页面也带着这些回复」。折叠后不成立，守卫去掉：这个面板是它们的标记唯一能亮的地方。它排在结算之前，读的正是结算即将清掉的那批标志。
+`threadLoadedMsg` 那一臂对每次落地都 `markDots`，不看终端焦点：会话页面不带这些回复，这个面板是它们的标记唯一能亮的地方。
 
-`tui/readgate.go` 的 `readKey` 谓词跟着取 `unreadBadge`。它注释里关于「窄化会让只有回复未读的会话永远结算不掉」的警告因折叠而自动解除——回复不在页面上，也就没有要重画的标记。
+`tui/readgate.go` 的 `readKey` 只看页面上的未读；回复不在页面上，它数到的都是水位能收掉的主消息流。
 
-`docs/silence/TECH.md` 与 `docs/read-sync/TECH.md` 都按名引用过这两个集合，跟着改。
 
 ### 参与
 
@@ -389,7 +384,7 @@ EXISTS (SELECT 1 FROM messages t WHERE t.thread_id <> '' AND t.thread_id = x.thr
 
 判据不新增查询，挂在两条已有的路上：
 
-- **摘要行的圆点**走 `ThreadGists(ctx, threadIDs, self)` 新增的 `Waiting`：未读、未静音、且我有份。静音那条照 `unreadCounted` 的规矩不点亮，但 `MarkThreadRead` 仍然收它——否则一条静音回复会把这行永远点着。
+- **摘要行的圆点**走 `ThreadGists(ctx, threadIDs, self)` 新增的 `Waiting`：未读、未静音、且我有份。静音那条照 `unreadCounted` 的规矩不点亮。
 - **会话列表里的话题行**走 `store.ListThreadFeed`，与会话列表在同一次刷新里取回：话题在那里是自己的一行，不是会话行上的一个字段，所以它是自己的一趟查询而不是 `ListChats` 的又一个聚合。取值与版式见 [chats-list](../chats-list/PRD.md) 的「thread 行」。
 
 圆点由读态派生，不进 `m.dots`：`clearDotsAtCursor` 收的是光标走过的那一块，而根消息早就读过了；把它并进去，光标扫过根就会抹掉读者没看过的回复。
@@ -419,7 +414,7 @@ type pendingJump struct{ id, thread string }
 
 `jumpTo(x)` 是三个入口共用的判据：`MessagePosition < 0` 且有 `thread_id` 就走话题，其余落在页面上。
 
-`openChatFrom` 之后：`thread` 为空照旧在 `m.msgs` 里找；不为空则 `pushRight(rightThread, thread)`，落位交给帧加载完成时的 `repinSelection`。整条话题随之结算——与 `jumped` 分支清掉 `clearBlockDots` 是同一条规矩：跳转落地按看见算。
+`openChatFrom` 之后：`thread` 为空照旧在 `m.msgs` 里找；不为空则 `pushRight(rightThread, thread)`，落位交给帧加载完成时的 `repinSelection`。
 
 填 `thread` 的地方就是命中本身：`searchHit.msg` 与 `MentionsOf` 的行都带着 `ThreadID` 与 `MessagePosition`，`MessagePosition < 0` 即是折叠的回复。
 
@@ -518,15 +513,9 @@ type pendingJump struct{ id, thread string }
 | `TestMessagesLoaded_AHitOnThePageItselfLeavesTheColumnAlone` | 页面上的命中不开栏 |
 | `TestRenderRows_AThreadSummaryIsNotDrawnInsideItsOwnPane` | 帧里不重复计数 |
 | `TestRenderRows_AThreadSummaryCarriesAnOpenZone` | 话题摘要可点 |
-| `TestMarkThreadRead_SettlesOnlyItsOwnReplies` | 只收自己那条话题，静音的也收 |
-| `TestMarkChatRead_LeavesThreadRepliesUnread` | 打开会话不再清回复 |
-| `TestMarkThreadRead_SettlesOnlyItsOwnReplies` | 打开话题才清 |
-| `TestMarkThreadRead_SettlesASilencedReplyToo` | 静音回复也结算，否则圆点灭不掉 |
-| `TestPushRight_AThreadFrameSettlesOnOpen` | 打开即结算，不看滚动 |
-| `TestThreadLoaded_ANewReplySettlesWhileTheFrameIsOnTop` | 帧在栈顶时新回复随到随清 |
-| `TestThreadLoaded_ABuriedFrameKeepsItsRepliesUnread` | 被压住不结算 |
+| `TestUpdate_OpeningTheChatLeavesAThreadReplyUnread` | 打开会话与打开话题都不改回复的读态 |
 | `TestThreadGists_WaitingOnlyForAThreadIAmIn` | 参与判据：说过话或被 @ |
-| `TestThreadGists_ASilencedOrReadReplyIsNotWaiting` | 静音不点亮，结算后也不亮 |
+| `TestThreadGists_ASilencedOrReadReplyIsNotWaiting` | 静音不点亮，已读也不亮 |
 | `TestListChats_MarksAChatWhoseOnlyUnreadIsAThreadIAmIn` | 会话列表记号，不计数不排序 |
 | `TestListChats_WithoutAReaderNothingIsWaiting` | 空 needle 不匹配所有人 |
 | `TestListChats_ThreadAggregateDrivesFromReadState` | 记号的代价与它标的东西同阶 |
@@ -569,7 +558,7 @@ type pendingJump struct{ id, thread string }
 | --- | --- | --- |
 | 1 | `forwarded_messages` + 同步展开 + 回填 + 附件注册 | 库里有数据，还没人读；SQL 可验 |
 | 2 | 右栏改栈 + 合并转发折叠 + 转发帧 + 点击 | 主要收益落地 |
-| 3 | 话题折叠 + 摘要 + 落地压帧 + `MarkChatRead` 收窄 + `MarkThreadRead` | 与客户端对齐 |
+| 3 | 话题折叠 + 摘要 + 落地压帧 + 打开会话不结算话题回复 | 与客户端对齐 |
 | 4 | 未读的可见性：参与判据、摘要圆点、列表记号、`markDots` 的焦点守卫 | 读者看得见哪条话题有新东西 |
 
 四期走完，`docs/containers/` 就是这套行为的终态描述。
@@ -578,4 +567,4 @@ type pendingJump struct{ id, thread string }
 
 栈与转发帧同期落地，因为分开落地的那一版里栈是不可达的：从消息面板打开总是重置成一层，而唯一能埋下第二层的动作——在话题里打开一条转发——正是转发帧带来的。
 
-读态的「清除」那半必须与折叠同期：折叠一落地，`MarkChatRead` 就在结算读者再也看不到的回复，而那正是验收 6 要挡的。留给下一期的是可见性——哪条话题里有新东西——它改错了只是看不见，不会丢掉「我还没读」。
+读态必须与折叠同期：折叠一落地，打开会话的结算若仍收话题回复，就在结算读者再也看不到的回复，而那正是验收 6 要挡的。留给下一期的是可见性——哪条话题里有新东西——它改错了只是看不见，不会丢掉「我还没读」。

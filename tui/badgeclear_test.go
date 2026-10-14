@@ -84,7 +84,7 @@ func TestTakeRead_ClearsNothingWhenNothingWasWaiting(t *testing.T) {
 	require.Empty(t, *cleared, "a chat with no badge here has none in Feishu either")
 }
 
-func TestTakeRead_ClearsNothingForAPageAlreadyReadHere(t *testing.T) {
+func TestTakeRead_ClearsNothingOnTheReloadItsOwnClearCauses(t *testing.T) {
 	t.Parallel()
 	m, _, cleared := badgeModel(t)
 	read := true

@@ -9,11 +9,11 @@
 ```
 任一 tea.Msg → dispatch
              → readKey 变了？
-                 markChatRead       local_read_at，larkim 自己的徽标
-                 clearFeishuBadge   markread.Clear → larkweb gateway
+                 takeRead → clearQueue → markread.Clear → larkweb gateway
+                                       → 成功：AcceptRemoteRead
 ```
 
-副作用层次按 ARCH.md 三：`local_read_at` 是必需的持久状态，先落；gateway POST 是尽力而为的副作用，失败只提示；回执最终由既有的 read-status 轮询收口，不新增对账机制。
+读态只有一份：`read_state.is_read_remote`，它属于飞书的回执。gateway POST 成功后，`AcceptRemoteRead` 把水位以内的主消息流未读先行翻成 1，`remote_checked_at` 置 0，意为「已接受、未确认」；下一趟 read-status 探针问到飞书报已读，`ConfirmAcceptedRead` 盖上确认时间（不动 `is_read_remote`，`data_rev` 不响），仍报未读则 `RevertUnconfirmedRead` 翻回，徽标重新亮起。POST 失败什么都不写。收口靠既有的 read-status 轮询，不新增对账机制。
 
 `markDots`（`tui/app.go`）与它共用 `pageShown`，但传的是**页面到达时**的 `tailed`，因为标记要回答「这条消息落进来的时候读者在不在看」，而不是这轮更新结束时在不在。
 
@@ -23,9 +23,9 @@
 
 **`pageShown(tailed)`（`tui/readgate.go`）决定读不读。** 每一项都是「消息面板其实没在读者眼前」的一种：搜索/Mentions 面板借同一套 `msgRows`/`msgTop` 画自己的命中（`m.searching` 两者都置位），Unread 面板借同一套画每个还欠着的会话（`m.feed` 非 nil；`m.chatID` 全程指着某个真实会话，但摆在读者眼前的是一页很多会话，摆着不等于在读——面板按自己的规则读，见下节「Unread 面板」），帮助层整屏盖住，终端窄到 `foldRight` 让右栏顶掉消息面板，尺寸低于 `minWidth`/`minHeight` 时 `View` 两栏都不画。视口本身的问题交给 `atTail` —— 滚轮把光标留在最新消息上也答不了它。
 
-**`unreadWaiting(msgs)`（`tui/badgeclear.go`）决定清不清 Feishu 红点。** 它与批量清理的集合**不同**，这是故意的：自动路径每次 reload 都跑，上界必须是「每条未读消息一次」，所以它绑在 `markChatRead` 的写上；批量清理是读者按一次才跑一次，上界是按下的次数，所以它绑在回执上。逐项复刻 `store.unreadBadge`——`is_read_remote = 0`、`local_read_at = 0`、`message_position >= 0`、未撤回。**它取的正是 `markChatRead` 的集合（`store.unreadBadge`），这是清红点次数的上界所在**：这一页判为真的每一条，`markChatRead` 都在同一个 batch 里记为本地已读，下一页因此判为假。谓词放宽到那个集合之外，就会出现 `markChatRead` 永远收不掉的消息，每次 reload 都清一次，直到会话被切走。
+**`unreadWaiting(msgs)`（`tui/badgeclear.go`）决定清不清 Feishu 红点。** 谓词逐项复刻 `store.unreadBadge`——`is_read_remote = 0`、`message_position >= 0`、未撤回。**这是清红点次数的上界所在**：这一页判为真的每一条，都在 POST 成功后被 `AcceptRemoteRead` 翻成已读，下一页因此判为假。谓词放宽到那个集合之外，就会出现水位永远收不掉的消息，每次 reload 都清一次，直到会话被切走。
 
-判据必须读页面查询时的状态：`markChatRead` 紧接着就把 `local_read_at` 写上，改用当前徽标数会被本次访问自己的写入打败。
+判据必须读页面查询时的状态：POST 一被接受，翻转带出的 reload 就把徽标抹成 0，改用当前徽标数会被本次访问自己的结果打败。
 
 ## Unread 面板
 
@@ -58,24 +58,15 @@
 
 `larkim read-all` 在循环里同样 `time.Sleep(larkweb.Pace)`。
 
-## 批量的两个谓词
+## 批量的集合
 
-两个谓词互不包含，各自回答一件事。
+`ChatsWithUnread` 查要走哪些会话，谓词就是 `unreadBadge`：`is_read_remote = 0 AND deleted = 0 AND message_position >= 0`，与自动路径的 `unreadWaiting` 同一个集合。
 
-|  | 谓词 | 常量 |
-|---|---|---|
-| `ChatsWithUnread` 查要走哪些会话 | `is_read_remote = 0 AND deleted = 0 AND message_position >= 0` | `clientDot` |
-| `MarkAllRead` 写本地已读 | `is_read_remote = 0 AND local_read_at = 0 AND deleted = 0` | `stillUnread` |
+收敛点是**飞书的回执**：POST 成功 → `AcceptRemoteRead` 翻 1 → 离开集合；探针否认 → 翻回 → 回到集合。POST 失败的会话一行不写，留在集合里，下一次按下重试，直到 7 天视野把 `is_read_remote` 刷成 NULL。
 
-查集合里没有 `local_read_at`：红点是客户端的，larkim 在这边把消息记为已读从来没让它落下来。用本地事实去回答「客户端还亮不亮」，会让一次没落到客户端的 sweep 变成不可重复的——写已经把会话收掉了，再按一次也找不回来。
+`ReadStatusProbes` 把「已接受、未确认」（`is_read_remote = 1 AND remote_checked_at = 0`）的会话留在探针里，所以确认或翻回只等一个 tick，而不是阶梯（`ReadStatusCandidates`）最长 6 小时的退避步长。
 
-因此收敛点不是同一次写，而是**飞书的回执**：gateway 成功 → read-status 轮询问到它 → `is_read_remote` 翻 1 → 离开集合。没有回执的会话留在集合里，下一次按下重试，直到 7 天视野把 `is_read_remote` 刷成 NULL。
-
-这就是 `ReadStatusProbes` 不再过滤 `local_read_at` 的理由。阶梯（`ReadStatusCandidates`）本来就不看它，所以探针买的是延迟：一个 tick，而不是最长 6 小时的退避步长——那段时间里 sweep 会一直走向红点早就落下的会话。
-
-查在写之前跑只是顺序上的省事，不再是约束：写不会抹掉查所依据的证据。
-
-thread 回复与已撤回不进查询集合：水位只收主消息流，thread 的 receipt 不翻，列进去就是每次都走。现在 `message_position >= 0` 与 `deleted = 0` 是唯二做这件排除的条件。本地已读照收——`MarkAllRead` 用的是更宽的 `stillUnread`。
+thread 回复与已撤回不进集合：水位只收主消息流，thread 的 receipt 不翻，列进去就是每次都走。`message_position >= 0` 与 `deleted = 0` 是唯二做这件排除的条件。
 
 不经 `Deps.Syncer` 与 data-dir 锁无关；收敛所依赖的那趟轮询不受此影响——没有 daemon 的 TUI 自己拿 `daemon.lock` 并内嵌跑 `Syncer.Run`（`cli/tui_cmd.go`），凡是在同步数据的配置都有一趟。
 
@@ -86,9 +77,9 @@ thread 回复与已撤回不进查询集合：水位只收主消息流，thread 
 - 新消息带着自己的 id 进来；到达即存为未读的，标记与消息同一次写入；
 - 其余的读标记落在一条已经在页面上的消息身上。这些 `read_state` 行由单独一趟写（`sync.checkReadStatus`，隔一个 chat beat 搭一次便车），所以把消息驮进来的那一页无事可做，而点亮徽标的那一页不带新 id。标记落在比最新消息更旧的那条上时同理。
 
-谓词按 `store.unreadBadge` 取，也就是 `markChatRead` 会收掉的那一批。会话页把 thread 回复折进根消息那一行，页面上一条都没有，所以这里也数不到它们；它们由 `markThreadRead` 在话题面板打开时收掉。
+会话页把 thread 回复折进根消息那一行，页面上一条都没有，所以这里数到的未读都是主消息流上的，也就是水位能收掉的那一批。
 
-**比对的是 `Model.readAt`（上次 takeRead 应答的那个 key），不是本轮更新之前的 key。** 后者会被 `key → "" → key` 的来回打败：读者在 `markChatRead` 的写入落地之前把视野挪开再挪回来，就会为同一条消息清第二次。存下来还顺带改善了失败路径——`markChatRead` 出错时 key 不变，不会每次 reload 重投。
+**比对的是 `Model.readAt`（上次 takeRead 应答的那个 key），不是本轮更新之前的 key。** 后者会被 `key → "" → key` 的来回打败：读者在 POST 被接受之前把视野挪开再挪回来，就会为同一条消息清第二次。存下来还顺带定下了失败路径——POST 失败、或探针把它翻回时 key 不变，不会每次 reload 重投，等下一条未读落进来才再发。
 
 用 `msgsBase` 而不是 `msgs`：`msgs` 带着还在飞的发送，每次发送/回执都会让 key 抖一下。
 
@@ -97,10 +88,10 @@ thread 回复与已撤回不进查询集合：水位只收主消息流，thread 
 | 事件 | key | 触发 | 清红点 |
 |---|---|---|---|
 | 视野在末尾，页面带着未读的 M10 | `C\|M10` | 是 | 是 |
-| `markChatRead` 自己的 `data_rev` 引起的 reload | `""`（没有欠着的了） | 否 | 否 |
+| `AcceptRemoteRead` 翻转引起的 reload | `""`（没有欠着的了） | 否 | 否 |
 | 轮询按客户端回执写 `is_read_remote = 1` | `""` | 否 | 否 |
 
-第二行就停了。没有冷却窗口：次数由未读消息条数决定而非 reload 次数，每条新消息本来就该对应一次清理——客户端的红点随每条消息重新亮起。加一层节流只会让落在窗口内的消息被 `markChatRead` 静静收掉、清红点再也不发。
+第二行就停了。没有冷却窗口：次数由未读消息条数决定而非 reload 次数，每条新消息本来就该对应一次清理——客户端的红点随每条消息重新亮起。加一层节流只会让落在窗口内的消息被 `readAt` 越过、清红点再也不发。
 
 ## 注入缝
 
@@ -130,9 +121,7 @@ Collapsed Chats 在 inbox 顶层只是一张 `type=BOX` 的卡片，折进去的
 
 ## 数据
 
-`chats.web_chat_id`（见上）。`read_state_unread(is_read_remote, local_read_at, message_id)` 仍以 `is_read_remote` 领衔，`clientDot` 只约束首列，索引照样能驱动 read_state 一侧且仍然覆盖——拿得到 `message_id` 去 join，不必回表。代价只是选择性：命中的行从「当前有徽标的」变成「7 天视野内远端仍未读的」，而 `ExpireReadStatus` 是这个集合现在唯一的上界。
-
-`local_read_at` 不因 gateway 能翻回执而退休：徽标要立刻落（回执有往返延迟）、回执过 7 天视野归 NULL、POST 可能静默失败。
+`chats.web_chat_id`（见上）。`read_state_unread(is_read_remote, message_id)` 驱动 read_state 一侧且覆盖——拿得到 `message_id` 去 join，不必回表。命中的行是「7 天视野内远端仍未读的」，`ExpireReadStatus` 是这个集合唯一的上界。
 
 ## 测试
 
@@ -142,7 +131,9 @@ Collapsed Chats 在 inbox 顶层只是一张 `type=BOX` 的卡片，折进去的
 |---|---|
 | `TestUpdate_OpeningAChatWithUnreadClearsTheFeishuBadge` | 整条路径：一次访问清一次，带 chat id |
 | `TestTakeRead_ClearsNothingWhenNothingWasWaiting` | 全部已读的页面不清 |
-| `TestTakeRead_ClearsNothingForAPageAlreadyReadHere` | `local_read_at` 非零的 reload 不清 |
+| `TestTakeRead_ClearsNothingOnTheReloadItsOwnClearCauses` | 清红点被接受后的 reload（页面已无欠着的）不清 |
+| `TestFireBadgeClear_AcceptsRemoteReadOnSuccess` | POST 成功后主消息流翻成已读 |
+| `TestFireBadgeClear_LeavesUnreadWhenClearFails` | POST 失败什么都不写 |
 | `TestTakeRead_ClearsAgainForAMessageLandingInTheOpenChat` | 清红点不是一次性的 |
 | `TestUpdate_AMessageLandingInTheOpenChatClearsTheBadgeAgain` | 开着的会话收到新消息后再清一次 |
 | `TestTakeRead_IgnoresUnreadTheChatBadgeLeavesOut` | thread 回复与已撤回消息不构成理由 |
