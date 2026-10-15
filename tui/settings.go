@@ -47,6 +47,9 @@ type setting struct {
 	// pickProject opens the Todoist project chooser on enter in place of the
 	// line editor: the value is an id, and nobody types one from memory.
 	pickProject bool
+	// pickValue opens a chooser over config.Values on enter in place of the
+	// line editor, for a key whose every value fits in a short list.
+	pickValue bool
 }
 
 // settings names every key of the configuration, in config.Keys() order, which
@@ -125,12 +128,18 @@ var settings = []setting{{
 	key:   "ai.jev_key_env",
 	help:  "environment variable holding the TypeSafe API key",
 	live:  true,
-	apply: rebuildSuggest,
+	apply: rebuildJev,
 }, {
 	key:   "ai.jev_endpoint",
-	help:  "the evaluation endpoint the reaction suggestions are asked of",
+	help:  "the evaluation endpoint the reaction suggestions and triage are asked of",
 	live:  true,
-	apply: rebuildSuggest,
+	apply: rebuildJev,
+}, {
+	key:       "ai.jev_model",
+	help:      "the Jev alias the reaction suggestions and triage ask: jev-preview is the newest build, official or not; jev-latest the newest stable one",
+	live:      true,
+	apply:     rebuildJev,
+	pickValue: true,
 }, {
 	key:      "ai.snippets",
 	help:     "the assistant panel's snippet offers, name and text; enter edits them in the config file",
@@ -209,14 +218,17 @@ func rebuildAI(m *Model) {
 	m.ai = m.deps.NewAI(m.cfg.AI.Agent, m.cfg.AI.Model)
 }
 
-// rebuildSuggest builds the reaction suggester again from the key variable and
-// the endpoint now in m.cfg. Deps without a builder — a test that injected a
-// fake — keeps what it was given.
-func rebuildSuggest(m *Model) {
-	if m.deps.NewSuggest == nil {
-		return
+// rebuildJev builds both of the session's Jev callers again from the ai
+// section now in m.cfg: the reaction suggester, and triage's judge where the
+// sweep runs here. A daemon's judge is its own and follows the file. Deps
+// without a builder — a test that injected a fake — keeps what it was given.
+func rebuildJev(m *Model) {
+	if m.deps.NewSuggest != nil {
+		m.suggester = m.deps.NewSuggest(m.cfg.AI)
 	}
-	m.suggester = m.deps.NewSuggest(m.cfg.AI.JevKeyEnv, m.cfg.AI.JevEndpoint)
+	if m.deps.SetJudge != nil {
+		m.deps.SetJudge(m.cfg.AI)
+	}
 }
 
 // rebuildClearBadge builds the badge clearer again from the browser now in

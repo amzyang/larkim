@@ -261,3 +261,26 @@ func TestSet_AnEmptyListKeepsTheUnsetValue(t *testing.T) {
 	require.NoError(t, cfg.Set("notifications.watch", "[]"))
 	require.Nil(t, cfg.Notifications.Watch, "an empty list round-trips equal to an unset one")
 }
+
+func TestDefault_AsksJevPreview(t *testing.T) {
+	require.Equal(t, "jev-preview", Default().AI.JevModel)
+}
+
+func TestLoad_TakesTheJevModel(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "c.yaml")
+	require.NoError(t, os.WriteFile(p, []byte("ai:\n  jev_model: jev-latest\n"), 0o644))
+	cfg, err := Load(p)
+	require.NoError(t, err)
+	require.Equal(t, "jev-latest", cfg.AI.JevModel)
+}
+
+func TestLoad_RejectsAJevModelThatIsNotAnAlias(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "c.yaml")
+	require.NoError(t, os.WriteFile(p, []byte("ai:\n  jev_model: jev-1.13.0\n"), 0o644))
+	_, err := Load(p)
+	require.ErrorContains(t, err, `ai.jev_model: "jev-1.13.0" is not one of jev-preview, jev-latest`)
+}
+
+func TestValues_OffersTheJevModels(t *testing.T) {
+	require.Equal(t, []string{"jev-preview", "jev-latest"}, Values("ai.jev_model"))
+}

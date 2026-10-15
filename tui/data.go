@@ -58,10 +58,10 @@ type Deps struct {
 	// Suggest ranks emoji against the message the reaction picker is open on;
 	// nil when no API key is configured, which leaves the picker without its
 	// contextual row. NewSuggest builds it again when :config changes
-	// ai.jev_key_env or ai.jev_endpoint, and returns nil when the new pair
-	// names no key.
+	// ai.jev_key_env, ai.jev_endpoint or ai.jev_model, and returns nil when
+	// the new section names no key.
 	Suggest    ReactSuggester
-	NewSuggest func(keyEnv, endpoint string) ReactSuggester
+	NewSuggest func(config.AI) ReactSuggester
 	// Todoist files the selected message or chat as a task and lists the
 	// projects :config offers for todoist.project; nil when no token is
 	// configured, which leaves the T key answering a notice instead of failing
@@ -115,6 +115,9 @@ type Deps struct {
 	// side running in this process; nil where a daemon runs it and rereads
 	// the file itself.
 	SetNotifications func(config.Notifications)
+	// SetJudge hands an edited ai section to triage's judge in this process;
+	// nil where a daemon runs triage and rereads the file itself.
+	SetJudge func(config.AI)
 }
 
 // AIStreamer is the pair of calls the assistant pane makes. They are named

@@ -172,11 +172,10 @@ type Presence interface {
 
 // Triager judges arrivals and acts on the verdicts. It runs in the process
 // holding daemon.lock, which makes it the only writer of triage and reminders.
-// Judge, Drafter, Notifier and Presence may be nil: no judge leaves the gray
-// zone at P1, no drafter writes no candidates, no notifier only records.
+// The judge, Drafter, Notifier and Presence may be nil: no judge leaves the
+// gray zone at P1, no drafter writes no candidates, no notifier only records.
 type Triager struct {
 	Store    *store.Store
-	Judge    Judge
 	Drafter  Drafter
 	Notifier Notifier
 	Desktop  Desktop
@@ -193,8 +192,23 @@ type Triager struct {
 	Read markread.Clear
 
 	rules   atomic.Pointer[Rules]
+	judger  atomic.Pointer[Judge]
 	banners gosync.WaitGroup
 	drafted chan struct{}
+}
+
+// SetJudge installs the judge the next gray-zone message is asked of; nil
+// takes it away. It is swapped rather than set once because a reloaded
+// configuration can name another model while a pass is running.
+func (t *Triager) SetJudge(j Judge) { t.judger.Store(&j) }
+
+// Judge is the judge the next gray-zone message is asked of; nil when none is
+// set.
+func (t *Triager) Judge() Judge {
+	if j := t.judger.Load(); j != nil {
+		return *j
+	}
+	return nil
 }
 
 // SetRules installs the rule set the next pass judges by.
@@ -338,7 +352,8 @@ func (t *Triager) judgeGray(ctx context.Context, m store.Message, c store.Chat, 
 	if c.Muted {
 		return Verdict{Level: P1, Reason: "muted"}
 	}
-	if t.Judge == nil {
+	judge := t.Judge()
+	if judge == nil {
 		return Verdict{Level: P1, Reason: "p1"}
 	}
 	before, err := t.Store.ListMessages(ctx, store.MessageQuery{ChatID: m.ChatID, BeforeID: m.MessageID,
@@ -350,7 +365,7 @@ func (t *Triager) judgeGray(ctx context.Context, m store.Message, c store.Chat, 
 	reader, _ := t.Store.GetContact(ctx, self)
 	ctx, cancel := context.WithTimeout(ctx, judgeTimeout)
 	defer cancel()
-	v, err := t.Judge.Judge(ctx, GrayAsk{Message: m, Chat: c, Context: before, Self: self,
+	v, err := judge.Judge(ctx, GrayAsk{Message: m, Chat: c, Context: before, Self: self,
 		Reader: reader.Name, Aliases: selfAliases})
 	if err != nil {
 		t.log().WarnContext(ctx, "triage judge", "message", m.MessageID, "chat", m.ChatID, "err", err)

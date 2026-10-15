@@ -61,8 +61,9 @@ type configPanel struct {
 	// rather than thrown away with it.
 	err string
 	// project is the todoist.project chooser, which stands in for the editor
-	// on that row.
+	// on that row; value is the same for a pickValue row.
 	project projectPick
+	value   valuePick
 	// tab is the page on screen; silence and notify are those pages' own
 	// state.
 	tab     configTab
@@ -197,6 +198,9 @@ func (m Model) forwardConfig(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	var cmd tea.Cmd
 	switch {
+	case m.config.value.open:
+		// The chooser has nothing to type into.
+		return m, nil
 	case m.config.project.open:
 		return m.typeIntoProjectPick(msg)
 	case m.config.editing:
@@ -231,6 +235,9 @@ func (m Model) onConfigKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	}
 	if m.config.project.open {
 		return m.onProjectPickKey(k)
+	}
+	if m.config.value.open {
+		return m.onValuePickKey(k)
 	}
 	s := k.String()
 	if m.config.editing {
@@ -322,6 +329,9 @@ func (m Model) editConfig() (tea.Model, tea.Cmd) {
 	}
 	if s.pickProject {
 		return m.openProjectPick()
+	}
+	if s.pickValue {
+		return m.openValuePick(s), nil
 	}
 	in := m.newQueryInput()
 	in.SetValue(m.settingValue(s))
@@ -463,18 +473,22 @@ func (m Model) configLines() []string {
 			cell = style.Render(truncate(value, valw))
 		}
 		out = append(out, fit(lead+fit(key, keyw)+gap+cell, w))
-		if row == m.config.idx && m.config.project.open {
+		switch {
+		case row != m.config.idx:
+		case m.config.project.open:
 			out = append(out, m.projectPickLines(configValueLeft(), w)...)
+		case m.config.value.open:
+			out = append(out, m.valuePickLines(configValueLeft(), w)...)
 		}
 	}
 	return out[:min(len(out), rows)]
 }
 
 // configTop is the first row drawn. It is the scroll the cursor keeps, moved
-// down while the project chooser is open as far as it takes for the list to
-// hang under its row rather than off the foot of the panel.
+// down while a chooser is open as far as it takes for the list to hang under
+// its row rather than off the foot of the panel.
 func (m Model) configTop() int {
-	need := m.config.idx + m.projectPickHeight() - m.configRows() + 1
+	need := m.config.idx + m.projectPickHeight() + m.valuePickHeight() - m.configRows() + 1
 	return max(m.config.top, need)
 }
 
@@ -499,7 +513,7 @@ func (m Model) renderConfig() string {
 	body, detail := m.configLines, m.configDetail
 	var hintBar []KeyBinding
 	switch {
-	case m.config.project.open:
+	case m.config.project.open, m.config.value.open:
 		hintBar = configPickHintBar
 	case m.config.editing:
 		hintBar = configEditHintBar

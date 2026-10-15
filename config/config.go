@@ -119,6 +119,8 @@ func Values(key string) []string {
 		return larkweb.Browsers
 	case "silence_sync":
 		return []string{"true", "false"}
+	case "ai.jev_model":
+		return jev.Models
 	}
 	return nil
 }
@@ -138,6 +140,16 @@ func (m MarkRead) Validate() error {
 	return ValidMarkReadBrowser(m.Browser)
 }
 
+// ValidJevModel refuses a model that is not one of the aliases, so a pinned
+// version or a typo is named where it is typed rather than refused by the
+// endpoint on every question.
+func ValidJevModel(model string) error {
+	if slices.Contains(jev.Models, model) {
+		return nil
+	}
+	return fmt.Errorf("ai.jev_model: %q is not one of %s", model, strings.Join(jev.Models, ", "))
+}
+
 // AI configures the TUI assistant.
 type AI struct {
 	// Agent is the command that starts an ACP agent on stdio, split on
@@ -154,6 +166,9 @@ type AI struct {
 	JevKeyEnv string `yaml:"jev_key_env"`
 	// JevEndpoint is the evaluation endpoint that answers it.
 	JevEndpoint string `yaml:"jev_endpoint"`
+	// JevModel is the alias every Jev question is asked of, one of
+	// jev.Models.
+	JevModel string `yaml:"jev_model"`
 	// Snippets replaces the assistant panel's built-in snippet offers whole,
 	// when it is set. Each is a scripted question the panel inserts into its
 	// box under a digit and behind the / popup.
@@ -226,7 +241,7 @@ func Default() Config {
 		MarkRead:          MarkRead{Browser: "chrome"},
 		Resources:         Resources{MaxBytes: 50 << 20},
 		AI: AI{Agent: "omp --mode acp", Model: "cursor/composer-2.5-fast", Context: 10,
-			JevKeyEnv: "TYPESAFE_API_KEY", JevEndpoint: jev.DefaultEndpoint},
+			JevKeyEnv: "TYPESAFE_API_KEY", JevEndpoint: jev.DefaultEndpoint, JevModel: jev.DefaultModel},
 	}
 }
 
@@ -305,6 +320,9 @@ func (c Config) Validate() error {
 		return err
 	}
 	if err := c.MarkRead.Validate(); err != nil {
+		return err
+	}
+	if err := ValidJevModel(c.AI.JevModel); err != nil {
 		return err
 	}
 	return c.Notifications.Validate()

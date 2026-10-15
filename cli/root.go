@@ -235,7 +235,9 @@ func (a *App) reloadOnChange(s *sync.Syncer, st *store.Store, t *triage.Triager)
 		// new fingerprint and rebuilds every flag from these rules.
 		st.SetSilence(cfg.Silence)
 		t.SetRules(triage.NewRules(cfg.Notifications))
-		a.logger().Info("config reloaded", "path", path, "poll_interval_ms", cfg.PollIntervalMS)
+		t.SetJudge(a.judge(cfg.AI))
+		a.logger().Info("config reloaded", "path", path, "poll_interval_ms", cfg.PollIntervalMS,
+			"jev_model", cfg.AI.JevModel)
 		for _, k := range frozenKeys(started, cfg) {
 			a.logger().Warn("config key needs a restart", "key", k)
 		}

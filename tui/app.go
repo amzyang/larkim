@@ -3347,6 +3347,10 @@ func (m Model) onWheel(ms tea.Mouse) (tea.Model, tea.Cmd) {
 			m.projectPickScroll(cmp.Compare(step, 0))
 			return m, nil
 		}
+		if m.config.value.open {
+			m.valuePickScroll(cmp.Compare(step, 0))
+			return m, nil
+		}
 		m.configScroll(step)
 		return m, nil
 	}

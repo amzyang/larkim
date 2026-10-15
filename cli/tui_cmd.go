@@ -54,13 +54,13 @@ func (a *App) runTUI(_ *cobra.Command, _ []string) error {
 		return nil
 	}
 	deps.AI = deps.NewAI(a.cfg.AI.Agent, a.cfg.AI.Model)
-	deps.NewSuggest = func(keyEnv, endpoint string) tui.ReactSuggester {
-		if c := a.newJev(keyEnv, endpoint); c != nil {
+	deps.NewSuggest = func(ai config.AI) tui.ReactSuggester {
+		if c := a.newJev(ai); c != nil {
 			return c
 		}
 		return nil
 	}
-	deps.Suggest = deps.NewSuggest(a.cfg.AI.JevKeyEnv, a.cfg.AI.JevEndpoint)
+	deps.Suggest = deps.NewSuggest(a.cfg.AI)
 	deps.NewTodoist = func(token, project string) tui.TodoistClient {
 		// An empty token leaves the key reporting that it is not configured
 		// rather than failing a request that cannot land.
@@ -102,6 +102,7 @@ func (a *App) runTUI(_ *cobra.Command, _ []string) error {
 			return err
 		}
 		deps.SetNotifications = func(n config.Notifications) { t.SetRules(triage.NewRules(n)) }
+		deps.SetJudge = func(ai config.AI) { t.SetJudge(a.judge(ai)) }
 		go func() {
 			defer sentryRecoverRepanic()
 			s.Run(ctx)

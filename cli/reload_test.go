@@ -1,12 +1,14 @@
 package cli
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/amzyang/larkim/config"
+	"github.com/amzyang/larkim/jev"
 	"github.com/amzyang/larkim/store"
 	"github.com/amzyang/larkim/store/storetest"
 	"github.com/amzyang/larkim/triage"
@@ -51,6 +53,31 @@ func TestReloadOnChange_HandsTriageTheEditedWatchList(t *testing.T) {
 	require.True(t, ok)
 	require.True(t, r.Watches("ou_boss"))
 	require.False(t, r.Watches("ou_a"))
+}
+
+func TestReloadOnChange_RebuildsTheJudgeOnANewJevModel(t *testing.T) {
+	t.Setenv("LARKIM_TEST_JEV_KEY", "k")
+	body := "ai:\n  jev_key_env: LARKIM_TEST_JEV_KEY\n  jev_model: %s\n"
+	a, st := reloadApp(t, fmt.Sprintf(body, "jev-latest"))
+	tr := &triage.Triager{}
+	tr.SetJudge(a.judge(a.cfg.AI))
+	require.Equal(t, "jev-latest", judgeModel(t, tr))
+	reload := a.reloadOnChange(a.syncer(st), st, tr)
+	rewrite(t, a.configPath, fmt.Sprintf(body, "jev-preview"))
+
+	reload()
+
+	require.Equal(t, "jev-preview", judgeModel(t, tr))
+}
+
+// judgeModel is the model the triager's judge asks.
+func judgeModel(t *testing.T, tr *triage.Triager) string {
+	t.Helper()
+	j, ok := tr.Judge().(triage.JevJudge)
+	require.True(t, ok, "a key is set, so a judge is built")
+	c, ok := j.Ranker.(*jev.Client)
+	require.True(t, ok)
+	return c.Model()
 }
 
 func TestReloadOnChange(t *testing.T) {

@@ -221,7 +221,7 @@ func TestTriager_GrayZoneFallsToP1WithoutJudgeOrOnJevError(t *testing.T) {
 	require.Equal(t, "p1", h.verdicts(t)["om_a"].Reason, "no judge configured")
 
 	j := &fakeJudge{err: errors.New("jev: 503")}
-	h.tr.Judge = j
+	h.tr.SetJudge(j)
 	h.arrive(t, text("om_b", "oc_team", "ou_a", "谁能看下"), time.Second)
 	h.pass(t)
 	require.Equal(t, "P1", h.verdicts(t)["om_b"].Level)
@@ -247,7 +247,7 @@ func TestTriager_TellsTheJudgeTheReadersName(t *testing.T) {
 	h := newHarness(t)
 	require.NoError(t, h.st.UpsertContacts(t.Context(), []store.Contact{{OpenID: "ou_self", Name: "林岚"}}, 1))
 	j := &fakeJudge{verdict: Verdict{Level: P1, Reason: "jev:fyi"}}
-	h.tr.Judge = j
+	h.tr.SetJudge(j)
 	h.arrive(t, text("om_a", "oc_team", "ou_a", "林岚 帮忙看下"), time.Second)
 	h.pass(t)
 	require.Equal(t, []string{"林岚"}, j.readers)
@@ -640,4 +640,16 @@ func setMention(t *testing.T, st *store.Store, id string) {
 	_, err := st.DB().ExecContext(t.Context(),
 		`UPDATE messages SET mentions_json = '[{"id":"ou_self","key":"@_user_1","name":"林岚"}]' WHERE message_id = ?`, id)
 	require.NoError(t, err)
+}
+
+func TestTriager_SetJudgeNilLeavesTheGrayZoneAtP1(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	j := &fakeJudge{verdict: Verdict{Level: P0, Reason: "jev:act"}}
+	h.tr.SetJudge(j)
+	h.tr.SetJudge(nil)
+	h.arrive(t, text("om_a", "oc_team", "ou_a", "谁能看下"), time.Second)
+	h.pass(t)
+	require.Equal(t, "p1", h.verdicts(t)["om_a"].Reason)
+	require.Empty(t, j.asked)
 }

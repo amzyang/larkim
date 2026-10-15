@@ -202,14 +202,20 @@ func (m Model) projectPickLines(indent, w int) []string {
 	case !p.menu.open():
 		return []string{line(stDim.Render("no project matches"))}
 	}
-	v := p.menu.view(m.projectPickRows())
+	return m.pickMenuLines(p.menu.view(m.configPickRows()), indent, w)
+}
+
+// pickMenuLines draws a chooser's window under its row, indented to the value
+// column so it hangs off the cell it fills.
+func (m Model) pickMenuLines(v menuView, indent, w int) []string {
+	lead := strings.Repeat(" ", indent)
 	out := make([]string, len(v.rows))
 	for i, o := range v.rows {
 		row := m.joinSegsWidth(m.offerRow(o, v.cols, i, i == v.sel))
 		if i == v.sel {
 			row = paint(stChatSelBG, row)
 		}
-		out[i] = line(row)
+		out[i] = fit(lead+row, w)
 	}
 	return out
 }
@@ -219,12 +225,12 @@ func (m Model) projectPickHeight() int {
 	if !m.config.project.open {
 		return 0
 	}
-	return max(1, min(len(m.config.project.menu.items), m.projectPickRows()))
+	return max(1, min(len(m.config.project.menu.items), m.configPickRows()))
 }
 
-// projectPickRows is how many projects the list shows at most: a popup menu's
-// height, less on a panel too short to hold one under its row.
-func (m Model) projectPickRows() int { return max(1, min(pumMaxRows, m.configRows()-1)) }
+// configPickRows is how many entries a chooser under a row shows at most: a
+// popup menu's height, less on a panel too short to hold one under its row.
+func (m Model) configPickRows() int { return max(1, min(pumMaxRows, m.configRows()-1)) }
 
 // projectPickScroll walks the list, for a key or the wheel.
-func (m *Model) projectPickScroll(d int) { m.config.project.menu.move(d, m.projectPickRows()) }
+func (m *Model) projectPickScroll(d int) { m.config.project.menu.move(d, m.configPickRows()) }

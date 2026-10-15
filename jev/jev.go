@@ -27,12 +27,17 @@ import (
 // configuration's default and this package name it in one place.
 const DefaultEndpoint = "https://api.typesafe.ai/v1/systemone"
 
-// model is the alias rather than a pinned version. An alias moves when a
-// release ships, which is worth taking here: the callers' cuts are coarse,
-// midpoints and floors rather than tuned to a decimal, and Rank.Model names
-// the version that answered, so a cut that drifts with a release can be read
-// back against the version it was measured on.
-const model = "jev-latest"
+// Models are the aliases a client may ask, DefaultModel first. Each names a
+// release rather than pinning one: jev-preview is the most recent release,
+// official or not, and moves ahead of jev-latest whenever a preview build
+// ships; jev-latest is the most recent stable one. Riding an alias is worth it
+// here: the callers' cuts are coarse, midpoints and floors rather than tuned to
+// a decimal, and Rank.Model names the version that answered, so a cut that
+// drifts with a build can be read back against the version it was measured on.
+var Models = []string{DefaultModel, "jev-latest"}
+
+// DefaultModel is the alias a client asks unless configured otherwise.
+const DefaultModel = "jev-preview"
 
 // Retrying. The endpoint asks for exponential backoff on 429 and 529 alone;
 // every other refusal says something about the request that a second try
@@ -51,17 +56,21 @@ const errBodyMax = 2 << 10
 type Client struct {
 	key      string
 	endpoint string
+	model    string
 	http     *http.Client
 }
 
-// New builds a client for an API key, against endpoint or DefaultEndpoint when
-// that is empty. Requests are bounded by the context they are given rather than
-// by a client-wide timeout, because one caller's idea of too long is not
-// another's. Every request is logged to log; nil discards.
-func New(key, endpoint string, log *slog.Logger) *Client {
-	return &Client{key: key, endpoint: cmp.Or(endpoint, DefaultEndpoint),
+// New builds a client for an API key that asks model, against endpoint or
+// DefaultEndpoint when that is empty. Requests are bounded by the context they
+// are given rather than by a client-wide timeout, because one caller's idea of
+// too long is not another's. Every request is logged to log; nil discards.
+func New(key, endpoint, model string, log *slog.Logger) *Client {
+	return &Client{key: key, endpoint: cmp.Or(endpoint, DefaultEndpoint), model: model,
 		http: &http.Client{Transport: oplog.Transport{Log: log, Name: "jev"}}}
 }
+
+// Model is the alias the client asks.
+func (c *Client) Model() string { return c.model }
 
 // Ask is one ranking question with a companion yes/no over the same state.
 type Ask struct {
@@ -136,7 +145,7 @@ func (c *Client) Rank(ctx context.Context, a Ask) (Rank, error) {
 			Criteria: map[string]string{"true": n.True, "false": n.False}}
 	}
 	var res response
-	if err := c.post(ctx, request{State: a.State, Model: model, Questions: qs}, &res); err != nil {
+	if err := c.post(ctx, request{State: a.State, Model: c.model, Questions: qs}, &res); err != nil {
 		return Rank{}, err
 	}
 	pick, ok := res.Answers[pickID]

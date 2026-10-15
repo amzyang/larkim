@@ -26,7 +26,7 @@ func serveLogged(t *testing.T, h http.HandlerFunc, log *slog.Logger) *Client {
 	t.Helper()
 	s := httptest.NewServer(h)
 	t.Cleanup(s.Close)
-	return New("k", s.URL, log)
+	return New("k", s.URL, DefaultModel, log)
 }
 
 // ask is the shape every case here sends.
@@ -51,7 +51,7 @@ func TestRank_SendsTheStateAndBothQuestions(t *testing.T) {
 	})
 	_, err := c.Rank(t.Context(), ask)
 	require.NoError(t, err)
-	require.Equal(t, model, got.Model)
+	require.Equal(t, DefaultModel, got.Model)
 	require.Equal(t, map[string]any{"target": "shipped it"}, got.State)
 	require.Equal(t, "choice", got.Questions[pickID].Type)
 	require.Equal(t, ask.Options, got.Questions[pickID].Criteria)
@@ -148,6 +148,25 @@ func TestRank_QuotesTheReasonARefusalGives(t *testing.T) {
 	require.ErrorContains(t, err, "invalid api key")
 }
 
+func TestRank_AsksTheModelTheClientWasBuiltFor(t *testing.T) {
+	var got request
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.NoError(t, json.UnmarshalRead(r.Body, &got))
+		io.WriteString(w, `{"answers":{"pick":{"probabilities":{"ROCKET":1}}}}`)
+	}))
+	t.Cleanup(s.Close)
+	c := New("k", s.URL, "jev-latest", nil)
+	_, err := c.Rank(t.Context(), ask)
+	require.NoError(t, err)
+	require.Equal(t, "jev-latest", got.Model)
+	require.Equal(t, "jev-latest", c.Model())
+}
+
+func TestDefaultModel_IsOneOfTheModels(t *testing.T) {
+	require.Equal(t, "jev-preview", DefaultModel)
+	require.Equal(t, []string{"jev-preview", "jev-latest"}, Models)
+}
+
 func TestRank_NamesTheModelThatAnswered(t *testing.T) {
 	c := serve(t, func(w http.ResponseWriter, _ *http.Request) {
 		io.WriteString(w, `{"model":"jev-1.13.0","answers":{"pick":{"probabilities":{"ROCKET":1}}}}`)
@@ -216,8 +235,8 @@ func TestRank_CarriesTheCallersDeadline(t *testing.T) {
 }
 
 func TestNew_FallsBackToTheDefaultEndpoint(t *testing.T) {
-	require.Equal(t, DefaultEndpoint, New("k", "", nil).endpoint)
-	require.Equal(t, "http://x", New("k", "http://x", nil).endpoint)
+	require.Equal(t, DefaultEndpoint, New("k", "", DefaultModel, nil).endpoint)
+	require.Equal(t, "http://x", New("k", "http://x", DefaultModel, nil).endpoint)
 }
 
 func TestClient_LogsEveryCallUnderTheCallersOperation(t *testing.T) {
