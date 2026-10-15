@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
+	"github.com/amzyang/larkim/store"
 	"gopkg.in/yaml.v3"
 )
 
@@ -43,6 +45,31 @@ func SetFileValue(path, key string, v any) error {
 		return fmt.Errorf("%s: %w", key, err)
 	}
 	return setNode(path, key, &node)
+}
+
+// UpdateSilence rewrites the silence rules from what the file holds now, not
+// from a copy loaded earlier: `larkim silence add` and an open Silence tab
+// both write the key, and an edit applied to a stale copy would drop the
+// other's rules. A file that no longer loads is refused rather than
+// overwritten. It returns the rules the file holds afterwards, normalized,
+// and whether they differ from before; the file is left untouched when not.
+func UpdateSilence(path string, edit func(store.SilenceRules) store.SilenceRules) (store.SilenceRules, bool, error) {
+	cfg, err := Load(path)
+	if err != nil {
+		return nil, false, err
+	}
+	next := edit(slices.Clone(cfg.Silence))
+	if err := next.Validate(); err != nil {
+		return nil, false, err
+	}
+	next = next.Normalize()
+	if slices.Equal(next, cfg.Silence) {
+		return next, false, nil
+	}
+	if err := SetFileValue(path, "silence", next); err != nil {
+		return nil, false, err
+	}
+	return next, true, nil
 }
 
 func setNode(path, key string, node *yaml.Node) error {

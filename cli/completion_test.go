@@ -91,12 +91,50 @@ func TestCompleteContactRef_OffersNameEmailAndOpenID(t *testing.T) {
 
 func TestCompleteSenderID_OffersOnlyOpenIDs(t *testing.T) {
 	a := completionFixture(t)
-	got, _ := a.completeSenderID(nil, nil, "")
+	got, _ := a.completeSenderID(&cobra.Command{}, nil, "")
 	require.ElementsMatch(t, []string{"ou_a", "ou_b", "ou_c"}, values(got),
 		"--sender takes an open_id, so a name would be a value it rejects")
 
-	got, _ = a.completeSenderID(nil, nil, "张")
+	got, _ = a.completeSenderID(&cobra.Command{}, nil, "张")
 	require.Empty(t, got)
+}
+
+func TestCompleteSenderID_OffersTheChatFlagsMembersFirst(t *testing.T) {
+	a := completionFixture(t)
+	st, err := store.Open(a.cfg.DBPath())
+	require.NoError(t, err)
+	require.NoError(t, st.SetChatMembers(t.Context(), "oc_quiet", []store.Contact{{OpenID: "ou_c"}, {OpenID: "ou_x"}}, false, 1))
+	require.NoError(t, st.Close())
+	cmd := &cobra.Command{}
+	cmd.Flags().String("chat", "", "")
+	require.NoError(t, cmd.Flags().Set("chat", "平台组"))
+
+	got, directive := a.completeSenderID(cmd, nil, "")
+	require.Equal(t, []string{"ou_c", "ou_x", "ou_a", "ou_b"}, values(got),
+		"the chat's members lead, a member never fetched as a contact included, then everyone else once")
+	require.NotZero(t, directive&cobra.ShellCompDirectiveKeepOrder, "the shell must not sort the members back among the rest")
+	require.Contains(t, got, cobra.Completion("ou_c\t构建机器人"))
+}
+
+func TestCompletion_SilenceAddCompletesItsFlags(t *testing.T) {
+	a := completionFixture(t)
+	home := t.TempDir()
+	require.NoError(t, os.Mkdir(filepath.Join(home, ".larkim"), 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(home, ".larkim", "config.yaml"), []byte("data_dir: "+a.cfg.DataDir+"\n"), 0o600))
+
+	lines := completeArgsIn(t, home, "silence", "add", "--chat", "平")
+	require.Equal(t, []string{"平台组\toc_quiet"}, lines[:len(lines)-1])
+
+	lines = completeArgsIn(t, home, "silence", "add", "--chat", "oc_quiet", "--sender", "ou_a")
+	require.Equal(t, []string{"ou_a\t张三"}, lines[:len(lines)-1])
+
+	lines = completeArgsIn(t, home, "silence", "add", "--")
+	require.Subset(t, lines, []string{"--chat\tchat whose messages the rule covers: an oc_ id or an exact chat name"})
+}
+
+func TestCompletion_SilenceOffersAdd(t *testing.T) {
+	lines := completeArgs(t, "silence", "")
+	require.Contains(t, lines, "add\tAdd a silence rule to the config file")
 }
 
 func TestCompleteMessageID_NewestFirst(t *testing.T) {
@@ -138,7 +176,15 @@ func directiveLine(d cobra.ShellCompDirective) string { return ":" + strconv.Ito
 // lines it printed, candidates first and the directive last.
 func completeArgs(t *testing.T, args ...string) []string {
 	t.Helper()
-	t.Setenv("HOME", t.TempDir())
+	return completeArgsIn(t, t.TempDir(), args...)
+}
+
+// completeArgsIn is completeArgs with home as $HOME. The hidden command
+// parses no flags before the configuration loads, so a --config on the line
+// is never what a completion reads; the default path under home is.
+func completeArgsIn(t *testing.T, home string, args ...string) []string {
+	t.Helper()
+	t.Setenv("HOME", home)
 	// Separate buffers: the candidates and the directive go to stdout, which
 	// is all a shell reads, and the trailer cobra adds goes to stderr.
 	var out, errOut bytes.Buffer
@@ -156,6 +202,7 @@ func TestCompletion_NoCommandOffersFilesByDefault(t *testing.T) {
 		{"db", "path", ""},
 		{"messages", "list", "--limit", ""},
 		{"silence", ""},
+		{"silence", "add", "--contains", ""},
 		{"--sentry-dsn", ""},
 	} {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {

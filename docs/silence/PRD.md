@@ -30,6 +30,7 @@ silence:
 - 三个字段全部可选，写出来的字段取 AND；三个都空的规则在配置加载时报错。
 - 多条规则取 OR。
 - `chat` 与 `sender` 是 `chat_id` / `sender_id` 精确匹配。id 从 `larkim chats list` 和 `larkim contacts list --search` 取。
+- 规则可以手写进配置文件，也可以经 TUI 的 Silence tab 或 `larkim silence add [--chat <oc_|会话名>] [--sender <open_id>] [--contains <文本>]` 写入：`--chat` 接受会话名并按 id 落盘，Tab 补全会话名/id 与 sender（`--chat` 已给时该会话成员排前）；已有的同一条规则不重复写。两处写入都基于文件当前内容改写，互不覆盖对方新增的规则。
 - `contains` 是大小写不敏感子串，匹配消息的人读渲染（`messages.content`）；渲染未到时退到原始 body。
 - 只写 `chat` 即整会话本地静音，比飞书的免打扰更彻底——它连计数都不留。
 - `silence_sync: false`（默认）只在本机生效；置 `true` 时 sweep 会把 web 客户端的已读水位推过被静音的消息。
@@ -48,5 +49,4 @@ silence:
 - 判定与徽标抑制只在本机：不写飞书的免打扰设置。`silence_sync` 是唯一写服务端的部分，也只推进已读水位，不制造未读——删除规则不在任何端补亮红点；第一条未读未命中在静音消息之上时，官方端的计数暂时偏高，读会话时整体结清。
 - 不支持正则、不支持按 `msg_type` 静音、不支持时间段静音。
 - 静音的消息不与未静音消息合并成同一块；头像以虚线圆形描边区分，消息头不加文字标记。
-- 规则只从配置文件来，TUI 里没有编辑入口。
 - 搜索与 `larkim messages` 不过滤静音消息，只多一个 `silenced` 字段：静音是列表的注意力口径，不是可见性开关。

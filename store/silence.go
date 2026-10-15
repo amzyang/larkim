@@ -59,6 +59,14 @@ func (rs SilenceRules) Fingerprint() string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
+// Normalize sorts the rules and keeps one copy of each: rules OR together,
+// so a duplicate matches nothing more, and every writer can append without
+// first asking whether the set already holds the rule.
+func (rs SilenceRules) Normalize() SilenceRules {
+	rs.Sort()
+	return slices.Compact(rs)
+}
+
 // silenceBody is what a contains rule reads: the human-readable rendering
 // once lark-cli has produced it, the raw body until then. A rule therefore
 // holds from a message's first tick instead of from the moment the render

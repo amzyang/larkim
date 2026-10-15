@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/amzyang/larkim/config"
 	"github.com/amzyang/larkim/store"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/stretchr/testify/require"
@@ -23,6 +24,12 @@ func silenceModel(t *testing.T) Model {
 	m = press(t, m, "tab")
 	require.Equal(t, tabSilence, m.config.tab)
 	return m
+}
+
+// writeSilence seeds the panel with next through the path a save takes, so
+// the store and the notice see it as they would a typed rule.
+func (m *Model) writeSilence(next store.SilenceRules) error {
+	return m.editSilence(func(store.SilenceRules) store.SilenceRules { return next })
 }
 
 // typeText presses each rune of s as a key of its own.
@@ -194,6 +201,41 @@ func TestSilenceTab_DeleteAsksFirst(t *testing.T) {
 	m = press(t, m, "d", "y")
 	require.Empty(t, configFile(t, m).Silence)
 	require.Contains(t, ansi.Strip(m.silenceDetail()), "no silence rules")
+}
+
+func TestSilenceTab_ASaveKeepsARuleAddedOutsideTheSession(t *testing.T) {
+	t.Parallel()
+	m := silenceModel(t)
+	require.NoError(t, m.writeSilence(store.SilenceRules{{Chat: "oc_quiet"}}))
+	// `larkim silence add` writes the file under a TUI that already loaded it.
+	require.NoError(t, config.SetFileValue(m.deps.ConfigPath, "silence", store.SilenceRules{{Chat: "oc_quiet"}, {Sender: "ou_b"}}))
+
+	m = press(t, m, "a", "tab", "tab")
+	m = typeText(t, m, "nightly")
+	m = press(t, m, "enter")
+	want := store.SilenceRules{{Contains: "nightly"}, {Sender: "ou_b"}, {Chat: "oc_quiet"}}
+	require.Equal(t, want, configFile(t, m).Silence)
+	require.Equal(t, want, m.cfg.Silence, "the panel shows what the file now holds")
+}
+
+func TestSilenceTab_EditAndDeleteFindTheirRuleByValue(t *testing.T) {
+	t.Parallel()
+	m := silenceModel(t)
+	require.NoError(t, m.writeSilence(store.SilenceRules{{Sender: "cli_c"}}))
+	// A rule sorting ahead of the one under the cursor lands in the file.
+	require.NoError(t, config.SetFileValue(m.deps.ConfigPath, "silence", store.SilenceRules{{Contains: "build"}, {Sender: "cli_c"}}))
+
+	m = press(t, m, "enter", "tab", "tab")
+	m = typeText(t, m, "daily")
+	m = press(t, m, "enter")
+	require.Equal(t, store.SilenceRules{{Contains: "build"}, {Sender: "cli_c", Contains: "daily"}}, configFile(t, m).Silence,
+		"the edit replaces the rule it was opened on, not whatever now sits at its index")
+
+	require.NoError(t, config.SetFileValue(m.deps.ConfigPath, "silence", store.SilenceRules{{Contains: "alert"}, {Contains: "build"}, {Sender: "cli_c", Contains: "daily"}}))
+	m.config.silence.idx = 1
+	m = press(t, m, "d", "y")
+	require.Equal(t, store.SilenceRules{{Contains: "alert"}, {Contains: "build"}}, configFile(t, m).Silence,
+		"the delete removes the rule under the cursor, wherever the file now has it")
 }
 
 func TestSilenceSearch_ListsNamedChatMembersBeforeContacts(t *testing.T) {

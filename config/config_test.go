@@ -40,6 +40,27 @@ func TestLoad_ParsesSilenceRules(t *testing.T) {
 	require.Equal(t, store.SilenceRules{{Contains: "nightly build"}, {Chat: "oc_quiet", Sender: "cli_c"}}, cfg.Silence)
 }
 
+func TestLoad_KeepsOneCopyOfARuleListedTwice(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "c.yaml")
+	require.NoError(t, os.WriteFile(p, []byte("silence:\n  - sender: cli_c\n  - chat: oc_quiet\n  - sender: cli_c\n"), 0o644))
+	cfg, err := Load(p)
+	require.NoError(t, err)
+	require.Equal(t, store.SilenceRules{{Sender: "cli_c"}, {Chat: "oc_quiet"}}, cfg.Silence)
+}
+
+func TestUpdateSilence_ReportsWhetherTheFileChanged(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "c.yaml")
+	rules, changed, err := UpdateSilence(p, func(rs store.SilenceRules) store.SilenceRules { return append(rs, store.SilenceRule{Sender: "cli_c"}) })
+	require.NoError(t, err)
+	require.True(t, changed)
+	require.Equal(t, store.SilenceRules{{Sender: "cli_c"}}, rules)
+
+	rules, changed, err = UpdateSilence(p, func(rs store.SilenceRules) store.SilenceRules { return append(rs, store.SilenceRule{Sender: "cli_c"}) })
+	require.NoError(t, err)
+	require.False(t, changed, "a rule the file already holds is kept once")
+	require.Equal(t, store.SilenceRules{{Sender: "cli_c"}}, rules)
+}
+
 func TestLoad_RejectsASilenceRuleThatMatchesEverything(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "c.yaml")
 	require.NoError(t, os.WriteFile(p, []byte("silence:\n  - chat: \"\"\n"), 0o644))

@@ -55,7 +55,10 @@ var silenceFieldNames = []string{"chat", "sender", "contains"}
 type silenceForm struct {
 	open bool
 	// at is the rule being edited, -1 for a new one.
-	at       int
+	at int
+	// was is the rule as the form opened on it. The save finds it by value,
+	// since the file may have gained rules ahead of it since.
+	was      store.SilenceRule
 	rule     store.SilenceRule
 	field    silenceField
 	contains textinput.Model
@@ -243,6 +246,7 @@ func (m Model) openSilenceForm(at int, seed store.SilenceRule) (tea.Model, tea.C
 	f := silenceForm{open: true, at: at, contains: m.newQueryInput()}
 	if at >= 0 {
 		f.rule = m.cfg.Silence[at]
+		f.was = f.rule
 	} else {
 		f.rule = seed
 	}
@@ -422,49 +426,48 @@ func (m Model) chatHits(ix *fuzzy.Index, query string) []silenceHit {
 }
 
 // saveSilenceForm writes the rule in place of the one it was opened on, or
-// after the rest for a new one.
+// beside the rest for a new one.
 func (m Model) saveSilenceForm() (tea.Model, tea.Cmd) {
 	f := &m.config.silence.form
 	f.rule.Contains = strings.TrimSpace(f.contains.Value())
-	next := slices.Clone(m.cfg.Silence)
-	at := f.at
-	if at < 0 {
-		next, at = append(next, f.rule), len(next)
-	} else {
-		next[at] = f.rule
-	}
-	if err := m.writeSilence(next); err != nil {
+	written := f.rule
+	err := m.editSilence(func(rs store.SilenceRules) store.SilenceRules {
+		if f.at >= 0 {
+			rs = slices.DeleteFunc(rs, func(r store.SilenceRule) bool { return r == f.was })
+		}
+		return append(rs, written)
+	})
+	if err != nil {
 		f.err = err.Error()
 		return m, nil
 	}
-	written := f.rule
 	m.config.silence.form = silenceForm{}
 	// The write sorted the set, so the rule the form held sits wherever it
 	// belongs now, not at the slot the form was opened on.
-	at = slices.Index(m.cfg.Silence, written)
-	moveCursor(&m.config.silence.idx, &m.config.silence.top, at-m.config.silence.idx, len(next), m.configRows())
+	at := slices.Index(m.cfg.Silence, written)
+	moveCursor(&m.config.silence.idx, &m.config.silence.top, at-m.config.silence.idx, len(m.cfg.Silence), m.configRows())
 	return m, m.silenceRecount()
 }
 
 func (m Model) deleteSilence() Model {
 	t := &m.config.silence
-	next := slices.Delete(slices.Clone(m.cfg.Silence), t.idx, t.idx+1)
-	if err := m.writeSilence(next); err != nil {
+	gone := m.cfg.Silence[t.idx]
+	err := m.editSilence(func(rs store.SilenceRules) store.SilenceRules {
+		return slices.DeleteFunc(rs, func(r store.SilenceRule) bool { return r == gone })
+	})
+	if err != nil {
 		return m.notify("silence: "+err.Error(), true)
 	}
-	moveCursor(&t.idx, &t.top, 0, len(next), m.configRows())
+	moveCursor(&t.idx, &t.top, 0, len(m.cfg.Silence), m.configRows())
 	return m
 }
 
-// writeSilence judges the rules, writes them, and only then takes them into
-// m.cfg, in the order commitConfig keeps: a set the file refused must not be
-// the one this panel shows.
-func (m *Model) writeSilence(next store.SilenceRules) error {
-	if err := next.Validate(); err != nil {
-		return err
-	}
-	next.Sort()
-	if err := config.SetFileValue(m.deps.ConfigPath, "silence", next); err != nil {
+// editSilence applies edit to the rules the file holds now, writes them, and
+// only then takes them into m.cfg, in the order commitConfig keeps: a set the
+// file refused must not be the one this panel shows.
+func (m *Model) editSilence(edit func(store.SilenceRules) store.SilenceRules) error {
+	next, _, err := config.UpdateSilence(m.deps.ConfigPath, edit)
+	if err != nil {
 		return err
 	}
 	m.cfg.Silence = next

@@ -309,7 +309,7 @@ func (c *Config) Normalize() {
 	c.PollIntervalMS = max(c.PollIntervalMS, minPollIntervalMS)
 	// Every process loads the same file; the rules must come out in the same
 	// order everywhere or the silence fingerprints disagree.
-	c.Silence.Sort()
+	c.Silence = c.Silence.Normalize()
 }
 
 // Validate refuses a configuration no run could honour, including the rules

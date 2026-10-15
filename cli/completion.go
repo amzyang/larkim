@@ -3,8 +3,10 @@ package cli
 import (
 	"cmp"
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -264,21 +266,39 @@ func (a *App) completeContactRef(_ *cobra.Command, _ []string, prefix string) ([
 }
 
 // completeSenderID offers open ids, which is all --sender takes; the name is
-// the description because it is not a value the flag would accept.
-func (a *App) completeSenderID(_ *cobra.Command, _ []string, prefix string) ([]cobra.Completion, cobra.ShellCompDirective) {
-	return a.completeFromStore(func(ctx context.Context, st *store.Store) ([]cobra.Completion, error) {
+// the description because it is not a value the flag would accept. Where the
+// command has a --chat, that chat's roster leads, the way the Silence tab's
+// sender picker and @ order it: the sender being named is nearly always one
+// of them, and a bot member is often never fetched as a contact at all.
+func (a *App) completeSenderID(cmd *cobra.Command, _ []string, prefix string) ([]cobra.Completion, cobra.ShellCompDirective) {
+	out, directive := a.completeFromStore(func(ctx context.Context, st *store.Store) ([]cobra.Completion, error) {
+		var roster []store.Contact
+		if ref := flagValue(cmd, "chat"); ref != "" {
+			// A --chat that resolves to nothing narrows nothing rather than
+			// failing: it is not the word being completed.
+			if id, err := resolveChatLocal(ctx, st, ref); err == nil {
+				roster, err = st.ChatRoster(ctx, id, selfOpenID(ctx, st))
+				if err != nil && !errors.Is(err, store.ErrNotFound) {
+					return nil, err
+				}
+			}
+		}
 		contacts, err := st.ListContacts(ctx, completionLimit)
 		if err != nil {
 			return nil, err
 		}
 		var out []cobra.Completion
-		for _, c := range contacts {
-			if hasPrefixFold(c.OpenID, prefix) {
-				out = append(out, candidate(c.OpenID, c.Name))
+		seen := make(map[string]bool, len(roster)+len(contacts))
+		for _, c := range slices.Concat(roster, contacts) {
+			if seen[c.OpenID] || !hasPrefixFold(c.OpenID, prefix) {
+				continue
 			}
+			seen[c.OpenID] = true
+			out = append(out, candidate(c.OpenID, c.Name))
 		}
 		return out, nil
 	})
+	return out, directive | cobra.ShellCompDirectiveKeepOrder
 }
 
 // completeMessageID offers the newest message ids, narrowed to --chat where

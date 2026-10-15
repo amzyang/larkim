@@ -235,7 +235,7 @@ func (m Model) deleteNotify() Model {
 }
 
 // writeNotify judges the section, writes it, and only then takes it into
-// m.cfg, as writeSilence does.
+// m.cfg, as editSilence does.
 func (m *Model) writeNotify(next config.Notifications) error {
 	if err := next.Validate(); err != nil {
 		return err

@@ -34,6 +34,7 @@ larkim read-all --dry-run                      # how many chats still have a red
 larkim read-all                                # take them all as read, and clear each chat's red dot in Feishu
 larkim --set backfill_days=7 read-all     # override one config key for this run; repeatable
 larkim silence                                 # configured silence rules and what each one matches
+larkim silence add --chat 平台组 --contains build  # write a rule into the config file; Tab completes chats and senders
 larkim sync --backfill-days 7                  # one tick in the foreground (daemon must be stopped)
 larkim db path && larkim schema                # for direct SQLite consumers, see docs/SCHEMA.md
 larkim emoji list                              # the emoji table: names, search terms, panel order, pictures
