@@ -145,6 +145,28 @@ func (s *Store) CandidateChats(ctx context.Context, selfID string) (map[string]i
 	return out, rows.Err()
 }
 
+// CandidateSources names the source messages of the drafts the reader has not
+// answered. Their reactions decide the chat-list marker, and a reaction is the
+// one answer no listing can bring: it moves no update_time, so the sweep is
+// what has to ask Feishu for it.
+func (s *Store) CandidateSources(ctx context.Context, selfID string) ([]string, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT mid FROM draft_candidates WHERE NOT `+candidateAnswered+` ORDER BY created_ms`, selfID, selfID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var mid string
+		if err := rows.Scan(&mid); err != nil {
+			return nil, err
+		}
+		out = append(out, mid)
+	}
+	return out, rows.Err()
+}
+
 // ClearCandidate drops one mid's drafts, which is what the TUI does after a
 // send left a composer it filled with one of them.
 func (s *Store) ClearCandidate(ctx context.Context, mid string) error {

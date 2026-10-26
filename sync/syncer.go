@@ -529,7 +529,9 @@ func (s *Syncer) tick(ctx context.Context, now time.Time, discover bool) (Report
 	rep.ReadChecks += n
 	s.changed(n)
 
-	// 15. Keep the chat list's reactions current for the liveliest p2p chats.
+	// 15. Keep the chat list's reactions current for the liveliest p2p chats,
+	// and the pending drafts' sources current for the marker whatever chat
+	// they sit in.
 	reactionsAt, err := s.stateTime(ctx, KeyReactionsAt)
 	if err != nil {
 		return rep, err
@@ -540,6 +542,10 @@ func (s *Syncer) tick(ctx context.Context, now time.Time, discover bool) (Report
 			return rep, fmt.Errorf("reactions: %w", err)
 		}
 		rep.Reactions = n
+		if n, err = s.candidateReactions(ctx); err != nil {
+			return rep, fmt.Errorf("candidate reactions: %w", err)
+		}
+		rep.Reactions += n
 	}
 
 	// 16. Keep the todo checkboxes current: the completion lives in the task

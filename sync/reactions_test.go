@@ -181,3 +181,43 @@ func TestReactionsSlice_AsksNoMoreOftenThanItsInterval(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 1, reactionCalls(), "past the interval it asks again")
 }
+
+func TestCandidateReactions_LandsADesktopAnswerOnAPendingDraft(t *testing.T) {
+	t.Parallel()
+	s, f, clk := newSyncer(t)
+	ctx := t.Context()
+	require.NoError(t, s.Store.SetState(ctx, KeySelfOpenID, "ou_me"))
+	// A group chat's source message a draft answers, answered with a reaction
+	// in the desktop client: a reaction moves no update_time, so no listing
+	// here can bring it, and the marker holds until the sweep asks.
+	_, err := s.Store.UpsertMessages(ctx, []store.Message{
+		{MessageID: "om_src", ChatID: "oc_group", MsgType: "text", CreateMs: clk.Now().UnixMilli(), RawJSON: "{}"},
+	}, 1)
+	require.NoError(t, err)
+	require.NoError(t, s.Store.PutCandidates(ctx, "om_src", "oc_group", []string{"好的"}, nil, "text", clk.Now().UnixMilli()))
+	f.Reactions["om_src"] = json.RawMessage(`{"counts":[{"reaction_type":"OK","count":"1"}],
+		"details":[{"emoji_type":"OK","operator":{"operator_id":"ou_me","operator_type":"user"}}]}`)
+	cands, err := s.Store.CandidateChats(ctx, "ou_me")
+	require.NoError(t, err)
+	require.Equal(t, map[string]int{"oc_group": 1}, cands)
+
+	rep, err := s.Tick(ctx)
+
+	require.NoError(t, err)
+	require.Positive(t, rep.Reactions)
+	cands, err = s.Store.CandidateChats(ctx, "ou_me")
+	require.NoError(t, err)
+	require.Empty(t, cands, "the marker drops without the chat being opened")
+}
+
+func TestCandidateReactions_CostsNoCallWhenNothingIsPending(t *testing.T) {
+	t.Parallel()
+	s, f, _ := newSyncer(t)
+	require.NoError(t, s.Store.SetState(t.Context(), KeySelfOpenID, "ou_me"))
+
+	n, err := s.candidateReactions(t.Context())
+
+	require.NoError(t, err)
+	require.Zero(t, n)
+	require.Empty(t, f.Calls, "no pending draft costs no call")
+}

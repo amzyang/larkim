@@ -514,6 +514,24 @@ func (s *Syncer) reactionsSlice(ctx context.Context, now time.Time) (int, error)
 	return len(ids), s.setStateTime(ctx, KeyReactionsAt, now)
 }
 
+// candidateReactions re-asks who reacted to the messages pending drafts
+// answer. Nothing else can bring a reaction made in another client: it moves
+// no update_time, so neither a listing nor the search re-sends it, and without
+// this pass the chat-list marker holds until somebody opens the chat here.
+func (s *Syncer) candidateReactions(ctx context.Context) (int, error) {
+	self, _, err := s.Store.GetState(ctx, KeySelfOpenID)
+	if err != nil || self == "" {
+		return 0, err
+	}
+	mids, err := s.Store.CandidateSources(ctx, self)
+	if err != nil || len(mids) == 0 {
+		return 0, err
+	}
+	n, err := s.storeReactions(ctx, mids)
+	s.changed(n)
+	return n, err
+}
+
 // React puts one emoji on a message, or takes the reader's own back, and
 // brings that message's summary up to date in the same breath so the pane
 // shows what Feishu now holds rather than what it held a moment ago.
