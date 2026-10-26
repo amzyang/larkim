@@ -143,12 +143,18 @@ func scanText(src string, start, stop int, label, card bool, sent map[int]bool, 
 	}
 	// [Name] is what the composer's own popup writes for an emoji no
 	// character carries. A line of words sends it as the emotion it names;
-	// on any other line it keeps its brackets. The brackets sit outside this
-	// node, so the source carries them.
-	if !label && start > 0 && stop < len(src) && src[start-1] == '[' && src[stop] == ']' {
-		if e, ok := emotionFor(raw); ok {
+	// on any other line it keeps its brackets. Goldmark may put the closing
+	// bracket and following prose in this node, so the source defines the name.
+	if !label && start > 0 && src[start-1] == '[' {
+		name := raw
+		if close := strings.IndexByte(raw, ']'); close >= 0 {
+			name = raw[:close]
+		} else if stop >= len(src) || src[stop] != ']' {
+			return out
+		}
+		if e, ok := emotionFor(name); ok {
 			if line, col := at(start - 1); !card && !sent[line] {
-				out = append(out, bracketFinding(e, "["+raw+"]", line, col))
+				out = append(out, bracketFinding(e, "["+name+"]", line, col))
 			}
 		}
 	}
