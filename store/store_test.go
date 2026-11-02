@@ -112,6 +112,37 @@ func TestMigrate_ClearsA2200SyncErrorAndLeavesARealRefusal(t *testing.T) {
 	require.Equal(t, "231203: The chat type is not supported", restricted.SyncError)
 }
 
+func TestMigrate_DropsCandidatesForRecalledSources(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "t.db")
+	ctx := t.Context()
+	s, err := openAt(t, path)
+	require.NoError(t, err)
+	seedCandidateChat(t, s)
+	require.NoError(t, s.PutCandidates(ctx, "om_ask", "oc_quiet", []string{"收到"}, []string{"OK"}, "text", 200))
+	require.NoError(t, s.PutCandidates(ctx, "om_keep", "oc_quiet", []string{"稍后回"}, nil, "text", 300))
+	_, err = s.db.ExecContext(ctx, `UPDATE messages SET deleted = 1 WHERE message_id = 'om_ask';
+	 DELETE FROM schema_migrations WHERE version = 57`)
+	require.NoError(t, err)
+	before, err := s.DataRev(ctx)
+	require.NoError(t, err)
+	require.NoError(t, s.Close())
+
+	s, err = Open(path)
+	require.NoError(t, err)
+	defer s.Close()
+	rows, err := s.ChatCandidates(ctx, "oc_quiet", "")
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	require.Equal(t, "om_keep", rows[0].Mid)
+	var stale int
+	require.NoError(t, s.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM draft_candidates WHERE mid = 'om_ask'`).Scan(&stale))
+	require.Zero(t, stale)
+	after, err := s.DataRev(ctx)
+	require.NoError(t, err)
+	require.Greater(t, after, before, "open TUIs reload when the stale candidates are removed")
+}
+
 func TestUpsertMessages_PreservesRenderingAndRecalledContent(t *testing.T) {
 	s := openTest(t)
 	ctx := t.Context()

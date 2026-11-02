@@ -142,6 +142,11 @@ func (s *Store) UpsertMessagesArriving(ctx context.Context, msgs []Message, now 
 			compactJSON(m.MentionsJSON), m.RawJSON, now, now); err != nil {
 			return n, fmt.Errorf("upsert %s: %w", m.MessageID, err)
 		}
+		if m.Deleted {
+			if _, err := tx.ExecContext(ctx, `DELETE FROM draft_candidates WHERE mid = ?`, m.MessageID); err != nil {
+				return n, fmt.Errorf("clear recalled candidates %s: %w", m.MessageID, err)
+			}
+		}
 		touched[m.ChatID] = struct{}{}
 		ids = append(ids, m.MessageID)
 		n++

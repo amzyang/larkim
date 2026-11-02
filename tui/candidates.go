@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"slices"
 	"strings"
 
 	"github.com/amzyang/larkim/emoji"
@@ -72,6 +73,27 @@ func loadCandidates(d Deps, chatID string) tea.Cmd {
 		}
 		return candidatesLoadedMsg{rows: rows}
 	}
+}
+
+func (m *Model) refreshCandidatePicker() {
+	if m.mode != modeCandidates {
+		return
+	}
+	rows := m.visibleCandidates(m.chatCands)
+	rows = slices.DeleteFunc(rows, func(c store.Candidate) bool { return c.ChatID != m.openingChat() })
+	if len(rows) == 0 {
+		*m = m.closeCandidates()
+		return
+	}
+	focused, _ := m.cand.focused()
+	idx, top := m.cand.idx, m.cand.top
+	m.cand = fillMenu(rows, candSpec)
+	if i := slices.IndexFunc(rows, func(c store.Candidate) bool { return candidateKey(c) == candidateKey(focused) }); i >= 0 {
+		idx = i
+	}
+	m.cand.idx = min(idx, len(rows)-1)
+	m.cand.top = min(top, m.cand.idx)
+	m.layout()
 }
 
 // onCandidatesKey drives the picker. The keys are the ones every list here

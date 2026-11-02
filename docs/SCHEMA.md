@@ -202,6 +202,9 @@ a message's row after a send left a composer it filled, after Feishu took a
 reaction it suggested, or once the reader has dismissed the last draft it
 offered. A row the reader has answered — spoken in the chat after `created_ms`,
 or reacted to `mid` — stays in the table but no longer counts as pending.
+Recall deletes the source's row in the same transaction that records the
+message's `deleted` flag. Recalled messages are not drafted for; a draft
+already in flight cannot store candidates once its source is recalled.
 One row per source message, so a re-draft overwrites. Unlike `drafts` this
 table is inside the `data_rev` triggers — the writer is not the displayer —
 and it is the only table here with a DELETE trigger.

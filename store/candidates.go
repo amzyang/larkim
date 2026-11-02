@@ -100,6 +100,8 @@ func (s *Store) ChatCandidates(ctx context.Context, chatID, selfID string) ([]Ca
 // PutCandidates stores the drafts for one source message: reply 0 in draft
 // (” when there are only reactions), the other replies in extras and the
 // reactions in reactions, both as minimal JSON. A same-mid re-draft overwrites.
+// The source may be recalled while the agent drafts, so the write checks the
+// persisted Recall atomically rather than trusting the drafter's snapshot.
 func (s *Store) PutCandidates(ctx context.Context, mid, chatID string, drafts, reactions []string, format string, nowMs int64) error {
 	var first string
 	var rest []string
@@ -115,11 +117,12 @@ func (s *Store) PutCandidates(ctx context.Context, mid, chatID string, drafts, r
 		return err
 	}
 	_, err = s.db.ExecContext(ctx,
-		`INSERT INTO draft_candidates(mid, chat_id, draft, format, extras, reactions, created_ms) VALUES(?, ?, ?, ?, ?, ?, ?)
+		`INSERT INTO draft_candidates(mid, chat_id, draft, format, extras, reactions, created_ms)
+		 SELECT ?, ?, ?, ?, ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM messages WHERE message_id = ? AND deleted = 1)
 		 ON CONFLICT(mid) DO UPDATE SET chat_id = excluded.chat_id, draft = excluded.draft,
 		   format = excluded.format, extras = excluded.extras, reactions = excluded.reactions,
 		   created_ms = excluded.created_ms`,
-		mid, chatID, first, format, string(extras), string(keys), nowMs)
+		mid, chatID, first, format, string(extras), string(keys), nowMs, mid)
 	return err
 }
 

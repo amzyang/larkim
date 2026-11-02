@@ -44,11 +44,15 @@ type fakeDrafter struct {
 	err   error
 	asked []DraftAsk
 	// remindOn, when set, keeps the reminder for targets containing it only.
-	remindOn string
+	remindOn     string
+	beforeReturn func(DraftAsk)
 }
 
 func (d *fakeDrafter) Draft(_ context.Context, a DraftAsk) (Draft, error) {
 	d.asked = append(d.asked, a)
+	if d.beforeReturn != nil {
+		d.beforeReturn(a)
+	}
 	out := d.draft
 	if d.remindOn != "" && !strings.Contains(a.Target, d.remindOn) {
 		out.Remind = nil
@@ -517,6 +521,74 @@ func TestTriager_DraftsP0IntoCandidatesAndGivesUpAfterTwoTries(t *testing.T) {
 	cands, err = h.st.ChatCandidates(t.Context(), "oc_peer", "ou_self")
 	require.NoError(t, err)
 	require.Len(t, cands, 1)
+}
+
+func TestTriager_RecallCancelsCandidates(t *testing.T) {
+	t.Parallel()
+	for _, when := range []string{"before drafting", "during drafting", "after drafting"} {
+		t.Run(when, func(t *testing.T) {
+			t.Parallel()
+			h := newHarness(t)
+			ctx := t.Context()
+			d := &fakeDrafter{draft: Draft{Texts: []string{"收到"}, Reactions: []string{"OK"}, Format: "text"}}
+			h.tr.Drafter = d
+			h.arrive(t, text("om_recalled", "oc_peer", "ou_a", "需要确认"), time.Second)
+			h.arrive(t, text("om_keep", "oc_peer", "ou_a", "请看下排期"), time.Second)
+			h.pass(t)
+			recall := func() {
+				m, err := h.st.GetMessage(ctx, "om_recalled")
+				require.NoError(t, err)
+				m.Deleted = true
+				m.ContentRaw = ""
+				m.UpdateMs = h.clock.Now().UnixMilli()
+				_, err = h.st.UpsertMessages(ctx, []store.Message{m}, h.clock.Now().UnixMilli())
+				require.NoError(t, err)
+			}
+			switch when {
+			case "before drafting":
+				recall()
+			case "during drafting":
+				d.beforeReturn = func(a DraftAsk) {
+					if strings.Contains(a.Target, "需要确认") {
+						recall()
+					}
+				}
+			}
+			require.NoError(t, h.tr.DraftPass(ctx))
+			if when == "after drafting" {
+				rows, err := h.st.ChatCandidates(ctx, "oc_peer", "ou_self")
+				require.NoError(t, err)
+				require.Len(t, rows, 4, "both live sources offer a reply and a reaction")
+				recall()
+			}
+			require.NoError(t, h.tr.DraftPass(ctx))
+			wantCalls := 2
+			if when == "before drafting" {
+				wantCalls = 1
+			}
+			require.Len(t, d.asked, wantCalls, "a known Recall must not reach the drafter")
+			for _, chatID := range []string{"oc_peer", ""} {
+				rows, err := h.st.ChatCandidates(ctx, chatID, "ou_self")
+				require.NoError(t, err)
+				require.Len(t, rows, 2)
+				require.Equal(t, "om_keep", rows[0].Mid)
+				require.Equal(t, "收到", rows[0].Text)
+				require.Equal(t, "om_keep", rows[1].Mid)
+				require.Equal(t, "OK", rows[1].Reaction)
+			}
+			counts, err := h.st.CandidateChats(ctx, "ou_self")
+			require.NoError(t, err)
+			require.Equal(t, map[string]int{"oc_peer": 1}, counts)
+			sources, err := h.st.CandidateSources(ctx, "ou_self")
+			require.NoError(t, err)
+			require.Equal(t, []string{"om_keep"}, sources)
+			var persisted int
+			require.NoError(t, h.st.DB().QueryRowContext(ctx,
+				`SELECT COUNT(*) FROM draft_candidates WHERE mid = 'om_recalled'`).Scan(&persisted))
+			require.Zero(t, persisted, "Recall removes the durable row, not just its marker")
+			require.NotZero(t, h.verdicts(t)["om_recalled"].DraftedMs)
+		})
+	}
 }
 
 func TestTriager_TellsTheDrafterTheReadersName(t *testing.T) {

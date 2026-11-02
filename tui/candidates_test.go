@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -132,6 +133,60 @@ func TestChatRow_DrawsTheCandidateMark(t *testing.T) {
 		gistOf(listRow{chat: c}, "ou_me", emojiPics{}), testNow, 40, nil)
 	require.Contains(t, with.bottom, candGlyph)
 	require.NotContains(t, without.bottom, candGlyph)
+}
+
+func TestCandidates_RecallRefreshesGistMessagesAndOpenPicker(t *testing.T) {
+	t.Parallel()
+	for _, keep := range []bool{false, true} {
+		t.Run(fmt.Sprint(keep), func(t *testing.T) {
+			t.Parallel()
+			m, st := reactCandModel(t)
+			ctx := t.Context()
+			if keep {
+				require.NoError(t, st.PutCandidates(ctx, "om_keep", "oc_team", []string{"保留候选"}, nil, "text", 200))
+			}
+			m = applyAll(t, m, m.reloadCurrent())
+			require.Contains(t, m.renderChats(m.bodyHeight()), candGlyph)
+			require.Contains(t, paneText(m), "收到")
+			require.Len(t, m.candidatesForStyle()["om_a"], 3)
+			next, cmd := m.openCandidates()
+			next, _ = next.(Model).Update(cmd())
+			m = next.(Model)
+			require.Equal(t, modeCandidates, m.mode)
+			require.Equal(t, "om_a", m.cand.items[0].Mid)
+			if keep {
+				m.cand.idx = 3
+			}
+
+			x, err := st.GetMessage(ctx, "om_a")
+			require.NoError(t, err)
+			x.Deleted = true
+			x.ContentRaw = ""
+			_, err = st.UpsertMessages(ctx, []store.Message{x}, 300)
+			require.NoError(t, err)
+			revs := make(chan int64)
+			close(revs)
+			m.revs = revs
+			next, cmd = m.Update(revMsg{})
+			m = applyAll(t, next.(Model), cmd)
+
+			require.Empty(t, m.candidatesForStyle()["om_a"])
+			require.NotContains(t, paneText(m), "收到")
+			require.Contains(t, paneText(m), "recalled a message.")
+			if keep {
+				require.Contains(t, m.renderChats(m.bodyHeight()), candGlyph)
+				require.Equal(t, modeCandidates, m.mode)
+				require.Len(t, m.cand.items, 1)
+				focused, ok := m.cand.focused()
+				require.True(t, ok)
+				require.Equal(t, "om_keep", focused.Mid)
+			} else {
+				require.NotContains(t, m.renderChats(m.bodyHeight()), candGlyph)
+				require.Equal(t, modeNormal, m.mode)
+				require.Empty(t, m.cand.items)
+			}
+		})
+	}
 }
 
 func TestSentMsg_ClearsTheSeededCandidateRow(t *testing.T) {

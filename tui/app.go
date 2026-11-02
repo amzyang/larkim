@@ -808,6 +808,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		infoCmd := entered
 		m.msgsBase, m.meta = msg.msgs, msg.meta
 		m.chatCands = msg.cands
+		m.refreshCandidatePicker()
 		m.metaGen++
 		m.applyOutbox()
 		// Only the page that opens the chat carries its draft back into the
@@ -892,6 +893,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.feed.sections = msg.sections
 		m.msgsBase, m.meta = msg.msgs, msg.meta
 		m.chatCands = msg.cands
+		m.refreshCandidatePicker()
 		m.metaGen++
 		m.applyOutbox()
 		// A marker goes out under the cursor, as on a chat's own page, not
