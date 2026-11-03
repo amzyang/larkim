@@ -148,6 +148,16 @@ func TestRun_DiscoveryLandsAMessageWhileTheSweepRests(t *testing.T) {
 	discovering(t, s, f, clk.t)
 	s.SetAttended(true)
 
+	firstSweepFinished := make(chan struct{}, 1)
+	s.OnChange = func() {
+		runs, err := s.Store.LastRuns(ctx, 1)
+		if err == nil && len(runs) > 0 {
+			select {
+			case firstSweepFinished <- struct{}{}:
+			default:
+			}
+		}
+	}
 	runCtx, stop := context.WithCancel(ctx)
 	done := make(chan error, 1)
 	go func() { done <- s.Run(runCtx) }()
@@ -156,6 +166,12 @@ func TestRun_DiscoveryLandsAMessageWhileTheSweepRests(t *testing.T) {
 		require.ErrorIs(t, <-done, context.Canceled)
 	})
 
+	// A message the first sweep finds leaves discovery nothing fresh to wake it for.
+	select {
+	case <-firstSweepFinished:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the first sweep did not finish")
+	}
 	f.AddMessage(msg("om_late", "oc_a", clk.t.Add(-time.Second), "sent after the sweep"))
 	require.Eventually(t, func() bool {
 		_, err := s.Store.GetMessage(ctx, "om_late")

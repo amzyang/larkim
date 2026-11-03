@@ -64,8 +64,9 @@ func TestTodoText_DatesTheDeadlineInTheGivenZone(t *testing.T) {
 func TestTodoText_MarksTheCompletionInTheLeadingBox(t *testing.T) {
 	t.Parallel()
 	body := `{"task_id":"task_a","summary":{"title":"写周报"},"due_time":"1790676000"}`
-	require.Equal(t, "☐ 写周报\nDue: 2026-09-29 18:00:00", todoText(body, false, time.Local))
-	require.Equal(t, "☑ 写周报\nDue: 2026-09-29 18:00:00", todoText(body, true, time.Local))
+	loc := time.FixedZone("CST", 8*60*60)
+	require.Equal(t, "☐ 写周报\nDue: 2026-09-29 18:00:00", todoText(body, false, loc))
+	require.Equal(t, "☑ 写周报\nDue: 2026-09-29 18:00:00", todoText(body, true, loc))
 }
 
 func TestTodoText_SpellsTheCard(t *testing.T) {

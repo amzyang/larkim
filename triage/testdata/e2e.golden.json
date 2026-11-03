@@ -19,21 +19,21 @@
       "JoinLink": ""
     },
     {
+      "Title": "⏰ 张三",
+      "Body": "12:20 评审",
+      "Icon": "",
+      "ChatID": "oc_peer",
+      "MessageID": "om_dm",
+      "Position": 0,
+      "JoinLink": ""
+    },
+    {
       "Title": "张三",
       "Body": "12:20 评审，记得来",
       "Icon": "",
       "ChatID": "oc_peer",
       "MessageID": "om_dm",
       "Position": 1791633530000,
-      "JoinLink": ""
-    },
-    {
-      "Title": "项目协作群",
-      "Body": "张三: 支付故障了",
-      "Icon": "",
-      "ChatID": "oc_team",
-      "MessageID": "om_kw",
-      "Position": 1791633560000,
       "JoinLink": ""
     },
     {
@@ -46,12 +46,12 @@
       "JoinLink": ""
     },
     {
-      "Title": "⏰ 张三",
-      "Body": "12:20 评审",
+      "Title": "项目协作群",
+      "Body": "张三: 支付故障了",
       "Icon": "",
-      "ChatID": "oc_peer",
-      "MessageID": "om_dm",
-      "Position": 0,
+      "ChatID": "oc_team",
+      "MessageID": "om_kw",
+      "Position": 1791633560000,
       "JoinLink": ""
     }
   ],
@@ -104,16 +104,16 @@
   ],
   "marked_read": [
     {
+      "chat_id": "oc_peer",
+      "position": 1791633530000
+    },
+    {
       "chat_id": "oc_team",
       "position": 1791633540000
     },
     {
       "chat_id": "oc_team",
       "position": 1791633550000
-    },
-    {
-      "chat_id": "oc_peer",
-      "position": 1791633530000
     },
     {
       "chat_id": "oc_team",
@@ -125,12 +125,12 @@
     }
   ],
   "opened_in_client": [
+    "lark://applink.feishu.cn/client/chat/open?openChatId=oc_peer&messageId=om_dm",
+    "lark://applink.feishu.cn/client/chat/open?openChatId=oc_peer&position=1791633530000&messageId=om_dm",
     "lark://applink.feishu.cn/client/chat/open?openChatId=oc_team&position=1791633540000&messageId=om_at",
     "lark://applink.feishu.cn/client/chat/open?openChatId=oc_team&position=1791633550000&messageId=om_boss",
-    "lark://applink.feishu.cn/client/chat/open?openChatId=oc_peer&position=1791633530000&messageId=om_dm",
     "lark://applink.feishu.cn/client/chat/open?openChatId=oc_team&position=1791633560000&messageId=om_kw",
-    "lark://applink.feishu.cn/client/chat/open?openChatId=oc_team&position=1791633570000&messageId=om_gray",
-    "lark://applink.feishu.cn/client/chat/open?openChatId=oc_peer&messageId=om_dm"
+    "lark://applink.feishu.cn/client/chat/open?openChatId=oc_team&position=1791633570000&messageId=om_gray"
   ],
   "triage": [
     {

@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -70,8 +71,16 @@ func TestOpenZone_LogsTheTargetsTheNoticeBarCannotHold(t *testing.T) {
 	require.Contains(t, buf.String(), "img_b.png")
 }
 
+func fakeOpen(t *testing.T) {
+	t.Helper()
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "open"),
+		[]byte("#!/bin/sh\nprintf 'fixture open: %s does not exist\\n' \"$1\" >&2\nexit 1\n"), 0o755))
+	t.Setenv("PATH", dir)
+}
+
 func TestOpenURL_CarriesWhatOpenRefusedOn(t *testing.T) {
-	t.Parallel()
+	fakeOpen(t)
 	err := applink.Open(t.Context(), slog.New(slog.DiscardHandler), []string{filepath.Join(t.TempDir(), "nothing-here.txt")})
 
 	require.ErrorContains(t, err, "does not exist",
@@ -79,7 +88,7 @@ func TestOpenURL_CarriesWhatOpenRefusedOn(t *testing.T) {
 }
 
 func TestOpenURL_LogsTheArgvItBuilt(t *testing.T) {
-	t.Parallel()
+	fakeOpen(t)
 	var buf bytes.Buffer
 	log := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
@@ -91,7 +100,7 @@ func TestOpenURL_LogsTheArgvItBuilt(t *testing.T) {
 }
 
 func TestOpenURL_LogsHowLongOpenTook(t *testing.T) {
-	t.Parallel()
+	fakeOpen(t)
 	var buf bytes.Buffer
 	log := slog.New(slog.NewTextHandler(&buf, nil))
 
@@ -102,6 +111,7 @@ func TestOpenURL_LogsHowLongOpenTook(t *testing.T) {
 }
 
 func TestNew_GivesTheDefaultOpenerTheLog(t *testing.T) {
+	fakeOpen(t)
 	saved := openApplink
 	openApplink = applink.Open
 	t.Cleanup(func() { openApplink = saved })

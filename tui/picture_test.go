@@ -306,9 +306,7 @@ func TestPicturesDisc_DrawsOneForSomebodyWithNoFile(t *testing.T) {
 	p := picturesIn(dir)
 
 	pic := p.disc("", "ou_a", "孙琪", avatarWidth, avatarHeight)
-	if pic.cols == 0 {
-		t.Skip("no system font to draw a disc with")
-	}
+	require.NotEmpty(t, pic.path)
 	require.Equal(t, avatarWidth, pic.cols)
 	require.Equal(t, avatarHeight, pic.rows)
 	require.False(t, pic.disc, "the drawn picture is a circle already; masking it again says nothing")
@@ -328,9 +326,7 @@ func TestPicturesDisc_DrawsEachPersonOnce(t *testing.T) {
 	dir := t.TempDir()
 	p := picturesIn(dir)
 	pic := p.disc("", "ou_a", "孙琪", avatarWidth, avatarHeight)
-	if pic.cols == 0 {
-		t.Skip("no system font to draw a disc with")
-	}
+	require.NotEmpty(t, pic.path)
 
 	require.NoError(t, os.Remove(pic.path), "the file is not read again, so removing it proves the memo")
 	require.Equal(t, pic, p.disc("", "ou_a", "孙琪", avatarWidth, avatarHeight))
@@ -342,8 +338,6 @@ func TestPicturesDisc_AFileThatCannotBeReadFallsBackToADrawnOne(t *testing.T) {
 	p := picturesIn(dir)
 
 	pic := p.disc("missing.png", "ou_a", "孙琪", avatarWidth, avatarHeight)
-	if pic.cols == 0 {
-		t.Skip("no system font to draw a disc with")
-	}
+	require.NotEmpty(t, pic.path)
 	require.Contains(t, pic.path, generatedDir)
 }

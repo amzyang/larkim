@@ -230,11 +230,8 @@ func bodyPixel(side int) (int, int) { return side/2 + side*35/100, side / 2 }
 
 func TestGenerateAvatar_FillsTheDiscAndInksItInWhite(t *testing.T) {
 	t.Parallel()
-	if avatarFont() == nil {
-		t.Skip("no system font on this machine")
-	}
 	accent := generatedPalette[0]
-	m := generateAvatar("程序化养号", 0, avatarPixels, avatarPixels, false)
+	m := generateAvatar("Team", 0, avatarPixels, avatarPixels, false)
 	require.NotNil(t, m)
 	require.Equal(t, image.Rect(0, 0, avatarPixels, avatarPixels), m.Bounds())
 
@@ -248,11 +245,8 @@ func TestGenerateAvatar_FillsTheDiscAndInksItInWhite(t *testing.T) {
 
 func TestGenerateAvatar_OutlinesAWhiteDiscInTheAccentItInksWith(t *testing.T) {
 	t.Parallel()
-	if avatarFont() == nil {
-		t.Skip("no system font on this machine")
-	}
 	accent := generatedPalette[0]
-	m := generateAvatar("程序化养号", 0, avatarPixels, avatarPixels, true)
+	m := generateAvatar("Team", 0, avatarPixels, avatarPixels, true)
 	require.NotNil(t, m)
 
 	x, y := bodyPixel(avatarPixels)
@@ -268,10 +262,7 @@ func TestGenerateAvatar_OutlinesAWhiteDiscInTheAccentItInksWith(t *testing.T) {
 
 func TestMaskDisc_ClearsEverythingOutsideTheCircle(t *testing.T) {
 	t.Parallel()
-	if avatarFont() == nil {
-		t.Skip("no system font on this machine")
-	}
-	m := generateAvatar("程序化养号", 0, avatarPixels, avatarPixels, false)
+	m := generateAvatar("Team", 0, avatarPixels, avatarPixels, false)
 
 	for _, p := range []image.Point{{X: 0, Y: 0}, {X: avatarPixels - 1, Y: 0},
 		{X: 0, Y: avatarPixels - 1}, {X: avatarPixels - 1, Y: avatarPixels - 1}} {
@@ -329,9 +320,6 @@ func TestKittyAvatars_MasksTheFileAvatarToADisc(t *testing.T) {
 
 func TestKittyAvatars_OutlinesAGroupAndFillsAPerson(t *testing.T) {
 	t.Parallel()
-	if avatarFont() == nil {
-		t.Skip("no system font on this machine")
-	}
 	k := newKittyAvatars(t.TempDir())
 	w, h := k.box()
 	x, y := bodyPixel(min(w, h))
@@ -357,9 +345,6 @@ func TestBadgeLabel_CapsAtNinetyNinePlus(t *testing.T) {
 
 func TestDrawBadge_StampsTheTopRightInTheColourTheChatCallsFor(t *testing.T) {
 	t.Parallel()
-	if avatarFont() == nil {
-		t.Skip("no system font on this machine")
-	}
 	// The pixels four by two cells occupy on the machine this runs on.
 	const w, h = 68, 72
 	blue := color.RGBA{B: 0xFF, A: 0xFF}
@@ -559,9 +544,6 @@ func TestUpdate_AResizeAsksForTheCellSizeAgain(t *testing.T) {
 
 func TestKittyAvatars_DrawsAP2PPeerInTheColourTheirMessagesTake(t *testing.T) {
 	t.Parallel()
-	if avatarFont() == nil {
-		t.Skip("no system font on this machine")
-	}
 	k := newKittyAvatars(t.TempDir())
 	w, h := k.box()
 	x, y := bodyPixel(min(w, h))

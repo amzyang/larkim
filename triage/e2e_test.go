@@ -1,11 +1,13 @@
 package triage
 
 import (
+	"cmp"
 	"encoding/json/jsontext"
 	"encoding/json/v2"
 	"flag"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -59,9 +61,19 @@ func TestTriager_EndToEnd(t *testing.T) {
 	require.NoError(t, err)
 	cands, err := h.st.ChatCandidates(t.Context(), "", "ou_self")
 	require.NoError(t, err)
+	// Banner responses run concurrently; their outcomes, not scheduler order,
+	// are the contract this snapshot records.
+	banners, opened, read := h.notifier.shown(), h.desktop.urls(), h.reader.posted()
+	slices.SortFunc(banners, func(a, b Banner) int {
+		return cmp.Or(cmp.Compare(a.MessageID, b.MessageID), cmp.Compare(a.Position, b.Position))
+	})
+	slices.Sort(opened)
+	slices.SortFunc(read, func(a, b store.ChatUnread) int {
+		return cmp.Or(cmp.Compare(a.ChatID, b.ChatID), cmp.Compare(a.Position, b.Position))
+	})
 	got, err := json.Marshal(map[string]any{
-		"triage": rows, "banners": h.notifier.shown(), "opened_in_client": h.desktop.urls(), "candidates": cands,
-		"marked_read": h.reader.posted(),
+		"triage": rows, "banners": banners, "opened_in_client": opened, "candidates": cands,
+		"marked_read": read,
 	}, json.Deterministic(true), jsontext.WithIndent("  "))
 	require.NoError(t, err)
 
