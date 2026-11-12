@@ -29,6 +29,8 @@ type silenceCount struct{ matched, lastMs int64 }
 // once it rereads the file. The store's rules here are what the messages this
 // process pulls itself are stamped from, so they follow the file too.
 type silenceTab struct {
+	// idx is the rule index into m.cfg.Silence. top is the display-item index
+	// (headers + rule rows) of the topmost visible line.
 	idx, top int
 	// counts is keyed by each rule's own fingerprint, so a reply that lands
 	// after an edit fills in only the rules still standing.
@@ -139,6 +141,68 @@ func loadSilenceRoster(d Deps, chatID string) tea.Cmd {
 	}
 }
 
+// silenceDisplayItem is one line in the grouped list: either a chat-group
+// header or a rule row. Headers are not selectable; the cursor lives only on
+// rule rows and is tracked by rule index (ruleIdx into m.cfg.Silence).
+type silenceDisplayItem struct {
+	isHeader bool
+	chatID   string
+	ruleIdx  int // -1 for headers
+}
+
+// silenceDisplayItems builds the flat list of headers and rule rows, grouped
+// by Chat in the order the sorted rules already have them.
+func silenceDisplayItems(rules store.SilenceRules) []silenceDisplayItem {
+	var items []silenceDisplayItem
+	const noChat = "\x00" // sentinel; never a real chat id
+	lastChat := noChat
+	for i, r := range rules {
+		if r.Chat != lastChat {
+			items = append(items, silenceDisplayItem{isHeader: true, chatID: r.Chat, ruleIdx: -1})
+			lastChat = r.Chat
+		}
+		items = append(items, silenceDisplayItem{chatID: r.Chat, ruleIdx: i})
+	}
+	return items
+}
+
+// silenceScrollToIdx adjusts t.top so the cursor rule and its group header
+// both sit within the visible window.
+func (m *Model) silenceScrollToIdx() {
+	items := silenceDisplayItems(m.cfg.Silence)
+	rows := m.configRows()
+	t := &m.config.silence
+	if len(items) == 0 {
+		t.top = 0
+		return
+	}
+	pos := -1
+	for i, item := range items {
+		if !item.isHeader && item.ruleIdx == t.idx {
+			pos = i
+			break
+		}
+	}
+	if pos < 0 {
+		t.top = 0
+		return
+	}
+	// Find the group header just above this rule.
+	headerPos := -1
+	for i := pos - 1; i >= 0; i-- {
+		if items[i].isHeader {
+			headerPos = i
+			break
+		}
+	}
+	t.top = clamp(t.top, max(0, pos-rows+1), pos)
+	// Pull the header into view if it scrolled above the top.
+	if headerPos >= 0 && headerPos < t.top {
+		t.top = clamp(headerPos, 0, pos)
+	}
+	t.top = clamp(t.top, 0, max(0, len(items)-rows))
+}
+
 // silenceKey is the key a rule's count is filed under.
 func silenceKey(r store.SilenceRule) string { return store.SilenceRules{r}.Fingerprint() }
 
@@ -188,7 +252,11 @@ func (m *Model) refreshSilencePick() {
 func (m *Model) silenceMove(d int) {
 	t := &m.config.silence
 	t.confirmDelete = false
-	moveCursor(&t.idx, &t.top, d, len(m.cfg.Silence), m.configRows())
+	n := len(m.cfg.Silence)
+	if n > 0 {
+		t.idx = clamp(t.idx+d, 0, n-1)
+	}
+	m.silenceScrollToIdx()
 }
 
 // onSilenceKey drives the Silence page. The form and its picker own their keys
@@ -445,7 +513,10 @@ func (m Model) saveSilenceForm() (tea.Model, tea.Cmd) {
 	// The write sorted the set, so the rule the form held sits wherever it
 	// belongs now, not at the slot the form was opened on.
 	at := slices.Index(m.cfg.Silence, written)
-	moveCursor(&m.config.silence.idx, &m.config.silence.top, at-m.config.silence.idx, len(m.cfg.Silence), m.configRows())
+	if at >= 0 {
+		m.config.silence.idx = at
+	}
+	m.silenceScrollToIdx()
 	return m, m.silenceRecount()
 }
 
@@ -459,6 +530,7 @@ func (m Model) deleteSilence() Model {
 		return m.notify("silence: "+err.Error(), true)
 	}
 	moveCursor(&t.idx, &t.top, 0, len(m.cfg.Silence), m.configRows())
+	m.silenceScrollToIdx()
 	return m
 }
 
@@ -535,12 +607,12 @@ func silenceIDCell(id string, resolve func(string) (string, bool), w int) string
 // silenceMatchedWidth is the right-aligned count column.
 const silenceMatchedWidth = 7
 
-// silenceColumns splits the row after the cursor lead and the count into the
-// chat, sender and contains columns, the text getting what is left.
-func (m Model) silenceColumns() (chat, sender, contains int) {
-	rest := max(9, m.configWidth()-2-silenceMatchedWidth-3*configGap)
-	chat, sender = rest*3/10, rest/4
-	return chat, sender, rest - chat - sender
+// silenceColumns splits the rule row after the cursor lead and the count into
+// sender and contains columns (chat column removed; each group carries a header).
+func (m Model) silenceColumns() (sender, contains int) {
+	rest := max(9, m.configWidth()-4-silenceMatchedWidth-2*configGap)
+	sender = rest * 3 / 10
+	return sender, rest - sender
 }
 
 func (m Model) silenceLines() []string {
@@ -550,11 +622,36 @@ func (m Model) silenceLines() []string {
 	t := m.config.silence
 	w := m.configWidth()
 	gap := strings.Repeat(" ", configGap)
-	cw, sw, tw := m.silenceColumns()
+	sw, tw := m.silenceColumns()
+	items := silenceDisplayItems(m.cfg.Silence)
+	rows := m.configRows()
 	var out []string
-	for i, r := range window(m.cfg.Silence, t.top, m.configRows()) {
-		row := t.top + i
-		lead := cursorLead(row == t.idx)
+	for _, item := range window(items, t.top, rows) {
+		if item.isHeader {
+			// Group header: chat name (or dim "Any chat") + rule count.
+			groupCount := 0
+			for _, r := range m.cfg.Silence {
+				if r.Chat == item.chatID {
+					groupCount++
+				}
+			}
+			var heading string
+			if item.chatID == "" {
+				heading = stDim.Render("Any chat")
+			} else {
+				name, ok := m.chatName(item.chatID)
+				if ok {
+					heading = stBold.Render(name)
+				} else {
+					heading = stErr.Render(truncate(item.chatID, w-silenceMatchedWidth-configGap-2))
+				}
+			}
+			n := stDim.Render(plural(groupCount, "rule", "rules"))
+			out = append(out, fit(padBetween("  "+heading, n, w), w))
+			continue
+		}
+		r := m.cfg.Silence[item.ruleIdx]
+		lead := cursorLead(item.ruleIdx == t.idx)
 		text := stDim.Render(fit("—", tw))
 		if r.Contains != "" {
 			text = fit(truncate(r.Contains, tw), tw)
@@ -568,8 +665,11 @@ func (m Model) silenceLines() []string {
 			n := strconv.FormatInt(c.matched, 10)
 			count = style.Render(pad(n, silenceMatchedWidth))
 		}
-		out = append(out, fit(lead+silenceIDCell(r.Chat, m.chatName, cw)+gap+
-			silenceIDCell(r.Sender, m.senderName, sw)+gap+text+gap+count, w))
+		row := fit(lead+"  "+silenceIDCell(r.Sender, m.senderName, sw)+gap+text+gap+count, w)
+		if item.ruleIdx == t.idx {
+			row = paint(stChatSel, row)
+		}
+		out = append(out, row)
 	}
 	return out
 }

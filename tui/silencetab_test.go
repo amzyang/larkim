@@ -43,7 +43,15 @@ func typeText(t *testing.T, m Model, s string) Model {
 
 // silenceRow is the rendered rule the cursor rests on, styling stripped.
 func silenceRow(m Model) string {
-	return cursorLine(m.silenceLines(), m.config.silence.idx, m.config.silence.top)
+	items := silenceDisplayItems(m.cfg.Silence)
+	t := m.config.silence
+	lines := m.silenceLines()
+	for i, item := range window(items, t.top, m.configRows()) {
+		if !item.isHeader && item.ruleIdx == t.idx && i < len(lines) {
+			return strings.Join(strings.Fields(ansi.Strip(lines[i])), " ")
+		}
+	}
+	return ""
 }
 
 func TestSilenceTab_AddsARuleThroughThePickersAndWritesTheFile(t *testing.T) {
@@ -309,12 +317,12 @@ func TestSilenceTab_NamesChatsAndSendersAndFallsBackToTheID(t *testing.T) {
 	t.Parallel()
 	m := silenceModel(t)
 	require.NoError(t, m.writeSilence(store.SilenceRules{{Chat: "oc_quiet", Sender: "cli_c"}, {Chat: "oc_gone", Contains: "nightly"}}))
-	// The set is written unsorted above and listed by chat: oc_gone first.
-	require.Equal(t, "❯ oc_gone — nightly …", silenceRow(m))
+	// Sorted: oc_gone first. Cursor starts on first rule (oc_gone's rule, no sender set).
+	require.Equal(t, "❯ — nightly …", silenceRow(m))
 	m = press(t, m, "j")
-	require.Equal(t, "❯ 平台组 构建机器人 — …", silenceRow(m))
-	cw, _, _ := m.silenceColumns()
-	require.Contains(t, m.silenceLines()[0], stErr.Render(fit("oc_gone", cw)), "an id nothing names stands out")
+	require.Equal(t, "❯ 构建机器人 — …", silenceRow(m))
+	// oc_gone appears in the group header (line 0), which is the first line since it sorts first.
+	require.Contains(t, m.silenceLines()[0], stErr.Render("oc_gone"), "an id nothing names stands out")
 }
 
 func TestSilenceTab_ShowsMatchCountsAndIgnoresRulesSinceRemoved(t *testing.T) {
@@ -327,14 +335,15 @@ func TestSilenceTab_ShowsMatchCountsAndIgnoresRulesSinceRemoved(t *testing.T) {
 	next, _ := m.Update(msg)
 	m = next.(Model)
 
-	require.Equal(t, "❯ 项目协作群 — — 1", silenceRow(m))
+	require.Equal(t, "❯ — — 1", silenceRow(m))
 	require.Contains(t, ansi.Strip(m.silenceDetail()), "chat 项目协作群 · matched 1 · last match")
-	require.Len(t, m.silenceLines(), 1, "the removed rule is not drawn")
+	// One header + one rule = 2 display lines.
+	require.Len(t, m.silenceLines(), 2, "the removed rule is not drawn")
 
 	require.NoError(t, m.writeSilence(store.SilenceRules{{Sender: "cli_c"}}))
 	next, _ = m.Update(loadSilenceMatches(m.deps, m.cfg.Silence)())
 	m = next.(Model)
-	require.Equal(t, "❯ — 构建机器人 — 0", silenceRow(m), "a rule that matches nothing reads as a zero")
+	require.Equal(t, "❯ 构建机器人 — 0", silenceRow(m), "a rule that matches nothing reads as a zero")
 }
 
 func TestSilenceRecount_CountsOnlyTheRulesWithoutACount(t *testing.T) {
