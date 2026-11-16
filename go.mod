@@ -5,7 +5,7 @@ go 1.27
 require (
 	charm.land/bubbles/v2 v2.2.1
 	charm.land/bubbletea/v2 v2.1.1
-	charm.land/lipgloss/v2 v2.0.6
+	charm.land/lipgloss/v2 v2.1.0
 	github.com/JohannesKaufmann/html-to-markdown/v2 v2.5.2
 	github.com/alecthomas/chroma/v2 v2.27.0
 	github.com/browserutils/kooky v0.2.10
@@ -13,21 +13,21 @@ require (
 	github.com/charmbracelet/x/ansi v0.11.9
 	github.com/coder/acp-go-sdk v0.13.5
 	github.com/getsentry/sentry-go v0.50.0
-	github.com/gofrs/flock v0.13.1
-	github.com/junegunn/fzf v0.74.5
+	github.com/gofrs/flock v0.13.2
+	github.com/junegunn/fzf v0.75.0
 	github.com/mozillazg/go-pinyin v0.21.0
 	github.com/rivo/uniseg v0.4.7
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.1.0
 	github.com/stretchr/testify v1.12.1
-	github.com/yuin/goldmark/v2 v2.1.15
-	golang.org/x/image v0.47.0
+	github.com/yuin/goldmark/v2 v2.1.16
+	golang.org/x/image v0.48.0
 	golang.org/x/net v0.62.0
-	golang.org/x/sys v0.49.0
-	golang.org/x/term v0.47.0
+	golang.org/x/sys v0.50.0
+	golang.org/x/term v0.48.0
 	google.golang.org/protobuf v1.36.12
 	gopkg.in/yaml.v3 v3.0.1
-	modernc.org/sqlite v1.61.1
+	modernc.org/sqlite v1.62.0
 )
 
 require (
@@ -60,9 +60,9 @@ require (
 	github.com/zalando/go-keyring v0.2.7 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/crypto v0.58.0 // indirect
-	golang.org/x/sync v0.24.0 // indirect
-	golang.org/x/text v0.43.0 // indirect
-	modernc.org/libc v1.79.0 // indirect
+	golang.org/x/sync v0.25.0 // indirect
+	golang.org/x/text v0.44.0 // indirect
+	modernc.org/libc v1.80.1 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.12.1 // indirect
 )
