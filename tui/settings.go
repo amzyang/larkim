@@ -187,6 +187,12 @@ var settings = []setting{{
 	summary: func(_ Model, c config.Config) string {
 		return plural(len(c.Notifications.Keywords), "keyword", "keywords")
 	},
+}, {
+	key:      "automation",
+	help:     "message callbacks; enter edits them in the Automation tab; restart the daemon or embedded-sync TUI",
+	readOnly: true,
+	tab:      tabAutomation,
+	summary:  func(_ Model, c config.Config) string { return plural(len(c.Automation), "rule", "rules") },
 }}
 
 // nonEmpty judges a key with no default to fall back on: an empty command

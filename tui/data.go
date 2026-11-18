@@ -14,6 +14,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/amzyang/larkim/ai"
 	"github.com/amzyang/larkim/applink"
+	"github.com/amzyang/larkim/automation"
 	"github.com/amzyang/larkim/config"
 	"github.com/amzyang/larkim/emoji"
 	"github.com/amzyang/larkim/fuzzy"
@@ -118,6 +119,10 @@ type Deps struct {
 	// SetJudge hands an edited ai section to triage's judge in this process;
 	// nil where a daemon runs triage and rereads the file itself.
 	SetJudge func(config.AI)
+	// CheckQuota inspects the built-in quota callback without clicking or running
+	// the configured executable. Executable resolves this process's binary in a Cmd.
+	CheckQuota func(context.Context, automation.Rule) (string, error)
+	Executable func() (string, error)
 }
 
 // AIStreamer is the pair of calls the assistant pane makes. They are named

@@ -124,6 +124,12 @@ func TestForward_EveryInputTakesAPaste(t *testing.T) {
 			func(t *testing.T, m Model) {
 				require.Equal(t, "oc_quiet", m.config.notify.pick.hits[0].id, "the picker searches on it")
 			}},
+		{"automation field", func(t *testing.T) Model { return press(t, automationModel(t), "a") },
+			func(t *testing.T, m Model) {
+				require.Equal(t, "平台", m.config.automation.form.inputs[automationID].Value())
+			}},
+		{"automation picker", func(t *testing.T) Model { return press(t, automationModel(t), "a", "tab", "tab", "enter") },
+			func(t *testing.T, m Model) { require.Equal(t, "oc_quiet", m.config.automation.form.pick.hits[0].id) }},
 		{"notifications keyword", func(t *testing.T) Model { return press(t, notifyModel(t), "A") },
 			func(t *testing.T, m Model) { require.Equal(t, "平台", m.config.notify.keyword.Value()) }},
 	} {

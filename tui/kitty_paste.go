@@ -85,6 +85,10 @@ func (m Model) pasteIntoFocusedInput() bool {
 
 // configTextInputLive is whether the config panel has a one-line field taking input.
 func (m Model) configTextInputLive() bool {
+	if m.config.tab == tabAutomation {
+		t := m.config.automation
+		return t.form.open && !t.busy && (t.form.pick.open || t.form.editable())
+	}
 	if m.config.editing || m.config.filtering {
 		return true
 	}

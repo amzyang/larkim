@@ -257,6 +257,75 @@ message; a replan moves it.
 | `title` | the banner's text |
 | `fired_ms` | when it was raised, or dropped for being over 15 minutes late; 0 while owed |
 
+## automation_rules, automation_dirty, automation_jobs
+
+Automation evaluation and callback execution belong to the process holding
+`daemon.lock`. Message writers in every process contribute changes through SQLite
+triggers in the same transaction as the message write. These three tables are
+outside `data_rev`.
+
+| `automation_rules` column | meaning |
+|---|---|
+| `id` | configured rule id, and the primary key |
+| `fingerprint` | fingerprint of the rule's configured behavior |
+| `enabled` | 1 while the rule is enabled; otherwise 0 |
+| `since_ms` | activation boundary, Unix ms UTC; 0 for a rule never enabled |
+
+An enabled rule keeps its activation boundary across restarts when its fingerprint
+is unchanged. Enabling a disabled rule or changing an enabled rule's fingerprint
+sets a fresh boundary. Reconciliation removes absent rules and cancels pending
+jobs whose rule is absent, disabled, or has a different fingerprint. Running and
+terminal jobs remain intact. Activation never queues existing message history;
+reconciliation leaves outstanding dirty rows intact.
+
+| `automation_dirty` column | meaning |
+|---|---|
+| `message_id` | changed message, and the primary key |
+| `version` | starts at 1; increments for each captured change while the row exists |
+
+Capture is active only while at least one persisted rule is enabled. Inserts are
+captured, as are changes to `chat_id`, `sender_id`, `sender_type`, `msg_type`,
+`content`, `content_raw`, `raw_json`, `create_ms`, `update_ms`, `deleted`, and render
+validity (`rendered_at` zero versus nonzero). A different nonzero render timestamp,
+`last_seen_at`, reactions, and silence flags alone do not enqueue work. Repeated
+changes coalesce into one row per message. Dirty rows are read in insertion order.
+
+An evaluation commits under SQLite's writer lock: it compares the current dirty
+version, inserts all matching jobs, and acknowledges only that same version in
+one transaction. A stale evaluation neither creates jobs nor acknowledges the
+newer version. Any insertion failure rolls back the whole evaluation. A newly
+queued row may start at version 1 after acknowledgement; the single evaluator
+must discard its prior evaluation before processing that message again.
+
+| `automation_jobs` column | meaning |
+|---|---|
+| `id` | integer primary key; execution order is ascending id, history descending id |
+| `rule_id` | rule responsible for the job |
+| `message_id` | message matched by that rule |
+| `fingerprint` | rule fingerprint at evaluation time |
+| `payload` | serialized callback input captured at evaluation time |
+| `callback` | serialized callback configuration captured at evaluation time |
+| `status` | `pending`, `running`, `succeeded`, `failed`, `unknown`, or `cancelled` |
+| `result` | recorded callback outcome or cancellation reason; empty while unavailable |
+| `created_ms` | when evaluation created the job, Unix ms UTC |
+| `started_ms` | when the pending job was claimed; 0 before execution |
+| `finished_ms` | when the outcome was recorded; 0 while pending or running |
+
+`UNIQUE(rule_id, message_id)` keeps every job, including terminal and cancelled
+jobs, as its deduplication record. Another edit, fingerprint change, or activation
+cannot create a second job for that pair. Payload and callback snapshots remain
+unchanged when a duplicate is encountered.
+
+Reading the next pending job does not claim it. Live messages awaiting rendering
+are skipped until their rendering arrives, without blocking later jobs; missing
+and recalled messages remain eligible for cancellation. After revalidation, a
+compare-and-set transitions `pending` to `running` before callback execution.
+Revalidation can instead finish a pending job as `cancelled`. A running job finishes
+as `succeeded`, `failed`, `unknown`, or `cancelled`. On owner startup, recovery marks
+all remaining `running` jobs `unknown`, with the recovery time as `finished_ms`;
+unknown external effects are never retried automatically. Pending jobs remain
+available for revalidation, and terminal outcomes are preserved.
+
 ## ai_sessions, ai_turns
 
 The assistant panel's own conversations: one session per chat per

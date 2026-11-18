@@ -188,6 +188,28 @@ func TestRunSet_PutsTheSettleLeverOnTheSweepRunningHere(t *testing.T) {
 	require.Nil(t, m.deps.Syncer.SettleSilenced(), "and off again takes it back off")
 }
 
+func TestSettings_AutomationHasItsOwnTabAndRequiresRestart(t *testing.T) {
+	t.Parallel()
+	m := configModel(t)
+	m = m.openConfig("automation")
+	s, ok := m.configFocus()
+	require.True(t, ok)
+	require.Equal(t, "automation", s.key)
+	require.True(t, s.readOnly)
+	require.False(t, m.isLive(s))
+	require.Contains(t, s.help, "restart")
+	require.Equal(t, "0 rules", m.settingCell(m.cfg, s))
+
+	m = press(t, m, "enter")
+	require.False(t, m.config.editing)
+	require.Equal(t, tabAutomation, m.config.tab)
+	m = m.resetConfig()
+	require.Contains(t, m.notice, "Automation tab")
+	m = m.runSet("automation=[]")
+	require.True(t, m.noticeErr)
+	require.Contains(t, m.notice, "unknown option automation")
+}
+
 func TestSettings_NameEveryConfigKeyInOrder(t *testing.T) {
 	t.Parallel()
 	var keys []string

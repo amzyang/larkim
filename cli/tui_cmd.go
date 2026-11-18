@@ -42,7 +42,7 @@ func (a *App) runTUI(_ *cobra.Command, _ []string) error {
 	// the absolute path this process actually loaded.
 	deps := tui.Deps{Store: st, Client: client, Version: a.Version,
 		DataDir: a.cfg.DataDir, ConfigPath: config.Resolve(a.configPath), Log: a.logger(),
-		Config: a.cfg}
+		Config: a.cfg, CheckQuota: a.checkQuota(st)}
 	if err := a.makeAIDir(); err != nil {
 		return err
 	}
@@ -101,6 +101,11 @@ func (a *App) runTUI(_ *cobra.Command, _ []string) error {
 		if err != nil {
 			return err
 		}
+		stopAutomation, err := a.startAutomation(ctx, st)
+		if err != nil {
+			return err
+		}
+		defer stopAutomation()
 		deps.SetNotifications = func(n config.Notifications) { t.SetRules(triage.NewRules(n)) }
 		deps.SetJudge = func(ai config.AI) { t.SetJudge(a.judge(ai)) }
 		go func() {

@@ -90,6 +90,11 @@ func (a *App) daemonCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			stopAutomation, err := a.startAutomation(ctx, st)
+			if err != nil {
+				return err
+			}
+			defer stopAutomation()
 			s.BeforeTick = a.reloadOnChange(s, st, t)
 			s.Log.Info("larkim daemon starting", "version", a.Version, "data_dir", a.cfg.DataDir, "poll_interval_ms", a.cfg.PollIntervalMS)
 			go func() {

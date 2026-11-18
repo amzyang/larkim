@@ -144,7 +144,8 @@ type Model struct {
 	help helpPanel
 	// config is the :config overlay, the editor of the configuration file.
 	// It takes every key too, and stands over the help panel's own.
-	config configPanel
+	config            configPanel
+	automationRestart bool
 	// todoistProjects is the account's projects as last listed, Inbox first.
 	// It outlives the chooser so the todoist.project row names its project
 	// rather than its id, and a new token empties it: the list was another
@@ -966,7 +967,16 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.fwd.move(0, m.fwdRows())
 		}
 		m.refreshSilencePick()
+		m.refreshAutomationPick()
 		return m, nil
+	case automationSavedMsg:
+		return m.onAutomationSaved(msg), nil
+	case automationPresetMsg:
+		return m.onAutomationPreset(msg)
+	case automationCheckedMsg:
+		return m.onAutomationChecked(msg), nil
+	case automationRosterMsg:
+		return m.onAutomationRoster(msg), nil
 	case silenceMatchesMsg:
 		return m.onSilenceMatches(msg), nil
 	case silenceRosterLoadedMsg:

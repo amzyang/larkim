@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"reflect"
 	"strconv"
 	gosync "sync"
 	"time"
@@ -108,7 +109,7 @@ func New(version, buildDSN string) *cobra.Command {
 	root.SetFlagErrorFunc(func(_ *cobra.Command, err error) error { return &usageError{err} })
 	root.AddCommand(app.syncCmd(), app.statusCmd(), app.daemonCmd(), app.chatsCmd(), app.messagesCmd(), app.contactsCmd(),
 		app.sendCmd(), app.replyCmd(), app.reactCmd(), app.watchCmd(), app.readAllCmd(), app.silenceCmd(), app.tuiCmd(), app.dbCmd(),
-		app.schemaCmd(), app.emojiCmd(), app.sentryCmd(), app.unreadCmd(), app.lintCmd(), app.candidatesCmd(), app.triageCmd())
+		app.schemaCmd(), app.emojiCmd(), app.sentryCmd(), app.unreadCmd(), app.lintCmd(), app.candidatesCmd(), app.triageCmd(), app.automationCmd())
 	mustWire(root.MarkPersistentFlagFilename("config", "yaml", "yml"))
 	mustWire(root.RegisterFlagCompletionFunc("set", app.completeConfigKey))
 	completeNoFileDefault(root)
@@ -245,8 +246,8 @@ func (a *App) reloadOnChange(s *sync.Syncer, st *store.Store, t *triage.Triager)
 }
 
 // frozenKeys names the keys the reread file changed that a running process
-// cannot honour: the database and lock live under data_dir, and lark-cli's
-// lanes are built around its path.
+// cannot honour: the database and lock live under data_dir, lark-cli's lanes
+// are built around its path, and automation reconciles its rules at startup.
 func frozenKeys(was, now config.Config) []string {
 	var out []string
 	if was.DataDir != now.DataDir {
@@ -254,6 +255,9 @@ func frozenKeys(was, now config.Config) []string {
 	}
 	if was.LarkCLIPath != now.LarkCLIPath {
 		out = append(out, "lark_cli_path")
+	}
+	if !reflect.DeepEqual(was.Automation, now.Automation) {
+		out = append(out, "automation")
 	}
 	return out
 }

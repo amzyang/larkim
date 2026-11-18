@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/amzyang/larkim/automation"
 	"github.com/amzyang/larkim/jev"
 	"github.com/amzyang/larkim/larkweb"
 	"github.com/amzyang/larkim/store"
@@ -58,6 +59,8 @@ type Config struct {
 	// Notifications widens which arrivals raise a desktop banner beyond the
 	// ones that always do (p2p, @me, calls).
 	Notifications Notifications `yaml:"notifications"`
+	// Automation is frozen at startup; only the daemon.lock owner executes it.
+	Automation []automation.Rule `yaml:"automation"`
 }
 
 // Notifications names what the banner treats as addressed to the reader even
@@ -310,6 +313,7 @@ func (c *Config) Normalize() {
 	// Every process loads the same file; the rules must come out in the same
 	// order everywhere or the silence fingerprints disagree.
 	c.Silence = c.Silence.Normalize()
+	c.normalizeAutomation()
 }
 
 // Validate refuses a configuration no run could honour, including the rules
@@ -325,7 +329,10 @@ func (c Config) Validate() error {
 	if err := ValidJevModel(c.AI.JevModel); err != nil {
 		return err
 	}
-	return c.Notifications.Validate()
+	if err := c.Notifications.Validate(); err != nil {
+		return err
+	}
+	return automation.ValidateRules(c.Automation)
 }
 
 func applySets(cfg *Config, sets []string) error {
@@ -356,7 +363,11 @@ func (c *Config) Set(key, value string) error {
 	}
 	dec := yaml.NewDecoder(strings.NewReader(setDoc(key, value)))
 	dec.KnownFields(true)
-	return dec.Decode(c)
+	if err := dec.Decode(c); err != nil {
+		return err
+	}
+	c.normalizeAutomation()
+	return nil
 }
 
 // Get renders one key the way the file spells it, so what Get returns goes

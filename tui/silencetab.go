@@ -456,8 +456,11 @@ func (m Model) silenceSearch(field silenceField, query string) []silenceHit {
 	if field == fieldChat {
 		return m.chatHits(ix, query)
 	}
+	return m.senderHits(ix, query, m.config.silence.form.roster)
+}
+
+func (m Model) senderHits(ix *fuzzy.Index, query string, roster []store.Contact) []silenceHit {
 	var out []silenceHit
-	roster := m.config.silence.form.roster
 	seen := make(map[string]bool, len(roster)+len(m.contacts))
 	add := func(p store.Contact) {
 		if len(out) == fwdLimit || p.OpenID == "" || seen[p.OpenID] {

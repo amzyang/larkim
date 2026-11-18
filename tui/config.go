@@ -32,9 +32,10 @@ const (
 	tabGeneral configTab = iota
 	tabSilence
 	tabNotify
+	tabAutomation
 )
 
-var configTabs = []string{"General", "Silence", "Notifications"}
+var configTabs = []string{"General", "Silence", "Notifications", "Automation"}
 
 // nextTabName is the tab Tab steps to from t, for the hint bars.
 func nextTabName(t configTab) string { return configTabs[(int(t)+1)%len(configTabs)] }
@@ -66,9 +67,10 @@ type configPanel struct {
 	value   valuePick
 	// tab is the page on screen; silence and notify are those pages' own
 	// state.
-	tab     configTab
-	silence silenceTab
-	notify  notifyTab
+	tab        configTab
+	silence    silenceTab
+	notify     notifyTab
+	automation automationTab
 }
 
 // openConfig opens the panel, on the row key names when it names one. A key
@@ -88,6 +90,9 @@ func (m Model) openConfig(key string) Model {
 	if key == "silence" {
 		m.config.tab = tabSilence
 	}
+	if key == "automation" {
+		m.config.tab = tabAutomation
+	}
 	return m
 }
 
@@ -96,7 +101,7 @@ func (m Model) configLoads() tea.Cmd {
 	switch m.config.tab {
 	case tabSilence:
 		return tea.Batch(loadContacts(m.deps), loadSilenceMatches(m.deps, m.cfg.Silence))
-	case tabNotify:
+	case tabNotify, tabAutomation:
 		return loadContacts(m.deps)
 	}
 	return nil
@@ -107,6 +112,7 @@ func (m Model) switchConfigTab(d int) (Model, tea.Cmd) {
 	n := configTab(len(configTabs))
 	m.config.tab = (m.config.tab + configTab(d) + n) % n
 	m.config.err, m.config.silence.confirmDelete, m.config.notify.confirmDelete = "", false, false
+	m.config.automation.confirm = ""
 	return m, m.configLoads()
 }
 
@@ -117,6 +123,10 @@ func (m *Model) configScroll(d int) {
 		m.silenceMove(d)
 	case tabNotify:
 		m.notifyMove(d)
+	case tabAutomation:
+		if !m.config.automation.busy && !m.config.automation.form.open {
+			m.automationMove(d)
+		}
 	default:
 		m.configMove(d)
 	}
@@ -195,6 +205,8 @@ func (m Model) forwardConfig(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.forwardSilence(msg)
 	case tabNotify:
 		return m.forwardNotify(msg)
+	case tabAutomation:
+		return m.forwardAutomation(msg)
 	}
 	var cmd tea.Cmd
 	switch {
@@ -232,6 +244,8 @@ func (m Model) onConfigKey(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m.onSilenceKey(k)
 	case tabNotify:
 		return m.onNotifyKey(k)
+	case tabAutomation:
+		return m.onAutomationKey(k)
 	}
 	if m.config.project.open {
 		return m.onProjectPickKey(k)
@@ -529,10 +543,17 @@ func (m Model) renderConfig() string {
 		idx, n = m.config.notify.idx, len(m.notifyEntries())
 		body, detail = m.notifyLines, m.notifyDetail
 		hintBar = m.notifyHintBar()
+	case tabAutomation:
+		idx, n = m.config.automation.idx, len(m.cfg.Automation)
+		body, detail = m.automationLines, m.automationDetail
+		hintBar = m.automationHintBar()
 	}
 	where := strconv.Itoa(min(idx+1, n)) + "/" + strconv.Itoa(n)
 	path := shortPath(underHome(m.deps.ConfigPath), max(8, w-lipgloss.Width(title)-len(where)-4))
 	head := padBetween(title, stDim.Render(where+" · "+path), w)
+	if lipgloss.Width(title)+lipgloss.Width(where+" · "+path)+1 > w {
+		head = padBetween(stHelpSection.Render("config · "+configTabs[m.config.tab]), stDim.Render(where), w)
+	}
 	if m.config.tab == tabGeneral && (m.config.filtering || strings.TrimSpace(m.config.input.Value()) != "") {
 		head = padBetween(configPrompt()+m.config.input.View(),
 			stDim.Render(strconv.Itoa(len(m.config.hits))+"/"+strconv.Itoa(len(settings))), w)
@@ -595,6 +616,8 @@ func (m Model) configCursor() *tea.Cursor {
 		return m.silenceCursor()
 	case tabNotify:
 		return m.notifyCursor()
+	case tabAutomation:
+		return m.automationCursor()
 	}
 	switch {
 	case m.config.editing || m.config.project.open:

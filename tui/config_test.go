@@ -178,14 +178,14 @@ func TestConfig_SilenceKeyOpensTheSilenceTab(t *testing.T) {
 	require.Equal(t, tabSilence, m.config.tab, ":config silence")
 
 	m = configModel(t)
-	m = press(t, m, "G", "k", "k", "k")
+	m = press(t, m, "G", "k", "k", "k", "k")
 	require.Equal(t, "❯ silence 0 rules", configRow(m), "the list is summed up, not spelled inline")
 	m = press(t, m, "enter")
 	require.Equal(t, tabSilence, m.config.tab, "enter on the row")
 	require.False(t, m.config.editing)
 }
 
-func TestConfig_TabStepsThroughGeneralSilenceAndNotifications(t *testing.T) {
+func TestConfig_TabStepsThroughEveryPage(t *testing.T) {
 	t.Parallel()
 	m := configModel(t)
 	m = press(t, m, "j", "tab")
@@ -195,10 +195,12 @@ func TestConfig_TabStepsThroughGeneralSilenceAndNotifications(t *testing.T) {
 	m = press(t, m, "tab")
 	require.Equal(t, tabNotify, m.config.tab)
 	m = press(t, m, "tab")
+	require.Equal(t, tabAutomation, m.config.tab)
+	m = press(t, m, "tab")
 	require.Equal(t, tabGeneral, m.config.tab)
 	require.Equal(t, 1, m.config.idx, "General keeps where it was")
 	m = press(t, m, "shift+tab")
-	require.Equal(t, tabNotify, m.config.tab, "and back the other way")
+	require.Equal(t, tabAutomation, m.config.tab, "and back the other way")
 }
 
 func TestConfig_TabIsTypedIntoAnOpenEditor(t *testing.T) {
@@ -277,7 +279,7 @@ func TestConfig_TakesEveryKeyAheadOfTheHelpPanel(t *testing.T) {
 
 func TestConfig_RenderFillsTheBoxAtEveryWidth(t *testing.T) {
 	t.Parallel()
-	for _, tab := range []configTab{tabGeneral, tabSilence, tabNotify} {
+	for _, tab := range []configTab{tabGeneral, tabSilence, tabNotify, tabAutomation} {
 		for _, w := range []int{minWidth, 100, 160} {
 			m := configModel(t)
 			m.width, m.height = w, 24
