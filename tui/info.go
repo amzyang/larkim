@@ -23,14 +23,16 @@ type infoLoadedMsg struct {
 func (m Model) toggleInfo() (tea.Model, tea.Cmd) {
 	if m.infoOpen {
 		m.infoOpen = false
-		m.layout()
-		return m, nil
+		return m.leaveRight()
 	}
 	if m.chatID == "" {
 		return m.notify("open a chat first", true), nil
 	}
 	keep := m.closeRight()
 	m.infoOpen, m.infoTop = true, 0
+	if m.singleColumn() {
+		m.focus = paneThread
+	}
 	// The assistant column hides rather than stopping, the way a frame hides
 	// it: its answers go on landing in their sessions.
 	if m.aiP != nil {

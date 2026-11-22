@@ -201,7 +201,7 @@ kitty 图形协议画真实头像，`VirtualPlacement` + Unicode placeholder（U
 ## 终端要求
 
 - **Nerd Font 为前置约束**，README 写明。整个 TUI 统一用图标字体，不提供 ASCII 降级集。
-- `minWidth` 抬到 78（chats 38 + messages 40）。`minHeight` 不变。
+- 最小尺寸 40×13。40–77 列时，Chats、消息页与 Thread 各占整栏；Enter 或单击进入，Esc 或 h 逐层返回。78 列起 Chats 固定占 38 列；122 列起右栏可与消息页并排。
 
 ## 测试
 

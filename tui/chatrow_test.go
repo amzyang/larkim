@@ -292,8 +292,7 @@ func TestRenderChats_SeparatesEachChatFromTheNextButNotFromTheFoot(t *testing.T)
 
 func TestRenderChats_HoldsTogetherAtTheNarrowestSupportedWidth(t *testing.T) {
 	t.Parallel()
-	m := sized(minWidth, 24)
-	require.Equal(t, chatsWidth+minMessagesWidth, minWidth, "minWidth is what the two left panes need")
+	m := sized(twoPaneWidth, 24)
 
 	out := m.renderChats(m.chatsBodyHeight())
 	for line := range strings.SplitSeq(ansi.Strip(out), "\n") {

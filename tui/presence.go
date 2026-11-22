@@ -36,6 +36,10 @@ func (m Model) openFromBanner(chat string) (tea.Model, tea.Cmd) {
 // reportPresence puts what the socket says in step with the model.
 func (m Model) reportPresence() {
 	if m.deps.Presence != nil {
-		m.deps.Presence.Set(m.focused, m.chatID)
+		chat := m.chatID
+		if m.chatsOnly() {
+			chat = ""
+		}
+		m.deps.Presence.Set(m.focused, chat)
 	}
 }

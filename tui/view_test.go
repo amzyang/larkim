@@ -293,10 +293,68 @@ func TestOnInsertKey_EscLeavesTheThreadBoxForItsOwnColumn(t *testing.T) {
 	require.True(t, m.threadOpen(), "leaving the box is not leaving the frame")
 }
 
+func TestView_SingleColumnNavigation(t *testing.T) {
+	t.Parallel()
+	m := sized(61, 26)
+	m.chatIdx = rowOf(1)
+	check := func(p pane, title string) {
+		t.Helper()
+		v := m.View()
+		require.Contains(t, ansi.Strip(v.Content), title)
+		require.Equal(t, 26, lipgloss.Height(v.Content))
+		for line := range strings.SplitSeq(v.Content, "\n") {
+			require.Equal(t, 61, lipgloss.Width(line))
+		}
+		for _, x := range []int{1, 59} {
+			got, _ := m.hit(x, 3)
+			require.Equal(t, p, got)
+		}
+		require.Equal(t, p == paneMessages, m.pageShown(true))
+	}
+	check(paneChats, "Chats")
+	require.Nil(t, m.View().Cursor)
+	m = press(t, m, "/", "z")
+	require.Contains(t, ansi.Strip(m.View().Content), "/z")
+	require.NotNil(t, m.View().Cursor)
+	m = press(t, m, "esc", "enter")
+	check(paneMessages, "内容很长")
+	m, _ = m.openRight(rightFrame{kind: rightThread, id: "omt_1"})
+	check(paneThread, "Thread")
+	m = press(t, m, "h")
+	check(paneMessages, "内容很长")
+	m = press(t, m, "esc")
+	check(paneChats, "Chats")
+	next, _ := m.onClick(tea.Mouse{X: 59, Y: 2 + rowOf(1)*chatRowStride, Button: tea.MouseLeft})
+	m = next.(Model)
+	check(paneMessages, "内容很长")
+}
+
+func TestView_SingleColumnResizePreservesDraftAndAnchor(t *testing.T) {
+	t.Parallel()
+	m := sized(61, 26)
+	m.focus = paneMessages
+	m = press(t, m, "i", "x")
+	m.msgTop = firstRow(m.msgRows, 15)
+	for _, w := range []int{twoPaneWidth, twoPaneWidth - 1, minWidth, twoPaneWidth + threadWidth, 61} {
+		next, _ := m.Update(tea.WindowSizeMsg{Width: w, Height: 26})
+		m = next.(Model)
+		v := m.View()
+		require.Equal(t, "x", m.input.Value())
+		require.Equal(t, 15, rowAt(m.msgRows, m.msgTop))
+		require.NotNil(t, v.Cursor)
+		left := 0
+		if w >= twoPaneWidth {
+			left = chatsWidth
+		}
+		require.Equal(t, left+2, v.Cursor.X)
+		require.Equal(t, w, lipgloss.Width(v.Content))
+	}
+}
+
 func TestView_TooSmallTerminal(t *testing.T) {
 	t.Parallel()
-	m := sized(50, 10)
-	require.Contains(t, m.View().Content, "too small")
+	require.Contains(t, sized(50, 10).View().Content, "too small")
+	require.Contains(t, sized(minWidth-1, 26).View().Content, "too small")
 }
 
 func TestSetBackground_DrivesSelectionShade(t *testing.T) {
@@ -370,9 +428,9 @@ func TestRenderStatus_ReservesHelpWithLongNotice(t *testing.T) {
 	require.Contains(t, ansi.Strip(m.renderStatus()), "? help")
 }
 
-func TestView_AtMinWidth78_LayoutFits(t *testing.T) {
+func TestView_AtTwoPaneWidth_LayoutFits(t *testing.T) {
 	t.Parallel()
-	m := sized(minWidth, minHeight)
+	m := sized(twoPaneWidth, minHeight)
 	v := m.View()
 	require.NotContains(t, v.Content, "too small")
 	for line := range strings.SplitSeq(v.Content, "\n") {

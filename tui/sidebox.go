@@ -170,16 +170,17 @@ func (m Model) bandLeft(s composerSide) int {
 	if s == sideRight || s == sideAI {
 		return m.width - m.rightWidth()
 	}
-	return chatsWidth
+	return m.messagesLeft()
 }
 
 // bandAt names the box drawn at a screen column, and whether one is drawn
-// there at all: the chats pane has none, and neither has a right column
-// showing something that carries no box of its own.
+// there at all: the chats pane has none but a list command's as the single
+// column, and neither has a right column showing something that carries no
+// box of its own.
 func (m Model) bandAt(x int) (composerSide, bool) {
 	switch {
-	case x < chatsWidth:
-		return sideMain, false
+	case x < m.chatPaneWidth():
+		return m.cmdSide(), m.chatsBand()
 	case m.rightOpen() && x >= m.width-m.rightWidth():
 		switch {
 		case m.aiOpen():

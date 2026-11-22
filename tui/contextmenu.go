@@ -425,7 +425,7 @@ func (m Model) contextMenuRow(it contextMenuItem, maxDesc, maxKey int, selected 
 func (m Model) contextMenuAnchorChats() (int, int) {
 	row := m.chatIdx - m.chatTop
 	y := 1 + headerHeight + row*chatRowStride + chatRowHeight/2
-	x := chatsWidth / 2
+	x := m.chatPaneWidth() / 2
 	return x, y
 }
 
@@ -450,7 +450,7 @@ func (m Model) contextMenuAnchorMessage() (int, int) {
 	}
 	visRow := line - top
 	y := visRow + 1 + msgHeaderHeight + m.msgPad()
-	x := chatsWidth + m.messagesWidth()/2
+	x := m.messagesLeft() + m.messagesWidth()/2
 	if m.focus == paneThread {
 		x = m.width - m.rightWidth()/2
 		y = visRow + 1 + headerHeight

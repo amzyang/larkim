@@ -2125,24 +2125,35 @@ func (m Model) onNormalKey(s string) (tea.Model, tea.Cmd) {
 		return m, m.quit()
 	case "?":
 		return m.openHelp(), nil
-	case "tab":
-		m.focus = m.nextPane(1)
-		return m, nil
-	case "shift+tab":
-		m.focus = m.nextPane(-1)
+	case "tab", "shift+tab":
+		if m.chatsOnly() {
+			return m.activate()
+		}
+		dir := 1
+		if s == "shift+tab" {
+			dir = -1
+		}
+		m.focus = m.nextPane(dir)
 		return m, nil
 	case "h", "left":
 		// Inside the column h steps out of the frame before it steps out of
 		// the pane: the stack is a containment path, so the frame beneath is
 		// the one the reader came through. Esc keeps this rung and closes the
 		// column on the last frame; h leaves it standing, because a column
-		// beside the chat is still being read.
+		// beside the chat is still being read. The single column has nothing
+		// beside it, so there h walks back to the message page as Esc does.
+		if m.singleColumn() && m.focus == paneThread {
+			return m.backFromRight()
+		}
 		if m.focus == paneThread && len(m.rightStack) > 0 {
 			return m.popRight()
 		}
 		m.focus = m.stepPane(-1)
 		return m, nil
 	case "l", "right":
+		if m.chatsOnly() {
+			return m.activate()
+		}
 		m.focus = m.stepPane(1)
 		return m, nil
 	case "j", "down":
@@ -2274,6 +2285,8 @@ func (m Model) onNormalKey(s string) (tea.Model, tea.Cmd) {
 		// sweep, which does find it again.
 		case m.clears.swept > 0:
 			return m.dropClears().notify("stopped", false), nil
+		case m.singleColumn() && m.focus == paneThread:
+			return m.backFromRight()
 		case m.aiOpen():
 			return m.closeAI(), nil
 		case m.searching:
@@ -2284,6 +2297,9 @@ func (m Model) onNormalKey(s string) (tea.Model, tea.Cmd) {
 			return m.notify("", false), leave
 		case m.threadOpen() && m.focus == paneThread:
 			return m.popRight()
+		case m.singleColumn() && m.focus == paneMessages:
+			m.focus = paneChats
+			return m, nil
 		case m.chatFilter != "":
 			m.chatFilter = ""
 			m.selectCurrentChat()
@@ -2538,7 +2554,7 @@ func (m Model) runCopy(arg string) (tea.Model, tea.Cmd) {
 // composer is entered with i, r or Enter rather than by cycling focus.
 func (m Model) visiblePanes() []pane {
 	order := []pane{paneChats}
-	if !m.foldRight() {
+	if m.messagesVisible() {
 		order = append(order, paneMessages)
 	}
 	if m.rightOpen() {
@@ -3082,6 +3098,17 @@ func (m Model) agentName() string {
 	return filepath.Base(name)
 }
 
+func (m Model) backFromRight() (tea.Model, tea.Cmd) {
+	switch {
+	case m.aiOpen():
+		return m.closeAI(), nil
+	case m.infoOpen:
+		return m.toggleInfo()
+	default:
+		return m.popRight()
+	}
+}
+
 // focusMessages moves focus to the messages pane; on a folded layout the
 // right pane stood in for it, so that pane closes first.
 func (m Model) focusMessages() (Model, tea.Cmd) {
@@ -3090,6 +3117,7 @@ func (m Model) focusMessages() (Model, tea.Cmd) {
 		// The reader is leaving the column, not stepping back through it, so
 		// the whole stack goes rather than one frame. The assistant column
 		// hides with it; its answers run on into their sessions.
+		m.infoOpen = false
 		keep = m.closeRight()
 		if m.aiP != nil {
 			m.aiP.open = false
@@ -3150,14 +3178,14 @@ func (m Model) onClick(ms tea.Mouse) (tea.Model, tea.Cmd) {
 		// under the click to put the cursor on. The one button it draws
 		// answers first, before the head falls back to taking focus.
 		if row < 0 {
-			if p == paneChats && inMarkAll(ms.X-1, chatsWidth-2) {
+			if p == paneChats && inMarkAll(ms.X-1, m.chatPaneWidth()-2) {
 				return m.startMarkAll()
 			}
 			// The pinned rule is part of the head, so its button is pressed
 			// here rather than through a row: it is drawn on the line under
 			// the title, which is the one hit collapses into the same -1.
 			if p == paneMessages && m.inFeed() && ms.Y == 1+headerHeight {
-				if w := m.messagesWidth() - 2; inMarkChat(ms.X-chatsWidth-1, w) {
+				if w := m.messagesWidth() - 2; inMarkChat(ms.X-m.messagesLeft()-1, w) {
 					return m.markSectionRead(m.feedTopChat())
 				}
 			}
@@ -3183,6 +3211,9 @@ func (m Model) onClick(ms tea.Mouse) (tea.Model, tea.Cmd) {
 		idx := m.chatTop + row
 		if idx >= 0 && idx < len(vis) {
 			m.chatIdx = idx
+			if m.chatsOnly() {
+				return m.activate()
+			}
 			r := vis[idx]
 			switch {
 			// A thread is opened by every click: the chat under it may
@@ -3214,10 +3245,10 @@ func (m Model) onClick(ms tea.Mouse) (tea.Model, tea.Cmd) {
 		// viewport is that pinned copy, and renderMessages holds its line
 		// blank, so pressing it here would press a button nobody drew.
 		if m.inFeed() && line != m.msgTop && line < len(m.msgRows) && m.msgRows[line].rule &&
-			inMarkChat(ms.X-chatsWidth-1, m.messagesWidth()-2) {
+			inMarkChat(ms.X-m.messagesLeft()-1, m.messagesWidth()-2) {
 			return m.markSectionRead(m.feedChatAt(m.msgRows[line].idx))
 		}
-		if z, ok := zoneAt(m.msgRows, line, ms.X-chatsWidth-1); ok {
+		if z, ok := zoneAt(m.msgRows, line, ms.X-m.messagesLeft()-1); ok {
 			// Pressing a button on the Unread page acts on its message, which
 			// reads that message's chat the way landing on it does: the client
 			// only offers the button with the chat open. The cursor stays put,

@@ -22,7 +22,8 @@ const (
 	chatsWidth       = 38 // avatar + two lines of text, per docs/chats-list/PRD.md
 	threadWidth      = 44
 	minMessagesWidth = 40 // narrower than this, the right pane takes the messages pane's place
-	minWidth         = chatsWidth + minMessagesWidth
+	minWidth         = minMessagesWidth
+	twoPaneWidth     = chatsWidth + minMessagesWidth
 	// minHeight is the shortest terminal the layout still fits in: the status
 	// bar, the composer box at rest, and a messages pane holding its head and
 	// one row of message. Derived rather than written down, because the panes
@@ -300,8 +301,12 @@ func (m Model) bodyHeight() int {
 // chatsBodyHeight is the inner height of the chats pane, which runs past the
 // composer to the status bar the way the client's chat list does. It is the
 // body plus the box below it, so it holds still while a growing draft shortens
-// the panes beside it.
+// the panes beside it. As the single column it stops above a list command's
+// box, there being no other pane to stand it under.
 func (m Model) chatsBodyHeight() int {
+	if m.chatsBand() {
+		return m.bodyHeight()
+	}
 	return m.bodyHeight() + m.composerHeight() + 2 // input border
 }
 
@@ -346,21 +351,51 @@ func (m Model) chatRowsHeight() int { return max(1, m.chatsBodyHeight()-headerHe
 // drawn with only one of its two lines.
 func (m Model) chatListHeight() int { return max(1, chatsThatFit(m.chatRowsHeight())) }
 
+func (m *Model) singleColumn() bool { return m.width > 0 && m.width < twoPaneWidth }
+
+func (m *Model) chatsOnly() bool { return m.singleColumn() && m.focus == paneChats }
+
+func (m *Model) messagesVisible() bool { return !m.chatsOnly() && !m.foldRight() }
+
+// A list command borrows the bottom of the single Chats column while it is active.
+func (m *Model) chatsBand() bool {
+	return m.chatsOnly() && m.mode != modeNormal && m.mode != modeContextMenu
+}
+
+// chatPaneWidth is how wide the Chats column is drawn from the left edge, 0
+// while the single column shows another page.
+func (m *Model) chatPaneWidth() int {
+	switch {
+	case m.chatsOnly():
+		return m.width
+	case m.singleColumn():
+		return 0
+	}
+	return chatsWidth
+}
+
+func (m *Model) messagesLeft() int {
+	if m.singleColumn() {
+		return 0
+	}
+	return chatsWidth
+}
+
 // foldRight reports whether the terminal is too narrow for three columns, in
 // which case the thread or assistant pane replaces the messages pane.
 func (m Model) foldRight() bool {
-	return m.rightOpen() && m.width < chatsWidth+minMessagesWidth+threadWidth
+	return m.rightOpen() && m.width < twoPaneWidth+threadWidth
 }
 
 func (m Model) rightWidth() int {
 	if m.foldRight() {
-		return m.width - chatsWidth
+		return m.width - m.messagesLeft()
 	}
 	return threadWidth
 }
 
 func (m Model) messagesWidth() int {
-	w := m.width - chatsWidth
+	w := m.width - m.messagesLeft()
 	if m.rightOpen() && !m.foldRight() {
 		w -= threadWidth
 	}
@@ -786,9 +821,16 @@ func (m Model) hit(x, y int) (pane, int) {
 		}
 		return -1
 	}
+	_, boxed := m.bandAt(x)
+	if boxed && y >= 1+body+1 && y < 1+body+1+m.composerHeight()+2 {
+		// The row inside the box, counted past its top border. Borders land
+		// outside the box's own height, which composerBand reads as neither
+		// the preview nor the writing area.
+		return paneInput, y - (body + 3)
+	}
 	// The chats pane has a column to itself, so its rows go on past the row
 	// the composer box starts at beside it.
-	if x < chatsWidth {
+	if x < m.chatPaneWidth() {
 		if y < 1 || y > m.chatsBodyHeight() {
 			return -1, 0
 		}
@@ -798,13 +840,6 @@ func (m Model) hit(x, y int) (pane, int) {
 		return paneChats, -1
 	}
 	inRight := m.rightOpen() && x >= m.width-m.rightWidth()
-	_, boxed := m.bandAt(x)
-	if boxed && y >= 1+body+1 && y < 1+body+1+m.composerHeight()+2 {
-		// The row inside the box, counted past its top border. Borders land
-		// outside the box's own height, which composerBand reads as neither
-		// the preview nor the writing area.
-		return paneInput, y - (body + 3)
-	}
 	// A column with no box under it runs its pane to the status bar, the way
 	// the chats pane does.
 	bottom := body
@@ -855,12 +890,21 @@ func (m Model) View() tea.View {
 	}
 	// Every column owns the box under it: the box belongs to the conversation
 	// it writes into, not to the whole width of the screen, and the chats pane
-	// writes into none and so runs to the status bar.
-	cols := []string{m.renderChats(m.chatsBodyHeight())}
-	if !m.foldRight() {
+	// writes into none and so runs to the status bar — unless, as the single
+	// column, it lends its foot to a list command's box.
+	var cols []string
+	if m.chatPaneWidth() > 0 {
+		col := m.renderChats(m.chatsBodyHeight())
+		if m.chatsBand() {
+			col += "\n" + m.renderBand(m.cmdSide())
+		}
+		cols = append(cols, col)
+	}
+	if m.messagesVisible() {
 		cols = append(cols, m.renderMessages(m.bodyHeight())+"\n"+m.renderBand(sideMain))
 	}
 	switch {
+	case m.chatsOnly():
 	case m.aiOpen():
 		cols = append(cols, m.rightColumn(m.renderAI))
 	case m.infoOpen:
@@ -902,6 +946,9 @@ func cursorShape(md mode) (tea.CursorShape, bool) {
 // cursor even in the modes that do not write into it, so the block sits on the
 // spot i would resume at, the way vim's does.
 func (m Model) cursorAt() *tea.Cursor {
+	if m.chatsOnly() && !m.chatsBand() {
+		return nil
+	}
 	// The panes with their border, then the composer box's own top border.
 	top := m.bodyHeight() + 3
 	shape, blink := cursorShape(m.mode)
@@ -968,7 +1015,7 @@ func popupStyle() lipgloss.Style {
 
 func (m Model) renderChats(h int) string {
 	vis := m.visibleRows()
-	w := chatsWidth - 2
+	w := m.chatPaneWidth() - 2
 	now := time.Now()
 	gap := strings.Repeat(" ", avatarGap)
 	line := func(avatar, text string, selected bool) string {
