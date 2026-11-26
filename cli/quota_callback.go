@@ -33,7 +33,7 @@ func (a *App) quotaCallbackCmd() *cobra.Command {
 			}()
 			if err := json.UnmarshalRead(a.In, &event); err != nil {
 				out.Result = fmt.Sprintf("invalid callback event: %v", err)
-			} else if q, err := cuacallback.ParseQuota(event, chatID, senderID, time.Now()); err != nil {
+			} else if q, err := cuacallback.ParseQuota(event, chatID, senderID); err != nil {
 				out.Result = err.Error()
 			} else {
 				out = a.claimQuota(cmd.Context(), q, check, fmt.Sprintf("larkim-quota-%d", event.JobID), a.logger().With("job_id", event.JobID, "message_id", event.Message.MessageID))
@@ -47,7 +47,7 @@ func (a *App) quotaCallbackCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&chatID, "chat-id", "", "authorized quota bot conversation")
 	cmd.Flags().StringVar(&senderID, "sender-id", "", "authorized quota bot sender")
-	cmd.Flags().BoolVar(&check, "check", false, "locate and validate the card without submitting a claim (may foreground Lingxi)")
+	cmd.Flags().BoolVar(&check, "check", false, "find a claimable button without pressing it (foregrounds Lingxi)")
 	mustWire(cmd.MarkFlagRequired("chat-id"))
 	mustWire(cmd.MarkFlagRequired("sender-id"))
 	completeNoFileDefault(cmd)
@@ -61,5 +61,5 @@ func (a *App) claimQuota(ctx context.Context, q cuacallback.Quota, check bool, s
 	driver := &cuacallback.CUA{Transport: transport, Session: session, OpenURL: func(ctx context.Context, u string) error {
 		return applink.Open(ctx, a.logger(), []string{u})
 	}}
-	return (&cuacallback.Claim{Driver: driver, Now: time.Now}).Run(ctx, q, check)
+	return (&cuacallback.Claim{Driver: driver}).Run(ctx, q, check)
 }

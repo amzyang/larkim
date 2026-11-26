@@ -49,26 +49,44 @@ func TestCUA_UsesPositionLinkAndSnapshotTokenWithoutRetry(t *testing.T) {
 	require.Equal(t, "foreground", f.args[3]["delivery_mode"])
 	require.NotContains(t, f.args[3], "x")
 }
-func TestCUA_WaitsForAXWithoutReopeningOrActivating(t *testing.T) {
+func TestCUA_FrontsAnUnreadableWindowOnceAndWaitsForAX(t *testing.T) {
 	t.Parallel()
+	// Lingxi also lists an untitled helper window, which keeps bring_to_front
+	// from verifying the exact window even when activation works.
 	f := &fakeTransport{responses: []string{
-		`{"windows":[{"pid":17,"window_id":42,"title":"Lingxi"}]}`,
+		`{"windows":[{"pid":17,"window_id":41,"title":""},{"pid":17,"window_id":42,"title":"Lingxi"}]}`,
 		`{"degraded":true,"degraded_reason":"ax_window_unresolved"}`,
-		`{"windows":[{"pid":17,"window_id":42,"title":"Lingxi"}]}`,
+		`{"status":"partial"}`,
+		`{"degraded":true,"degraded_reason":"ax_window_unresolved"}`,
 		`{"elements":[{"role":"AXWebArea","label":"messenger-chat"}]}`,
 	}}
 	opens := 0
 	d := CUA{Transport: f, Session: "test-job", OpenURL: func(context.Context, string) error { opens++; return nil }}
+	w, err := d.Open(t.Context(), "lark://test")
+	require.NoError(t, err)
+	require.Equal(t, Window{PID: 17, ID: 42}, w)
+	require.Equal(t, 1, opens)
+	require.Equal(t, []string{"list_windows", "get_window_state", "bring_to_front", "get_window_state", "get_window_state"}, f.tools)
+	require.Equal(t, 42, f.args[2]["window_id"])
+}
+
+func TestCUA_ReadableWindowIsNotActivated(t *testing.T) {
+	t.Parallel()
+	f := &fakeTransport{responses: []string{
+		`{"windows":[{"pid":17,"window_id":42,"title":"Lingxi"}]}`,
+		`{"elements":[{"role":"AXWebArea","label":"messenger-chat"}]}`,
+	}}
+	d := CUA{Transport: f, Session: "test-job", OpenURL: func(context.Context, string) error { return nil }}
 	_, err := d.Open(t.Context(), "lark://test")
 	require.NoError(t, err)
-	require.Equal(t, 1, opens)
-	require.Equal(t, []string{"list_windows", "get_window_state", "list_windows", "get_window_state"}, f.tools)
 	require.NotContains(t, f.tools, "bring_to_front")
 }
+
 func TestCUA_RefusesAmbiguousWindowAndHonorsDeadline(t *testing.T) {
 	t.Parallel()
 	for _, response := range []string{
 		`{"windows":[{"pid":17,"window_id":42,"title":"Lingxi"},{"pid":17,"window_id":43,"title":"Lingxi"}]}`,
+		`{"windows":[{"pid":17,"window_id":41,"title":""}]}`,
 		`{"windows":[]}`,
 	} {
 		f := &fakeTransport{responses: []string{response}}

@@ -36,7 +36,7 @@ func (c quotaChecker) Check(ctx context.Context, r automation.Rule) (string, err
 		if !match {
 			continue
 		}
-		q, err := cuacallback.ParseQuota(automation.Event{Version: 1, JobID: 1, RuleID: r.ID, Message: m, Text: text}, chat, sender, now)
+		q, err := cuacallback.ParseQuota(automation.Event{Version: 1, JobID: 1, RuleID: r.ID, Message: m, Text: text}, chat, sender)
 		if err != nil {
 			continue
 		}
@@ -46,7 +46,7 @@ func (c quotaChecker) Check(ctx context.Context, r automation.Rule) (string, err
 		}
 		return result.Result, nil
 	}
-	return "", fmt.Errorf("no current eligible quota card in the latest 100 synced messages; sync the chat and try again")
+	return "", fmt.Errorf("no matching quota card in the last 24 hours of synced messages; sync the chat and try again")
 }
 
 func (a *App) checkQuota(st *store.Store) func(context.Context, automation.Rule) (string, error) {

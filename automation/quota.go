@@ -5,7 +5,7 @@ import "time"
 func QuotaRule(id, executable, chatID, senderID string) Rule {
 	return Rule{ID: id, Criteria: Criteria{
 		ChatIDs: []string{chatID}, SenderIDs: []string{senderID}, MessageTypes: []string{"interactive"},
-		Contains: []string{"AI Coding 总额度已用", "再次申请加油包（+50%）"},
+		Contains: []string{"申请加油包"}, Excludes: []string{"未达加油条件"},
 	}, Callback: Callback{Executable: executable, Args: []string{"automation", "claim-quota", "--chat-id", chatID, "--sender-id", senderID}, Timeout: 60 * time.Second}}
 }
 

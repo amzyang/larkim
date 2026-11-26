@@ -113,7 +113,7 @@ The persistent tables and column contracts are documented in [SCHEMA.md](SCHEMA.
 
 ## Lingxi quota callback
 
-`larkim automation claim-quota` consumes the callback event on stdin and emits the same outcome protocol. It supports the Chinese repeat-claim card with the exact button label `再次申请加油包（+50%）`. First-time claims, changed card formats, and overnight periods are refused.
+`larkim automation claim-quota` consumes the callback event on stdin and emits the same outcome protocol. It decides from the Lingxi client's buttons, not from card text: a card whose buttons are only `未达加油条件…`, or that has no button, is skipped. Any enabled button labelled `申请加油包…` or `再次申请加油包…` is pressed; every one grants the same +50% to the current period, so which card it sits on does not matter.
 
 ```yaml
 automation:
@@ -123,22 +123,21 @@ automation:
       chat_ids: [oc_quiet]
       sender_ids: [ou_a]
       message_types: [interactive]
-      contains: ["AI Coding 总额度已用", "再次申请加油包（+50%）"]
+      contains: ["申请加油包"]
+      excludes: ["未达加油条件"]
     callback:
       executable: /Users/linlan/bin/larkim
       args: [automation, claim-quota, --chat-id, oc_quiet, --sender-id, ou_a]
       timeout: 60s
 ```
 
-Use the actual installed binary path and explicitly authorized chat/sender IDs in local configuration. The example is disabled and contains fictional IDs. Configuring a rule does not grant authorization for other chats or actions.
+The criteria only keep warning cards from opening the client; ineligible cards also contain `方可申请加油包` in their body, hence the exclusion. Use the actual installed binary path and explicitly authorized chat/sender IDs in local configuration. The example is disabled and contains fictional IDs. Configuring a rule does not grant authorization for other chats or actions.
 
-Requirements: `cua-driver` on PATH, its local daemon running with normal approvals, Accessibility permission, a logged-in Lingxi client, and an unlocked desktop. No token or new language runtime is required. The callback uses `applink.Open` to open the native `lark://` message-position link in the registered Lingxi client. It waits up to ten seconds for a unique Lingxi window with a readable chat AX surface; navigation is submitted once, and ambiguous windows are refused. This changes the visible conversation and may mark it read; foreground-free execution is not promised.
+Requirements: `cua-driver` on PATH, its local daemon running with normal approvals, Accessibility permission, a logged-in Lingxi client, and an unlocked desktop. No token or new language runtime is required. The callback validates the event's chat, sender, live interactive type, message ID and positive position, then uses `applink.Open` to open the native `lark://` message-position link once. If the single titled Lingxi window exposes no chat, which happens when it sits on another Space, it brings that window forward once and waits up to ten seconds for a readable chat surface. This changes the visible conversation, takes the foreground and may mark the chat read.
 
-The callback validates the event's chat, sender, live interactive type, message ID and positive position before desktop access. It uses the message creation date and the card's UTC+8 time range, then checks expiry again immediately before clicking. Only one card may match its account, time range, total/per-strategy amounts and prior refill count. It uses an AX element token, never coordinates, and refuses incomplete/degraded snapshots or multiple matching cards/buttons.
+Lingxi's AX tree has no per-message container; every card row sits directly under the chat web area. Buttons are therefore collected from the whole loaded chat. A consumed card renders as a `加油包已生效` receipt with no button, while the message body that lark-cli reads keeps the original button, so eligibility can only be judged in the client. The callback presses the first claimable button once through its AX element token, never coordinates, and refuses incomplete or degraded snapshots.
 
-AX does not expose a proven message-ID-to-card binding. Matching uses card content after position navigation; it cannot distinguish cards with identical content that are outside the loaded AX tree. The current card layout must be validated on the installed client before enabling unattended claims. Concurrent navigation by a person or another automation process can invalidate the target; no click is retried.
-
-After the single click request, the callback observes for at most ten seconds. Success requires one card with the same account and time range, the next refill count, and the expected increased total, Claude and GPT limits. A transport error after submission or an unverified result is `unknown`. The callback itself has a 45-second deadline; the enclosing callback timeout should be longer.
+After the single click request, the callback observes for at most ten seconds. Success requires the number of claimable buttons to drop. A transport error after submission, or a button that stays, is `unknown`; no click is retried. The callback itself has a 45-second deadline; the enclosing callback timeout should be longer.
 
 For non-submitting validation, pass a current event file through stdin:
 
@@ -146,4 +145,4 @@ For non-submitting validation, pass a current event file through stdin:
 larkim automation claim-quota --chat-id oc_quiet --sender-id ou_a --check < event.json
 ```
 
-`--check` may open and foreground Lingxi but never submits a claim. A successful check returns `status: failed` with `check passed` in `result`: no quota effect occurred, so it must not be recorded as a successful claim. Do not put `--check` in an enabled automation rule, because its job would become terminal without claiming.
+`--check` opens and foregrounds Lingxi but never presses a button. A successful check returns `status: failed` with `check passed` in `result`: no quota effect occurred, so it must not be recorded as a successful claim. Do not put `--check` in an enabled automation rule, because its job would become terminal without claiming.

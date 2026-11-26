@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json/v2"
+	"errors"
 	"fmt"
 	"os/exec"
 	"slices"
@@ -42,39 +43,69 @@ type CUA struct {
 	OpenURL   func(context.Context, string) error
 }
 
+// Open navigates once, then waits for Lingxi's titled main window to expose
+// its chat. Window discovery is retried inside the timeout loop so startup
+// races resolve without failing immediately. A window on another Space reports
+// an empty AX tree and open(1) on a lark:// link does not switch Spaces, so
+// an unreadable window is brought forward once. Lingxi's untitled helper window
+// stays above the main one, so bring_to_front reports the exact window
+// unverified even when activation worked; its error is kept and only surfaces
+// if the chat stays unreadable.
 func (c *CUA) Open(ctx context.Context, url string) (Window, error) {
 	if err := c.OpenURL(ctx, url); err != nil {
 		return Window{}, err
 	}
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
+	var w Window
+	found := false
+	var activateErr error
+	activated := false
 	tick := time.NewTicker(250 * time.Millisecond)
 	defer tick.Stop()
 	for {
-		var result struct {
-			Windows []Window `json:"windows"`
+		if !found {
+			var result struct {
+				Windows []struct {
+					Window
+					Title string `json:"title"`
+				} `json:"windows"`
+			}
+			if err := c.Transport.Call(ctx, "list_windows", map[string]any{"app": "Lingxi", "session": c.Session}, &result); err != nil {
+				return Window{}, err
+			}
+			var main []Window
+			for _, win := range result.Windows {
+				if win.Title != "" {
+					main = append(main, win.Window)
+				}
+			}
+			if len(main) > 1 {
+				return Window{}, fmt.Errorf("expected one titled Lingxi window, found %d", len(main))
+			}
+			if len(main) == 1 {
+				w = main[0]
+				found = true
+			}
 		}
-		if err := c.Transport.Call(ctx, "list_windows", map[string]any{"app": "Lingxi", "session": c.Session}, &result); err != nil {
-			return Window{}, err
-		}
-		if len(result.Windows) > 1 {
-			return Window{}, fmt.Errorf("expected one Lingxi window, found %d", len(result.Windows))
-		}
-		if len(result.Windows) == 1 {
-			w := result.Windows[0]
+		if found {
 			state, err := c.State(ctx, w)
 			if err != nil {
 				return Window{}, err
 			}
-			if !state.Truncated && !state.Degraded && state.DegradedReason == "" && slices.ContainsFunc(state.Elements, func(e Element) bool {
+			if state.Healthy() && slices.ContainsFunc(state.Elements, func(e Element) bool {
 				return e.Role == "AXWebArea" && e.Label == "messenger-chat"
 			}) {
 				return w, nil
 			}
+			if !activated {
+				activated = true
+				activateErr = c.Transport.Call(ctx, "bring_to_front", map[string]any{"pid": w.PID, "window_id": w.ID, "session": c.Session}, &struct{}{})
+			}
 		}
 		select {
 		case <-ctx.Done():
-			return Window{}, fmt.Errorf("wait for Lingxi AX window: %w", ctx.Err())
+			return Window{}, errors.Join(fmt.Errorf("wait for Lingxi AX window: %w", ctx.Err()), activateErr)
 		case <-tick.C:
 		}
 	}
