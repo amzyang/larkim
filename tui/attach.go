@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"charm.land/lipgloss/v2"
+	"github.com/amzyang/larkim/applink"
 	"github.com/amzyang/larkim/store"
 )
 
@@ -21,9 +22,8 @@ const (
 	voiceGlyph = "🎤"
 )
 
-// attachment is the one file a media, audio or file message is. It is read
-// from the body Feishu sent rather than from the text lark-cli renders that
-// body into: the cover picture and the duration are in the body alone.
+// The raw attachment body carries details the rendered text omits, including
+// a video's cover picture and duration.
 type attachment struct {
 	msgType  string
 	key      string
@@ -36,7 +36,7 @@ type attachment struct {
 // else — a post's embedded pictures hang off its text and are placed there.
 func attachmentOf(msgType, contentRaw string) (attachment, bool) {
 	switch msgType {
-	case "file", "audio", "media", "video":
+	case "file", "folder", "audio", "media", "video":
 	default:
 		return attachment{}, false
 	}
@@ -69,12 +69,26 @@ func (a attachment) clip() bool {
 	return a.msgType == "media" || a.msgType == "video" || a.msgType == "audio"
 }
 
-// attachRows card the file a message is, the way the client draws one: a
-// video as its cover picture under the length it runs, a voice message as
-// that length alone, and any other file as its name beside its size. What the
-// card draws opens the downloaded file, so a click reaches the video the same
-// way it reaches a call's join button.
+// A folder's IM key is not a Drive URL. Its message is the entry point to
+// the client's File tab; without a position the link only opens the chat.
+func folderRow(a attachment, x store.Message, idx int, st msgStyle, g *leads) msgRow {
+	label := truncate(docGlyph("folder")+" "+cmp.Or(a.name, "Folder"), st.inner())
+	row := msgRow{lead: g.take(), idx: idx}
+	if x.MessagePosition <= 0 {
+		row.text = stBold.Render(label)
+		return row
+	}
+	link := applink.ChatLink(x.ChatID, x.MessageID, x.MessagePosition)
+	row.text = hyperlink(link, stLink.Render(label))
+	row.addZones([]clickZone{{x1: lipgloss.Width(label), urls: []string{link},
+		label: "open in Feishu", note: "opening in Feishu"}})
+	return row
+}
+
 func attachRows(a attachment, x store.Message, idx int, st msgStyle, g *leads) []msgRow {
+	if a.msgType == "folder" {
+		return []msgRow{folderRow(a, x, idx, st, g)}
+	}
 	r := attachRes(a.key, x, st)
 	open := ""
 	if r.Status == "done" {

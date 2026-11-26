@@ -7,6 +7,7 @@ import (
 
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/amzyang/larkim/applink"
 	"github.com/amzyang/larkim/store"
 	"github.com/stretchr/testify/require"
 )
@@ -111,6 +112,44 @@ func TestBodyRows_AFileCardsItsNameBesideItsSize(t *testing.T) {
 	card, ok := zoneRow(rows)
 	require.True(t, ok, "a downloaded file is opened from its card: %q", out)
 	require.Equal(t, []string{filepath.Join("/data", "resources/file_conf.yaml")}, firstZone(card).urls)
+}
+
+func TestFolder_OpenFromIconNameOrKeyboard(t *testing.T) {
+	t.Parallel()
+	msg := store.Message{ChatID: "oc_a", MessageID: "om_folder", MessagePosition: 43, MsgType: "folder",
+		ContentRaw: `{"file_key":"file_folder","file_name":"周报"}`,
+		Content:    `<folder key="file_folder" name="周报"/>`, RenderedAt: 1}
+	m, calls := targetPage(t, msg, nil)
+	link := applink.ChatLink(msg.ChatID, msg.MessageID, msg.MessagePosition)
+	const label = "📁 周报"
+	r, i := lineOf(t, m.msgRows, label)
+	require.Equal(t, label, ansi.Strip(r.text))
+	require.Contains(t, r.text, ";"+link+"\a")
+	collect(clickAt(m, i, r.lead.cols()))
+	collect(clickAt(m, i, r.lead.cols()+ansi.StringWidth(label)-1))
+	_, cmd := m.onNormalKey("o")
+	collect(cmd)
+	require.Equal(t, [][]string{{link}, {link}, {link}}, *calls)
+}
+
+func TestFolder_TruncatesNameAndDoesNotLinkWithoutPosition(t *testing.T) {
+	t.Parallel()
+	st := baseStyle()
+	st.width = leadWidth + 10
+	for _, position := range []int64{0, -3} {
+		msg := store.Message{ChatID: "oc_a", MessageID: "om_folder", MessagePosition: position, MsgType: "folder",
+			ContentRaw: `{"file_key":"file_folder","file_name":"项目协作会议记录"}`}
+		rows := renderRows([]store.Message{msg}, st)
+		require.Contains(t, rowText(rows), "📁 项目协…")
+		require.Empty(t, rowZones(rows))
+	}
+}
+
+func TestFolder_UnnamedFolderDoesNotExposeItsKey(t *testing.T) {
+	t.Parallel()
+	rows := renderRows([]store.Message{{MsgType: "folder", ContentRaw: `{"file_key":"file_folder"}`}}, baseStyle())
+	require.Contains(t, rowText(rows), "📁 Folder")
+	require.NotContains(t, rowText(rows), "file_folder")
 }
 
 func TestBodyRows_AFileKeepsItsSizeAfterBeingSkipped(t *testing.T) {
