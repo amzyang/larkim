@@ -160,7 +160,8 @@ func TestAutomationTab_QuotaPresetResolvesExecutableAndRequiresExplicitScope(t *
 	m = finishAutomation(t, m, cmd)
 	r := m.cfg.Automation[0]
 	require.Equal(t, []string{"interactive"}, r.Criteria.MessageTypes)
-	require.Equal(t, []string{"AI Coding 总额度已用", "再次申请加油包（+50%）"}, r.Criteria.Contains)
+	require.Equal(t, []string{"申请加油包"}, r.Criteria.Contains)
+	require.Equal(t, []string{"未达加油条件"}, r.Criteria.Excludes)
 	require.Equal(t, []string{"automation", "claim-quota", "--chat-id", "oc_quiet", "--sender-id", "cli_c"}, r.Callback.Args)
 	require.Equal(t, time.Minute, r.Callback.Timeout)
 }
