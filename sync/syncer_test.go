@@ -938,38 +938,7 @@ func TestActiveProbe_AFailedPullLeavesTheMovedChatsNamedNextTick(t *testing.T) {
 	require.Equal(t, 1, rep.Probed, "the retained ordering names oc_c again")
 }
 
-func TestProbeReadStatus_TakesAChatOutOfTheSweepOnceTheClientAnswers(t *testing.T) {
-	t.Parallel()
-	s, f, clk := newSyncer(t)
-	ctx := t.Context()
-	now := clk.t
-	require.NoError(t, s.Store.SetState(ctx, KeySelfOpenID, "ou_me"))
-	f.AddMessage(msg("om_walked", "oc_walked", now.Add(-time.Hour), "hi"))
-	_, err := s.Store.UpsertMessages(ctx, []store.Message{{MessageID: "om_walked", ChatID: "oc_walked",
-		SenderID: "ou_a", CreateMs: now.Add(-time.Hour).UnixMilli(), RawJSON: "{}"}}, now.UnixMilli())
-	require.NoError(t, err)
-	require.NoError(t, s.Store.SetReadStatus(ctx, "om_walked", new(false), now.UnixMilli(), now.Add(6*time.Hour).UnixMilli()))
-	_, err = s.Store.AcceptRemoteRead(ctx, "oc_walked", 0)
-	require.NoError(t, err)
-	chats, err := s.Store.ChatsWithUnread(ctx)
-	require.NoError(t, err)
-	require.Empty(t, chats, "accept is the receipt the badge follows")
-
-	f.Read["om_walked"] = true
-	_, err = s.probeReadStatus(ctx, now)
-	require.NoError(t, err)
-
-	m, _ := s.Store.GetMessage(ctx, "om_walked")
-	require.True(t, *m.IsReadRemote)
-	probes, err := s.Store.ReadStatusProbes(ctx, store.ReadCheckQuery{Self: "ou_me", SinceMs: 100, Limit: 10})
-	require.NoError(t, err)
-	require.Empty(t, probes, "confirm closes the unconfirmed accept slot")
-	chats, err = s.Store.ChatsWithUnread(ctx)
-	require.NoError(t, err)
-	require.Empty(t, chats)
-}
-
-func TestProbeReadStatus_RevertsWhenFeishuStillReportsUnread(t *testing.T) {
+func TestProbeReadStatus_DoesNotRevertWatermarkAcceptedMessages(t *testing.T) {
 	t.Parallel()
 	s, f, clk := newSyncer(t)
 	ctx := t.Context()
@@ -980,18 +949,19 @@ func TestProbeReadStatus_RevertsWhenFeishuStillReportsUnread(t *testing.T) {
 		SenderID: "ou_a", CreateMs: now.Add(-time.Hour).UnixMilli(), RawJSON: "{}"}}, now.UnixMilli())
 	require.NoError(t, err)
 	require.NoError(t, s.Store.SetReadStatus(ctx, "om_lie", new(false), now.UnixMilli(), now.Add(6*time.Hour).UnixMilli()))
-	_, err = s.Store.AcceptRemoteRead(ctx, "oc_lie", 0)
+	_, err = s.Store.AcceptRemoteRead(ctx, "oc_lie", 0, now.UnixMilli())
 	require.NoError(t, err)
 
-	f.Read["om_lie"] = false
 	_, err = s.probeReadStatus(ctx, now)
 	require.NoError(t, err)
+	require.NotContains(t, f.Calls, "read-status")
 
-	m, _ := s.Store.GetMessage(ctx, "om_lie")
-	require.False(t, *m.IsReadRemote)
+	m, err := s.Store.GetMessage(ctx, "om_lie")
+	require.NoError(t, err)
+	require.True(t, *m.IsReadRemote, "watermark-accepted read must not be reverted by the probe")
 	chats, err := s.Store.ChatsWithUnread(ctx)
 	require.NoError(t, err)
-	require.Len(t, chats, 1)
+	require.Empty(t, chats)
 }
 
 func TestSlowPath_NamesANewChatBelowTheProbesPage(t *testing.T) {

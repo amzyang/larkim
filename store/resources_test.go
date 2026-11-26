@@ -322,7 +322,7 @@ func TestAcceptRemoteRead_FlipsMainFlowUpToPosition(t *testing.T) {
 		markUnread(t, s, id)
 	}
 
-	n, err := s.AcceptRemoteRead(ctx, "oc_a", 2)
+	n, err := s.AcceptRemoteRead(ctx, "oc_a", 2, 1)
 	require.NoError(t, err)
 	require.Equal(t, int64(2), n)
 
@@ -349,7 +349,7 @@ func TestAcceptRemoteRead_IncludesSilenced(t *testing.T) {
 	markUnread(t, s, "om_quiet")
 	require.Empty(t, unreadCounts(t, s))
 
-	n, err := s.AcceptRemoteRead(ctx, "oc_a", 1)
+	n, err := s.AcceptRemoteRead(ctx, "oc_a", 1, 1)
 	require.NoError(t, err)
 	require.Equal(t, int64(1), n)
 	m, _ := s.GetMessage(ctx, "om_quiet")
@@ -362,12 +362,12 @@ func TestAcceptRemoteRead_WritesNothingWhenAlreadyRead(t *testing.T) {
 	_, err := s.UpsertMessages(ctx, []Message{msgAt("om_a", "oc_a", 10, 1, "one")}, 1)
 	require.NoError(t, err)
 	markUnread(t, s, "om_a")
-	_, err = s.AcceptRemoteRead(ctx, "oc_a", 1)
+	_, err = s.AcceptRemoteRead(ctx, "oc_a", 1, 1)
 	require.NoError(t, err)
 
 	before, err := s.DataRev(ctx)
 	require.NoError(t, err)
-	n, err := s.AcceptRemoteRead(ctx, "oc_a", 1)
+	n, err := s.AcceptRemoteRead(ctx, "oc_a", 1, 1)
 	require.NoError(t, err)
 	require.Zero(t, n)
 	after, err := s.DataRev(ctx)
@@ -387,7 +387,7 @@ func TestAcceptRemoteRead_LeavesAHigherPositionUnread(t *testing.T) {
 	markUnread(t, s, "om_1")
 	markUnread(t, s, "om_2")
 
-	_, err = s.AcceptRemoteRead(ctx, "oc_a", 1)
+	_, err = s.AcceptRemoteRead(ctx, "oc_a", 1, 1)
 	require.NoError(t, err)
 
 	require.Equal(t, map[string]int64{"oc_a": 1}, unreadCounts(t, s))
@@ -395,7 +395,9 @@ func TestAcceptRemoteRead_LeavesAHigherPositionUnread(t *testing.T) {
 	require.False(t, *m.IsReadRemote)
 }
 
-func TestReadStatusProbes_KeepsUnconfirmedAcceptedRead(t *testing.T) {
+func TestReadStatusProbes_SkipsAcceptedReads(t *testing.T) {
+	// AcceptRemoteRead stamps remote_checked_at immediately, so the probe
+	// never sees these messages as unchecked and cannot revert them.
 	s := openTest(t)
 	ctx := t.Context()
 	_, err := s.UpsertMessages(ctx, []Message{
@@ -403,34 +405,32 @@ func TestReadStatusProbes_KeepsUnconfirmedAcceptedRead(t *testing.T) {
 	}, 1)
 	require.NoError(t, err)
 	require.NoError(t, s.SetReadStatus(ctx, "om_a", new(false), 1000, 9e12))
-	_, err = s.AcceptRemoteRead(ctx, "oc_a", 0)
+	_, err = s.AcceptRemoteRead(ctx, "oc_a", 0, 2000)
 	require.NoError(t, err)
 
 	probes, err := s.ReadStatusProbes(ctx, ReadCheckQuery{Self: "ou_me", SinceMs: 100, Limit: 10})
 	require.NoError(t, err)
-	require.Equal(t, []ReadProbe{{"om_a", "oc_a", true}}, probes)
-
-	require.NoError(t, s.ConfirmAcceptedRead(ctx, "oc_a", 2000))
-	probes, err = s.ReadStatusProbes(ctx, ReadCheckQuery{Self: "ou_me", SinceMs: 100, Limit: 10})
-	require.NoError(t, err)
-	require.Empty(t, probes)
+	require.Empty(t, probes, "watermark-accepted reads are already confirmed and must not appear in probes")
 }
 
-func TestRevertUnconfirmedRead_RestoresTheBadge(t *testing.T) {
+func TestRevertUnconfirmedRead_IsNoOpForWatermarkAcceptedMessages(t *testing.T) {
+	// AcceptRemoteRead now stamps remote_checked_at immediately, so
+	// RevertUnconfirmedRead (which only targets remote_checked_at = 0) leaves
+	// them untouched.
 	s := openTest(t)
 	ctx := t.Context()
 	require.NoError(t, s.EnsureChat(ctx, "oc_a", 1))
 	_, err := s.UpsertMessages(ctx, []Message{msgAt("om_a", "oc_a", 10, 1, "one")}, 1)
 	require.NoError(t, err)
 	markUnread(t, s, "om_a")
-	_, err = s.AcceptRemoteRead(ctx, "oc_a", 1)
+	_, err = s.AcceptRemoteRead(ctx, "oc_a", 1, 5000)
 	require.NoError(t, err)
 	require.Empty(t, unreadCounts(t, s))
 
 	require.NoError(t, s.RevertUnconfirmedRead(ctx, "oc_a"))
-	require.Equal(t, map[string]int64{"oc_a": 1}, unreadCounts(t, s))
+	require.Empty(t, unreadCounts(t, s), "nothing to revert: already confirmed")
 	m, _ := s.GetMessage(ctx, "om_a")
-	require.False(t, *m.IsReadRemote)
+	require.True(t, *m.IsReadRemote)
 }
 
 func sharedFixture(t *testing.T) *Store {
@@ -605,29 +605,13 @@ func TestReadStatusProbes_SkipsMessagesNoAnswerCanReach(t *testing.T) {
 		"a refused id spends the chat's one slot on a question with no answer")
 }
 
-func TestReadStatusProbes_KeepsAskingAboutAnUnconfirmedAccept(t *testing.T) {
-	s := openTest(t)
-	ctx := t.Context()
-	_, err := s.UpsertMessages(ctx, []Message{
-		{MessageID: "om_walked", ChatID: "oc_walked", SenderID: "ou_x", CreateMs: 1000, RawJSON: "{}"},
-	}, 1)
-	require.NoError(t, err)
-	require.NoError(t, s.SetReadStatus(ctx, "om_walked", new(false), 1000, 9e12))
-	_, err = s.AcceptRemoteRead(ctx, "oc_walked", 0)
-	require.NoError(t, err)
-
-	probes, err := s.ReadStatusProbes(ctx, ReadCheckQuery{Self: "ou_me", SinceMs: 100, Limit: 10})
-	require.NoError(t, err)
-	require.Equal(t, []ReadProbe{{"om_walked", "oc_walked", true}}, probes)
-}
-
 func TestChatsWithUnread_DropsAfterAcceptUntilFeishuDisagrees(t *testing.T) {
 	s := openTest(t)
 	ctx := t.Context()
 	_, err := s.UpsertMessages(ctx, []Message{msgAt("om_c", "oc_c", 30, 1, "one")}, 1)
 	require.NoError(t, err)
 	markUnread(t, s, "om_c")
-	_, err = s.AcceptRemoteRead(ctx, "oc_c", 1)
+	_, err = s.AcceptRemoteRead(ctx, "oc_c", 1, 1)
 	require.NoError(t, err)
 	chats, err := s.ChatsWithUnread(ctx)
 	require.NoError(t, err)
@@ -677,7 +661,7 @@ func TestChatsWithUnread_DropsAChatFeishuReportsRead(t *testing.T) {
 	require.NoError(t, err)
 	markUnread(t, s, "om_a")
 	markUnread(t, s, "om_b")
-	_, err = s.AcceptRemoteRead(ctx, "oc_a", 1)
+	_, err = s.AcceptRemoteRead(ctx, "oc_a", 1, 1)
 	require.NoError(t, err)
 	require.NoError(t, s.ConfirmAcceptedRead(ctx, "oc_a", 6000))
 

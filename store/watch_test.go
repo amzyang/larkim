@@ -168,7 +168,7 @@ func TestDataRev_AdvancesWhenSomethingVisibleChanges(t *testing.T) {
 		{"a mute", func() error {
 			return s.SetMuteStatus(ctx, map[string]bool{"oc_a": true}, nil, 2)
 		}},
-		{"accept remote read", func() error { _, err := s.AcceptRemoteRead(ctx, "oc_a", 1); return err }},
+		{"accept remote read", func() error { _, err := s.AcceptRemoteRead(ctx, "oc_a", 1, 1); return err }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			before, err := s.DataRev(ctx)

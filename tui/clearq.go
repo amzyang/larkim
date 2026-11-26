@@ -178,7 +178,7 @@ func fireBadgeClear(d Deps, c store.ChatUnread, gen int) tea.Cmd {
 			d.Log.WarnContext(ctx, "clear feishu badge", "chat_id", c.ChatID, "err", err)
 			return clearFiredMsg{gen: gen, chatID: c.ChatID, err: err}
 		}
-		if _, err := d.Store.AcceptRemoteRead(ctx, c.ChatID, c.Position); err != nil {
+		if _, err := d.Store.AcceptRemoteRead(ctx, c.ChatID, c.Position, time.Now().UnixMilli()); err != nil {
 			d.Log.WarnContext(ctx, "accept remote read", "chat_id", c.ChatID, "err", err)
 			return clearFiredMsg{gen: gen, chatID: c.ChatID, err: err}
 		}

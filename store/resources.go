@@ -391,13 +391,16 @@ func (s *Store) UnreadAnchors(ctx context.Context) ([]UnreadAnchor, error) {
 }
 
 // AcceptRemoteRead records a successful mark-read watermark: main-flow messages
-// up to position flip to read and stay unconfirmed until the probe checks.
-func (s *Store) AcceptRemoteRead(ctx context.Context, chatID string, position int64) (int64, error) {
-	res, err := s.db.ExecContext(ctx, `UPDATE read_state SET is_read_remote = 1, remote_checked_at = 0
+// up to position flip to read. now is stamped as the confirmation time so the
+// probe does not treat these messages as unconfirmed and cannot revert them
+// when the read-status API (which does not reflect watermark state) still
+// reports them as unread.
+func (s *Store) AcceptRemoteRead(ctx context.Context, chatID string, position int64, now int64) (int64, error) {
+	res, err := s.db.ExecContext(ctx, `UPDATE read_state SET is_read_remote = 1, remote_checked_at = ?
  WHERE message_id IN (
    SELECT m.message_id FROM messages m JOIN read_state r ON r.message_id = m.message_id
    WHERE m.chat_id = ? AND r.is_read_remote = 0 AND m.deleted = 0
-     AND m.message_position >= 0 AND m.message_position <= ?)`, chatID, position)
+     AND m.message_position >= 0 AND m.message_position <= ?)`, now, chatID, position)
 	if err != nil {
 		return 0, err
 	}

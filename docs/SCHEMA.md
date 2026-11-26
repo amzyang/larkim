@@ -136,8 +136,8 @@ Per-message read state, joined on `message_id`. A row exists for a message whose
 
 | column | meaning |
 |---|---|
-| `is_read_remote` | NULL unknown, 0 unread, 1 read. Feishu OpenAPI read-status polling sets it from answers; a successful web-gateway mark-read watermark sets it to 1 for main-flow messages up to the posted position (`AcceptRemoteRead`). While `remote_checked_at` is 0 after such a write, the row is accepted but unconfirmed until the read-status probe confirms or reverts it. Messages older than the 7-day polling horizon go back to NULL, since nothing can refresh them |
-| `remote_checked_at`, `check_count`, `next_check_at` | polling schedule for the remote flag; `remote_checked_at` is 0 on a row stored unread on arrival until Feishu first answers for it, and again after an accepted watermark until the probe confirms |
+| `is_read_remote` | NULL unknown, 0 unread, 1 read. Feishu OpenAPI read-status polling sets it from answers; a successful web-gateway mark-read watermark sets it to 1 for known unread main-flow messages up to the posted position (`AcceptRemoteRead`). Unread messages older than the 7-day polling horizon go back to NULL, since nothing can refresh them |
+| `remote_checked_at`, `check_count`, `next_check_at` | `remote_checked_at` is 0 for an unchecked arrival, otherwise the time of the recorded read-status answer or successful watermark. Watermark acceptance does not advance `check_count` or `next_check_at`. Persisted read rows with a legacy zero timestamp remain eligible for reconciliation until the probe resolves them |
 
 A chat's badge counts live rows where `is_read_remote` is 0 on an unsilenced message with a non-negative `message_position`; thread replies are left out. That is the same set `larkim read-all` walks for Feishu red dots. Silenced main-flow messages still flip on a successful watermark POST even though they do not increment the badge.
 

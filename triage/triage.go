@@ -570,7 +570,7 @@ func (t *Triager) markRead(ctx context.Context, b Banner) {
 		t.log().WarnContext(ctx, "banner: mark read", "chat", b.ChatID, "message", b.MessageID, "position", b.Position, "err", err)
 		return
 	}
-	if _, err := t.Store.AcceptRemoteRead(ctx, b.ChatID, b.Position); err != nil {
+	if _, err := t.Store.AcceptRemoteRead(ctx, b.ChatID, b.Position, t.Clock.Now().UnixMilli()); err != nil {
 		t.log().WarnContext(ctx, "banner: accept remote read", "chat", b.ChatID, "message", b.MessageID, "err", err)
 	}
 }

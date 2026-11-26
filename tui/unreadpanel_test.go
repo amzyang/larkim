@@ -294,7 +294,7 @@ func TestFeed_AChatReadHereStaysUntilTheReaderLeaves(t *testing.T) {
 	t.Parallel()
 	m, _, _ := readingFeed(t)
 	m = keyThrough(t, m, "n")
-	_, err := m.deps.Store.AcceptRemoteRead(t.Context(), "oc_platform", 200)
+	_, err := m.deps.Store.AcceptRemoteRead(t.Context(), "oc_platform", 200, 1)
 	require.NoError(t, err)
 
 	m = applyAll(t, m, m.reloadCurrent())
@@ -532,7 +532,7 @@ func TestFeed_ASendWaitsUnderItsOwnSection(t *testing.T) {
 func TestFeed_ADataRevReloadDropsAChatReadElsewhere(t *testing.T) {
 	t.Parallel()
 	m := feedModel(t)
-	_, err := m.deps.Store.AcceptRemoteRead(t.Context(), "oc_platform", 200)
+	_, err := m.deps.Store.AcceptRemoteRead(t.Context(), "oc_platform", 200, 1)
 	require.NoError(t, err)
 
 	m = applyAll(t, m, m.reloadCurrent())

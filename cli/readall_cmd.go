@@ -57,7 +57,7 @@ func (a *App) readAllCmd() *cobra.Command {
 					res.Failed++
 					continue
 				}
-				n, err := st.AcceptRemoteRead(ctx, c.ChatID, c.Position)
+				n, err := st.AcceptRemoteRead(ctx, c.ChatID, c.Position, time.Now().UnixMilli())
 				if err != nil {
 					a.logger().Warn("accept remote read", "chat_id", c.ChatID, "err", err)
 					res.Failed++

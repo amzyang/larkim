@@ -259,7 +259,7 @@ func TestGatherUnread_AChatReadElsewhereLeavesThePage(t *testing.T) {
 	secs, _, _, err := gatherUnread(t.Context(), st, "ou_me", chats, nil, nil)
 	require.NoError(t, err)
 
-	_, err = st.AcceptRemoteRead(t.Context(), "oc_platform", 200)
+	_, err = st.AcceptRemoteRead(t.Context(), "oc_platform", 200, 1)
 	require.NoError(t, err)
 
 	held, msgs, _, err := gatherUnread(t.Context(), st, "ou_me", chats, secs, nil)
@@ -277,7 +277,7 @@ func TestGatherUnread_AChatReadHereKeepsItsStretch(t *testing.T) {
 	secs, _, _, err := gatherUnread(t.Context(), st, "ou_me", chats, nil, nil)
 	require.NoError(t, err)
 
-	_, err = st.AcceptRemoteRead(t.Context(), "oc_platform", 200)
+	_, err = st.AcceptRemoteRead(t.Context(), "oc_platform", 200, 1)
 	require.NoError(t, err)
 	chats[0].UnreadCount = 0
 
