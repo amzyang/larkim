@@ -107,7 +107,7 @@ func New(version, buildDSN string) *cobra.Command {
 		"log every lark-cli request and response (always-on logging lives in <data_dir>/larkim.log)")
 	root.PersistentFlags().StringVar(&app.sentryFlag, "sentry-dsn", "", "Sentry DSN for crash reporting (overrides SENTRY_DSN and the build-time default; empty disables)")
 	root.SetFlagErrorFunc(func(_ *cobra.Command, err error) error { return &usageError{err} })
-	root.AddCommand(app.syncCmd(), app.statusCmd(), app.daemonCmd(), app.chatsCmd(), app.messagesCmd(), app.contactsCmd(),
+	root.AddCommand(app.syncCmd(), app.statusCmd(), app.chatsCmd(), app.messagesCmd(), app.contactsCmd(),
 		app.sendCmd(), app.replyCmd(), app.reactCmd(), app.watchCmd(), app.readAllCmd(), app.silenceCmd(), app.tuiCmd(), app.dbCmd(),
 		app.schemaCmd(), app.emojiCmd(), app.sentryCmd(), app.unreadCmd(), app.lintCmd(), app.candidatesCmd(), app.triageCmd(), app.automationCmd())
 	mustWire(root.MarkPersistentFlagFilename("config", "yaml", "yml"))

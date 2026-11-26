@@ -72,7 +72,7 @@ func TestSilenceTab_AddsARuleThroughThePickersAndWritesTheFile(t *testing.T) {
 	require.False(t, m.config.silence.form.open)
 	require.Equal(t, want, m.cfg.Silence)
 	require.Equal(t, want, configFile(t, m).Silence)
-	require.Equal(t, "silence · 1 rule · the daemon rereads it", m.notice)
+	require.Equal(t, "silence · 1 rule · the sweep owner rereads it", m.notice)
 	require.False(t, m.noticeErr)
 	require.Equal(t, want, m.deps.Store.Silence(),
 		"the messages this process pulls itself are stamped from the new rules")

@@ -3046,7 +3046,7 @@ func (m Model) runCommand(line string) (tea.Model, tea.Cmd) {
 	case "sync":
 		// A tick moves the global cursors, which belong to the sweep alone.
 		if !m.deps.Embedded {
-			return m.notify("sync is handled by the daemon", false), nil
+			return m.notify("sync is handled by another process", false), nil
 		}
 		s := m.deps.Syncer
 		return m.notify("syncing…", false), func() tea.Msg {

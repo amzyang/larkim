@@ -56,7 +56,7 @@ type setting struct {
 // TestSettings_NameEveryConfigKeyInOrder holds them to.
 var settings = []setting{{
 	key:  "data_dir",
-	help: "the database, attachments and the daemon lock live here",
+	help: "the database, attachments and the sweep lock live here",
 }, {
 	key:  "lark_cli_path",
 	help: "the lark-cli binary; empty tries /opt/homebrew/bin, then $PATH",
@@ -189,7 +189,7 @@ var settings = []setting{{
 	},
 }, {
 	key:      "automation",
-	help:     "message callbacks; enter edits them in the Automation tab; restart the daemon or embedded-sync TUI",
+	help:     "message callbacks; enter edits them in the Automation tab; restart the TUI that owns sync",
 	readOnly: true,
 	tab:      tabAutomation,
 	summary:  func(_ Model, c config.Config) string { return plural(len(c.Automation), "rule", "rules") },
@@ -329,12 +329,20 @@ func (m Model) settingReach(s setting) string {
 	case s.readOnly:
 		return s.editedIn()
 	case m.isLive(s):
-		return "takes effect now"
+		return reachNow
 	case s.sweep:
-		return "the daemon rereads it"
+		return reachSweep
 	}
 	return "next start"
 }
+
+// The two labels a section editor reports after a write. A section the sweep
+// owns is reread by whichever process holds the lock, so the panels report
+// the same pair settingReach does rather than each spelling it out.
+const (
+	reachNow   = "takes effect now"
+	reachSweep = "the sweep owner rereads it"
+)
 
 // settingInfo is what the box beside the : line's list says about a key: what
 // it is for, then what it is set to under cfg and how far a change reaches.

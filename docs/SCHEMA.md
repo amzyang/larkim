@@ -1,6 +1,6 @@
 # larkim SQLite schema
 
-Database: `larkim db path` (default `~/.larkim/larkim.db`). WAL mode; readers never block the daemon. The authoritative DDL is `larkim schema` (embedded migrations in `store/migrations/`). All timestamps are Unix **milliseconds** in UTC unless the column name says otherwise.
+Database: `larkim db path` (default `~/.larkim/larkim.db`). WAL mode; readers never block the sweep. The authoritative DDL is `larkim schema` (embedded migrations in `store/migrations/`). All timestamps are Unix **milliseconds** in UTC unless the column name says otherwise.
 
 Ownership: `daemon.lock` names the one process that runs the sweep — discovery, backfill, and the global cursors in `sync_state`. Everything a reader reaches for is a write any larkim process may make: a send, a reaction, an expanded forward, a page of older history and a cold search hit all name ids Feishu just answered for and upsert the same rows whoever asks. `drafts` belong to the TUI. How far a reader outside larkim has got is its own state, not a column here; see [Consumer cursors](#consumer-cursors).
 
@@ -164,7 +164,7 @@ Derived state: rebuild it by re-queuing every chat with a silenced message still
 ## drafts
 
 What the reader has typed but not sent, one row per composer. Consumer-owned:
-the daemon never writes it, and it is outside
+the sweep never writes it, and it is outside
 the `data_rev` triggers, since the process that writes a draft is the one that
 displays it.
 
@@ -335,7 +335,7 @@ composer text, the selection. Later actions on an answer (Retry and
 Regenerate included) replay the recorded context rather than the live
 cursor, so that record is what an answer's meaning rests on.
 
-TUI-owned, like `drafts`: the daemon never writes these tables, and they sit
+TUI-owned, like `drafts`: the sweep never writes these tables, and they sit
 outside the `data_rev` triggers — the process that writes a turn is the one
 that displays it. Ids are uuids minted in the TUI, so a stream key exists
 before its row is inserted; turn rows are upserted whole, so an out-of-order

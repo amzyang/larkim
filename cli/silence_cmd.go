@@ -77,7 +77,7 @@ func (a *App) silenceAddCmd() *cobra.Command {
 		Use:   "add [--chat <oc_ | name>] [--sender <open_id>] [--contains <text>]",
 		Short: "Add a silence rule to the config file",
 		Long: "The flags given are an AND, and at least one is required. --chat alone silences the whole chat on this machine.\n" +
-			"A running daemon takes the rule on its next tick; a TUI that syncs in-process takes it on its next start.",
+			"The process running the sweep takes the rule on its next tick; a TUI that syncs in-process takes it at once.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			rule.Contains = strings.TrimSpace(rule.Contains)

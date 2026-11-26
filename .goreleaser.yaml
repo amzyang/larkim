@@ -57,19 +57,14 @@ brews:
       token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
     directory: Formula
     homepage: "https://github.com/amzyang/larkim"
-    description: "Feishu/Lark IM synced to local SQLite: background daemon, CLI and TUI"
+    description: "Feishu/Lark IM synced to local SQLite: TUI and CLI"
     license: MIT
     caveats: |
       larkim drives the official lark-cli for authentication and API access:
         npm install -g @larksuite/cli
         lark-cli auth login --domain im,contact
-      Then start the sync service:
-        brew services start larkim
-    service: |
-      run [opt_bin/"larkim", "daemon", "run"]
-      keep_alive true
-      log_path var/"log/larkim.log"
-      error_log_path var/"log/larkim.log"
+      Run the TUI, which embeds the sync loop:
+        larkim tui
     install: |
       bin.install "larkim"
       generate_completions_from_executable(bin/"larkim", "completion")

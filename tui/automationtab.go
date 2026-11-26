@@ -637,7 +637,7 @@ func (m Model) automationDetail() string {
 			text = "Positive duration, e.g. 60s"
 		}
 	case m.automationRestart:
-		text = "Restart required · daemon or embedded-sync TUI"
+		text = "Restart required · the TUI that owns sync"
 	}
 	return fit(stDim.Render(truncate(text, w)), w)
 }

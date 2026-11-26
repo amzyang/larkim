@@ -1,6 +1,6 @@
 # Message automation
 
-Automation matches synchronized messages against configured rules and runs an external executable for each match. The process holding `daemon.lock` owns evaluation and dispatch: either `larkim daemon run` or a TUI with embedded sync. A TUI attached to an existing daemon does not run another dispatcher. One-shot `larkim sync` records message changes but leaves them queued for the next owner.
+Automation matches synchronized messages against configured rules and runs an external executable for each match. The process holding `daemon.lock` owns evaluation and dispatch, which is a TUI with embedded sync. A TUI that finds the lock already taken does not run another dispatcher. One-shot `larkim sync` records message changes but leaves them queued for the next owner.
 
 Rules are read at startup. Editing `automation` requires restarting the lock owner; live configuration reload does not change running rules. No rules are enabled by default.
 
@@ -19,7 +19,7 @@ Open `:config automation` or select the Automation tab in `:config`.
 
 In the editor, Tab/Shift+Tab move between fields; Enter opens Chat, Sender or message-type selection. Chat and Sender pickers support name/ID search and include known bots. Lists and callback arguments are JSON arrays of strings; arguments are not shell-parsed. Ctrl+S saves, and Esc discards the draft. The quota preset derives its callback arguments from its single Chat and Sender.
 
-The list displays **configured**, not runtime, status. A saved change is marked **Restart required** for the daemon or embedded-sync TUI. Saving or deleting a rule does not change the running worker. Runtime job history remains available through `larkim automation jobs`.
+The list displays **configured**, not runtime, status. A saved change is marked **Restart required** for the TUI that owns sync. Saving or deleting a rule does not change the running worker. Runtime job history remains available through `larkim automation jobs`.
 
 Check is available only for the current binary's quota preset. It requires confirmation because it may foreground Lingxi. It selects a current eligible card from the latest 100 locally synced interactive messages in the configured Chat/Sender scope; it never runs the configured executable and never clicks the claim button. A missing/expired card or unavailable AX window is an error. Checking does not enqueue or consume a job.
 

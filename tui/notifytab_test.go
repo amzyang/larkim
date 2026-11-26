@@ -42,7 +42,7 @@ func TestNotifyTab_AddsAWatchedPersonAndChatThroughThePicker(t *testing.T) {
 	want := config.Strings{"ou_b", "oc_quiet"}
 	require.Equal(t, want, m.cfg.Notifications.Watch)
 	require.Equal(t, want, configFile(t, m).Notifications.Watch)
-	require.Equal(t, "notifications · 2 watch, 0 keywords · the daemon rereads it", m.notice)
+	require.Equal(t, "notifications · 2 watch, 0 keywords · the sweep owner rereads it", m.notice)
 	require.Contains(t, ansi.Strip(strings.Join(m.notifyLines(), "\n")), "李四")
 	require.Contains(t, ansi.Strip(strings.Join(m.notifyLines(), "\n")), "平台组")
 }

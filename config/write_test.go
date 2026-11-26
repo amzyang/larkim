@@ -36,7 +36,7 @@ func TestSetFile_KeepsCommentsAndSiblings(t *testing.T) {
 
 	text, err := os.ReadFile(p)
 	require.NoError(t, err)
-	require.Contains(t, string(text), "# Database, attachments and the daemon lock live here.")
+	require.Contains(t, string(text), "# Database, attachments and the sweep lock live here.")
 	require.Contains(t, string(text), "# Skip attachments larger than this; 0 means unlimited.")
 	require.Contains(t, string(text), "# Command that starts an ACP agent on stdio; the agent holds its own login.")
 }

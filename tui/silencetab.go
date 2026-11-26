@@ -546,7 +546,7 @@ func (m *Model) editSilence(edit func(store.SilenceRules) store.SilenceRules) er
 		return err
 	}
 	m.cfg.Silence = next
-	reach := "the daemon rereads it"
+	reach := reachSweep
 	if m.deps.Store != nil {
 		m.deps.Store.SetSilence(next)
 	}

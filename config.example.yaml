@@ -1,7 +1,7 @@
 # larkim configuration. Copy to ~/.larkim/config.yaml and edit; every key is
 # optional and falls back to the value shown here.
 
-# Database, attachments and the daemon lock live here.
+# Database, attachments and the sweep lock live here.
 data_dir: ~/.larkim
 
 # Empty tries /opt/homebrew/bin/lark-cli, then $PATH.

@@ -23,8 +23,8 @@ func TestRunCommand_SyncBelongsToTheSweepOwner(t *testing.T) {
 	t.Parallel()
 	m := New(Deps{})
 	next, cmd := m.runCommand("sync")
-	require.Nil(t, cmd, "a tick moves the global cursors, which the daemon owns")
-	require.Contains(t, next.(Model).notice, "daemon")
+	require.Nil(t, cmd, "a tick moves the global cursors, which the sweep owner holds")
+	require.Contains(t, next.(Model).notice, "another process")
 
 	m.deps.Embedded = true
 	next, cmd = m.runCommand("sync")

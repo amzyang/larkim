@@ -32,7 +32,7 @@ func (a *App) syncCmd() *cobra.Command {
 			defer st.Close()
 			lock, err := sync.TryLock(a.cfg.DataDir)
 			if err != nil {
-				return fmt.Errorf("%w (is the daemon running? use `larkim status`)", err)
+				return fmt.Errorf("%w (is a TUI running? use `larkim status`)", err)
 			}
 			defer lock.Unlock()
 			ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -67,51 +67,6 @@ func (a *App) syncCmd() *cobra.Command {
 	return cmd
 }
 
-func (a *App) daemonCmd() *cobra.Command {
-	daemon := &cobra.Command{Use: "daemon", Short: "Background synchronization service"}
-	run := &cobra.Command{
-		Use:   "run",
-		Short: "Run the sync loop in the foreground (what `brew services` starts)",
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			st, err := a.openStore()
-			if err != nil {
-				return err
-			}
-			defer st.Close()
-			lock, err := sync.TryLock(a.cfg.DataDir)
-			if err != nil {
-				return err
-			}
-			defer lock.Unlock()
-			ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-			defer cancel()
-			s := a.syncer(st)
-			t, err := a.triager(st)
-			if err != nil {
-				return err
-			}
-			stopAutomation, err := a.startAutomation(ctx, st)
-			if err != nil {
-				return err
-			}
-			defer stopAutomation()
-			s.BeforeTick = a.reloadOnChange(s, st, t)
-			s.Log.Info("larkim daemon starting", "version", a.Version, "data_dir", a.cfg.DataDir, "poll_interval_ms", a.cfg.PollIntervalMS)
-			go func() {
-				defer sentryRecoverRepanic()
-				t.Run(ctx)
-			}()
-			err = s.Run(ctx)
-			if errors.Is(err, context.Canceled) {
-				return nil
-			}
-			return err
-		},
-	}
-	daemon.AddCommand(run)
-	return daemon
-}
-
 type statusOut struct {
 	Status          string           `json:"status"`
 	LastError       string           `json:"last_error,omitempty"`
@@ -120,7 +75,7 @@ type statusOut struct {
 	WatermarkMs     int64            `json:"watermark_ms"`
 	LastTickMs      int64            `json:"last_tick_ms"`
 	ChatsRefreshed  int64            `json:"chats_refreshed_ms"`
-	DaemonLockHeld  bool             `json:"daemon_lock_held"`
+	SweepLockHeld   bool             `json:"sweep_lock_held"`
 	Counts          store.Counts     `json:"counts"`
 	Unread          int64            `json:"unread"`
 	Resources       map[string]int64 `json:"resources"`
@@ -132,7 +87,7 @@ type statusOut struct {
 func (a *App) statusCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "status",
-		Short: "Show sync state from the database (works whether or not the daemon runs)",
+		Short: "Show sync state from the database (works whether or not a sync process runs)",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			st, err := a.openStore()
 			if err != nil {
@@ -168,7 +123,7 @@ func (a *App) statusCmd() *cobra.Command {
 			if lock, err := sync.TryLock(a.cfg.DataDir); err == nil {
 				lock.Unlock()
 			} else if errors.Is(err, sync.ErrLocked) {
-				out.DaemonLockHeld = true
+				out.SweepLockHeld = true
 			}
 			if out.Counts, err = st.Counts(ctx); err != nil {
 				return err
@@ -201,8 +156,8 @@ func (a *App) statusCmd() *cobra.Command {
 			if out.Hint != "" {
 				fmt.Fprintf(a.Out, "hint:             %s\n", out.Hint)
 			}
-			fmt.Fprintf(a.Out, "daemon lock:      %v\nuser:             %s\nwatermark:        %s\nlast tick:        %s\nchats/messages:   %d / %d (rendered %d, unread %d)\nresources:        done %d, pending %d, failed %d, skipped %d\npending backfill: %d chats\n",
-				out.DaemonLockHeld, out.SelfOpenID, fmtMs(out.WatermarkMs), fmtMs(out.LastTickMs), out.Counts.Chats, out.Counts.Messages, out.Counts.Rendered, out.Unread,
+			fmt.Fprintf(a.Out, "sweep lock:       %v\nuser:             %s\nwatermark:        %s\nlast tick:        %s\nchats/messages:   %d / %d (rendered %d, unread %d)\nresources:        done %d, pending %d, failed %d, skipped %d\npending backfill: %d chats\n",
+				out.SweepLockHeld, out.SelfOpenID, fmtMs(out.WatermarkMs), fmtMs(out.LastTickMs), out.Counts.Chats, out.Counts.Messages, out.Counts.Rendered, out.Unread,
 				out.Resources["done"], out.Resources["pending"], out.Resources["failed"], out.Resources["skipped"], out.PendingBackfill)
 			if len(out.Runs) > 0 {
 				rows := make([][]string, 0, len(out.Runs))

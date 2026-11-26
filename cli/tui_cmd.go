@@ -106,6 +106,10 @@ func (a *App) runTUI(_ *cobra.Command, _ []string) error {
 			return err
 		}
 		defer stopAutomation()
+		// The owner of the sweep is the one process that hands it an edited
+		// config file and the only one that can: every other larkim process
+		// keeps the config it started on.
+		s.BeforeTick = a.reloadOnChange(s, st, t)
 		deps.SetNotifications = func(n config.Notifications) { t.SetRules(triage.NewRules(n)) }
 		deps.SetJudge = func(ai config.AI) { t.SetJudge(a.judge(ai)) }
 		go func() {
@@ -117,7 +121,7 @@ func (a *App) runTUI(_ *cobra.Command, _ []string) error {
 			t.Run(ctx)
 		}()
 	} else if errors.Is(err, sync.ErrLocked) {
-		a.logger().Info("tui", "sync", "daemon", "reason", "a daemon owns the sweep")
+		a.logger().Info("tui", "sync", "busy", "reason", "another process owns the sweep")
 	} else {
 		return err
 	}

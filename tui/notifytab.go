@@ -244,10 +244,10 @@ func (m *Model) writeNotify(next config.Notifications) error {
 		return err
 	}
 	m.cfg.Notifications = next
-	reach := "the daemon rereads it"
+	reach := reachSweep
 	if m.deps.SetNotifications != nil {
 		m.deps.SetNotifications(next)
-		reach = "takes effect now"
+		reach = reachNow
 	}
 	*m = m.notify("notifications · "+strconv.Itoa(len(next.Watch))+" watch, "+
 		plural(len(next.Keywords), "keyword", "keywords")+" · "+reach, false)
