@@ -2,6 +2,8 @@ package ai
 
 import (
 	"encoding/json"
+	"encoding/json/jsontext"
+	jsonv2 "encoding/json/v2"
 	"fmt"
 	"slices"
 	"strings"
@@ -180,21 +182,22 @@ func splitCommand(cmd string) ([]string, bool) {
 // kind the agent names the call as. Only the shell is ever allowed: every
 // other tool the agent could reach reads this machine, which is what the
 // gate exists to keep it from.
-func commandOf(kind string, rawInput any) (string, bool) {
+func commandOf(kind string, rawInput jsontext.Value) (string, bool) {
 	if kind != "execute" && kind != "" {
 		return "", false
 	}
-	m, ok := rawInput.(map[string]any)
-	if !ok {
+	var input struct {
+		Command string `json:"command"`
+	}
+	if err := jsonv2.Unmarshal(rawInput, &input); err != nil {
 		return "", false
 	}
-	cmd, _ := m["command"].(string)
-	return cmd, cmd != ""
+	return input.Command, input.Command != ""
 }
 
 // traceLine is what a history call leaves in the answer: the command it ran
 // and, when its output can be counted, how many rows that was.
-func traceLine(title string, rawOutput any) string {
+func traceLine(title string, rawOutput jsontext.Value) string {
 	cmd := strings.TrimPrefix(title, "$ ")
 	line := "⌕ " + cmd
 	if n, ok := rowsOf(rawOutput); ok {
@@ -205,15 +208,17 @@ func traceLine(title string, rawOutput any) string {
 
 // rowsOf counts the rows a history call returned: a JSON array's length, or
 // the lines of anything else.
-func rowsOf(rawOutput any) (int, bool) {
+func rowsOf(rawOutput jsontext.Value) (int, bool) {
 	var out string
-	switch v := rawOutput.(type) {
-	case string:
-		out = v
-	case map[string]any:
-		s, _ := v["output"].(string)
-		out = s
-	default:
+	if rawOutput.Kind() == '{' {
+		var envelope struct {
+			Output string `json:"output"`
+		}
+		if err := jsonv2.Unmarshal(rawOutput, &envelope); err != nil {
+			return 0, false
+		}
+		out = envelope.Output
+	} else if err := jsonv2.Unmarshal(rawOutput, &out); err != nil {
 		return 0, false
 	}
 	var arr []any

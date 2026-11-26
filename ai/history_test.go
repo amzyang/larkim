@@ -79,9 +79,9 @@ func TestSplitCommand_RefusesAnythingThatRunsMoreThanOneCommand(t *testing.T) {
 
 func TestTraceLine_CountsTheRowsTheCallReturned(t *testing.T) {
 	require.Equal(t, "⌕ larkim messages list --chat oc_quiet --json · 4 rows",
-		traceLine("$ larkim messages list --chat oc_quiet --json", map[string]any{"output": "[{},{},{},{}]"}))
+		traceLine("$ larkim messages list --chat oc_quiet --json", []byte(`{"output":"[{},{},{},{}]"}`)))
 	require.Equal(t, "⌕ larkim messages list --json · 3 rows",
-		traceLine("$ larkim messages list --json", "a\nb\nc"))
+		traceLine("$ larkim messages list --json", []byte(`"a\nb\nc"`)))
 	require.Equal(t, "⌕ larkim messages list --json",
 		traceLine("$ larkim messages list --json", nil), "nothing countable is left off")
 }

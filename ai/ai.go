@@ -5,6 +5,7 @@ package ai
 import (
 	"cmp"
 	"context"
+	"encoding/json/jsontext"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -304,7 +305,7 @@ func selectValues(o acp.SessionConfigSelectOptions) []acp.SessionConfigSelectOpt
 // allowlisted command — false and the turn stops. trace carries the dim line
 // a running call leaves in the answer when its result arrives.
 type toolGate struct {
-	allow func(kind, title string, rawInput any) bool
+	allow func(kind string, rawInput jsontext.Value) bool
 	trace func(string) bool
 	// title is the call the gate passed, whose trace its result carries: an
 	// agent may not repeat the title on the update.
@@ -313,7 +314,7 @@ type toolGate struct {
 
 // gate is the History's own decision function.
 func (h History) gate() *toolGate {
-	return &toolGate{allow: func(kind, title string, rawInput any) bool {
+	return &toolGate{allow: func(kind string, rawInput jsontext.Value) bool {
 		cmd, ok := commandOf(kind, rawInput)
 		if !ok {
 			return false
@@ -347,7 +348,7 @@ func (h handler) SessionUpdate(_ context.Context, n acp.SessionNotification) err
 	// the answer. The tool call itself is refused by ending the turn: reading
 	// local files or the web is what this assistant exists never to do.
 	if u := n.Update.ToolCall; u != nil {
-		if h.gate != nil && h.gate.allow(string(u.Kind), u.Title, u.RawInput) {
+		if h.gate != nil && h.gate.allow(string(u.Kind), u.RawInput) {
 			// The taught command, on this chat: it runs, and the answer
 			// keeps going.
 			h.gate.title = u.Title
@@ -358,9 +359,12 @@ func (h handler) SessionUpdate(_ context.Context, n acp.SessionNotification) err
 		h.stop()
 		return nil
 	}
-	if u := n.Update.ToolCallUpdate; u != nil && h.gate != nil && u.Status != nil &&
-		*u.Status == acp.ToolCallStatusCompleted {
-		h.gate.trace(traceLine(cmp.Or(deref(u.Title), h.gate.title), u.RawOutput))
+	if u := n.Update.ToolCallUpdate; u != nil && h.gate != nil {
+		if status, _ := u.Status.Value(); status == acp.ToolCallStatusCompleted {
+			title, _ := u.Title.Value()
+			output, _ := u.RawOutput.Value()
+			h.gate.trace(traceLine(cmp.Or(title, h.gate.title), output))
+		}
 	}
 	if u := n.Update.AgentMessageChunk; u != nil && u.Content.Text != nil && u.Content.Text.Text != "" {
 		h.emit(u.Content.Text.Text)
@@ -378,6 +382,14 @@ func (handler) RequestPermission(_ context.Context, p acp.RequestPermissionReque
 		return acp.RequestPermissionResponse{Outcome: acp.NewRequestPermissionOutcomeCancelled()}, nil
 	}
 	return acp.RequestPermissionResponse{Outcome: acp.NewRequestPermissionOutcomeSelected(p.Options[i].OptionId)}, nil
+}
+
+func (handler) CreateElicitation(context.Context, acp.CreateElicitationRequest) (acp.CreateElicitationResponse, error) {
+	return acp.CreateElicitationResponse{}, acp.NewMethodNotFound(acp.ClientMethodElicitationCreate)
+}
+
+func (handler) CompleteElicitation(context.Context, acp.CompleteElicitationNotification) error {
+	return nil
 }
 
 func (handler) ReadTextFile(context.Context, acp.ReadTextFileRequest) (acp.ReadTextFileResponse, error) {
@@ -503,12 +515,4 @@ func (t Turn) Prompt() string {
 	}
 	fmt.Fprintf(&b, "<ask>\n%s\n</ask>", strings.TrimSpace(t.Question))
 	return b.String()
-}
-
-// deref reads a title the update may carry or not.
-func deref(s *string) string {
-	if s == nil {
-		return ""
-	}
-	return *s
 }
