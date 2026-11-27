@@ -4,13 +4,13 @@ go 1.27
 
 require (
 	charm.land/bubbles/v2 v2.2.1
-	charm.land/bubbletea/v2 v2.1.2
+	charm.land/bubbletea/v2 v2.2.0
 	charm.land/lipgloss/v2 v2.1.1
 	github.com/JohannesKaufmann/html-to-markdown/v2 v2.5.2
 	github.com/alecthomas/chroma/v2 v2.27.0
 	github.com/browserutils/kooky v0.2.10
 	github.com/charmbracelet/ultraviolet v0.0.0-20261008173134-6b8d4baf91b4
-	github.com/charmbracelet/x/ansi v0.11.10
+	github.com/charmbracelet/x/ansi v0.12.0
 	github.com/coder/acp-go-sdk v0.20.0
 	github.com/getsentry/sentry-go v0.50.0
 	github.com/gofrs/flock v0.13.2

@@ -879,6 +879,7 @@ func (m Model) View() tea.View {
 	v.ReportFocus = true
 	v.KeyboardEnhancements = tea.KeyboardEnhancements{ReportAlternateKeys: true}
 	v.WindowTitle = windowTitle(m.rows.all(m.chats, m.threads), m.unread)
+	v.ProgramResume = m.resume
 	if m.width == 0 {
 		v.Content = "loading…"
 		return v

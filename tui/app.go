@@ -106,6 +106,11 @@ type Model struct {
 	chatPollPausedUntil time.Time
 	// chatPollBeat counts polls so the refreshes riding along take turns.
 	chatPollBeat uint
+	// resume is what the terminal is told to run to bring this TUI back
+	// after it restarts (OSC 7577). Nil only when the binary's own path
+	// could not be resolved, which leaves the feature unreported.
+	resume *tea.ProgramResume
+
 	// targets is the chooser over what the selected message leads to, open
 	// only in modeTarget.
 	targets targets
@@ -456,6 +461,17 @@ func New(d Deps) Model {
 		files:      osDraftFiles()}
 	m.emoji.LoadUsed(d.DataDir)
 	m.emojiWrite.LoadUsed(d.DataDir)
+	resolve := d.Executable
+	if resolve == nil {
+		resolve = os.Executable
+	}
+	if exe, err := resolve(); err == nil {
+		args := []string{exe, "tui"}
+		if d.ConfigPath != "" {
+			args = []string{exe, "--config", d.ConfigPath, "tui"}
+		}
+		m.resume = &tea.ProgramResume{Args: args}
+	}
 	// The handshake settles the renderers before the first frame rather than
 	// after it: no colour blocks turning into avatars a blink later, no dark
 	// palette turning light.
